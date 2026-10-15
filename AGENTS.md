@@ -185,6 +185,9 @@ hopper's note naming the job and the request by id only, and gets no label or as
   `hopper`) writes the database directly: whoever runs it holds its credentials. Its operator actions
   (`job`, `queue`, `question`, issue #374) change no job, question or setting themselves: each mints a UI session in the database for one
   `POST /ui/api/*` on the running daemon, and drops it after.
+- **A job's containers are its own** (issue #1295, `docs/design.md` "Each job its own container runtime"): a job's shell
+  gets a podman runtime of its own (`src/client/job-runtime.ts`) — its runtime dir, storage and socket —, never the user's
+  runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
 - **Persisted state is the user's.** A schema change ships a migration, appended to
   `src/store/migrations-recent.ts` or `src/store/tenant-migrations-recent.ts` (additions files, issue #967; `SHARED`, in SQL both databases mean the same way); it never drops a

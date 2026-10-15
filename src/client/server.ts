@@ -39,7 +39,7 @@ import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
 import { reachOf } from './reach.ts';
 import { CHECKPOINT_TIMEOUT_MS, checkpointOf } from './checkpoint.ts';
 import { runArgv } from './run.ts';
-import { readReap, reapArgv, scriptArgvOf } from './reap.ts';
+import { readReap, REAP_TIMEOUT_MS, reapArgv, scriptArgvOf } from './reap.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
 import { createSignInRoute, startSignIn } from './sign-in.ts';
@@ -209,7 +209,7 @@ async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | 
   // A checkpoint (issue #921): the fixed script, which only reads the job's own worktree and session.
   const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
+  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
   answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 

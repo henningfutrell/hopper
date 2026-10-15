@@ -5,6 +5,8 @@
 // target runs them, and a client release is the files in that directory. Imports nothing of hopper but its own directory.
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
+import { REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
+
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 export const isJobId = (id: unknown): id is string => typeof id === 'string' && JOB_ID.test(id);
 
@@ -17,6 +19,12 @@ export const scopeUnitOf = (jobId: string): string => `hopper-job-${jobId}`;
  * job that still has one.
  */
 export const JOB_LABEL = 'hopper.job';
+
+/**
+ * How long a reap may take (issue #1295): a scope stop waits up to 10 s, and a job's own container runtime is reset, its
+ * containers stopped, which a kind cluster makes slow.
+ */
+export const REAP_TIMEOUT_MS = 180000;
 
 export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
@@ -48,6 +56,9 @@ const REAP_SCRIPT = [
   '    l=$(pids); [ -n "$l" ] && kill -KILL $l 2>/dev/null;',
   '  fi;',
   'fi;',
+  // The job's own container runtime (issue #1295, job-runtime.ts): reset and removed, its containers named as removed.
+  'to=; command -v timeout >/dev/null 2>&1 && to="timeout 30";',
+  REAP_RUNTIME_SH,
   // The job's containers and volumes (issue #1120): each labelled with its id, in each container runtime there, a
   // container with its anonymous volumes. Not a timed-out job's (keep): it may go on there. Only names a runtime gives
   // (never an option), each call cut off at 30 s where `timeout` is, so a runtime that hangs never holds the reap.
@@ -145,6 +156,8 @@ const SURVEY_SCRIPT = [
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
   'done;',
+  // Each job's own container runtime left (issue #1295, job-runtime.ts), as a job with a container left.
+  SURVEY_RUNTIME_SH,
   `measure() { set --; for p in "$r/${LAYOUT.worktrees}" "$r/${LAYOUT.oldScratch}" "$r"/workspace/*; do`,
   `    [ -d "$p" ] && [ ! -L "$p" ] || continue; case $p in "$r/${LAYOUT.worktrees}"|"$r/${LAYOUT.oldScratch}"|"$r/${LAYOUT.oldWorktrees}") ;; *) [ -e "$p/.git" ] || continue;; esac;`,
   '    set -- "$@" "$p";',

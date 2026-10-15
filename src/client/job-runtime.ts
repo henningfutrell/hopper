@@ -1,0 +1,168 @@
+// The job's own container runtime (issue #1295, design.md "Work tree" → "The job's container runtime"): a job that ran
+// `podman system reset --force` with HOME and XDG_DATA_HOME moved, but XDG_RUNTIME_DIR left as it was, wiped the host's
+// rootless runtime dir, and the hopper stack stopped answering. So each job runs podman in a runtime of its own: its runtime
+// dir `<the user's runtime dir>/hopper-runtime-<job id>`, its storage `<scratch dir>/containers/storage`, its socket
+// `<runtime dir>/podman/podman.sock`. The job's shell gets them as its environment (`env.sh`), and `podman` and `docker` on
+// its PATH are guards that put them back whatever the job changed, refuse a flag that names another runtime, and refuse
+// `podman system reset|migrate|renumber`. A machine with no podman, or no runtime dir of the user's, gives the job no
+// runtime: DOCKER_HOST names a socket that is not there, so the host's socket is closed to it all the same. The reap
+// (reap.ts) resets that runtime, never another, and removes it; the survey names each one left. Beside reap.ts, as a client
+// target runs these scripts too. Imports nothing of hopper.
+
+/** The runtime dir's name in the user's runtime dir, before the job id. */
+export const RUNTIME_PREFIX = 'hopper-runtime-';
+/** Where the job's runtime keeps its files in its scratch dir: the storage, its config and the guards. */
+export const RUNTIME_SUBDIR = 'containers';
+
+/**
+ * The user's runtime dir as the shell sees it, `$h`: XDG_RUNTIME_DIR, else `/run/user/<uid>`; a job's runtime dir given
+ * as it (a shell of a job's own) names its parent.
+ */
+export const HOST_RUNTIME_SH = `h=\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; case \${h##*/} in ${RUNTIME_PREFIX}*) h=\${h%/*};; esac;`;
+
+/**
+ * Writes the runtime's config, `conf <runtime dir> <containers dir>`: storage under the scratch dir, everything that runs
+ * under the runtime dir. Read over the user's own (CONTAINERS_CONF_OVERRIDE is read last), and the storage config in
+ * place of theirs (CONTAINERS_STORAGE_CONF). The reap writes it again before it resets, so a job that changed it
+ * cannot point the reset elsewhere.
+ */
+export const CONF_SH = [
+  'conf() {',
+  '  printf "[engine]\\ntmp_dir = \\"%s/libpod/tmp\\"\\nvolume_path = \\"%s/storage/volumes\\"\\n[network]\\nnetwork_config_dir = \\"%s/networks\\"\\n" "$1" "$2" "$2" > "$2/containers.conf" &&',
+  '  printf "[storage]\\ngraphroot = \\"%s/storage\\"\\nrunroot = \\"%s/storage\\"\\n" "$2" "$1" > "$2/storage.conf";',
+  '};',
+].join(' ');
+
+// The guard, one line after its `#!/bin/sh`, named podman or docker: the job's runtime from env.sh beside its directory,
+// whatever the caller changed (HOME, XDG_*, DOCKER_HOST, a context), then the real command of that name further on PATH.
+// Refused, exit 126: a global flag that names another runtime or its storage, and `podman system reset|migrate|renumber`.
+// Only the options before the command are read; a value-taking global option skips its value.
+const GUARD = [
+  'e="${0%/*}/../env.sh"; if [ -r "$e" ]; then . "$e"; else printf "hopper: %s\\n" "the job container runtime is not set up" >&2; exit 125; fi;',
+  'n=${0##*/}; deny() { printf "hopper: %s %s: %s\\n" "$n" "$1" "$2" >&2; exit 126; };',
+  'w=; v=; for a in "$@"; do',
+  '  if [ -n "$v" ]; then v=; continue; fi;',
+  '  if [ -z "$w" ]; then case $n:$a in',
+  '    podman:--url|podman:--url=*|podman:--connection|podman:--connection=*|podman:-c|podman:-c?*|podman:--remote|podman:--remote=*|podman:-r'
+    + '|podman:--root|podman:--root=*|podman:--runroot|podman:--runroot=*|podman:--tmpdir|podman:--tmpdir=*|podman:--imagestore|podman:--imagestore=*'
+    + '|podman:--volumepath|podman:--volumepath=*|podman:--network-config-dir|podman:--network-config-dir=*|podman:--config|podman:--config=*'
+    + '|docker:-H|docker:-H?*|docker:--host|docker:--host=*|docker:-c|docker:-c?*|docker:--context|docker:--context=*|docker:--config|docker:--config=*)',
+  '      deny "$a" "a job uses only its own container runtime";;',
+  '    *:--log-level|*:-l|*:--cgroup-manager|*:--events-backend|*:--hooks-dir|*:--module|*:--network-cmd-path|*:--out|*:--runtime|*:--runtime-flag'
+    + '|*:--ssh|*:--identity|*:--storage-driver|*:--storage-opt|*:--cdi-spec-dir|*:--tlscacert|*:--tlscert|*:--tlskey) v=1;;',
+  '    *:-*) ;;',
+  '    *) w=$a;;',
+  '  esac; continue; fi;',
+  '  [ "$n:$w" = podman:system ] || break;',
+  '  case $a in -*) ;; reset|migrate|renumber) deny "system $a" "refused in a job";; *) break;; esac;',
+  'done;',
+  'r=; o=$IFS; IFS=:; for p in $PATH; do [ -n "$p" ] && [ -x "$p/$n" ] && ! [ "$p/$n" -ef "$0" ] && { r=$p/$n; break; }; done; IFS=$o;',
+  '[ -n "$r" ] || { printf "hopper: %s: not found\\n" "$n" >&2; exit 127; };',
+  'exec "$r" "$@"',
+].map((l) => l.trim()).join(' ');
+
+// $1 the job id, $2 its scratch dir, $3 the guard, $4 `service` to start the runtime's socket (a pane's job: it lives in
+// the job's scope until the reap stops it). Prints one word: own, none or failed. The user's bus and systemd's private
+// socket are hard links in the runtime dir: podman's rootless network namespace sees a /run of its own, with only the
+// runtime dir in it, and aardvark-dns reaches systemd through them.
+const SETUP_SCRIPT = [
+  'i=$1; s=$2; c=$s/' + RUNTIME_SUBDIR + ';',
+  CONF_SH,
+  `mkdir -p "$c/bin" || { echo failed; exit 0; };`,
+  'for n in podman docker; do { printf "#!/bin/sh\\n%s\\n" "$3" > "$c/bin/$n" && chmod 755 "$c/bin/$n"; } || { echo failed; exit 0; }; done;',
+  HOST_RUNTIME_SH,
+  `j=$h/${RUNTIME_PREFIX}$i;`,
+  'if command -v podman >/dev/null 2>&1 && [ -d "$h" ] && [ ! -L "$h" ] && [ -w "$h" ] && mkdir -p "$j" && [ ! -L "$j" ] && chmod 700 "$j"; then',
+  '  mkdir -p "$j/systemd" "$j/podman" || { echo failed; exit 0; };',
+  '  [ -S "$h/bus" ] && ln -f "$h/bus" "$j/bus" 2>/dev/null;',
+  '  [ -S "$h/systemd/private" ] && ln -f "$h/systemd/private" "$j/systemd/private" 2>/dev/null;',
+  '  printf "%s\\n" "$s" > "$j/scratch" && conf "$j" "$c" || { echo failed; exit 0; };',
+  '  { printf "export XDG_RUNTIME_DIR=\\"%s\\" CONTAINERS_CONF_OVERRIDE=\\"%s/containers.conf\\" CONTAINERS_STORAGE_CONF=\\"%s/storage.conf\\" DOCKER_HOST=\\"unix://%s/podman/podman.sock\\" KIND_EXPERIMENTAL_PROVIDER=podman\\n" "$j" "$c" "$c" "$j";',
+  '    if [ -S "$j/bus" ]; then printf "export DBUS_SESSION_BUS_ADDRESS=\\"unix:path=%s/bus\\"\\n" "$j"; fi; } > "$c/env.sh" || { echo failed; exit 0; };',
+  '  how=own;',
+  'else',
+  '  printf "export DOCKER_HOST=\\"unix://%s/no-container-runtime.sock\\"\\n" "$c" > "$c/env.sh" || { echo failed; exit 0; };',
+  '  how=none;',
+  'fi;',
+  '{ printf "unset CONTAINER_HOST CONTAINER_CONNECTION DOCKER_CONTEXT\\n";',
+  '  printf "case :\\$PATH: in *:%s/bin:*) ;; *) PATH=\\"%s/bin:\\$PATH\\"; export PATH;; esac\\n" "$c" "$c"; } >> "$c/env.sh" || { echo failed; exit 0; };',
+  'if [ "$how" = own ] && [ "$4" = service ]; then',
+  '  ( . "$c/env.sh"; nohup "$c/bin/podman" system service --time=0 "unix://$j/podman/podman.sock" </dev/null >/dev/null 2>&1 & );',
+  'fi;',
+  'echo "$how"',
+].map((l) => l.trim()).join(' ');
+
+/** What the runtime command prints, followed by its outcome. */
+export const RUNTIME_MARK = 'hopper-runtime-';
+/** own: the job has a runtime of its own; none: no podman or runtime dir here, the host's socket closed all the same; failed. */
+export type RuntimeOutcome = 'own' | 'none' | 'failed';
+const OUTCOMES: readonly RuntimeOutcome[] = ['own', 'none', 'failed'];
+
+const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/** The job's `env.sh`, in its scratch dir. */
+export const runtimeEnvOf = (scratch: string): string => `${scratch}/${RUNTIME_SUBDIR}/env.sh`;
+
+/**
+ * The command that sets the job's runtime up and puts it in the shell's environment, then prints its outcome as two words,
+ * so the command's own echo never reads as it. Any POSIX shell: the script runs in sh, the shell only sources env.sh.
+ * `service`: start the runtime's socket too (a pane's job, in its scope).
+ */
+export function runtimeCommand(jobId: string, scratch: string, service: boolean): string {
+  const env = shq(runtimeEnvOf(scratch));
+  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-runtime ${shq(jobId)} ${shq(scratch)} ${shq(GUARD)}${service ? ' service' : ''}); `
+    + `[ -r ${env} ] && . ${env}; printf 'hopper-runtime-%s\\n' "\${o:-failed}"`;
+}
+
+/** The argv that runs the setup script outside a shell's own environment, for a test. */
+export const runtimeSetupArgv = (jobId: string, scratch: string, service: boolean): string[] =>
+  ['sh', '-c', SETUP_SCRIPT, 'hopper-runtime', jobId, scratch, GUARD, ...(service ? ['service'] : [])];
+
+/** The last runtime outcome on the screen, if any. */
+export function runtimeOutcome(screen: string): RuntimeOutcome | undefined {
+  const last = screen.split('\n').map((l) => l.trim()).filter((l) => l.startsWith(RUNTIME_MARK)).at(-1)?.slice(RUNTIME_MARK.length);
+  return (OUTCOMES as readonly string[]).includes(last ?? '') ? last as RuntimeOutcome : undefined;
+}
+
+/**
+ * The reap's part (reap.ts), with `id` the job id, `s` its scratch dir or empty, `to` the timeout prefix, `k` keep/discard:
+ * the job's runtime dir, when there is one, has its containers listed, then removed with everything else in it by a
+ * reset — through the config written again here, with the job's storage and runtime dir named on the command line, so
+ * nothing the job changed can point it at another runtime —, then every process still started from it stopped, and the
+ * dir removed. The scratch dir is the one given, else the one the runtime dir names, and only ever the job's own. Not a
+ * timed-out job's (keep): it may go on there.
+ */
+export const REAP_RUNTIME_SH = [
+  'if [ "$k" != keep ]; then',
+  HOST_RUNTIME_SH,
+  `  j=$h/${RUNTIME_PREFIX}$id;`,
+  '  if [ -d "$j" ] && [ ! -L "$j" ]; then',
+  '    js=$s; [ -n "$js" ] || js=$(head -n 1 "$j/scratch" 2>/dev/null);',
+  '    case $js in /*/.worktrees/@scratch/"$id"|/*/.hopper-scratch/"$id") ;; *) js=;; esac;',
+  `    c=$js/${RUNTIME_SUBDIR};`,
+  '    if [ -n "$js" ] && command -v podman >/dev/null 2>&1 && [ -d "$c" ] && [ ! -L "$c" ] && { [ ! -e "$c/storage" ] || { [ -d "$c/storage" ] && [ ! -L "$c/storage" ]; }; }; then',
+  `      ${CONF_SH}`,
+  '      if conf "$j" "$c"; then',
+  '        pm() { pt=$1; shift; $pt env -u CONTAINER_HOST -u CONTAINER_CONNECTION XDG_RUNTIME_DIR="$j" CONTAINERS_CONF_OVERRIDE="$c/containers.conf" CONTAINERS_STORAGE_CONF="$c/storage.conf" podman --root "$c/storage" --runroot "$j/storage" --tmpdir "$j/libpod/tmp" "$@"; };',
+  '        for x in $(pm "$to" ps -aq 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-container %s\\n" "$x"; done;',
+  '        for x in $(pm "$to" volume ls -q 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-volume %s\\n" "$x"; done;',
+  '        tr=; command -v timeout >/dev/null 2>&1 && tr="timeout 120";',
+  '        pm "$tr" system reset --force >/dev/null 2>&1;',
+  '        [ -e "$c/storage" ] && pm "$tr" unshare rm -rf "$c/storage" >/dev/null 2>&1;',
+  '      fi;',
+  '    fi;',
+  // Whatever still runs from the job's runtime dir: its pause process, a network helper. Never this script.
+  '    if [ -r /proc/self/environ ]; then',
+  '      rp() { grep -lzxF "XDG_RUNTIME_DIR=$j" /proc/[0-9]*/environ 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/environ\\$|\\1|p" | grep -vx "$$"; };',
+  '      l=$(rp); [ -n "$l" ] && kill -KILL $l 2>/dev/null;',
+  '    fi;',
+  '    rm -rf "$j";',
+  '  fi;',
+  'fi;',
+].map((l) => l.trim()).join(' ');
+
+/** The survey's part (reap.ts): each job whose runtime dir is still there, as a job with a container left. */
+export const SURVEY_RUNTIME_SH = [
+  HOST_RUNTIME_SH,
+  `for d in "$h"/${RUNTIME_PREFIX}*; do [ -d "$d" ] && [ ! -L "$d" ] || continue; printf "hopper-container %s\\n" "\${d##*/${RUNTIME_PREFIX}}"; done;`,
+].join(' ');

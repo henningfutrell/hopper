@@ -845,6 +845,14 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   where it runs (`/proc/self/cgroup`) until it answers (`hopper-scope-entered`; the pane state records
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
   without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
+- **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
+  below). After the scope, the pane's shell runs the runtime command: the job gets a podman of its own — its runtime dir
+  `<the user's runtime dir>/hopper-runtime-<job id>`, its storage `<scratch dir>/containers/storage`, its socket
+  `<runtime dir>/podman/podman.sock`, started in the scope — as the shell's environment (`<scratch dir>/containers/env.sh`),
+  with guards named `podman` and `docker` first on its PATH. It prints `hopper-runtime-own`; with no podman or no runtime
+  dir of the user's, `hopper-runtime-none`, and DOCKER_HOST names a socket that is not there. `hopper-runtime-failed`
+  fails the job before Claude starts; no answer within 60000 ms is a start that timed out. A print-agent turn runs the
+  same setup before its scope, with no socket of its own.
 - **The reap** (issues #401, #410; the script in `src/client/reap.ts`, run by
   `src/executors/machine-shell.ts`). A job left processes and copies behind: dev servers and watchers
   started with `&` or `setsid` outlive the pane (herdr's close hangs up only the pane's own session),
@@ -861,6 +869,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
      unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
+     Then the job's own container runtime (issue #1295), unless the reap keeps (`keep`): its containers and volumes
+     printed as removed, a `podman system reset --force` of it alone, and its runtime dir removed ("Each job its own
+     container runtime" below).
   3. removes the job's scratch dir — only a path that is `…/.worktrees/@scratch/<job id>` — unless a
      repository in it (`.git`, outside `node_modules`) has uncommitted changes (a `node_modules` link to
      shared dependencies aside), or commits no remote has (a worktree: its `HEAD`; a clone: `HEAD` and
@@ -20884,3 +20895,69 @@ limits against the cgroup's use; a pod on a WSL node), `test/client/windows-link
 `test/scripts/helm-chart-lanes.test.ts`. `test/support/isolate.ts` unsets `KUBERNETES_SERVICE_HOST`, so a test run in a
 lane pod reads as a host.
 
+## Each job its own container runtime (issue #1295, 2026-10-15)
+
+**What happened.** A job ran `podman system reset --force` on the host. It had moved `HOME` and `XDG_DATA_HOME` to a
+temp dir, but not `XDG_RUNTIME_DIR`, so the reset wiped the user's rootless runtime dir. Podman then refreshed as after a
+reboot: every container of the hopper stack showed as exited, the rootless network went, and the live hopper stopped
+answering while its processes ran on untracked. The kind clusters and testcontainers of other jobs ran on the host's
+podman socket too, beside the stack. A job's shell was the user's shell: every container runtime the user had was the
+job's.
+
+**As built** (`src/client/job-runtime.ts`, used by `src/executors/herdr/start.ts`, `src/executors/print-agent.ts` and
+`src/client/reap.ts`):
+
+- **The job's runtime.** In the job's scope, before Claude starts, the pane's shell runs a fixed setup script. Where the
+  machine has podman and the user a runtime dir (`XDG_RUNTIME_DIR`, else `/run/user/<uid>`), the job gets its own:
+  - runtime dir `<the user's runtime dir>/hopper-runtime-<job id>`, mode 700 — never the user's runtime dir itself;
+  - storage `<scratch dir>/containers/storage` (graphroot), its run state in the runtime dir (runroot, `tmp_dir`):
+    `<scratch dir>/containers/storage.conf` in place of the user's (`CONTAINERS_STORAGE_CONF`), and
+    `containers.conf` read over theirs (`CONTAINERS_CONF_OVERRIDE`);
+  - socket `<runtime dir>/podman/podman.sock`, a `podman system service --time=0` started in the job's scope, so the
+    reap's scope stop ends it. `DOCKER_HOST` names it, for the docker CLI and testcontainers; `KIND_EXPERIMENTAL_PROVIDER`
+    is `podman`, so kind runs its cluster inside the job's runtime.
+  - The user's bus and systemd's private socket are hard links in the runtime dir (the same tmpfs): podman's rootless
+    network namespace has a `/run` of its own with only the runtime dir in it, and aardvark-dns (a network with DNS, as
+    kind makes) reaches systemd only through them. The job reached both before; nothing is added.
+  These are written to `<scratch dir>/containers/env.sh`, which the shell sources; `CONTAINER_HOST`,
+  `CONTAINER_CONNECTION` and `DOCKER_CONTEXT` are unset. A print-agent turn sources the same, with no socket: nothing of a
+  turn outlives it.
+- **No runtime here.** A machine with no podman, or no runtime dir the user can write: `DOCKER_HOST` names
+  `<scratch dir>/containers/no-container-runtime.sock`, which is not there. The host's docker socket is closed to the job
+  all the same (`hopper-runtime-none`); a job that needs containers there has none.
+- **The guards.** `<scratch dir>/containers/bin/podman` and `…/docker`, first on the job's PATH. Each sources `env.sh`
+  again, so a job that changed HOME, `XDG_*`, DOCKER_HOST or a context gets its own runtime all the same, then runs the
+  real command of its name further on PATH. Refused, exit 126: `podman system reset|migrate|renumber` (after any global
+  options), and a global option that names another runtime or its storage (`podman --url|--connection|-c|--remote|-r|
+  --root|--runroot|--tmpdir|--imagestore|--volumepath|--network-config-dir|--config`, `docker -H|--host|-c|--context|
+  --config`). A job's own runtime holds only its own containers, so `podman rm|stop` of anything not its own has nothing
+  to find, and the hopper stack's containers, volumes and network are not in it.
+- **The reap** (step 2 of "The reap"). Unless it keeps (`keep`: a timed-out job may go on), it finds the runtime dir by
+  the job id in the user's runtime dir, and the scratch dir as given, else as the runtime dir names it — only ever a
+  `…/.worktrees/@scratch/<job id>`. It writes the config again (a job that changed it cannot point the reset at another
+  runtime), prints each container and volume as removed (`job.containers_removed`), runs `podman system reset --force`
+  with `--root`, `--runroot` and `--tmpdir` the job's, removes what of the storage is left through `podman unshare`, stops
+  every process still started from the runtime dir (its environment's `XDG_RUNTIME_DIR`: the pause process, network
+  helpers), and removes the runtime dir. The reap may take 180 s (`REAP_TIMEOUT_MS`): a kind cluster is slow to stop.
+- **The survey** names each job whose runtime dir is still there as a job with a container left, so the sweep reaps an
+  ended job's at once ("The sweep").
+- **Labels.** Everything in a job's runtime is the job's, so the runtime itself is its label: its name carries the job
+  id. The `hopper.job` label (issue #1120) stays for what a job starts elsewhere.
+
+**Residual risk.** The job is still the user's OS user. The guards stop a mistake made by name — the one that happened,
+and what kind and testcontainers call —, not a job that runs `/usr/bin/podman` with the user's runtime named again, opens
+the user's sockets by path, or signals the stack's processes. A boundary against that is a box ("Agent boxes",
+"Sandboxing jobs: mechanisms compared"): a VM or another OS user. The job's image pulls are its own (no image store shared
+with the user's), so each job pulls what it runs once.
+
+**Not done here.** A test hopper a job installs inside its cluster showed its Limited banner ("the master key is
+missing") to the admin as if it were the real hopper. How it reached the admin's browser is not settled; it is carried on
+the issue as the part left.
+
+**Verification:** `test/client/job-runtime.test.ts` (the setup, the guards, the reap and the survey for real, with a
+stand-in podman and docker on PATH and a stand-in user runtime dir: a reset refused whatever HOME and `XDG_*` say, a flag
+naming another runtime refused, everything else run on the job's runtime, the reap resetting only the job's runtime with its
+config written again, stopping what runs from it, and leaving the user's runtime dir as it was),
+`test/herdr/executor-runtime.test.ts` (set up after the scope, before Claude; failed fails the job), and by hand on a
+machine with podman 6: a job's network with DNS, a container listed by the job's docker and not by the user's podman, a
+reset refused, and the reap leaving the stack's containers as they were.
