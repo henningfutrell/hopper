@@ -20,6 +20,8 @@ export function createLocalMachineSource(o: {
   reservedLanes?: number;
   /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */
   elbowIns?: number;
+  /** A Windows machine (issue #1350): it alone takes a job with a Windows label. */
+  windows?: true;
   /** The executors registered now; asked on every list(). */
   executors: () => string[];
   id?: string;
@@ -91,6 +93,7 @@ export function createLocalMachineSource(o: {
           maxLanes: o.maxLanes,
           ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
           ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}),
+          ...(o.windows ? { windows: true as const } : {}),
           online: true,
           executors: [...o.executors()],
           ...(o.session ? { herdr: { session: o.session } } : {}),

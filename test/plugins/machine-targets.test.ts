@@ -135,6 +135,14 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reservedLanes: -1 } }))).toMatch(/reservedLanes/);
   });
 
+  // Issue #1350: a Windows machine takes the jobs labelled hopper:win or hopper:windows, and only it does.
+  it('an attached instance says it is a Windows machine; absent, it is not', () => {
+    expect(targetOf({ name: 'win', plugin: 'ssh', options: { ssh: 'win', windows: true } })).toMatchObject({ windows: true });
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, windows: true } })).toMatchObject({ windows: true });
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('windows');
+    expect(why(() => targetOf({ name: 'win', plugin: 'ssh', options: { ssh: 'win', windows: 'yes' } }))).toMatch(/windows/);
+  });
+
   it('any other plugin is not an attached machine', () => {
     expect(targetOf({ name: 'local', plugin: 'local', options: { lanes: 2 } })).toBeUndefined();
   });

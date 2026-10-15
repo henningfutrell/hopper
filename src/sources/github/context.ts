@@ -11,7 +11,7 @@ import { isArtifactDeliverable } from './completion.ts';
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
 import type { BotLogin } from './identity.ts';
-import { needsWindows } from './labels.ts';
+import { needsWindows } from '../../domain/windows-jobs.ts';
 import { truncate } from './markers.ts';
 import type { Priority } from './priority.ts';
 
@@ -113,11 +113,10 @@ export function partsLine(n: number, parts: Parts): string {
 }
 
 /**
- * What a job whose issue has a Windows label (issue #918) is told. On a native Windows machine (issue #1348, a routing rule
- * places it there) the job does the work itself; on any other machine it runs each step that needs Windows on a Windows
- * host, as a Windows sandbox step (issue #731).
+ * What a job whose issue has a Windows label (issue #918) is told: only a Windows machine takes it (issue #1350), so it does
+ * its Windows work where it runs.
  */
-export const WINDOWS_LINE = 'windows: this issue needs Windows. When this machine runs Windows natively, do the work and its Windows steps here. Else do the work here, and run each step that needs Windows (a build, tests, a packing step) as a Windows sandbox step on a Windows host. sh "$HOPPER_SKILL" windows-step gives the help; sh "$HOPPER_STEP" hosts lists the hosts. When no host is set up, ask the user to add one in Settings → Windows hosts';
+export const WINDOWS_LINE = 'windows: this issue needs Windows, and this job runs on a Windows machine: only a Windows machine takes it. Do the work that needs Windows (a build, tests, a packing step) here, in this machine\'s own shell';
 
 /**
  * What a code job checks here (issue #1038): the fast checks and the tests its change affects. A full local test run

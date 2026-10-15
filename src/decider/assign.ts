@@ -2,6 +2,7 @@ import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, 
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
+import { isWindowsJob, windowsFits } from '../domain/windows-jobs.ts';
 import { roomToElbowIn } from './elbow-in.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
@@ -263,7 +264,7 @@ const problemFree = (s: MachineState, job: Job): boolean => job.pendingAnswer !=
 export function problemHold(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[]): string | undefined {
   if (problems.length === 0 || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
-  const places = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin));
+  const places = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && windowsFits(m, job) && (pin === undefined || m.id === pin));
   const blocking = places.map((m) => problems.find((b) => problemHits(b, m.id, job)));
   if (places.length === 0 || blocking.some((b) => b === undefined)) return undefined;
   return `held by problem: ${blocking[0]!.title}`;
@@ -276,7 +277,7 @@ export function problemHold(job: Job, machines: MachineSnapshot[], problems: rea
 export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[], gate: BlastRadiusInput | undefined, signedOut?: readonly SignedOutTool[]): string | undefined {
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
-  const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
+  const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && windowsFits(m, job) && (pin === undefined || m.id === pin)
     && !homeless(m) && !leavingHolds(m, job) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
     && signedOutFor(m.id, job, signedOut) === undefined);
   return gateHold(job, usable, gate);
@@ -284,7 +285,7 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && signedOutFor(s.machine.id, job, s.signedOut) === undefined && (pin === undefined || pin === s.machine.id);
 }
@@ -338,7 +339,9 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  */
 function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): string {
   const ex = job.spec.executor;
-  const s = states.filter((m) => eligible(m, job)).reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
+  const able = states.filter((m) => eligible(m, job));
+  if (able.length === 0 && isWindowsJob(job)) return windowsWait(job, states);
+  const s = able.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
@@ -357,6 +360,21 @@ function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): 
     return `waiting for a lane: executor ${ex}'s lane cap on ${id} is ${e.cap}${usageNote(e.band, e.usedFrac)}, all ${executorInUse} in use`;
   }
   return `waiting for a lane: machine ${id}'s lane cap is ${s.cap}${usageNote(s.band, s.usedFrac)}, all ${s.occupied + s.assigned} in use`;
+}
+
+/**
+ * Why a Windows job no Windows machine can take waits (issue #1350): none runs its executor, none of those is online, or
+ * none of those takes it now (pinned elsewhere, or held there). It waits queued; it never goes to another machine.
+ */
+function windowsWait(job: Job, states: MachineState[]): string {
+  const ex = job.spec.executor;
+  const runs = states.map((s) => s.machine).filter((m) => m.windows === true && m.executors.includes(ex));
+  if (runs.length === 0) return `waiting for a Windows lane: no Windows machine runs executor ${ex}`;
+  const online = runs.filter((m) => m.online);
+  if (online.length === 0) return `waiting for a Windows lane: no Windows machine that runs executor ${ex} is online (${runs.map((m) => `${m.id} offline`).join(', ')})`;
+  const pin = pinOf(job);
+  if (pin !== undefined && !online.some((m) => m.id === pin)) return `waiting for a Windows lane: it is pinned to ${pin}, which is not an online Windows machine`;
+  return `waiting for a Windows lane: no Windows machine that runs executor ${ex} takes a new job now (${online.map((m) => m.id).join(', ')})`;
 }
 
 /**

@@ -4859,8 +4859,9 @@ Bash's `sh` on its `PATH`) also joins and dials in, so work that needs Windows (
 - **Not built:** a named-pipe vault. Node on Windows cannot listen on a socket file in the client dir, so the vault's
   socket fails (`listen EACCES`); the client logs it and runs on. Give such a machine no box jobs. Not planned: any VM
   path (Podman machine, Docker Desktop, Hyper-V).
-- **Routing.** A label routes nothing by itself: a routing rule (Settings → Routing) places `hopper:win` work on the
-  machine. Its job's `windows:` line (`WINDOWS_LINE`) says to do the work there when the machine runs Windows natively.
+- **Routing.** Turn on the machine's `windows` option (Settings → Machines): it is then a **Windows machine**, and a job
+  with a Windows label goes only to such a machine (issue #1350, "Windows jobs wait for a Windows machine"). Its job's
+  `windows:` line (`WINDOWS_LINE`) says it runs on a Windows machine and does the work there.
 - **Outside the hopper:** a person's own scripts that keep the client running on Windows (a logon task and a restart
   loop) are not part of this repository.
 - **Docs:** the install page's "A Windows computer as a machine" (`site/install.html#windows-machine`) and the
@@ -4951,16 +4952,38 @@ reversed), or writes it into an output, gives it to the job. The mask is a guard
 the gates decide what the job may reach. The host's account sees the value while the step runs, as any process of it
 would.
 
-**A native Windows machine** (issue #1348): a person's machine and routing rule, set in Settings → Machines and Settings →
-Routing; no code of the hopper holds them. Its job does the work there, Windows steps included.
+**A native Windows machine** (issue #1348): a person's machine, joined with the native Windows client and set in Settings →
+Machines. With its `windows` option on it is a **Windows machine** (issue #1350, below), and a job with a Windows label
+goes only there. Its job does the work there, Windows steps included.
 
 **A Windows label** (issue #918): an issue labelled `hopper:win` or `hopper:windows` (any case; `WINDOWS_LABELS`,
-`src/sources/github/labels.ts`) needs Windows. Its job is placed as any job is, and its
-`[hopper issue context]` gets a `windows:` line before `done:` (`WINDOWS_LINE`, `src/sources/github/context.ts`): on a
-native Windows machine, do the work there; else do the work there and run each step that needs Windows as a Windows sandbox step (the `windows-step` skill, `sh "$HOPPER_STEP"
-hosts`), and ask the user for a host when none is set up. The label routes nothing: a routing rule that still names a
-removed Windows machine is skipped at intake, with why ("Routing rules"), and the next rule or the default placement
-applies. The line reaches a job at its prompt, so a job queued before keeps the prompt it was read with.
+`src/domain/windows-jobs.ts`) needs Windows. Since issue #1350 its job goes only to a **Windows machine** ("Windows jobs
+wait for a Windows machine", below), and its `[hopper issue context]` gets a `windows:` line before `done:`
+(`WINDOWS_LINE`, `src/sources/github/context.ts`): it runs on a Windows machine, and does its Windows work there. A
+routing rule that still names a removed Windows machine is skipped at intake, with why ("Routing rules"). The line
+reaches a job at its prompt, so a job queued before keeps the prompt it was read with. A job on a Linux machine can
+still ask for Windows sandbox steps; the label no longer sends a job to Linux to do so.
+
+**Windows jobs wait for a Windows machine** (issue #1350, 2026-10-15). A `hopper:windows` direct job was placed on a
+Linux machine while the one Windows machine was offline, and failed: the work could not run there. Requirement: a job
+with a Windows label is only ever placed on a Windows machine; when none is online it waits queued and says why; it
+never falls back to a Linux machine.
+
+- **A Windows machine** says so: the machine option `windows: true` (every attached machine and `local`;
+  `windowsOption`, `src/plugins/machine-source/attached.ts`), set by a person in Settings → Machines. It reaches the
+  decider as `MachineSnapshot.windows`. The hopper does not guess it from a probe: the person who adds the machine knows.
+- **The decider** reads the job's labels at intake (`job.source.labels`; `isWindowsJob`, `windowsFits`,
+  `src/domain/windows-jobs.ts`), so a job queued before this change is judged too. Step 7 takes as candidates only Windows
+  machines for such a job (`eligible`, `src/decider/assign.ts`); the problem and gate holds count only them. A job with no
+  Windows label goes to any machine, a Windows machine too.
+- **The wait, not a hold** (issue #381): with no Windows machine that can take it, the job stays `queued` and its wait
+  reason starts `waiting for a Windows lane:` — `no Windows machine runs executor e`, `no Windows machine that runs
+  executor e is online (m offline)`, `it is pinned to m, which is not an online Windows machine`, or `no Windows machine
+  that runs executor e takes a new job now (m)`. With a Windows machine eligible but full, the lane-cap wait names that
+  machine as for any job.
+
+Tests: `test/decider/windows.test.ts`, `test/plugins/machine-targets.test.ts`, `test/plugins/host-sources.test.ts`,
+`test/adapters/ssh-machine.test.ts`, `test/sources/github-context.test.ts`.
 
 **Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (the response carries it); more than
 one step at a time on one host; a host reached through a jump host.
