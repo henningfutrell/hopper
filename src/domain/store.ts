@@ -295,9 +295,9 @@ export interface LoginCodeRepository {
 /** One-time join codes (issue #308): only each code's SHA-256 is kept, with its user and expiry. */
 /**
  * What a join code names beside its user: the template the machine joins as (issue #558), when the line names one;
- * the sandbox box the hopper launched with it (issue #603), when it did.
+ * the sandbox box the hopper launched with it (issue #603), when it did; the job pod it started with it (issue #1283).
  */
-export interface JoinCodePlace { template?: string; container?: string }
+export interface JoinCodePlace { template?: string; container?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;

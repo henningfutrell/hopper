@@ -6,10 +6,10 @@ import type { ClientMachine } from '../../../domain/types.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { attachedBase, attachedShape, diskLowShape, reach, sweepShape, workTreeOption, workTreesOption, type AttachedOptions } from '../attached.ts';
 
-export interface ClientOptions extends AttachedOptions { key: string; template?: string; container?: string; pool?: true }
+export interface ClientOptions extends AttachedOptions { key: string; template?: string; container?: string; pool?: true; pod?: string }
 
 export const clientMachine = (name: string, o: ClientOptions): ClientMachine => ({
-  ...attachedBase(name, o), client: { key: o.key, ...(o.template ? { template: o.template } : {}), ...(o.container ? { container: o.container } : {}), ...(o.pool ? { pool: true as const } : {}) },
+  ...attachedBase(name, o), client: { key: o.key, ...(o.template ? { template: o.template } : {}), ...(o.container ? { container: o.container } : {}), ...(o.pool ? { pool: true as const } : {}), ...(o.pod ? { pod: o.pod } : {}) },
 });
 
 const client: PluginDefinition<'machine-source', ClientOptions> = {
@@ -25,6 +25,8 @@ const client: PluginDefinition<'machine-source', ClientOptions> = {
       .meta({ commandBearing: true, description: 'the sandbox box the hopper started for it (issue #603): removing the machine stops and removes that box' }),
     pool: z.literal(true).optional()
       .meta({ commandBearing: true, description: 'a lane pod (issue #1284): it joined with the lane pool key, joins again under its name, and is retired when it leaves with no job on it' }),
+    pod: z.string().regex(/^hopper-job-[a-z0-9-]{1,52}$/).optional()
+      .meta({ commandBearing: true, description: 'the job pod the hopper started for it (issue #1283): its one job runs there, and the machine goes with the pod' }),
     ...attachedShape(z, ['herdr-claude']),
     workTree: workTreeOption(z),
     workTrees: workTreesOption(z),

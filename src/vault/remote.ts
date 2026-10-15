@@ -123,5 +123,11 @@ export function remoteVault(o: {
       const r = await call<AgentCredentialAnswer>('agent-credential', { ask });
       return 'problem' in r ? { refused: r.problem } : r.result;
     },
+    // A job pod's agent credential (issue #1287): the same split.
+    async podCredential(ask) {
+      if (o.local.view().secrets.find((s) => s.name === ask.name)?.backend) return o.local.podCredential(ask);
+      const r = await call<AgentCredentialAnswer>('pod-credential', { ask });
+      return 'problem' in r ? { refused: r.problem } : r.result;
+    },
   };
 }

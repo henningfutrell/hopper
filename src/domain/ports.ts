@@ -50,9 +50,10 @@ export interface ExecutionContext {
    * The variables the job's own processes run with: its way to the hopper (issues #563, #652) — the hopper's URL, the
    * files `hopper-gh` and its proxy token kept under `<scratch>/credentials` on the job's machine, and git's way to GitHub
    * through the hopper. Never a GitHub token: the hopper acts on GitHub for the job. Asked when the job starts, resumes,
-   * or takes a turn, with the job's own scratch dir, and whether its work tree may be made (the jobs dir).
+   * or takes a turn, with the job's own scratch dir, and whether its work tree may be made (the jobs dir). `machine`: the
+   * machine the job's work is on, when it is not the lane's — a job pod's (issue #1283); absent: the lane's.
    */
-  credentials?: (scratch: string, makeWorkTree?: boolean) => Promise<Readonly<Record<string, string>>>;
+  credentials?: (scratch: string, makeWorkTree?: boolean, machine?: MachineSnapshot) => Promise<Readonly<Record<string, string>>>;
   /**
    * The job rules (issue #172): the text a job's prompt carries before its work tree and the protocol —
    * the config record `job-rules` as it is when the job starts, or the default while none is saved.

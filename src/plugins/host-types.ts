@@ -97,6 +97,8 @@ export interface PluginHost {
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   /** POST /client/join (issue #308): a machine joining as a client target; resolves once the plugins config is reloaded. */
   joinMachine(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
+  /** A job pod's machine removed (issue #1283); none is no change. Rejects when the plugins config could not be written. */
+  leavePod(pod: string): Promise<void>;
   report(): PluginsReport;
   /** the plugins config `routing:` now (none when absent; the last good list on an invalid config). */
   routingRules(): RoutingRule[];

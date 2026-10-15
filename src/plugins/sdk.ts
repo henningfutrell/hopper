@@ -145,8 +145,25 @@ export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'>
  * executors or label change.
  */
 /** What an executor learns (issue #308): how to reach a client target, by its machine id; undefined when no client target has it. */
-export interface ExecutorContext {
+export interface ExecutorContext extends Partial<Pick<MachineLookup, 'machine'>> {
   client(machine: string): ClientTransport | undefined;
+  /** Job pods (issue #1283): what a pod per job needs of the hopper. Absent: no job pod can join this hopper. */
+  pods?: JobPodHost;
+}
+
+/** What the hopper does for a job pod (issue #1283, design.md "Job pods on Kubernetes"). */
+export interface JobPodHost {
+  /** A fresh join code for the user, naming the pod: the pod joins once with it, as a machine only its job runs on. */
+  join(pod: string): string;
+  /** Removes the machine the pod joined as; none is no error. */
+  leave(pod: string): Promise<void>;
+  /** The hopper's instance id: the label that makes a pod this hopper's. */
+  instanceId(): string;
+  /**
+   * The job's user's vault secret `name` for the job's pod (issue #1287): a Claude setup token the pod's panes sign in
+   * with; `none` when the user holds no such secret; or why the vault refuses it. Absent: no vault, nothing is given.
+   */
+  agentCredential?(ask: { name: string; pod: string; job: string }): Promise<{ name: string; value: string } | { none: true } | { refused: string }>;
 }
 
 export interface MachineSourceContext {

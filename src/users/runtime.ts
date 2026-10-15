@@ -124,7 +124,7 @@ export interface UserRuntimeOptions {
   /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
-  launchScopes?(userId: string): Map<string, LaunchScope>; sandboxes?: SandboxLauncher; outboundGuard: OutboundGuard; // the process's (issue #1014)
+  launchScopes?(userId: string): Map<string, LaunchScope>; sandboxes?: SandboxLauncher; outboundGuard: OutboundGuard; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -274,7 +274,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     builtins: withSeams(seams, outbound),
     jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
-    executorContext: { client: clientNamed },
+    executorContext: { client: clientNamed, ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
     intervalMs: o.pluginsConfigIntervalMs,
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),

@@ -188,7 +188,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.write_forgotten': { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' }, by: 'Ada' },
   'vault.sandbox_failed': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', reason: 'the start check did not pass in 30 s' },
   'template.profile_approved': { template: 'kube', operation: 'write', asset: { kind: 'cluster', name: 'lab' }, level: 'high', by: 'Ada' },
-  'vault.agent_credential_given': { name: 'CLAUDE', template: 'kube', box: 'hopper-sandbox-kube' },
+  'vault.agent_credential_given': { name: 'CLAUDE', template: 'kube', box: 'hopper-sandbox-kube' }, 'vault.pod_credential_given': { name: 'CLAUDE_TOKEN', pod: 'hopper-job-0a1b2c3d', job: '0a1b2c3d' },
   'vault.delivered': { name: 'KUBE_TOKEN', template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
   'vault.minted': {
     kind: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'lab/web' }, template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',

@@ -103,9 +103,9 @@ export interface ClientMachine extends AttachedBase {
   /**
    * Its machine key; the template its join line named (issue #558), when it is a sandbox box of one; the box the
    * hopper started for it (issue #603), when it did; `pool` when it is a lane pod (issue #1284), joined with the lane
-   * pool key.
+   * pool key; the job pod it started (issue #1283), when it is one.
    */
-  client: { key: string; template?: string; container?: string; pool?: true };
+  client: { key: string; template?: string; container?: string; pool?: true; pod?: string };
 }
 
 /**

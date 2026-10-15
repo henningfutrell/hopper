@@ -2,6 +2,9 @@
 import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource, WindowsStepHost } from '../domain/ports.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
+import { kubernetesPlugin } from '../plugins/executor/kubernetes/index.ts';
+import { kubernetesMachinePlugin } from '../plugins/machine-source/kubernetes-cluster/index.ts';
+import type { KubernetesPods } from '../domain/pods.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { localPlugin } from '../plugins/machine-source/local/index.ts';
@@ -16,6 +19,8 @@ import type { GitHubApi } from '../sources/index.ts';
 export interface UserSeams {
   /** Replaces the herdr CLI client of every herdr-claude executor instance (detection then says available). */
   herdr?: HerdrClient;
+  /** Replaces the Kubernetes API of the job pods (issue #1283): the `kubernetes` executor and the `kubernetes-cluster` machine. */
+  kubernetes?: (namespace?: string) => KubernetesPods;
   /** Registered after the configured executor instances. */
   executors?: Executor[];
   /** Replaces the connected account's adapter of every github-account job source; the account still has to be connected. */
@@ -59,6 +64,8 @@ export interface UserSeams {
 export function withSeams(seams: UserSeams, outbound: Outbound) {
   return BUILTIN_PLUGINS.map((p) => {
     if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
+    if (p.id === 'kubernetes' && seams.kubernetes) return kubernetesPlugin({ pods: seams.kubernetes, ...(seams.herdr ? { herdr: seams.herdr } : {}) });
+    if (p.id === 'kubernetes-cluster' && seams.kubernetes) return kubernetesMachinePlugin(seams.kubernetes);
     if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
     if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
