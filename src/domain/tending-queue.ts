@@ -15,9 +15,13 @@
 // to report. A finished one whose end is reported holds nothing (it follows its pull request then, or the pull request was
 // merged or closed first and there is nothing to follow), nor one that waits on a person, nor one whose pull request any
 // job saw merged or closed.
+// A tend job on its own command holds nothing (issue #1210): a job that waits on its own background command works on nothing
+// meanwhile, as a job that waits on a person. One that ran a `sleep` loop to read another pull request held four pull requests
+// for the whole hour of `MAX_HELD_MS`. Once its wait ends and it pushes, it is a head again.
 import { following, tendOf, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 import type { ChangeKind } from './change-kinds.ts';
+import { ownWaitOf } from './own-command.ts';
 
 /** A waiting pull request a tend is due for: its job, the pull request, and the step. */
 export interface TendDue { jobId: string; pullRequest: string; step: TendStep }
@@ -69,11 +73,12 @@ export const repoOf = (job: Job): string | undefined => job.source?.repo?.toLowe
 /**
  * The tend job at work on a pull request: one a tend handed the pull request to (`tended`), not ended and not waiting on a
  * person — or finished, its end still to report (`reported`), and not following it again yet (issue #1162: once reported, it
- * follows the pull request, or there is none left to follow). A failed one waits on a person and holds nothing.
+ * follows the pull request, or there is none left to follow). A failed one waits on a person and holds nothing, and one on
+ * its own command works on nothing and holds nothing (issue #1210).
  */
 function tending(job: Job, get: (id: string) => Job | undefined, reported: (job: Job) => boolean): string | undefined {
   const t = tendOf(job, get);
-  if (!t || ENDED.includes(job.status) || WAITS_ON_PERSON.includes(job.status)) return undefined;
+  if (!t || ENDED.includes(job.status) || WAITS_ON_PERSON.includes(job.status) || ownWaitOf(job)) return undefined;
   if (job.status !== 'finished') return t.pullRequest;
   return followedOf(job).follow === undefined && !reported(job) ? t.pullRequest : undefined;
 }

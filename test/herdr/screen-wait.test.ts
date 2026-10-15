@@ -24,6 +24,9 @@ describe('the wait marker', () => {
     expect(line).toContain('Never open a question only to wait');
     // Issue #1037: a wait on its own command names it so in until:.
     expect(line).toContain('until: own command <its id> ends');
+    // Issue #1210: a poll is no own command, and a job does not poll for what the hopper does by itself.
+    expect(line).toContain('A poll is never a command of your own');
+    expect(line).toContain('Never wait in a loop for the hopper to tend, rebase or merge a pull request');
     expect(FOOTER_ANCHOR).toContain('HOPPER_FAILED');
   });
 
