@@ -18,8 +18,6 @@ export function withVaultGrants(v: Vault, o: {
   clock: Clock;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
-  /** Whether a box step of the job runs on the machine now (issue #1004). */
-  stepsOn?: (jobId: string, machine: string) => boolean;
 }): Vault {
   const { events, jobs, vaultGrants } = o.store;
   /** The open asks, by job. */
@@ -41,7 +39,7 @@ export function withVaultGrants(v: Vault, o: {
 
   /** Undefined: the vault answers (no box, or granted). Else the refusal, after the ask is recorded. */
   function gate(token: string, machineKey: string, name: string): { machine: string; template: string; job: string; reason: string } | undefined {
-    const box = boxAsk({ targets: o.targets, holds: o.holds, ...(o.stepsOn ? { stepsOn: o.stepsOn } : {}), job: (id) => jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, token, machineKey);
+    const box = boxAsk({ targets: o.targets, holds: o.holds, job: (id) => jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, token, machineKey);
     if ('refused' in box) return undefined;
     const { machine: m, job } = box;
     if (vaultGrants.get(grantKeyOf(job))) return undefined;

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { SandboxRecord } from '../../src/domain/sandboxes.ts';
 import type { SandboxRepository } from '../../src/domain/store.ts';
 import { createSandboxes } from '../../src/sandbox/service.ts';
+import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
 function memoryRepo(): SandboxRepository {
   const rows = new Map<string, SandboxRecord>();
@@ -17,7 +18,7 @@ function memoryRepo(): SandboxRepository {
 }
 
 const sandboxes = (cluster: boolean) => createSandboxes({
-  runtime: undefined, repo: memoryRepo(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1', cluster,
+  runtime: undefined, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1', cluster,
   mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(),
   clock: { now: () => new Date('2026-10-15T00:00:00.000Z') }, logger: { info() {}, warn() {} },
 });

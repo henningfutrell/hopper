@@ -15,7 +15,7 @@ import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { mintsForProblem } from '../domain/minting.ts';
 import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
-import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type BoxAskOptions, type ClientTarget } from './box.ts';
+import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
 import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
@@ -125,8 +125,7 @@ export function createVaultService(o: {
   shared?: (row: string) => VaultSecret | undefined;
   /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. */
   plans?: MintingOptions['plans'];
-  // `stepsOn`: a box step of the job runs on the machine now, so its box asks for the job (issue #1004).
-} & Pick<BoxAskOptions, 'stepsOn'>): VaultService {
+}): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -181,7 +180,7 @@ export function createVaultService(o: {
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,
-    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.stepsOn ? { stepsOn: o.stepsOn } : {}), ...(o.plans ? { plans: o.plans } : {}),
+    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.plans ? { plans: o.plans } : {}),
   });
 
   const testMint = createMintTest({ store: o.store });

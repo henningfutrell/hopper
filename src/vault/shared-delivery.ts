@@ -16,13 +16,11 @@ export function withSharedSecrets(v: Vault, o: {
   store: Pick<UserStore, 'events' | 'jobs'>;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
-  /** Whether a box step of the job runs on the machine now (issue #1004). */
-  stepsOn?: (jobId: string, machine: string) => boolean;
 }): Vault {
   const { events } = o.store;
 
   async function deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }> {
-    const box = boxAsk({ targets: o.targets, holds: o.holds, ...(o.stepsOn ? { stepsOn: o.stepsOn } : {}), job: (id) => o.store.jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, ask.token, machineKey);
+    const box = boxAsk({ targets: o.targets, holds: o.holds, job: (id) => o.store.jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, ask.token, machineKey);
     const { machine: m, job } = box;
     const refuse = (reason: string): { refused: string } => {
       events.append({

@@ -1,13 +1,11 @@
-// Sandbox requests (issue #991, design.md "Sandboxes jobs start"): a running job asks the hopper for a box of the
-// template its needs made (`sh "$HOPPER_SKILL" sandbox --needs …`), and the hopper starts it. One user's requests, kept
-// in memory, one per job and template: asked again, the job is told where its request is, and gets the box it started.
-// A request waits for a person on Access requests unless the user's **skip sandbox approval** is on; then it is approved
-// at once, by that toggle. Approved, the hopper starts the box through the sandbox module with the template's defaults,
-// and the box joins as a machine. Every step is an event on the job's timeline. A person declines a request with a
-// reason the job is told; a start that failed stays failed. A request whose job is no longer at work is forgotten;
-// its box ends at its time limit. A start never runs in the request that approves it (issue #1002): the approval is
-// recorded and answered, and the box starts after, in the background, with a time limit of its own. A start that has
-// not ended in that time fails with that reason; whatever it does after is not the request's any more.
+// Sandbox requests (issue #991, design.md "Sandboxes jobs start"): a running job asks the hopper for sandbox runs of the
+// template its needs made (`sh "$HOPPER_SKILL" sandbox --needs …`). One user's requests, kept in memory, one per job and
+// template: asked again, the job is told where its request is. A request waits for a person on Access requests unless
+// the user's **skip sandbox approval** is on; then it is approved at once, by that toggle. Approved, the job runs its
+// commands as box steps: each in a sandbox of its own, of the template, that the hopper burns after the step (issue
+// #1349, src/sandbox/need-box.ts). The approval starts nothing: no box waits between steps, and none joins as a machine.
+// Every step is an event on the job's timeline. A person declines a request with a reason the job is told. A request
+// whose job is no longer at work is forgotten.
 // Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
 // or when a person approved the template this job asked for, or waited on: that approval was given for this job's run;
 // or when a person's remembered write approvals cover every change the template makes (src/domain/remembered-writes.ts).
@@ -25,10 +23,6 @@ export interface SandboxRequestsOptions {
   record(event: NewEvent): void;
   approvals(): SandboxApprovals;
   template(name: string): TemplateView | undefined;
-  /** Starts a box of the template, with its defaults; throws when it did not start. */
-  launch(template: TemplateView): Promise<{ container: string }>;
-  /** Whether the user's box of that name is still there. */
-  alive(container: string): boolean;
   /** Whether the job is at work: a request of a job that is not is forgotten. */
   atWork(jobId: string): boolean;
   jobTitle?(jobId: string): string | undefined;
@@ -40,12 +34,7 @@ export interface SandboxRequestsOptions {
   policy?(): ReadPolicy | undefined;
   clock: { now(): Date };
   newId?: () => string;
-  /** How long a start may take before its request fails (issue #1002); default START_MS. */
-  startMs?: number;
 }
-
-/** How long a box's start may take, its image pull and build included, before its request fails (issue #1002). */
-export const START_MS = 20 * 60_000;
 
 export type SandboxRequestResult = { ok: true } | { ok: false; code: 'not_found' | 'conflict'; error: string };
 
@@ -57,20 +46,17 @@ export interface SandboxRequests {
   ask(jobId: string, template: string, about?: { purpose: string; plan?: string }): SandboxRequestView;
   /** The job waited on the template for a person's approval (issue #1001): that approval covers the job's run. */
   waited(jobId: string, template: string): void;
-  /** A person approves a waiting request: the box starts. */
+  /** A person approves a waiting request: the job's box steps run. */
   approve(id: string, by: string): SandboxRequestResult;
   /** A person declines a waiting request, with the reason the job is told. */
   decline(id: string, reason: string, by: string): SandboxRequestResult;
   /** The requests of jobs at work, oldest first. */
   list(): SandboxRequestView[];
-  /** Resolves when no box of a request is starting. */
-  idle(): Promise<void>;
 }
 
 export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequests {
   const newId = o.newId ?? (() => randomUUID());
   const requests = new Map<string, SandboxRequestView>();
-  const starting = new Set<Promise<void>>();
   /** `<job> <template>`: the templates each job at work waited on for a person (issue #1001). */
   const waitedOn = new Set<string>();
   const event = (r: SandboxRequestView, type: NewEvent['type'], data: Record<string, unknown> = {}): void => {
@@ -98,38 +84,10 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     return person && !NO_PERSON.includes(person) && forJob ? { by: templateApprovalBy(person) } : undefined;
   };
 
-  const start = (r: SandboxRequestView, by: string, data: Record<string, unknown> = {}): void => {
-    r.state = 'starting';
+  const approve = (r: SandboxRequestView, by: string, data: Record<string, unknown> = {}): void => {
+    r.state = 'approved';
     r.approvedBy = by;
     event(r, 'vault.sandbox_approved', { by, ...data });
-    let ended = false;
-    const end = (then: () => void): void => {
-      if (ended) return;
-      ended = true;
-      then();
-    };
-    const fail = (reason: string): void => end(() => {
-      r.state = 'failed';
-      r.reason = reason;
-      event(r, 'vault.sandbox_failed', { reason });
-    });
-    const limit = o.startMs ?? START_MS;
-    // After the approval's answer, never in it (issue #1002): nothing of the start runs in the request that approves it.
-    const p = new Promise<void>((resolve) => {
-      setImmediate(() => {
-        const timer = setTimeout(() => { fail(`the box did not start in ${minutes(limit)}`); resolve(); }, limit);
-        timer.unref();
-        const t = o.template(r.template);
-        const launched = t ? o.launch(t) : Promise.reject(new Error(`template ${r.template} is not there any more`));
-        launched.then(({ container }) => end(() => {
-          r.state = 'running';
-          r.container = container;
-          event(r, 'vault.sandbox_started', { container });
-        }), (e: unknown) => fail(e instanceof Error ? e.message : String(e))).finally(() => { clearTimeout(timer); resolve(); });
-      });
-    });
-    starting.add(p);
-    void p.finally(() => starting.delete(p));
   };
 
   const waiting = (id: string): SandboxRequestView | SandboxRequestResult => {
@@ -143,11 +101,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     ask(jobId, template, about) {
       forget();
       const had = [...requests.values()].find((r) => r.jobId === jobId && r.template === template);
-      // A box that went: the job's next ask is a new request. A start that failed stays failed: asked again on each
-      // event, a new one would start the box again and again.
-      const ended = had && had.state === 'running' && !o.alive(had.container!);
-      if (had && !ended) return { ...had };
-      if (had) requests.delete(had.id);
+      if (had) return { ...had };
       const title = o.jobTitle?.(jobId), url = o.jobUrl?.(jobId);
       const r: SandboxRequestView = {
         id: newId(), jobId, ...(title ? { jobTitle: title } : {}), ...(url ? { jobUrl: url } : {}), template, state: 'waiting', askedAt: o.clock.now().toISOString(),
@@ -156,7 +110,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       requests.set(r.id, r);
       event(r, 'vault.sandbox_requested');
       const approver = approverOf(jobId, template);
-      if (approver) start(r, approver.by, approver.radius ? { radius: approver.radius } : {});
+      if (approver) approve(r, approver.by, approver.radius ? { radius: approver.radius } : {});
       return { ...r };
     },
     waited(jobId, template) {
@@ -165,7 +119,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     approve(id, by) {
       const r = waiting(id);
       if ('ok' in r) return r;
-      start(r, by);
+      approve(r, by);
       return { ok: true };
     },
     decline(id, reason, by) {
@@ -180,10 +134,6 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       forget();
       return [...requests.values()].map((r) => ({ ...r }));
     },
-    async idle() {
-      while (starting.size > 0) await Promise.allSettled([...starting]);
-    },
   };
 }
 
-const minutes = (ms: number): string => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);

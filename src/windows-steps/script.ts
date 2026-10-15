@@ -1,6 +1,7 @@
 // `hopper-step` (issue #731): the command a job runs to have the hopper run one step on a Windows host — a .NET
 // Framework build, a Windows app's tests, a packing step — and get its log, its exit code and its outputs back; and
-// (issue #1004) one step in a sandbox box the job's own sandbox request started, where the minted credentials are. Kept
+// (issue #1004) one step in a sandbox of the template the job's sandbox request was approved for, made for that step and
+// burned after it (issue #1349), with credentials minted for it; and (issue #1007) one step by its needs. Kept
 // in the job's credentials dir beside its proxy token, `hopper-gh` and `hopper-skill`, run as `sh "$HOPPER_STEP"`: POSIX
 // sh, curl, tar and od, nothing else. Its full help is the `windows-step` and `box-step` skills' text.
 
@@ -20,7 +21,7 @@ export const STEP_NOT_RUN = 125;
 
 /** Where `--script FILE` goes in the inputs: the step's scratch directory on the host, removed after the step. */
 export const STEP_SCRIPT_INPUT = '.hopper-step/script.ps1';
-/** Where a box step's `--script FILE` goes in the inputs (issue #1004): removed from the box's work dir after the step. */
+/** Where a box or need step's `--script FILE` goes in the inputs (issue #1004): in the sandbox's work dir, burned with it. */
 export const BOX_SCRIPT_INPUT = '.hopper-step/script.sh';
 
 /** What a job reads when it loads the `windows-step` skill. */
@@ -60,39 +61,40 @@ Example: push a package with a key from the vault.
   sh "$HOPPER_STEP" run build-host --secret NUGET_TOKEN --command 'nuget push out\\App.nupkg -ApiKey $env:NUGET_TOKEN'`;
 
 /** What a job reads when it loads the `box-step` skill (issue #1004). */
-export const BOX_STEP_HELP = `box-step: run one step in a sandbox box, from the machine this job runs on.
+export const BOX_STEP_HELP = `box-step: run one step in a sandbox, from the machine this job runs on.
 
-A job does not move to the box the hopper started for it (sh "$HOPPER_SKILL" sandbox). When the work needs the assets
-that box was made for (AWS, a cluster), the hopper runs each step of it in the box, under sh, in the box's working
-directory ($HOME/work there, kept between steps). The step's output streams back here as it runs; then its exit code
-and its outputs. This job's work tree, its GitHub and its agent stay here.
+A job does not move to a sandbox. When the work needs the assets of the template its sandbox request was approved for
+(sh "$HOPPER_SKILL" sandbox), the hopper runs each step of it in a sandbox of that template, under sh, in the sandbox's
+work directory ($HOME/work there). Each step gets a new sandbox, which the hopper destroys when the step ends: nothing
+is kept between steps, so bring back what the next step needs with --output and send it again with --input. The step's
+output streams back here as it runs; then its exit code and its outputs. This job's work tree, its GitHub and its agent
+stay here.
 
-  sh "$HOPPER_STEP" hosts                     the Windows hosts, then this job's boxes: box NAME  template T
-  sh "$HOPPER_STEP" box BOX (--command TEXT | --script FILE) [--input PATH]... [--output PATH]...
-                         [--timeout SECONDS] [--into DIR]
-    --command TEXT     sh to run in the box's working directory (at most 4 KiB)
+  sh "$HOPPER_STEP" hosts                     the Windows hosts, then this job's approved sandboxes: box TEMPLATE  template TEMPLATE
+  sh "$HOPPER_STEP" box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]...
+                         [--plan-id ID] [--timeout SECONDS] [--into DIR]
+    --command TEXT     sh to run in the sandbox's work directory (at most 4 KiB)
     --script FILE      a sh script of this machine's to run instead (any size)
-    --input PATH       a file or directory, relative to the current directory: copied into the box's working
+    --input PATH       a file or directory, relative to the current directory: copied into the sandbox's work
                        directory, at the same relative path, before the command runs. Repeat for more.
-    --output PATH      a file or directory, relative to the box's working directory: brought back after the command
+    --output PATH      a file or directory, relative to the sandbox's work directory: brought back after the command
                        ends, into --into DIR (default: the current directory). Repeat for more.
+    --plan-id ID       the id of the approved infra plan the step applies: the template's changes are minted too, and
+                       the plan's saved file is in the sandbox (terraform apply there applies it)
     --timeout SECONDS  how long the step may run (default 1800, at most 14400): then it is stopped
 Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back
 (the reason is on stderr); 2: a bad call.
 
-Only a box this job's own sandbox request started, while it runs. One step runs in a box at a time.
+Only a template this job's own sandbox request was approved for.
 
-Credentials. In the step, $HOPPER_SECRET is the vault's helper in the box. Point each tool at it; the vault mints a
-short-lived credential each time the tool asks, after Access, as for a job on the box. The first ask of a job with no
-vault grant is refused, and a person is asked to grant it. A step takes no --secret, and no credential reaches this
-machine. The step's own scratch, with this job's token, is removed when it ends.
-  AWS:        printf '[profile hopper]\\ncredential_process = %s aws OPERATION aws-account/ACCOUNT\\n' "$HOPPER_SECRET" > ~/.aws/config
-              then: aws --profile hopper ...
-  Kubernetes: a kubeconfig user whose exec command is the value of $HOPPER_SECRET, with args [kube, OPERATION, ASSET]
-OPERATION is the need's operation (read, write, sync, apply); every one but read needs an approved plan: add --plan ID.
+Credentials. The hopper mints a short-lived credential for each of the template's AWS roles, clusters and namespaces,
+for that step only, after Access: its reads, and with --plan-id its changes too. They are in the sandbox's environment,
+set up as for a need step: one AWS role is the AWS CLI's default; each AWS role is also a profile named
+<account>-<role>; each cluster or namespace is a kubectl context named for it, the first one current. A step takes no
+--secret, and no credential reaches this machine. Never print a credential.
 
-Example: check who the box is on AWS, and bring back a plan.
-  sh "$HOPPER_STEP" box hopper-sandbox-asked-0a1b2c3d4e5f --input infra --command 'cd infra && terraform plan -no-color > plan.txt' --output infra/plan.txt`;
+Example: check who the sandbox is on AWS, and bring back a plan.
+  sh "$HOPPER_STEP" box asked-0a1b2c3d4e5f --input infra --command 'cd infra && terraform plan -no-color > plan.txt' --output infra/plan.txt`;
 
 /** How often `hopper-step need` asks again while the template for its needs waits, in seconds. */
 export const STEP_READY_POLL_S = 10;
@@ -145,17 +147,18 @@ Example: apply an approved terraform plan (record it first: POST /job/infra-plan
 
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const STEP_SCRIPT = `#!/bin/sh
-# hopper-step — run one step on a Windows host (issue #731), in a sandbox box of this job's (issue #1004), or in a
-# one-shot need box with credentials the hopper mints for it (issue #1007). Written by the hopper at each job start.
+# hopper-step — run one step on a Windows host (issue #731), in a sandbox of a template this job's sandbox request was
+# approved for (issues #1004, #1349), or in a one-shot need box by its needs (issue #1007), each sandbox burned after its
+# step, with credentials the hopper mints for it. Written by the hopper at each job start.
 #   sh "$HOPPER_STEP" hosts
 #   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR]
-#   sh "$HOPPER_STEP" box BOX (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR]
+#   sh "$HOPPER_STEP" box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR]
 #   sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
 # Load the windows-step, box-step or need-step skill for the full help: sh "$HOPPER_SKILL" windows-step
 # Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back; 2: a bad call.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST|box BOX (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] | box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
@@ -185,12 +188,12 @@ while [ $# -gt 0 ]; do
         --script) script=$2 ;;
         --input) [ -e "$2" ] || { echo "no: $2 is not here" >&2; exit 2; }; printf '%s\\n' "$2" >> "$tmp/inputs" ;;
         --output) q="$q&output=$(enc "$2")" ;;
-        --secret) [ "$at" = host ] || [ "$at" = box ] || { echo 'no: a need step gets the credentials its needs name, never a vault secret by name' >&2; exit 2; }; q="$q&secret=$(enc "$2")" ;;
+        --secret) [ "$at" = host ] || { echo 'no: a sandbox step gets the credentials the hopper mints for it, never a vault secret by name' >&2; exit 2; }; q="$q&secret=$(enc "$2")" ;;
         --timeout) q="$q&timeout=$(enc "$2")" ;;
         --into) into=$2 ;;
         --why) needonly --why; q="$q&why=$(enc "$2")" ;;
         --plan) needonly --plan; q="$q&plan=$(enc "$2")" ;;
-        --plan-id) needonly --plan-id; q="$q&planId=$(enc "$2")" ;;
+        --plan-id) if [ "$at" = host ]; then needonly --plan-id; fi; q="$q&planId=$(enc "$2")" ;;
         --wait) needonly --wait; wait=$2 ;;
       esac
       shift ;;
