@@ -36,14 +36,14 @@ const reader = (apiUrl: string) => createRepoChecksGitHub({ apiUrl, token: async
 
 describe('repository checks: a read GitHub refuses to the GitHub App (issue #1351)', () => {
   it('the pull requests over GraphQL: names Pull requests (read) and the fix', async () => {
-    const err = await reader(await github({})).found('o/r', conditionalAnswers()).catch((e: unknown) => e as Error);
+    const err = await reader(await github({})).found('o/r', conditionalAnswers()).then(() => new Error("no refusal"), (e: unknown) => e as Error);
     expect(err.message).toContain(`GitHub answered the pull requests of o/r with: ${REFUSED}`);
     expect(err.message).toContain('the GitHub App needs Pull requests (read)');
     expect(err.message).toMatch(/install it on the repository's owner with this repository/);
   });
 
   it('the repository over REST: names the permission GitHub asks for', async () => {
-    const err = await reader(await github({ refuseRepo: true })).found('o/r', conditionalAnswers()).catch((e: unknown) => e as Error);
+    const err = await reader(await github({ refuseRepo: true })).found('o/r', conditionalAnswers()).then(() => new Error("no refusal"), (e: unknown) => e as Error);
     expect(err.message).toContain(`GitHub answered 403 to the checks of o/r: ${REFUSED}`);
     expect(err.message).toContain('the GitHub App needs Metadata (read)');
   });

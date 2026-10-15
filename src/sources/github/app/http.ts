@@ -5,6 +5,7 @@ import { request as octokitRequest } from '@octokit/request';
 import { holdAfter } from '../../../domain/github-rate-limit.ts';
 import { GitHubRateLimited, githubLimiter, type GitHubLimiter, type LimiterCall } from '../../../github-limiter/limiter.ts';
 import { GitHubApiError, isPermanent } from '../api.ts';
+import { explained, permissionsOfError } from './refusal.ts';
 
 export type Request = typeof octokitRequest;
 
@@ -72,7 +73,7 @@ export function toApiError(err: unknown, what: string): GitHubApiError {
   if (status === 401) {
     return new GitHubApiError(`${what}: GitHub rejected the app's credentials (401: ${message}); check the app id and the private key`, true, 401);
   }
-  return new GitHubApiError(`${what}: ${message}`, isPermanent(status, message), status);
+  return new GitHubApiError(`${what}: ${explained(message, permissionsOfError(err))}`, isPermanent(status, message), status);
 }
 
 export function statusOf(err: unknown): number | undefined {

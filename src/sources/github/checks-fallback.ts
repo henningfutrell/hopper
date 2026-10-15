@@ -18,7 +18,9 @@ export const APP_CONNECTION: ChecksConnection = {
   name: 'the GitHub App', fix: 'add them to the GitHub App and accept them on its installation',
 };
 export const ACCOUNT_CONNECTION: ChecksConnection = {
-  name: 'the connected GitHub account', fix: "add them to the hopper's GitHub App and accept them on its installation, then connect GitHub again",
+  name: 'the connected GitHub account',
+  // Issue #1351: the account reaches a repository only where the hopper's app is installed with it.
+  fix: "install the hopper's GitHub App on the repository's owner with this repository, accept its new permissions on the installation, then connect GitHub again",
 };
 
 const PERMISSIONS = { checks: 'Checks: read', statuses: 'Commit statuses: read' } as const;

@@ -34,7 +34,7 @@ import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
-import { needsWork, notConfigured, setupTold } from './sync-setup.ts';
+import { needsWork, notConfigured, pauseTold, setupTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
@@ -261,7 +261,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     // Not configured (issue #1243): no sync pass at all — it would ask nothing and look like a healthy zero —, unless jobs
     // of its own still need their checks or reports.
     const setup = slot.removed ? undefined : slot.source.setupProblem?.();
-    if (!slot.removed) setupTold(slot, setup);
+    if (!slot.removed) { setupTold(slot, setup); if (!setup) pauseTold(slot, paused); }
     if (setup && !jobsOf(slot).some(needsWork)) { notConfigured(slot, setup, clock.now(), paused); schedule(slot); emit(slot); return; }
     // One pass (issue #822): the source asks GitHub once for what the steps read twice.
     const pass = async () => {

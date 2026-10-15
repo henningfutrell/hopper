@@ -15236,6 +15236,17 @@ not asked again for ten minutes (`UNREADABLE_KEEP_MS`), so a sync over many of i
 permission added is seen within ten minutes. A REST read that fails otherwise (a timeout, 5xx) keeps the checks `unknown`
 with GitHub's error, and is asked again at the next read.
 
+**A refusal says what the app lacks** (issue #1351, `src/sources/github/app/refusal.ts`). GitHub refuses a GitHub App's
+token — the hopper's app for a connected account, an admin's app for the app source — with "Resource not accessible by
+integration" and names neither the permission nor the install. Every refusal the hopper passes on (the App adapter, the
+connected account's adapter, the GraphQL reads of pull requests, a repository's checks read) adds what the app needs and the
+fix: the permission GitHub asks for — REST's `x-accepted-github-permissions` header, or the GraphQL field it refused, by the
+permission the hopper knows that field needs — or, when neither names one, that the app lacks a permission or is not
+installed there; then install it on the repository's owner with that repository and accept its new permissions. A connected
+account reaches only the repositories where the hopper's app is installed, so its checks fix says that too. A paused source
+says why in the log, once when the pause starts or changes and once when it ends (`pauseTold`, `src/sources/sync-setup.ts`):
+its pass asks GitHub nothing new, and its traffic line alone reads as a healthy zero.
+
 **Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
 `PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
 (`src/domain/pull-request-list.ts`) makes one **checks read problem** per repository of its open cards that wait on
