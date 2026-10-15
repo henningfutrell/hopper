@@ -1,7 +1,8 @@
 // The Helm chart (issue #1281 part 1, docs/deploy.md "On Kubernetes, with Helm"): `helm install` alone brings up the hopper
 // in a cluster — its Postgres, OpenFGA and Solr, as compose.yaml does — with no container runtime socket, no host path and
-// no settings to start. Asserted on what `helm template` renders: `helm` on PATH, else Helm's image through the docker
-// CLI, the chart mounted read-only.
+// no settings to start. Issue #1288: the master key from a mounted Secret (one the admin makes, or an External Secrets
+// Operator ExternalSecret fills), and AWS KMS for the vault's data key. Asserted on what `helm template` renders: `helm`
+// on PATH, else Helm's image through the docker CLI, the chart mounted read-only.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,9 +21,9 @@ interface Container {
   securityContext?: { runAsNonRoot?: boolean; allowPrivilegeEscalation?: boolean; privileged?: boolean; capabilities?: { drop?: string[] } };
 }
 interface PodSpec {
-  containers: Container[]; initContainers?: Container[];
+  containers: Container[]; initContainers?: Container[]; serviceAccountName?: string;
   securityContext?: { runAsNonRoot?: boolean; runAsUser?: number; fsGroup?: number };
-  volumes?: { name: string; hostPath?: unknown; secret?: { secretName: string }; persistentVolumeClaim?: { claimName: string } }[];
+  volumes?: { name: string; hostPath?: unknown; secret?: { secretName: string; optional?: boolean }; persistentVolumeClaim?: { claimName: string } }[];
   automountServiceAccountToken?: boolean;
   enableServiceLinks?: boolean;
 }
@@ -39,6 +40,14 @@ interface Resource {
   };
   stringData?: Record<string, string>;
   data?: Record<string, string>;
+}
+interface ExternalSecret {
+  kind: string; metadata: { name: string };
+  spec: {
+    refreshInterval?: string; secretStoreRef: { name: string; kind: string };
+    target: { name: string; creationPolicy?: string; deletionPolicy?: string };
+    data: { secretKey: string; remoteRef: { key: string; property?: string } }[];
+  };
 }
 
 function helm(args: string[]): { status: number | null; stdout: string; stderr: string } {
@@ -222,10 +231,76 @@ describe('the Helm chart, with values', () => {
     expect(out.stderr).toMatch(/ingress\.host/);
   });
 
-  it('names the master key Secret it is given', () => {
-    const rs = render('masterKey.existingSecret=my-key');
-    const key = env(container(find(rs, 'Deployment', 'hopper'), 'hopper'), 'HOPPER_MASTER_KEY')?.valueFrom?.secretKeyRef;
-    expect(key?.name).toBe('my-key');
+  // Issue #1288: a Secret the admin names is mounted as files; the hopper reads the key from the file, and refuses to
+  // start when it is not there. The key before a rotation is the Secret's `previous`.
+  const keyFromFiles = (rs: Resource[], secretName: string): void => {
+    const hopper = find(rs, 'Deployment', 'hopper');
+    const daemon = container(hopper, 'hopper');
+    expect(env(daemon, 'HOPPER_MASTER_KEY')).toBeUndefined();
+    expect(env(daemon, 'HOPPER_MASTER_KEY_PREVIOUS')).toBeUndefined();
+    expect(env(daemon, 'HOPPER_MASTER_KEY_FILE')?.value).toBe('/run/hopper-master-key/master-key');
+    expect(env(daemon, 'HOPPER_MASTER_KEY_PREVIOUS_FILE')?.value).toBe('/run/hopper-master-key/previous');
+    const mount = daemon.volumeMounts?.find((m) => m.mountPath === '/run/hopper-master-key');
+    expect(mount?.readOnly).toBe(true);
+    expect(pod(hopper).volumes?.find((v) => v.name === mount?.name)?.secret?.secretName).toBe(secretName);
+  };
+
+  it('mounts the master key Secret it is given, and the hopper reads the key from its file', () => {
+    keyFromFiles(render('masterKey.existingSecret=my-key'), 'my-key');
+  });
+
+  it('fills the master key Secret from an outside store through an External Secrets Operator ExternalSecret', () => {
+    const rs = render(
+      'masterKey.externalSecret.enabled=true', 'masterKey.externalSecret.secretStoreRef.name=vault-store',
+      'masterKey.externalSecret.masterKey.key=hopper/master-key', 'masterKey.externalSecret.previous.key=hopper/master-key-previous',
+    );
+    keyFromFiles(rs, 'hopper-master-key');
+    const es = rs.find((r) => r.kind === 'ExternalSecret') as unknown as ExternalSecret;
+    expect(es.metadata.name).toBe('hopper-master-key');
+    expect(es.spec.secretStoreRef).toEqual({ name: 'vault-store', kind: 'ClusterSecretStore' });
+    expect(es.spec.target.name).toBe('hopper-master-key');
+    expect(es.spec.data).toEqual([
+      { secretKey: 'master-key', remoteRef: { key: 'hopper/master-key' } },
+      { secretKey: 'previous', remoteRef: { key: 'hopper/master-key-previous' } },
+    ]);
+  });
+
+  it('refuses an ExternalSecret with no store or no key to read', () => {
+    const out = helm(['template', 'hopper', '/chart', '--set', 'masterKey.externalSecret.enabled=true']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/masterKey\.externalSecret\./);
+  });
+
+  it('makes no ExternalSecret unless asked', () => {
+    expect(render().filter((r) => r.kind === 'ExternalSecret')).toEqual([]);
+  });
+
+  it('wraps the vault\'s data key with AWS KMS, as the service account\'s role', () => {
+    const rs = render(
+      'kms.aws.region=eu-west-1', 'kms.aws.key=alias/hopper-vault',
+      'serviceAccount.create=true', 'serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::123456789012:role/hopper-vault',
+    );
+    const hopper = find(rs, 'Deployment', 'hopper');
+    const daemon = container(hopper, 'hopper');
+    expect(env(daemon, 'HOPPER_KMS_REGION')?.value).toBe('eu-west-1');
+    expect(env(daemon, 'HOPPER_KMS_KEY')?.value).toBe('alias/hopper-vault');
+    expect(env(daemon, 'HOPPER_KMS_URL')).toBeUndefined();
+    expect(pod(hopper).serviceAccountName).toBe('hopper');
+    expect(find(rs, 'ServiceAccount', 'hopper').metadata.annotations?.['eks.amazonaws.com/role-arn']).toBe('arn:aws:iam::123456789012:role/hopper-vault');
+  });
+
+  it('refuses AWS KMS with no key: the hopper never makes one in AWS', () => {
+    const out = helm(['template', 'hopper', '/chart', '--set', 'kms.aws.region=eu-west-1']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/kms\.aws\.key/);
+  });
+
+  it('names no KMS and no service account of its own unless asked', () => {
+    const rs = render();
+    const hopper = find(rs, 'Deployment', 'hopper');
+    expect(env(container(hopper, 'hopper'), 'HOPPER_KMS_REGION')).toBeUndefined();
+    expect(pod(hopper).serviceAccountName).toBeUndefined();
+    expect(rs.filter((r) => r.kind === 'ServiceAccount')).toEqual([]);
   });
 
   it('runs no Solr when search is off, and the hopper then has no search', () => {
