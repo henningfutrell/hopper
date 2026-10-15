@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "act": {
+      "type": "string",
+      "enum": [
+        "merge",
+        "close"
+      ]
+    },
+    "error": {
+      "type": "string"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "act",
+    "error"
+  ],
+  "additionalProperties": false
+}
