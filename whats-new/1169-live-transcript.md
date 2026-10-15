@@ -1,0 +1,1 @@
+- On a job's page, the transcript of a job at work now follows the job: it reads the agent's newest steps each minute, and keeps the earlier turns you loaded in place.
