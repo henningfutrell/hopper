@@ -5,7 +5,8 @@
 // source could not list is asked again by that source each interval, whatever another source's listing of it keeps fresh.
 import { describe, expect, it } from 'vitest';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
-import { memoryListings } from '../../src/sources/github/listing.ts';
+import { CHANGE_READ_SKEW_MS, createIntakeListing, memoryListings } from '../../src/sources/github/listing.ts';
+import { listedReads } from '../../src/sources/github/listed-reads.ts';
 import { GitHubApiError } from '../../src/sources/github/api.ts';
 import type { GitHubListingRepository } from '../../src/domain/github-listing.ts';
 import type { Job } from '../../src/domain/types.ts';
@@ -128,6 +129,54 @@ describe('the change read (issue #1125)', () => {
     await source.discover();
     expect(count('listRepos')).toBe(2);
     expect(count('issuesChangedSince')).toBe(0);
+  });
+});
+
+describe('the change-read start (issue #1276)', () => {
+  function intake(listings = memoryListings()) {
+    const gh = createFakeGitHub();
+    const clock = { at: Date.parse('2026-10-14T18:00:00.000Z') };
+    const listing = createIntakeListing({ api: gh, listings, clock: { now: () => new Date(clock.at) }, everyMs: () => 15 * MIN });
+    const since = () => gh.calls.filter((c) => c.method === 'issuesChangedSince').map((c) => c.args[1]);
+    return { gh, listings, listing, since, pass: (ms: number) => { clock.at += ms; } };
+  }
+
+  it('a read of a listed issue from GitHub does not move it past a new issue', async () => {
+    const { gh, listings, listing, pass } = intake();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    await listing.issues([REPO], 'hopper', true);
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.addComment(REPO, 1, 'someone', 'A note.');
+    const reread = await listedReads(gh, listings).api.getIssue(REPO, 1);
+    expect(listings.item(REPO, 1)?.updatedAt).toBe(reread.updatedAt);
+    expect(reread.updatedAt > gh.issue(REPO, 2).updatedAt).toBe(true);
+    pass(MIN);
+    const got = await listing.issues([REPO], 'hopper', true);
+    expect(got.listed).toBe(true);
+    expect(got.issues.map((i) => i.number)).toEqual([1, 2]);
+  });
+
+  it("moves to the newest change a change read answers, and stays while nothing changes", async () => {
+    const { gh, listing, since, pass } = intake();
+    const first = gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    await listing.issues([REPO], 'hopper', true);
+    gh.editIssue(REPO, 1, { body: 'Do the other thing.' }, 'owner', '2026-10-14T18:00:30.000Z');
+    pass(MIN);
+    await listing.issues([REPO], 'hopper', true);
+    pass(MIN);
+    await listing.issues([REPO], 'hopper', true);
+    pass(MIN);
+    await listing.issues([REPO], 'hopper', true);
+    expect(since()).toEqual([first.updatedAt, '2026-10-14T18:00:30.000Z', '2026-10-14T18:00:30.000Z']);
+  });
+
+  it('a listing another source read starts a skew before it was read', async () => {
+    const listings = memoryListings();
+    const { listing, since, pass } = intake(listings);
+    listings.record(REPO, [], '2026-10-14T17:59:00.000Z');
+    pass(MIN);
+    await listing.issues([REPO], 'hopper', true);
+    expect(since()).toEqual([new Date(Date.parse('2026-10-14T17:59:00.000Z') - CHANGE_READ_SKEW_MS).toISOString()]);
   });
 });
 

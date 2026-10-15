@@ -7,12 +7,18 @@
 // keeps fresh in the shared cache (issue #1125). With no store (tests), the cache is kept in memory.
 //
 // The change read (issue #1125, design.md "Change reads"): with no GitHub delivery, a timed sync inside the interval asks GitHub,
-// for each repository it would not list, which issues changed since the newest change its listing holds — one conditional
+// for each repository it would not list, which issues changed since its **change-read start** — one conditional
 // request, so an answer GitHub has not changed costs no call; at most once a minute a repository (`CHANGE_READ_EVERY_MS`),
 // however often the source syncs. A change the listing does not hold makes the repository due, as
 // a delivery does: an open issue with the label not listed, a listed one closed or unlabelled. A listed issue changed otherwise
 // has its row read in place, so its listed reads go to GitHub again. A change read that fails changes nothing: the timed
 // listing stays.
+//
+// The change-read start (issue #1276) is kept apart from the rows: a read of a listed issue from GitHub moves its row's
+// `updatedAt` (listed-reads.ts), and a start taken from the rows then passed issues no change read covered. Only a listing
+// (the newest change it held, as GitHub dates it) or a change read's answer (the newest change of an issue in it) moves it, so it stays the
+// same URL while nothing changed. A listing this source did not read (another source's, or one from before a restart) starts
+// at its `fetchedAt` less `CHANGE_READ_SKEW_MS`.
 import type { GitHubListingRepository, ListedItem } from '../../domain/github-listing.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { CHANGE_READ_PAGE, GitHubApiError, type GitHubApi, type GitHubIssue, type IssueChange } from './api.ts';
@@ -50,9 +56,12 @@ export interface IntakeListing {
 /** How often a repository's change read is made at most (issue #1125): a sync after a merge or a rerun makes none sooner. */
 export const CHANGE_READ_EVERY_MS = 60_000;
 
-/** The newest change of an issue a listing holds, as GitHub dates it: where its change read starts. Undefined: it holds none. */
-const newestOf = (items: ListedItem[]): string | undefined =>
-  items.filter((i) => i.kind === 'issue').reduce<string | undefined>((m, i) => (m === undefined || i.updatedAt > m ? i.updatedAt : m), undefined);
+/** How far before a listing's `fetchedAt` the change read of a listing this source did not read starts (issue #1276). */
+export const CHANGE_READ_SKEW_MS = 60_000;
+
+/** The newest of `dates` and `from`, as GitHub dates them. Undefined: none. */
+const newestOf = (dates: string[], from?: string): string | undefined =>
+  dates.reduce<string | undefined>((m, d) => (m === undefined || d > m ? d : m), from);
 
 /**
  * What a change read says of a listing, for `label` (issue #1125): `due` when it names an issue the listing must take or drop
@@ -86,6 +95,12 @@ export function createIntakeListing(o: { api: Pick<GitHubApi, 'listRepos' | 'iss
   };
   /** When each repository's change read was last made. */
   const readAt = new Map<string, number>();
+  /** Each repository's change-read start, for the listing read at `fetchedAt` (issue #1276). */
+  const starts = new Map<string, { fetchedAt: string; since: string | undefined }>();
+  const startOf = (repo: string, fetchedAt: string): string | undefined => {
+    const s = starts.get(repo);
+    return s?.fetchedAt === fetchedAt ? s.since : new Date(Date.parse(fetchedAt) - CHANGE_READ_SKEW_MS).toISOString();
+  };
   /**
    * Whether GitHub says `repo` must be listed again; a listed issue that changed otherwise has its row read in place, so a
    * listed read of it goes to GitHub. False when the change read cannot be made.
@@ -97,13 +112,16 @@ export function createIntakeListing(o: { api: Pick<GitHubApi, 'listRepos' | 'iss
     const last = readAt.get(repo);
     if (last !== undefined && now - last < CHANGE_READ_EVERY_MS) return false;
     readAt.set(repo, now);
-    let read: ReturnType<typeof readChanges>;
+    const since = startOf(repo, l.fetchedAt);
+    let changes: IssueChange[];
     try {
-      read = readChanges(l.items, await o.api.issuesChangedSince!(repo, newestOf(l.items)), label);
+      changes = await o.api.issuesChangedSince!(repo, since);
     } catch {
       return false;
     }
+    const read = readChanges(l.items, changes, label);
     if (read.due) return true;
+    starts.set(repo, { fetchedAt: l.fetchedAt, since: newestOf(changes.filter((c) => c.kind === 'issue').map((c) => c.updatedAt), since) });
     if (read.rows.length > 0) {
       const fresh = new Map(read.rows.map((r) => [r.number, r]));
       o.listings.record(repo, l.items.map((i) => (i.kind === 'issue' ? fresh.get(i.number) ?? i : i)), l.fetchedAt);
@@ -124,7 +142,11 @@ export function createIntakeListing(o: { api: Pick<GitHubApi, 'listRepos' | 'iss
       for (const r of asked) marked.delete(r);
       if (asked.length > 0) {
         const got = await o.api.listRepos(asked, [label]);
-        for (const [repo, items] of got.repos) { o.listings.record(repo, items, now.toISOString()); failed.delete(repo); }
+        for (const [repo, items] of got.repos) {
+          o.listings.record(repo, items, now.toISOString());
+          starts.set(repo, { fetchedAt: now.toISOString(), since: newestOf(items.filter((i) => i.kind === 'issue').map((i) => i.updatedAt)) });
+          failed.delete(repo);
+        }
         for (const [repo, error] of got.repoErrors) failed.set(repo, { at: now.getTime(), error });
       }
       const repoErrors: Record<string, string> = {};

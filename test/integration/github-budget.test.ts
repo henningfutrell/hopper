@@ -184,9 +184,10 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
     const made = fake.state.requests.filter(isChangeRead);
     expect(made.length).toBeGreaterThan(50 * REPOS.length);
     // Charged once for each installation token (the ETag cache is per credential, a token lasts an hour), and again only
-    // where an issue changed: the merged and the closed pull requests' repositories.
+    // where an issue changed: the merged and the closed pull requests' repositories, and the yolo one, whose merge closed its
+    // issue: the change read that answers it moves the repository's change-read start (issue #1276).
     const tokens = fake.state.requests.filter((r) => /^\/app\/installations\/\d+\/access_tokens$/.test(r.path)).length;
-    const changedRepos = new Set(['merged', 'closed'].map((role) => `/repos/${OWNER}/${REPOS[ROLES.indexOf(role as Role)]}/issues`));
+    const changedRepos = new Set(['merged', 'closed', 'yolo'].map((role) => `/repos/${OWNER}/${REPOS[ROLES.indexOf(role as Role)]}/issues`));
     expect(changeReads.filter((r) => !changedRepos.has(r.path))).toHaveLength((REPOS.length - changedRepos.size) * tokens);
     expect(changeReads.length).toBeLessThan(REPOS.length * tokens + 10);
   });

@@ -18642,8 +18642,8 @@ feeds.
 
 **As built:**
 - **The change read** (`GitHubApi.issuesChangedSince`, both adapters; `src/sources/github/app/rest.ts`):
-  `GET /repos/{owner}/{repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=<t>`, where `t` is the newest
-  `updatedAt` of an issue in the repository's listing (GitHub's clock, never the hopper's). The same `t` is the same URL, so
+  `GET /repos/{owner}/{repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=<t>`, where `t` is the
+  repository's **change-read start** (issue #1276, below; GitHub's clock). The same `t` is the same URL, so
   the shared rate limiter's ETag cache makes it a conditional request: while nothing changed, GitHub answers `304`, which
   costs no call. An **intake call** (it waits at the intake reserve) that never waits: a call that would wait is not made
   (`deferAfterMs: 0`).
@@ -18656,6 +18656,14 @@ feeds.
   writes too — has its row read in place (title, labels, assignees, `updatedAt`), so its **listed reads** go to GitHub
   again and no new listing is made. Pull requests are the listing's and the in-motion cycle's: a change read skips them.
   A change read that fails (a rate limit, a network error) changes nothing; the timed listing stays.
+- **The change-read start** (issue #1276), kept in memory for each repository and its listing's `fetchedAt`, apart from the
+  listing's rows. A listing sets it to the newest `updatedAt` of an issue it held, as listed; a change read that does not
+  make the repository due moves it to the newest `updatedAt` of an issue it answered; nothing else moves it. Before, it was the newest
+  row `updatedAt`, and a read of a listed issue from GitHub (a job, a follow or a discover; `listed-reads.ts`) moves that
+  row's `updatedAt`. The hopper reads its in-flight issues each pass, and its own labels and comments change them, so the
+  start passed new issues no change read had covered: they reached Intake only at the next listing. A listing this source
+  did not read (another source's, in the shared cache, or one from before a restart) starts at its `fetchedAt` less
+  `CHANGE_READ_SKEW_MS` (a minute, for the clocks): the hopper's clock, once, until a change read answers.
 - **A failed repository** is due again an interval after this source asked, whatever another source's listing keeps fresh.
   It is not change-read.
 - **Intake says why** (`ui/src/views/intake.tsx`, `intakeTrouble`): a paused source has its panel, with why it lists
