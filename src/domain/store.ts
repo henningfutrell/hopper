@@ -499,7 +499,8 @@ export interface UserStore {
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
   checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
   settings: UserSettingsRepository;
-  connectedAccounts: ConnectedAccountRepository;
+  /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
+  connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
   usageHistory: UsageHistoryRepository;
   machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */

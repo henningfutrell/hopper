@@ -43,6 +43,9 @@ type Answer = { status: number; body?: unknown; etag?: string };
 /** An answer's ETag: the same body, the same tag. */
 const etagOf = (body: unknown): string => `"${createHash('sha1').update(JSON.stringify(body)).digest('hex')}"`;
 
+/** A 200 with its ETag, as GitHub answers a list (issue #1250): a request that names the tag is answered 304. */
+export const tagged = (body: unknown): Answer => ({ status: 200, body, etag: etagOf(body) });
+
 const notFound: Answer = { status: 404, body: { message: 'Not Found' } };
 const down: Answer = { status: 503, body: { message: 'Service Unavailable' } };
 const forbidden: Answer = { status: 403, body: { message: 'Resource not accessible by integration' } };

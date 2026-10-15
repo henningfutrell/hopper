@@ -253,7 +253,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // GitHub App user tokens expire after 8 h (issues #358, #441): renewed with the refresh token, sealed at rest.
     store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env), secrets: system,
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
-    installations: (token) => installations(config.hopperApps.github, token),
+    installations: (token, answers) => installations(config.hopperApps.github, token, answers),
     // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
     ...accountEvents(store.events),
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}),

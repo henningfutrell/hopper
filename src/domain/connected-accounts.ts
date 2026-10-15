@@ -1,4 +1,5 @@
 // A user's connected account (issue #214): the GitHub account their work comes through. Re-exported from types.ts.
+import type { KeptAnswer } from './repo-checks.ts';
 
 /** Where a user connects an account to work from: GitHub. */
 export const CONNECTED_ACCOUNT_PROVIDERS = ['github'] as const;
@@ -35,10 +36,17 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     installUrl?: string;
     /** GitHub: where the app's installations are seen and their repositories chosen. */
     configUrl?: string;
-    /** GitHub: the installations of the app this account can see, each with the repositories it reaches; absent when GitHub could not be asked. */
+    /**
+     * GitHub: the installations of the app this account can see, each with the repositories it reaches, as last read (issue
+     * #1250: kept in the database, never read when shown); absent when they were never read, or no read worked yet.
+     */
     installations?: AppInstallation[];
-    /** GitHub: why GitHub could not say where the app is installed (then `installations` is absent). */
+    /** GitHub: why the last read of where the app is installed failed; `installations` then holds the read before it, if any. */
     installationsError?: string;
+    /** GitHub: when `installations` were read from GitHub (issue #1250); absent: not read yet. */
+    installationsCheckedAt?: string;
+    /** GitHub: a read of where the app is installed is under way (issue #1250). */
+    installationsReading?: true;
     /** When the token now kept expires; absent: it does not. The hopper renews it an hour before (issue #441). */
     expiresAt?: string;
     /** Why the last renewal failed, while it is tried again (issue #441): GitHub not answering, or this hopper set up so it cannot renew. The sign-in goes on. */
@@ -72,3 +80,28 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }
   | { state: 'failed'; error: string }
 );
+
+/**
+ * Where the hopper's app is installed, as last read for a provider's connected `account` (issue #1250), kept in the
+ * database, so Sources shows it and a restart reads nothing again. `at`: when the installations were read; `nextAt`: when
+ * the schedule reads again — `FRESH_MS` after a read, a backoff that doubles with each failure in a row (`failures`), or
+ * when GitHub's rate limit lets it. A failed read keeps the installations read before, with `error`. `etags`: the answers
+ * of the read, by request, for the next read's conditional requests.
+ */
+export interface AppInstallationsRead {
+  provider: ConnectedAccountProvider;
+  account: string;
+  at?: string;
+  nextAt: string;
+  failures: number;
+  installations?: AppInstallation[];
+  error?: string;
+  etags: Record<string, KeptAnswer>;
+}
+
+/** The kept reads (tenant migration 66): one row per provider. */
+export interface AppInstallationsReadRepository {
+  get(provider: ConnectedAccountProvider): AppInstallationsRead | undefined;
+  put(read: AppInstallationsRead): void;
+  remove(provider: ConnectedAccountProvider): void;
+}
