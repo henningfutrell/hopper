@@ -13,6 +13,8 @@ const API = '../../ui/src/lib/api.ts'; // browser code, type-checked by ui/tscon
 const INSTANCE = '../../ui/src/lib/instance.ts';
 const GATE = '../../ui/src/app/other-hopper.tsx';
 const MASTER_KEY = '../../ui/src/app/master-key.tsx';
+const STREAM = '../../ui/src/store/stream.ts';
+const STORE = '../../ui/src/store/index.ts';
 
 interface Api {
   get<T>(path: string): Promise<T>;
@@ -152,8 +154,8 @@ describe('another hopper at the page\'s address (#1295)', () => {
     vi.stubGlobal('EventSource', FakeEventSource);
     vi.stubGlobal('fetch', address({ now: MINE }).fetch);
     const api = (await import(API)) as Api;
-    const { connect } = (await import('../../ui/src/store/stream.ts')) as { connect(): () => void };
-    const { useHopper } = (await import('../../ui/src/store/index.ts')) as { useHopper: { getState(): { events: { seq: number }[] } } };
+    const { connect } = (await import(STREAM)) as { connect(): () => void };
+    const { useHopper } = (await import(STORE)) as { useHopper: { getState(): { events: { seq: number }[] } } };
     await api.get('/api/health');
     const close = connect();
     const es = streams[0]!;

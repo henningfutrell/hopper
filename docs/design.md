@@ -21074,7 +21074,7 @@ the user's sockets by path, or signals the stack's processes. A boundary against
 with the user's), so each job pulls what it runs once.
 
 **Not done here.** The hard boundary above: a job as another OS user, or in a VM. It differs in security and cost from
-what is built, so a person decides it (carried as its own issue). A test hopper's banner on the admin's page is
+what is built, so a person decides it (the part of issue #1295 left). A test hopper's banner on the admin's page is
 "Which hopper answers" below.
 
 **Verification:** `test/client/job-runtime.test.ts` (the setup, the guards, the reap and the survey for real, with a
