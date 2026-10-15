@@ -21434,7 +21434,14 @@ and `hopper-service.sh` are. The steps are in `docs/kubernetes.md`; here, why th
   here-string: bash before 5.1 writes one to a file). Its fingerprint is worked out by `node` in the compose hopper, from
   stdin, so a compose image of any version can be moved; it must match the running hopper's before anything stops, and
   the cluster hopper's after it starts. With an outside store (`--external-secret-store`), the person puts the key there
-  and the External Secrets Operator fills the Secret; the script checks it and writes nothing to the store.
+  and the External Secrets Operator fills the Secret; the script writes nothing to the store.
+- **The person's own Secret: the script never reads the key** (`--master-key-secret NAME`). The person makes the Secret
+  in the namespace before the move; the script reads no launch source and never reads the Secret's value (only whether
+  it has a `master-key`). Once the release is in, with the hopper at 0, a one-off pod of the release's image mounts that
+  Secret as the chart does and prints only the key's short fingerprint (`kubectl run --rm`). A fingerprint that is not the
+  running hopper's stops the move before the compose hopper stops. The outside store's Secret is checked the same way,
+  so with either the script holds no key at any time. A pod, not `kubectl get secret` and a hash here: the key would
+  then be in this script's memory, which is what this path exists to avoid.
 - **Machines keep their lanes.** Their link keys are in the database. On a cluster bootstrap made, the Service is a
   `LoadBalancer` at compose's port, which k3s's load balancer takes on the host: a machine dials the address it joined.
   The names it dialled (compose's `HOPPER_LAN_NAMES`, the host's names, its tailnet name) go to the chart's `lanNames`.

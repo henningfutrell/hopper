@@ -12,173 +12,15 @@
 //   Scenario: a cluster hopper that is not healthy rolls back: the cluster hopper to 0, the compose stack started again
 //   Scenario: rollback after a migration starts the compose stack again
 //   Scenario: an install with the local KMS is refused
-//   Scenario: with the owner's own Secret (--master-key-secret), the script never reads the key: a pod of the cluster
-//             checks its fingerprint, and a Secret that is not there or holds another key stops the move before compose
-//   Scenario: with an outside store, the filled Secret is checked the same way: the script never reads it
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fingerprintOf, shortFingerprint } from '../../src/secrets/master-key.ts';
+import { delegated, filesHolding, FP, host, KEY, migrate, removeHosts, ROOT, SCRIPT, sha } from '../support/hopper-cluster.ts';
 
-const ROOT = join(import.meta.dirname, '..', '..');
-const SCRIPT = join(ROOT, 'scripts', 'hopper-cluster.sh');
-const KEY = 'f00dfeed'.repeat(8);
-// The running hopper's: the fingerprint the script works out in the hopper's container must be the hopper's own.
-const FP = shortFingerprint(fingerprintOf(KEY));
-const dirs: string[] = [];
+afterEach(removeHosts);
 
-afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
-
-// The compose stack: container ids by service; `inspect` answers its launch environment, image and labels; `exec` the
-// hopper's CLI (the fingerprint of the key on stdin, the status), postgres's dump and table count; `cp` a home as a tar.
-const PODMAN = `#!/bin/bash
-in=''
-case "$*" in "exec -i hopperid node -e "*) in="$(cat)";; esac
-printf 'podman %s\\n' "$*" >> "$STUB_LOG"
-case "$*" in
-  "ps -aq --filter label=com.docker.compose.project=hopper") echo hopperid; echo pgid ;;
-  "ps -aq --filter label=com.docker.compose.project=hopper --filter status=exited") echo hopperid; echo pgid ;;
-  "ps -q --filter label=com.docker.compose.project=hopper") [ -f "$STUB_DIR/stopped" ] || { echo hopperid; echo pgid; } ;;
-  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") [ -n "\${STUB_DOWN:-}" ] || echo hopperid ;;
-  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=postgres") echo pgid ;;
-  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service="*) ;;
-  "inspect --format {{range .Config.Env}}{{println .}}{{end}} hopperid")
-    printf 'PATH=/usr/bin\\nHOPPER_MASTER_KEY=%s\\nHOPPER_PORT=4790\\nHOPPER_LAN_NAMES=hopper,box.lan\\nCOMPOSE_PROFILES=%s\\nHOPPER_DATABASE_URL_FILE=/run/x\\nHOPPER_PUBLIC_URL=https://hopper.example\\nCLAUDE_CODE_OAUTH_TOKEN=tok-123\\nHOPPER_LOCAL_MACHINE=false\\n' "\${STUB_LAUNCH_KEY:-}" "\${STUB_PROFILES:-}" ;;
-  "inspect --format {{.Config.Image}} hopperid") echo ghcr.io/henningfutrell/hopper:beta ;;
-  "inspect --format {{.Image}} hopperid") echo imageid ;;
-  "image inspect --format {{range .Config.Env}}{{println .}}{{end}} imageid") printf 'PATH=/usr/bin\\nHOPPER_LOCAL_MACHINE=false\\n' ;;
-  "inspect --format {{index .Config.Labels \\"com.docker.compose.service\\"}} hopperid") echo hopper ;;
-  "inspect --format {{index .Config.Labels \\"com.docker.compose.service\\"}} pgid") echo postgres ;;
-  "exec -i hopperid node -e "*) printf '%s' "$in" | '${process.execPath}' -e "$6" ;;
-  "exec hopperid hopper master-key status") printf '{ "source": "given", "fingerprint": "${FP}", "previous": false }\\n' ;;
-  "exec pgid pg_dump -U hopper -d hopper -Fc") printf 'DUMP' ;;
-  "exec pgid psql -tA -U hopper -d hopper -c "*) echo 42 ;;
-  "cp hopperid:/home/node -") tar -cf - -C "$STUB_DIR" node ;;
-  stop\\ *) [ "$*" = "stop hopperid" ] || touch "$STUB_DIR/stopped" ;;
-esac
-exit 0
-`;
-
-// The cluster: a release that is not there yet, a Secret store, the chart's postgres and hopper.
-const KUBECTL = `#!/bin/bash
-in=''
-case "$*" in *"create secret generic"*|*"apply -f -"*|*" exec -i "*) in="$(cat)";; esac
-printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
-case "$*" in
-  *"create secret generic hopper-master-key --from-file=master-key=/dev/stdin"*) [ "$in" = "$STUB_KEY" ] && echo key-matched >> "$STUB_LOG"; touch "$STUB_DIR/secret" ;;
-  *"get secret owner-key -o go-template="*) [ -z "\${STUB_OWNER_SECRET:-}" ] || printf yes ;;
-  *"get secret hopper-master-key -o go-template="*) printf yes ;;
-  *"run hopper-key-check "*) printf '%s' "\${STUB_SECRET_FP:-${FP}}" ;;
-  *"get deployment/hopper -o jsonpath={.spec.template.spec.containers[?(@.name==\\"hopper\\")].image}"*) printf ghcr.io/henningfutrell/hopper:beta ;;
-  *"get secret hopper-master-key"*) [ -f "$STUB_DIR/secret" ] && printf '%s' "$STUB_KEY" | base64 -w0 ;;
-  *"create secret generic hopper-carried-env"*) printf 'carried: %s\\n' "$(printf '%s' "$in" | tr '\\n' ' ')" >> "$STUB_LOG"; echo 'kind: Secret' ;;
-  version*) [ -z "\${STUB_NO_CLUSTER:-}" ] || exit 1 ;;
-  *"wait --for=condition=Ready node"*) exit 0 ;;
-  *"exec hopper-postgres-0 -c postgres -- psql -tA"*) echo 42 ;;
-  *"exec -i hopper-postgres-0 -c postgres -- pg_restore"*) [ "$in" = DUMP ] && echo restored-dump >> "$STUB_LOG" ;;
-  *"get deployment/hopper -o"*) printf 4790 ;;
-  *"exec deployment/hopper -c hopper -- node -e fetch('http://127.0.0.1"*) [ -z "\${STUB_UNHEALTHY:-}" ] || exit 1; printf '{"ok":true}' ;;
-  *"exec deployment/hopper -c hopper -- hopper master-key status"*) printf '{ "fingerprint": "${FP}" }' ;;
-  *"exec -i deployment/hopper -c hopper -- tar"*) [ -n "$in" ] && echo home-copied >> "$STUB_LOG" ;;
-esac
-exit 0
-`;
-
-const HELM = `#!/bin/bash
-printf 'helm %s\\n' "$*" >> "$STUB_LOG"
-case "$1" in
-  status) exit 1 ;;
-  install) cat > "$STUB_DIR/values.json" ;;
-esac
-exit 0
-`;
-
-const SYSTEMCTL = `#!/bin/bash
-printf 'systemctl %s\\n' "$*" >> "$STUB_LOG"
-case "$*" in
-  "--user cat hopper-compose.service") [ -n "\${STUB_UNIT:-}" ] ;;
-  "--user enable --now hopper-k3s.service") printf 'apiVersion: v1\\n' > "$STUB_KUBECONFIG" ;;
-  "is-active --quiet k3s") exit 3 ;;
-esac
-`;
-
-const LOGINCTL = `#!/bin/sh
-printf 'loginctl %s\\n' "$*" >> "$STUB_LOG"
-[ "$1" = show-user ] && echo yes
-exit 0
-`;
-
-// Downloads from a folder: the URL's last segment.
-const CURL = `#!/bin/bash
-printf 'curl %s\\n' "$*" >> "$STUB_LOG"
-out=''
-url=''
-while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; -*) ;; *) url=$1 ;; esac; shift; done
-f="$STUB_FILES/\${url##*/}"
-[ -f "$f" ] || exit 22
-if [ -n "$out" ]; then cat "$f" > "$out"; else cat "$f"; fi
-`;
-
-const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
-const uid = process.getuid?.() ?? 1000;
-const delegated = (cgroups: string) => join(cgroups, 'user.slice', `user-${uid}.slice`, `user@${uid}.service`);
-
-function host(o: { unit?: boolean } = {}) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jh-hopper-cluster-')));
-  dirs.push(dir);
-  writeFileSync(join(dir, 'hopper-cluster.sh'), readFileSync(SCRIPT));
-  const bin = join(dir, '.bin');
-  mkdirSync(bin);
-  const tools: Record<string, string> = { podman: PODMAN, kubectl: KUBECTL, helm: HELM, systemctl: SYSTEMCTL, loginctl: LOGINCTL, curl: CURL, newuidmap: '#!/bin/sh\n', newgidmap: '#!/bin/sh\n', slirp4netns: '#!/bin/sh\n' };
-  for (const [name, body] of Object.entries(tools)) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
-  const home = join(dir, '.home');
-  mkdirSync(join(home, 'node'), { recursive: true });
-  writeFileSync(join(home, 'node', '.claude.json'), '{}');
-  const state = join(home, 'cluster');
-  const files = join(dir, '.files');
-  mkdirSync(files);
-  const cgroups = join(dir, '.cgroup');
-  mkdirSync(delegated(cgroups), { recursive: true });
-  writeFileSync(join(cgroups, 'cgroup.controllers'), 'cpu io memory pids');
-  writeFileSync(join(delegated(cgroups), 'cgroup.controllers'), 'cpuset cpu io memory pids');
-  const log = join(dir, '.calls');
-  const chart = join(dir, '.chart');
-  mkdirSync(chart);
-  writeFileSync(join(chart, 'Chart.yaml'), 'name: hopper\n');
-  const run = (args: string[], env: Record<string, string> = {}) => {
-    const r = spawnSync('/bin/bash', ['hopper-cluster.sh', ...args], {
-      cwd: dir, encoding: 'utf8', input: '',
-      env: {
-        PATH: `${bin}:/usr/bin:/bin`, HOME: home, USER: 'someone', XDG_CONFIG_HOME: join(home, '.config'), HOPPER_CLUSTER_DIR: state,
-        HOPPER_CGROUP_ROOT: cgroups, HOPPER_KEY_TTY: '/nonexistent', STUB_LOG: log, STUB_DIR: home, STUB_FILES: files, STUB_KEY: KEY,
-        STUB_KUBECONFIG: join(state, 'kubeconfig.yaml'), KUBECONFIG: join(dir, '.kube-none'), ...(o.unit ? { STUB_UNIT: '1' } : {}), ...env,
-      },
-    });
-    return { status: r.status, out: r.stdout, err: r.stderr };
-  };
-  const calls = () => (existsSync(log) ? readFileSync(log, 'utf8') : '').trim().split('\n').filter(Boolean);
-  return { dir, home, state, files, cgroups, chart, run, calls };
-}
-
-/** Every file under `dir`, read: none may hold the master key. */
-function filesHolding(dir: string, needle: string): string[] {
-  const out: string[] = [];
-  const walk = (d: string) => {
-    for (const name of readdirSync(d)) {
-      const p = join(d, name);
-      const s = statSync(p);
-      if (s.isDirectory()) walk(p);
-      else if (s.isFile() && readFileSync(p).includes(needle)) out.push(p);
-    }
-  };
-  walk(dir);
-  return out;
-}
 
 describe('hopper-cluster.sh bootstrap', () => {
   it('refuses when a cluster is there, and with --use-existing prints its kubeconfig and changes nothing', () => {
@@ -247,8 +89,6 @@ describe('hopper-cluster.sh bootstrap', () => {
 });
 
 describe('hopper-cluster.sh migrate', () => {
-  const migrate = (h: ReturnType<typeof host>, env: Record<string, string> = {}) => h.run(['migrate', '--chart', h.chart], env);
-
   it('refuses a master key whose fingerprint is not the running hopper\'s: nothing stops, nothing is installed', () => {
     const h = host();
     const r = migrate(h, { HOPPER_MASTER_KEY: 'ab'.repeat(32) });
@@ -345,50 +185,6 @@ describe('hopper-cluster.sh migrate', () => {
     expect(r.status).toBe(1);
     expect(r.err).toContain('runs the local KMS');
     expect(h.calls().filter((c) => /^podman stop|^helm install/.test(c))).toEqual([]);
-  });
-
-  it('with the owner\'s own Secret, never reads the master key: a cluster pod checks its fingerprint before compose stops', () => {
-    const h = host({ unit: true });
-    const r = h.run(['migrate', '--chart', h.chart, '--master-key-secret', 'owner-key'], { STUB_OWNER_SECRET: '1' });
-    expect(r.status, r.err).toBe(0);
-    const calls = h.calls();
-    // No launch source is read, no Secret value is read or written, the key reaches no node in compose.
-    for (const c of calls) expect(c).not.toMatch(/master-key=\/dev\/stdin|\{\.data\.master-key\}|^podman exec -i hopperid node/);
-    expect(calls).not.toContain('key-matched');
-    expect(r.err).toContain(`the Secret owner-key holds the running hopper's master key (fingerprint ${FP})`);
-    // The check: a pod of the hopper's image with the Secret mounted, once the release is in, before compose stops.
-    const check = calls.findIndex((c) => c.startsWith('kubectl --namespace hopper run hopper-key-check '));
-    expect(check).toBeGreaterThan(calls.findIndex((c) => c.startsWith('helm install')));
-    expect(check).toBeLessThan(calls.indexOf('podman stop hopperid'));
-    expect(calls[check]).toContain('"secretName":"owner-key"');
-    expect(calls[check]).toContain('"image":"ghcr.io/henningfutrell/hopper:beta"');
-    expect(calls[check]).toContain('--rm');
-    const values = JSON.parse(readFileSync(join(h.home, 'values.json'), 'utf8')) as Record<string, unknown>;
-    expect(values).toMatchObject({ masterKey: { existingSecret: 'owner-key' } });
-  });
-
-  it('with the owner\'s own Secret, stops before anything changes when it is not there, and before compose stops when it holds another key', () => {
-    const missing = host();
-    const m = missing.run(['migrate', '--chart', missing.chart, '--master-key-secret', 'owner-key']);
-    expect(m.status).toBe(1);
-    expect(m.err).toContain('no Secret owner-key with a master-key');
-    expect(missing.calls().filter((c) => /^podman stop|^helm install/.test(c))).toEqual([]);
-
-    const other = host();
-    const o = other.run(['migrate', '--chart', other.chart, '--master-key-secret', 'owner-key'], { STUB_OWNER_SECRET: '1', STUB_SECRET_FP: '0000000000000000' });
-    expect(o.status).toBe(1);
-    expect(o.err).toContain(`the Secret owner-key holds the master key of fingerprint 0000000000000000, the running hopper ${FP}`);
-    expect(other.calls().filter((c) => /^podman stop/.test(c))).toEqual([]);
-  });
-
-  it('with an outside store, checks the filled Secret in a cluster pod: the script never reads it', () => {
-    const h = host();
-    const r = h.run(['migrate', '--chart', h.chart, '--external-secret-store', 'vault', '--external-secret-key', 'hopper/master'], { STUB_LAUNCH_KEY: KEY });
-    expect(r.status, r.err).toBe(0);
-    const calls = h.calls();
-    for (const c of calls) expect(c).not.toMatch(/master-key=\/dev\/stdin|\{\.data\.master-key\}/);
-    expect(calls.some((c) => c.startsWith('kubectl --namespace hopper run hopper-key-check ') && c.includes('"secretName":"hopper-master-key"'))).toBe(true);
-    expect(r.err).toContain("the Secret hopper-master-key from vault holds the running hopper's master key");
   });
 
   it('refuses when no cluster answers, and when the compose hopper does not run', () => {
