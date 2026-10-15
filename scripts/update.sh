@@ -22,8 +22,8 @@
 #   6. puts in the compose.yaml of the image with the install's own settings (`hopper update carry`; the old one stays as
 #      compose.yaml.bak), pulls the stack, stops it and starts it on the image, so every container is made again. When
 #      hopper-compose.service owns the stack (hopper-service.sh, issue #1320), it stops and starts it through that service,
-#      with the key sealed to this host, so the published port belongs to the service and not to this shell. When it
-#      does not start: back to the old compose.yaml, compose.override.yaml and the image the hopper ran before;
+#      with the key sealed to this host, else with the key given to the update, for that start only (issue #1372), so the
+#      published port belongs to the service and not to this shell. When it does not start: back to the old compose.yaml, compose.override.yaml and the image the hopper ran before;
 #   7. checks that the hopper runs the image pulled, answers /api/health, that its published port answers on this host
 #      (issue #1320), has its master key, that the openfga-migrate
 #      one-shot exited 0 (then removes its container, issue #1247), and that the stack has no drift (`hopper update
@@ -100,16 +100,21 @@ main() {
   say "compose: ${compose[*]}"
 
   # The user service (issue #1320): when it owns the stack, the stack stops and starts through it, so its published port
-  # belongs to the service and not to this shell. It starts the stack with the key sealed to this host.
-  local service=0
+  # belongs to the service and not to this shell. It starts the stack with the key sealed to this host, else with the key
+  # given to this update, for each start only (issue #1372).
+  local service=0 service_key=0
   if [ "$runtime" = podman ] && [ -f hopper-service.sh ] && systemctl --user is-enabled --quiet hopper-compose.service 2>/dev/null; then
     service=1
-    { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; } \
-      || fail 'hopper-compose.service starts the stack with the master key sealed to this host, and none is sealed here: seal it (bash master-key.sh seal), then run the update again. Nothing changed'
-    if [ "$sealed" = 0 ] && [ "$(bash master-key.sh unseal 2>/dev/null || true)" != "$HOPPER_MASTER_KEY" ]; then
+    if ! { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; }; then
+      service_key=1
+    elif [ "$sealed" = 0 ] && [ "$(bash master-key.sh unseal 2>/dev/null || true)" != "$HOPPER_MASTER_KEY" ]; then
       fail 'the master key given is not the one sealed to this host, which hopper-compose.service starts the stack with: seal the right key (bash master-key.sh seal), then run the update again. Nothing changed'
     fi
-    say 'hopper-compose.service owns the stack: the update stops and starts it through the service'
+    if [ "$service_key" = 1 ]; then
+      say 'hopper-compose.service owns the stack: the update stops and starts it through the service, with the master key given to this update (none is sealed here)'
+    else
+      say 'hopper-compose.service owns the stack: the update stops and starts it through the service'
+    fi
   fi
 
   # The image the hopper runs now: after the update, the one before, kept to go back to.
@@ -200,7 +205,7 @@ main() {
     if [ -n "$previous" ] && [ -n "$old_ref" ] && "$runtime" tag "$previous" "$old_ref" >/dev/null 2>&1; then
       back=", back on the image it ran before (${previous:0:12})"
     fi
-    if [ "$service" = 1 ]; then systemctl --user restart hopper-compose.service </dev/null >&2 || true; else "${compose[@]}" up -d </dev/null >&2 || true; fi
+    if [ "$service" = 1 ]; then service_restart || true; else "${compose[@]}" up -d </dev/null >&2 || true; fi
     fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again${back}; the database backup is hopper-backup.dump"
   fi
 
@@ -217,12 +222,26 @@ main() {
 # else with the compose tool (main's own variables).
 restart_stack() {
   if [ "$service" = 1 ]; then
-    systemctl --user restart hopper-compose.service </dev/null >&2
+    service_restart
     return
   fi
   "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
   clear_one_shot "$runtime"
   "${compose[@]}" up -d </dev/null >&2
+}
+
+# hopper-compose.service restarted. With no key sealed here (issue #1372), the key given to this update goes into the user
+# manager's environment from this process's environment, never as an argument, for this start only, and is removed after.
+service_restart() {
+  if [ "$service_key" = 0 ]; then
+    systemctl --user restart hopper-compose.service </dev/null >&2
+    return
+  fi
+  local status=0
+  systemctl --user import-environment HOPPER_MASTER_KEY </dev/null >&2 || return
+  systemctl --user restart hopper-compose.service </dev/null >&2 || status=$?
+  systemctl --user unset-environment HOPPER_MASTER_KEY </dev/null >&2 || true
+  return "$status"
 }
 
 # A script beside compose.yaml — master-key.sh (issue #1296), hopper-service.sh (issue #1320) — replaced with the one of

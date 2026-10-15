@@ -26,6 +26,7 @@ case "$*" in
   "ps -aq --filter label=io.podman.compose.project=hopper") [ "\${STUB_STACK:-}" = podman-compose ] && echo 0123456789ab ;;
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") [ -n "\${STUB_RUNNING:-}" ] && echo cid ;;
   "port cid") [ -n "\${STUB_PORT:-}" ] && echo "4790/tcp -> \${STUB_PORT}" ;;
+  "volume exists hopper_postgres") [ -n "\${STUB_DATA:-}" ] || exit 1 ;;
 esac
 exit 0
 `;
@@ -34,6 +35,7 @@ printf 'podman-compose %s | key=%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" >> "$STUB_
 `;
 const SYSTEMCTL = `#!/bin/sh
 printf 'systemctl %s\\n' "$*" >> "$STUB_LOG"
+[ "$*" = '--user import-environment HOPPER_MASTER_KEY' ] && printf 'imported key=%s\\n' "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
 [ "$*" = '--user is-active --quiet hopper-compose.service' ] && exit "\${STUB_ACTIVE:-0}"
 exit 0
 `;
@@ -107,6 +109,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(service).toContain('Environment="HOPPER_PORT=4791"');
     expect(service).toMatch(/^WantedBy=default\.target$/m);
     for (const secret of [KEY, 'HOPPER_MASTER_KEY', 'HOPPER_KMS_KEY', 'HOPPER_IMAGE']) expect(service).not.toContain(secret);
+    expect(service).toMatch(/^ImportCredential=hopper-master-key$/m);
     expect(f.unit('hopper-compose-check.service')).toContain(`"${f.dir}/hopper-service.sh" check`);
     expect(f.unit('hopper-compose-check.timer')).toMatch(/^OnUnitActiveSec=1min$/m);
     expect(f.calls()).toEqual([
@@ -173,7 +176,87 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
   });
 
-  it('start with no key sealed here starts the stack with no key, and stop takes it down', () => {
+  const upCalls = (f: ReturnType<typeof folder>) => f.calls().filter((c) => c.startsWith('podman compose') || c.startsWith('master-key.sh'));
+
+  it('start takes the key from the systemd credential hopper-master-key, for compose only, with no key sealed (issue #1372)', () => {
+    const f = folder();
+    const creds = join(f.dir, '.creds');
+    mkdirSync(creds);
+    writeFileSync(join(creds, 'hopper-master-key'), `${KEY}\n`);
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', CREDENTIALS_DIRECTORY: creds, STUB_DATA: '1' });
+    expect(r.status, r.err).toBe(0);
+    expect(r.err).toMatch(/with the master key from the systemd credential hopper-master-key/);
+    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key=${KEY}`]);
+    for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
+    expect(r.err).not.toContain(KEY);
+  });
+
+  it('start takes HOPPER_MASTER_KEY given at launch in place of the key sealed here (issue #1372)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    writeFileSync(join(f.dir, 'hopper-master-key.enc'), 'sealed');
+    const other = 'b'.repeat(64);
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', HOPPER_MASTER_KEY: other, STUB_DATA: '1' });
+    expect(r.status, r.err).toBe(0);
+    expect(r.err).toMatch(/with the master key from HOPPER_MASTER_KEY given at launch/);
+    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key=${other}`]);
+    expect(r.err).not.toContain(other);
+  });
+
+  it('start refuses a credential that is no key, and changes nothing (issue #1372)', () => {
+    const f = folder();
+    const creds = join(f.dir, '.creds');
+    mkdirSync(creds);
+    writeFileSync(join(creds, 'hopper-master-key'), 'not a key');
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', CREDENTIALS_DIRECTORY: creds });
+    expect(r.status).toBe(1);
+    expect(r.err).toMatch(/the systemd credential hopper-master-key is no master key/);
+    expect(upCalls(f)).toEqual([]);
+  });
+
+  it('start with data and no key refuses: the stack is not touched and no new key is made (issue #1372)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', STUB_DATA: '1' });
+    expect(r.status).toBe(1);
+    expect(r.err).toMatch(/no master key is given, and the hopper keeps data \(the volume hopper_postgres\): the stack does not start, and no new key is made/);
+    expect(r.err).toMatch(/bash hopper-service\.sh start-with-key/);
+    expect(upCalls(f)).toEqual([]);
+  });
+
+  it('start-with-key restarts the service with the key in the manager\'s environment for that start only, never as an argument (issue #1372)', () => {
+    const f = folder();
+    expect(f.run(['install']).status).toBe(0);
+    const before = f.calls().length;
+    const r = f.run(['start-with-key'], { HOPPER_MASTER_KEY: KEY });
+    expect(r.status, r.err).toBe(0);
+    expect(f.calls().slice(before)).toEqual([
+      'systemctl --user import-environment HOPPER_MASTER_KEY',
+      `imported key=${KEY}`,
+      'systemctl --user restart hopper-compose.service',
+      'systemctl --user unset-environment HOPPER_MASTER_KEY',
+    ]);
+    for (const c of f.calls().filter((c) => c.startsWith('systemctl'))) expect(c).not.toContain(KEY);
+    expect(r.err).not.toContain(KEY);
+  });
+
+  it('start-with-key asks for the key on the terminal, and refuses no key or no service (issue #1372)', () => {
+    const f = folder();
+    expect(f.run(['start-with-key'], { HOPPER_MASTER_KEY: KEY }).err).toMatch(/no hopper-compose\.service: install it first/);
+    expect(f.run(['install']).status).toBe(0);
+    const tty = join(f.dir, '.tty');
+    writeFileSync(tty, `${KEY}\n`);
+    const before = f.calls().length;
+    expect(f.run(['start-with-key'], { HOPPER_KEY_TTY: tty }).status).toBe(0);
+    expect(f.calls().slice(before)).toContain(`imported key=${KEY}`);
+    writeFileSync(tty, 'nope\n');
+    const bad = f.run(['start-with-key'], { HOPPER_KEY_TTY: tty });
+    expect(bad.status).toBe(1);
+    expect(bad.err).toMatch(/that is no master key/);
+    expect(f.run(['start-with-key'], { HOPPER_KEY_TTY: join(f.dir, 'no-tty') }).err).toMatch(/no master key: give it as HOPPER_MASTER_KEY/);
+  });
+
+  it('start with no key sealed here and no data yet starts the stack with no key, and stop takes it down', () => {
     const f = folder();
     expect(f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
     expect(f.run(['stop'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
