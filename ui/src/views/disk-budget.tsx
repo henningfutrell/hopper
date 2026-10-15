@@ -1,5 +1,5 @@
 // The disk budget on Machines (issue #1120, design.md "Hopper's own disk use" → "Part 2"): the most the hopper's own disk
-// use (its scratch areas and job worktrees) may be on each machine. GET /api/machines/disk-budget reads it; an admin sets
+// use (its scratch areas, job worktrees and repository checkouts) may be on each machine. GET /api/machines/disk-budget reads it; an admin sets
 // it or turns it off (POST /ui/api/machines/disk-budget). Each machine's card shows its use against it.
 import { useEffect, useState } from 'react';
 import { HardDrive } from 'lucide-react';
@@ -28,7 +28,7 @@ export function DiskBudgetPanel() {
   return (
     <Panel title="Disk budget" icon={HardDrive} bodyClassName="space-y-2">
       <p className="text-xs text-muted-foreground">
-        The most disk the hopper's own files (job scratch dirs and job worktrees) may use on each machine. Over it, the sweep removes
+        The most disk the hopper's own files (job scratch dirs, job worktrees and the repository checkouts they are made of) may use on each machine. Over it, the sweep removes
         every ended job's files at once, but never work not pushed. If it is still over, you are told (webhooks and notifiers).
       </p>
       {budget === undefined ? <Empty>loading</Empty> : (

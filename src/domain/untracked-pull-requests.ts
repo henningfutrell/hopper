@@ -1,14 +1,17 @@
 // Untracked pull requests (issue #1176, design.md "Untracked pull requests"): every open pull request of a job repository is
 // in the ledger — a job names it, or an item's pull request is it — or it is an **untracked pull request**, listed with the
 // one reason the hopper does not track it: it links no issue, its issue is not in Intake, its base is not the landing
-// branch, or no job made it. Pure: the source reads the open pull requests, the store says what is tracked.
+// branch, its item's job follows another pull request, or no job made it. One whose issue is not in Intake offers that
+// issue to Intake (`take_in`, Take into Intake). Pure: the source reads the open pull requests, the store says what is tracked.
 import { closingReferences } from './cross-references.ts';
 
-export const UNTRACKED_REASONS = ['no_issue', 'issue_not_in_intake', 'wrong_base', 'not_by_a_job'] as const;
+export const UNTRACKED_REASONS = ['no_issue', 'issue_not_in_intake', 'wrong_base', 'second_pull_request', 'not_by_a_job'] as const;
 /**
  * Why an open pull request is not tracked: `no_issue`, its text closes no issue of its repository and is part of none;
  * `issue_not_in_intake`, its issue is no work item (no label, no assignee, or not of the user); `wrong_base`, its issue is a
- * work item, and its base is not the repository's landing branch nor another open pull request's head; `not_by_a_job`,
+ * work item, and its base is not the repository's landing branch nor another open pull request's head;
+ * `second_pull_request`, its issue is a work item whose job follows another pull request (`followed`): one item, two pull
+ * requests, and the hopper tends only the one its job follows; `not_by_a_job`,
  * its issue is a work item, and no job of it names this pull request (a person's, a second one, or one moved to the landing
  * branch that no job follows yet).
  */
@@ -25,6 +28,12 @@ export interface UntrackedPullRequest {
   base?: string;
   issue?: { number: number; url: string; part: boolean };
   reason: UntrackedReason;
+  /** The pull request a job of its issue's item follows: this one is a second one (`second_pull_request`). */
+  followed?: string;
+  /** `take_in`: its issue is not in Intake, and Take into Intake offers it (its source's intake action). */
+  offer?: 'take_in';
+  /** The job source whose census listed it: where Take into Intake goes. Set when the list is answered. */
+  source?: string;
   /** The hopper moved it to the landing branch (issue #1176): a job's branch, on a base from before. */
   retargeted?: { from: string; to: string };
 }
@@ -35,6 +44,8 @@ export interface CensusFacts {
   tracked(url: string): boolean;
   /** The ledger holds the issue (its URL) as a work item. */
   issueTracked(url: string): boolean;
+  /** The pull request a job of the item (the issue's URL) follows; undefined: none. */
+  followedOf(url: string): string | undefined;
   /** The repository's landing branch; undefined: it has no landing batches, and no base is wrong. */
   landing(repo: string): string | undefined;
 }
@@ -63,8 +74,13 @@ export function untrackedPullRequests(repo: string, prs: readonly CensusPullRequ
     const linked = issueOfPullRequest(pr.body, repo);
     const issue = linked && { ...linked, url: issueUrlOf(pr.url, linked.number) };
     const offBase = landing !== undefined && pr.base !== undefined && pr.base !== landing && !heads.has(pr.base);
-    const reason: UntrackedReason = !issue ? 'no_issue' : !facts.issueTracked(issue.url) ? 'issue_not_in_intake' : offBase ? 'wrong_base' : 'not_by_a_job';
-    out.push({ repo, url: pr.url, ...(pr.title ? { title: pr.title } : {}), ...(pr.base ? { base: pr.base } : {}), ...(issue ? { issue } : {}), reason });
+    const inIntake = issue !== undefined && facts.issueTracked(issue.url);
+    const followed = inIntake ? facts.followedOf(issue.url) : undefined;
+    const reason: UntrackedReason = !issue ? 'no_issue' : !inIntake ? 'issue_not_in_intake' : offBase ? 'wrong_base' : followed ? 'second_pull_request' : 'not_by_a_job';
+    out.push({
+      repo, url: pr.url, ...(pr.title ? { title: pr.title } : {}), ...(pr.base ? { base: pr.base } : {}), ...(issue ? { issue } : {}), reason,
+      ...(followed ? { followed } : {}), ...(reason === 'issue_not_in_intake' ? { offer: 'take_in' as const } : {}),
+    });
   }
   return out;
 }

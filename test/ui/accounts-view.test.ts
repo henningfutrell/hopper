@@ -6,7 +6,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolAccount, ToolAccountsReport } from '../../src/domain/types.ts';
-import { accountTitle, machineLine, signedOutMachines } from '../../ui/src/model/tool-accounts.ts';
+import { accountTitle, machineLine, signedOutLines, signedOutMachines } from '../../ui/src/model/tool-accounts.ts';
 
 type El = ReturnType<typeof createElement>;
 let root: Root | undefined;
@@ -125,5 +125,10 @@ describe('the Accounts model', () => {
   it('the badge counts the machines signed in as nobody', () => {
     expect(signedOutMachines([SIGNED_IN, SIGNED_OUT])).toBe(1);
     expect(signedOutMachines([SIGNED_IN])).toBe(0);
+  });
+
+  it('Needs you names each machine signed in as nobody, by its tool and label (issue #1128)', () => {
+    expect(signedOutLines([SIGNED_IN, SIGNED_OUT])).toEqual(['Claude on Server: signed in as nobody — sign it in from Accounts']);
+    expect(signedOutLines([SIGNED_IN])).toEqual([]);
   });
 });

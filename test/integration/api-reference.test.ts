@@ -109,6 +109,6 @@ describe('across the LAN', () => {
     const host = `server:${new URL(a.url).port}`;
     expect((await get(a, '/docs/', { host })).status).toBe(200);
     expect((await get(a, '/docs/openapi.json', { host })).status).toBe(200);
-    expect((await get(a, '/api/health', { host })).status).toBe(401);
+    expect((await get(a, '/api/queue', { host })).status).toBe(401);
   });
 });

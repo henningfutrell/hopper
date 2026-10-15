@@ -51,7 +51,7 @@ export function pullRequestsView(t: Pick<TenantParts, 'store' | 'registry'>): Pu
   const now = Date.now();
   const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'), now, (id) => store.jobs.get(id));
   const landing = landingCards(store.workItems.list({ landing: true }), now);
-  const untracked = t.registry.statuses().flatMap((s) => (s.detail?.untrackedPullRequests ?? []) as UntrackedPullRequest[]);
+  const untracked = t.registry.statuses().flatMap((s) => ((s.detail?.untrackedPullRequests ?? []) as UntrackedPullRequest[]).map((u) => ({ ...u, source: s.name })));
   return { ...view, ...(landing.length > 0 ? { landing } : {}), ...(untracked.length > 0 ? { untracked } : {}) };
 }
 

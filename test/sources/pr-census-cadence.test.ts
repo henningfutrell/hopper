@@ -47,6 +47,8 @@ describe('the census in the sync loop (issue #1176)', () => {
     expect([f.tracked(PR), f.tracked(LEDGER_PR), f.tracked(`https://github.com/${REPO}/pull/10`)]).toEqual([true, true, false]);
     expect([f.issueTracked(`https://github.com/${REPO}/issues/1`), f.issueTracked(LEDGER_ISSUE), f.issueTracked(`https://github.com/${REPO}/issues/2`)])
       .toEqual([true, true, false]);
+    // The pull request a job of the item follows: what a second one of the item names.
+    expect([f.followedOf(`https://github.com/${REPO}/issues/1`), f.followedOf(LEDGER_ISSUE)]).toEqual([PR, undefined]);
   });
 
   it('paused: none', async () => {

@@ -1,6 +1,7 @@
 // One engine pass: gather inputs → decide() → skip a no-op → apply in one transaction.
 import { decide } from '../decider/index.ts';
 import { retiredPins } from '../decider/retired.ts';
+import { signedOutOf } from '../decider/signed-out.ts';
 import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, LaneId, MachineSnapshot } from '../domain/types.ts';
 import { nowIso, policyOf, priorityTagOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
@@ -20,6 +21,7 @@ export type ExpectedCostOf = (job: Job) => ExpectedCost | undefined;
 
 async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<{ machines: MachineSnapshot[]; inputs: () => DecisionInputs }> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
+  const signedOut = signedOutOf(c.usage().map((u) => ({ name: u.name, state: u.state?.() })));
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return { machines, inputs: () => {
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
@@ -41,6 +43,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       blastRadius: blastRadius.input(machines),
       ...(expectedCosts ? { expectedCosts } : {}),
       ...(placementPicks ? { placementPicks } : {}),
+      ...(signedOut.length ? { signedOut } : {}),
       policy: policyOf(c),
     };
   } };

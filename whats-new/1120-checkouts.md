@@ -1,0 +1,1 @@
+- The disk use on Machines now also counts the shared copies of each repository that jobs work from, so the disk budget covers them too.

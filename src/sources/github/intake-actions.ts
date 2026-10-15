@@ -1,8 +1,10 @@
 // The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve and Decline
 // (issue #1035) on a request card — on a reopened card (issue #1126) Approve also takes `hopper:done` off —, and Take off the backburner — each only on an item the source's last discover offered
-// it for. Decline writes nothing to GitHub. Apart from source.ts for its size.
+// it for. Decline writes nothing to GitHub. Take into Intake (issue #1176): only on an issue an untracked pull request the
+// last census listed closes, and that is no work item. Apart from source.ts for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
+import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import type { GitHubApi } from './api.ts';
 import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
 
@@ -12,6 +14,8 @@ export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was 
 export const ALREADY_APPROVED = 'already approved';
 /** Approve on an item taken with no approval: its origin is trusted (issue #1045). */
 export const ALREADY_TAKEN = 'already taken, no approval needed';
+/** Take into Intake on an issue the last census did not offer (issue #1176). */
+export const NOT_OFFERED_TAKE_IN = 'not offered: no untracked pull request closes it';
 
 export interface IntakeActionContext {
   source: string;
@@ -26,6 +30,30 @@ export interface IntakeActionContext {
   approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean>;
   /** Keeps a person's decline of a request card (issue #1035); the text a person approved (issue #1045). */
   trust: Pick<IntakeTrust, 'decline' | 'approvedText'>;
+  /** The source's label: what Take into Intake gives an issue. */
+  label: string;
+  /** The issues the last census offers to Intake, each with the untracked pull request that closes it (issue #1176). */
+  takeIn: Map<string, UntrackedPullRequest>;
+}
+
+/** Take into Intake (issue #1176): the source's label and an assignment to the connected account, a GitHub write the user makes. */
+async function takeIn(c: IntakeActionContext, keys: string[]): Promise<IntakeActionResult> {
+  const done: string[] = [];
+  const failed: Record<string, string> = {};
+  for (const key of [...new Set(keys)]) {
+    const u = c.takeIn.get(key);
+    if (!u) { failed[key] = NOT_OFFERED_TAKE_IN; continue; }
+    try {
+      if (!c.assignee) throw new Error('no GitHub account connected');
+      await c.api.addLabels(u.repo, numberOf(key), [c.label]);
+      await c.api.addAssignees(u.repo, numberOf(key), [c.assignee]);
+      c.intake?.record('source.issue_taken_in', { source: c.source, key, pullRequest: u.url, assignee: c.assignee });
+      done.push(key);
+    } catch (err) {
+      failed[key] = (err as Error).message;
+    }
+  }
+  return { done, failed };
 }
 
 /** Decline is offered where Approve is: on a request card. */
@@ -34,6 +62,7 @@ const offeredAs = (kind: IntakeAction['kind']): IntakeAction['kind'] => (kind ==
 const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
 
 export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promise<IntakeActionResult> {
+  if (a.kind === 'take_in') return takeIn(c, a.keys);
   const offered = new Map(c.offered.map((x) => [x.key, x]));
   const done: string[] = [];
   const failed: Record<string, string> = {};

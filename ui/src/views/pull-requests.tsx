@@ -9,9 +9,9 @@
 // A card the hopper gave up on (its tend job ended failed, cancelled or rejected) has Tend again (issue #1010).
 // Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
 // moves it to the tested branch. Not tracked (issue #1176): each open pull request of a job repository the hopper does not
-// track, with why.
+// track, with why; one whose issue is not in Intake has Take into Intake.
 // Each card shows its change kind (issue #1076), why in its title.
-import { ExternalLink, GitBranch, GitMerge, GitPullRequest, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
+import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
@@ -216,11 +216,16 @@ function Landing({ cards }: { cards: LandingCard[] }) {
 }
 
 const UNTRACKED_TONE: Record<UntrackedPullRequest['reason'], string> = {
-  no_issue: 'text-muted-foreground', issue_not_in_intake: 'text-warn', wrong_base: 'text-warn', not_by_a_job: 'text-muted-foreground',
+  no_issue: 'text-muted-foreground', issue_not_in_intake: 'text-warn', wrong_base: 'text-warn', second_pull_request: 'text-warn', not_by_a_job: 'text-muted-foreground',
 };
 
-/** Not tracked (issue #1176): each open pull request of a job repository that no job names and the ledger does not hold, with why. */
+/**
+ * Not tracked (issue #1176): each open pull request of a job repository that no job names and the ledger does not hold, with
+ * why. One whose issue is not in Intake has Take into Intake for an operator: its source labels and assigns the issue.
+ */
 function Untracked({ prs }: { prs: UntrackedPullRequest[] }) {
+  const operator = useCanOperate();
+  const takeIn = (u: UntrackedPullRequest) => act(`/ui/api/sources/${encodeURIComponent(u.source!)}/intake`, { kind: 'take_in', keys: [u.issue!.url] }, `#${u.issue!.number} taken into Intake`);
   return (
     <section data-slot="untracked">
       <Panel title="Not tracked" icon={GitPullRequest} count={prs.length} bodyClassName="p-0">
@@ -233,6 +238,9 @@ function Untracked({ prs }: { prs: UntrackedPullRequest[] }) {
               <GhLink url={u.url} className="font-medium text-foreground">{u.repo}#{u.url.split('/').pop()}<ExternalLink className="size-3 opacity-60" /></GhLink>
               {u.title && <span className="text-muted-foreground">{u.title}</span>}
               <span data-slot="untracked-reason" className={`text-xs ${UNTRACKED_TONE[u.reason]}`}>{untrackedText(u)}</span>
+              {operator && u.offer === 'take_in' && u.source && u.issue && (
+                <Button size="xs" variant="outline" title="Gives the issue the hopper label and assigns it to your GitHub account: Intake lists it as a request card for you to approve" onClick={() => void takeIn(u)}><Inbox />Take into Intake</Button>
+              )}
             </li>
           ))}
         </ul>

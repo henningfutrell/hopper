@@ -1,5 +1,6 @@
 import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
+import { SIGN_IN, signedOutEvery } from './signed-out.ts';
 
 /**
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
@@ -74,6 +75,8 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
   if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
   if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  const out = signedOutEvery(m.id, m.executors, s.signedOut);
+  if (out) return `${out.service} signed out: ${SIGN_IN}; ${NO_NEW_JOB}`;
   const gated = s.gate?.gated.find((g) => g.machineId === m.id);
   if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;
   if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;

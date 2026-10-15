@@ -22,3 +22,7 @@ export function machineLine(m: Pick<ToolAccountMachine, 'readAt' | 'lastUsedAt'>
 /** The machines whose tool is signed in as nobody: the Accounts badge counts them. */
 export const signedOutMachines = (accounts: readonly ToolAccount[]): number =>
   accounts.reduce((n, a) => n + a.machines.filter((m) => m.login === 'signed-out').length, 0);
+
+/** Needs you's Accounts row (issue #1128): one line per machine whose tool is signed in as nobody, as soon as its source reads it. */
+export const signedOutLines = (accounts: readonly ToolAccount[]): string[] =>
+  accounts.flatMap((a) => a.machines.filter((m) => m.login === 'signed-out').map((m) => `${serviceLabel(a.service)} on ${m.label}: signed in as nobody — sign it in from Accounts`));

@@ -1,0 +1,1 @@
+- Needs you now shows each machine where Claude is signed out, as soon as the hopper sees it. A question from a signed-out Claude links to Accounts, where you sign it in again. You can also view and type into terminals from the command line.

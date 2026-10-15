@@ -1,6 +1,6 @@
 // Which open questions wait on the owner: the nav badge counts them, seen or not (issue #499); the Questions view
 // marks the unseen ones seen. A parked job's question is not among them: it is in Parked, with its job (issue #565).
-// And how the raising machine is named (issue #485).
+// And how the raising machine is named (issue #485), and which question a sign-in from Accounts settles (issue #1128).
 import { summaryOf } from './card-text.ts';
 import type { DomainEvent, Job, Question, RaisedBy } from './wire.ts';
 
@@ -42,3 +42,11 @@ export function raisedByOf(e: DomainEvent): RaisedBy | undefined {
   if (d) return d;
   return e.machineId ? { machineId: e.machineId, ...(e.laneId ? { laneId: e.laneId } : {}) } : undefined;
 }
+
+/**
+ * A question of a Claude with no credential (issue #533): its text starts as `NOT_SIGNED_IN` (`src/domain/questions.ts`) does.
+ * The UI imports nothing of `src/` at runtime, so the start is said again here; `test/ui/question-machine.test.ts` keeps the two equal.
+ */
+export const isNotSignedIn = (text: string): boolean => text.startsWith('Claude is not signed in on this machine');
+/** One of Claude's login screen (`LOGIN_SCREEN_MARK`): a sign-in from Accounts does not answer it, a person still does. */
+export const isLoginScreen = (text: string): boolean => text.includes('Select login method');

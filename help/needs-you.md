@@ -15,6 +15,7 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 | Proposals | **Proposals** | Proposals that wait for you to pick a path. |
 | Research | **Research** | Research reports that wait for you to accept or steer them. |
 | Logins | **Logins** | Logins a job waits on, and connections that ended. A code that ran out still counts while its job waits for a new code: by default the job gets a new code by itself. |
+| Accounts | **Accounts** | Machines whose agent tool (Claude) is signed in as nobody, one line each. The row shows as soon as the machine's usage source reads the sign-out. Sign the tool in again from Accounts: no terminal on the machine is needed. |
 | Failures | **Failures** | Open problems and jobs handed off to a person. |
 | Pull requests | **Pull requests** | Open pull requests with merge conflicts. Fix them, or close them. |
 | Tagged | **Tagged** | Open issues and pull requests in your job repositories that ask for your review, mention you, or are assigned to you. |

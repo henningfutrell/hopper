@@ -34,7 +34,7 @@ export const noteBody = z.object({
 /** The intake actions on a request card's text (issues #652, #1035): one item, with the hash of the text as read. */
 const hashed = (kind: string): boolean => kind === 'approve' || kind === 'decline';
 export const intakeActionBody = z.object({
-  kind: z.enum(['assign', 'release', 'approve', 'unbackburner', 'decline', 'dismiss']),
+  kind: z.enum(['assign', 'release', 'approve', 'unbackburner', 'decline', 'dismiss', 'take_in']),
   keys: z.array(z.string().min(1)).min(1, 'name at least one item').max(100, 'at most 100 items at once'),
   hash: z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256, hex').optional(),
 }).strict()

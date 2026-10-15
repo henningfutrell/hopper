@@ -1,4 +1,4 @@
-import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, SignedOutTool, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
@@ -7,6 +7,7 @@ import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 import { fitting, place, type PlacedCost } from './placement-cost.ts';
 import { jevPicked } from './lane-calls.ts';
+import { SIGN_IN, signedOutFor } from './signed-out.ts';
 
 /** One executor's share of a machine: its own cap, and the lanes its jobs hold there. */
 export interface ExecutorState {
@@ -44,6 +45,8 @@ export interface MachineState {
   gate?: BlastRadiusInput;
   /** What the jobs this Decision placed here are expected to cost (issue #688). */
   placed: PlacedCost;
+  /** Its agent tools that read signed out (issue #1128 part 5): a new job of their executors is placed elsewhere. */
+  signedOut?: SignedOutTool[];
 }
 
 export interface Candidate {
@@ -99,7 +102,7 @@ export const NO_NEW_JOB = 'no new job is claimed there';
  * Step 5: a hold that applies regardless of the router, or undefined. An unavailable executor
  * comes first: its reason says what to fix.
  */
-export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: ExecutorUnavailable[]): string | undefined {
+export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: ExecutorUnavailable[], signedOut?: readonly SignedOutTool[]): string | undefined {
   const executor = job.spec.executor;
   const down = unavailable.find((u) => u.name === executor);
   if (down) return `executor ${executor} unavailable: ${down.reason}`;
@@ -126,6 +129,11 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
     if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
     const usable = working.filter((m) => !templateHolds(m, job));
     if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+    const roomy = usable.filter((m) => !diskHolds(m, job));
+    const out = roomy.map((m) => signedOutFor(m.id, job, signedOut));
+    if (out.every((t) => t !== undefined)) {
+      return `no machine running executor ${executor} is signed in: ${roomy.map((m, i) => `${m.id} (${out[i]!.service} signed out)`).join(', ')}: ${SIGN_IN}`;
+    }
     return undefined;
   }
   const pinned = machines.find((m) => m.id === pin);
@@ -138,6 +146,8 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (herdrHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.herdrProblem}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
+  const out = signedOutFor(pin, job, signedOut);
+  if (out) return `pinned machine ${pin}: ${out.service} signed out (usage source ${out.source}): ${SIGN_IN}`;
   return undefined;
 }
 
@@ -238,11 +248,12 @@ export function problemHold(job: Job, machines: MachineSnapshot[], problems: rea
  * Issue #542: the hold of a job the blast-radius gate keeps from every machine it could otherwise take a new job on,
  * naming them; undefined when one is not gated for it, or it resumes.
  */
-export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[], gate: BlastRadiusInput | undefined): string | undefined {
+export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[], gate: BlastRadiusInput | undefined, signedOut?: readonly SignedOutTool[]): string | undefined {
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !workTreeHolds(m, job) && !addressHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
+    && !homeless(m) && !workTreeHolds(m, job) && !addressHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
+    && signedOutFor(m.id, job, signedOut) === undefined);
   return gateHold(job, usable, gate);
 }
 
@@ -250,7 +261,7 @@ function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
-    && (pin === undefined || pin === s.machine.id);
+    && signedOutFor(s.machine.id, job, s.signedOut) === undefined && (pin === undefined || pin === s.machine.id);
 }
 
 /**

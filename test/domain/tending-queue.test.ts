@@ -53,7 +53,7 @@ describe('nothing holds the tending queue for good (issue #927)', () => {
   });
 });
 
-describe('a merged pull request holds nothing (issue #1162)', () => {
+describe('a merged pull request holds nothing (issues #1162, #1210)', () => {
   /** The tended job and its tend job, `status`, with `source` as the tend job's source state; and any other jobs. */
   function tend(status: Job['status'], source: Record<string, unknown> = {}, others: Job[] = []) {
     const t: Tended = { pullRequest: PR, step: 'rebase', nextJobId: 'job-2' };
@@ -77,6 +77,15 @@ describe('a merged pull request holds nothing (issue #1162)', () => {
 
   it('a tend job that waits on a person holds nothing', () => {
     for (const status of ['waiting_answer', 'parked', 'operator_led'] as const) expect(heads(tend(status), false)).toEqual([]);
+  });
+
+  it('a tend job that waits on its own command holds nothing (issue #1210); on another wait it still holds', () => {
+    const own = tend('waiting_on');
+    own.jobs[1] = { ...own.jobs[1]!, wait: { for: 'checks', until: 'own command b1 ends', since: ago(60_000), ownCommand: true } };
+    expect(heads(own, false)).toEqual([]);
+    const outside = tend('waiting_on');
+    outside.jobs[1] = { ...outside.jobs[1]!, wait: { for: 'a review', since: ago(60_000) } };
+    expect(heads(outside, false)).toEqual([{ pullRequest: PR, why: 'tending', jobId: 'job-2' }]);
   });
 
   it('a pull request a job saw merged or closed holds nothing, even while its tend job runs', () => {

@@ -260,7 +260,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
     intake: () => outcomes.map((x) => ({ ...x })),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve, label: config.label, takeIn: census.takeIn() }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
