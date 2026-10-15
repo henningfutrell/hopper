@@ -128,6 +128,7 @@ export type { ComponentWatcherSettings, ComponentWatcherView, ComponentWatchersV
 export type { DirectJob, DirectJobInput, DirectJobQuestion, DirectJobView } from '../../../src/domain/direct-jobs.ts';
 export type { VaultGrant, VaultGrantAsk, VaultGrantItem, VaultGrantView } from '../../../src/domain/vault-grants.ts';
 export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswer } from '../../../src/domain/search.ts';
+export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src/domain/transcript.ts';
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';
 export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/job-notes.ts';
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';

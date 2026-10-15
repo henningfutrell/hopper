@@ -571,4 +571,3 @@ export type { SandboxApprovals, SandboxRequestState, SandboxRequestView } from '
 export type { RememberedWrite, RememberedWriteView } from './remembered-writes.ts';
 export * from './minting.ts';
 export * from './master-key.ts';
-export * from './transcript.ts';

@@ -12,7 +12,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Job, JobTranscript, TranscriptTurn } from '../../src/domain/types.ts';
+import type { Job } from '../../src/domain/types.ts';
+import type { JobTranscript, TranscriptTurn } from '../../src/domain/transcript.ts';
 
 const T = '2026-10-14T12:00:00.000Z';
 const checkpoint = { at: T, machineId: 'local', base: 'b', head: 'c', commits: [], bytes: 2048, session: true };

@@ -7,7 +7,7 @@
 //   Scenario: no transcript without a kept session, a job, or Access
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { JobTranscript } from '../../src/domain/types.ts';
+import type { JobTranscript } from '../../src/domain/transcript.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createManualSource } from '../support/manual-source.ts';
