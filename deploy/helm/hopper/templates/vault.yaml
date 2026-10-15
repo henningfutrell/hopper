@@ -60,7 +60,17 @@ spec:
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}
+          {{- if .Values.postgres.bundled }}
           command: [sh, -c, {{ printf "until pg_isready -q -h %s-postgres -U hopper -d hopper; do sleep 2; done" (include "hopper.fullname" .) | quote }}]
+          {{- else }}
+          command: [sh, -c, 'until pg_isready -q -d "$DATABASE_URL"; do sleep 2; done']
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hopper.databaseSecret" . }}
+                  key: database_url
+          {{- end }}
           {{- include "hopper.containerSecurity" . | nindent 10 }}
       containers:
         - name: hopper-vault
@@ -70,7 +80,12 @@ spec:
           args: [node, src/vault/main.ts]
           env:
             - name: HOPPER_DATABASE_URL_FILE
+              {{- if .Values.postgres.bundled }}
               value: /run/hopper-secrets/database_url
+              {{- else }}
+              # The external database (issue #1282).
+              value: /run/hopper-database/database_url
+              {{- end }}
             {{- include "hopper.masterKeyEnv" . | nindent 12 }}
             - name: HOPPER_VAULT_KEY_FILE
               value: /run/hopper-secrets/vault_key
@@ -98,6 +113,11 @@ spec:
             - name: secrets
               mountPath: /run/hopper-secrets
               readOnly: true
+            {{- if not .Values.postgres.bundled }}
+            - name: database
+              mountPath: /run/hopper-database
+              readOnly: true
+            {{- end }}
             {{- if include "hopper.masterKeyFromFile" . }}
             - name: master-key
               mountPath: /run/hopper-master-key
@@ -109,9 +129,20 @@ spec:
             secretName: {{ include "hopper.runtimeSecret" . }}
             defaultMode: 0440
             items:
+              {{- if .Values.postgres.bundled }}
               - key: database_url
                 path: database_url
+              {{- end }}
               - key: vault_key
                 path: vault_key
+        {{- if not .Values.postgres.bundled }}
+        - name: database
+          secret:
+            secretName: {{ include "hopper.databaseSecret" . }}
+            defaultMode: 0440
+            items:
+              - key: database_url
+                path: database_url
+        {{- end }}
         {{- include "hopper.masterKeyVolume" . | nindent 8 }}
 {{- end }}

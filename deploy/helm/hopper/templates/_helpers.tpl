@@ -89,6 +89,15 @@ bytes. With no limit set, Kubernetes gives the node's allocatable.
       divisor: "1"
 {{- end -}}
 
+{{/* The Secret with `database_url` and `openfga_datastore_uri`: the runtime Secret, or the external one (issue #1282). */}}
+{{- define "hopper.databaseSecret" -}}
+{{- if .Values.postgres.bundled -}}
+{{- include "hopper.runtimeSecret" . -}}
+{{- else -}}
+{{- required "postgres.external.existingSecret: the Secret with database_url and openfga_datastore_uri, for postgres.bundled=false" .Values.postgres.external.existingSecret -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 The master key, for each pod that seals or opens with it: the hopper, and the vault pod. From the mounted Secret's files
 (a start without its file is refused), else from its keys as variables.

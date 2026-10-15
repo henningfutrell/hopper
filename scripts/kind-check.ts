@@ -1,6 +1,7 @@
 // The kind check (issue #1281, docs/deploy.md "Check the chart on kind"): on a fresh kind cluster, `helm install` alone
 // brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket, or runs Podman, Docker or
-// compose. Needs `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
+// compose. Then `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Needs
+// `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
 //
 //   node scripts/kind-check.ts [--cluster NAME] [--tag TAG] [--keep] [--set key=value ...]
 //
@@ -54,7 +55,7 @@ function sh(cmd: string, args: string[], capture = false): { status: number | nu
 function check(context: string, tag: string | undefined, sets: string[]): string | null {
   const values = [...(tag ? [`image.tag=${tag}`] : []), ...sets];
   const install = sh('helm', ['install', 'hopper', CHART, '--kube-context', context, '--namespace', NAMESPACE, '--create-namespace',
-    '--wait', '--timeout', '15m', ...values.flatMap((v) => ['--set', v])]);
+    '--wait', '--wait-for-jobs', '--timeout', '15m', ...values.flatMap((v) => ['--set', v])]);
   if (install.status !== 0) return 'helm install did not bring up the release';
 
   // Asked on the pod's loopback, as its probes ask: from outside the pod it would be a LAN request.
@@ -71,6 +72,21 @@ function check(context: string, tag: string | undefined, sets: string[]): string
   const found = findings(pods);
   if (found.length > 0) return `a container runtime in the cluster:\n${found.map((f) => `  ${f}`).join('\n')}`;
   console.log(`${pods.length} pods, no container runtime socket, no Podman, Docker or compose`);
+  return migratesOnce(context);
+}
+
+/** An upgrade with the same values leaves the OpenFGA migration Job as it was: the migration ran once. */
+function migratesOnce(context: string): string | null {
+  const jobs = (): string => sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'get', 'jobs',
+    '-l', 'app.kubernetes.io/component=openfga-migrate', '-o', 'jsonpath={.items[*].metadata.uid}'], true).stdout.trim();
+  const before = jobs();
+  if (!before) return 'the install made no OpenFGA migration Job';
+  const upgrade = sh('helm', ['upgrade', 'hopper', CHART, '--kube-context', context, '--namespace', NAMESPACE, '--reuse-values',
+    '--wait', '--wait-for-jobs', '--timeout', '10m']);
+  if (upgrade.status !== 0) return 'helm upgrade with the same values did not succeed';
+  const after = jobs();
+  if (after !== before) return `the upgrade ran the OpenFGA migration again: Job ${before} became ${after || 'none'}`;
+  console.log('the upgrade ran the OpenFGA migration no second time');
   return null;
 }
 
