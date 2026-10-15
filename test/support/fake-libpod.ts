@@ -61,6 +61,11 @@ export function createFakeLibpod(): FakeLibpod {
       volumeLabels.set(name, (r.body as { Label?: Record<string, string> }).Label ?? {});
       return { status: 201, body: { Name: name } };
     }
+    if (r.method === 'GET' && path(r, /^\/volumes\/json$/)) {
+      const filters = r.query.get('filters');
+      const want = filters ? (JSON.parse(filters) as { label?: string[] }).label ?? [] : [];
+      return { status: 200, body: [...volumes].filter((v) => want.every((l) => { const [k, x] = l.split('='); return volumeLabels.get(v)?.[k!] === x; })).map((v) => ({ Name: v, Labels: volumeLabels.get(v) ?? {} })) };
+    }
     if (r.method === 'GET' && (m = path(r, /^\/volumes\/([^/]+)\/json$/))) {
       const name = decodeURIComponent(m[1]!);
       return volumes.has(name) ? { status: 200, body: { Name: name, Labels: volumeLabels.get(name) ?? {} } } : { status: 404, body: { message: 'no such volume' } };
