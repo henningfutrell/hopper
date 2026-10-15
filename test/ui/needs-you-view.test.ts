@@ -53,8 +53,7 @@ const EMPTY_VAULT = { secrets: [], backends: [], shared: [], readPolicy: [], tem
 const posts: { path: string; body: unknown }[] = [];
 let sources: unknown[] = SOURCES;
 let vault: unknown = VAULT;
-let pullRequests: unknown = PULL_REQUESTS;
-let plans: unknown = { plans: [PLAN], applies: [], settings: { autoApprove: false }, watchers: {} };
+let pullRequests: unknown = PULL_REQUESTS, plans: unknown = { plans: [PLAN], applies: [], settings: { autoApprove: false }, watchers: {} };
 let minor: unknown = MINOR;
 
 function fakeDaemon() {
