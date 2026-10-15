@@ -28,7 +28,8 @@ const job = (id: string): LedgerJob => ({ id, key: KEY });
 /** The item after its job's pull request `n` merged as the whole item, promoted with batch `tip`. */
 function promoted(n: number, tip: string, from?: WorkItem): WorkItem {
   let i = from ?? applyEvent(undefined, { type: 'job.queued', at: at(), data: {} }, KEY, job('j1'))!;
-  i = applyEvent(i, { type: 'job.pull_request_merged', at: at(), data: { pullRequest: PR(n) } }, KEY, job(i.jobId ?? 'j1'))!;
+  if (!from) i = applyEvent(i, { type: 'job.finished', at: at(), data: { result: 'pull request opened' } }, KEY, { ...job('j1'), pullRequest: PR(n) })!;
+  i = applyEvent(i, { type: 'job.pull_request_merged', at: at(), data: { pullRequest: PR(n) } }, KEY, job('j1'))!;
   for (const e of [
     landing('landing_batch.pending', { merges: [n] }),
     landing('landing_batch.started', { tip, merges: [n], pullRequest: 900 + n, url: 'u' }),
@@ -94,5 +95,28 @@ describe('a promoted item whose issue is still open is done (issue #1232)', () =
     expect(promotedOpen(onItsWay, landingRepo)).toBe(false);
     const culprit = { ...promoted(101, TIP_B), landing: { repo: REPO, pullRequest: 101, stage: 'culprit' as const, since: at() } };
     expect(promotedOpen(culprit, landingRepo)).toBe(false);
+  });
+});
+
+describe('the stale item is corrected on the next pass (issue #1232)', () => {
+  it('replayed: a part promoted, the whole merged and a card opened at once, a later part merged, all promoted', () => {
+    // Part one merged and promoted with its batch.
+    let i = promoted(101, TIP_A);
+    // The whole merged ("Closes"); the sync then took the earlier part's `promoted` for it, and opened a reopened card.
+    i = applyEvent(i, { type: 'job.pull_request_merged', at: at(), data: { pullRequest: PR(102) } }, KEY, job('j1'))!;
+    i = applyEvent(i, { type: 'source.request_opened', at: at(), data: { source: 'github', key: KEY } }, KEY)!;
+    // A later part merged while the card waits; both batches promoted.
+    i = applyEvent(i, { type: 'job.pull_request_merged', at: at(), data: { pullRequest: PR(103), part: true } }, KEY, job('j1'))!;
+    for (const e of [
+      landing('landing_batch.started', { tip: TIP_B, merges: [102, 103], pullRequest: 950, url: 'u' }),
+      landing('landing_batch.promoted', { tip: TIP_B, pullRequest: 950, url: 'u' }),
+    ]) i = applyLandingEvent(i, e) ?? i;
+    expect(i).toMatchObject({ state: 'waiting_for_approval', pullRequest: PR(103), landing: { pullRequest: 103, stage: 'promoted' } });
+    // The next pass: the hopper closes the issue and withdraws the card; the item is done.
+    expect(promotedOpen(i, landingRepo)).toBe(true);
+    i = applyEvent(i, { type: 'work_item.issue_closed', at: at(), data: { key: KEY, reason: 'completed', via: 'landing' } }, KEY)!;
+    i = applyEvent(i, { type: 'source.request_withdrawn', at: at(), data: { source: 'github', key: KEY } }, KEY)!;
+    expect(i.state).toBe('done');
+    expect(promotedOpen(i, landingRepo)).toBe(false);
   });
 });

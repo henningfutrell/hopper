@@ -8,7 +8,7 @@ import { changeRuleFor, DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../
 import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
-import { awaitsBatch } from '../domain/work-item-landing.ts';
+import { awaitsBatch, promotedOpen } from '../domain/work-item-landing.ts';
 import { itemHistory, requestOpenedSince } from '../domain/intake.ts';
 import { storeIntakeTrust, type DecideIntakeActor } from './intake-trust.ts';
 import { join } from 'node:path';
@@ -38,6 +38,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       history: (key) => itemHistory(store.jobs.getBySourceKey(key), (id) => store.jobs.get(id), store.workItems.get(key)?.pullRequest),
       // Merged into the landing branch, its batch run not yet on the tested branch (issue #1175): no reopened card.
       awaitsBatch: (key) => awaitsBatch(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined, clock().getTime()),
+      // Promoted with its batch, its issue still open (issue #1232): the sync closes it, once.
+      promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),

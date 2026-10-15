@@ -102,10 +102,10 @@ export interface OutsideRepo {
   items: string[];
 }
 
-/** The events intake records (issue #440). */
+/** The events intake records (issue #440); `work_item.issue_closed`: the close of a promoted item's issue (issue #1232). */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
   | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn' | 'source.review_requested'
-  | 'source.issue_taken_in';
+  | 'source.issue_taken_in' | 'work_item.issue_closed';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {
@@ -133,6 +133,11 @@ export interface IntakeContext {
    * its issue stays open until the batch run reaches the tested branch. It is no reopened card.
    */
   awaitsBatch?(key: string): boolean;
+  /**
+   * Whether the item is done by a pull request its batch run promoted to the tested branch, its issue still open (issue
+   * #1232, `promotedOpen`): the sync closes the issue, once, and it is no reopened card.
+   */
+  promotedOpen?(key: string): boolean;
 }
 
 /**

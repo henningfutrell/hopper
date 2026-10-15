@@ -3,16 +3,19 @@
 // red batch, the `culprit` of one, `reverted` from the landing branch, or `promoted` to the tested branch with its batch.
 // Folded from the repository's `landing_batch.*` events into each item whose merged pull request they name (by number, in
 // the event's repository), or whose batch tip they name. The item's state stays as the ledger says it (`done`): the stage
-// is a fact beside it. Pure.
+// is a fact beside it. A stage is of one pull request (issue #1232): the item's next merge has none until an event names
+// it, so an earlier part's `promoted` never stands for it. Pure.
 import type { DomainEvent, EventType } from './types.ts';
 import type { WorkItem } from './work-items.ts';
 
 export const LANDING_STAGES = ['waiting', 'batch_run', 'bisecting', 'culprit', 'reverted', 'promoted'] as const;
 export type LandingStage = typeof LANDING_STAGES[number];
 
-/** A work item's landing stage: its repository (lowercased), the stage, since when, and the batch it is in. */
+/** A work item's landing stage: its repository (lowercased), the pull request it is of, the stage, since when, and the batch it is in. */
 export interface ItemLanding {
   repo: string;
+  /** The number of the pull request whose stage it is (issue #1232). Absent: a stage folded before that, of the item's pull request then. */
+  pullRequest?: number;
   stage: LandingStage;
   since: string;
   /** The tip of the batch run (or the red batch) it is in. */
@@ -46,17 +49,46 @@ const ON_ITS_WAY: ReadonlySet<LandingStage> = new Set(['waiting', 'batch_run', '
  */
 export const LANDING_UNSEEN_MS = 60 * 60_000;
 
+/** The item's landing stage, when it is of its pull request (issue #1232); undefined: none, or an earlier pull request's. */
+export function landingOf(item: Pick<WorkItem, 'pullRequest' | 'landing'>): ItemLanding | undefined {
+  const pr = pullRequestOf(item.pullRequest);
+  const l = item.landing;
+  return pr && l && l.repo === pr.repo && (l.pullRequest === undefined || l.pullRequest === pr.number) ? l : undefined;
+}
+
+/**
+ * The states of an item done by its merge, as far as the landing goes: `done`, or a request card the sync opened on it
+ * when it took the merge for a reopen (issue #1232). A card a person's reopen opened is no such item: the reopen ended its
+ * landing stage (`applyRead`).
+ */
+const DONE_BY_MERGE: ReadonlySet<WorkItem['state']> = new Set(['done', 'waiting_for_approval']);
+
 /**
  * Whether the item waits on its batch (issue #1175): done by a pull request merged into the landing branch of a repository
  * with landing batches (`landingRepo`, by its lowercased `owner/name`), not yet promoted, a culprit or reverted. Its issue
  * stays open until its batch run reaches the tested branch, and Intake neither offers it again nor starts a job for it.
+ * The stage must be of its pull request (issue #1232). A merge no landing event named yet waits only while it is `done`.
  */
 export function awaitsBatch(item: Pick<WorkItem, 'state' | 'stateSince' | 'pullRequest' | 'pullRequestState' | 'landing'> | undefined,
   landingRepo: (repo: string) => boolean, now: number): boolean {
   const pr = pullRequestOf(item?.pullRequest);
-  if (!item || !pr || item.state !== 'done' || item.pullRequestState !== 'merged' || !landingRepo(pr.repo)) return false;
-  if (item.landing?.repo === pr.repo) return ON_ITS_WAY.has(item.landing.stage);
-  return now - Date.parse(item.stateSince) <= LANDING_UNSEEN_MS;
+  if (!item || !pr || !DONE_BY_MERGE.has(item.state) || item.pullRequestState !== 'merged' || !landingRepo(pr.repo)) return false;
+  const l = landingOf(item);
+  if (l) return ON_ITS_WAY.has(l.stage);
+  return item.state === 'done' && now - Date.parse(item.stateSince) <= LANDING_UNSEEN_MS;
+}
+
+/**
+ * Whether the item is done by a pull request its batch run promoted to the tested branch while its issue stays open
+ * (issue #1232): the batch run's text did not close it, as when the item was not `done` at the batch's start. The hopper
+ * closes the issue, once, and records the close (`work_item.issue_closed`, `via: landing`): an issue the ledger holds
+ * closed is not closed again, and a person's reopen after a close ends the landing stage, so it is a reopened card.
+ */
+export function promotedOpen(item: Pick<WorkItem, 'state' | 'pullRequest' | 'pullRequestState' | 'issueState' | 'landing'> | undefined,
+  landingRepo: (repo: string) => boolean): boolean {
+  const pr = pullRequestOf(item?.pullRequest);
+  if (!item || !pr || !DONE_BY_MERGE.has(item.state) || item.pullRequestState !== 'merged' || !landingRepo(pr.repo)) return false;
+  return landingOf(item)?.stage === 'promoted' && item.issueState !== 'closed';
 }
 
 /** An issue URL's `owner/name` (as written) and number. */
@@ -77,7 +109,7 @@ export function batchClosingIssues(items: Iterable<Pick<WorkItem, 'key' | 'state
     const pr = pullRequestOf(i.pullRequest);
     const issue = issueOf(i.key);
     if (!pr || !issue || pr.repo !== repo.toLowerCase() || !merges.includes(pr.number)) continue;
-    if (i.state !== 'done' || i.pullRequestState !== 'merged' || i.issueState === 'closed' || isLandingUndone(i.landing)) continue;
+    if (i.state !== 'done' || i.pullRequestState !== 'merged' || i.issueState === 'closed' || isLandingUndone(landingOf(i))) continue;
     const ref = issue.repo.toLowerCase() === repo.toLowerCase() ? `#${issue.number}` : `${issue.repo}#${issue.number}`;
     at.set(pr.number, [...at.get(pr.number) ?? [], ref]);
   }
@@ -117,13 +149,13 @@ export function applyLanding(item: WorkItem, e: LandingEvent): WorkItem | undefi
   const t = landingTargets(e);
   const pr = pullRequestOf(item.pullRequest);
   if (!t || !pr || pr.repo !== t.repo || item.pullRequestState !== 'merged') return undefined;
-  const was = item.landing?.repo === t.repo ? item.landing : undefined;
+  const was = landingOf(item);
   const d = e.data;
   const named = t.pullRequests.includes(pr.number);
   const atTip = was !== undefined && t.tip !== undefined && was.tip === t.tip;
   const sticky = was !== undefined && STICKY.has(was.stage);
   const to = (stage: LandingStage, change: Partial<ItemLanding> = {}): WorkItem | undefined => {
-    const next: ItemLanding = { ...(was ?? { repo: t.repo, stage, since: e.at }), ...change, stage, since: was?.stage === stage ? was.since : e.at };
+    const next: ItemLanding = { ...(was ?? { repo: t.repo, stage, since: e.at }), pullRequest: pr.number, ...change, stage, since: was?.stage === stage ? was.since : e.at };
     if (was && JSON.stringify(next) === JSON.stringify(was)) return undefined;
     return { ...item, landing: next, version: item.version + 1 };
   };
@@ -175,7 +207,7 @@ export const LANDING_REVERTED_SHOWN_MS = 7 * 24 * 60 * 60_000;
 export function landingCards(items: readonly WorkItem[], now: number): LandingCard[] {
   const out: LandingCard[] = [];
   for (const i of items) {
-    const l = i.landing;
+    const l = landingOf(i);
     const pr = pullRequestOf(i.pullRequest);
     if (!l || !pr || l.stage === 'promoted') continue;
     if (l.stage === 'reverted' && now - Date.parse(l.since) > LANDING_REVERTED_SHOWN_MS) continue;

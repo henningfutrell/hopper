@@ -18781,7 +18781,41 @@ before it is failed too.
 
 Not taken: the hopper closing each issue itself after a promotion. That is a GitHub write of the hopper's own, and the
 rule is that the merge closes an issue, never the hopper ("GitHub text is neutral" in `AGENTS.md`). An issue closed
-before this change whose fix was reverted (the old path) is not reopened: its fix issue carries the work.
+before this change whose fix was reverted (the old path) is not reopened: its fix issue carries the work. Issue #1232
+takes it for the one case the batch run's text misses (below).
+
+## A promoted item is done (issue #1232, 2026-10-15)
+
+**The problem.** An item of three parts: its first part merged into the landing branch and was promoted with its batch.
+Its last pull request ("Closes #N") merged later, and at once Intake offered the issue as a reopened card, waiting for
+approval. Its batch run carried no closing keyword for it (the item was not `done` any more), so the issue stayed open
+after the promotion too, and the card stayed.
+
+**Why #1175 missed it.** The ledger kept one landing stage per item. The first part's `promoted` stayed on the item when its
+next pull request merged, so `awaitsBatch` read that pull request as promoted already, waiting on no batch. The next
+`landing_batch.pending` did not move it either: `pending` moves only an item with no stage or one `waiting`.
+
+**A landing stage is of one pull request.** `ItemLanding.pullRequest` names the pull request the stage is of; `applyLanding`
+sets it at each event. `landingOf` gives the item's stage only when it is of the item's pull request (a stage folded before,
+with no number, counts as the item's): `awaitsBatch`, `stateOf`, `batchClosingIssues` and the Landing list read it. A new
+merge thus has no stage until a landing event names it, and waits on its batch like any other. Tenant migration 60
+rebuilds the ledger, so every stage names its pull request.
+
+**A promoted item whose issue is still open is closed** (`promotedOpen`, `src/domain/work-item-landing.ts`; `closePromoted`,
+`src/sources/github/origin.ts`). At a sync, an open issue with `hopper:done` (the follow puts it on only for a merge that
+did the whole item, or every declared part) whose item's pull request its batch run promoted, while the ledger does not
+hold its issue closed, is closed by the hopper as completed, with no comment. The sync records the close
+(`work_item.issue_closed`, `via: landing`) and lists the item as "done: promoted to the tested branch with its batch; the
+issue is closed". It opens no reopened card, and a stale one is withdrawn (`source.request_withdrawn`), so the item reads
+`done` again: a withdrawn card with a merged pull request settles to `done`, not `dropped`. A close that fails is said on
+the item and asked again at the next sync, still with no card. The item's state may be `done` or `waiting_for_approval`
+(the stale card): no person's reopen gives it a promoted stage of its own pull request, because a reopen after a close
+ends the landing stage (`applyRead`), and an issue the ledger holds closed is never closed again. A reopen the hopper never
+saw (no delivery, no read between the close and the reopen) is taken for an open issue once: the hopper closes it, records
+it, and the next reopen is a reopened card.
+
+**A part.** An item whose last merge was a part (`partly_done`) has no `hopper:done`: the next sync takes its next part as
+before, and none of this applies.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 

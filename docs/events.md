@@ -1105,7 +1105,7 @@ Version 1 (`docs/schemas/job.own_command_stuck.v1.json`). A job waiting on its o
 
 ## `job.checkpointed`
 
-Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at work, or of one just parked, was taken and kept (issue #921): its agent session and its work not pushed, read on `machineId`, scrubbed of secrets. `bytes`: its size compressed. `session`: whether it holds the agent session (without it, the job cannot resume elsewhere). `commits`: the commits not pushed then. Only the latest checkpoint of a job is kept.
+Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at work, or of one just parked, or for a fresh read of its transcript (issue #1169), was taken and kept (issue #921): its agent session and its work not pushed, read on `machineId`, scrubbed of secrets. `bytes`: its size compressed. `session`: whether it holds the agent session (without it, the job cannot resume elsewhere). `commits`: the commits not pushed then. Only the latest checkpoint of a job is kept.
 
 | field | type | required |
 |---|---|---|
@@ -4254,13 +4254,13 @@ Version 1 (`docs/schemas/job.pull_request_seen.v1.json`). The follow saw what a 
 
 ## `work_item.issue_closed`
 
-Version 1 (`docs/schemas/work_item.issue_closed.v1.json`). GitHub closed the issue of a work item (issue #1067, part 3): `key` is the item's source key, `reason` why it closed (`completed`, `not_planned`, `duplicate`). `via`: a GitHub delivery said it, or the ledger's fallback read of an item with no news for a while. Moves the item as a read of the issue does: an item no job or person acts on is done, or dropped when not planned.
+Version 1 (`docs/schemas/work_item.issue_closed.v1.json`). GitHub closed the issue of a work item (issue #1067, part 3): `key` is the item's source key, `reason` why it closed (`completed`, `not_planned`, `duplicate`). `via`: a GitHub delivery said it, the ledger's fallback read of an item with no news for a while, or `landing` (issue #1232): the hopper closed it itself, as done by a pull request its batch run promoted to the tested branch while the issue stayed open. Moves the item as a read of the issue does: an item no job or person acts on is done, or dropped when not planned.
 
 | field | type | required |
 |---|---|---|
 | `key` | string | yes |
 | `reason` | string | no |
-| `via` | `delivery` \| `read` | yes |
+| `via` | `delivery` \| `read` \| `landing` | yes |
 
 ```json
 {

@@ -5,7 +5,7 @@
 // event (src/store/work-items.ts), and a rebuild replays every event through it.
 import type { GraphNode } from './issue-graph.ts';
 import type { DomainEvent, EventType } from './types.ts';
-import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
+import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, landingOf, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
 
 /**
@@ -132,9 +132,9 @@ const NOT_COMPLETED: readonly string[] = ['not_planned', 'duplicate'];
  * culprit of a red batch, and its change reverted from the landing branch, is failed (issue #1175): its merge shipped
  * nothing that stays, whatever its issue says, until a new job takes the item over.
  */
-export function stateOf(i: Pick<WorkItem, 'eventState' | 'pullRequestState' | 'issueState' | 'issueReason' | 'landing'>): WorkItemState {
+export function stateOf(i: Pick<WorkItem, 'eventState' | 'pullRequest' | 'pullRequestState' | 'issueState' | 'issueReason' | 'landing'>): WorkItemState {
   if (isActive(i.eventState)) return i.eventState;
-  if (isLandingUndone(i.landing)) return 'failed';
+  if (isLandingUndone(landingOf(i))) return 'failed';
   if (i.eventState === 'done') return i.eventState;
   if (i.pullRequestState === 'merged' && i.eventState !== 'partly_done') return 'done';
   if (i.issueState?.toLowerCase() === 'closed') return NOT_COMPLETED.includes((i.issueReason ?? '').toLowerCase()) ? 'dropped' : 'done';
@@ -282,7 +282,11 @@ export function applyLandingEvent(item: WorkItem, event: Pick<DomainEvent, 'type
   return settled(item, base, event.at);
 }
 
-/** The item after a read of GitHub; undefined: it says nothing new. A read of the issue older than the item's newest event is old news. */
+/**
+ * The item after a read of GitHub; undefined: it says nothing new. A read of the issue older than the item's newest event is
+ * old news. A reopen after a close (issue #1232) ends its landing stage: the merge it waited on is history, and the reopen is
+ * a person's, so the hopper does not take the item for one its batch promoted and close its issue again.
+ */
 export function applyRead(item: WorkItem, read: LedgerRead): WorkItem | undefined {
   const { state: _s, stateSince: _ss, version: _v, ...base } = item;
   if (read.kind === 'pull_request') {
@@ -296,6 +300,7 @@ export function applyRead(item: WorkItem, read: LedgerRead): WorkItem | undefine
   const next: Base = { ...base, issueState };
   if (issueReason) next.issueReason = issueReason;
   else delete next.issueReason;
+  if (item.issueState === 'closed' && issueState === 'open') delete next.landing;
   return settled(item, next, read.at);
 }
 

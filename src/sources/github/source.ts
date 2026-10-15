@@ -42,7 +42,7 @@ import { createWriteBehind } from './write-behind.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { awaitingBatch, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
+import { awaitingBatch, closePromoted, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -293,8 +293,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       });
       // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
       // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list. A merge
-      // on the landing branch waits on its batch run (issue #1175): done, and no reopened card.
-      let next = awaitingBatch(found.outcomes, intake);
+      // on the landing branch waits on its batch run (issue #1175): done, and no reopened card. One its batch run promoted
+      // with its issue still open (issue #1232): the issue is closed, once, and no reopened card.
+      let next = await closePromoted(api, found.seen, awaitingBatch(found.outcomes, intake), intake);
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
       if (listed.listed) await outside.read(repos, assignee); await tagged.read(repos, assignee, d?.due !== true);

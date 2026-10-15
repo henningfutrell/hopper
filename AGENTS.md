@@ -136,7 +136,7 @@ while the drift lasts, never filing a second. With **landing batches** on for a 
 "Landing batches"), a red batch's **culprit** — the first change a bisect within the batch finds failing — is reverted from the
 landing branch through GitHub's own revert of its pull request, which the hopper merges, and one **fix issue** is filed through
 the user's own connection — the hopper label, assigned to their connected account, so Intake takes it —, its text fixed but for
-the failing checks' output, masked; a `landing_batch.fix_filed` event keeps it from being filed twice. A batch run with merge
+the failing checks' output, masked; a `landing_batch.fix_filed` event keeps it from being filed twice. When a batch run promoted a job's pull request that did the whole item and its issue is still open — the batch run's text did not close it — the hopper closes that issue as completed, once, with no comment, and records the close (issue #1232, `docs/design.md` "A promoted item is done"). A batch run with merge
 conflicts with the tested branch gets a **back-merge** (issue #1073 part 4): the tested branch merged into a branch at the
 landing tip by GitHub's own merge, and a pull request of it into the landing branch, its text fixed, which the hopper merges;
 a conflict GitHub cannot merge files one issue the same way as a fix issue, its text fixed, and no second while it stands

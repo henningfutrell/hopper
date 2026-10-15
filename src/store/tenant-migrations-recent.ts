@@ -48,4 +48,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 59: The work-item ledger, rebuilt (issue #1175): a culprit of a red batch, and its revert, is failed, not done. Rows
   // only: the build before reads them as they are, and keeps each in the state it is in.
   (db) => { rebuildWorkItems(db); },
+  // 60: The work-item ledger, rebuilt (issue #1232): each landing stage names its pull request, so an earlier part's
+  // `promoted` no longer stands for the item's next merge. Rows only, a new field in each landing: the build before ignores it.
+  (db) => { rebuildWorkItems(db); },
 ];

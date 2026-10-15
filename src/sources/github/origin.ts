@@ -7,7 +7,8 @@
 // An open issue with `hopper:done` whose job here ended was reopened (issue #1126): it is a request card again, the
 // reopened card (`reopenedRequest`), whatever its origin, so a person decides whether the item runs again — unless its pull
 // request merged into the landing branch and waits on its batch run (issue #1175, `awaitingBatch`): its issue closes when
-// the batch reaches the tested branch, so it is not offered again.
+// the batch reaches the tested branch, so it is not offered again — or its batch run promoted it and the issue is still
+// open (issue #1232, `closePromoted`): the hopper closes the issue, once, so it is done and not offered again.
 import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type ItemHistory, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
@@ -25,6 +26,10 @@ export const REOPENED_REASON = 'reopened after its job was done: approve it to r
 export const REOPENED_WHY = 'reopened after its job was done';
 /** A done item whose merge waits on its batch run (issue #1175). */
 export const AWAITS_BATCH = 'done: merged into the landing branch; its batch run closes the issue';
+/** A done item its batch run promoted, whose open issue the hopper closed (issue #1232). */
+export const PROMOTED_CLOSED = 'done: promoted to the tested branch with its batch; the issue is closed';
+/** The same, when its close failed: asked again at the next sync. */
+export const PROMOTED_OPEN = 'done: promoted to the tested branch with its batch; closing the issue failed, asked again at the next sync';
 /** A request card a person declined (issue #1035). */
 export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
 
@@ -112,6 +117,31 @@ export function awaitingBatch(outcomes: readonly IntakeOutcome[], intake: Pick<I
   const waits = intake?.awaitsBatch;
   if (!waits) return [...outcomes];
   return outcomes.map((x) => (x.reason === DONE_OPEN && waits(x.key) ? { ...x, reason: AWAITS_BATCH, group: 'pr-waiting' } : x));
+}
+
+/**
+ * The outcomes with each `done, but the issue is still open` whose pull request its batch run promoted (issue #1232) closed:
+ * the hopper closes the issue as completed, as the batch run's text would have, and records the close
+ * (`work_item.issue_closed`, `via: landing`), so the ledger holds it closed and a later reopen is a person's. No comment.
+ * A close that fails is asked again at the next sync, and said, with no reopened card.
+ */
+export async function closePromoted(api: Pick<GitHubApi, 'closeAsCompleted'>, seen: readonly GitHubIssue[], outcomes: readonly IntakeOutcome[],
+  intake: Pick<IntakeContext, 'promotedOpen' | 'record'> | undefined): Promise<IntakeOutcome[]> {
+  const promoted = intake?.promotedOpen;
+  if (!intake || !promoted) return [...outcomes];
+  const out: IntakeOutcome[] = [];
+  for (const x of outcomes) {
+    const issue = x.reason === DONE_OPEN && promoted(x.key) ? seen.find((i) => i.url === x.key) : undefined;
+    if (!issue) { out.push(x); continue; }
+    try {
+      await api.closeAsCompleted(issue.repo, issue.number);
+      intake.record('work_item.issue_closed', { key: x.key, reason: 'completed', via: 'landing' });
+      out.push({ ...x, reason: PROMOTED_CLOSED, group: 'other' });
+    } catch (err) {
+      out.push({ ...x, reason: `${PROMOTED_OPEN}: ${(err as Error).message}`, group: 'other' });
+    }
+  }
+  return out;
 }
 
 /**
