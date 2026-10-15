@@ -42,7 +42,7 @@ async function boot(dbPath: string, github: GitHubApi, repos = [REPO]): Promise<
   return a;
 }
 
-type Detail = { intake?: { key: string; action?: string; writeBehind?: { state: string } }[]; outbox?: { pending: number; failed: number } };
+type Detail = { intake?: { key: string; action?: string; writeBehind?: { state: string } }[]; writeBehindPending?: number; writeBehindErrors?: Record<string, string> };
 const detail = async (app: TestApp): Promise<Detail> =>
   (await app.api<{ sources: { name: string; detail?: Detail }[] }>('GET', '/api/sources')).body.sources.find((s) => s.name === 'github')?.detail ?? {};
 
@@ -58,14 +58,14 @@ describe('the GitHub outbox (issue #1238)', () => {
     const token = await first.login();
     expect(await first.ui('/ui/api/sources/github/intake', { kind: 'assign', keys: [issue.url] }, { token })).toEqual({ status: 200, body: { done: [issue.url], failed: {} } });
     await waitFor(() => held.sent.includes('addAssignees'), { what: 'the assignment sent' });
-    expect((await detail(first)).outbox).toEqual({ pending: 1, failed: 0 });
+    expect(await detail(first)).toMatchObject({ writeBehindPending: 1 });
     await first.stop();
     apps.splice(0);
     expect(gh.issue(REPO, issue.number).assignees).toEqual([]);
 
     const second = await boot(db.dbPath, gh);
     await waitFor(() => gh.issue(REPO, issue.number).assignees.includes('owner'), { what: 'the assignment after the restart' });
-    await waitFor(async () => (await detail(second)).outbox?.pending === 0, { what: 'no row left' });
+    await waitFor(async () => (await detail(second)).writeBehindPending === undefined, { what: 'no row left' });
     expect(second.user().store.events.recent(10, ['source.issues_assigned']).map((e) => e.data.keys)).toEqual([[issue.url]]);
   });
 
@@ -87,7 +87,8 @@ describe('the GitHub outbox (issue #1238)', () => {
     await waitFor(() => held.sent.length > 0, { what: 'a write sent' });
     await app.sync();
     const d = await detail(app);
-    expect(d.outbox).toMatchObject({ pending: 3, failed: 0 });
+    expect(d).toMatchObject({ writeBehindPending: 3 });
+    expect(d.writeBehindErrors).toBeUndefined();
     expect(d.intake?.filter((x) => x.writeBehind?.state === 'running').map((x) => x.key).sort()).toEqual([assign.url, claimed.url, backburner.url].sort());
   });
 

@@ -52,6 +52,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       lastRead: (issue) => store.issueGraph.lastRead(issue),
     },
     githubListings: store.githubListings,
+    githubOutbox: store.githubOutbox,
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),
   };
 }

@@ -1,4 +1,4 @@
-// The GitHub outbox's rows (issue #1238, tenant migration 61): kept in the user's store, so a restart keeps what was not
+// The GitHub outbox's rows (issue #1238, tenant migration 62): kept in the user's store, so a restart keeps what was not
 // sent; a row a stopped process left `sending` goes back to `pending`; a row goes with the transaction it was added in.
 import { describe, expect, it } from 'vitest';
 import type { OutboxInput } from '../../src/domain/github-outbox.ts';

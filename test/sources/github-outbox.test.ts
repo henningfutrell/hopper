@@ -60,7 +60,7 @@ describe('an intake action answers before its GitHub write (issues #1194, #1238)
     expect(item(url(1))).toMatchObject({ action: 'assign', writeBehind: { act: 'assign', state: 'running' } });
     // A second click before the next discover: done, and no second row.
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
-    expect(source.describe().outbox).toEqual({ pending: 1, failed: 0 });
+    expect(source.describe()).toMatchObject({ writeBehindPending: 1 });
     const flushed = source.flushOutbox!();
     await Promise.resolve();
     // A discover while the write is under way does not wait for it.
@@ -73,7 +73,8 @@ describe('an intake action answers before its GitHub write (issues #1194, #1238)
     expect(events).toEqual([{ type: 'source.issues_assigned', data: { source: 'github', keys: [url(1)], assignee: 'owner' } }]);
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
     expect(item(url(1))?.writeBehind).toBeUndefined();
-    expect(source.describe().outbox).toMatchObject({ pending: 0, failed: 0, lastFlushAt: expect.any(String) });
+    expect(source.describe().writeBehindPending).toBeUndefined();
+    expect(source.describe().lastWriteBehindAt).toEqual(expect.any(String));
     // Its write is timed for `afterAnswer` (part 8).
     expect(source.afterAnswerTimings?.()).toMatchObject([{ act: 'assign', count: 1 }]);
   });
@@ -94,18 +95,19 @@ describe('an intake action answers before its GitHub write (issues #1194, #1238)
     expect((await source.discover()).map((i) => i.number)).toEqual([1, 2]);
   });
 
-  it('a write GitHub refuses for good is shown on the item and in the detail, offered again, and goes through when sent again', async () => {
+  it('a write GitHub refused for now shows running with its next attempt and why, and goes through when sent again', async () => {
     const { gh, gated, source, item } = setup();
     gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
     await source.discover();
-    gh.failNext('addAssignees', new GitHubApiError('GitHub is down', true, 422));
+    gh.failNext('addAssignees', new GitHubApiError('GitHub is down', false, 502));
     gated.open();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     expect(await source.flushOutbox!()).toEqual({ due: 1, wrote: [] });
     await source.discover();
     // A transient refusal waits its backoff, and is tried again by itself meanwhile.
-    expect(item(url(1))).toMatchObject({ action: 'assign', writeBehind: { act: 'assign', state: 'failed', error: 'GitHub is down', retrying: true } });
-    expect(source.describe().writeBehindErrors).toEqual({ [url(1)]: 'assign: GitHub is down' });
+    expect(item(url(1))).toMatchObject({ action: 'assign', writeBehind: { act: 'assign', state: 'running', attempt: 2, error: 'GitHub is down' } });
+    expect(source.describe()).toMatchObject({ writeBehindPending: 1 });
+    expect(source.describe().writeBehindErrors).toBeUndefined();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     expect(await source.flushOutbox!()).toEqual({ due: 1, wrote: [REPO] });
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
@@ -122,7 +124,10 @@ describe('an intake action answers before its GitHub write (issues #1194, #1238)
     await source.intakeAction?.({ kind: 'assign', keys: [url(1)] });
     await source.flushOutbox!();
     expect(item(url(1))?.writeBehind).toEqual({ act: 'assign', state: 'failed', error: 'not allowed' });
-    expect(source.describe().outbox).toEqual({ pending: 0, failed: 1, lastFlushAt: expect.any(String) });
+    expect(source.describe().writeBehindErrors).toEqual({ [url(1)]: 'assign: not allowed' });
+    expect(source.describe().writeBehindPending).toBeUndefined();
+    // A row failed for good is timed too (part 8).
+    expect(source.afterAnswerTimings?.()).toMatchObject([{ act: 'assign', count: 1 }]);
   });
 });
 

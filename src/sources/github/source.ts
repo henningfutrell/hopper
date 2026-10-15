@@ -39,7 +39,7 @@ import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, u
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts';
-import { createWriteBehind } from './write-behind.ts';
+import { createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
@@ -95,8 +95,8 @@ export interface GitHubSourceOptions {
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
   issueGraph?: IssueGraphRecorder;
-  /** The listing cache (issue #985): the user's store. Absent: kept in memory. */
-  listings?: GitHubListingRepository;
+  /** The listing cache (issue #985) and the GitHub outbox (issue #1238): the user's store. Absent: kept in memory. */
+  listings?: GitHubListingRepository; outbox?: import('../../domain/github-outbox.ts').GitHubOutboxRepository;
   /** The intake sync interval, in ms, read at each discover (issue #985). Default: DEFAULT_RATE_LIMITER's. */
   listingEveryMs?: () => number;
 }
@@ -244,15 +244,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake.record('source.intake_migrated', { source: o.name, changes });
   };
 
-  const writeBehind = createWriteBehind({ now: () => o.clock.now() });
-  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, writeBehind });
+  // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
+  const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox });
 
   return {
     name: o.name,
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outcomes.map(writeBehind.on), afterAnswerTimings: writeBehind.timings,
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), writeBehind }, a),
+    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: () => outbox.flush(outboxSend(api, approvals.readComments)),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -263,16 +264,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...outside.detail(), ...tagged.detail(), ...census.detail(writeBehind.of),
+        ...outside.detail(), ...tagged.detail(), ...census.detail(outbox.of),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
-        ...writeBehind.detail(),
+        ...outbox.detail(),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
     discover: (d) => reads.cached(async () => {
-      const round = await writeBehind.begin();
+      const round = outbox.begin();
       const bot = await botLogin();
       const assignee = o.assignee();
       const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
@@ -300,9 +301,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
       if (listed.listed) await outside.read(repos, assignee); await tagged.read(repos, assignee, d?.due !== true);
-      // A listing has no body: each issue taken is read, from GitHub only when its listing changed since.
+      // A listing has no body: each issue taken is read, from GitHub only when its listing changed since. One whose outbox
+      // rows are not sent yet waits for them (issue #1238): Approve's comments, `hopper:done` gone, the claim released.
       const taken: GitHubIssue[] = [];
-      for (const i of found.issues) { const issue = await api.getIssue(i.repo, i.number); if (issue.state === 'open') taken.push(issue); }
+      for (const i of found.issues) { if (outbox.held(i.url)) continue; const issue = await api.getIssue(i.repo, i.number); if (issue.state === 'open') taken.push(issue); }
       const projects = await readProjects(api, config, taken);
       projectErrors = projects.errors;
       const urls = taken.map((i) => i.url);
@@ -326,7 +328,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
       outcomes = next;
-      writeBehind.listed(round);
+      outbox.listed(round);
       listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();
       return items;

@@ -14,6 +14,7 @@ import type { Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, Opti
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
+import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 
 export type {
@@ -181,6 +182,8 @@ export interface JobSourceContext {
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
   /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */
   githubListings?: GitHubListingRepository;
+  /** The user's GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent. Absent: a source keeps it in memory. */
+  githubOutbox?: GitHubOutboxRepository;
   /** The user's mirrors of the job repositories (issue #858): whether a pull request has conflicts, as git says. Absent: none. */
   gitMirrors?: GitMirrors;
 }

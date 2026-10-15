@@ -550,8 +550,13 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, H
    * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
    */
   intake?(): IntakeOutcome[];
-  /** The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError. */
-  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>;
+  /**
+   * The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError.
+   * Its GitHub writes are outbox rows (issue #1238): `flushOutbox` sends the rows due, one batch, coalesced, and answers how
+   * many were due and the repositories it wrote to, so the sync loop lists them again. It never throws: a failed row waits
+   * its backoff, or is failed.
+   */
+  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>; flushOutbox?(): Promise<{ due: number; wrote: string[] }>;
 }
 
 /**

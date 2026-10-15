@@ -40,8 +40,8 @@ export interface IntakeOutcome {
 }
 
 /**
- * An intake action's write-behind: its GitHub work after the answer (issue #1194): running, or failed with why. Absent once it
- * went through. Running a second or third time (part 8): `attempt`, and `error`, why GitHub refused the try before.
+ * An intake action's write-behind: its rows in the GitHub outbox (issues #1194, #1238): running, or failed with why. Absent
+ * once it went through. While the outbox tries it again by itself (part 8): `attempt`, and `error`, why GitHub refused the try before.
  */
 export type IntakeWriteBehind =
   | { act: IntakeActionKind; state: 'running'; attempt?: number; error?: string }
