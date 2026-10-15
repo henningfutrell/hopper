@@ -8,8 +8,8 @@
 //   Scenario: a pod with a Docker socket, a Podman image or a socket variable fails the check, and names the pod
 //   Scenario: a hopper that is not healthy fails the check
 //   Scenario: an upgrade with the same values that runs the OpenFGA migration again fails the check (issue #1282)
-//   Scenario: then the machines come up as pods (sandbox boxes, a lane pod), the hopper stays healthy, and still no pod
-//             has a container runtime socket
+//   Scenario: then the machines come up as pods (sandbox boxes, a lane pod), on a fresh install given a master key, the
+//             hopper stays healthy, and still no pod has a container runtime socket
 //   Scenario: a lane pod that does not come up fails the check
 //   Scenario: with --keep the cluster stays
 //   Scenario: a pull request that changes the chart runs the check, with no secret
@@ -108,11 +108,20 @@ describe('scripts/kind-check.ts', () => {
       return i;
     };
     const migration = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 10m`);
-    const sandbox = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 10m --set sandbox.enabled=true`);
+    // A new pod would not start on the first install's database: its master key was made at the first start, and shown
+    // only in the UI (issue #1296). So the machines come up on a fresh install, given a master key as a person keeps it.
+    const removed = at('kubectl --context kind-hopper-check delete namespace hopper --wait=true --timeout=5m');
+    const namespace = at('kubectl --context kind-hopper-check create namespace hopper');
+    const key = r.calls.findIndex((c) => /^kubectl --context kind-hopper-check --namespace hopper create secret generic hopper-master-key --from-literal=master-key=[0-9a-f]{64}$/.test(c));
+    expect(key, r.calls.join('\n')).toBeGreaterThan(-1);
+    const sandbox = at(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --wait --wait-for-jobs --timeout 15m --set image.tag=dev --set sandbox.enabled=true`);
     // No --wait: a lane pod is ready only once a person signed in, and its spec is what the check reads.
     const lanes = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --set lanes.replicas=1`);
     const created = at('kubectl --context kind-hopper-check --namespace hopper wait --for=create pod/hopper-lanes-0 --timeout=180s');
-    expect(migration).toBeLessThan(sandbox);
+    expect(migration).toBeLessThan(removed);
+    expect(removed).toBeLessThan(namespace);
+    expect(namespace).toBeLessThan(key);
+    expect(key).toBeLessThan(sandbox);
     expect(sandbox).toBeLessThan(lanes);
     expect(lanes).toBeLessThan(created);
     expect(r.calls.filter((c) => c.includes(' exec deploy/hopper '))).toHaveLength(2);
