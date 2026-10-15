@@ -1,7 +1,7 @@
 // Issue #1245: a job's own wait always names what it waits on, typed — a pull request, a job, an item, a person's
 // question, an approval, a grant, its own command, or an outside event. A job never enters `waiting_on` without it. Pure.
 import { describe, expect, it } from 'vitest';
-import { mergedWaiter, waitEntryProblem, waitOnLabel, waitOnOf, type WaitOn } from '../../src/domain/wait-on.ts';
+import { settledBy, waitEntryProblem, waitOnLabel, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 const since = '2026-10-15T00:00:00.000Z';
@@ -69,6 +69,66 @@ describe('the jobs a merged pull request wakes (issue #1245)', () => {
       waiting('e', { kind: 'pull_request', repo: 'o/r', number: 12, about: 'merge' }, 'x/y'),
       waiting('f', { kind: 'outside', what: 'PR 12' }),
     ];
-    expect(jobs.filter((j) => mergedWaiter(j, 'https://github.com/o/r/pull/12')).map((j) => j.id)).toEqual(['a', 'b', 'e']);
+    const merged = settledBy({ type: 'job.pull_request_merged', data: { pullRequest: 'https://github.com/o/r/pull/12', part: false } })!;
+    expect(merged.note).toBe('https://github.com/o/r/pull/12 was merged');
+    expect(jobs.filter((j) => waitsFor(j, merged)).map((j) => j.id)).toEqual(['a', 'b', 'e']);
+  });
+});
+
+describe('the jobs each dependency\'s event wakes (issue #1245, part 2)', () => {
+  const waiting = (id: string, on: WaitOn, repo = 'o/r'): Job =>
+    ({ id, status: 'waiting_on', wait: { for: 'x', since, on }, source: { repo } }) as unknown as Job;
+  const jobs = [
+    waiting('on-job', { kind: 'job', jobId: 'j1' }),
+    waiting('on-other-job', { kind: 'job', jobId: 'j2' }),
+    waiting('on-item', { kind: 'item', number: 9 }),
+    waiting('on-item-elsewhere', { kind: 'item', repo: 'x/y', number: 9 }),
+    waiting('on-question', { kind: 'question', questionId: 'q1' }),
+    waiting('on-grant', { kind: 'grant' }),
+    waiting('on-sandbox', { kind: 'approval', of: 'sandbox' }),
+    waiting('on-template', { kind: 'approval', of: 'template' }),
+    waiting('outside', { kind: 'outside', what: 'job j1' }),
+    { ...waiting('ran-again', { kind: 'job', jobId: 'j1' }), status: 'queued' } as Job,
+  ];
+  const woken = (e: Parameters<typeof settledBy>[0]) => {
+    const s = settledBy(e);
+    return s ? { note: s.note, jobs: jobs.filter((j) => waitsFor(j, s)).map((j) => j.id) } : undefined;
+  };
+
+  it('a job ending wakes the jobs waiting on it', () => {
+    expect(woken({ type: 'job.finished', jobId: 'j1', data: { result: {} } })).toEqual({ note: 'job j1 finished', jobs: ['on-job'] });
+    expect(woken({ type: 'job.failed', jobId: 'j1', data: { error: 'boom' } })).toEqual({ note: 'job j1 failed', jobs: ['on-job'] });
+    expect(woken({ type: 'job.cancelled', jobId: 'j2', data: { reason: 'r' } })).toEqual({ note: 'job j2 was cancelled', jobs: ['on-other-job'] });
+  });
+
+  it('an item\'s issue closing wakes the jobs waiting on that item, in its repository', () => {
+    expect(woken({ type: 'work_item.issue_closed', data: { key: 'https://github.com/o/r/issues/9', via: 'delivery' } }))
+      .toEqual({ note: 'https://github.com/o/r/issues/9 was closed', jobs: ['on-item'] });
+    expect(woken({ type: 'work_item.issue_closed', data: { key: 'https://github.com/x/y/issues/9', via: 'delivery' } })!.jobs).toEqual(['on-item-elsewhere']);
+  });
+
+  it('a question answered, closed, dismissed or expired wakes the jobs waiting on it', () => {
+    expect(woken({ type: 'question.answered', data: { questionId: 'q1', by: 'human', answer: 'yes' } })).toEqual({ note: 'question q1 was answered', jobs: ['on-question'] });
+    for (const type of ['question.closed', 'question.dismissed', 'question.expired'] as const) {
+      expect(woken({ type, data: { questionId: 'q1' } })!.jobs).toEqual(['on-question']);
+    }
+    expect(woken({ type: 'question.answered', data: { questionId: 'q2' } })!.jobs).toEqual([]);
+  });
+
+  it('a grant given or denied wakes only the job it is for, when it waits on a grant', () => {
+    expect(woken({ type: 'vault.granted', jobId: 'on-grant', data: { job: 'on-grant', key: 'k', by: 'p' } })).toEqual({ note: 'a vault grant was given', jobs: ['on-grant'] });
+    expect(woken({ type: 'vault.grant_denied', jobId: 'on-grant', data: { job: 'on-grant', key: 'k', by: 'p' } })).toEqual({ note: 'a vault grant was denied', jobs: ['on-grant'] });
+    expect(woken({ type: 'vault.granted', jobId: 'on-job', data: { job: 'on-job', key: 'k', by: 'p' } })!.jobs).toEqual([]);
+  });
+
+  it('a sandbox request approved or declined wakes its job; a template approval wakes the jobs waiting on one', () => {
+    expect(woken({ type: 'vault.sandbox_approved', jobId: 'on-sandbox', data: { request: 'r', template: 't', by: 'p' } })).toEqual({ note: 'the sandbox request for t was approved', jobs: ['on-sandbox'] });
+    expect(woken({ type: 'vault.sandbox_declined', jobId: 'on-sandbox', data: { request: 'r', template: 't', reason: 'no', by: 'p' } })!.jobs).toEqual(['on-sandbox']);
+    expect(woken({ type: 'vault.approved', data: { template: 't', image: 'i', secrets: [], by: 'p' } })).toEqual({ note: 'template t was approved', jobs: ['on-template'] });
+  });
+
+  it('other events wake nothing', () => {
+    expect(settledBy({ type: 'job.queued', jobId: 'j1', data: {} })).toBeUndefined();
+    expect(settledBy({ type: 'job.finished', data: {} })).toBeUndefined();
   });
 });

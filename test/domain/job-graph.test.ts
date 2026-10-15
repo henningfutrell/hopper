@@ -249,6 +249,19 @@ describe('the job graph in plain words (issue #935)', () => {
     expect(node(g, jobNodeId('out'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on the outside world' });
   });
 
+  it('a job on its own wait carries what it waits on, and says it (issue #1245)', () => {
+    const since = '2026-10-02T01:00:00.000Z';
+    const g = jobGraph({
+      jobs: [
+        job('pr', 'waiting_on', { wait: { for: 'the base change', since, on: { kind: 'pull_request', number: 12, about: 'merge' } } }, 1),
+        job('legacy', 'waiting_on', { wait: { for: 'something', since } }, 2),
+      ],
+    });
+    expect(node(g, jobNodeId('pr'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on PR #12 to merge', stageSince: since, waitOn: { kind: 'pull_request', number: 12, about: 'merge' } });
+    expect(node(g, jobNodeId('legacy'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on nothing recorded' });
+    expect(node(g, jobNodeId('legacy')).waitOn).toBeUndefined();
+  });
+
   it('sums up each tree in one line: pieces shipped, being redone, waiting on you', () => {
     const g = jobGraph({
       jobs: [
