@@ -55,10 +55,12 @@ spec:
         {{- include "hopper.labels" $sel | nindent 8 }}
     spec:
       {{- if $account }}
-      # Its AWS role (IRSA or EKS Pod Identity), for AWS KMS: the webhook mounts its own token.
+      # Its AWS role (IRSA or EKS Pod Identity), for AWS KMS: the webhook mounts its own token. With sandbox.enabled, the
+      # account the sandbox Role is bound to.
       serviceAccountName: {{ $account }}
       {{- end }}
-      automountServiceAccountToken: false
+      # With sandbox.enabled, the Kubernetes API client reads the token: the hopper starts its sandbox boxes with it.
+      automountServiceAccountToken: {{ .Values.sandbox.enabled }}
       # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
       enableServiceLinks: false
       # The image's node user.
@@ -131,6 +133,13 @@ spec:
               value: {{ printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $name $name $ns $name $ns $name $ns .Values.clusterDomain | quote }}
             - name: HOPPER_LAN_PEERS
               value: {{ .Values.lanPeers | quote }}
+            {{- if .Values.sandbox.enabled }}
+            # Sandbox boxes as pods in this namespace (issue #1286). A box's egress policy lets it reach this pod alone.
+            - name: HOPPER_SANDBOX_RUNTIME
+              value: kubernetes
+            - name: HOPPER_KUBERNETES_HOPPER_LABELS
+              value: {{ include "hopper.selector" $sel | replace ": " "=" | splitList "\n" | join "," | quote }}
+            {{- end }}
             {{- if .Values.ingress.enabled }}
             - name: HOPPER_PUBLIC_URL
               value: {{ .Values.ingress.publicUrl | default (printf "https://%s" (required "ingress.host: the host name the Ingress publishes the hopper on" .Values.ingress.host)) | quote }}
