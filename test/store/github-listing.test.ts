@@ -1,6 +1,6 @@
 // The listing cache (issue #985, tenant migration 52): each repository's latest listing, with when it was read. A new
 // listing replaces the one before, so an item gone from it (closed, unlabelled) is gone from the cache. A listing keeps
-// where its next change read starts (issue #1276, tenant migration 61).
+// where its next change read starts (issue #1276, tenant migration 63).
 import { describe, expect, it } from 'vitest';
 import type { ListedItem } from '../../src/domain/github-listing.ts';
 import { useTempStore } from './helpers.ts';

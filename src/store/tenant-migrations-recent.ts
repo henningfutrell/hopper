@@ -59,4 +59,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 62: The GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent. A table only: the build
   // before runs on it, and sends what it left there no more — its rows wait for the next start of this build.
   GITHUB_OUTBOX_TABLE,
+  // 63: Where each listing's next change read starts (issue #1276), apart from its rows. A nullable column only: the build
+  // before runs on it, and names its columns when it inserts.
+  'ALTER TABLE github_listings ADD COLUMN since TEXT',
 ];
