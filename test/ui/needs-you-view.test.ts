@@ -65,6 +65,8 @@ function fakeDaemon() {
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/questions': { questions: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
+    // Issue #1128: a machine whose tool is signed in as nobody waits on a sign-in.
+    '/api/tool-accounts': { accounts: [{ service: 'claude', detail: {}, login: 'signed-out', spend: [], machines: [{ machineId: 'm3', label: 'Server', source: 'claude-server', login: 'signed-out', signIn: true }] }] },
     '/api/connected-accounts': { accounts: [{
       provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
       installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'] }],
@@ -143,7 +145,7 @@ describe('the nav: Dashboard, then Needs you, Intake and Access requests top-lev
     expect(navLink('#dashboard')!.textContent).toBe('Dashboard');
     expect(navLink('#needs-you')!.textContent).toContain('Needs you');
     expect(badge('#intake')).toBe('1');
-    await vi.waitFor(() => expect(badge('#needs-you')).toBe('6'));
+    await vi.waitFor(() => expect(badge('#needs-you')).toBe('7'));
     expect(navLink('#not-taken')).toBeNull();
   });
 
@@ -200,6 +202,10 @@ describe('Needs you lists every kind with its count and links to its home (issue
     expect(row('pull-requests')!.querySelector('a')!.getAttribute('href')).toBe('#pull-requests');
     // Issue #927: why the hopper gave up shows under its row, not only on the card.
     expect(row('pull-requests')!.querySelector('[data-needs-you-detail]')!.textContent).toBe('octo-user/hopper#8: checks still fail after 3 fixes: a person must look at them');
+    // Issue #1128: a signed-out tool shows as soon as its source reads it, and links to Accounts, where a person signs it in.
+    await vi.waitFor(() => expect(row('accounts')?.querySelector('[data-needs-you-count]')?.textContent).toBe('1'));
+    expect(row('accounts')!.querySelector('a')!.getAttribute('href')).toBe('#accounts');
+    expect(row('accounts')!.querySelector('[data-needs-you-detail]')!.textContent).toBe('Claude on Server: signed in as nobody — sign it in from Accounts');
   });
 });
 
