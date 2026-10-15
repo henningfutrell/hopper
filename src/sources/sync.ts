@@ -325,10 +325,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
    * for while one waits to start joins it (issue #1019): it starts after the ask, so it sees what the ask did, and ten
    * approvals in a row wait for one sync behind the running one, not for ten in a row.
    */
-  function runSync(slot: Slot, asked = false): Promise<void> {
+  function runSync(slot: Slot, asked = false, askedAt?: number): Promise<void> {
     clearTimeout(slot.timer);
-    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now.
-    const asks = syncAsks();
+    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now, or from when the act asked its outbox to send (issue #1238).
+    const asks = syncAsks(askedAt);
     const joining = joined(slot, asked, asks);
     if (joining) return joining;
     const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve(), asks };
@@ -340,7 +340,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
-  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot) => { void runSync(slot); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }),
+  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }),
     refresh: (slot) => { slot.status.detail = detailOf(slot, slot.removed ? REMOVED : slot.source.paused?.(), jobsOf(slot).filter((j) => flagsOf(j).permanentErrors?.length).length); emit(slot); } });
 
   /** A status with each taken item's job as it is now (issue #798). */

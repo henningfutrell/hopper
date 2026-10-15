@@ -11621,6 +11621,8 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   is due (`repoChanged`) and the source syncs — a timed sync, which lists only what is due; an action with no row (Decline,
   an Approve that reads no comments) gets the same sync after the batch window. Take into Intake sent drops its pull
   request's offer at once (`takenIntoIntake`), until the next census reads it.
+  The sync after an action is timed `sync:<act>` ("After-answer timing") from the action on, so its wait counts the batch
+  window and the send.
 - **What the UI reads.** The source's status is read again after an action and after a batch that had rows due, and sent on
   the stream, so the item's marker follows the rows. The detail keeps part 8's names, so Sources' line on the source's card
   reads the outbox: `writeBehindPending` (rows not sent, not failed), `lastWriteBehindAt` (when the last row went through),

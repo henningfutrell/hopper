@@ -16,8 +16,8 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export interface OutboxFlushContext {
   slots(): Iterable<Slot>;
   running(): boolean;
-  /** A timed sync of the source. */
-  sync(slot: Slot): void;
+  /** A timed sync of the source; `at`: when the act that asked for it asked (`performance.now()`), so its wait counts from then. */
+  sync(slot: Slot, at?: number): void;
   /** The source's status read again and sent on the stream: its items' outbox markers as they are now. */
   refresh(slot: Slot): void;
   batchMs?: number;
@@ -26,13 +26,13 @@ export interface OutboxFlushContext {
 export function outboxFlushes(c: OutboxFlushContext) {
   let every: NodeJS.Timeout | undefined;
 
-  function flush(slot: Slot, sync: boolean): void {
+  function flush(slot: Slot, sync: boolean, at?: number): void {
     if (!slot.source.flushOutbox || slot.removed) return;
     void slot.source.flushOutbox().then(({ due, wrote }) => {
       if (!c.running() || slot.removed) return;
       if (due > 0) c.refresh(slot);
       for (const repo of wrote) slot.source.repoChanged?.(repo);
-      if (sync || wrote.length > 0) c.sync(slot);
+      if (sync || wrote.length > 0) c.sync(slot, at);
     }, (e: unknown) => console.warn(`hopper: the GitHub outbox of ${slot.source.name} could not send: ${message(e)}`));
   }
 
@@ -42,7 +42,8 @@ export function outboxFlushes(c: OutboxFlushContext) {
     /** After an intake action: its items show their rows at once, and the outbox sends once the batch window ends. */
     soon(slot: Slot): void {
       c.refresh(slot);
-      slot.outboxSoon ??= setTimeout(() => { delete slot.outboxSoon; if (c.running()) flush(slot, true); }, c.batchMs ?? OUTBOX_BATCH_MS);
+      const at = performance.now();
+      slot.outboxSoon ??= setTimeout(() => { delete slot.outboxSoon; if (c.running()) flush(slot, true, at); }, c.batchMs ?? OUTBOX_BATCH_MS);
     },
     start(): void { every = setInterval(all, OUTBOX_EVERY_MS); all(); },
     stop(): void {
