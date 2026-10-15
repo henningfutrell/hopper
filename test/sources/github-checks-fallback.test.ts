@@ -53,7 +53,7 @@ describe('checks the rollup would not give, read again over REST (issue #1244)',
   it('REST refused too: unknown, saying the connection, the permission it lacks and the fix; the repository is asked once', async () => {
     const a = await app(['checks'], [pull(2, {}), pull(3, {}), pull(4, {})]);
     const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
-    expect(await a.states()).toEqual([2, 3, 4].map(() => expect.objectContaining({ checks: 'unknown', checksWhy: why })));
+    expect(await a.states()).toEqual([2, 3, 4].map(() => expect.objectContaining({ checks: 'unknown', checksWhy: why, checksRefused: true })));
     expect(a.reads('check-runs')).toBe(1);
     expect(await a.api.pullRequest('owner/a', 2)).toMatchObject({ checks: 'unknown', checksWhy: why });
     expect(a.reads('check-runs')).toBe(1);
@@ -65,6 +65,16 @@ describe('checks the rollup would not give, read again over REST (issue #1244)',
   it('both permissions missing: says both', async () => {
     const a = await app(['checks', 'statuses'], [pull(2, {})]);
     expect(await a.states()).toMatchObject([{ checks: 'unknown', checksWhy: expect.stringMatching(/^the GitHub App lacks Checks: read and Commit statuses: read: /) }]);
+  });
+
+  it('a REST read that fails otherwise: unknown with GitHub\'s error, not refused, so no checks read problem', async () => {
+    const gh = createFakeGitHub();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const pr = gh.openPullRequest(REPO, 1, { checks: 'unknown' as ChecksState, headRef: 'issue-1' });
+    const failing = Object.assign(Object.create(gh) as typeof gh, { headChecks: async () => { throw new Error('timeout'); } });
+    const got = await checksFallback(failing, APP_CONNECTION).pullRequest(REPO, Number(pr.url.split('/').pop()));
+    expect(got).toMatchObject({ checks: 'unknown', checksWhy: 'GitHub did not answer the read of its checks: timeout' });
+    expect(got).not.toHaveProperty('checksRefused');
   });
 
   it('checks the rollup gives: no REST read', async () => {
@@ -111,7 +121,8 @@ describe('a follow in yolo mode over the fallback (issue #1244)', () => {
   it('no read works: unknown never merges, and what is seen says why', async () => {
     const f = await followed(undefined);
     expect(f.outcome).toMatchObject({ outcome: 'open', state: { seen: {
-      checks: 'unknown', checksWhy: expect.stringMatching(/^the connected GitHub account lacks Checks: read and Commit statuses: read: .*connect GitHub again$/),
+      checks: 'unknown', checksRefused: true,
+      checksWhy: expect.stringMatching(/^the connected GitHub account lacks Checks: read and Commit statuses: read: .*connect GitHub again$/),
     } } });
     expect(f.merges).toBe(0);
   });
