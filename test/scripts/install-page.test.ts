@@ -156,10 +156,11 @@ describe('the Windows install (WSL)', () => {
 describe('a Windows computer as a machine (issue #704)', () => {
   const machines = page.slice(page.indexOf('id="windows-machine"'));
 
-  it('says native Windows is not supported, and the client runs inside WSL', () => {
+  it('gives the WSL way, and says a client on Windows itself joins too (issue #1348)', () => {
     expect(page).toContain('id="windows-machine"');
-    expect(machines).toContain('not supported natively');
     expect(machines).toContain('inside WSL');
+    expect(machines).toContain('A client on Windows itself');
+    expect(page).not.toContain("Windows isn't supported natively");
   });
 
   it('turns systemd on in WSL, starts podman.socket, and joins the WSL distro with the Add machine line', () => {
