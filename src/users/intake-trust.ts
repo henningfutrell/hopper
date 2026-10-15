@@ -49,6 +49,12 @@ export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | u
         });
       });
     },
+    approvedComments(key, comments) {
+      const s = store.itemSnapshots.get(key);
+      if (!s || s.reason !== 'approved') return;
+      const text = { title: s.title, body: s.body, comments };
+      store.itemSnapshots.put({ ...s, ...text, hash: textHash(text) });
+    },
     declined: (key, hash) => store.events.between(['source.request_declined'], '1970-01-01T00:00:00.000Z').some((e) => e.data.key === key && e.data.hash === hash),
     decline(source, key, request, acting) {
       store.events.append({ type: 'source.request_declined', data: { source, key, hash: request.hash, author: request.author, ...acting } });

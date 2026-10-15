@@ -1,7 +1,7 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createClassifier } from './classifier.ts';
@@ -83,8 +83,13 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly laneTuning: LaneTuningService;
   /** Job checkpoints (issue #921): a pass every minute takes those due; a park takes one. */
   readonly checkpoints: Checkpoints;
-  /** Discard an ended job's kept work (issue #1010): its scratch dir removed on its machine whatever it holds (`Sweep.discard`). */
+  /**
+   * Discard an ended job's kept work (issue #1010): its scratch dir removed on its machine whatever it holds (`Sweep.discard`).
+   * Answers before the removal, which runs after (issue #1194); `discarding` says how it goes.
+   */
   discardWork(jobId: string, by: ActingPerson): Promise<{ jobId: string; paths: string[] }>;
+  /** A discard's removal under way, or why it failed (issue #1194). */
+  discarding(jobId: string): Discarding | undefined;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -148,6 +153,7 @@ export function createEngine(o: EngineOptions): Engine {
     laneTuning,
     checkpoints,
     discardWork: (jobId, by) => sweep.discard(jobId, by),
+    discarding: (jobId) => sweep.discarding(jobId),
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
@@ -215,6 +221,7 @@ export function createEngine(o: EngineOptions): Engine {
       if (checkpointTimer) clearInterval(checkpointTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
+      await sweep.removals();
       // In-flight classifications are not awaited: they write nothing once stopping.
       await serial.idle();
     },

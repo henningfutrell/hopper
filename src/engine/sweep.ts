@@ -24,7 +24,7 @@
 // after a restart, the first pass measures again, and a machine still over is told again.
 // An ended job with a container or a volume labelled with its id still on the machine (issue #1120) is reaped at once,
 // whatever its age: the reap removes them. What any reap removed of them is recorded as job.containers_removed.
-import type { ActingPerson, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
+import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { discardReasonOf, hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
@@ -119,10 +119,16 @@ export interface Sweep {
   run(all?: boolean): Promise<void>;
   /**
    * Discard an ended job's kept work (issue #1010): its scratch dir reaped on its machine whatever it holds, then
-   * `job.work_removed` with `discarded` and who. Throws `not_found`, or `conflict` with why: no work kept, the job not
-   * ended, its machine unknown, offline or out of reach, or the machine kept it all the same (a client older than this).
+   * `job.work_removed` with `discarded` and who. Answers once the checks pass, before the reap (issue #1194): the reap
+   * runs after, as `discarding` says; out of reach, or the machine kept it all the same (a client older than this), it
+   * records `job.work_discard_failed` with why. Throws `not_found`, or `conflict` with why: no work kept, the job not
+   * ended, or its machine unknown or offline. A discard while one is removed answers that one.
    */
   discard(jobId: string, by: ActingPerson): Promise<{ jobId: string; paths: string[] }>;
+  /** A discard's removal under way, or why it failed (issue #1194); undefined: none asked, or it went through. */
+  discarding(jobId: string): Discarding | undefined;
+  /** Ends when every discard's removal under way ended. */
+  removals(): Promise<void>;
   /** The hopper's own disk use on the machine as the sweep last measured it, against the disk budget now (issue #1120); undefined: never measured. */
   disk(machineId: string): HopperDisk | undefined;
 }
@@ -140,6 +146,9 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   const measured = new Map<string, { paths: HopperDiskPath[]; at: string }>();
   const told = new Set<string>();
   let busy = false;
+  /** Each discard's removal under way or failed, by job (issue #1194), and the reaps running. */
+  const discards = new Map<string, Discarding>();
+  const removing = new Set<Promise<void>>();
   const budgetNow = (): DiskBudget | undefined => c.store.settings.getDiskBudget();
 
   /** The machine as the first executor there that reaches it does. */
@@ -255,18 +264,34 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       if (!m.online) throw refuse(jobId, `its machine ${m.id} is offline`);
       const shell = shellOf(m);
       if (!shell) throw refuse(jobId, `no executor reaches its machine ${m.id}`);
-      let said;
-      try {
-        said = await shell.reap(jobId, scratch, false, true);
-      } catch (e) {
-        throw refuse(jobId, (e as Error).message);
-      }
-      recordRemoved(jobId, m, said);
-      if (said.kept.length > 0) throw refuse(jobId, `the machine ${m.id} kept it: update its client, then discard it again`);
-      log(`hopper: job ${jobId}'s kept work was discarded on ${m.id}, its scratch dir removed`);
-      c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [scratch], discarded: true, ...by } });
+      if (discards.get(jobId)?.state === 'removing') return { jobId, paths: [scratch] };
+      // The reap is a round trip to the machine that removes git worktrees: it runs after the answer (issue #1194).
+      discards.set(jobId, { state: 'removing' });
+      const failed = (why: string) => {
+        discards.set(jobId, { state: 'failed', error: why });
+        log(`hopper: job ${jobId}'s kept work was not discarded on ${m.id}: ${why}`);
+        c.store.events.append({ type: 'job.work_discard_failed', jobId, data: { error: why, ...by } });
+      };
+      const removal = (async () => {
+        let said;
+        try {
+          said = await shell.reap(jobId, scratch, false, true);
+        } catch (e) {
+          failed((e as Error).message);
+          return;
+        }
+        recordRemoved(jobId, m, said);
+        if (said.kept.length > 0) { failed(`the machine ${m.id} kept it: update its client, then discard it again`); return; }
+        discards.delete(jobId);
+        log(`hopper: job ${jobId}'s kept work was discarded on ${m.id}, its scratch dir removed`);
+        c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [scratch], discarded: true, ...by } });
+      })().catch((e: unknown) => { log(`hopper: job ${jobId}'s discard on ${m.id} could not be recorded: ${(e as Error).message}`); });
+      removing.add(removal);
+      void removal.finally(() => removing.delete(removal));
       return { jobId, paths: [scratch] };
     },
+    discarding: (jobId) => discards.get(jobId),
+    async removals() { await Promise.allSettled([...removing]); },
     async run(all = false) {
       if (busy || c.stopping()) return;
       busy = true;
