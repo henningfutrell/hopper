@@ -1,6 +1,7 @@
 // The sweep (issue #410): what it reaps of what jobs left on a machine, and when. The plan is pure; the
 // runner is driven with a fake machine shell, the store's jobs and work trail as plain lists.
 import { describe, expect, it } from 'vitest';
+import type { Job } from '../../src/domain/types.ts';
 import type { Survey } from '../../src/domain/ports.ts';
 import { planSweep } from '../../src/engine/sweep.ts';
 import { HOUR, job, none, rig } from './sweep-rig.ts';
@@ -145,7 +146,7 @@ describe('kept work of a done item (issue #1105)', () => {
     const r = rig({ found, kept: ['old'], keeps: ['old'], itemDone: ['old'] });
     await r.sweep.run(true);
     expect(r.reaps).toEqual([{ jobId: 'old', scratch: '/w/.hopper-scratch/old', discard: true }]);
-    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], discarded: true } });
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], discarded: true, reason: 'merged' } });
     expect(r.logs).toEqual([expect.stringContaining('its item is done')]);
   });
 
@@ -157,6 +158,24 @@ describe('kept work of a done item (issue #1105)', () => {
     const old = rig({ found, kept: ['old'], keeps: ['old'], itemDone: ['old'], oldClient: true });
     await old.sweep.run(true);
     expect(old.events).toHaveLength(1);
+  });
+});
+
+describe('kept work nobody waits on (issue #1187)', () => {
+  const found = { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.hopper-scratch/old', ageMs: HOUR }] };
+  it('a newer job of its item finished with nothing kept: discarded, superseded', async () => {
+    const r = rig({ found, kept: ['old'], keeps: ['old'], others: [{ ...job('new', 'finished'), source: { source: 's', kind: 'github', key: 'item:old' } } as Job] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'old', scratch: '/w/.hopper-scratch/old', discard: true }]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], discarded: true, reason: 'superseded' } });
+  });
+
+  it('a finished proposal job: discarded, as it never had work to push; a failed one is kept', async () => {
+    const at = { ...none, scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: HOUR }, { jobId: 'old', path: '/w/.hopper-scratch/old', ageMs: HOUR }] };
+    const r = rig({ found: at, kept: ['done', 'old'], keeps: ['done', 'old'], spec: { proposal: true } });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done', discard: true }, { jobId: 'old', scratch: '/w/.hopper-scratch/old' }]);
+    expect(r.events.slice(2)).toEqual([{ type: 'job.work_removed', jobId: 'done', data: { paths: ['/w/.hopper-scratch/done'], discarded: true, reason: 'proposal' } }]);
   });
 });
 

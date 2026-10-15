@@ -12,6 +12,26 @@ export const PUSHABLE_ENDS: readonly JobStatus[] = ['failed', 'finished', 'cance
 /** The work trail: the events that keep and remove an ended job's scratch dir. */
 export const WORK_EVENTS = ['job.work_kept', 'job.work_removed'] as const;
 
+/**
+ * Why the sweep discarded kept work with no person (issue #1187): its item is done (`merged`, issue #1105); a newer job of
+ * its item finished, its cleanup done, with nothing kept (`superseded`); or it finished a proposal or a research report, never work to push
+ * (`proposal`, `research`).
+ */
+export const WORK_DISCARD_REASONS = ['merged', 'superseded', 'proposal', 'research'] as const;
+export type WorkDiscardReason = typeof WORK_DISCARD_REASONS[number];
+
+/**
+ * Pure: why nobody waits on an ended job's kept work any more, or undefined. `itemDone`: its item is done, as the ledger
+ * has it. `newest`: the newest job of its item. `kept`: the jobs whose work is kept.
+ */
+export function discardReasonOf(job: Job, itemDone: boolean, newest: Job | undefined, kept: ReadonlySet<string>): WorkDiscardReason | undefined {
+  if (itemDone) return 'merged';
+  if (newest && newest.id !== job.id && newest.status === 'finished' && !newest.cleanupDeferred && !kept.has(newest.id)) return 'superseded';
+  if (job.status === 'finished' && job.spec.proposal) return 'proposal';
+  if (job.status === 'finished' && job.spec.research) return 'research';
+  return undefined;
+}
+
 /** One ended job's kept work: the repositories holding it, and when it was kept. */
 export interface KeptWork { jobId: string; paths: string[]; at: string }
 

@@ -859,7 +859,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   3. removes the job's scratch dir — only a path that is `…/.hopper-scratch/<job id>` — unless a
      repository in it (`.git`, outside `node_modules`) has uncommitted changes (a `node_modules` link to
      shared dependencies aside), or commits no remote has (a worktree: its `HEAD`; a clone: `HEAD` and
-     every branch). Then nothing is removed and each such repository is printed; a pushed git worktree
+     every branch) whose work is not on a remote either (issue #1187: a rebase, a re-run that made the
+     commits again, or a squash or rebase merge gives the same work other commits). Work is on a remote
+     when it makes no change from the default branch (`origin/HEAD`), or when the default branch or one of
+     the 30 newest remote branches has each of its patches (`git cherry`; not when it holds a merge of its
+     own the remote does not have) or has every file it changed from the default branch with the same
+     content. Then nothing is removed and each such repository is printed; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees
      in its work tree's workspace, `<work tree>/workspace/worktrees/<name>-<job id>` (issue #1103), are
@@ -11294,6 +11299,13 @@ Now Failures lists it, and each has an action that moves it.
 - **Discarded once done** (issue #1105). Kept work of a job whose work item is `done`, as the ledger has it, waits on
   nobody: the sweep reaps its scratch dir with `discard`, as Discard does, and records `job.work_removed` with
   `discarded` and no person. A client older than the discard keeps it, and the sweep records nothing new.
+- **Nobody waits on it** (issue #1187, `discardReasonOf`). The sweep discards kept work the same way, with no person, and
+  `job.work_removed` names the `reason`: `merged` (its item is done, above); `superseded` (the newest job of its item
+  finished, its cleanup done, with no work kept: it took the work over, and Push it is refused for an older job anyway);
+  `proposal` or `research` (it finished a proposal or a research report, never work to push). The reap's rule reads
+  work already on a remote under other commits as pushed ("The reap"), so the sweep's next pass removes such kept work
+  with no reason at all. Each pass reads every kept entry again by these rules, so entries kept before them clear
+  themselves.
 - **Gone from disk** (issue #1120, "Hopper's own disk use"). Kept work whose scratch dir and job worktree a person or a
   cleanup outside the hopper removed leaves the list at the next sweep: `job.work_removed` with `gone`.
 
@@ -11306,7 +11318,8 @@ job's).
 
 **Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (discard, its refusals, the log once),
 `test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,
-the worktree entry gone, nothing outside the job's scratch dir), `test/integration/kept-work.test.ts` (Push it through
+the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squash-merged, rebased and re-made commits
+read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
 the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused).
 
 ### Stuck work (issue #1010, 2026-10-13)

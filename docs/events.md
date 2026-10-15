@@ -868,13 +868,14 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 
 ## `job.work_removed`
 
-Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
+Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `discarded` and `reason` (issue #1187), the sweep discarded it with no person, as nobody waits on it: `merged` (its item is done, issue #1105), `superseded` (a newer job of its item finished with nothing kept), `proposal` or `research` (it finished a proposal or a research report, never work to push). With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
 | `discarded` | boolean | no |
 | `gone` | boolean | no |
+| `reason` | `merged` \| `superseded` \| `proposal` \| `research` | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -2080,7 +2081,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
 
 ## `proposal.accepted`
 
-Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who), by the top reviewer level where the proposal settings let it, or by the hopper itself (`stage: "hopper"`, issue #1059: one recommended path and no rule needs a person). `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
+Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who), by the top reviewer level where the proposal settings let it, or by the hopper itself (`stage: "hopper"`, issues #1059, #1174: one recommended path, or each of a recommended combination, and no rule needs a person). `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
 
 | field | type | required |
 |---|---|---|
