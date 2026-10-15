@@ -232,7 +232,7 @@ describe('the Kubernetes container runtime', () => {
     await rt.createVolume('hopper_need.x-home', { 'io.hopper.need': 'i-1' });
     await rt.createVolume('hopper-check-y-home', { 'io.hopper.check': 'i-1' });
     api.claims.set('data-hopper-postgres-0', { metadata: { name: 'data-hopper-postgres-0', labels: { 'io.hopper.need': 'i-1' } } });
-    expect(await rt.listVolumes!({ 'io.hopper.need': 'i-1' })).toEqual(['hopper_need.x-home']);
+    expect(await rt.listVolumes({ 'io.hopper.need': 'i-1' })).toEqual(['hopper_need.x-home']);
     await rt.removeVolume('hopper_need.x-home');
     expect([...api.claims.keys()]).toEqual(['hopper-check-y-home', 'data-hopper-postgres-0']);
   });

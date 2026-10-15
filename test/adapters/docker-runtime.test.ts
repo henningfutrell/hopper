@@ -6,7 +6,7 @@
 //   Scenario: pull pulls only a missing image, and answers the user the image runs as
 //   Scenario: build sends the Containerfile in a tar, only when the image is not there yet; a stream error fails it (issue #716)
 //   Scenario: inspect and list read Docker's names without the leading slash
-//   Scenario: listVolumes answers the volumes with every label asked, by name; through a machine's relay it lists none (issue #1371)
+//   Scenario: listVolumes answers the volumes with every label asked, by name, through a machine's relay too (issue #1371)
 //   Scenario: stop, remove and volumes: gone is no error, and removing keeps the volumes
 //   Scenario: stop, remove and removeVolume refuse what carries no sandbox label (issue #1371)
 //   Scenario: a rootful Docker is a problem: the hopper launches boxes only through a rootless runtime
@@ -113,14 +113,14 @@ describe('the Docker container runtime', () => {
     await expect(rt.build('localhost/x:1', 'FROM x\n')).rejects.toThrow('docker could not build localhost/x:1: no match');
   });
 
-  it('listVolumes answers the volumes with every label asked, by name; through a machine\'s relay it lists none (issue #1371)', async () => {
+  it('listVolumes answers the volumes with every label asked, by name, through a machine\'s relay too (issue #1371)', async () => {
     api = await startFakeRuntimeApi([
       on('GET', `${API}/volumes`, { status: 200, body: { Volumes: [{ Name: 'hopper-check-a-home', Labels: { 'io.hopper.check': 'i-1' } }], Warnings: null } }),
     ]);
     const rt = createDockerRuntime(api.socket);
-    expect(await rt.listVolumes!({ 'io.hopper.check': 'i-1' })).toEqual(['hopper-check-a-home']);
+    expect(await rt.listVolumes({ 'io.hopper.check': 'i-1' })).toEqual(['hopper-check-a-home']);
     expect(JSON.parse(api.seen[0]!.query.get('filters')!)).toEqual({ label: ['io.hopper.check=i-1'] });
-    expect(createDockerRuntime(api.socket, async () => ({ status: 200, text: '{}' })).listVolumes).toBeUndefined();
+    expect(await createDockerRuntime('studio', async () => ({ status: 200, text: '{"Volumes":[{"Name":"hopper-check-b-home"}]}' })).listVolumes({ 'io.hopper.need': 'i-1' })).toEqual(['hopper-check-b-home']);
   });
 
   it('inspect and list read Docker\'s names without the leading slash', async () => {

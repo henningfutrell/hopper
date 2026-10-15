@@ -1,0 +1,1 @@
+- Sandbox steps can now run on a machine of yours that joined the hopper, and sandbox storage left behind there is cleaned up too.

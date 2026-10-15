@@ -18813,6 +18813,29 @@ with no label and another hopper's stay; the home of a step or check that runs n
 `test/adapters/podman-runtime.test.ts`, `test/adapters/docker-runtime.test.ts` and `test/sandbox/kubernetes.test.ts`, and
 the Role in `test/scripts/helm-chart-sandbox.test.ts`.
 
+**Part 3 (2026-10-15): need boxes and the home sweep on a client target.** A need step runs where a check runs
+(`places.forCheck`): beside the hopper, else on a client target of the user's. Before, the machine's client
+(`src/client/runtime.ts`) took only `hopper-sandbox-*` and `hopper-check-*`, so a need box there was refused; and a
+runtime through a machine's relay had no `listVolumes`, so the check pass's home sweep did nothing there.
+
+- **A need box runs on a client target.** The client takes a need box as it takes a check box: the `io.hopper.need`
+  label, a `hopper-need-<name>` name, its script once as `sh -c`, its end awaited and its output read. A sandbox box is
+  still never waited on or read.
+- **The volumes of a label are listed through the relay.** The client carries Podman's `GET /volumes/json` and Docker's
+  `GET /volumes`, read-only, so `listVolumes` is now on every runtime (the port's call is no longer optional) and
+  `sweepHomes` sweeps a client target's leaked check homes when the check pass sweeps it.
+- **The client removes only a labelled volume.** Before a `DELETE` of a volume, the client reads it and refuses one with
+  no sandbox label ("the volume … carries no sandbox label"), as the adapters do over their socket (part 1). A home's
+  name alone is no proof the hopper made it; one already gone answers 404, as before.
+- **Left.** The need box sweep (`sweepSteps`, `service.ts`) still runs only beside the hopper: a need box a client
+  target leaked stays there until a later step on that machine. Issue #1349 (#1368) rewrites that sweep and its ledger;
+  the sweep of client targets goes with it.
+
+Tests: `test/client/runtime.test.ts` (a need box carried under its own label and name, with a wrong name refused; the
+volumes of a label listed; a volume with a home's name and no sandbox label not removed), `test/adapters/remote-runtime.test.ts`
+(a need box's life through a machine's client, and its leaked home listed and swept there), and the `listVolumes` cases in
+`test/adapters/podman-runtime.test.ts` and `test/adapters/docker-runtime.test.ts`, now through a relay too.
+
 ## Approve several at once (issue #1018, 2026-10-13)
 
 Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at
