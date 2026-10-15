@@ -3,8 +3,9 @@
 // restart, until it resumes; a new job of the same item (run again, rework, I fixed it) carries the notes not yet
 // delivered. Each note is in the job's timeline: added, delivered, carried. Real daemon over the fake herdr.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, Job, JobNote } from '../../src/domain/types.ts';
+import type { DomainEvent, JobNote } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -111,7 +112,7 @@ describe('notes to a job', () => {
     const added = await send(a, token, job.id, NOTE);
     expect(added.status).toBe(200);
 
-    const again = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
+    const again = await runAgain(a, job.id, token);
 
     expect(again.status).toBe(200);
     const next = again.body;

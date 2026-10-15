@@ -14,17 +14,19 @@ import { useNow } from '@/hooks/use-now';
 import { canRerun, machineName, ownWaitOf, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
-import { act, rerun, useHopper } from '@/store';
+import { act, useHopper } from '@/store';
+import { giveBack, useGivingBack } from '@/store/give-back';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 import type { Job } from '@/model/wire';
 import { TextChangeCard } from '@/components/text-change';
 import { AskButton, CancelButton, OperatorLedButton, ParkButton, PickUpButton } from './lanes';
 
-/** Run again: a new job for the item joins the queue now (issue #354). */
+/** Run again: a new job for the item joins the queue once its source gave the item back (issues #354, #1194). */
 function RerunButton({ job }: { job: Job }) {
+  const sent = useGivingBack((s) => s[job.id] !== undefined);
   return (
-    <Button size="xs" variant="outline" title="Run again: a new job for its item joins the queue now"
-      onClick={() => void rerun(job.id)}><RotateCcw />Run again</Button>
+    <Button size="xs" variant="outline" disabled={sent} title="Run again: its source gives the item back, then a new job for it joins the queue"
+      onClick={() => void giveBack(job.id, 'rerun')}><RotateCcw />{sent ? 'Running again' : 'Run again'}</Button>
   );
 }
 

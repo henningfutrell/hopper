@@ -22,6 +22,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type DomainEvent, type FailuresView, type StuckActResult } from '../../src/domain/types.ts';
 import type { DirectJobView } from '../../src/domain/direct-jobs.ts';
+import { runAgain } from '../support/give-back.ts';
 import { rawRequest } from '../support/http.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -120,7 +121,7 @@ describe('Direct jobs (issue #901)', () => {
     await app.waitForStatus(job.id, 'failed');
     // Run again waits for the failure's report to the source.
     const again = await waitFor(async () => {
-      const r = await app.ui<{ id: string; rerunOf?: string }>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
+      const r = await runAgain(app, job.id, token);
       return r.status === 200 ? r.body : undefined;
     }, { what: 'Run again' });
     expect(again.rerunOf).toBe(job.id);

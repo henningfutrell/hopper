@@ -1,7 +1,7 @@
 // The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, ownWaitOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, ownWaitOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineLaneEffect, MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -228,11 +228,3 @@ describe('canRerun (issues #313, #354, #362)', () => {
   });
 });
 
-describe('rerunOutcome (issue #354)', () => {
-  it('says where the new job is: waiting for acceptance, held and why, queued, or failed at once with its reason', () => {
-    expect(rerunOutcome(job('n', { status: 'queued', accepted: false }))).toEqual({ ok: true, message: 'Queued again: waiting for acceptance in Queue' });
-    expect(rerunOutcome(job('n', { status: 'held', holdReason: 'lane cap reached' }))).toEqual({ ok: true, message: 'Queued again, held: lane cap reached' });
-    expect(rerunOutcome(job('n', { status: 'queued' }))).toEqual({ ok: true, message: 'Queued again' });
-    expect(rerunOutcome(job('n', { status: 'failed', error: 'empty issue body' }))).toEqual({ ok: false, message: 'Run again: the new job failed at once: empty issue body' });
-  });
-});

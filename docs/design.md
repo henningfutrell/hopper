@@ -11377,18 +11377,35 @@ the next read, never from a poll.
   write-behind under way, so it lists what they wrote. The same act sent again before a discover listed the item again
   (a second click, another tab) is `done` and writes nothing more, unless it failed; then it tries again.
 - **Discard kept work** ("Work not pushed"): the checks, then the answer; the reap after, followed by `discarding`.
+- **Run again and Rework** (`SourceRegistry.giveBack`, `src/sources/rerun.ts`, part 3). Run again took 20 s and Rework
+  22 s with GitHub slowed to 2 s a call: the route awaited the source's **give-back** — on GitHub the issue read, assigned,
+  reopened and its labels changed, read again, its projects and comments read; for Rework the pull request read and made a
+  draft first — and only then made the new job. Now the checks the hopper can make itself (the job the newest of its
+  item, its end reported to its source, a source that takes an item back; for Rework finished and following an open pull
+  request) run, then the answer, `202 { jobId, giveBack }`. The give-back runs after, on the job's report chain, and the
+  new job follows as before, with `job.rerun` (now naming who and the way) or `job.rework_requested`. A give-back that
+  fails — GitHub out of reach or refusing, the issue no longer assigned and not to be assigned, a newer job made meanwhile —
+  records `job.give_back_failed` with why and makes no job; the act is offered again. The same act sent again while one
+  runs answers that one. The state is kept in memory, as the write-behind's is: after a restart the job is as it ended,
+  and Run again is offered. Failures' Retry, a hand-off's Continue and I fixed it, Push it and Tend again still await
+  their give-back.
+- **Queue order and the landing batches** record and answer without GitHub: the budget test holds them to it.
 - **The UI.** Approve and Decline wait on the card only for the answer. Discard shows removing from the click on, and
   `failureAct` reads the failures again before the action ends, so the entry shows the result, never what was before.
   Assign to me, Release claim and Take off the backburner (`ui/src/components/intake-groups.tsx`): from the click on,
   the row says GitHub is updated and offers that action no more, until a list the daemon sent after the click says how
   it ended; a failed write says why, and offers the action again. A refusal shows the action again at once.
+  Run again (Dashboard) and Send back for rework (Pull requests; `ui/src/store/give-back.ts`): from the click on, the
+  button says Running again or Sending back and sends nothing more, until the stream's `job.rerun`,
+  `job.rework_requested` or `job.give_back_failed` for that job says how it ended — a toast says which, a failure with why.
 - **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
-  Discard, Assign to me, Release claim and Take off the backburner answer in under 200 ms, their decision recorded, and
-  the slow work ends after.
+  Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
+  answer in under 200 ms, their decision recorded, and the slow work ends after.
 
-Not yet so (issue #1194, later parts): the other mutating routes (push, run again, rework, answer, end wait, landing
-batch, queue order) are not measured against the budget; Take into Intake's write-behind shows in the source's detail
-only, not on its Pull requests row; and no end-to-end check measures the card in a browser.
+Not yet so (issue #1194, later parts): Failures' Retry, a hand-off's resolution, Push it, Tend again, and Merge now and
+Close PR still await GitHub; answer, end wait and pick up are local but not measured against the budget; Take into
+Intake's write-behind shows in the source's detail only, not on its Pull requests row; and no end-to-end check measures
+the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 

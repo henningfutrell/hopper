@@ -26,6 +26,7 @@ import { ago } from '@/model/format';
 import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
 import { act } from '@/store';
+import { giveBack, useGivingBack } from '@/store/give-back';
 import { setPolled } from '@/store/polled';
 import { useCanOperate } from '@/store/selectors';
 
@@ -43,6 +44,7 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   const [busy, setBusy] = useState(false);
   const [reworking, setReworking] = useState(false);
   const [notes, setNotes] = useState('');
+  const sendingBack = useGivingBack((s) => s[c.jobId] === 'rework');
   // A tend job works on it (issue #763): its job follows it no more, so no act until the tend job ends.
   if (!operator || c.state !== 'open' || !c.pullRequest || c.tendJobId) return null;
   const run = async (what: 'merge' | 'close') => {
@@ -51,9 +53,10 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
     setBusy(false);
     onChanged();
   };
+  // Answered at once (issue #1194): the pull request is made a draft after, and the card waits until the stream says so.
   const rework = async () => {
     setBusy(true);
-    const ok = await act(`/ui/api/jobs/${c.jobId}/rework`, { notes: notes.trim() }, `#${c.pullRequest!.number} sent back for rework`);
+    const ok = await giveBack(c.jobId, 'rework', { notes: notes.trim() });
     setBusy(false);
     if (ok) { setReworking(false); setNotes(''); onChanged(); }
   };
@@ -64,8 +67,8 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
           description="The hopper merges it now with a merge commit, whatever yolo mode and its checks say. GitHub still refuses a draft, merge conflicts or a required check.">
           <Button size="sm" variant="outline" disabled={busy}><GitMerge />Merge now</Button>
         </Confirm>
-        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={busy || reworking} title="Make it a draft, and a new job reworks it with your notes"
-          onClick={() => setReworking(true)}><Undo2 />Send back for rework</Button>
+        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={busy || reworking || sendingBack} title="Make it a draft, and a new job reworks it with your notes"
+          onClick={() => setReworking(true)}><Undo2 />{sendingBack ? 'Sending back' : 'Send back for rework'}</Button>
         <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => void run('close')}
           description="The pull request closes without a merge. Its issue gets hopper:pr-closed and is not taken again until a person removes the label.">
           <Button size="sm" variant="ghost" disabled={busy}><X />Close PR</Button>

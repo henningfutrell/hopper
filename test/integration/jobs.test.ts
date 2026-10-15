@@ -1,6 +1,7 @@
 // Jobs pulled from a source, run, and read back over the read-only API.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { manualItem } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -122,12 +123,13 @@ describe('jobs pulled from a source', () => {
     const jobsFor = async () => (await t.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === failed.source?.key);
     expect(await jobsFor()).toHaveLength(1); // ended and reported: not offered again on its own
 
-    const r = await t.ui<Job>(`/ui/api/jobs/${failed.id}/rerun`, {}, { token });
+    const r = await runAgain(t, failed.id, token);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ rerunOf: failed.id, source: { key: failed.source!.key } });
     expect((await jobsFor()).map((j) => j.id)).toEqual([r.body.id, failed.id]);
     expect(t.source.reports.filter((x) => x.job.id === failed.id).map((x) => x.kind)).toEqual(['claimed', 'failed']);
-    expect((await t.events('types=job.rerun')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user' });
+    // Who asked, and the way (issue #1194).
+    expect((await t.events('types=job.rerun')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user', person: expect.any(String), via: 'ui' });
     await t.sync();
     expect(await jobsFor()).toHaveLength(2);
   });
@@ -138,7 +140,7 @@ describe('jobs pulled from a source', () => {
     await t.waitForStatus(done.id, 'finished');
     await waitFor(async () => (await t.job(done.id)).sourceState?.sync?.finalReported === true, { what: 'the end reported' });
 
-    const r = await t.ui<Job>(`/ui/api/jobs/${done.id}/rerun`, {}, { token });
+    const r = await runAgain(t, done.id, token);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ rerunOf: done.id, source: { key: done.source!.key } });
     await t.waitForStatus(r.body.id, 'finished');
@@ -148,7 +150,7 @@ describe('jobs pulled from a source', () => {
     const token = await t.login();
     const long = await t.pull({ op: 'sleep', ms: 10000 });
     await t.waitForStatus(long.id, 'running');
-    expect((await t.ui(`/ui/api/jobs/${long.id}/rerun`, {}, { token })).status).toBe(409);
+    expect((await runAgain(t, long.id, token)).status).toBe(409);
     expect((await t.ui('/ui/api/jobs/nope/rerun', {}, { token })).status).toBe(404);
     expect(await t.events('types=job.rerun')).toEqual([]);
   });
