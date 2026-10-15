@@ -180,11 +180,21 @@ export const linkTmpCommand = (scratch: string, jobId: string): string => {
   return `ln -sfn ${shellQuote(scratch)} ${link} && [ "$(readlink ${link})" = ${shellQuote(scratch)} ]`;
 };
 
-/** Makes the job's scratch dir, git-ignored, and its temp link; prints the ready or unusable marker. */
+/**
+ * The job's temp dir (issue #691): its temp link, except under Git for Windows (MSYS, Cygwin), whose `ln -s` copies
+ * the directory or names it as `/c/…` where the work tree said `C:/…`. There TMPDIR and Claude's temp dir are the
+ * scratch dir itself, set in the pane's shell, where Claude starts.
+ */
+export const tmpCommand = (scratch: string, jobId: string): string => {
+  const s = shellQuote(scratch);
+  return `{ case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) export TMPDIR=${s} CLAUDE_CODE_TMPDIR=${s};; *) ${linkTmpCommand(scratch, jobId)};; esac; }`;
+};
+
+/** Makes the job's scratch dir, git-ignored, and its temp dir; prints the ready or unusable marker. */
 export const scratchCommand = (cwd: string, jobId: string, make: boolean): string => {
   const scratch = jobScratchOf(cwd, jobId);
   return `${make ? `mkdir -p ${shellQuote(cwd)} && ` : ''}cd ${shellQuote(cwd)} && ${mkScratchCommand(cwd, jobId)}`
-    + ` && ${linkTmpCommand(scratch, jobId)} && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+    + ` && ${tmpCommand(scratch, jobId)} && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
 };
 
 /**

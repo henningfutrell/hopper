@@ -340,10 +340,10 @@ line carries a one-time join code: it works once, for 10 minutes.
   The hopper keeps the client current by itself. Should Machines say a computer's client cannot be
   updated, it shows the line to run there: the same install with no join code, which reinstalls the
   client and keeps the machine.
-- **A Windows computer**: not supported natively. Run the machine inside WSL, with systemd on and
+- **A Windows computer**: the usual way is to run the machine inside WSL, with systemd on and
   `podman.socket` started (`systemctl --user enable --now podman.socket`), and run the line in the WSL
-  distro, not in PowerShell. A client on Windows itself (Node.js for Windows, Git Bash) is refused at
-  the join: `Windows isn't supported natively. Run the client inside WSL.` The steps:
+  distro, not in PowerShell. A client on Windows itself (Node.js for Windows, with Git Bash's `sh` on
+  its `PATH`) joins too, for work that needs Windows; it serves no vault socket. The steps:
   https://henningfutrell.github.io/hopper/install.html#windows-machine
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
   container `hopper-sandbox-claude` (`hopper-sandbox-<template>` for a box of a template) from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,

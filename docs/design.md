@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key (`lane-pool.ts`, issue #1284), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
@@ -783,7 +783,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   the owner. A payload cannot turn the countdown back on.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
-  (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
+  (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
+  shell no temp link: `TMPDIR` is the scratch dir, issues #691, #1348) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
   until the 60000 ms start deadline, then fails the job (`pane … never ran the scratch dir
@@ -4840,32 +4841,36 @@ refused, the install served. `test/client/link.test.ts` (the token), `test/adapt
 (the link), `test/integration/client-release.test.ts` (releases over the link), `test/ui/machines.test.ts`
 (the lines), `test/store/tenant-migration-12.test.ts`.
 
-### Windows: only inside WSL (issue #704, 2026-10-10)
+### Windows: WSL, or the client on Windows itself (issues #704, #1348)
 
-Owner decision: hopper does not support native Windows. A Windows computer runs its machine, and its sandbox boxes,
-on Podman inside WSL (a Linux distro with systemd on and `podman.socket` started); that is the one supported Windows
-path. A native client (Node.js for Windows, MSYS or Git Bash) failed every job within seconds: discovery's
-`spawn env ENOENT`, the vault socket's `listen EACCES` on a Windows path, and an unusable scratch dir under MSYS.
+Owner decision (2026-10-15, issue #1348) reverses issue #704 (2026-10-10, "hopper does not support native Windows"):
+native Windows is a supported client. The usual way for a Windows computer stays a machine on Podman inside WSL (a
+Linux distro with systemd on and `podman.socket` started). A client on Windows itself (Node.js for Windows, with Git
+Bash's `sh` on its `PATH`) also joins and dials in, so work that needs Windows (a .NET Framework build) runs on it.
 
-- **The check, and nothing more.** `unsupportedPlatform` (`src/client/link.ts`, one of the client's files) names
-  `win32` as unsupported, with `Windows isn't supported natively. Run the client inside WSL.` The client stops with
-  it at start, before it joins or dials in. The join sends Node's `process.platform`; `POST /client/join` answers
-  400 with the same text when it is `win32`, before the join code is spent, so the same line then joins from WSL.
-  No machine is added, so no job is placed on it. A join with no platform (a client from before) is not refused.
-- **Not built, not planned:** a named-pipe vault, discovery without `env`, MSYS path or scratch handling, and any VM
-  path (Podman machine, Docker Desktop, Hyper-V). The Windows code from before (a drive-letter home, the PowerShell
-  check, load averages) stays as it is; no Windows code is added beyond the check.
+- **No refusal.** The client starts on `win32`, and `POST /client/join` takes it. The join still sends Node's
+  `process.platform` (`platform`, optional); nothing reads it now.
+- **What makes its jobs run:** the fixed scripts run with no `env` program (`spawnOf`, `src/client/spawn.ts`), and the
+  scratch command makes no temp link under MSYS ("Windows clients, the same issue", in "Work trees per repository").
+- **Not built:** a named-pipe vault. Node on Windows cannot listen on a socket file in the client dir, so the vault's
+  socket fails (`listen EACCES`); the client logs it and runs on. Give such a machine no box jobs. Not planned: any VM
+  path (Podman machine, Docker Desktop, Hyper-V).
+- **Routing.** A label routes nothing by itself: a routing rule (Settings → Routing) places `hopper:win` work on the
+  machine. Its job's `windows:` line (`WINDOWS_LINE`) says to do the work there when the machine runs Windows natively.
+- **Outside the hopper:** a person's own scripts that keep the client running on Windows (a logon task and a restart
+  loop) are not part of this repository.
 - **Docs:** the install page's "A Windows computer as a machine" (`site/install.html#windows-machine`) and the
-  README's Add machines list give the WSL steps.
+  README's Add machines list.
 
-Tests: `test/client/link.test.ts` (the platforms), `test/integration/machine-join.test.ts` (a `win32` join refused
-with the WSL text, the code still good), `test/scripts/install-page.test.ts` (the WSL machine steps).
+Tests: `test/integration/machine-join.test.ts` (a `win32` join takes the machine), `test/client/spawn.test.ts`,
+`test/herdr/job-tmp.test.ts`, `test/sources/github-context.test.ts` (the `windows:` line),
+`test/scripts/install-page.test.ts` (the Windows machine steps).
 
 ## Windows sandbox steps (issue #731, 2026-10-12)
 
 Owner direction (2026-10-11, rescoped 2026-10-12): Windows work runs as **Windows sandbox steps** that a job on a Linux
-machine asks the hopper for. No hopper client, lane, worktree or agent runs on Windows, so it fits "Windows: only inside
-WSL" (issue #704). The job keeps its work tree, its GitHub (through the hopper) and its agent on Linux; only the one step
+machine asks the hopper for. No hopper client, lane, worktree or agent runs on the Windows host (a native Windows client,
+issue #1348, is a machine of its own: "Windows: WSL, or the client on Windows itself"). The job keeps its work tree, its GitHub (through the hopper) and its agent on Linux; only the one step
 that needs Windows — a .NET Framework build, a Windows app's tests, a packing step — runs on a **Windows host**.
 
 **A Windows host** is an entry of the user's config record `windows-hosts` (`{ "hosts": [...] }`, `src/domain/windows-steps.ts`):
@@ -4942,13 +4947,13 @@ reversed), or writes it into an output, gives it to the job. The mask is a guard
 the gates decide what the job may reach. The host's account sees the value while the step runs, as any process of it
 would.
 
-**Retired:** the native Windows client lane and the `hopper:win` routing to it. No code of the hopper holds them: they
-are a person's machine and routing rule, removed in Settings → Machines and Settings → Routing.
+**A native Windows machine** (issue #1348): a person's machine and routing rule, set in Settings → Machines and Settings →
+Routing; no code of the hopper holds them. Its job does the work there, Windows steps included.
 
 **A Windows label** (issue #918): an issue labelled `hopper:win` or `hopper:windows` (any case; `WINDOWS_LABELS`,
-`src/sources/github/labels.ts`) needs Windows. Its job is placed as any job is, on a Linux machine, and its
-`[hopper issue context]` gets a `windows:` line before `done:` (`WINDOWS_LINE`, `src/sources/github/context.ts`): do the
-work there, run each step that needs Windows as a Windows sandbox step (the `windows-step` skill, `sh "$HOPPER_STEP"
+`src/sources/github/labels.ts`) needs Windows. Its job is placed as any job is, and its
+`[hopper issue context]` gets a `windows:` line before `done:` (`WINDOWS_LINE`, `src/sources/github/context.ts`): on a
+native Windows machine, do the work there; else do the work there and run each step that needs Windows as a Windows sandbox step (the `windows-step` skill, `sh "$HOPPER_STEP"
 hosts`), and ask the user for a host when none is set up. The label routes nothing: a routing rule that still names a
 removed Windows machine is skipped at intake, with why ("Routing rules"), and the next rule or the default placement
 applies. The line reaches a job at its prompt, so a job queued before keeps the prompt it was read with.
@@ -15859,9 +15864,21 @@ replaced by the machine's.
   machine still takes jobs of other repositories. The issue's other way — a routing rule that sets `workTree`
   without a machine — is not built: a path is one machine's (issue #361), and the map is per machine already.
 
+**Windows clients, the same issue** (dropped by #691 when native Windows was refused, brought back by issue #1348).
+Two failures stopped every job on a Windows client:
+- **The temp link.** Under Git for Windows (MSYS), `ln -s` copies the directory, or names it `/c/…` where the work
+  tree said `C:/…`, so the link check failed and the job ended `hopper-scratch-unusable` in seconds. The scratch
+  command runs `tmpCommand` (`src/executors/herdr/start.ts`): when `uname -s` is `MINGW*`, `MSYS*` or `CYGWIN*`
+  it makes no temp link and exports `TMPDIR` and `CLAUDE_CODE_TMPDIR` as the scratch dir itself, in the pane's shell,
+  where Claude then starts; elsewhere the temp link as before (issue #506).
+- **`spawn env ENOENT`.** The client ran each fixed script (discovery, a reap, a survey) as `env -u HOPPER_JOB_ID sh …`,
+  and a Windows client has no `env` on its PATH. The client removes the variables itself (`spawnOf`,
+  `src/client/spawn.ts`, used by `runArgv` in `src/client/run.ts`) and runs `sh` directly.
+
 Tests: `test/herdr/machine-work-tree.test.ts` (mapped, any case, made when missing, other repository, pinned path wins,
 the home refused), `test/plugins/machine-targets.test.ts` (the option, its refusals, command-bearing),
-`test/ui/machine-work-tree.test.ts` (the panel line).
+`test/herdr/job-tmp.test.ts` (a Windows shell: no link, TMPDIR is the scratch dir), `test/client/spawn.test.ts`
+(no `env` program, the variable removed), `test/ui/machine-work-tree.test.ts` (the panel line).
 
 ## The client door and the reach check (issue #695, 2026-10-10)
 

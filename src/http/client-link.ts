@@ -3,8 +3,7 @@
 //
 //   POST /client/join      a one-time join code (minted through an admin's UI session, or the operator CLI)
 //                          and the machine's key: the machine is added as a client target. The code is
-//                          what authorizes the write; it is spent by it. A machine on native Windows is
-//                          refused, the code not spent (issue #704). Or the lane pool key (issue #1284), never
+//                          what authorizes the write; it is spent by it.. Or the lane pool key (issue #1284), never
 //                          spent: a lane pod joins as the first user's machine, under its own name.
 //   POST /client/leave     a machine's say that it leaves (issue #1284), signed with its client token over its
 //                          user and machine key: it takes no new job; a lane pod with no job left is retired.
@@ -23,7 +22,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CONNECT_PATH, JOIN_PATH, LEAVE_PATH, LINK_PROTOCOL, MACHINE_KEY_HEADER, USER_HEADER, unsupportedPlatform } from '../client/link.ts';
+import { CONNECT_PATH, JOIN_PATH, LEAVE_PATH, LINK_PROTOCOL, MACHINE_KEY_HEADER, USER_HEADER } from '../client/link.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { REQUEST_HEADER, createNonceCache, nonceOf, verifyConnect, verifyLeave, verifyVault } from '../client/signature.ts';
 import { askOf, sealAnswer, VAULT_CONTENT_TYPE, VAULT_PATH } from '../client/vault.ts';
@@ -55,7 +54,7 @@ const joinBody = z.strictObject({
   code: z.string(),
   key: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'key must be the machine key: the public half of its link key'),
   name: z.string().min(1).max(63),
-  /** Node's `process.platform` on the machine (issue #704); a client from before it sends none. */
+  /** Node's `process.platform` on the machine (issue #704). Every platform joins, native Windows too (issue #1348). */
   platform: z.string().max(32).optional(),
 });
 
@@ -75,9 +74,6 @@ const header = (req: IncomingMessage, name: string): string => {
 export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): void {
   app.post(JOIN_PATH, async (req) => {
     const b = parseWith(joinBody, req.body);
-    // Native Windows is refused before the code is spent (issue #704): the same line then joins from WSL.
-    const unsupported = b.platform === undefined ? undefined : unsupportedPlatform(b.platform);
-    if (unsupported) throw new HttpError(400, unsupported);
     const pool = isLanePoolKey(o.poolKey?.(), b.code);
     const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code);
     if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');

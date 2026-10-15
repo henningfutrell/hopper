@@ -55,7 +55,7 @@ export const hasLink = (dir: string): boolean => existsSync(linkFile(dir));
 
 /**
  * Joins the hopper the line names, under `name` (the hopper may give another when it is taken). Resolves the link, kept
- * in `dir`. It tells the hopper its platform (default this process's): the hopper refuses native Windows (issue #704).
+ * in `dir`. It tells the hopper its platform (default this process's, issue #704).
  */
 export async function joinHopper(o: { line: string; name: string; dir: string; platform?: string }): Promise<Link> {
   const { url, code } = parseJoinLine(o.line);
