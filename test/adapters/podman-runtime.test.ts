@@ -10,6 +10,7 @@
 //   Scenario: a build whose stream carries an error fails with it
 //   Scenario: inspect, list, start, stop and remove use the container id; gone is no error
 //   Scenario: volumes are made and removed by name; one that exists or is gone is no error
+//   Scenario: listVolumes answers the volumes with every label asked, by name; through a machine's relay it lists none (issue #1371)
 //   Scenario: stop, remove and removeVolume refuse what carries no sandbox label: a hopper stack container, a volume of
 //     someone else's (issue #1371)
 //   Scenario: a rootful Podman is a problem; a reachable rootless one is none
@@ -150,6 +151,16 @@ describe('the Podman container runtime', () => {
     await rt.removeVolume('gone');
     expect(api.seen[0]!.body).toEqual({ Name: 'home', Label: { 'io.hopper.box': 'i-1' } });
     expect(api.seen.find((r) => r.method === 'DELETE')!.query.get('force')).toBe('true');
+  });
+
+  it('listVolumes answers the volumes with every label asked, by name; through a machine\'s relay it lists none (issue #1371)', async () => {
+    api = await startFakeRuntimeApi([
+      on('GET', `${API}/volumes/json`, { status: 200, body: [{ Name: 'hopper-need-a-home', Labels: { 'io.hopper.need': 'i-1' } }] }),
+    ]);
+    const rt = createPodmanRuntime(api.socket);
+    expect(await rt.listVolumes!({ 'io.hopper.need': 'i-1' })).toEqual(['hopper-need-a-home']);
+    expect(JSON.parse(api.seen[0]!.query.get('filters')!)).toEqual({ label: ['io.hopper.need=i-1'] });
+    expect(createPodmanRuntime(api.socket, async () => ({ status: 200, text: '[]' })).listVolumes).toBeUndefined();
   });
 
   it('build sends the Containerfile in a tar, only when the image is not there yet (issue #716)', async () => {

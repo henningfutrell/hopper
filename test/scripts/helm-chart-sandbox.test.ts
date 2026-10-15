@@ -49,7 +49,7 @@ describe('the Helm chart\'s sandbox boxes', () => {
     const role = find(rs, 'Role', 'hopper-sandbox') as Rbac;
     const grants = (role.rules ?? []).flatMap((r) => r.resources.flatMap((res) => r.verbs.map((v) => `${r.apiGroups.join('')}/${res}:${v}`))).sort();
     expect(grants).toEqual([
-      '/persistentvolumeclaims:create', '/persistentvolumeclaims:delete',
+      '/persistentvolumeclaims:create', '/persistentvolumeclaims:delete', '/persistentvolumeclaims:get', '/persistentvolumeclaims:list',
       '/pods/exec:create', '/pods/exec:get', '/pods/log:get',
       '/pods:create', '/pods:delete', '/pods:get', '/pods:list',
       'networking.k8s.io/networkpolicies:create', 'networking.k8s.io/networkpolicies:update',

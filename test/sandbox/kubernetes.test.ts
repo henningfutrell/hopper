@@ -12,6 +12,7 @@
 //   Scenario: the start check runs in the box through exec
 //   Scenario: a command runs in the box with its environment; files are copied in through tar
 //   Scenario: the home is a claim; one that exists is kept
+//   Scenario: listVolumes answers the runtime's own claims with every label asked, by the hopper's name (issue #1371)
 //   Scenario: stop, remove and removeVolume refuse a pod or claim that is not the runtime's: the hopper's own pod, a
 //     claim of the hopper's Postgres (issue #1371)
 //   Scenario: an API it cannot reach is its problem
@@ -223,6 +224,17 @@ describe('the Kubernetes container runtime', () => {
     });
     await rt.removeVolume('hopper-sandbox-infra-home');
     expect(api.claims.size).toBe(0);
+  });
+
+  it('listVolumes answers the runtime\'s own claims with every label asked, by the hopper\'s name (issue #1371)', async () => {
+    const api = createFakeKubeApi();
+    const rt = runtime(api);
+    await rt.createVolume('hopper_need.x-home', { 'io.hopper.need': 'i-1' });
+    await rt.createVolume('hopper-check-y-home', { 'io.hopper.check': 'i-1' });
+    api.claims.set('data-hopper-postgres-0', { metadata: { name: 'data-hopper-postgres-0', labels: { 'io.hopper.need': 'i-1' } } });
+    expect(await rt.listVolumes!({ 'io.hopper.need': 'i-1' })).toEqual(['hopper_need.x-home']);
+    await rt.removeVolume('hopper_need.x-home');
+    expect([...api.claims.keys()]).toEqual(['hopper-check-y-home', 'data-hopper-postgres-0']);
   });
 
   it('stop, remove and removeVolume refuse a pod or claim that is not the runtime\'s: the hopper\'s own pod, a claim of its Postgres (issue #1371)', async () => {
