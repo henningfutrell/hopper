@@ -27,6 +27,8 @@ const PORT = 4790;
 const PERSON = { ...process.env };
 /** How long a box's pod and claim may take to go once its run ended: a pod's grace, then the claim's protection. */
 const GONE_MS = 180_000;
+/** What each box here asks for. */
+const BOX_LIMITS = { cpus: 0.25, memoryMb: 128 };
 
 function kubectl(context: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync('kubectl', ['--context', context, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: PERSON });
@@ -125,7 +127,10 @@ export async function check(context: string, namespace: string, image: string): 
     serviceAccountConfig(context, namespace, account, config);
     process.env.KUBECONFIG = config;
     const { api } = createKubeApi(namespace);
-    const runtime = createKubernetesRuntime({ api, hopper: { namespace, labels: deployment.spec.selector.matchLabels, port: PORT } });
+    const kube = createKubernetesRuntime({ api, hopper: { namespace, labels: deployment.spec.selector.matchLabels, port: PORT } });
+    // A need box's limits (4 CPUs, 8 GiB) are its requests too, which a kind node on a CI runner cannot give: the boxes
+    // here ask for little, as the check is about what is left after them, not about room.
+    const runtime: ContainerRuntime = { ...kube, create: (spec) => kube.create({ ...spec, limits: BOX_LIMITS }) };
     const instance = `kind-${randomBytes(4).toString('hex')}`;
     const box = { runtime, context, namespace, image, instance, dir };
 
