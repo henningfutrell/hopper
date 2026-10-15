@@ -228,12 +228,13 @@ while it is on.
 ## No bootstrap login
 
 There is no bootstrap login (issue #238). A new hopper creates no user, no account, no password and no
-login code, and no command on the host signs anyone in (`hopper login-code` and `open-ui.sh` are gone;
-the first sign-in by login code of issue #237 is gone too). The hopper keeps no username-and-password
-accounts of its own (issue #237). The way in is a realm:
+login code (`hopper login-code` and `open-ui.sh` are gone; the first sign-in by login code of issue #237
+is gone too). The way in is a realm, or a [local account](#local-accounts) the operator adds:
 
 - **Sign in with GitHub**, which every hopper offers ([GitHub](#github)). [The first person to sign in
   with GitHub](#ui-roles-and-role-rules) is the admin, so sign in before anyone else can reach the UI.
+- **No GitHub and no identity provider**: add the first admin's [local account](#local-accounts) with
+  `hopper local-account add`, then sign in with its email and password.
 - **Each person gets a whole environment of their own**: the first sign-in of each identity makes its
   user ([Who signs in as which user](#who-signs-in-as-which-user)).
 - **A hopper from before** keeps its default admin account `admin` and its work until the first person
@@ -253,6 +254,42 @@ inside its own user ([the instance admin](#the-instance-admin)).
 minute per client address; past that, 429 until the minute is over. Behind a reverse proxy every
 client has the proxy's address, so the limit is shared: add a per-client limit at the proxy for a
 public deploy.
+
+## Local accounts
+
+The hopper's own accounts (issue #1380): an email and a password, for a hopper with no identity provider
+and no GitHub, and for its first admin. They are no realm of the sign-in config: they sign in through the
+reserved realm name `local-accounts`, and no realm may take that name. The username and password form
+tries them first, while there is one, then each LDAP realm that is on.
+
+- **The first admin.** On the daemon's host (or in its pod), with the database's credentials, add the
+  account; the password comes on stdin, never as an argument:
+
+  ```sh
+  hopper local-account add admin@example.com --role admin < password-file
+  ```
+
+  Then sign in on the sign-in page with that email and password. The first person to sign in on a new
+  hopper is its first user; an admin who signed in with a local account is [the instance admin](#the-instance-admin).
+  `hopper local-account list | password <email> | remove <email>` list the accounts, set a password (on
+  stdin) and remove an account. A running daemon takes a new account or password at the next sign-in;
+  the sessions of an account the CLI removed or lowered follow at its next start.
+- **Settings → Sign-in → Local accounts** (the instance admin): add an account (email, role, password),
+  change its role, set its password, or remove it. Each account has its own role; no role rule applies to
+  it. A password has 12 characters at least.
+- **An admin runs the hopper, never another user's work.** Once an account has signed in, it signs in as
+  its own user: an admin cannot set its password, nor add it again after it was removed (409). Its user
+  changes the password in Settings → Sign-in → Your password, with the current one; the account's other
+  sessions and API tokens end. Its grants stay (an agent's delegation): end one in Settings → API tokens.
+- **No lockout from the UI.** The account you signed in with cannot be removed, nor lowered from admin,
+  from Settings: sign in as an admin another way first, or use the CLI.
+- **What is kept.** A salted scrypt hash of each password (`local_accounts`), made by Node's crypto, never
+  the password. An email is kept in lowercase and compared so. An unknown email costs the same time as a
+  wrong password, and both answer "wrong email, username or password".
+
+**Residual risk.** A password is only as strong as the person picks it, and the sign-in form answers
+anyone who reaches the UI: 20 attempts a minute per client (see "Rate limit" above); add a limit at the
+proxy for a public URL. There is no second factor yet (a passkey is planned, issue #1380).
 
 ## LDAP realm
 
@@ -950,7 +987,7 @@ The same for every realm, no sign-in and the login code:
 | "this change would end your own admin session" | You signed in with the realm (or the login code) the change turns off, or the change lowers your own role. Sign in as an admin another way, then make the change. |
 | Nobody can sign in as an admin any more | Give yourself admin with a role rule, from [the sign-in config from the CLI](#the-sign-in-config-from-the-cli) or the environment, and restart. |
 | LDAP: "sign-in could not be checked: <realm>: …" | The directory did not answer, or the search account's bind failed: check `url`, the certificate (`NODE_EXTRA_CA_CERTS`), `bindDn` and its password. |
-| LDAP: "wrong username or password" for a real account | `userFilter` under `userBase` finds no entry, or finds two. Try the filter with `ldapsearch -H <url> -D <bindDn> -W -b <userBase> '<filter>'`. |
+| LDAP: "wrong email, username or password" for a real account | `userFilter` under `userBase` finds no entry, or finds two. Try the filter with `ldapsearch -H <url> -D <bindDn> -W -b <userBase> '<filter>'`. |
 | LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |

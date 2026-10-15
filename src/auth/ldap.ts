@@ -26,7 +26,7 @@ export function createLdapRealm(c: LdapRealmConfig): FormRealm {
     return client;
   };
   return {
-    name: c.name, label: c.label, type: 'ldap',
+    name: c.name, label: c.label,
     async check(username, password) {
       // An empty password is an unauthenticated bind, which a directory accepts as anonymous.
       if (username === '' || password === '') return { ok: false };

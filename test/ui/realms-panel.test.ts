@@ -39,6 +39,7 @@ function fakeDaemon() {
   return vi.fn(async (input: string, init: RequestInit = {}) => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (String(input) === '/api/realms') return json(VIEW);
+    if (String(input) === '/api/local-accounts') return json({ accounts: [] });
     if (String(input) === '/api/users') return json({ users: [{ id: 'admin', name: 'admin', createdAt: '2026-10-01T00:00:00.000Z' }, { id: 'bea', name: 'Bea', createdAt: '2026-10-02T00:00:00.000Z' }] });
     if (String(input) === '/ui/api/realms') {
       posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
@@ -172,7 +173,7 @@ describe('Settings: Sign-in', () => {
     expect(row('staff').textContent).not.toContain('from the environment');
   });
 
-  it('offers no password realm to add, and GitHub only where GitHub is: the hopper keeps no password accounts (issue #237)', async () => {
+  it('offers no password realm to add, and GitHub only where GitHub is: local accounts are no realm (issues #237, #1380)', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     await click(buttonIn(document.body, 'Add realm'));

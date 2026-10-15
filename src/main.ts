@@ -263,7 +263,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   const signIn = createSignIn({
     config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}`, apps: config.hopperApps,
-    claimGithubAdmin: (who) => claimGithubAdmin(instance, who),
+    claimGithubAdmin: (who) => claimGithubAdmin(instance, who), accounts: instance.localAccounts,
     githubClientSecret: () => { try { return secret(CLIENT_SECRET_VARIABLE); } catch { return undefined; } },
   });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.

@@ -3,8 +3,8 @@
 // tunnel the address its edge names (issue #795, `tunnelCaller`). Routes:
 //   POST /ui/login                        ← the one-time login code (a form)
 //   POST /ui/auth/none                    → a no-sign-in session (exact UI Origin)
-//   POST /ui/auth/password                ← { username, password }, tried against the LDAP
-//                                           realms in order → a session (exact UI Origin)
+//   POST /ui/auth/password                ← { username, password }, tried against the local accounts, then the
+//                                           LDAP realms in order → a session (exact UI Origin)
 //   POST /ui/auth/gateway                 ← the token an auth gateway forwards, checked by the gateway
 //                                           realms in order → a session (exact UI Origin)
 //   POST /ui/auth/<name>/device           ← { binding }: a GitHub realm's device code (issue #214)
@@ -41,7 +41,7 @@ const nameParams = z.object({ name: z.string() });
 export const startQuery = z.object({ binding: z.string().optional() });
 export const completeBody = z.object({ ticket: z.string(), binding: z.string() });
 export const loginBody = z.object({ code: z.string() });
-export const passwordBody = z.object({ username: z.string().max(128), password: z.string().max(1024) });
+export const passwordBody = z.object({ username: z.string().max(320), password: z.string().max(1024) });
 export const deviceStartBody = z.object({ binding: z.string().max(128) });
 export const devicePollBody = z.object({ flow: z.string().max(128), binding: z.string().max(128) });
 
@@ -148,7 +148,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   });
 
   app.post('/ui/auth/password', async (req, reply) => {
-    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: no LDAP realm is on (Settings → Sign-in)');
+    if (!signIn.password) return o.refuse(req, reply, 'password sign-in is off: there is no local account and no LDAP realm is on (Settings → Sign-in)');
     if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
     const { username, password } = parseWith(passwordBody, req.body);
     const r = await signIn.checkPassword(username, password);

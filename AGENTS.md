@@ -1,6 +1,6 @@
 # hopper — repo law
 
-Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through realms (GitHub through the hopper's app — the main way, and the connection jobs work through —, LDAP, OIDC, SAML, or an auth gateway in front that signed people in), a device link's login code, or no sign-in; no password accounts of its own, and a fresh hopper holds no user: the first to sign in with GitHub is admin. TypeScript run directly by Node ≥ 24.
+Local job-queue daemon that pulls its jobs. Loopback plus an opt-in LAN or public URL behind a reverse proxy, sign-in through realms (GitHub through the hopper's app — the main way, and the connection jobs work through —, LDAP, OIDC, SAML, or an auth gateway in front that signed people in), the hopper's own local accounts (an email and a password, issue #1380), a device link's login code, or no sign-in; a fresh hopper holds no user: the first to sign in with GitHub is admin, or the operator CLI adds the first admin's local account. TypeScript run directly by Node ≥ 24.
 
 North star (owner decision): an extendable and plugin architecture; every part must serve it. `docs/design.md` "North star".
 
@@ -113,7 +113,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Sign-in fails closed.** An invalid sign-in config stops the daemon; an identity no role rule
   matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in"). Every sign-in
   kind uses an established library for its protocol or hash (openid-client, jose, @node-saml/node-saml,
-  ldapts, @octokit/oauth-methods for GitHub's device flow, openid-client for its web flow); no hand-rolled protocol or password code. The hopper keeps no password accounts of its own (issue #237). A realm change from the UI is loaded
+  ldapts, @octokit/oauth-methods for GitHub's device flow, openid-client for its web flow); no hand-rolled protocol or password code. The hopper's own **local accounts** (issue #1380, `docs/design.md` "Local accounts") keep only a salted scrypt hash, made by Node's crypto; an admin never sets the password of one that signs in as another user. A realm change from the UI is loaded
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
 - **Jobs come only from a trusted origin** (issue #652, `docs/design.md` "Trusted origin and request cards"): an issue
   becomes a job only when the user's trusted actors — Access decides (OpenFGA `intake#can_start_jobs`) — wrote, labelled
