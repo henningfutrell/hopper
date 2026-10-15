@@ -18,6 +18,19 @@ export interface FakeShellOptions {
   runtime?: 'own' | 'none' | 'failed' | 'silent';
 }
 
+/** A typed command longer than ECHO_MAX echoes only its first ECHO_SHOWN characters, as a terminal's screen scrolls the rest off. */
+const ECHO_MAX = 2000;
+const ECHO_SHOWN = 100;
+
+/**
+ * The shell's echo of a typed command. A long one (the job's container runtime set-up, issue #1295, is over 5 KB) shows
+ * only its start: a real pane's screen is a bounded number of rows, and a full echo kept on the fake screen makes each
+ * poll of a long run scan it again.
+ */
+export function echoOf(command: string): string {
+  return command.length > ECHO_MAX ? `$ ${command.slice(0, ECHO_SHOWN)}…` : `$ ${command}`;
+}
+
 export function shellSays(command: string, o: FakeShellOptions, scoped: boolean): ShellSaid {
   // The job's scope (job-scope.ts): with systemd the shell is replaced by one in the scope and prints
   // nothing; without, it says none. Asked where it runs, it says whether that is the scope.
