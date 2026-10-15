@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process */
+/* global process, setInterval */
 // Fake `claude` for `claude setup-token` (issue #1287): like the real CLI it prints nothing and waits when its stdout is no
 // terminal, so only a run in a pseudo-terminal sees its URL. In a terminal it puts stdin in raw mode, prints its URL as an
 // OSC 8 link (the real CLI's form), and reads the code up to Enter (\r). The right code prints the token; any other an error.
@@ -19,12 +19,13 @@ if (argv[0] !== 'setup-token') { process.stderr.write('fake: setup-token only\n'
 // No terminal: the real CLI renders nothing, and waits.
 if (!process.stdout.isTTY) setInterval(() => undefined, 60_000);
 else {
+  // Raw mode before anything shows, as Ink does: a code pasted at once is read with its Enter (\r).
+  process.stdin.setRawMode(true);
   const url = 'https://claude.com/cai/oauth/authorize?code=true&client_id=fake&response_type=code&state=fake-state';
   process.stdout.write('\x1b[1mWelcome to Claude Code\x1b[0m\r\n');
   process.stdout.write('This will guide you through long-lived (1-year) auth token setup for your Claude account.\r\n');
   process.stdout.write(`Browser didn't open? Use the url below to sign in (c to copy)\r\n\x1b]8;id=1;${url}\x07${url}\x1b]8;;\x07\r\n`);
   process.stdout.write('Paste code here if prompted > ');
-  process.stdin.setRawMode(true);
   process.stdin.setEncoding('utf8');
   let input = '';
   process.stdin.on('data', (c) => {

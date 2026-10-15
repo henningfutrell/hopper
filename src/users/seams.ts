@@ -55,6 +55,8 @@ export interface UserSeams {
   tldrWriter?: TldrWriter;
   /** Replaces the Windows host a step runs on (issue #731; default ssh and scp to the host). */
   windowsStepHost?: WindowsStepHost;
+  /** The `claude` the hopper's Claude sign-in for pods runs `setup-token` with (issue #1287; default `claude` on PATH), and variables it gets besides its own. */
+  setupToken?: { file: string; env?: Record<string, string> };
 }
 
 /**

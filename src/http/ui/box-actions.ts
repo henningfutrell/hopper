@@ -52,6 +52,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   // Issue #1128: a machine's agent tool signed in again, and the code its sign-in page showed.
   { route: '/ui/api/tool-accounts/sign-in', kind: 'change work on a machine' },
   { route: '/ui/api/logins/:id/code', kind: 'change work on a machine' },
+  { route: '/ui/api/logins/claude-setup-token', kind: 'run a command' }, // issue #1287: claude setup-token in the hopper
   { route: '/ui/api/jobs/:id/terminal/input', kind: 'change work on a machine' }, // issue #1128: typed into a job's pane
   { route: '/ui/api/machines/:id/terminal/input', kind: 'change work on a machine' }, // issue #1128: typed into a pane on a machine
   { route: '/ui/api/machines', kind: 'change work on a machine' },

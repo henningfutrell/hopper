@@ -8,7 +8,8 @@
 // then go to Earlier logins below; a completed or dismissed one goes there at once (issue #1110). Dismiss puts an open
 // login away when its job never says what came of it; a login its job reopened says why (issue #1110). A session whose UI role cannot act (viewer) sees a notice, never
 // the code (the server answers it none either). A 403 on an action drops the UI to the landing page. A tool sign-in (issue #1128, kind
-// `paste_code`, no job) asks for the code its sign-in page shows instead (`SignInCode`).
+// `paste_code`, no job) asks for the code its sign-in page shows instead (`SignInCode`). The hopper's Claude sign-in for pods
+// (issue #1287) is one on no machine: an admin starts it below the cards (`ClaudePodSignIn`), and its card names the account.
 import { Ban, Check, EyeOff, KeyRound, Lock, RotateCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { countdownText, isOpen, lastAccountText, onCard, phaseOf, sortByTimeLeft
 import type { LoginSettings, LoginView } from '@/model/wire';
 import { actFor, refreshLogins, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex, useMachineName, useServerNow } from '@/store/selectors';
+import { ClaudePodSignIn } from './claude-pod-sign-in';
 import { LoginHistory, LoginSettingsPanel } from './login-settings';
 
 const BORDER: Record<LoginPhase, string> = {
@@ -37,11 +39,19 @@ const LABEL: Record<LoginPhase, string> = { pending: 'pending', expiring: 'expir
 /** A tool sign-in a person started from Accounts (issue #1128): no job waits on it. */
 const isSignIn = (l: LoginView): boolean => l.kind === 'paste_code' && !l.jobId;
 
+/** The hopper's Claude sign-in for pods (issue #1287): a sign-in on no machine. */
+const isPodSignIn = (l: LoginView): boolean => isSignIn(l) && !l.machineId;
+
 /** What waits on the login, as a noun: the job, the sign-in, or the escalation run. */
 const waiter = (l: LoginView): string => (l.jobId ? 'The job' : isSignIn(l) ? 'The sign-in' : 'The escalation run');
 
 /** What happened to what waited on it, for an ended login. */
 function outcome(l: LoginView, phase: LoginPhase, settings: LoginSettings): string {
+  if (isPodSignIn(l)) {
+    if (phase === 'completed') return 'The token is kept in your vault as CLAUDE_TOKEN: new job pods and lane pods start signed in.';
+    if (phase === 'failed') return `${l.reason ? `Failed: ${l.reason}.` : 'Failed.'} Start it again below.`;
+    if (phase === 'expired' || phase === 'cancelled') return 'The sign-in stopped. Start it again below.';
+  }
   if (isSignIn(l)) {
     if (phase === 'completed') return `${l.tool} on this machine is signed in.`;
     if (phase === 'failed') return `${l.reason ? `Failed: ${l.reason}.` : 'Failed.'} Start it again from Accounts.`;
@@ -68,6 +78,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
   const job = useJobIndex().get(l.jobId ?? '');
   const machine = useMachineName(l.machineId);
   const name = machine ?? 'machine unknown';
+  const where = isPodSignIn(l) ? 'in the hopper' : `on ${name}`;
   const lastAccount = lastAccountText(l.lastAccount, machine ?? l.machineId ?? name);
   const [busy, setBusy] = useState(false);
   const left = countdownText(l, now);
@@ -103,12 +114,12 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
           <StatusBadge status={phase} tone={TONE[phase]} label={LABEL[phase]} />
         </span>}>
         <span data-login-announce aria-live="polite" className="sr-only">
-          {phase === 'expiring' ? `The ${l.tool} login on ${name} expires soon.` : phase === 'expired' ? `The ${l.tool} login on ${name} expired.` : ''}
+          {phase === 'expiring' ? `The ${l.tool} login ${where} expires soon.` : phase === 'expired' ? `The ${l.tool} login ${where} expired.` : ''}
         </span>
         <div className="flex items-start gap-2 text-sm">
           <span className="shrink-0 text-xs text-muted-foreground">Waiting:</span>
           {job ? <JobTitle job={job} className="flex-1" />
-            : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : isSignIn(l) ? `the ${l.tool} sign-in on ${name}` : `the ${l.run} escalation run for a question`}</span>}
+            : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : isPodSignIn(l) ? 'the Claude sign-in for pods, in the hopper' : isSignIn(l) ? `the ${l.tool} sign-in on ${name}` : `the ${l.run} escalation run for a question`}</span>}
           {!job && l.high && l.priority !== undefined && <HighTag priority={l.priority} />}
         </div>
         {lastAccount && <div data-slot="login-last-account" className="text-sm">{lastAccount}</div>}
@@ -172,6 +183,7 @@ export function Logins() {
         ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{cards.map((l) => <LoginCard key={l.id} l={l} now={now} settings={settings} />)}</div>
         : <Panel title="Logins" icon={KeyRound}><Empty>no pending logins</Empty></Panel>}
       {earlier.length > 0 && <LoginHistory logins={earlier} />}
+      {canAdmin && <ClaudePodSignIn />}
       {canAdmin && <LoginSettingsPanel settings={settings} />}
     </div>
   );

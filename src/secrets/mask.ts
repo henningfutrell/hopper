@@ -49,6 +49,9 @@ const KEY_PATTERNS = [
  */
 const CLAUDE_TOKEN_PATTERN = /\bsk-ant-o[ar]t\d\d-[A-Za-z0-9_-]{8,}/g;
 
+/** `text` with each Claude token masked. */
+export const maskClaudeTokens = (text: string): string => text.replace(CLAUDE_TOKEN_PATTERN, '[Claude token, masked]');
+
 /** `text` with each 32-byte key, as hex, base64 or base64url, replaced by `[key, masked]`. */
 export function maskKeys(text: string): string {
   let result = text;
@@ -63,7 +66,7 @@ export function maskKeys(text: string): string {
 export function maskLogLine(text: string, held: Iterable<string>): string {
   let result = text;
   for (const secret of held) result = maskSecret(result, secret, 'secret');
-  return maskKeys(maskGitHubTokens(result)).replace(CLAUDE_TOKEN_PATTERN, '[Claude token, masked]');
+  return maskClaudeTokens(maskKeys(maskGitHubTokens(result)));
 }
 
 /**
@@ -102,7 +105,7 @@ const SECRET_PATTERNS: [RegExp, string][] = [
 export function maskSecrets(text: string): string {
   let result = text;
   for (const [pattern, mask] of SECRET_PATTERNS) result = result.replace(pattern, mask);
-  return maskKeys(maskGitHubTokens(result)).replace(CLAUDE_TOKEN_PATTERN, '[Claude token, masked]');
+  return maskClaudeTokens(maskKeys(maskGitHubTokens(result)));
 }
 
 /** Every string inside a JSON value masked. */

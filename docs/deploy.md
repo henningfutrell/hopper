@@ -1353,8 +1353,11 @@ to the pods' join step only.
 
 1. Sign in to the hopper once. Until then, a pod's join is refused, and the pod tries again every 10 seconds.
 2. Set how many: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set lanes.replicas=3`.
-3. Keep the agent's sign-in in your vault once: run `claude setup-token` on any machine, sign in, and set what it prints
-   (`sk-ant-oat…`) as the vault secret `CLAUDE_TOKEN` in Settings → Vault. Each job on a lane pod starts signed in with
+3. Keep the agent's sign-in in your vault once: on Logins, under **Claude sign-in for pods**, type the Claude account and
+   select **Sign in**. Open the URL on its card, sign in as that account, and paste the code the page shows into the card.
+   The hopper runs `claude setup-token` itself and keeps the token as the vault secret `CLAUDE_TOKEN`. (Or run
+   `claude setup-token` on any machine and set what it prints, `sk-ant-oat…`, as `CLAUDE_TOKEN` in Settings → Vault.)
+   Each job on a lane pod starts signed in with
    it, also after a pod starts again with a new volume. A `claude-plan` usage source that names a lane pod reads it with
    the token too. The token is not kept in a pod's volume, its spec or a ConfigMap.
    Without it, sign each pod in once (`kubectl --namespace hopper exec -it hopper-lanes-0 -c lane -- claude`): that

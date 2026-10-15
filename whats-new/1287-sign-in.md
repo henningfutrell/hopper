@@ -1,0 +1,1 @@
+- You can now sign Claude in for Kubernetes job pods and lane pods from the Logins page: name the account, open the link, and paste the code back. The hopper keeps the token in your vault for you.
