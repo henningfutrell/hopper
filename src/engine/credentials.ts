@@ -41,3 +41,13 @@ export async function placeCredentials(
   if (unreached) throw new Error(`${unreached}. ${REACH_ACTION}`);
   return { ...pathsUnder(dir, proxy.paths), ...proxy.vars };
 }
+
+/**
+ * The agent's sign-in a job on `machine` starts with (issue #1287, design.md "The agent's sign-in in a lane pod"): its
+ * variable and value, or none. Throws with the vault's reason when it refuses: the job fails before its pane starts.
+ */
+export async function agentSignIn(c: Pick<EngineContext, 'agentSignIn'>, job: Job, machine: MachineSnapshot): Promise<Record<string, string>> {
+  const r = await c.agentSignIn(job, machine);
+  if ('refused' in r) throw new Error(`the agent credential: ${r.refused}`);
+  return 'none' in r ? {} : { [r.variable]: r.value };
+}

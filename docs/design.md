@@ -5454,14 +5454,45 @@ every new job pod.
   new pod; set a new value and the next start takes it.
 
 **Not done here** (still in #1287): the hopper running `claude setup-token` itself and keeping what it prints, so the sign-in
-is one paste from the Logins page and names the account (a pty: `setup-token` prints nothing without a terminal); lane pods'
-restarts (#1284, not merged): a lane pod's home on its claim keeps a `/login`, and the same token can be given to it.
+is one paste from the Logins page and names the account (a pty: `setup-token` prints nothing without a terminal). Lane pods'
+restarts: "The agent's sign-in in a lane pod" below.
 
 **Verification.** `test/integration/kubernetes-executor.test.ts`: through the real daemon, with the vault in the hopper and in
 a container of its own, two jobs each run in a new pod whose pane starts with the token; no pod spec, event or log line holds
 it; a value that is no setup token fails the job and starts no pod. `test/adapters/kubernetes-executor.test.ts`,
 `test/vault/agent-credential.test.ts`, `test/secrets/mask.test.ts`. Not checked here: a real Claude in a real pod signed in by
 a real setup token.
+
+### The agent's sign-in in a lane pod (issue #1287, part 2, 2026-10-15)
+
+A lane pod (issue #1284, "Lane pods") kept its agent's sign-in as a `/login` in its home volume: a person signed each pod
+in once with `kubectl exec`, and a pod that started again with a new volume asked again. That `/login` is a credentials
+file in clear on the claim, and its refresh token rotates. Now a lane pod's job starts signed in from the user's vault, as a
+job pod's does ("The agent's sign-in in a job pod" above).
+
+- **Each job on a lane pod is given the setup token.** The engine asks `agentSignIn` (`EngineOptions`) for each job's
+  credentials, at each start of its pane (a run, a resume): on a machine that is a lane pod (a client target with
+  `pool: true`) it is the user's vault secret `CLAUDE_TOKEN`, through the same `podCredential` and with the same refusals
+  (`laneAgentSignIn`, `src/machines/lane-pool.ts`); on any other machine, none — its own sign-in as before. The pane gets it
+  as `CLAUDE_CODE_OAUTH_TOKEN` with the job's other variables, over the pod's link. `vault.pod_credential_given` names the
+  lane pod as its `pod`.
+- **So a restart asks for no sign-in.** The token is in the vault, not in the pod: a pod started again, with its volume or a
+  new one, joins as the same machine, and its next job starts with the token. Nothing of the sign-in needs to be on the claim,
+  in the StatefulSet, a ConfigMap or the image. The chart is unchanged; a `/login` made earlier in a pod's home stays the
+  fallback for a user with no `CLAUDE_TOKEN`, and the variable wins over it.
+- **A refusal fails the job before its pane starts**, with the reason (a value that is no setup token, a shared or system
+  secret, a backend that cannot read it). The lane pod stays: it is no job's.
+- **Never in an outcome.** The engine masks each sign-in it gave a run in that run's failed outcome (error and tail); log
+  lines mask a Claude token as before (`maskLogLine`).
+- **Residual risk.** As for a job pod: every process of the job reads the token in its environment. A lane pod runs many
+  jobs, all of its one user (`admin`), so the token reaches no other user's job.
+- **Not done here.** A `claude-plan` usage source on a lane pod reads `claude auth status` in the pod, without the token: with
+  no `/login` there it reads the pod signed out, and the decider holds its jobs ("Failover to signed-in machines"). Name no
+  usage source on a lane pod, or sign it in there, until the usage source takes the token too.
+
+**Verification.** `test/integration/lane-pod-sign-in.test.ts`: through the real daemon and the real client, a lane pod's job
+starts with the token, and so does the next after the pod starts again with a new volume; no event or log line holds it; a
+machine joined with a join code gets no token; a value that is no setup token fails the job before its pane starts.
 
 ## Client releases (issue #70, 2026-10-05)
 

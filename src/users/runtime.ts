@@ -15,7 +15,7 @@ import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
 import { linkToken } from '../client/link.ts';
-import type { MachineLinks } from '../machines/links.ts';
+import type { MachineLinks } from '../machines/links.ts'; import { laneAgentSignIn } from '../machines/lane-pool.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
@@ -362,7 +362,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL, and
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
-    jobProxy: proxy.jobProxy, boxRadius: (machine) => vault.boxRadius(machine),
+    jobProxy: proxy.jobProxy, agentSignIn: laneAgentSignIn(() => host.targets(), (ask) => vault.podCredential(ask)), boxRadius: (machine) => vault.boxRadius(machine),
     // Read at each Decision; reached only after `failures` exists. An applied lane recommendation edits the machine (issue #688).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins),
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).

@@ -8,10 +8,10 @@ import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/por
 import type { TaskCount } from '../domain/task-count.ts';
 import { finishBrief, MAX_FINISH_BRIEFS, type Job, type LaneId, type MachineSnapshot, type UnfinishedPullRequest } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
-import { maskGitHubTokens } from '../secrets/mask.ts';
+import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
-import { placeCredentials } from './credentials.ts';
+import { agentSignIn, placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 import { elsewhereBrief, freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
@@ -187,6 +187,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     // A person's correction of an earlier auto-answer (issue #632) goes in ahead of what it resumes with.
     const resumeWith = store.tx(() => withCorrection(c, started, forkResume(c, started, started.pendingAnswer === undefined ? undefined
       : started.parked?.elsewhere ? elsewhereBrief(started, started.pendingAnswer) : startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer)));
+    /** The agent's sign-ins given to this run: never in its outcome, as a tool's error may repeat its variables. */
+    const given = new Set<string>();
     const contextOf = (j: Job, m: MachineSnapshot): ExecutionContext => ({
       // The job rules as they are at this start (issue #172): an edit reaches the next job.
       job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), j.spec, j.forkOf, j.followOn),
@@ -194,7 +196,13 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: m.id, run: job.spec.executor }, () => !c.stopping()),
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
       // `on`: the machine the job's work is on, when not the lane's (a job pod, issue #1283).
-      credentials: (scratch, make = false, on = m) => placeCredentials(c, started, on, executor?.machineShell?.(on), scratch, make, (line) => progress.report(line)),
+      // The agent's sign-in on a lane pod (issue #1287), from the user's vault: kept to mask it in the outcome.
+      credentials: async (scratch, make = false, on = m) => {
+        const placed = await placeCredentials(c, started, on, executor?.machineShell?.(on), scratch, make, (line) => progress.report(line));
+        const signIn = await agentSignIn(c, started, on);
+        for (const value of Object.values(signIn)) given.add(value);
+        return { ...placed, ...signIn };
+      },
       progress: (msg, tasks) => progress.report(msg, tasks),
       // Before a nudge (issue #627): the job's source, then what it waits on a person for.
       beforeNudge: () => nudgeCheck(c, j),
@@ -204,11 +212,16 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
       agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
     });
+    const masked = (outcome: ExecutionOutcome): ExecutionOutcome => {
+      if (outcome.kind !== 'failed' || given.size === 0) return outcome;
+      const mask = (text: string): string => [...given].reduce((t, v) => maskSecret(t, v, 'agent sign-in'), text);
+      return { ...outcome, error: mask(outcome.error), ...(outcome.tail !== undefined ? { tail: mask(outcome.tail) } : {}) };
+    };
     const guarded = async (go: () => Promise<ExecutionOutcome>): Promise<ExecutionOutcome> => {
       try {
-        return await go();
+        return masked(await go());
       } catch (e) {
-        return { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
+        return masked({ kind: 'failed', error: e instanceof Error ? e.message : String(e) });
       }
     };
     /** Its machine link lost while it ran (issue #752): held, then watched again from its saved turn, as often as the link drops. */
