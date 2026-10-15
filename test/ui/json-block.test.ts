@@ -8,7 +8,9 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 
-const { JsonBlock } = (await import('../../ui/src/components/json-block.tsx')) as {
+// Browser code, type-checked by ui/tsconfig.json: imported by path.
+const jsonBlock = '../../ui/src/components/json-block.tsx';
+const { JsonBlock } = (await import(jsonBlock)) as {
   JsonBlock: (p: { value: unknown; label: string; className?: string }) => ReturnType<typeof createElement>;
 };
 
