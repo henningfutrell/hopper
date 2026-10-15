@@ -24,7 +24,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { CONNECT_PATH, JOIN_PATH, LEAVE_PATH, LINK_PROTOCOL, MACHINE_KEY_HEADER, USER_HEADER } from '../client/link.ts';
 import type { ClientRelease } from '../client/release.ts';
-import { REQUEST_HEADER, createNonceCache, nonceOf, verifyConnect, verifyLeave, verifyVault } from '../client/signature.ts';
+import { HELD_CREDIT_MS, REQUEST_HEADER, WINDOW_MS, createNonceCache, nonceOf, verifyConnect, verifyLeave, verifyVault, type HeldSince } from '../client/signature.ts';
 import { askOf, sealAnswer, VAULT_CONTENT_TYPE, VAULT_PATH } from '../client/vault.ts';
 import type { Clock, InstanceStore, JoinCodePlace } from '../domain/ports.ts';
 import { useJoinCode } from '../machines/join-code.ts';
@@ -48,7 +48,15 @@ export interface ClientLinkOptions {
   installScript: string;
   /** The lane pool key (issue #1284), read at each join; undefined: this hopper has no lane pool. */
   poolKey?: () => string | undefined;
+  /**
+   * How long the event loop was held since a moment (issue #1383): a machine's signed ask that waited behind a stall is
+   * not stale for that time. Absent: none.
+   */
+  heldSince?: HeldSince;
 }
+
+/** A nonce is kept as long as an ask that carries it may be fresh: the window and the held credit, both ways. */
+const nonceCache = () => createNonceCache(WINDOW_MS + HELD_CREDIT_MS);
 
 const joinBody = z.strictObject({
   code: z.string(),
@@ -90,7 +98,7 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
 
   // The body is the bytes the machine signed: kept as text, parsed only after the signature holds.
   app.addContentTypeParser(VAULT_CONTENT_TYPE, { parseAs: 'string' }, (_req, body, done) => { done(null, body); });
-  const vaultNonces = createNonceCache();
+  const vaultNonces = nonceCache();
   app.post(VAULT_PATH, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const user = header(req.raw, USER_HEADER);
@@ -99,7 +107,7 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const tenant = o.tenants.user(user);
     const token = tenant?.machineLink.tokenFor(key);
     const signature = header(req.raw, REQUEST_HEADER);
-    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyVault(token, signature, user, key, body, vaultNonces);
+    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyVault(token, signature, user, key, body, vaultNonces, Date.now(), o.heldSince);
     if (!verdict.ok || !tenant || token === undefined) {
       const why = verdict.ok ? 'no such user' : verdict.why;
       console.warn(`hopper: refused a vault ask from ${req.socket.remoteAddress}: ${why}`);
@@ -114,13 +122,13 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     return sealAnswer(token, nonceOf(signature), ask, r.value);
   });
 
-  const leaveNonces = createNonceCache();
+  const leaveNonces = nonceCache();
   app.post(LEAVE_PATH, async (req) => {
     const user = header(req.raw, USER_HEADER);
     const key = header(req.raw, MACHINE_KEY_HEADER);
     const tenant = o.tenants.user(user);
     const token = tenant?.machineLink.tokenFor(key);
-    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyLeave(token, header(req.raw, REQUEST_HEADER), user, key, leaveNonces);
+    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyLeave(token, header(req.raw, REQUEST_HEADER), user, key, leaveNonces, Date.now(), o.heldSince);
     if (!verdict.ok || !tenant) {
       console.warn(`hopper: refused a machine's leave from ${req.socket.remoteAddress}: ${verdict.ok ? 'no such user' : verdict.why}`);
       throw new HttpError(401, `refused: ${verdict.ok ? 'no such user' : verdict.why}`);
@@ -132,7 +140,7 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
   app.get('/client/release', async () => o.release);
 
   const peers = peerList(o.lan.peers);
-  const nonces = createNonceCache();
+  const nonces = nonceCache();
   app.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on('error', () => socket.destroy());
     const path = (req.url ?? '').split('?')[0];
@@ -145,7 +153,7 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const user = header(req, USER_HEADER);
     const key = header(req, MACHINE_KEY_HEADER);
     const token = o.tenants.user(user)?.machineLink.tokenFor(key);
-    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyConnect(token, header(req, 'x-hopper-signature'), user, key, nonces);
+    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyConnect(token, header(req, 'x-hopper-signature'), user, key, nonces, Date.now(), o.heldSince);
     if (!verdict.ok) {
       console.warn(`hopper: refused a machine's dial-in from ${req.socket.remoteAddress}: ${verdict.why}`);
       return refuse(socket, 401, `refused: ${verdict.why}. A removed machine is added again with Add machine`);

@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the slow store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the slow store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -18664,8 +18664,8 @@ inside the approval's request, the start had no time limit of its own, and nothi
   /ui/api/sandbox-requests` — with the routes of the requests in flight while it lasted (route patterns, never URLs: no
   id or token reaches the log). `/api/health` answers the last stall for 10 minutes (`eventLoopStall`: `at`, `ms`,
   `during`), and the top bar shows a **stalled** badge with them.
-- **What it cannot say.** The stack of the code that held the loop: once the loop is free, that code has ended, and no
-  other thread of Node reads the main thread's stack. The routes name the handler; a stall with none in flight was a
+- **What it cannot say.** The stack of the code that held the loop: once the loop is free, that code has ended. (Issue
+  #1383 reads it while the loop is held, from a worker thread: "Reading the held event loop".) The routes name the handler; a stall with none in flight was a
   timer or the engine. The store's calls block the loop by design (`src/store/db.ts`, up to 30 s each), so a slow
   database shows as a stall too.
 
@@ -20892,7 +20892,8 @@ nothing else") said only which routes were in flight; most stalls had none, so i
   sends it; a dial-in that waits in the socket's queue behind a stall is read when the stall ends, older than the 30 s
   window, and refused `stale`. The client's backoff had grown meanwhile (to 30 s). The client now dials again at the first
   backoff (1 s), signed fresh, after a stale refusal, once: a second stale refusal in a row is a clock that is wrong, not
-  a stall, and backs off as any failure. The window is not widened: the hopper's side is unchanged.
+  a stall, and backs off as any failure. The window is not widened: the hopper's side is unchanged. (Issue #1383 credits
+  the time the loop was held: "Reading the held event loop".)
 - **A session with no HOME** (`probeSsh`, `src/machines/attached.ts`). A WSL machine reached over ssh answered an empty
   home, and was offline with `its home is not an absolute path: ""`. The probe now takes the user's home from the user
   database (`getent passwd`) when HOME is empty, and uses it for the rest of its command (the work tree); the home comes on
@@ -21454,3 +21455,42 @@ sign-in, which no check has).
 of the cutover, the key never in an argument or a file, the rollback, the refusals),
 `test/scripts/helm-chart.test.ts` (`replicas`, `service.type`, `lanNames`, the chart in the image),
 `test/scripts/kind-migrate-check.test.ts`, and `scripts/kind-migrate-check.ts` on kind.
+
+## Reading the held event loop (issue #1383, 2026-10-15)
+
+Seen after the parts of issue #1154: stalls of 57 s, 63 s and 129 s, each `no slow store call in it`. `/api/health` did
+not answer from inside the container; OpenFGA and Solr calls timed out though both answered at once from another
+process; a machine's link ended and its dial-ins were refused `stale`. The process held 2.5 GB resident. The watchdog
+said what did not hold the loop, never what did.
+
+- **A worker thread reads where the loop runs while it is held** (`src/http/event-loop-held.ts`,
+  `event-loop-held-worker.ts`). The watchdog's tick writes a beat (ms since the epoch) into shared memory. The worker
+  looks at it each second; when no beat came for 5 s (`HELD_MS`), it opens the inspector on the main thread
+  (`Session.connectToMainThread`), pauses it (`Debugger.pause`, which V8 takes as an interrupt, so a busy loop is
+  paused where it runs, and a synchronous native call at the JavaScript that called it), reads the top 8 frames,
+  and resumes it at once. At most three reads a held spell, 5 s apart. Each read is logged by the worker at once, on
+  stderr, so the log says the loop is held while it is: `hopper: the event loop is held for 5.0 s now; it runs list
+  (src/store/jobs.ts:88) ← …`. The watchdog names the reads with the stall when the loop is free (`held`: `afterMs`,
+  `frames`), in its log line, in `/api/health`'s `eventLoopStall`, in `hopper.event_loop_stalled` (additive, still v1)
+  and in the **stalled** badge's title. A frame names its function and its file in the hopper's tree (`src/…`,
+  `node_modules/…`, `node:…`), else the file name alone: never an absolute path. The debugger is on only for the read.
+  No inspector port is opened: the session is in-process. A Node with no inspector starts with none, and says so.
+- **A stall says the process's memory** (`memory`: `rssMb`, `heapMb`), and the watchdog logs each time the resident size
+  grows past another GiB (`hopper: the process's resident memory grew past 2 GiB (2560 MiB)`), read each minute. A
+  growth and a stall in the same log say whether the garbage collector held it (a read of "no JavaScript").
+- **A machine's ask that waited behind a held loop is not stale** (`src/client/signature.ts` `fresh`,
+  `src/http/client-link.ts`). A dial-in, a vault ask or a leave is signed when it is sent, and read only when the loop is
+  free. The watchdog answers how long the loop was held since a moment (`heldSince`: the stalls of the last 10 minutes
+  and the one still going on, which the request handler sees before the timer does). An ask signed at `ts` is fresh when
+  its age is within 30 s plus that time, at most 5 minutes more (`HELD_CREDIT_MS`). An ask from more than 30 s in the
+  future gets no credit. Its nonce is kept for the window and the credit (`createNonceCache(WINDOW_MS + HELD_CREDIT_MS)`),
+  so an ask is still accepted once. The credit is only time the hopper itself could not read: it is never given for a
+  loop that was free.
+- **Not done here.** `/api/health` still cannot answer while the loop is held: it is served on the loop. A second
+  listener in the worker would be a second network surface. Nothing is moved off the loop yet: the reads say what to
+  move, and no hopper has run them through a stall.
+
+**Verification:** `test/http/event-loop.test.ts` (a stall names the code the loop ran while held, from the real worker;
+`heldSince`, a stall going on included; the memory line once per GiB; `frameOf` never an absolute path),
+`test/client/signature.test.ts` (a dial-in, a vault ask and a leave credited the held time, at most 5 minutes; none from
+the future; still once).

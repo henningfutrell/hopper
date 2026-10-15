@@ -4,7 +4,7 @@
 // request's nonce and what it says, so the hopper knows the client answered (design.md "Target
 // authentication").
 import { describe, expect, it } from 'vitest';
-import { createNonceCache, signRequest, signResponse, verifyRequest, verifyResponse, mintToken, checkToken } from '../../src/client/signature.ts';
+import { HELD_CREDIT_MS, WINDOW_MS, createNonceCache, signConnect, signLeave, signRequest, signResponse, signVault, verifyConnect, verifyLeave, verifyRequest, verifyResponse, verifyVault, mintToken, checkToken } from '../../src/client/signature.ts';
 
 const TOKEN = mintToken();
 const BODY = JSON.stringify({ args: ['status', 'server'] });
@@ -77,5 +77,38 @@ describe('a signed answer', () => {
     expect(verifyResponse(TOKEN, h, nonce, 200, '{"code":1}')).toBe(false);
     expect(verifyResponse(mintToken(), h, nonce, 200, '{"code":0}')).toBe(false);
     expect(verifyResponse(TOKEN, undefined, nonce, 200, '{"code":0}')).toBe(false);
+  });
+});
+
+// Issue #1383: a dial-in that waited behind the hopper's held event loop is read late; the time the loop was held since
+// it was signed is credited, at most HELD_CREDIT_MS. The nonce still holds it to once.
+describe('a dial-in read after a held event loop', () => {
+  const USER = 'u1', KEY = 'k'.repeat(43);
+  it('is fresh for the time the loop was held since it was signed', () => {
+    const h = signConnect(TOKEN, USER, KEY, T0);
+    const held = (from: number) => (from === T0 ? 129_000 : 0);
+    expect(verifyConnect(TOKEN, h, USER, KEY, createNonceCache(), T0 + 150_000)).toEqual({ ok: false, why: 'stale' });
+    expect(verifyConnect(TOKEN, h, USER, KEY, createNonceCache(), T0 + 150_000, held)).toMatchObject({ ok: true });
+    expect(verifyConnect(TOKEN, h, USER, KEY, createNonceCache(), T0 + 159_001, held)).toEqual({ ok: false, why: 'stale' });
+  });
+
+  it('is credited at most HELD_CREDIT_MS, and a dial-in from the future gets none', () => {
+    const h = signConnect(TOKEN, USER, KEY, T0);
+    const held = () => 60 * 60_000;
+    expect(verifyConnect(TOKEN, h, USER, KEY, createNonceCache(), T0 + WINDOW_MS + HELD_CREDIT_MS, held)).toMatchObject({ ok: true });
+    expect(verifyConnect(TOKEN, h, USER, KEY, createNonceCache(), T0 + WINDOW_MS + HELD_CREDIT_MS + 1, held)).toEqual({ ok: false, why: 'stale' });
+    expect(verifyConnect(TOKEN, h, USER, KEY, createNonceCache(), T0 - WINDOW_MS - 1, held)).toEqual({ ok: false, why: 'stale' });
+  });
+
+  it('a vault ask and a leave are credited the same way', () => {
+    const held = () => 100_000;
+    expect(verifyVault(TOKEN, signVault(TOKEN, USER, KEY, BODY, T0), USER, KEY, BODY, createNonceCache(), T0 + 120_000, held)).toMatchObject({ ok: true });
+    expect(verifyLeave(TOKEN, signLeave(TOKEN, USER, KEY, T0), USER, KEY, createNonceCache(), T0 + 120_000, held)).toMatchObject({ ok: true });
+  });
+
+  it('is still accepted once', () => {
+    const h = signConnect(TOKEN, USER, KEY, T0), seen = createNonceCache(WINDOW_MS + HELD_CREDIT_MS);
+    expect(verifyConnect(TOKEN, h, USER, KEY, seen, T0 + 100_000, () => 90_000)).toMatchObject({ ok: true });
+    expect(verifyConnect(TOKEN, h, USER, KEY, seen, T0 + 200_000, () => 190_000)).toEqual({ ok: false, why: 'replayed' });
   });
 });

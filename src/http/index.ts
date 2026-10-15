@@ -2,6 +2,7 @@
 // only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
 // passes the Host guard (AGENTS.md).
 import { watchEventLoop, type EventLoopStall } from './event-loop.ts';
+import type { HeldWatch } from './event-loop-held.ts';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { accessRoutes } from './access.ts';
@@ -140,6 +141,8 @@ export interface ServerOptions {
   client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript' | 'poolKey'>;
   /** Fastify logger; off by default. */
   logger?: boolean;
+  /** The thread that reads where the event loop is held (issue #1383); absent: a stall does not say. */
+  held?: HeldWatch;
 }
 
 export function createServer(o: ServerOptions): FastifyInstance {
@@ -152,7 +155,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // (issue #1154), shown on /api/health, and raised as an instance event.
   const events = o.events;
   const loop = watchEventLoop(app, {
-    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.since,
+    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.since, ...(o.held ? { held: o.held } : {}),
     ...(events ? { raise: ({ at: _at, ...data }: EventLoopStall & { skipped: number }) => { events.append({ type: 'hopper.event_loop_stalled', data }); } } : {}),
   });
   // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
@@ -225,7 +228,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });
-  clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
+  clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan, heldSince: loop.heldSince });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   const { proxy: github, prWaits } = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
