@@ -18012,8 +18012,12 @@ job's issue was closed as complete: two more answers beside the ledger's.
   — its issue closed, its label or assignee gone, of a trusted origin now — records `source.request_withdrawn`
   (`withdrawRequests`, `src/sources/github/origin.ts`): the item is dropped. Offered again, the card opens again: "opened"
   is opened with this text since its last withdraw. So `waiting_for_approval` holds only the cards Intake offers now.
-- **The Intake badge and Needs you's Intake row** read `items.waiting_for_approval` of `GET /api/queue` (`requestsWaiting`):
-  the ledger's count. Each source's Intake list still shows its own last sync, which agrees after the sync records it.
+- **The Intake badge and Needs you's Intake row** count the request cards the Intake page shows under Needs approval
+  (`requestsWaiting`, by the page's own rule `intakeGroups`; issue #1193), not the ledger's `waiting_for_approval`: the
+  ledger lags a card the source lists (a reopened card, issue #1126, showed on the page with no badge). One rule for each
+  nav badge and its page: a badge counts what its page shows waiting, from the same data, and changes when the page does.
+  Infra's page shares its reads with the badge and Needs you (`setPolled`), so an approve or a mark there changes them at
+  once.
 - **Closed as complete** (issue #350) is the ledger's rule (`issueClosedAsComplete`, "A failed job whose issue is closed
   as complete is finished"): the source's read is only ledger input. `JobSource.closedAsComplete` is gone; a source answers
   `issueState(job)`, open or closed and why.

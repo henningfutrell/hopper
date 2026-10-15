@@ -42,6 +42,7 @@ function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     // The work-item ledger's counts (issue #1067): 3 items wait for approval, though the source's last sync listed 2 cards.
+    // The badge counts the cards the page shows (issue #1193), not the ledger.
     '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [], items: { ...countStates([]), waiting_for_approval: 3 } },
     '/api/machines': MACHINES, '/api/decisions': { decisions: [DECISION] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },

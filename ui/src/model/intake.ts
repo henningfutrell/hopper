@@ -4,7 +4,7 @@
 // passed intake (issue #1035): their state is job progress, on Jobs, and Intake only counts them. A request a person
 // declined (issue #1035) waits for nobody: Intake counts it apart.
 import type { IntakeOutcome, NotTakenGroup } from '../../../src/domain/intake.ts';
-import type { JobStatus, SourceStatus, WorkItemState } from './wire';
+import type { JobStatus, SourceStatus } from './wire';
 
 export type IntakeGroupKind = NotTakenGroup | 'taken';
 
@@ -73,8 +73,13 @@ export const onTheBackburner = (sources: SourceStatus[]): number => sources.redu
 /** An issue's number from its key (a GitHub issue URL), or undefined for another kind of item (issue #808). */
 export const issueNumber = (key: string): number | undefined => { const m = /\/issues\/(\d+)$/.exec(key); return m ? Number(m[1]) : undefined; };
 
-/** The items the work-item ledger has waiting for approval (issue #1067): the Intake badge and Needs you's Intake row. None before the ledger is read. */
-export const requestsWaiting = (items: Partial<Record<WorkItemState, number>> | null): number => items?.waiting_for_approval ?? 0;
+/**
+ * The request cards waiting for approval across the sources: the Intake badge and Needs you's Intake row. The count each
+ * source's Needs approval heading shows, by the same rule (intakeGroups), so the badge and the page never disagree
+ * (issue #1193): a reopened card (issue #1126) counts as soon as the page shows it.
+ */
+export const requestsWaiting = (sources: readonly SourceStatus[]): number =>
+  sources.reduce((n, s) => n + (intakeGroups(intakeOf(s)).find((g) => g.kind === 'request')?.count ?? 0), 0);
 
 const ENDED: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 /** A taken item's job has ended since the sync that took it: the next sync says what became of the issue. */
