@@ -38,5 +38,7 @@ describe('header badges (issue #1181)', () => {
     expect(shownBadges(undefined)).toEqual(['lanes']);
     expect(shownBadges({ badges: ['failed', 'inFlight'] })).toEqual(['inFlight', 'failed']);
     expect(shownBadges({ badges: [] })).toEqual([]);
+    // An answer with no list (an older daemon) is no choice.
+    expect(shownBadges({} as never)).toEqual(['lanes']);
   });
 });

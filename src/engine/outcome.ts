@@ -72,7 +72,7 @@ export function releaseLane(c: EngineContext, lane: Lane | undefined, at: string
     c.store.lanes.close(lane.id);
     c.store.events.append({ type: 'lane.closed', laneId: lane.id, machineId: lane.machineId, data: { reason: 'drained' } });
   } else {
-    c.store.lanes.update(lane.id, { state: 'idle', jobId: undefined, idleSince: at });
+    c.store.lanes.update(lane.id, { state: 'idle', jobId: undefined, idleSince: at, pastCap: undefined });
   }
 }
 

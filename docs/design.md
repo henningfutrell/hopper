@@ -1414,9 +1414,11 @@ cleared, attempt `reason: "answered in the pane"`, question `answered` by `human
 `running` on an idle lane of its `resumeOn` machine with the new `executorState`,
 `job.reattached { reason: "answered in the pane" }`; after the commit `runner.reattach` watches
 the turn to its outcome, exactly as after a restart. **Lanes:** the job already runs
-physically, so it never waits: with no idle lane it opens one more (`lane.opened`) and runs
-**over the lane cap** until it ends; the decider counts that busy lane like any other and drains
-or closes the extra lane after. **Missed:** a reply turn that starts and ends between two ticks
+physically, so it never waits: with no idle lane it opens one more (`lane.opened`), marked
+`pastCap` on the lane (issue #1181), and runs **over the lane cap** until it ends; the decider counts that busy lane
+like any other, and step 8 drains it before any other busy lane, as an elbow-in's, so the machine is back at its cap
+when that job ends (before issue #1181 it drained the lowest-priority lane, often an older job's, while the extra lane
+stayed). The Lanes panel marks it `came back · over the cap`. `pastCap` is cleared when the lane goes idle. **Missed:** a reply turn that starts and ends between two ticks
 with no readable echo (e.g. a dialog answered by keys) is not seen; the question stays open and
 can still be answered or closed in the UI.
 
@@ -17961,6 +17963,23 @@ follow lost cannot inflate the count, and its first look puts it in. `GET /api/q
 `inFlight: { total, running, ownCommand, pullRequests }`; the badge shows `total` with the parts as its title, and the
 dashboard's **In flight** card (in place of Running) shows the same `total` and the same parts in the same words
 (`ui/src/model/in-flight.ts`). The Jobs view's filter reads the same rule. Neither recounts the job list.
+
+**Header badges (issue #1181, 2026-10-15).** The header shows the KPI cards the user picks in the Dashboard's Customize
+as **header badges**: In flight, Lanes, Waiting, On a question, Finished, Failed (`HEADER_BADGES`,
+`src/domain/header-badges.ts`). Each badge shows its card's own total: the cards and the badges read one selector
+(`useKpis`, `cardTotals` in `ui/src/model/header-badges.ts`), so a badge and its card cannot disagree. The default is one
+**Lanes** badge: the lanes holding a job, busy and draining — the Lanes card's number, not the ledger's in flight, which
+also counts pull requests. The choice is the user's own, a viewer's too: `GET /api/header-badges`,
+`POST /ui/api/header-badges` (role viewer), kept in the user's settings (`headerBadges`), not in the browser as the
+dashboard layout is. The In flight badge, when chosen, is the issue #1113 badge, its link and title unchanged.
+
+**The Lanes card (issue #1181).** Its number is the lanes holding a job, busy and draining: a draining lane still runs
+its job. Its cap is the machines' **effective** lane caps — the decider's, usage pacing included (`GET /api/usage`
+`machines[].cap`); the machine's lanes when no reading names it or it is offline. Under the number: the lanes open, then
+the lanes still unopened under the cap, or the idle lanes past it, and `N over the cap` when lanes holding a job pass
+it — never a 0 that hides them. The decider never starts a job past the cap for an ordinary job: a draining lane counts
+in `occupied` until it closes (`test/decider/draining-cap.test.ts`). Lanes pass the cap only by an elbow-in, critical
+priority's one lane, or a reattach with no lane idle ("Answered in the pane"); each drains first.
 
 **Part 3: what GitHub says is ledger input (2026-10-14).** Before it, the ledger heard of GitHub only through the
 issue graph's reads and the follow's merge or close, so an item whose issue closed while its pull request waited, or

@@ -6,12 +6,13 @@
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
 // on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
 // A stall of the hopper's event loop shows here for 10 minutes, a warning with how long it was and the routes in flight (issue #1002).
-// How many work items are in flight shows here on every screen (issue #1113): the work-item ledger's count, read with the
-// queue after each event, a link to the Jobs view filtered to them.
+// The header badges (issue #1181) show here on every screen: the Dashboard's KPI cards the user chose in Customize, each its
+// card's own total (`useKpis`), so a badge and its card never disagree; one Lanes badge until chosen. In flight (issue #1113)
+// is the work-item ledger's count, a link to the Jobs view filtered to them; the others link to the Dashboard.
 // The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
-import { Activity, BookOpen, CircleHelp, KeyRound, Zap } from 'lucide-react';
+import { Activity, BookOpen, CircleCheck, CircleHelp, CircleX, KeyRound, Layers, MessageCircleQuestion, Timer, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import logo from '../../../site/hopper-logo.svg';
 import { Button } from '@/components/ui/button';
@@ -20,13 +21,14 @@ import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
 import { IN_FLIGHT_SECTION } from '@/model/jobs-view';
 import { inFlightParts } from '@/model/in-flight';
-import type { Health } from '@/model/wire';
+import { BADGES, shownBadges } from '@/model/header-badges';
+import type { HeaderBadge, Health } from '@/model/wire';
 import { connectionEnded } from '@/model/sources';
 import { yoloIndicator } from '@/model/yolo-mode';
 import { recheckSession, useHopper } from '@/store';
 import { cn } from '@/lib/utils';
-import { useYoloMode } from '@/store/polled';
-import { useLoginsBadge, useSignedInWith } from '@/store/selectors';
+import { useHeaderBadges, useYoloMode } from '@/store/polled';
+import { useKpis, useLoginsBadge, useSignedInWith } from '@/store/selectors';
 import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
@@ -34,6 +36,32 @@ import { UserMenu } from './user-menu';
 /** What a stall of the event loop was (issue #1002): how long, when, and the routes in flight. */
 const stallTitle = (s: NonNullable<Health['eventLoopStall']>): string =>
   `The hopper stopped answering for ${(s.ms / 1000).toFixed(1)} s at ${new Date(s.at).toLocaleTimeString()}${s.during.length ? `, during ${s.during.join(', ')}` : ''}. Its log says more.`;
+
+const BADGE_ICONS: Record<HeaderBadge, typeof Activity> = {
+  inFlight: Activity, lanes: Layers, waiting: Timer, waitingAnswer: MessageCircleQuestion, finished: CircleCheck, failed: CircleX,
+};
+
+/** The header badges the user chose (issue #1181), each its card's total. */
+function HeaderBadges() {
+  const shown = shownBadges(useHeaderBadges());
+  const { k, totals } = useKpis();
+  const inFlight = useHopper((s) => s.inFlight);
+  // No badge before the queue is read (issue #1113): a count of nothing read yet is no 0.
+  if (inFlight === null) return null;
+  return shown.map((b) => {
+    const Icon = BADGE_ICONS[b];
+    const n = totals[b];
+    const title = b === 'inFlight' ? `${n} in flight: ${inFlightParts(inFlight)}`
+      : b === 'lanes' ? `${n} of ${k.lanesMax} lanes in use${k.lanesOver ? `, ${k.lanesOver} over the cap` : ''}`
+        : `${BADGES[b].title}: ${n}`;
+    return (
+      <a key={b} data-slot={b === 'inFlight' ? 'in-flight' : 'header-badge'} data-badge={b} href={b === 'inFlight' ? `#jobs/${IN_FLIGHT_SECTION}` : '#dashboard'} title={title}
+        className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium hover:bg-muted/60', n > 0 ? 'border-busy/40 text-busy' : 'border-border text-muted-foreground')}>
+        <Icon className="size-3.5" aria-hidden /><span className="num">{n}</span> <span className="max-sm:sr-only">{BADGES[b].words(n)}</span>
+      </a>
+    );
+  });
+}
 
 export function Header({ nav }: { nav?: React.ReactNode }) {
   const health = useHopper((s) => s.health);
@@ -43,7 +71,6 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   // Signed in with GitHub, the session ended with the connection (issue #513): no reconnect here, straight to sign-in.
   useEffect(() => { if (ended && signedInWithGitHub) void recheckSession(); }, [ended, signedInWithGitHub]);
   const logins = useLoginsBadge();
-  const inFlight = useHopper((s) => s.inFlight);
   const yolo = yoloIndicator(useYoloMode());
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
@@ -60,13 +87,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
             <a data-connection-ended href="#sources" title={ended}
               className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub: reconnect needed</a>
           )}
-          {inFlight !== null && (
-            <a data-slot="in-flight" href={`#jobs/${IN_FLIGHT_SECTION}`}
-              title={`${inFlight.total} in flight: ${inFlightParts(inFlight)}`}
-              className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium hover:bg-muted/60', inFlight.total > 0 ? 'border-busy/40 text-busy' : 'border-border text-muted-foreground')}>
-              <Activity className="size-3.5" aria-hidden /><span className="num">{inFlight.total}</span> <span className="max-sm:sr-only">in flight</span>
-            </a>
-          )}
+          <HeaderBadges />
           {logins.n > 0 && (
             <a data-logins-pending href="#logins" title={logins.warn ? 'A login expires soon' : 'Logins wait on you'}
               className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium',

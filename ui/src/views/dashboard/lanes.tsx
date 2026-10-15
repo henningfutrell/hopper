@@ -106,6 +106,8 @@ const LANE_MEANING = {
 } as const;
 const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
 const ELBOWED_IN = 'A specialty job, or a job that tends a pull request, elbowed in: it started on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
+const PAST_CAP = 'Its job went on in its pane after a question or a wait, and no lane was free: it came back on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
+const OVER_CAP = 'Lanes past the lane cap: a specialty or tend job elbowed in, or a job came back from its pane with no lane free. They close when their jobs end.';
 
 function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
   const { job, lane } = row;
@@ -122,7 +124,8 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
         <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
         {priority && <PriorityLaneMark />}
         {row.elbowIn && <span data-slot="elbow-in" className="shrink-0 rounded border border-warn/40 px-1 text-warn" title={ELBOWED_IN}>elbow-in · over the cap</span>}
-        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={row.elbowIn ? ELBOWED_IN : CLOSES_AFTER}>closes after this job</span>}
+        {row.pastCap && <span data-slot="past-cap" className="shrink-0 rounded border border-warn/40 px-1 text-warn" title={PAST_CAP}>came back · over the cap</span>}
+        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={row.elbowIn ? ELBOWED_IN : row.pastCap ? PAST_CAP : CLOSES_AFTER}>closes after this job</span>}
         <StatusBadge className={row.state === 'draining' ? undefined : 'ml-auto'} status={state === 'unopened' ? 'not open' : state}
           tone={state === 'unopened' ? 'muted' : undefined} title={LANE_MEANING[state]} />
       </div>
@@ -186,7 +189,7 @@ export function LanesPanel() {
         </a>
       )}
       {overCap(machines).map((o) => (
-        <div key={o.machineId} data-slot="over-cap" className="text-xs text-warn" title={ELBOWED_IN}>
+        <div key={o.machineId} data-slot="over-cap" className="text-xs text-warn" title={OVER_CAP}>
           {machineName(o.machineId, machines)}: {o.inUse}/{o.lanes} lanes in use · {o.inUse - o.lanes} over the cap, back to {o.lanes} when the work over it ends
         </div>
       ))}

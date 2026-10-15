@@ -146,6 +146,12 @@ describe('laneRows', () => {
     const over = laneRows([machine([lane('lane-1', 'busy', 'a'), lane('lane-2', 'busy', 't')], 1)], [job('a'), t]);
     expect(over.map((r) => [r.job?.id, r.elbowIn ?? false])).toEqual([['a', false], ['t', true]]);
   });
+  it('a lane a reattach opened past the cap is marked while the machine is over its cap (issue #1181)', () => {
+    const back = { ...lane('lane-2', 'busy', 'b'), pastCap: true as const };
+    const over = laneRows([machine([lane('lane-1', 'busy', 'a'), back], 1)], [job('a'), job('b')]);
+    expect(over.map((r) => [r.job?.id, r.pastCap ?? false])).toEqual([['a', false], ['b', true]]);
+    expect(laneRows([machine([lane('lane-1', 'busy', 'a'), back], 2)], [job('a'), job('b')]).some((r) => r.pastCap)).toBe(false);
+  });
 });
 
 describe('lane job (issue #432)', () => {
