@@ -1192,14 +1192,17 @@ to the pods' join step only.
 
 1. Sign in to the hopper once. Until then, a pod's join is refused, and the pod tries again every 10 seconds.
 2. Set how many: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set lanes.replicas=3`.
-3. Sign each pod's agent in once: `kubectl --namespace hopper exec -it hopper-lanes-0 -c lane -- claude`. The sign-in
-   stays in the pod's volume.
+3. Keep the agent's sign-in in your vault once: run `claude setup-token` on any machine, sign in, and set what it prints
+   (`sk-ant-oat…`) as the vault secret `CLAUDE_TOKEN` in Settings → Vault. Each job on a lane pod starts signed in with
+   it, also after a pod starts again with a new volume. The token is not kept in a pod's volume, its spec or a ConfigMap.
+   Without it, sign each pod in once (`kubectl --namespace hopper exec -it hopper-lanes-0 -c lane -- claude`): that
+   sign-in stays in the pod's volume only.
 
 | value | |
 |---|---|
 | `lanes.replicas` | how many lane pods: one machine each. Default `0`: none |
 | `lanes.drainSeconds` | how long a pod told to stop waits for the jobs on it to end (`terminationGracePeriodSeconds`). Default `3600` |
-| `lanes.size`, `lanes.storageClass` | each pod's volume: its link key, the agent's sign-in and the jobs' work trees. Default `20Gi` |
+| `lanes.size`, `lanes.storageClass` | each pod's volume: its link key and the jobs' work trees (the agent's sign-in only without `CLAUDE_TOKEN`). Default `20Gi` |
 | `lanes.agent`, `lanes.imageTag` | the box image: `box-<agent>` for the `latest` and `stable` channels, `box-<agent>-<channel>` for the others, unless `lanes.imageTag` names another tag |
 | `lanes.resources`, `lanes.nodeSelector`, `lanes.tolerations`, `lanes.affinity` | where the pods run, and with what |
 

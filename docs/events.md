@@ -927,7 +927,7 @@ Version 1 (`docs/schemas/job.give_back_failed.v1.json`). A person's act on this 
 
 ## `job.pull_request_act_failed`
 
-Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge now (`act` `merge`) or Close PR (`close`) on this finished job's open pull request was answered at once (issue #1194), and its source's merge or close, which runs after the answer, failed: `error` says why (GitHub refused it — a draft, merge conflicts, a required check — or was out of reach, or the pull request was no longer open). The pull request stays as it was, and the act is offered again. `person` and `via` say who and the way.
+Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge now (`act` `merge`) or Close PR (`close`) on this finished job's open pull request was answered at once (issue #1194), and its source's merge or close, which runs after the answer, failed for good: `error` says why (GitHub refused it — a draft, merge conflicts, a required check —, or was out of reach at each of the GitHub outbox's attempts, issue #1238, or the pull request was no longer open). Recorded once, when its outbox row fails. The pull request stays as it was, and the act is offered again. `person` and `via` say who and the way.
 
 | field | type | required |
 |---|---|---|
@@ -3875,7 +3875,7 @@ Version 1 (`docs/schemas/vault.agent_credential_given.v1.json`). A box the hoppe
 
 ## `vault.pod_credential_given`
 
-Version 1 (`docs/schemas/vault.pod_credential_given.v1.json`). A job pod was given its user's Claude token at a start of its job (issue #1287): the vault secret the kubernetes executor names (`agentCredential`), a token `claude setup-token` printed, in the job's pane as `CLAUDE_CODE_OAUTH_TOKEN`, so Claude in the pod starts signed in. The secret's name, the pod and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+Version 1 (`docs/schemas/vault.pod_credential_given.v1.json`). A job pod, or a lane pod, was given its user's Claude token at a start of its job (issue #1287): the vault secret the kubernetes executor names (`agentCredential`; on a lane pod `CLAUDE_TOKEN`), a token `claude setup-token` printed, in the job's pane as `CLAUDE_CODE_OAUTH_TOKEN`, so Claude in the pod starts signed in. The secret's name, the pod and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
 
 | field | type | required |
 |---|---|---|

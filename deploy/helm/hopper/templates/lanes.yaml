@@ -101,7 +101,7 @@ spec:
           resources:
             {{- toYaml .Values.lanes.resources | nindent 12 }}
           volumeMounts:
-            # Its link key, the agent's sign-in and the jobs' work trees.
+            # Its link key and the jobs' work trees. The agent's sign-in comes from the vault with each job (issue #1287).
             - name: home
               mountPath: /home/agent
             - name: tmp

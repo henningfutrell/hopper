@@ -58,6 +58,11 @@ export interface EngineOptions {
   credentialRequests?: () => readonly CredentialRequest[];
   /** What a job on this machine asks the hopper's GitHub proxy with (issue #563); undefined: the machine cannot reach the hopper. Absent: none. */
   jobProxy?: (job: Job, machine: MachineSnapshot) => JobProxyCredentials | undefined;
+  /**
+   * The agent's sign-in a job on this machine starts with (issue #1287, design.md "The agent's sign-in in a lane pod"): the
+   * variable and its value, `none`, or why the vault refuses it (the job fails). Absent: none on any machine.
+   */
+  agentSignIn?: (job: Job, machine: MachineSnapshot) => Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
   /** A box's template and its rating now (issue #605): the box's blast radius includes it. Absent: no machine is a box. */
   boxRadius?: (machineId: string) => { name: string; radius: TemplateRadius } | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
