@@ -1,3 +1,4 @@
+{{- if .Values.postgres.bundled -}}
 {{- $name := printf "%s-postgres" (include "hopper.fullname" .) -}}
 {{- $sel := dict "ctx" . "component" "postgres" -}}
 apiVersion: v1
@@ -111,3 +112,4 @@ spec:
         resources:
           requests:
             storage: {{ .Values.postgres.size }}
+{{- end }}

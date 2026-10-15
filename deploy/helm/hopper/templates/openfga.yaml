@@ -1,6 +1,7 @@
 {{- $name := printf "%s-openfga" (include "hopper.fullname" .) -}}
 {{- $sel := dict "ctx" . "component" "openfga" -}}
 {{- $secret := include "hopper.runtimeSecret" . -}}
+{{- $db := include "hopper.databaseSecret" . -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -39,21 +40,6 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
-      # Brings the schema up to this version first. It fails, and is started again, until Postgres takes connections.
-      # Until OpenFGA runs, the hopper denies every credential (fail closed).
-      initContainers:
-        - name: migrate
-          image: {{ .Values.openfga.image }}
-          args: [migrate]
-          env:
-            - name: OPENFGA_DATASTORE_ENGINE
-              value: postgres
-            - name: OPENFGA_DATASTORE_URI
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $secret }}
-                  key: openfga_datastore_uri
-          {{- include "hopper.containerSecurity" . | nindent 10 }}
       containers:
         - name: openfga
           image: {{ .Values.openfga.image }}
@@ -64,7 +50,7 @@ spec:
             - name: OPENFGA_DATASTORE_URI
               valueFrom:
                 secretKeyRef:
-                  name: {{ $secret }}
+                  name: {{ $db }}
                   key: openfga_datastore_uri
             # Only the hopper asks it, with this key.
             - name: OPENFGA_AUTHN_METHOD
@@ -79,6 +65,8 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # Not ready until the migration Job below has made its tables: until then OpenFGA answers NOT_SERVING, and the
+          # hopper denies every credential (fail closed).
           readinessProbe:
             httpGet:
               path: /healthz
@@ -87,3 +75,61 @@ spec:
           {{- include "hopper.containerSecurity" . | nindent 10 }}
           resources:
             {{- toYaml .Values.openfga.resources | nindent 12 }}
+{{- /*
+The migration (issue #1282): a Job, once for each form of its spec. Its name carries a hash of that spec (the OpenFGA and
+Postgres images, the database Secret), so an upgrade that changes none of them leaves the finished Job as it is and runs
+nothing; a changed one is a new Job, and Helm deletes the old one. `openfga migrate` applies only the migrations the
+schema lacks: it never drops a table. Not a Helm hook: a post-install hook waits for `helm install --wait`, which waits
+for OpenFGA, which waits for its tables.
+*/}}
+{{- define "hopper.openfgaMigrateSpec" }}
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" (dict "ctx" . "component" "openfga-migrate") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      initContainers:
+        # The schema OpenFGA's tables go in, as postgres.yaml's init script makes it; for an external database too. It
+        # fails, and is started again, until the database takes connections.
+        - name: schema
+          image: {{ .Values.postgres.image }}
+          command: [sh, -euc, 'psql -q -d "$DATABASE_URL" -c "CREATE SCHEMA IF NOT EXISTS openfga"']
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hopper.databaseSecret" . }}
+                  key: database_url
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+      containers:
+        - name: migrate
+          image: {{ .Values.openfga.image }}
+          args: [migrate]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hopper.databaseSecret" . }}
+                  key: openfga_datastore_uri
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+{{- end }}
+{{- $spec := include "hopper.openfgaMigrateSpec" . }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate-%s" $name ($spec | sha256sum | trunc 10) }}
+  labels:
+    {{- include "hopper.labels" (dict "ctx" . "component" "openfga-migrate") | nindent 4 }}
+spec:
+{{- $spec }}

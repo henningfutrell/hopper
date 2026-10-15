@@ -73,7 +73,17 @@ spec:
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}
+          {{- if .Values.postgres.bundled }}
           command: [sh, -c, {{ printf "until pg_isready -q -h %s-postgres -U hopper -d hopper; do sleep 2; done" $name | quote }}]
+          {{- else }}
+          command: [sh, -c, 'until pg_isready -q -d "$DATABASE_URL"; do sleep 2; done']
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hopper.databaseSecret" . }}
+                  key: database_url
+          {{- end }}
           {{- include "hopper.containerSecurity" . | nindent 10 }}
       containers:
         - name: hopper
@@ -81,8 +91,15 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             {{- include "hopper.podLimits" "hopper" | nindent 12 }}
+            {{- if .Values.postgres.bundled }}
             - name: HOPPER_DATABASE_URL_FILE
               value: /run/hopper-secrets/database_url
+            {{- end }}
+            {{- if not .Values.postgres.bundled }}
+            # The external database (issue #1282).
+            - name: HOPPER_DATABASE_URL_FILE
+              value: /run/hopper-database/database_url
+            {{- end }}
             {{- include "hopper.masterKeyEnv" . | nindent 12 }}
             {{- if .Values.hopperVault.enabled }}
             # The vault in a pod of its own (issue #586), asked with the preshared key.
@@ -92,6 +109,19 @@ spec:
               value: /run/hopper-secrets/vault_key
             {{- else }}
             {{- include "hopper.kmsEnv" . | nindent 12 }}
+            {{- end }}
+            {{- if .Values.tunnel.ngrok.enabled }}
+            - name: HOPPER_TUNNEL_API
+              value: {{ printf "http://%s-tunnel:4040" $name | quote }}
+            {{- end }}
+            {{- if .Values.tunnel.cloudflared.enabled }}
+            - name: HOPPER_CLOUDFLARED_API
+              value: {{ printf "http://%s-cloudflared:2000" $name | quote }}
+            {{- end }}
+            {{- if or .Values.tunnel.ngrok.enabled .Values.tunnel.cloudflared.enabled }}
+            # The key the tunnel services ask GET /tunnel/agent with.
+            - name: HOPPER_TUNNEL_KEY_FILE
+              value: /run/hopper-secrets/tunnel_key
             {{- end }}
             - name: HOPPER_PORT
               value: {{ $port | quote }}
@@ -164,20 +194,40 @@ spec:
               mountPath: /run/hopper-master-key
               readOnly: true
             {{- end }}
+            {{- if not .Values.postgres.bundled }}
+            - name: database
+              mountPath: /run/hopper-database
+              readOnly: true
+            {{- end }}
       volumes:
         - name: secrets
           secret:
             secretName: {{ include "hopper.runtimeSecret" . }}
             defaultMode: 0440
             items:
+              {{- if .Values.postgres.bundled }}
               - key: database_url
                 path: database_url
+              {{- end }}
               - key: openfga_key
                 path: openfga_key
               {{- if .Values.hopperVault.enabled }}
               - key: vault_key
                 path: vault_key
               {{- end }}
+              {{- if or .Values.tunnel.ngrok.enabled .Values.tunnel.cloudflared.enabled }}
+              - key: tunnel_key
+                path: tunnel_key
+              {{- end }}
+        {{- if not .Values.postgres.bundled }}
+        - name: database
+          secret:
+            secretName: {{ include "hopper.databaseSecret" . }}
+            defaultMode: 0440
+            items:
+              - key: database_url
+                path: database_url
+        {{- end }}
         - name: lane-pool
           secret:
             secretName: {{ include "hopper.lanePoolSecret" . }}

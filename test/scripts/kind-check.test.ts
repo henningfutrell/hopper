@@ -7,6 +7,7 @@
 //   Scenario: a fresh cluster with the chart installed and the hopper healthy passes, and the cluster is deleted
 //   Scenario: a pod with a Docker socket, a Podman image or a socket variable fails the check, and names the pod
 //   Scenario: a hopper that is not healthy fails the check
+//   Scenario: an upgrade with the same values that runs the OpenFGA migration again fails the check (issue #1282)
 //   Scenario: with --keep the cluster stays
 //   Scenario: a pull request that changes the chart runs the check, with no secret
 import { spawnSync } from 'node:child_process';
@@ -44,7 +45,8 @@ function tool(name: string, script: string): void {
   chmodSync(join(bin, name), 0o755);
 }
 
-function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}'): void {
+function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1']): void {
+  writeFileSync(join(dir, 'jobs'), migrations.join('\n') + '\n');
   writeFileSync(join(dir, 'pods.json'), JSON.stringify({ items: pods }));
   writeFileSync(join(dir, 'health.json'), health);
   tool('kind', 'exit 0');
@@ -53,6 +55,8 @@ function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}'
     'case "$*" in',
     `  *" exec "*) cat "${join(dir, 'health.json')}" ;;`,
     `  *"get pods --all-namespaces -o json"*) cat "${join(dir, 'pods.json')}" ;;`,
+    // Each ask for the migration Jobs answers the next line: before the upgrade, then after.
+    `  *"get jobs"*) head -n 1 "${join(dir, 'jobs')}"; sed -i 1d "${join(dir, 'jobs')}" ;;`,
     '  *) echo "listed" ;;',
     'esac',
   ].join('\n'));
@@ -80,7 +84,9 @@ describe('scripts/kind-check.ts', () => {
     expect(r.status, r.stdout + r.stderr).toBe(0);
     expect(r.calls[0]).toBe('kind create cluster --name hopper-check --wait 180s');
     const install = r.calls.find((c) => c.startsWith('helm '));
-    expect(install).toBe(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --create-namespace --wait --timeout 15m --set image.tag=dev`);
+    expect(install).toBe(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --create-namespace --wait --wait-for-jobs --timeout 15m --set image.tag=dev`);
+    expect(r.calls).toContain(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 10m`);
+    expect(r.stdout).toContain('the upgrade ran the OpenFGA migration no second time');
     expect(r.calls).toContain('kubectl --context kind-hopper-check --namespace hopper exec deploy/hopper -c hopper -- node -e '
       + "fetch('http://127.0.0.1:4790/api/health').then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 1); }, () => process.exit(1))");
     expect(r.calls).toContain('kubectl --context kind-hopper-check get pods --all-namespaces -o json');
@@ -111,6 +117,21 @@ describe('scripts/kind-check.ts', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('health');
     expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
+  });
+
+  it('fails when an upgrade with the same values runs the OpenFGA migration again', () => {
+    fakes(clean, undefined, ['uid-1', 'uid-2']);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('OpenFGA migration');
+    expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
+  });
+
+  it('fails when the install made no OpenFGA migration Job', () => {
+    fakes(clean, undefined, ['', '']);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no OpenFGA migration Job');
   });
 
   it('keeps the cluster with --keep, under the name --cluster gives', () => {
