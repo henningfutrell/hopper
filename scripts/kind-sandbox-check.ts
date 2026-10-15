@@ -23,11 +23,13 @@ import { needEnv, NEED_LABEL, runNeedBox, type NeedBoxResult } from '../src/sand
 import type { ContainerRuntime } from '../src/domain/sandboxes.ts';
 
 const PORT = 4790;
+/** The environment kubectl runs in: the person's, whatever KUBECONFIG the runtime is later given. */
+const PERSON = { ...process.env };
 /** How long a box's pod and claim may take to go once its run ended: a pod's grace, then the claim's protection. */
 const GONE_MS = 180_000;
 
 function kubectl(context: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync('kubectl', ['--context', context, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync('kubectl', ['--context', context, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: PERSON });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.error ? r.error.message : r.stderr };
 }
 
@@ -118,8 +120,10 @@ export async function check(context: string, namespace: string, image: string): 
 
   const dir = mkdtempSync(join(tmpdir(), 'hopper-kind-sandbox-'));
   try {
-    process.env.KUBECONFIG = join(dir, 'kubeconfig');
-    serviceAccountConfig(context, namespace, account, process.env.KUBECONFIG);
+    // Written with the person's kubeconfig; only then is it the one the runtime's API client reads.
+    const config = join(dir, 'kubeconfig');
+    serviceAccountConfig(context, namespace, account, config);
+    process.env.KUBECONFIG = config;
     const { api } = createKubeApi(namespace);
     const runtime = createKubernetesRuntime({ api, hopper: { namespace, labels: deployment.spec.selector.matchLabels, port: PORT } });
     const instance = `kind-${randomBytes(4).toString('hex')}`;

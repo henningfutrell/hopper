@@ -39,9 +39,10 @@ const inJobShell = (s: Seat, script: string): { status: number | null; stdout: s
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 };
 const setUp = (s: Seat): string => spawnSync(runtimeSetupArgv(JOB, s.scratch, false)[0]!, runtimeSetupArgv(JOB, s.scratch, false).slice(1), { encoding: 'utf8', env: s.env }).stdout.trim();
-const reap = (s: Seat): ReturnType<typeof readReap> => {
+const reap = (s: Seat): ReturnType<typeof readReap> & { said: string } => {
   const [file, ...args] = reapArgv(JOB, s.scratch);
-  return readReap(spawnSync(file!, args, { encoding: 'utf8', env: s.env, timeout: 300_000 }).stdout);
+  const r = spawnSync(file!, args, { encoding: 'utf8', env: s.env, timeout: 300_000 });
+  return { ...readReap(r.stdout) ?? { kept: [] }, said: `${r.stdout}${r.stderr}` };
 };
 
 /**
@@ -93,8 +94,8 @@ describe.skipIf(!WORKS)('a job\'s runtime leaves nothing, on real Podman (issue 
     expect(made.stdout.trim().split('\n')).toEqual(['marker-vol', 'marker-net', 'marker-box']);
 
     const said = reap(s);
-    expect(said?.removed?.volumes).toContain('marker-vol');
-    expect(said?.removed?.containers).toHaveLength(1);
+    expect(said.removed?.volumes ?? [], said.said).toContain('marker-vol');
+    expect(said.removed?.containers ?? [], said.said).toHaveLength(1);
     const containers = join(s.scratch, 'containers');
     expect(existsSync(join(containers, 'storage'))).toBe(false);
     expect(existsSync(join(s.host, `hopper-runtime-${JOB}`))).toBe(false);
