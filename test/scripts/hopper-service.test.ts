@@ -166,19 +166,20 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(r.status, r.err).toBe(0);
     const compose = f.calls().filter((c) => c.startsWith('podman compose') || c.startsWith('master-key.sh'));
     expect(compose).toEqual([
-      'podman compose -p hopper down | key=',
+      'podman compose -p hopper down --remove-orphans | key=',
       expect.stringMatching(/^master-key\.sh run bash .*hopper-service\.sh up$/),
       `podman compose -p hopper up -d | key=${KEY}`,
     ]);
     for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
   });
 
-  it('start with no key sealed here starts the stack with no key, and stop takes it down', () => {
+  // A service whose profile a person turned off, then ran the install again, goes at that start: no `up` by hand.
+  it('start with no key sealed here starts the stack with no key, removing services turned off, and stop takes it down', () => {
     const f = folder();
     expect(f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
     expect(f.run(['stop'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
     expect(f.calls().filter((c) => c.startsWith('podman compose'))).toEqual([
-      'podman compose -p hopper down | key=',
+      'podman compose -p hopper down --remove-orphans | key=',
       'podman compose -p hopper up -d | key=',
       'podman compose -p hopper down | key=',
     ]);
