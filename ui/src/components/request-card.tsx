@@ -5,7 +5,8 @@
 // and sends once while the daemon approves and syncs; a refusal shows on the card, which stays (issue #811). Decline
 // (issue #1035) makes no job and writes nothing to GitHub: an edit to the issue's title or body shows the card again.
 // A reopened card (issue #1126): the issue was reopened after its job was done; it links the item's earlier jobs and its
-// pull request, and Approve runs the item again.
+// pull request, and Approve runs the item again. A decision shows only while the source's list agrees with it (issue #1178):
+// when the source asks again, the card offers Approve and Decline again; approved, it says it waits for the source's job.
 import { Check, Loader2, X } from 'lucide-react';
 import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
 import { Button } from '@/components/ui/button';
@@ -46,7 +47,7 @@ export function RequestCard({ request, source, itemKey, canOperate }: { request:
         : <pre data-slot="request-body" className="max-h-64 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">{request.body}</pre>}
       {approval?.state === 'refused' && <div data-slot="request-error" role="alert" className="text-bad">Not done: {approval.error}</div>}
       <div className="flex flex-wrap items-center gap-2">
-        {approval?.state === 'approved' && <span data-slot="request-approved" className="text-ok">Approved: the source takes it now</span>}
+        {approval?.state === 'approved' && <span data-slot="request-approved" className="text-ok">Approved: no job yet. The source makes one at its sync</span>}
         {approval?.state === 'declined' && <span data-slot="request-declined" className="text-muted-foreground">Declined: no job. An edit to its title or body shows it again</span>}
         {approval?.state !== 'approved' && approval?.state !== 'declined' && canOperate && (
           <>
