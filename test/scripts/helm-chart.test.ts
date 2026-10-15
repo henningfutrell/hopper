@@ -24,6 +24,7 @@ interface PodSpec {
   securityContext?: { runAsNonRoot?: boolean; runAsUser?: number; fsGroup?: number };
   volumes?: { name: string; hostPath?: unknown; secret?: { secretName: string }; persistentVolumeClaim?: { claimName: string } }[];
   automountServiceAccountToken?: boolean;
+  enableServiceLinks?: boolean;
 }
 interface Resource {
   apiVersion: string; kind: string;
@@ -122,6 +123,18 @@ describe('the Helm chart, installed with no values', () => {
       expect(p.securityContext?.runAsNonRoot, w.metadata.name).toBe(true);
       expect(p.automountServiceAccountToken, w.metadata.name).toBe(false);
     }
+  });
+
+  // Kubernetes gives a pod <SERVICE>_PORT=tcp://… for each Service by default: for the Service `hopper`, HOPPER_PORT and
+  // a score of HOPPER_* variables the hopper reads as leftovers.
+  it('gives no pod the Service link variables, which name HOPPER_* variables of their own', () => {
+    for (const w of workloads(rs)) expect(pod(w).enableServiceLinks, w.metadata.name).toBe(false);
+  });
+
+  it('starts the hopper once Postgres takes connections, not in a crash loop before', () => {
+    const wait = pod(hopper).initContainers?.find((c) => c.name === 'wait-for-postgres');
+    expect(wait?.image).toBe(composeImage('postgres'));
+    expect(wait?.command?.join(' ')).toContain('pg_isready -q -h hopper-postgres');
   });
 
   it('gives the hopper its database URL and OpenFGA\'s key as files of a generated Secret, kept across an uninstall', () => {
