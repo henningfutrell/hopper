@@ -8,8 +8,11 @@
 // `ships(fn)` plays a job that ships its work (issue #171): fn runs (a test merges the job's pull
 // request in the fake GitHub) before each finished outcome is returned. The op `before-nudge` (issue #627) ships, then
 // asks the engine's check before a nudge, keeps its answer in `checks`, and finishes.
+// `waits(fn)` plays a job that ends its turn with HOPPER_WAITING (issue #1210): when fn names a wait for a job, its run
+// returns that wait in place of its op's outcome.
 import type { ExecutionContext, ExecutionOutcome, Executor, NudgeCheck } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
+import type { WaitAsked } from '../../src/domain/wait-on.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
 import { UNTRUSTED_LINE } from '../../src/sources/github/context.ts';
 import { PRIVATE_LINE } from '../../src/direct-jobs/index.ts';
@@ -20,6 +23,8 @@ export interface ScriptedExecutor extends Executor {
   readonly payloads: Record<string, unknown>[];
   /** From now on, every job that finishes ships first: `fn(job)` runs before the outcome returns. */
   ships(fn: (job: Job) => void): void;
+  /** From now on, a job `fn` names a wait for waits on it: its run returns that wait. */
+  waits(fn: (job: Job) => WaitAsked | undefined): void;
   /** What each `before-nudge` op was answered, in order. */
   readonly checks: NudgeCheck[];
 }
@@ -44,6 +49,7 @@ export function createScriptedExecutor(): ScriptedExecutor {
   const payloads: Record<string, unknown>[] = [];
   const checks: NudgeCheck[] = [];
   let ship: ((job: Job) => void) | undefined;
+  let waitOf: ((job: Job) => WaitAsked | undefined) | undefined;
   const shipped = async (ctx: ExecutionContext, outcome: Promise<ExecutionOutcome>): Promise<ExecutionOutcome> => {
     const o = await outcome;
     if (o.kind === 'finished') ship?.(ctx.job);
@@ -61,6 +67,7 @@ export function createScriptedExecutor(): ScriptedExecutor {
     payloads,
     checks,
     ships(fn) { ship = fn; },
+    waits(fn) { waitOf = fn; },
     validate(payload) {
       const s = script(payload);
       if (typeof s === 'string') return s;
@@ -68,6 +75,8 @@ export function createScriptedExecutor(): ScriptedExecutor {
     },
     run: async (ctx) => {
       const op = scripted(ctx);
+      const wait = waitOf?.(ctx.job);
+      if (wait) return { kind: 'wait', wait };
       if (op.job.spec.payload.op === 'before-nudge') {
         ship?.(ctx.job);
         checks.push(await ctx.beforeNudge!());

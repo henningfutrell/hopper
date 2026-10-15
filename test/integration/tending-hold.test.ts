@@ -1,6 +1,8 @@
 // A merged pull request holds nothing (issue #1162): a tend job whose pull request a person merged while it worked finished
 // following nothing, and held its tending queue. Real daemon, in-memory fake GitHub at the GitHubApi seam; issues carry a
 // scripted-executor op as their first body line.
+// A tend job on its own command holds nothing (issue #1210): with lanes free, a pull request held behind it is tended at the
+// next sync pass, not after `MAX_HELD_MS`.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
@@ -48,6 +50,29 @@ describe('a merged pull request holds nothing (issue #1162)', () => {
     expect(held?.queue).toMatchObject({ held: { pullRequest: Number(first!.url.split('/').at(-1)), why: 'tending' } });
     await app.sync();
     await waitFor(async () => (await tends(app)).length === 2, { what: 'the next one tended' });
+    expect(await tends(app)).toEqual([[first!.job.id, 'rebase'], [second!.job.id, 'rebase']]);
+    expect(sourceOf(await app.job(second!.job.id))?.heldBehind).toBeUndefined();
+  });
+});
+
+describe('a tend job on its own command holds nothing (issue #1210)', () => {
+  it('the head\'s tend job waits on its own poll: on the next pass the one held behind it is tended', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const [first, second] = await waitingPullRequests(gh, app, REPO, 2);
+    // The tend of the head waits on its own background command, as one that polls another pull request in a sleep loop.
+    app.scripted.waits((j) => j.source?.key === gh.issue(REPO, first!.issue).url && j.id !== first!.job.id
+      ? { for: 'the other pull request to become mergeable', until: 'background command b7x2 ends' } : undefined);
+    gh.setConflicting(first!.url, true);
+    gh.setConflicting(second!.url, true);
+    await app.sync();
+    expect(await tends(app)).toEqual([[first!.job.id, 'rebase']]);
+    const next = await nextJobOf(app, first!.job.id);
+    await app.waitForStatus(next, 'waiting_on');
+    expect((await app.job(next)).wait).toMatchObject({ ownCommand: true, on: { kind: 'own_command' } });
+    expect(sourceOf(await app.job(second!.job.id))?.heldBehind).toMatchObject({ pullRequest: first!.url, why: 'tending' });
+    await app.sync();
+    await waitFor(async () => (await tends(app)).length === 2, { what: 'the one held behind the polling head tended' });
     expect(await tends(app)).toEqual([[first!.job.id, 'rebase'], [second!.job.id, 'rebase']]);
     expect(sourceOf(await app.job(second!.job.id))?.heldBehind).toBeUndefined();
   });
