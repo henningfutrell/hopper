@@ -142,7 +142,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   };
   // One read per sync pass (issue #822), across a rebuild of the source too; conflicts from the mirror (issue #858); checks
   // the rollup would not give, read again over REST (issue #1244).
-  const account = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) });
+  const account = o.api ?? createAccountGitHubApi({ ...accounts.endpoints(provider), token, renew: (refused) => accounts.renew(provider, refused) });
   const reads = passReads(gitAnswers(checksFallback(account, ACCOUNT_CONNECTION, () => o.clock.now().getTime()), o.gitMirrors), o.name);
   const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
@@ -186,6 +186,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     passCalls: reads.calls,
     discover: (d) => current()?.discover(d) ?? Promise.resolve([]),
     repoChanged: (repo) => current()?.repoChanged?.(repo) ?? false,
+    adopts: (job) => current()?.adopts?.(job) ?? false,
     check: (active) => current()?.check(active) ?? Promise.resolve([]),
     report(r) {
       const s = current();

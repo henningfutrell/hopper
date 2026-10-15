@@ -354,7 +354,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(), sendNow,
   });
 
-  const { outboxActs: giveBackRows, ...rerunning } = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); }, sendNow, now: () => clock.now().toISOString() });
+  // The source that takes a job's item back (issue #1352): its own while it runs, else a running source that adopts it — its source was removed, and another takes the same repository.
+  const { outboxActs: giveBackRows, ...rerunning } = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id) ?? (running && !slots.has(job.source?.source ?? '') ? [...slots.values()].find((s) => !s.removed && s.source.adopts?.(job) === true)?.source : undefined), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); }, sendNow, now: () => clock.now().toISOString() });
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),

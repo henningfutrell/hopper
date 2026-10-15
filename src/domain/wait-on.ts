@@ -5,6 +5,7 @@
 // it wakes the job (`settledBy`, `waitsFor`; engine/wait.ts). Pure.
 import { namesOwnCommand } from './own-command.ts';
 import type { Job } from './types.ts';
+import type { WorkItem } from './work-items.ts';
 
 /** What about a pull request a job waits on. */
 export type PullRequestWait = 'checks' | 'merge' | 'review';
@@ -149,3 +150,27 @@ export function waitsFor(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, s:
 
 /** A legacy wait (before issue #1245) names nothing it waits on, unless it was on its own command: stuck work, "waiting on nothing recorded". */
 export const waitsOnNothing = (job: Pick<Job, 'status' | 'wait'>): boolean => job.status === 'waiting_on' && !job.wait?.on && !job.wait?.ownCommand;
+
+/** What the work-item ledger says of an issue (by its URL) and of a pull request (by its URL): `settledAlready` reads it. */
+export interface SettledLookup {
+  get(key: string): Pick<WorkItem, 'issueState'> | undefined;
+  byPullRequest(url: string): Pick<WorkItem, 'pullRequest' | 'pullRequestState'> | undefined;
+}
+
+/**
+ * What already settled a wait as it starts (issue #1356): its issue closed, or its pull request merged or closed, as the
+ * work-item ledger holds it. No event comes for it any more, so the hopper ends the wait at once, as that event would.
+ * `ownRepo`: the job's own repository, for a wait that names none. Undefined: it still waits.
+ */
+export function settledAlready(on: WaitOn, ownRepo: string | undefined, ledger: SettledLookup): Settled | undefined {
+  if (on.kind !== 'item' && !(on.kind === 'pull_request' && on.about === 'merge')) return undefined;
+  const repo = on.repo ?? ownRepo;
+  if (!repo) return undefined;
+  if (on.kind === 'item') {
+    const url = `https://github.com/${repo}/issues/${on.number}`;
+    return ledger.get(url)?.issueState === 'closed' ? { kind: 'item', repo, number: on.number, note: `${url} was closed` } : undefined;
+  }
+  const url = `https://github.com/${repo}/pull/${on.number}`;
+  const state = ledger.byPullRequest(url)?.pullRequestState;
+  return state === 'merged' || state === 'closed' ? { kind: 'pull_request', repo, number: on.number, note: `${url} was ${state}` } : undefined;
+}

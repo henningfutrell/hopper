@@ -70,6 +70,8 @@ export interface WorkItem {
   jobId?: string;
   pullRequest?: string;
   pullRequestState?: PullRequestState;
+  /** A pull request merged as the whole item since its job took it (`job.pull_request_merged`, not a `part`; issue #1356), kept while a job still acts on it. */
+  wholeMerged?: true;
   /** What its open pull request waits on, as the follow last saw it (`job.pull_request_seen`). */
   pullRequestWait?: PullRequestWait;
   /** Its pull request's change kind (issue #1076), as `job.pull_request_classified` last said. */
@@ -192,7 +194,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, changeKind: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, wholeMerged: undefined, pullRequestWait: undefined, changeKind: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
@@ -216,7 +218,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     return (current || pr === base.pullRequest) && base.changeKind !== kind ? mark({ changeKind: kind }) : undefined;
   }
   if (event.type === 'job.pull_request_merged') {
-    const change = { pullRequest: pr, pullRequestState: 'merged' as const, pullRequestWait: undefined, waitingOn: undefined };
+    const change = { pullRequest: pr, pullRequestState: 'merged' as const, ...(d.part === true ? {} : { wholeMerged: true as const }), pullRequestWait: undefined, waitingOn: undefined };
     if (isActive(base.eventState)) return mark(change);
     return d.part === true ? move('partly_done', { ...change, waitingOn: 'the next part' }) : move('done', change);
   }
@@ -339,12 +341,17 @@ export function requestsWaitingOf(items: Iterable<Pick<WorkItem, 'key' | 'eventS
 /** A GitHub issue's URL: what the fallback read can read. */
 const GITHUB_ISSUE = /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/issues\/\d+$/;
 
-/** The states whose items the fallback read reads: no job or person acts on them, and they are not done (issue #1105). */
-export const FALLBACK_READ_STATES: readonly WorkItemState[] = WORK_ITEM_STATES.filter((s) => !isActive(s) && s !== 'done');
+/**
+ * The states whose items the fallback read reads: no job or person acts on them, and they are not done (issue #1105); and
+ * a job's wait on something outside (issue #1356), as its issue's close by a batch run, which no event of the hopper's
+ * records: the read's close wakes the job.
+ */
+export const FALLBACK_READ_STATES: readonly WorkItemState[] = WORK_ITEM_STATES.filter((s) => (!isActive(s) && s !== 'done') || s === 'waiting_outside');
 
 /**
  * The issues the ledger's fallback read reads now (issue #1067, part 3): of the items in `FALLBACK_READ_STATES` (`pr_open`,
- * `partly_done`, `failed`, `dropped`: its issue may have closed as completed since, issue #1105) whose key is a GitHub
+ * `partly_done`, `failed`, `dropped`: its issue may have closed as completed since, issue #1105; `waiting_outside`, issue
+ * #1356) whose key is a GitHub
  * issue, those with no news for `quietMs` — no event moved them and the read did not read them — , the one read longest
  * ago (never first, then the oldest news), at most `limit`.
  */

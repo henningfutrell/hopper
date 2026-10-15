@@ -336,7 +336,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return items;
     }),
     repoChanged: (repo) => { const own = scanned.find((r) => r.toLowerCase() === repo.toLowerCase()); if (own !== undefined) listing.markDue(own); return own !== undefined; },
-    check: (active) => reads.cached(async () => {
+    adopts: (job) => { const repo = job.source?.repo?.toLowerCase(); return repo !== undefined && scanned.some((r) => r.toLowerCase() === repo); }, check: (active) => reads.cached(async () => {
       const mine = active.filter((j) => j.source?.source === o.name && !TERMINAL_STATUSES.includes(j.status));
       if (mine.length === 0) return [];
       const r = await checkJobs(api, config, mine);

@@ -1779,9 +1779,13 @@ after a job that finished without shipping stayed stuck, skipped without a word.
 **Run again** (issues #313, #354). An ended job need not wait for a human to clear its marker at the
 source, nor for a sync to offer its item again: `POST /ui/api/jobs/:id/rerun` (operator; the Ended
 panel's Run again button) asks the sync loop (`SourceRegistry.rerun`) to queue the item again now. Only
-the newest job of its key, status `failed` or `finished` (a result that is not wanted), whose end was
-reported (`finalReported`), of a running source that implements `JobSource.rerun` — else 409; unknown →
-404. On the job's report chain the source gives the item back (`JobSource.rerun`) — on GitHub
+the newest job of its key, status `failed`, `finished` (a result that is not wanted), `rejected` or `cancelled`
+(issue #1352), whose end was reported (`finalReported`), of a running source that implements `JobSource.rerun` —
+else 409; unknown → 404. **An item belongs to its repository and issue, not to the source that first saw it**
+(issue #1352): when a job's own source no longer runs (its instance was removed, as the polling `github-account`
+was), a running source that **adopts** it (`JobSource.adopts`: the job's repository is one of its job repositories)
+takes the item back in its place, and the new job is that source's. Its end need not be reported: the removed source
+is told nothing more. Retry, Continue and Push it ask the same (`takesBack`). On the job's report chain the source gives the item back (`JobSource.rerun`) — on GitHub
 (`takeBack`) a closed issue is **reopened** (the new job is cancelled while its issue is closed, and its
 own pull request's merge closes it again), `hopper:failed`, `hopper:done`, `hopper:rejected` and
 `hopper:claimed` go, and the source label comes back if it was taken off — and answers the item as it
@@ -15313,7 +15317,9 @@ integration" and names neither the permission nor the install. Every refusal the
 connected account's adapter, the GraphQL reads of pull requests, a repository's checks read) adds what the app needs and the
 fix: the permission GitHub asks for — REST's `x-accepted-github-permissions` header, or the GraphQL field it refused, by the
 permission the hopper knows that field needs — or, when neither names one, that the app lacks a permission or is not
-installed there; then install it on the repository's owner with that repository and accept its new permissions. A connected
+installed there; then install it on the repository's owner with that repository, at the app's install link
+(`<app>/installations/new`: the app source's own app, or the hopper's app from its slug, `ConnectedAccountTokens.endpoints`,
+for a connected account and its repository checks), and accept its new permissions. A connected
 account reaches only the repositories where the hopper's app is installed, so its checks fix says that too. A paused source
 says why in the log, once when the pause starts or changes and once when it ends (`pauseTold`, `src/sources/sync-setup.ts`):
 its pass asks GitHub nothing new, and its traffic line alone reads as a healthy zero.
@@ -18750,6 +18756,36 @@ archive calls of both APIs, against the API double; a remote runtime has neither
 and outputs; another box or a `--secret` refused; in a step, the box's helper asks for the job and stops at its vault
 grant, and outside a step the same ask is refused).
 
+## Sandboxes are fresh and leave nothing (issue #1371, part 1, 2026-10-15)
+
+Owner direction: every sandbox a job or a step gets is fresh, made from a clean base, and destroyed with all its state
+on any outcome; nothing is reused across jobs; and cleanup acts only on resources labelled as sandbox resources, never
+on host Podman or the hopper stack. Issue #1349 makes a sandbox one step and burns it after; this part adds the two
+guards below. What is left is listed in the issue's pull request.
+
+- **A fresh home or no sandbox.** A need box (`need-box.ts`) and a check box (`check.ts`) start only on a home volume
+  they made: when `createVolume` answers that a volume of that name is there already — an earlier box's, or anyone's —,
+  the step or check does not run (`staleHome`, `src/sandbox/owned.ts`), and that volume is left as it is: the step
+  removes only what it made. The names already hold a random part, so this is a guard, not a path a step takes.
+- **Only sandbox resources are stopped or removed.** A **sandbox label** (`owned.ts`) is `io.hopper.box`,
+  `io.hopper.need` or `io.hopper.check` on a container or volume, and on Kubernetes the runtime's own `POD_LABEL` on its
+  pods (`true`) and claims (`claim`). The Podman and Docker adapters, over their socket, inspect a container before each
+  `stop` and `remove` and a volume before each `removeVolume`, and refuse one with no sandbox label ("the hopper leaves
+  the box …: it carries no sandbox label"); one already gone is no error, as before. The Kubernetes runtime reads the pod
+  or claim first (`KubeApi.readClaim`, new) and refuses the hopper's own pod, its Postgres's claim, or any other. The
+  check is in the adapters, not in the callers, so a wrong id in any caller (the reconcile pass, a sweep, a step's
+  cleanup) never reaches a stack container. Through a machine's relay the adapters do not check: the machine's client
+  holds the same line at its end (`src/client/runtime.ts`), so the relay carries no extra call.
+- **Residual risk.** The hopper still holds the runtime's socket (#603): the label check stops a mistake in the hopper,
+  not a compromise of its process. A volume or container from before labels, with none, is no longer removed by the
+  hopper; it shows as a cleanup problem and a person removes it.
+
+Tests: `test/sandbox/fresh-sandbox.test.ts` (a check box on a home that is there does not run and leaves it; on a fresh home
+it runs and leaves nothing), `test/sandbox/need-box.test.ts` (the same for a need box; a later step of the same template
+does not see a marker file an earlier one wrote), `test/adapters/podman-runtime.test.ts`,
+`test/adapters/docker-runtime.test.ts` and `test/sandbox/kubernetes.test.ts` (a stack container, a volume or claim of
+someone else's, the hopper's own pod: refused, nothing deleted).
+
 ## Approve several at once (issue #1018, 2026-10-13)
 
 Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at
@@ -19700,6 +19736,32 @@ branch, one GraphQL read, shared in a sync pass), the open batch runs by `openPu
   ledger) and the items of the graph's jobs the ledger has waiting (`awaitsBatch`); `awaitBatch` (`src/domain/job-rollup.ts`)
   marks only the issue nodes already in the graph. The graph makes no read of its own. Not taken: a job stage of its own
   for it; the job keeps its stage, as the ledger has its item.
+
+## A job that waits on its batch (issue #1356, 2026-10-15)
+
+**The problem.** A job's pull request ("Closes #N") merged into the landing branch while its job still acted on the item:
+the job then waited, `waiting_on` its issue's close, for the batch run to reach the tested branch. The batch run carried no
+closing keyword for it, because `batchClosingIssues` took only `done` items and the item read `waiting_outside`; and
+`promotedOpen` skipped it for the same reason. The ledger may also not link the item to the pull request at all (a job's
+pull request it never followed). Nothing closed the issue, so the job waited for ever.
+
+**The batch run reads its pull requests' own text** (`closingReferences`, `src/domain/landing-batches.ts`; the runner's
+`batchCloses`). As it starts, the runner reads each merged pull request of the batch and adds every issue its text closes
+with one of GitHub's closing keywords (`close`, `fix`, `resolve` and their forms, before `#N`, `owner/name#N` or the
+issue's URL) to the ledger's list, once each. "Part of #N" is no closing keyword, so a part closes nothing. A text that
+cannot be read is logged, and the batch run starts with the rest. The batch run's merge into the tested branch then closes
+them, as before: the hopper closes no issue itself here.
+
+**A whole merge counts while its job still acts** (`mergedWhole`, `src/domain/work-item-landing.ts`). The ledger keeps
+`wholeMerged` on an item when a merge is recorded as the whole item (`job.pull_request_merged`, not a `part`) while a job
+acts on it; a new job (`job.queued`) clears it. `batchClosingIssues` and `promotedOpen` take such an item in `queued`,
+`working`, `needs_you` or `waiting_outside` as they take a `done` one. Tenant migration 68 rebuilds the ledger.
+
+**The waiting job sees the close.** The fallback read also reads items in `waiting_outside` (`FALLBACK_READ_STATES`),
+so a close GitHub made with no delivery is recorded (`work_item.issue_closed`, `via: read`) and wakes a job that waits on
+that issue (`settledBy`). A wait that starts on something the ledger holds settled already — its issue closed, its pull
+request merged or closed (`settledAlready`, `src/domain/wait-on.ts`) — ends at once (`wait`, `src/engine/outcome.ts`), as
+the event would have ended it: no event comes for it any more.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 

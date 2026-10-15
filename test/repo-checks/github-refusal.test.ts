@@ -47,4 +47,14 @@ describe('repository checks: a read GitHub refuses to the GitHub App (issue #135
     expect(err.message).toContain(`GitHub answered 403 to the checks of o/r: ${REFUSED}`);
     expect(err.message).toContain('the GitHub App needs Metadata (read)');
   });
+
+  it('with the hopper\'s app install link: both refusals say where to install it', async () => {
+    const installUrl = 'https://github.com/apps/some-app/installations/new';
+    const read = (url: string) => createRepoChecksGitHub({ apiUrl: url, installUrl, token: async () => 't', renew: async () => 't' });
+    const graphql = await read(await github({})).found('o/r', conditionalAnswers()).then(() => new Error('no refusal'), (e: unknown) => e as Error);
+    expect(graphql.message).toContain(`with this repository at ${installUrl}`);
+    server?.close(); server = undefined;
+    const rest = await read(await github({ refuseRepo: true })).found('o/r', conditionalAnswers()).then(() => new Error('no refusal'), (e: unknown) => e as Error);
+    expect(rest.message).toContain(`with this repository at ${installUrl}`);
+  });
 });

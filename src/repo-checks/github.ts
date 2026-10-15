@@ -48,14 +48,15 @@ const ROLLUPS = `query($owner: String!, $name: String!, $n: Int!) {
 
 interface Rollups { repository?: { pullRequests?: { nodes?: ({ commits?: { nodes?: ({ commit?: { statusCheckRollup?: unknown } } | null)[] } } | null)[] } } | null }
 
-export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): RepoChecksGitHub {
+/** `installUrl`: the hopper's app's install link, which a refusal gives (issue #1351). */
+export function createRepoChecksGitHub(o: { apiUrl: string; installUrl?: string | undefined } & TokenSource): RepoChecksGitHub {
   const req = makeRequest(o.apiUrl);
   const asGet = req as unknown as Get;
   const withToken = tokenCaller(o);
   const failed = (what: string) => (err: unknown): Error => {
     const e = err as { message?: unknown; response?: { data?: { message?: unknown } } };
     const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : String(e.message ?? err);
-    return new RepoChecksGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${explained(message, permissionsOfError(err))}`, statusOf(err), retryAtOf(err));
+    return new RepoChecksGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${explained(message, permissionsOfError(err), o.installUrl)}`, statusOf(err), retryAtOf(err));
   };
   const headers = (token: string) => ({ authorization: `token ${token}` });
   /** A 404 is "there is none" (no workflows folder, no rulesets); anything else throws. */
@@ -83,7 +84,7 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
     const { owner, repo: name } = splitRepo(repo);
     const d = (await req('POST /graphql', { query: ROLLUPS, variables: { owner, name, n: RECENT_PULL_REQUESTS }, headers: headers(token) })).data as { data?: Rollups; errors?: { message: string; path?: (string | number)[] }[] };
     if (d.errors?.length) {
-      const said = [...new Set(d.errors.map((e) => explained(e.message, permissionsOfPath(e.path))))];
+      const said = [...new Set(d.errors.map((e) => explained(e.message, permissionsOfPath(e.path), o.installUrl)))];
       throw new RepoChecksGitHubError(`GitHub answered the pull requests of ${repo} with: ${said.join('; ')}`);
     }
     const nodes = d.data?.repository?.pullRequests?.nodes ?? [];

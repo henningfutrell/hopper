@@ -35,11 +35,15 @@ export function permissionsOfPath(path: readonly (string | number)[] | undefined
   return field ? permissionsOfHeader(FIELDS[field]) : undefined;
 }
 
-/** `message`, and when it is GitHub's refusal of the app, what the app needs and the fix. */
-export function explained(message: string, permissions: string | undefined): string {
+/**
+ * `message`, and when it is GitHub's refusal of the app, what the app needs and the fix; `installUrl`, when the app's is
+ * known, says where to install it.
+ */
+export function explained(message: string, permissions: string | undefined, installUrl?: string): string {
   if (!notAccessible(message)) return message;
   const needs = permissions ? `the GitHub App needs ${permissions} on this repository` : 'the GitHub App lacks a permission on this repository, or is not installed on it';
-  return `${message} (${needs}: install it on the repository's owner with this repository, and accept its new permissions on the installation)`;
+  const where = installUrl ? ` at ${installUrl}` : '';
+  return `${message} (${needs}: install it on the repository's owner with this repository${where}, and accept its new permissions on the installation)`;
 }
 
 /** The permissions GitHub asks for in an Octokit request error's answer. */

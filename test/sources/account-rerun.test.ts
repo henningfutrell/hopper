@@ -49,4 +49,12 @@ describe('a connected account\'s source runs an item again (issue #354)', () => 
     expect(err).toBeInstanceOf(SourceError);
     expect(gh.issue(REPO, issue.number).labels).toEqual(['hopper', 'hopper:failed']);
   });
+
+  it('adopts a job of a removed source when its repository is one of its job repositories (issue #1352)', async () => {
+    const { s } = source('owner');
+    await s.discover();
+    expect(s.adopts!(failedJob('a', `https://github.com/${REPO}/issues/3`, 3))).toBe(true);
+    const other = failedJob('b', 'https://github.com/owner/other/issues/3', 3);
+    expect(s.adopts!({ ...other, source: { ...other.source!, repo: 'owner/other' } })).toBe(false);
+  });
 });

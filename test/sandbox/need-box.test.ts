@@ -172,6 +172,27 @@ describe('a need step\'s box (issue #1007)', () => {
     expect(r.boxes.size).toBe(0);
   });
 
+  it('a home volume that is there already is not the step\'s: no box runs, and the volume stays (issue #1371)', async () => {
+    const r = runtime();
+    r.volumes.add('hopper-need-asked-1-abcd-home');
+    expect(await runNeedBox(r, box(needEnv({ command: 'true', outputs: [], credentials: [] })), { log: () => {}, signal: new AbortController().signal })).toEqual({
+      exit: 125, problem: 'the need box did not run: its home volume hopper-need-asked-1-abcd-home is there already: a sandbox starts only on a fresh home',
+    });
+    expect(r.ran.size).toBe(0);
+    expect(r.volumes.has('hopper-need-asked-1-abcd-home')).toBe(true);
+  });
+
+  it('a later step of the same template sees nothing an earlier one wrote (issue #1371)', async () => {
+    const r = runtime();
+    const run = (name: string, command: string) => runNeedBox(r, { ...box(needEnv({ command, outputs: [], credentials: [] })), name }, { log: () => {}, signal: new AbortController().signal, pollMs: 10 });
+    expect((await run('hopper-need-asked-1-aaaa', 'echo first > "$HOME/marker"')).exit).toBe(0);
+    expect(r.boxes.size).toBe(0);
+    expect(r.volumes.size).toBe(0);
+    const later = await run('hopper-need-asked-1-bbbb', 'test ! -e "$HOME/marker"');
+    expect(later.exit).toBe(0);
+    expect(r.volumes.size).toBe(0);
+  });
+
   it('a box that does not start is a problem, never a throw', async () => {
     const r = runtime();
     r.createFails = 'no such image';

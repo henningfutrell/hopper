@@ -68,7 +68,11 @@ With rootless Podman, the hopper's port (4790) is served by a process that belon
 
 `bash hopper-service.sh install` makes the user service `hopper-compose.service`, and the service owns the stack:
 
-- It starts the stack with the master key sealed to this host. The key goes to compose only, never to a file or a volume.
+- It starts the stack with the master key. The key goes to compose only, never to a `.env`, a file or a volume. It takes the key from the first of these:
+  1. The systemd credential `hopper-master-key` (an encrypted credential, for example under the TPM).
+  2. The key you give at launch: run `bash hopper-service.sh start-with-key`. It reads `HOPPER_MASTER_KEY`, or asks you for the key. The service does not keep the key: give it again at the next start.
+  3. The key sealed to this host (`bash master-key.sh seal`). Sealing is optional.
+- When the hopper has data and the service gets no key, the service does not start. It does not make a new key, and it tells you how to give the key.
 - It starts the stack at boot, when linger is on.
 - Every minute, a timer checks the port from this host. When the hopper's container runs and its port does not answer, the timer restarts the service.
 - The update stops and starts the stack through the service.

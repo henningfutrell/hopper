@@ -6,7 +6,7 @@
 // (launch.ts `publishedToolsImage`). A command runs in a box, and files are copied into it, through the API's exec.
 //
 // The runtime sees only its own pods (the label POD_LABEL): another pod of the namespace, the hopper's own included, is
-// no container of it. A name Kubernetes does not take (a template name with `_` or `.`, one too long) is made DNS-safe,
+// no container of it, and it stops and removes only its own pods and claims (issue #1371). A name Kubernetes does not take (a template name with `_` or `.`, one too long) is made DNS-safe,
 // and the hopper's name is kept on the pod, so the runtime answers it as given; a label value Kubernetes does not take
 // is selected by its hash, and answered as given too.
 import { createHash } from 'node:crypto';
@@ -15,6 +15,7 @@ import type { Readable } from 'node:stream';
 import type { V1Pod } from '@kubernetes/client-node';
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { KUBERNETES_USER, kubernetesPodBody, startCheckTest, STOP_S } from './flags.ts';
+import { notASandbox } from './owned.ts';
 
 /** The label on every pod and claim the runtime makes: what it lists, inspects and holds under its egress policy. */
 export const POD_LABEL = 'io.hopper.sandbox-pod';
@@ -54,6 +55,8 @@ export interface KubeApi {
   podLog(name: string): Promise<string>;
   /** False: one of that name is there already, kept as it is. */
   createClaim(body: Record<string, unknown>): Promise<boolean>;
+  /** Undefined: no such claim. */
+  readClaim(name: string): Promise<{ metadata?: { labels?: Record<string, string> } } | undefined>;
   /** One already gone is no error. */
   deleteClaim(name: string): Promise<void>;
   /** Made, or replaced when one of its name is there. */
@@ -136,6 +139,13 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
     const p = await api.readPod(kubeName(id));
     return p?.metadata?.labels?.[POD_LABEL] === 'true' ? p : undefined;
   };
+  /** Deletes the runtime's own pod (issue #1371): one that carries no POD_LABEL, the hopper's own included, is refused. */
+  const takePod = async (id: string): Promise<void> => {
+    const p = await api.readPod(kubeName(id));
+    if (!p) return;
+    if (p.metadata?.labels?.[POD_LABEL] !== 'true') throw notASandbox(`pod ${kubeName(id)}`);
+    await api.deletePod(kubeName(id), STOP_S);
+  };
   const run = (id: string, cmd: string[], out: (chunk: Buffer, stream: 1 | 2) => void, more: { stdin?: Readable; signal?: AbortSignal } = {}): Promise<number> =>
     api.exec(id, { cmd, stdout: (c) => out(c, 1), stderr: (c) => out(c, 2), ...more });
 
@@ -163,7 +173,13 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
       });
     },
 
-    removeVolume: (name) => api.deleteClaim(kubeName(name)),
+    // Only its own claim (issue #1371): a claim of the hopper's Postgres, or anyone's, carries no POD_LABEL.
+    async removeVolume(name) {
+      const claim = await api.readClaim(kubeName(name));
+      if (!claim) return;
+      if (claim.metadata?.labels?.[POD_LABEL] !== 'claim') throw notASandbox(`claim ${kubeName(name)}`);
+      await api.deleteClaim(kubeName(name));
+    },
 
     async create(spec) {
       const name = kubeName(spec.name);
@@ -223,8 +239,8 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
       }
     },
 
-    stop: (id) => api.deletePod(id, STOP_S),
-    remove: (id) => api.deletePod(id, STOP_S),
+    stop: (id) => takePod(id),
+    remove: (id) => takePod(id),
 
     list: async (labels) => (await api.listPods(selector(labels))).map(infoOf),
 

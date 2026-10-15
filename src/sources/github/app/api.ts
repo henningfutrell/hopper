@@ -79,7 +79,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; baseUrl?: string; 
       authError = undefined;
       return v;
     } catch (err) {
-      const e = toApiError(err, what);
+      const e = toApiError(err, what, `${l.app.htmlUrl}/installations/new`);
       if (e.status === 401) authError = e.message;
       throw e;
     }

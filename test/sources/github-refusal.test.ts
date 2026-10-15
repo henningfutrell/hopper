@@ -41,6 +41,12 @@ describe('a refusal explained', () => {
     expect(explained(REFUSED, undefined)).toMatch(/the GitHub App lacks a permission .* or is not installed/);
   });
 
+  it('with the app\'s install link: the fix names where to install it', () => {
+    const m = explained(REFUSED, 'Pull requests (read)', 'https://github.com/apps/some-app/installations/new');
+    expect(m).toMatch(/install it on the repository's owner with this repository at https:\/\/github\.com\/apps\/some-app\/installations\/new/);
+    expect(m).toMatch(/accept its new permissions/);
+  });
+
   it('any other message is left as it is', () => {
     expect(explained('Not Found', 'Issues (read)')).toBe('Not Found');
   });
@@ -52,5 +58,11 @@ describe('a refusal explained', () => {
     const account = accountError(refusal('pull_requests=read'), 'open pull requests of owner/repo');
     expect(account).toMatchObject({ status: 403, permanent: true });
     expect(account.message).toContain('the GitHub App needs Pull requests (read)');
+  });
+
+  it('the App adapter and the connected account give the install link they are given', () => {
+    const link = 'https://github.com/apps/some-app/installations/new';
+    expect(toApiError(refusal('checks=read'), 'checks of owner/repo@abc', link).message).toContain(`with this repository at ${link}`);
+    expect(accountError(refusal('pull_requests=read'), 'open pull requests of owner/repo', link).message).toContain(`with this repository at ${link}`);
   });
 });

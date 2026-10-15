@@ -7,10 +7,11 @@ import { raisedBy } from '../domain/raised-by.ts';
 import { namesOwnCommand } from '../domain/own-command.ts';
 import { suggestionIn } from '../domain/phase.ts';
 import type { Job, JobLiveness, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
-import { waitOnOf, type WaitAsked } from '../domain/wait-on.ts';
+import { settledAlready, waitOnOf, type WaitAsked } from '../domain/wait-on.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
+import { wakeOn } from './wait.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
 export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string } | { kind: 'wait' };
@@ -55,7 +56,8 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
  * The job's own wait (issue #483): `waiting_on` what it named, no question, its lane freed, its pane kept on its machine. It
  * goes on when its agent goes on by itself (pane-answers.ts) or a person ends the wait (commands.ts `endWait`). A wait whose
  * `until:` names its own background command is marked `ownCommand` (issue #1037): it shows as running. `on` (issue #1245): what
- * it waits on, from its `on:` line or what it wrote.
+ * it waits on, from its `on:` line or what it wrote. What it waits on happened already — its issue closed, its pull request
+ * merged or closed, as the work-item ledger holds it (issue #1356) —: its wait ends at once, as that event would end it.
  */
 function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, w: WaitAsked, at: string): Recorded {
   const asked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(w.on ? { on: maskGitHubTokens(w.on) } : {}) };
@@ -66,6 +68,9 @@ function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId
     resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,
   });
   c.store.events.append({ type: 'job.waiting', jobId: job.id, laneId, data: masked });
+  // What it waits on happened already (issue #1356): no event comes for it now, so the hopper ends the wait at once.
+  const settled = settledAlready(masked.on, job.source?.repo, c.store.workItems);
+  if (settled && wakeOn(c, settled).length > 0) setImmediate(() => c.trigger('job.wait_ended'));
   return { kind: 'wait' };
 }
 
