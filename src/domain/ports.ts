@@ -5,7 +5,7 @@ import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeActi
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, AfterAnswerTiming, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
+  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
@@ -644,10 +644,8 @@ export interface SourceHost extends AnswersFromThread {
  * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
  */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */
-export interface SourceRegistry extends GiveBackRegistry {
+export interface SourceRegistry extends GiveBackRegistry, AfterAnswerTimed {
   statuses(): SourceStatus[];
-  /** How the work after each person's act waited on its queue and ran (issue #1194), per act. */
-  afterAnswerTimings(): AfterAnswerTiming[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
   /**
    * Run an ended job's item again (Run again, issues #313, #354): its source gives the item back

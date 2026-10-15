@@ -40,3 +40,9 @@ export interface AfterAnswerTiming {
   /** When the last run ended. */
   lastAt: string;
 }
+
+/** A registry that times the work after each person's act (issue #1194). */
+export interface AfterAnswerTimed {
+  /** How the work after each person's act waited on its queue and ran, per act. */
+  afterAnswerTimings(): AfterAnswerTiming[];
+}
