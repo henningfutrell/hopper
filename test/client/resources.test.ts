@@ -21,11 +21,11 @@ const put = (path: string, text: string) => {
 const cpu = (busy: number, idle: number): CpuTimes => ({ user: busy, nice: 0, sys: 0, idle, irq: 0 });
 
 /** A meter over a fake root and fake os readings: the clock and the CPU times move as the test says. */
-function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader } = {}) {
+function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string> } = {}) {
   let t = 1_000_000;
   let times = [cpu(0, 0), cpu(0, 0)];
   const read = createResourceMeter({
-    root, platform: o.platform ?? 'linux', now: () => t, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}),
+    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}),
     cpus: o.cpus ?? (() => times), parallelism: () => 2, loadavg: () => [0.5, 0.75, 1], totalmem: () => 16 * GIB, freemem: () => 4 * GIB,
   });
   return { read, advance(ms: number, next: CpuTimes[]) { t += ms; times = next; } };
@@ -158,6 +158,40 @@ describe('a machine\'s resources', () => {
       expect(readWindowsMemory('')).toBeUndefined();
       expect(readWindowsMemory('9 3')).toBeUndefined();
       expect(readWindowsMemory('Get-CimInstance: not found')).toBeUndefined();
+    });
+  });
+
+  describe('in a Kubernetes pod (issue #1289): its limits, never WSL', () => {
+    const POD = { KUBERNETES_SERVICE_HOST: '10.96.0.1' };
+    const nodeMeminfo = `MemTotal: ${64 * GIB / KIB} kB\nMemFree: ${1 * GIB / KIB} kB\nMemAvailable: ${60 * GIB / KIB} kB`;
+
+    it('a pod with cgroup limits reads them: its memory limit and its CPU limit as cores', () => {
+      put('proc/meminfo', nodeMeminfo);
+      put('sys/fs/cgroup/memory.max', `${2 * GIB}\n`);
+      put('sys/fs/cgroup/memory.current', `${1 * GIB}\n`);
+      put('sys/fs/cgroup/cpu.max', '50000 100000\n');
+      expect(meter({ env: POD }).read()).toMatchObject({ container: true, cores: 0.5, memTotalBytes: 2 * GIB, memAvailableBytes: 1 * GIB });
+    });
+
+    it('a cgroup with no limits reads the limits the Downward API gives, against the cgroup\'s own use', () => {
+      put('proc/meminfo', nodeMeminfo);
+      put('sys/fs/cgroup/memory.max', 'max\n');
+      put('sys/fs/cgroup/memory.current', `${3 * GIB}\n`);
+      put('sys/fs/cgroup/cpu.max', 'max 100000\n');
+      const r = meter({ env: { ...POD, HOPPER_POD_CPU_LIMIT: '4000', HOPPER_POD_MEMORY_LIMIT: String(8 * GIB) } }).read();
+      expect(r).toMatchObject({ container: true, cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 5 * GIB });
+    });
+
+    it('a pod is a container, so the memory alert does not watch it; a node in WSL is not WSL to it, and Windows is never asked', async () => {
+      put('proc/version', 'Linux version 6.6.87.2-microsoft-standard-WSL2\n');
+      put('proc/meminfo', nodeMeminfo);
+      let asked = 0;
+      const r = meter({ env: POD, hostMemory: async () => { asked += 1; return undefined; } }).read();
+      await new Promise((res) => setImmediate(res));
+      expect(r.container).toBe(true);
+      expect(r).not.toHaveProperty('wsl');
+      expect(r).not.toHaveProperty('vmHeldBytes');
+      expect(asked).toBe(0);
     });
   });
 

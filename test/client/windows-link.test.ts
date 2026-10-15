@@ -20,11 +20,11 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const WSL = 'Linux version 6.6.87.2-microsoft-standard-WSL2 (gcc) #1 SMP\n';
 
 /** A check over a fake root: PowerShell answers what `answer` says, wslinfo what `mode` says; the clock moves as the test says. */
-function check(url: string, o: { answer?: string | undefined; mode?: string | undefined } = {}) {
+function check(url: string, o: { answer?: string | undefined; mode?: string | undefined; env?: Record<string, string> } = {}) {
   let t = Date.parse('2026-10-13T10:00:00.000Z');
   const state = { answer: 'answer' in o ? o.answer : 'status 204 http://localhost:4790/job/address', mode: 'mode' in o ? o.mode : 'nat\n', scripts: [] as string[], hang: false };
   const read = createWindowsLinkCheck({
-    url, root, now: () => t,
+    url, root, now: () => t, env: o.env ?? {},
     powershell: (script) => { state.scripts.push(script); return state.hang ? new Promise<string | undefined>(() => {}) : Promise.resolve(state.answer); },
     networkingMode: async () => state.mode,
   });
@@ -121,5 +121,14 @@ describe('the Windows link', () => {
     expect(far.read()).toBeUndefined();
     expect(linux.state.scripts).toHaveLength(0);
     expect(far.state.scripts).toHaveLength(0);
+  });
+
+  it('in a Kubernetes pod (issue #1289): no Windows link, even on a node in WSL', async () => {
+    put('proc/version', WSL);
+    const pod = check('http://127.0.0.1:4790', { env: { KUBERNETES_SERVICE_HOST: '10.96.0.1' } });
+    expect(pod.read()).toBeUndefined();
+    await tick();
+    expect(pod.read()).toBeUndefined();
+    expect(pod.state.scripts).toHaveLength(0);
   });
 });

@@ -4,6 +4,7 @@
 //
 // Feature: a client target runs the hopper's runtime calls against its own runtime
 //   Scenario: the client says which runtime it has: Podman first, Docker else, none with what to do
+//   Scenario: in a Kubernetes pod with no socket, the client asks for no socket or systemd fix (issue #1289)
 //   Scenario: a runtime call is carried to the socket and its answer carried back
 //   Scenario: a create without the sandbox flags, or with a mount of the machine, is refused
 //   Scenario: a call on a container the hopper did not make is refused; a gone one answers 404
@@ -15,6 +16,7 @@
 //   Scenario: a check box is carried: its script, its end awaited, and its output as the bytes the runtime sent
 //   Scenario: a script on a sandbox box, a check box without its one script, and a wait or a read of a sandbox box are refused
 import { afterEach, describe, expect, it } from 'vitest';
+import { runtimeAnswer } from '../../src/client/runtime.ts';
 import { clientRuntimeCall, clientRuntimeWhich } from '../../src/executors/client.ts';
 import { libpodCreateBody, dockerCreateBody } from '../../src/sandbox/flags.ts';
 import { containerfileTar } from '../../src/sandbox/socket-http.ts';
@@ -62,6 +64,19 @@ describe('the remote runtime, on the machine', () => {
     const none = await clientRuntimeWhich(t);
     expect(none).toEqual({ problem: expect.stringContaining('no Podman or Docker socket') });
     expect((none as { problem: string }).problem).toContain('systemctl --user enable --now podman.socket');
+  });
+
+  it('in a Kubernetes pod with no socket, the client asks for no socket or systemd fix (issue #1289)', async () => {
+    const pod = { KUBERNETES_SERVICE_HOST: '10.96.0.1' };
+    const which = await runtimeAnswer({ podman: '/nonexistent/podman.sock' }, { which: true }, pod);
+    expect(which).toEqual({ problem: expect.stringContaining('Kubernetes pod') });
+    expect(JSON.stringify(which)).not.toMatch(/socket|systemctl|loginctl/);
+    const call = await runtimeAnswer({ podman: '/nonexistent/podman.sock' }, { method: 'GET', path: `${API}/info` }, pod);
+    expect(call).toMatchObject({ status: 503 });
+    expect(JSON.stringify(call)).not.toMatch(/socket|systemctl|loginctl/);
+    // A pod given a socket uses it.
+    const podman = await api();
+    expect(await runtimeAnswer({ podman: podman.socket }, { which: true }, pod)).toEqual({ kind: 'podman' });
   });
 
   it('a runtime call is carried to the socket and its answer carried back', async () => {

@@ -6,11 +6,14 @@
 // sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
+// In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
+// the cgroup's, else the pod's own through the Downward API (src/client/cluster.ts).
 // Imports nothing of hopper: a client target runs it as a plain file.
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, statfsSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
+import { inCluster, podLimits, type Env } from './cluster.ts';
 
 export interface ResourceReading {
   /** CPUs it may use: the host's, or a container's CPU quota (may be fractional). */
@@ -54,6 +57,8 @@ export interface ResourceMeterDeps {
   freemem?: () => number;
   /** WSL only: reads the Windows host's memory; default PowerShell through interop. */
   hostMemory?: HostMemoryReader;
+  /** Says whether it runs in a Kubernetes pod, and the pod's limits; default this process's. */
+  env?: Env;
 }
 
 /** How often the Windows host's memory is read again, at most. */
@@ -126,7 +131,9 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const cgroup = (name: string) => join(root, 'sys/fs/cgroup', name);
   let last: { at: number; busy: number; total: number } | undefined;
   let busyFrac: number | undefined;
-  const wsl = platform === 'linux' && /microsoft/i.test(text(join(root, 'proc/version')) ?? '');
+  const env = d.env ?? process.env;
+  const pod = inCluster(env) ? podLimits(env) : undefined;
+  const wsl = !pod && platform === 'linux' && /microsoft/i.test(text(join(root, 'proc/version')) ?? '');
   const hostMemory = d.hostMemory ?? windowsMemory;
   let host: { at: number; reading: HostMemory } | undefined;
   let hostAskedAt: number | undefined;
@@ -143,11 +150,11 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return { hostMemFreeBytes: host.reading.freeBytes, hostMemTotalBytes: host.reading.totalBytes };
   };
 
-  /** The container's CPU quota in cores, when its cgroup sets one. */
+  /** The container's CPU quota in cores, when its cgroup sets one; else a pod's CPU limit. */
   const quota = (): number | undefined => {
     if (platform !== 'linux') return undefined;
     const [q, period] = (text(cgroup('cpu.max')) ?? '').trim().split(/\s+/);
-    return q && /^\d+$/.test(q) && period && Number(period) > 0 ? Number(q) / Number(period) : undefined;
+    return q && /^\d+$/.test(q) && period && Number(period) > 0 ? Number(q) / Number(period) : pod?.cores;
   };
 
   /** Busy and total CPU time so far, in comparable units: the cgroup's own use against its quota, else the host's CPUs. */
@@ -166,7 +173,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   };
 
   const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes'> => {
-    const max = platform === 'linux' ? limit(cgroup('memory.max')) : undefined;
+    const max = platform === 'linux' ? limit(cgroup('memory.max')) ?? pod?.memBytes : undefined;
     const current = max !== undefined ? limit(cgroup('memory.current')) : undefined;
     if (max !== undefined && current !== undefined) {
       // The page cache it could drop is available, as MemAvailable counts it on the host.
@@ -203,7 +210,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       ...(busyFrac !== undefined ? { cpuBusyFrac: busyFrac } : {}),
       ...(platform !== 'win32' && l.length === 3 ? { load: [l[0]!, l[1]!, l[2]!] as [number, number, number] } : {}),
       ...mem,
-      ...(q !== undefined ? { container: true as const } : {}),
+      ...(q !== undefined || pod ? { container: true as const } : {}),
       ...(wsl ? { wsl: true as const, ...hostNow(at) } : {}),
     };
   };

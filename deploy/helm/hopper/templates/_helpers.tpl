@@ -64,3 +64,22 @@ storageClassName: {{ . | quote }}
 {{- define "hopper.lanePoolSecret" -}}
 {{- printf "%s-lane-pool" (include "hopper.fullname" .) -}}
 {{- end -}}
+
+{{/*
+A container's own limits through the Downward API (issue #1289): its resources in the hopper are these, millicores and
+bytes. With no limit set, Kubernetes gives the node's allocatable.
+*/}}
+{{- define "hopper.podLimits" -}}
+- name: HOPPER_POD_CPU_LIMIT
+  valueFrom:
+    resourceFieldRef:
+      containerName: {{ . }}
+      resource: limits.cpu
+      divisor: 1m
+- name: HOPPER_POD_MEMORY_LIMIT
+  valueFrom:
+    resourceFieldRef:
+      containerName: {{ . }}
+      resource: limits.memory
+      divisor: "1"
+{{- end -}}

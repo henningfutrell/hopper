@@ -6,6 +6,7 @@
 // `cloudflared` hold nothing: each asks the hopper every few seconds at GET /tunnel/agent, with the preshared key both
 // read from a file in memory (HOPPER_TUNNEL_KEY, made at each start of the stack), and runs its agent only while its
 // provider is the one on. Its ask reports what the agent did, which the status shows with the tunnel watch's word.
+// A cluster install (issue #1289) has no compose stack: its status names none, and points at the chart's Ingress.
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
@@ -20,6 +21,7 @@ import { ngrokProvider } from '../remote-access/ngrok.ts';
 import { ProviderError, type TunnelProvider } from '../remote-access/provider.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
+import { inCluster } from '../client/cluster.ts';
 import { HttpError } from './errors.ts';
 import { watchTunnel, type TunnelWatch } from './tunnel.ts';
 
@@ -38,6 +40,20 @@ export const TUNNEL_KEY_VARIABLE = 'HOPPER_TUNNEL_KEY';
 
 /** How long after its last ask a tunnel service counts as gone: it asks every 10 s. */
 export const SERVICE_GONE_MS = 30_000;
+
+/**
+ * Why no tunnel service runs the agent now, or undefined: `service` asked within SERVICE_GONE_MS. `keyed`: the hopper has
+ * the tunnel services' key; `at`: when the service last asked.
+ */
+export function tunnelServiceProblem(o: { service: string; cluster: boolean; keyed: boolean; at: Date | undefined; now: Date }): string | undefined {
+  if (o.cluster && !o.keyed) return 'this hopper runs in a Kubernetes cluster, which runs no tunnel service: reach it through the chart\'s Ingress (docs/deploy.md "Remote access")';
+  if (!o.keyed) return 'this hopper runs no tunnel service: the compose stack runs them (docs/deploy.md "Remote access")';
+  if (o.at && o.now.getTime() - o.at.getTime() <= SERVICE_GONE_MS) return undefined;
+  const since = o.at ? 'for more than 30 s' : 'since the hopper started';
+  return o.cluster
+    ? `the ${o.service} service has not asked for its settings ${since}: check that it runs in the cluster`
+    : `the ${o.service} service has not asked for its settings ${since}: start it with \`podman compose up -d\` beside the hopper's compose.yaml`;
+}
 
 /** The path the tunnel services ask for their settings at. */
 export const AGENT_PATH = '/tunnel/agent';
@@ -121,10 +137,9 @@ export function createRemoteAccess(o: {
     const seen = at ? { serviceSeenAt: at.toISOString() } : {};
     if (!saved.enabled || !p) return { state: 'off' };
     const service = p === 'cloudflare' ? 'cloudflared' : 'tunnel';
-    if (serviceKey() === undefined) return { state: 'no-service', error: 'this hopper runs no tunnel service: the compose stack runs them (docs/deploy.md "Remote access")' };
-    if (!at || o.now().getTime() - at.getTime() > SERVICE_GONE_MS) {
-      return { state: 'no-service', ...seen, error: `the ${service} service has not asked for its settings ${at ? 'for more than 30 s' : 'since the hopper started'}: start it with \`podman compose up -d\` beside the hopper's compose.yaml` };
-    }
+    const keyed = serviceKey() !== undefined;
+    const gone = tunnelServiceProblem({ service, cluster: inCluster(o.env), keyed, at, now: o.now() });
+    if (gone) return { state: 'no-service', ...(keyed ? seen : {}), error: gone };
     if (unreadable) return { state: 'down', ...seen, error: unreadable };
     const up = watch.url();
     if (up) return { state: 'up', url: up, ...seen };

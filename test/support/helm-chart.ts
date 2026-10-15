@@ -12,7 +12,7 @@ const HELM_IMAGE = 'docker.io/alpine/helm:3.19.0';
 
 export interface EnvVar {
   name: string; value?: string;
-  valueFrom?: { secretKeyRef?: { name: string; key: string; optional?: boolean }; fieldRef?: { fieldPath: string } };
+  valueFrom?: { secretKeyRef?: { name: string; key: string; optional?: boolean }; fieldRef?: { fieldPath: string }; resourceFieldRef?: { containerName?: string; resource: string; divisor?: string } };
 }
 export interface Container {
   name: string; image: string; args?: string[]; command?: string[]; env?: EnvVar[];

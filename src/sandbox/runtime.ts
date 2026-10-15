@@ -51,6 +51,8 @@ export async function selectRuntime(o: RuntimeChoice): Promise<ContainerRuntime 
 export const LOCAL = 'local';
 /** A box on a client target shares that machine's network: it reaches the hopper as the machine's client does. */
 export const REMOTE_NETWORK = 'host';
+/** A hopper in a Kubernetes pod (issue #1289): no socket is a fault to fix there; sandbox boxes do not run in the cluster yet (issue #1281). */
+export const NO_RUNTIME_IN_CLUSTER = 'the hopper runs in a Kubernetes cluster: it starts no sandbox box beside itself there';
 export const NO_RUNTIME = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot start sandbox boxes itself. docs/deploy.md "Sandbox boxes the hopper starts"';
 
 /** A user's client target named `machine`: its runtime relay, and the hopper's URL as it dialled in. Undefined: none. */
@@ -84,7 +86,7 @@ export interface Placements {
  * `joinUrl`: where a box beside the hopper dials it, as configured; `address`, when given, sets it at each launch from
  * what the runtime says of the hopper (address.ts).
  */
-export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; joinUrl: () => string; address?: (runtime: ContainerRuntime) => Promise<string>; clients?: ClientTargets }): Placements {
+export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; joinUrl: () => string; address?: (runtime: ContainerRuntime) => Promise<string>; clients?: ClientTargets; noRuntime?: string }): Placements {
   // Made at each look: a machine that joined again under the same name has a new link key.
   const remote = (userId: string, machine: string): { runtime: ContainerRuntime; dialled(): string | undefined } | undefined => {
     const target = o.clients?.(userId, machine);
@@ -94,7 +96,7 @@ export function createPlacements(o: { local: ContainerRuntime | undefined; netwo
     local: o.local,
     async place(userId, machine) {
       if (machine === undefined || machine === LOCAL) {
-        if (!o.local) throw new Error(NO_RUNTIME);
+        if (!o.local) throw new Error(o.noRuntime ?? NO_RUNTIME);
         const problem = await o.local.problem();
         if (problem) throw new Error(problem);
         return { machine: LOCAL, runtime: o.local, network: o.network, joinUrl: o.address ? await o.address(o.local) : o.joinUrl() };

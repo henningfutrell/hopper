@@ -1213,6 +1213,10 @@ What to expect:
   from Machines. Its volume goes with it. A job still on it at the end of `lanes.drainSeconds` is a job on a machine
   that went away.
 - A pod restarted (a rollout, a node drained) leaves the same way, then joins again as the same machine.
+- Machines shows each pod's CPU and memory as its limits (`lanes.resources`). With no limit set, a pod may use the whole
+  node, and Machines shows the node's. The chart passes the limits as `HOPPER_POD_CPU_LIMIT` and
+  `HOPPER_POD_MEMORY_LIMIT` (design.md "Host-only parts in a cluster").
+- No view asks for a Podman or Docker socket, systemd or WSL in a pod: a cluster install has none of them.
 
 Without the chart, give the same: a Secret with the key (`openssl rand -hex 32`), mounted into the hopper's pod with
 `HOPPER_LANE_POOL_KEY_FILE` naming its file, and a StatefulSet like `deploy/helm/hopper/templates/lanes.yaml`.

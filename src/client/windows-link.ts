@@ -5,10 +5,12 @@
 // PowerShell over WSL interop, for the address check (`/job/address`: 204 to anyone the Host guard lets in, no session):
 // any HTTP answer means the hopper answered, and the URL that answered is the result's. In the background, at most every 5 minutes, so a read never waits; a result
 // older than 15 minutes is dropped. The test carries no token and only reads. Said in `/release` with the resources.
+// A client in a Kubernetes pod (issue #1289) tests nothing: a node's kernel may be WSL's, but no Windows is beside a pod.
 // Imports nothing of hopper: a client target runs it as a plain file.
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { inCluster, type Env } from './cluster.ts';
 import { powershell as runPowerShell } from './resources.ts';
 
 /** What the test found (the same shape as WindowsLink in src/domain/machine-history.ts). */
@@ -31,6 +33,8 @@ export interface WindowsLinkDeps {
   powershell?: (script: string) => Promise<string | undefined>;
   /** WSL's networking mode; default `wslinfo --networking-mode`. */
   networkingMode?: () => Promise<string | undefined>;
+  /** Says whether it runs in a Kubernetes pod; default this process's. */
+  env?: Env;
 }
 
 const INTERVAL_MS = 5 * 60_000;
@@ -73,7 +77,7 @@ export function createWindowsLinkCheck(d: WindowsLinkDeps): () => WindowsLink | 
   const urls = windowsLinkUrls(d.url);
   let wsl = false;
   try { wsl = /microsoft/i.test(readFileSync(join(d.root ?? '/', 'proc/version'), 'utf8')); } catch { /* not Linux */ }
-  if (!urls || !wsl) return () => undefined;
+  if (!urls || !wsl || inCluster(d.env ?? process.env)) return () => undefined;
   const now = d.now ?? Date.now;
   const ps = d.powershell ?? ((s: string) => runPowerShell(s, 30_000));
   const mode = d.networkingMode ?? wslinfo;

@@ -96,6 +96,7 @@ spec:
             # Told to stop, it leaves the hopper and lets the jobs on it end before herdr stops.
             - name: HOPPER_CLIENT_DRAIN
               value: "1"
+            {{- include "hopper.podLimits" "lane" | nindent 12 }}
           {{- include "hopper.containerSecurity" . | nindent 10 }}
             readOnlyRootFilesystem: true
           resources:

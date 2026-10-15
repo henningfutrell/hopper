@@ -17,7 +17,7 @@ import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
-import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runtime.ts';
+import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
 import { runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
 import type { AgentCredentialOf } from './agent-credential.ts';
 import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
@@ -58,6 +58,8 @@ export interface SandboxesOptions {
   network: string;
   /** The URL a box dials the hopper at, from that network, as configured: a box taken on from before the records. */
   joinUrl: () => string;
+  /** The hopper runs in a Kubernetes pod (issue #1289): with no runtime, that is said, not a socket to give. */
+  cluster?: boolean;
   /** Sets that URL at each launch from what the runtime says of the hopper (address.ts); absent: `joinUrl`. */
   address?: (runtime: ContainerRuntime) => Promise<string>;
   /** How long a launch waits for the box's start check to pass; default START_CHECK_MS. */
@@ -119,7 +121,8 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   let running: Promise<void> | undefined;
   const down = new Map<string, string>();
   let buildsAt = -Infinity;
-  const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, ...(o.address ? { address: o.address } : {}), ...(o.clients ? { clients: o.clients } : {}) });
+  const noRuntime = o.cluster ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME;
+  const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, noRuntime, ...(o.address ? { address: o.address } : {}), ...(o.clients ? { clients: o.clients } : {}) });
 
   /**
    * The hopper's own runtime, then each client target that holds a recorded box. One that cannot be listed now — a
@@ -173,7 +176,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
 
   return {
     async view(userId) {
-      const problem = o.runtime ? await o.runtime.problem() : NO_RUNTIME;
+      const problem = o.runtime ? await o.runtime.problem() : noRuntime;
       return {
         launch: { available: problem === undefined, ...(problem !== undefined ? { problem } : {}), ...(o.runtime ? { runtime: o.runtime.kind } : {}) },
         boxes: o.repo.list().filter((r) => r.userId === userId).map(({ userId: _u, ...box }) => box),
@@ -196,13 +199,13 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       const r = o.repo.list().find((x) => x.userId === userId && x.name === name);
       if (!r || !r.containerId) return { exit: 255, problem: `no box ${name}: it went` };
       if (r.machine !== LOCAL) return { exit: 255, problem: `box ${name} runs on ${r.machine}: a box step runs only in a box beside the hopper` };
-      if (!o.runtime) return { exit: 255, problem: NO_RUNTIME };
+      if (!o.runtime) return { exit: 255, problem: noRuntime };
       return runBoxStep(o.runtime, r.containerId, step, io);
     },
 
     async needStep(userId, box, io) {
       const at = await places.forCheck(userId);
-      if (!at) return { exit: 125, problem: `${NO_RUNTIME}; and no machine of the user's with a container runtime is dialled in` };
+      if (!at) return { exit: 125, problem: `${noRuntime}; and no machine of the user's with a container runtime is dialled in` };
       stepping.add(box.name);
       try {
         const r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, network: at.network }, io);
