@@ -5,6 +5,7 @@
 // and a job there is given that one; when it reaches none, the machine has an **address problem** and takes no new job.
 import type { MachineSnapshot } from '../domain/types.ts';
 import { shellQuote } from '../executors/ssh.ts';
+import { defaultHostLinkBase } from '../artifacts/links.ts';
 
 /** The route a machine's probe asks at each address: 204 and nothing else, from the hopper, behind the Host guard. */
 export const ADDRESS_PATH = '/job/address';
@@ -39,14 +40,31 @@ export function hopperAddresses(o: { publicUrl?: string | undefined; lanNames: r
 }
 
 /**
- * The shell that asks the address path at each address, in order, until one answers 204: one line per address asked,
- * `hopper-address <status> <url>` (000: no connection). Each at most 3 s. Nothing to ask: nothing runs.
+ * The address a WSL machine on the computer that runs the hopper reaches it at (issue #1248 part 4), or undefined: the
+ * hopper does not run in WSL. WSL distros on one computer share one network, and the hopper publishes its port on
+ * loopback there, so it is the hopper's host link (issue #712): the host link base, else `http://localhost:<port>`.
  */
-export function addressCommand(urls: readonly string[]): string {
-  if (urls.length === 0) return ':';
-  return `if command -v curl >/dev/null 2>&1; then for u in ${urls.map(shellQuote).join(' ')}; do`
-    + ` c=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 3 "$u${ADDRESS_PATH}"); printf '${LINE} %s %s\\n' "\${c:-000}" "$u";`
-    + ` if [ "$c" = 204 ]; then break; fi; done; else echo '${NO_CURL}'; fi`;
+export function wslHopperUrl(o: { wsl: boolean; hostLinkBase: string; port: number }): string | undefined {
+  if (!o.wsl) return undefined;
+  return o.hostLinkBase.replace(/\/+$/, '') || defaultHostLinkBase(o.port);
+}
+
+/** What a WSL machine is asked (issue #1248 part 4): the address on the hopper's computer, and the kernel file that says WSL. */
+export interface WslAddress { url: string; procVersion?: string }
+
+/** One address asked: `hopper-address <status> <url>` (000: no connection), at most 3 s. */
+const ASK = `c=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 3 "$u${ADDRESS_PATH}"); printf '${LINE} %s %s\\n' "\${c:-000}" "$u"`;
+
+/**
+ * The shell that asks the address path at each address, in order, until one answers 204: one line per address asked.
+ * Then, when none did and the machine runs in WSL (its kernel file names Microsoft), the address `wsl` names. Nothing to
+ * ask: nothing runs.
+ */
+export function addressCommand(urls: readonly string[], wsl?: WslAddress): string {
+  if (urls.length === 0 && !wsl) return ':';
+  const each = urls.length ? `for u in ${urls.map(shellQuote).join(' ')}; do ${ASK}; if [ "$c" = 204 ]; then break; fi; done;` : '';
+  const onWsl = wsl ? ` if [ "$c" != 204 ] && grep -qi microsoft ${shellQuote(wsl.procVersion ?? '/proc/version')} 2>/dev/null; then u=${shellQuote(wsl.url)}; ${ASK}; fi;` : '';
+  return `if command -v curl >/dev/null 2>&1; then c=; ${each}${onWsl} else echo '${NO_CURL}'; fi`;
 }
 
 const why = (status: string): string => {
@@ -56,9 +74,11 @@ const why = (status: string): string => {
   return `answered ${status}, not as the hopper`;
 };
 
-/** What the address check found: the first address that answered as the hopper, or why none did. */
-export function readAddress(stdout: string, urls: readonly string[]): { hopperUrl: string } | { addressProblem: string } {
-  if (urls.length === 0) return { addressProblem: 'the hopper has no address a machine can reach it at: set HOPPER_PUBLIC_URL, or HOPPER_LAN_NAMES with names machines resolve' };
+/**
+ * What the address check found: the first address that answered as the hopper, or why none did. `wsl`, the address a
+ * WSL machine was asked after the others (issue #1248 part 4): asked, it was a WSL machine, and the problem names it.
+ */
+export function readAddress(stdout: string, urls: readonly string[], wsl?: string): { hopperUrl: string } | { addressProblem: string } {
   const lines = stdout.split('\n').filter(isAddressLine);
   if (lines.includes(NO_CURL)) return { addressProblem: 'curl is not installed there: its jobs cannot reach the hopper' };
   const asked = new Map<string, string>();
@@ -68,8 +88,13 @@ export function readAddress(stdout: string, urls: readonly string[]): { hopperUr
   }
   const reached = urls.find((u) => asked.get(u) === '204');
   if (reached) return { hopperUrl: reached };
+  if (wsl !== undefined && asked.get(wsl) === '204') return { hopperUrl: wsl };
+  const onWsl = wsl !== undefined && asked.has(wsl)
+    ? `a WSL machine on the computer that runs the hopper reaches it at ${wsl}, and this one did not (${why(asked.get(wsl)!)}). `
+    : '';
+  if (urls.length === 0) return { addressProblem: `${onWsl}the hopper has no address a machine can reach it at: set HOPPER_PUBLIC_URL, or HOPPER_LAN_NAMES with names machines resolve` };
   const said = urls.map((u) => `${u} (${asked.has(u) ? why(asked.get(u)!) : 'not asked'})`).join('; ');
-  return { addressProblem: `the hopper cannot be reached from it: ${said}. Its jobs need the hopper: ${SET_ADDRESS}` };
+  return { addressProblem: `the hopper cannot be reached from it: ${said}. ${onWsl}Its jobs need the hopper: ${SET_ADDRESS}` };
 }
 
 /**
