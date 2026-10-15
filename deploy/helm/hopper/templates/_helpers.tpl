@@ -40,3 +40,22 @@ securityContext:
 storageClassName: {{ . | quote }}
 {{- end }}
 {{- end -}}
+
+{{/* The master key Secret: the one given, else <release>-master-key. */}}
+{{- define "hopper.masterKeySecret" -}}
+{{- .Values.masterKey.existingSecret | default (printf "%s-master-key" (include "hopper.fullname" .)) -}}
+{{- end -}}
+
+{{/* Whether the master key is read from a mounted Secret file (a Secret given, or an ExternalSecret), not variables. */}}
+{{- define "hopper.masterKeyFromFile" -}}
+{{- if or .Values.masterKey.existingSecret .Values.masterKey.externalSecret.enabled }}true{{ end -}}
+{{- end -}}
+
+{{/* The hopper's service account, or nothing: the namespace's default. */}}
+{{- define "hopper.serviceAccount" -}}
+{{- if .Values.serviceAccount.create -}}
+{{- .Values.serviceAccount.name | default (include "hopper.fullname" .) -}}
+{{- else -}}
+{{- .Values.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}

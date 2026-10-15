@@ -7812,8 +7812,13 @@ sends nothing, and its card, its test event and its deliveries say the stored se
 
 Issue #659. The hopper runs in ephemeral containers, and a persistent volume cannot be assumed: a key kept in
 a volume beside the container (the compose `secrets` volume's `token_key`, before) is lost with it, and every
-secret it sealed with it. So the master key comes from the launch alone, as the variable `HOPPER_MASTER_KEY` —
-never a file (`HOPPER_MASTER_KEY_FILE` is refused, naming the variable), never a volume. `src/secrets/master-key.ts`
+secret it sealed with it. So the master key comes from the launch alone, as the variable `HOPPER_MASTER_KEY` or the
+file `HOPPER_MASTER_KEY_FILE` names — never a volume of the hopper's own. The file is for a Secret an orchestrator
+mounts (issue #1288: a Kubernetes Secret, which an External Secrets Operator `ExternalSecret` can fill from an outside
+store): its key lives in the cluster, not beside the container. A key file named but not there, unreadable or empty
+stops the start; the variable and its file both set are refused. `HOPPER_MASTER_KEY_PREVIOUS_FILE` gives the previous
+keys the same way, and a previous-keys file that is not there gives none (a Secret with no `previous`). The files are
+read once, at start: a rotation in the Secret takes effect at the next restart. `src/secrets/master-key.ts`
 resolves it once, at start, before any user's runtime; the parts read it through `withMasterKey` — each sealer reads
 the key at each call (`liveSealer`), so a rotation changes it in the running hopper —, and no child
 process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HOPPER_TOKEN_KEY*` variable).
@@ -13948,11 +13953,21 @@ the KMS is always optional. So the KMS is a second key provider, chosen by one r
 - **The KMS built**: local-kms (`docker.io/nsmithuk/local-kms`, AWS KMS's API, keys in its `/data` volume), the
   compose profile `kms`. The key is `HOPPER_KMS_KEY` (default `alias/hopper-vault`), made with its alias at the first
   ask when the KMS has none. The client is AWS's own (`@aws-sdk/client-kms`), with fixed placeholder credentials:
-  local-kms checks none. A KMS that checks credentials (AWS) is not supported yet. Residual risk: local-kms keeps its key
+  local-kms checks none. Residual risk: local-kms keeps its key
   material in clear in its volume; it parts the key from the database (a dump holds no usable value), not from the host.
+- **AWS KMS** (issue #1288). `HOPPER_KMS_REGION` names the region; then the KMS is AWS KMS, at the region's own endpoint
+  or at `HOPPER_KMS_URL` when set (a VPC endpoint). The client takes AWS's own credential chain: in a cluster the
+  service account's role (IRSA or EKS Pod Identity), else the instance's role or the `AWS_*` variables. The hopper never
+  makes a key in AWS: `HOPPER_KMS_KEY` names one an operator made (the Helm chart requires it), and a key that is not
+  there is the KMS's error, so the vault fails closed. The role needs `kms:GenerateDataKey` and `kms:Decrypt` on that
+  key, with the encryption context above. The master key is not needed to open the data key: with no master key the
+  vault still seals and opens under it (the master key, when given, stays a previous key only). What the hopper owns
+  itself (the system scope, the shared secrets) is still sealed under the master key. Vault transit (HashiCorp) as a
+  third provider is not built: AWS KMS is the one a cluster on AWS has, and a second provider waits for a second need.
 
 Tests: `test/vault/kms-keys.test.ts` (a fake KMS at the `KeyService` port: wrap once, open again, seal again, fail
-closed), `test/vault/local-kms.test.ts` (the adapter against a real local-kms, when `HOPPER_TEST_KMS_URL` names one).
+closed, no master key needed; which KMS the settings name), `test/vault/local-kms.test.ts` (both adapters against a
+real local-kms, when `HOPPER_TEST_KMS_URL` names one: the AWS adapter at its endpoint makes no key).
 
 ### The vault in a container of its own (issue #586, 2026-10-09)
 
