@@ -158,7 +158,7 @@ export interface ToolAccountMachine {
   lastUsedAt?: string;
   /** Its source can start the tool's sign-in there (issue #1128): `POST /ui/api/tool-accounts/sign-in`. */
   signIn?: true;
-  /** The infra credential folders the machine's home holds (issue #1128 part 7): a machine must hold none. Absent: none, or not read. */
+  /** The infra credentials the machine's job user holds (issues #1128 part 7, #1248): a machine holding any is not ready. Absent: none, or not read. */
   infraCredentials?: string[];
 }
 

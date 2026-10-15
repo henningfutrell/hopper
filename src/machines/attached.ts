@@ -39,7 +39,7 @@ export interface MachineProbe {
   disk?: DiskReading;
   /** Its CPU, memory and swap (issue #560). Absent: not read. */
   resources?: ResourceReading;
-  /** The infra credential folders its home holds (issue #1128 part 7). Absent: not read. */
+  /** The infra credentials its job user holds (issues #1128 part 7, #1248): any makes it not ready. Absent: not read. */
   infraCredentials?: string[];
   /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
   workTreeProblem?: string;
@@ -184,7 +184,7 @@ export type HerdrProbe = Pick<MachineProbe, 'online' | 'herdr' | 'herdrProblem'>
  * fails or the answer is not an absolute home. A session with no HOME (seen on a WSL machine, issue #1154) takes its
  * user's home from the user database; the home comes on a line of its own (`hopper-home`), so a line a shell's startup
  * file prints first is not taken for it. With it, the disk the home is on (issue #401), when its df says,
- * its CPU, memory and swap (issue #560), when it has /proc, and the infra credential folders its home holds (issue #1128 part 7).
+ * its CPU, memory and swap (issue #560), when it has /proc, and the infra credentials its job user holds (issues #1128 part 7, #1248).
  */
 export function probeSsh(o: {
   target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string;

@@ -115,7 +115,7 @@ export async function clientRunningRelease(t: ClientTransport, jobs: readonly st
   const at = clientHome(home);
   // Its CPU, memory and swap (issue #560): a client older than this says none.
   const res = resourcesOf(resources);
-  // The infra credential folders its home holds (issue #1128 part 7): only names on the list; a client older than this says none.
+  // The infra credentials its job user holds (issues #1128 part 7, #1248): only names on the list; a client older than this says none.
   const creds = infraCredentialsOf(infraCredentials);
   // Its vault's helper (issue #558): an absolute path, one line; a client older than this says none.
   const helper = typeof vault === 'string' && vault.startsWith('/') && !/[\n\0]/.test(vault) && vault.length <= 4096 ? { vault } : {};
