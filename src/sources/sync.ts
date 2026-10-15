@@ -360,7 +360,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         const job = why.startsWith('already ') ? store.jobs.getBySourceKey(key) : undefined;
         if (job) result.failed[key] = `${why}: its job is ${job.status}`;
       }
-      await runSync(slot, true);
+      // The answer does not wait for the sync (issue #1194): the action is recorded, and the sync it asks for takes the
+      // assigned, released or approved issues after, its status on the stream.
+      void runSync(slot, true);
       return { ok: true, result };
     },
     start() {

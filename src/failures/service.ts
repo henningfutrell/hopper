@@ -17,7 +17,7 @@
 // failure of a job that reported a hopper bug about itself waits on that report's problem, never a person (issue #1147).
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
-  failureSettingsOf, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
+  failureSettingsOf, jobPriorityTag, type ActingPerson, type Discarding, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
   type PendingRun, type Problem, type WorkState,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS } from './assess.ts';
@@ -57,6 +57,8 @@ export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'contin
   doneAtSource?(job: Job): Promise<boolean>;
   /** When this hopper's build was made (its install record): a hopper bug's fix is in it only when it closed before (issue #1147). */
   installedAt?(): string | undefined;
+  /** A discard of kept work under way or failed on its machine (issue #1194, `Engine.discarding`). Absent: none shown. */
+  discarding?(jobId: string): Discarding | undefined;
 }
 
 const DAY_MS = 86_400_000;
@@ -320,7 +322,7 @@ export function createFailures(o: FailuresOptions): Failures {
     sweep,
     dismissStale: () => handoffs.dismissStale(),
     backfill,
-    view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack),
+    view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack, o.discarding),
     blocks() {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.

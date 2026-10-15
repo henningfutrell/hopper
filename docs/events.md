@@ -887,6 +887,24 @@ Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or 
 }
 ```
 
+## `job.work_discard_failed`
+
+Version 1 (`docs/schemas/job.work_discard_failed.v1.json`). A person discarded the kept work in Failures, Work not pushed (issue #1010), and the removal on the job's machine, which runs after the answer (issue #1194), failed: `error` says why (its machine out of reach, or a client older than the discard that kept it). The work is still kept, and Discard is offered again. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `error` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "error": "job 7d0c9b1e's work cannot be discarded: its machine desk is out of reach",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `job.containers_removed`
 
 Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.

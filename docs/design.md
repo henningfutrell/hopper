@@ -10586,7 +10586,7 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
   issue's `jobId` and puts the list in `SourceStatus.detail.intake` (none while paused). Sources lists them,
   not-taken first, with **Assign to me**, **Assign all to me** and **Release claim**
   (`POST /ui/api/sources/:name/intake { kind, keys }`, operator; only on items the last sync offered that
-  action for; the source syncs at once).
+  action for; the source syncs at once, after the answer: issue #1194).
 - **Claim holders.** A claim adds `hopper:held-by:<id>` beside `hopper:claimed`; the end of the job, a
   cancel, a rejection and Run again remove both. The id is the user's **claim holder** id: 12 random hex
   characters made on first use (`UserSettingsRepository.claimHolder`), naming no person or machine. A claimed
@@ -11305,8 +11305,11 @@ Now Failures lists it, and each has an action that moves it.
   (`Engine.discardWork`) reaps the job's scratch dir on its machine with `discard` (the reap script's `$3`, a client
   target's `/reap` body `discard: true`): its git worktrees removed with `--force --force`, the dir removed whatever it
   holds; then `job.work_removed` with `discarded`, `person` and `via`. Refused, with why, when no work is kept, the job
-  has not ended, or its machine is unknown, offline or out of reach. A client older than this ignores `discard` and keeps
-  the work: the refusal says to update it.
+  has not ended, or its machine is unknown or offline. The answer comes once these checks pass; the reap runs after it
+  (issue #1194, "Actions answer at once"): the entry's `discarding` is `removing` meanwhile, and Failures shows it so from
+  the click on. Out of reach, or kept all the same — a client older than this ignores `discard` —, the removal fails:
+  `job.work_discard_failed` with why and who, `discarding` `failed` with the error (the refusal says to update the
+  client), and Discard is offered again. `discarding` is kept in memory: after a restart the work shows kept, as it is.
 - **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
 - **Discarded once done** (issue #1105). Kept work of a job whose work item is `done`, as the ledger has it, waits on
   nobody: the sweep reaps its scratch dir with `discard`, as Discard does, and records `job.work_removed` with
@@ -11328,11 +11331,41 @@ for a finished or cancelled job — its source takes the item back as for Run ag
 Continue only), and `SourceHost.continueJob` takes those ends only `by` `keptWork` (a hand-off's Continue stays a failed
 job's).
 
-**Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (discard, its refusals, the log once),
+**Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (the log once), `test/engine/sweep-discard.test.ts` (discard, its refusals, the removal after the answer and its failure),
 `test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,
 the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squash-merged, rebased and re-made commits
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
 the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused).
+
+### Actions answer at once (issue #1194, 2026-10-14)
+
+A person's action on a local hopper must feel instant. Approve took 5 to 20 s: the route awaited a GitHub read of the
+issue and then a full sync of the source before it answered, and the UI waited for that answer. Discard of kept work
+awaited a round trip to the job's machine that removes git worktrees. The rule now: **an action records its decision and
+answers; its slow side effects run after the answer**, and what the person sees follows from the answer, the stream and
+the next read, never from a poll.
+
+- **Intake actions** (`SourceRegistry.intakeAction`, `src/sources/sync.ts`). The sync an action asks for runs after the
+  answer, not awaited; its status reaches the UI on the stream (`source.status`).
+- **Approve** (`src/sources/github/approvals.ts`). The hash is checked against the request card the last sync showed, and
+  that text is recorded at once (`IntakeTrust.approve`, `source.request_approved`); the issue is not read again. The
+  person approves the text they read: an edit since makes the next sync show the card again, with the approved text and
+  the change, and no job runs a text nobody approved. After the answer, not awaited: on a reopened card `hopper:done`
+  goes from the issue, and the assignee's comments the job would see are read and added to the approved snapshot
+  (`IntakeTrust.approvedComments`). The next discover waits for both, so the sync takes the issue with them. One that
+  fails is kept in the source's `detail.approvalErrors` until Approve again goes through; an Approve again of the same
+  text before a discover listed the issue taken is `done` and records nothing more.
+- **Decline** writes nothing to GitHub and answers at once; so does Dismiss.
+- **Discard kept work** ("Work not pushed"): the checks, then the answer; the reap after, followed by `discarding`.
+- **The UI.** Approve and Decline wait on the card only for the answer. Discard shows removing from the click on, and
+  `failureAct` reads the failures again before the action ends, so the entry shows the result, never what was before.
+- **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline and
+  Discard answer in under 200 ms, their decision recorded, and the slow work ends after.
+
+Not yet so (issue #1194, later parts): Assign to me, Release claim and Take off the backburner still write to GitHub
+before they answer (one call each); the other mutating routes (push, run again, rework, answer, end wait, landing batch,
+queue order) are not measured against the budget; a follow-up's progress is not shown on the item; and no end-to-end
+check measures the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 
@@ -15219,10 +15252,12 @@ each is trusted, and why). Sources shows it first, as a card (`ui/src/components
 wrote, labelled and assigned it, the title and the body as plain text, and **Approve**. Approve —
 `POST /ui/api/sources/:name/intake` `{ kind: 'approve', keys: [key], hash }` — is a person's act: a UI session signed in
 (a job's routes reach no `/ui/api/`), the operator role, and Access's `item#can_accept_text` for the signed-in user (as
-for accepting new text, issue #662; 403 denied, 503 when OpenFGA cannot be asked). The source reads the issue again; only
-when its title and body still hash as the person read them is its text — with the assignee's comments the job would see —
-recorded as the item's snapshot, reason `approved` (`IntakeTrust.approve`), with `source.request_approved` (the hash,
-the actors, who; never the text). The source syncs at once.
+for accepting new text, issue #662; 403 denied, 503 when OpenFGA cannot be asked). Only when `hash` is the hash of the
+title and body the last sync showed is that text — with the assignee's comments the job would see — recorded as the
+item's snapshot, reason `approved` (`IntakeTrust.approve`), with `source.request_approved` (the hash, the actors, who;
+never the text). The issue is not read again (issue #1194): the person approves the text they read, and an edit since
+makes the next sync show the card again (**Approved** below). The answer comes once the approval is recorded; the
+source syncs after it, not awaited, and the stream shows the issue taken (see "Actions answer at once").
 
 **Approve again** (issue #1045). The source checks Approve against its last sync, so a page that still shows a card the
 sync since took (another tab, an API client, an earlier click) sends Approve on an item no longer offered it. When the

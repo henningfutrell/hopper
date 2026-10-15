@@ -76,19 +76,19 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash, acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(trust.approvals.get(url(1))).toMatchObject({ text: { title: 'Fix it', body: 'It is still broken.' } });
+    // The label goes after the answer (issue #1194); the next discover waits for it.
     const items = await source.discover();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(items.map((i) => [i.number, i.origin])).toEqual([[1, 'trusted']]);
   });
 
-  it('Approve refuses a reopened text that changed since it was shown, and leaves the label', async () => {
+  it('Approve refuses a hash that is not of the reopened text shown, and leaves the label', async () => {
     const { gh, source, trust } = setup();
     gh.createIssue({ repo: REPO, body: 'It is still broken.', labels: ['hopper', 'hopper:done'] });
     await source.discover();
-    const hash = source.intake!()[0]!.request!.hash;
-    gh.editIssue(REPO, 1, { body: 'Something else.' }, 'owner');
-    expect((await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).done).toEqual([]);
+    expect((await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'f'.repeat(64) })).done).toEqual([]);
+    await source.discover();
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
     expect(trust.approvals.size).toBe(0);
   });

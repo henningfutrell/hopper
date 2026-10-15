@@ -6,7 +6,7 @@ import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, In
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import type { GitHubApi } from './api.ts';
-import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
+import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was shown: read it again';
@@ -26,7 +26,7 @@ export interface IntakeActionContext {
   listedLabels: Map<string, string[]>;
   assignee: string | undefined;
   intake: IntakeContext | undefined;
-  /** Approve a request card (issue #652): false when its text changed since the person read it. */
+  /** Approve a request card (issue #652): false when it is not the text the last sync showed. Its GitHub writes run after it (issue #1194). */
   approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean>;
   /** Keeps a person's decline of a request card (issue #1035); the text a person approved (issue #1045). */
   trust: Pick<IntakeTrust, 'decline' | 'approvedText'>;
@@ -79,9 +79,8 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
     }
     try {
       if (a.kind === 'approve') {
+        // A reopened card (issue #1126): the approve takes `hopper:done` off, after it (issue #1194), so the sync takes it again.
         if (!await c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
-        // A reopened card (issue #1126): `hopper:done` goes, so the next sync takes the issue again.
-        if (x.request?.reopened) await c.api.removeLabels(x.repo, numberOf(key), [LABEL_DONE]);
       } else if (a.kind === 'decline') {
         // Only the text the person read, as the last sync showed it. Nothing on GitHub.
         if (!x.request || x.request.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }

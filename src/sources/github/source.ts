@@ -15,8 +15,7 @@
 // while its listing shows no change (`listed-reads.ts`); every other read — before a write — goes to GitHub.
 // Beside intake, a connected account's source reads the user's **tagged items** (issue #1141, `tagged.ts`).
 
-import type { IntakeAction, IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
-import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
+import type { IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
 import type { GitHubListingRepository } from '../../domain/github-listing.ts';
 import { DEFAULT_RATE_LIMITER } from '../../domain/github-rate-limit.ts';
@@ -38,6 +37,7 @@ import { gitHubThread } from './thread.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock, type SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
+import { createApprovals } from './approvals.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
@@ -102,7 +102,6 @@ export interface GitHubSourceOptions {
 export const MIGRATION_RELEASED = 'released a claim with no holder recorded and no job in this hopper';
 export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to take it';
 
-const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
 
 export const CONFIG_URL = 'https://github.com/settings/installations';
 export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its key in GITHUB_APP_PRIVATE_KEY';
@@ -243,24 +242,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake.record('source.intake_migrated', { source: o.name, changes });
   };
 
-  /**
-   * Approve a request card (issue #652): read the issue again; only when its title and body still hash as the person read
-   * them, its text — with the assignee's comments the job would see — is the item's approved snapshot. False: it changed.
-   */
-  const approve = async (repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean> => {
-    const issue = await api.getIssue(repo, numberOf(key));
-    if (!request || request.hash !== a.hash || requestHash(issue) !== a.hash) return false;
-    const item = await toItem(issue, new Set(), new Set(), priorityOf(issue, config, undefined), await botLogin(), o.assignee());
-    o.trust.approve(o.name, key, { title: issue.title, body: issue.body, comments: item.text?.comments ?? [] }, request, a.acting);
-    return true;
-  };
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin });
 
   return {
     name: o.name,
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
     intake: () => outcomes.map((x) => ({ ...x })),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve, label: config.label, takeIn: census.takeIn() }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn() }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -275,10 +264,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
+        ...approvals.detail(),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
     discover: (d) => reads.cached(async () => {
+      const approved = await approvals.begin();
       const bot = await botLogin();
       const assignee = o.assignee();
       const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
@@ -331,6 +322,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
       outcomes = next;
+      approvals.listed(approved);
       listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();
       return items;

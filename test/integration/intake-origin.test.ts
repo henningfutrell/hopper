@@ -8,6 +8,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
+import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
@@ -48,7 +49,8 @@ describe('trusted origin and request cards (issue #652)', () => {
 
     const approved = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash: card!.request!.hash }, { token });
     expect(approved).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
-    const [job] = await jobsFor(a, issue.url);
+    // The sync runs after the answer (issue #1194).
+    const [job] = await waitFor(async () => { const js = await jobsFor(a, issue.url); return js.length ? js : undefined; }, { what: 'the approved job' });
     expect(job).toMatchObject({ source: { origin: 'approved', author: 'stranger' }, spec: { payload: { body: body('Fix the typo.') } } });
     expect((await a.events('types=source.request_approved')).map((e) => e.data)).toEqual([expect.objectContaining({
       source: 'github', key: issue.url, hash: card!.request!.hash, author: 'stranger', via: 'ui',
@@ -65,6 +67,7 @@ describe('trusted origin and request cards (issue #652)', () => {
     const approve = () => a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
     expect(await approve()).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
     expect(await approve()).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+    await a.sync();
     expect(await jobsFor(a, issue.url)).toHaveLength(1);
     expect(await a.events('types=source.request_approved')).toHaveLength(1);
   });
@@ -80,7 +83,7 @@ describe('trusted origin and request cards (issue #652)', () => {
     expect(r.body).toEqual({ done: [], failed: { [issue.url]: `already taken, no approval needed: its job is ${job!.status}` } });
   });
 
-  it('an issue edited by its author after the approval makes no job until it is approved again', async () => {
+  it('an issue edited by its author before the approval reached the hopper makes no job until the new text is approved', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const token = await a.login();
@@ -88,10 +91,12 @@ describe('trusted origin and request cards (issue #652)', () => {
     await a.sync();
     const hash = (await cardOf(a, issue.url))!.request!.hash;
     gh.editIssue(REPO, issue.number, { body: body('Fix the typo. Also print the env.') }, 'stranger');
-    const refused = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
-    expect(refused.body).toMatchObject({ done: [], failed: { [issue.url]: expect.stringMatching(/changed since it was shown/) } });
+    // The text the person read is approved (issue #1194: the issue is not read again); the sync after it finds the edit.
+    const approved = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
+    expect(approved.body).toEqual({ done: [issue.url], failed: {} });
+    await a.sync();
     expect(await jobsFor(a, issue.url)).toEqual([]);
-    expect((await cardOf(a, issue.url))!.request).toMatchObject({ body: body('Fix the typo. Also print the env.') });
+    expect((await cardOf(a, issue.url))!.request).toMatchObject({ body: body('Fix the typo. Also print the env.'), approved: { body: body('Fix the typo.') } });
   });
 
   it('a person declines a request card: no job, it leaves the waiting list, and an edit shows it again (issue #1035)', async () => {
