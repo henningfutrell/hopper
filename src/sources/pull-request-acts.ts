@@ -64,5 +64,5 @@ export function createPullRequestActs(c: PullRequestActsContext) {
     return { ok: true, jobId, act: under };
   }
 
-  return { act, acts: { pullRequest: send, gaveUp } satisfies OutboxActs };
+  return { act, acts: { pullRequest: send, gaveUp } satisfies Pick<OutboxActs, 'pullRequest' | 'gaveUp'> };
 }

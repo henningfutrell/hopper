@@ -43,6 +43,7 @@ interface OutboxFailed { key: string; repo: string; act: string; error: string; 
 const ACT: Record<string, string> = {
   assign: 'Assign to me', release: 'Release claim', approve: 'Approve', unbackburner: 'Take off the backburner',
   take_in: 'Take into Intake', resolve: 'Hand-off resolution', merge: 'Merge now', close: 'Close PR',
+  rerun: 'Run again', rework: 'Rework',
 };
 
 /**
