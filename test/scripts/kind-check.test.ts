@@ -8,6 +8,9 @@
 //   Scenario: a pod with a Docker socket, a Podman image or a socket variable fails the check, and names the pod
 //   Scenario: a hopper that is not healthy fails the check
 //   Scenario: an upgrade with the same values that runs the OpenFGA migration again fails the check (issue #1282)
+//   Scenario: then the machines come up as pods (sandbox boxes, a lane pod), on a fresh install given a master key, the
+//             hopper stays healthy, and still no pod has a container runtime socket
+//   Scenario: a lane pod that does not come up fails the check
 //   Scenario: with --keep the cluster stays
 //   Scenario: a pull request that changes the chart runs the check, with no secret
 import { spawnSync } from 'node:child_process';
@@ -37,6 +40,7 @@ interface Pod {
 const clean: Pod[] = [
   { metadata: { namespace: 'hopper', name: 'hopper-6f9d' }, spec: { containers: [{ name: 'hopper', image: 'ghcr.io/henningfutrell/hopper:dev', env: [{ name: 'HOPPER_SANDBOX_RUNTIME', value: 'kubernetes' }] }], initContainers: [{ name: 'wait-for-postgres', image: 'postgres:17-alpine' }] } },
   { metadata: { namespace: 'hopper', name: 'hopper-openfga-1a' }, spec: { containers: [{ name: 'openfga', image: 'docker.io/openfga/openfga:v1.22.0' }] } },
+  { metadata: { namespace: 'hopper', name: 'hopper-lanes-0' }, spec: { containers: [{ name: 'lane', image: 'ghcr.io/henningfutrell/hopper:box-claude-dev' }], initContainers: [{ name: 'join', image: 'ghcr.io/henningfutrell/hopper:box-claude-dev' }] } },
   { metadata: { namespace: 'kube-system', name: 'kube-proxy-x' }, spec: { volumes: [{ name: 'lib-modules', hostPath: { path: '/lib/modules' } }], containers: [{ name: 'kube-proxy', image: 'registry.k8s.io/kube-proxy:v1.34.0' }] } },
 ];
 
@@ -91,7 +95,46 @@ describe('scripts/kind-check.ts', () => {
       + "fetch('http://127.0.0.1:4790/api/health').then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 1); }, () => process.exit(1))");
     expect(r.calls).toContain('kubectl --context kind-hopper-check get pods --all-namespaces -o json');
     expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
-    expect(r.stdout).toContain('3 pods, no container runtime socket');
+    expect(r.stdout).toContain('4 pods, no container runtime socket');
+  });
+
+  it('then brings up the machines as pods, asks the health again, and checks the cluster again for a container runtime', () => {
+    fakes(clean);
+    const r = run('--tag', 'dev');
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const at = (call: string): number => {
+      const i = r.calls.indexOf(call);
+      expect(i, `${call} in\n${r.calls.join('\n')}`).toBeGreaterThan(-1);
+      return i;
+    };
+    const migration = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 10m`);
+    // A new pod would not start on the first install's database: its master key was made at the first start, and shown
+    // only in the UI (issue #1296). So the machines come up on a fresh install, given a master key as a person keeps it.
+    const removed = at('kubectl --context kind-hopper-check delete namespace hopper --wait=true --timeout=5m');
+    const namespace = at('kubectl --context kind-hopper-check create namespace hopper');
+    const key = r.calls.findIndex((c) => /^kubectl --context kind-hopper-check --namespace hopper create secret generic hopper-master-key --from-literal=master-key=[0-9a-f]{64}$/.test(c));
+    expect(key, r.calls.join('\n')).toBeGreaterThan(-1);
+    const sandbox = at(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --wait --wait-for-jobs --timeout 15m --set image.tag=dev --set sandbox.enabled=true`);
+    // No --wait: a lane pod is ready only once a person signed in, and its spec is what the check reads.
+    const lanes = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --set lanes.replicas=1`);
+    const created = at('kubectl --context kind-hopper-check --namespace hopper wait --for=create pod/hopper-lanes-0 --timeout=180s');
+    expect(migration).toBeLessThan(removed);
+    expect(removed).toBeLessThan(namespace);
+    expect(namespace).toBeLessThan(key);
+    expect(key).toBeLessThan(sandbox);
+    expect(sandbox).toBeLessThan(lanes);
+    expect(lanes).toBeLessThan(created);
+    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper '))).toHaveLength(2);
+    expect(r.calls.slice(created).some((c) => c === 'kubectl --context kind-hopper-check get pods --all-namespaces -o json')).toBe(true);
+    expect(r.stdout).toContain('machines as pods: sandbox boxes on, lane pod hopper-lanes-0');
+  });
+
+  it('fails when the lane pod does not come up', () => {
+    fakes(clean.filter((p) => p.metadata.name !== 'hopper-lanes-0'));
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no lane pod');
+    expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
   });
 
   it('fails when a pod has a Docker or Podman socket, a socket variable, or runs Podman, Docker or compose, and names each', () => {

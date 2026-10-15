@@ -23,6 +23,21 @@ export function setupTold(slot: Slot, setup: SetupProblem | undefined): void {
   }
 }
 
+/**
+ * Say why a source is paused (issue #1351) once when it starts or changes, and once when it ends: a paused pass asks GitHub
+ * nothing new, and its traffic line alone reads as a healthy zero. A setup problem says itself (setupTold).
+ */
+export function pauseTold(slot: Slot, paused: string | undefined): void {
+  if (paused === slot.pauseSaid) return;
+  if (paused !== undefined) {
+    console.warn(`hopper: source ${slot.source.name} paused, nothing new is taken: ${paused}`);
+    slot.pauseSaid = paused;
+  } else {
+    console.warn(`hopper: source ${slot.source.name} no longer paused`);
+    delete slot.pauseSaid;
+  }
+}
+
 /** The status of a sync that ran no pass for want of setup: nothing seen, never ok, the problem named. */
 export function notConfigured(slot: Slot, setup: SetupProblem, now: Date, paused: string | undefined): void {
   const st = slot.status;

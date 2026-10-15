@@ -18,6 +18,7 @@ export function fakeMachineShell(o: FakeHerdrOptions, fake: () => FakeHerdrClien
     async checkpoint(jobId, worktree, session) {
       onMachine('checkpoint', jobId, worktree, session);
       fake().checkpoints.push({ jobId, worktree, session });
+      if (o.checkpoint instanceof Error) throw o.checkpoint;
       return o.checkpoint ?? { none: 'the fake machine takes no checkpoint' };
     },
     async keepCredential(jobId, dir, file, content, make) {

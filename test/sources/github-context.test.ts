@@ -173,7 +173,8 @@ describe('GitHub source: a Windows label sends the Windows work to Windows sandb
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', label] });
     expect(windowsLine((await discoverOne(source)).prompt)).toBe(WINDOWS_LINE);
-    // No Windows machine takes the job: it runs on Linux and asks for each Windows step.
+    // A native Windows machine may take the job (issue #1348): there it does the work itself; elsewhere it asks for each Windows step.
+    expect(WINDOWS_LINE).toContain('When this machine runs Windows natively, do the work and its Windows steps here');
     expect(WINDOWS_LINE).toContain('sh "$HOPPER_STEP" hosts');
     expect(WINDOWS_LINE).toContain('sh "$HOPPER_SKILL" windows-step');
   });

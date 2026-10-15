@@ -62,7 +62,9 @@ async function threeSignedIn() {
   return { app, origin, github, first, second, third };
 }
 
-describe('two admin tiers (issue #242)', () => {
+// Each test starts a daemon and signs three people in through the device flow: under a full suite's load that
+// takes more than the default 15 s (issue #1357), as the other tests that start a daemon and wait on it.
+describe('two admin tiers (issue #242)', { timeout: 30_000 }, () => {
   it('the first person to sign in with GitHub is a super admin; the rest are not', async () => {
     const { app, first, second } = await threeSignedIn();
     expect(await me(app, first)).toMatchObject({ role: 'admin', superAdmin: true });

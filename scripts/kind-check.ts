@@ -1,6 +1,8 @@
 // The kind check (issue #1281, docs/deploy.md "Check the chart on kind"): on a fresh kind cluster, `helm install` alone
 // brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket, or runs Podman, Docker or
-// compose. Then `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Needs
+// compose. Then `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the
+// machines come up as pods — on a fresh install given a master key, sandbox boxes on, one lane pod — and the check runs
+// again: still no container runtime. Needs
 // `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
 //
 //   node scripts/kind-check.ts [--cluster NAME] [--tag TAG] [--keep] [--set key=value ...]
@@ -8,12 +10,15 @@
 // --cluster names the kind cluster (default hopper-check), --tag the hopper's image tag (default: the chart's), --set
 // passes more values to the chart, and --keep keeps the cluster at the end. Exit 0 when the check passes, 1 when not.
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const CHART = join(import.meta.dirname, '..', 'deploy', 'helm', 'hopper');
 const NAMESPACE = 'hopper';
 const PORT = 4790;
+// The release is named hopper, so the chart's names are too.
+const LANE_POD = 'hopper-lanes-0';
 
 interface Container {
   name: string; image: string;
@@ -54,25 +59,41 @@ function sh(cmd: string, args: string[], capture = false): { status: number | nu
 /** The check, on a cluster made for it. Answers what failed, or null. */
 function check(context: string, tag: string | undefined, sets: string[]): string | null {
   const values = [...(tag ? [`image.tag=${tag}`] : []), ...sets];
-  const install = sh('helm', ['install', 'hopper', CHART, '--kube-context', context, '--namespace', NAMESPACE, '--create-namespace',
-    '--wait', '--wait-for-jobs', '--timeout', '15m', ...values.flatMap((v) => ['--set', v])]);
-  if (install.status !== 0) return 'helm install did not bring up the release';
+  if (install(context, ['--create-namespace'], values) !== 0) return 'helm install did not bring up the release';
 
-  // Asked on the pod's loopback, as its probes ask: from outside the pod it would be a LAN request.
+  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? machines(context, values);
+}
+
+/** `helm install` of the release, waiting for it, with `values`. Answers its exit status. */
+function install(context: string, flags: string[], values: string[]): number | null {
+  return sh('helm', ['install', 'hopper', CHART, '--kube-context', context, '--namespace', NAMESPACE, ...flags,
+    '--wait', '--wait-for-jobs', '--timeout', '15m', ...values.flatMap((v) => ['--set', v])]).status;
+}
+
+/** The hopper's health answers ok, asked on its pod's loopback, as its probes ask: from outside the pod it would be a LAN request. */
+function healthy(context: string): string | null {
   const health = `fetch('http://127.0.0.1:${PORT}/api/health').then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 1); }, () => process.exit(1))`;
   const h = sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'exec', 'deploy/hopper', '-c', 'hopper', '--', 'node', '-e', health], true);
   let ok = false;
   try { ok = h.status === 0 && (JSON.parse(h.stdout) as { ok?: unknown }).ok === true; } catch { /* not JSON */ }
   if (!ok) return `the hopper's health is not ok: ${h.stdout.trim() || `exit ${h.status}`}`;
   console.log(`health: ${h.stdout.trim()}`);
+  return null;
+}
 
-  const list = sh('kubectl', ['--context', context, 'get', 'pods', '--all-namespaces', '-o', 'json'], true);
-  if (list.status !== 0) return 'kubectl could not list the pods';
-  const pods = (JSON.parse(list.stdout) as { items: Pod[] }).items;
-  const found = findings(pods);
+/** No pod in the cluster has a container runtime socket or runs a container runtime. */
+function noRuntime(context: string, pods?: Pod[]): string | null {
+  const all = pods ?? listPods(context);
+  if (!all) return 'kubectl could not list the pods';
+  const found = findings(all);
   if (found.length > 0) return `a container runtime in the cluster:\n${found.map((f) => `  ${f}`).join('\n')}`;
-  console.log(`${pods.length} pods, no container runtime socket, no Podman, Docker or compose`);
-  return migratesOnce(context);
+  console.log(`${all.length} pods, no container runtime socket, no Podman, Docker or compose`);
+  return null;
+}
+
+function listPods(context: string): Pod[] | null {
+  const list = sh('kubectl', ['--context', context, 'get', 'pods', '--all-namespaces', '-o', 'json'], true);
+  return list.status === 0 ? (JSON.parse(list.stdout) as { items: Pod[] }).items : null;
 }
 
 /** An upgrade with the same values leaves the OpenFGA migration Job as it was: the migration ran once. */
@@ -87,6 +108,37 @@ function migratesOnce(context: string): string | null {
   const after = jobs();
   if (after !== before) return `the upgrade ran the OpenFGA migration again: Job ${before} became ${after || 'none'}`;
   console.log('the upgrade ran the OpenFGA migration no second time');
+  return null;
+}
+
+/**
+ * The machines as pods: sandbox boxes on (the hopper starts them through the Kubernetes API), and one lane pod. The lane
+ * pod joins only once a person signed in, so its upgrade does not wait for it: its spec is what the check reads.
+ *
+ * They come up on a fresh install given a master key. The first install's hopper made its key at its first start and
+ * shows it only in the UI, so a new hopper pod on that database does not start (issue #1296), and turning sandbox boxes
+ * on makes a new pod. Deleting the namespace removes the release, the claims it keeps and the database with it.
+ */
+function machines(context: string, values: string[]): string | null {
+  if (sh('kubectl', ['--context', context, 'delete', 'namespace', NAMESPACE, '--wait=true', '--timeout=5m']).status !== 0) return 'kubectl could not delete the first install';
+  if (sh('kubectl', ['--context', context, 'create', 'namespace', NAMESPACE]).status !== 0) return `kubectl could not make the namespace ${NAMESPACE}`;
+  // The chart's default name for the key's Secret: masterKey.existingSecret unset.
+  const key = randomBytes(32).toString('hex');
+  if (sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'create', 'secret', 'generic', 'hopper-master-key',
+    `--from-literal=master-key=${key}`], true).status !== 0) return 'kubectl could not make the master key Secret';
+  if (install(context, [], [...values, 'sandbox.enabled=true']) !== 0) return 'helm install with sandbox.enabled=true did not bring up the release';
+  const upgrade = (...args: string[]): number | null => sh('helm', ['upgrade', 'hopper', CHART, '--kube-context', context,
+    '--namespace', NAMESPACE, '--reuse-values', ...args]).status;
+  const health = healthy(context);
+  if (health) return `with sandbox boxes on, ${health}`;
+  if (upgrade('--set', 'lanes.replicas=1') !== 0) return 'helm upgrade with lanes.replicas=1 did not succeed';
+  sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'wait', '--for=create', `pod/${LANE_POD}`, '--timeout=180s']);
+  const pods = listPods(context);
+  if (!pods) return 'kubectl could not list the pods';
+  if (!pods.some((p) => p.metadata.namespace === NAMESPACE && p.metadata.name === LANE_POD)) return `no lane pod ${LANE_POD} after lanes.replicas=1`;
+  const runtime = noRuntime(context, pods);
+  if (runtime) return runtime;
+  console.log(`machines as pods: sandbox boxes on, lane pod ${LANE_POD}`);
   return null;
 }
 

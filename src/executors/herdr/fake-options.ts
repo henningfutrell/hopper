@@ -94,8 +94,8 @@ export interface FakeHerdrOptions {
   discovery?: DiscoveryFacts;
   /** What the reach check says on the machine (issue #695): why it cannot reach the hopper. Default it reaches it. */
   unreached?: string;
-  /** What a checkpoint finds on the machine (issue #921). Default none taken. */
-  checkpoint?: CheckpointCapture;
+  /** What a checkpoint finds on the machine (issue #921), or the error it throws (issue #1353). Default none taken. */
+  checkpoint?: CheckpointCapture | Error;
   /** What the restore of a checkpoint in a pane says (issue #921). Default `restored`. */
   restore?: 'restored' | 'kept' | 'failed';
   /** What setting up the job's own container runtime says (issue #1295); `silent` says nothing. Default `none`: no podman. */

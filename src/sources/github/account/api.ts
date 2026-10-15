@@ -12,6 +12,7 @@ import { taggedItems } from '../app/graphql-tagged.ts';
 import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
 import { mergedPullRequestsInto } from '../app/graphql-merged.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
+import { explained, permissionsOfError } from '../app/refusal.ts';
 import * as rest from '../app/rest.ts';
 import { headChecks } from '../app/rest-checks.ts';
 
@@ -24,7 +25,7 @@ export function accountError(err: unknown, what: string): GitHubApiError {
   const status = typeof e.status === 'number' ? e.status : undefined;
   const message = typeof e.message === 'string' ? e.message : String(err);
   if (status === 401) return new GitHubApiError(`${what}: GitHub refused the connected account's token (401: ${message})`, true, 401);
-  return new GitHubApiError(`${what}: ${message}`, isPermanent(status, message), status);
+  return new GitHubApiError(`${what}: ${explained(message, permissionsOfError(err))}`, isPermanent(status, message), status);
 }
 
 const refused = (err: unknown) => (err as { status?: unknown }).status === 401;

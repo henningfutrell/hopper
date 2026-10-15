@@ -113,10 +113,11 @@ export function partsLine(n: number, parts: Parts): string {
 }
 
 /**
- * What a job whose issue has a Windows label (issue #918) is told: no machine of the hopper runs Windows (issue #704), so
- * the job works on Linux and runs each step that needs Windows on a Windows host, as a Windows sandbox step (issue #731).
+ * What a job whose issue has a Windows label (issue #918) is told. On a native Windows machine (issue #1348, a routing rule
+ * places it there) the job does the work itself; on any other machine it runs each step that needs Windows on a Windows
+ * host, as a Windows sandbox step (issue #731).
  */
-export const WINDOWS_LINE = 'windows: this issue needs Windows. No Windows machine takes the job: do the work here, and run each step that needs Windows (a build, tests, a packing step) as a Windows sandbox step on a Windows host. sh "$HOPPER_SKILL" windows-step gives the help; sh "$HOPPER_STEP" hosts lists the hosts. When no host is set up, ask the user to add one in Settings → Windows hosts';
+export const WINDOWS_LINE = 'windows: this issue needs Windows. When this machine runs Windows natively, do the work and its Windows steps here. Else do the work here, and run each step that needs Windows (a build, tests, a packing step) as a Windows sandbox step on a Windows host. sh "$HOPPER_SKILL" windows-step gives the help; sh "$HOPPER_STEP" hosts lists the hosts. When no host is set up, ask the user to add one in Settings → Windows hosts';
 
 /**
  * What a code job checks here (issue #1038): the fast checks and the tests its change affects. A full local test run

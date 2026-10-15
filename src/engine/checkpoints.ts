@@ -63,7 +63,8 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         return k;
       });
     } catch (e) {
-      return `its machine could not be reached: ${(e as Error).message}`;
+      // The error says where it failed: a machine not reached, or a script that ran there and refused (issue #1353).
+      return `it could not be taken: ${(e as Error).message}`;
     } finally {
       inFlight.delete(jobId);
     }

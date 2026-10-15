@@ -66,13 +66,6 @@ export function parseJoinLine(line: string): JoinLine {
 /** The route a machine joins at, and the one it dials in at (an HTTP upgrade to this protocol). */
 export const JOIN_PATH = '/client/join';
 
-/**
- * Why a client cannot run on a platform (Node's `process.platform`), or undefined when it can (issue #704). Native
- * Windows is not supported: a Windows computer runs the client inside WSL. The join sends the platform, and the hopper
- * refuses this one too, so no job is placed on it.
- */
-export const unsupportedPlatform = (platform: string): string | undefined =>
-  platform === 'win32' ? "Windows isn't supported natively. Run the client inside WSL." : undefined;
 export const CONNECT_PATH = '/client/connect';
 /** The route a machine says it leaves at (issue #1284): it takes no new job, and a lane pod with none left is retired. */
 export const LEAVE_PATH = '/client/leave';

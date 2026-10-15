@@ -9,6 +9,7 @@
 // GitHub links as closing it.
 
 import { GitHubApiError } from './api.ts';
+import { explained, permissionsOfPath } from './app/refusal.ts';
 import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 import { MAX_CHECK_REPORTED, MAX_CHECK_REPORTED_CHARS, MAX_FAILED_CHECKS, type ChecksState, type FailedCheck } from '../../domain/pull-requests.ts';
 import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';
@@ -98,7 +99,7 @@ function response(body: unknown, what: string): GqlResponse & { checksUnknown: b
   const r = (body ?? {}) as GqlResponse;
   const errors = (r.errors ?? []).filter((e) => !checksForbidden(e));
   if (errors.length) {
-    const message = `${what}: ${errors.map((e) => e.message ?? e.type ?? 'error').join('; ')}`;
+    const message = `${what}: ${errors.map((e) => explained(e.message ?? e.type ?? 'error', permissionsOfPath(e.path))).join('; ')}`;
     throw new GitHubApiError(message, errors.some((e) => PERMANENT_TYPES.has(e.type ?? '')));
   }
   return { ...r, checksUnknown: errors.length < (r.errors?.length ?? 0) };
