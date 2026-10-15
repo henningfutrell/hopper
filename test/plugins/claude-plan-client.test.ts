@@ -1,7 +1,7 @@
 // claude-plan on a client target (issue #366, design.md "Usage and accounts (issue #18)"): the hopper
 // cannot run a command there, so the client runs its own claude for the two read-only calls of a usage
 // read (`POST /claude`), signed like every call on its link. The client is real; claude is the fake.
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -42,8 +42,10 @@ describe('claude-plan on a client target (issue #366)', () => {
     }
   });
 
-  async function create(client: () => TestClient | undefined): Promise<UsageSource> {
+  type SignIn = { variable: string; value: string } | { none: true } | { refused: string };
+  async function create(client: () => TestClient | undefined, agentSignIn?: (machine: string) => Promise<SignIn>): Promise<UsageSource> {
     const ctx = {
+      ...(agentSignIn ? { agentSignIn } : {}),
       clock: { now: () => new Date('2026-10-03T17:00:00.000Z') }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch,
       instanceName: 'studio-claude', env: () => undefined,
       machine: async (id: string) => (id === 'studio' ? STUDIO : undefined), machines: async () => [STUDIO],
@@ -79,5 +81,43 @@ describe('claude-plan on a client target (issue #366)', () => {
     await waitFor(() => (s.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(await s.poll()).toEqual([]);
     expect(s.state!().problem).toMatch(/^machine studio: .*not dialled in/);
+  });
+
+  // Issue #1287, design.md "The agent's sign-in in a lane pod": a lane pod keeps no sign-in of its own; its jobs start
+  // with the user's setup token. Its usage read takes the same token, else it reads the pod signed out and holds its jobs.
+  const SETUP_TOKEN = 'sk-ant-oat01-usage-read-0123456789abcdef';
+
+  it('a lane pod: the read runs with the user\'s token, so a pod with no sign-in of its own reads signed in', async () => {
+    writeFileSync(join(control, 'mode'), 'token-only');
+    tc = await startTestClient({ token: () => TOKEN, herdrBin: '/nonexistent/herdr', claudeBin: BIN, session: 'hopper' });
+    const asked: string[] = [];
+    const s = await create(() => tc, async (machine) => { asked.push(machine); return { variable: 'CLAUDE_CODE_OAUTH_TOKEN', value: SETUP_TOKEN }; });
+    const readings = await waitFor(async () => { const r = await s.poll(); return r.length ? r : undefined; }, { what: 'readings' });
+    expect(readings.map((r) => [r.window, r.used])).toEqual([['session', 80], ['week', 30], ['week (Fable)', 99]]);
+    await waitFor(() => s.state!().account, { what: 'account' });
+    expect(s.state!().account).toEqual({ service: 'claude', detail: { authMethod: 'oauth_token', machine: 'studio' } });
+    expect(s.state!().problem).toBeUndefined();
+    const ran = readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { token?: boolean });
+    expect(ran.map((c) => c.token)).toEqual([true, true]);
+    expect(asked).toEqual(['studio', 'studio']);
+    expect(JSON.stringify(s.state!())).not.toContain(SETUP_TOKEN);
+  });
+
+  it('a machine with no token to give reads with its own sign-in, as before', async () => {
+    tc = await startTestClient({ token: () => TOKEN, herdrBin: '/nonexistent/herdr', claudeBin: BIN, session: 'hopper' });
+    const s = await create(() => tc, async () => ({ none: true }));
+    await waitFor(() => s.state!().account, { what: 'account' });
+    expect(s.state!().account).toMatchObject({ identity: 'user@example.com' });
+    const ran = readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { token?: boolean });
+    expect(ran.map((c) => c.token)).toEqual([undefined, undefined]);
+  });
+
+  it('a token the vault refuses: no claude runs, and the read says why', async () => {
+    tc = await startTestClient({ token: () => TOKEN, herdrBin: '/nonexistent/herdr', claudeBin: BIN, session: 'hopper' });
+    const s = await create(() => tc, async () => ({ refused: 'CLAUDE_TOKEN is not a Claude token' }));
+    await waitFor(() => (s.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(await s.poll()).toEqual([]);
+    expect(s.state!().problem).toMatch(/the agent credential: CLAUDE_TOKEN is not a Claude token/);
+    expect(existsSync(join(control, 'calls.jsonl'))).toBe(false);
   });
 });

@@ -61,6 +61,14 @@ describe('a job pod\'s agent credential', () => {
     expect(v.events).toEqual([]);
   });
 
+  it('a usage read on a lane pod (no job) is given the token, and nothing is recorded: it reads every few minutes', async () => {
+    const v = vaultWith({ CLAUDE_TOKEN: TOKEN });
+    expect(await v.vault.podCredential({ name: 'CLAUDE_TOKEN', pod: 'hopper-lanes-0' })).toEqual({ name: 'CLAUDE_TOKEN', value: TOKEN });
+    const bad = vaultWith({ CLAUDE_TOKEN: 'not a token' });
+    expect(await bad.vault.podCredential({ name: 'CLAUDE_TOKEN', pod: 'hopper-lanes-0' })).toEqual({ refused: expect.stringMatching(/CLAUDE_TOKEN is not a Claude token/) });
+    expect([...v.events, ...bad.events]).toEqual([]);
+  });
+
   it('refuses a value that is no setup token, a shared or a system secret, and a backend that cannot read it', async () => {
     const bad = vaultWith({ CLAUDE_TOKEN: JSON.stringify({ claudeAiOauth: { refreshToken: 'sk-ant-ort01-x-0123456789' } }) });
     const r = await bad.vault.podCredential(ask);
