@@ -88,6 +88,8 @@ describe('Direct jobs', () => {
     expect(rows()[0]!.querySelector('a[href="#questions"]')).not.toBeNull();
     expect(rows()[0]!.querySelector('a[href="#job/j1"]')).not.toBeNull();
     expect(done).toContain('Two failed logins, no lockout.');
+    // Issue #1169: the result is a code block with a wrap toggle and copy.
+    expect(rows()[1]!.querySelector('[data-slot="direct-job-result"] [data-slot="code-block-copy-button"]')).not.toBeNull();
     expect(done).toContain('Submitted by bob with an API token');
   });
 
