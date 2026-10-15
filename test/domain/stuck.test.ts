@@ -86,10 +86,18 @@ describe('stuck work by cause (issue #1010)', () => {
   it('parked jobs and jobs stuck on their own wait: counted, with what a person does', () => {
     const causes = stuckOf({
       ...empty,
-      jobs: [job('j1', {}), job('j2', { status: 'waiting_on', wait: { for: 'x', since: 's', ownCommand: true, stuckAt: 't' } }), job('j3', { status: 'waiting_on', wait: { for: 'x', since: 's' } })],
+      jobs: [job('j1', {}), job('j2', { status: 'waiting_on', wait: { for: 'x', since: 's', ownCommand: true, stuckAt: 't' } }), job('j3', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'grant' } } })],
     });
     expect(causes.map((c) => [c.cause, c.ids])).toEqual([['parked', ['j1']], ['own_wait', ['j2']]]);
     expect(causes.every((c) => c.act === undefined && c.todo)).toBe(true);
+  });
+
+  it('a legacy job waiting on nothing recorded (issue #1245): stuck work with that reason, and Resume all', () => {
+    const causes = stuckOf({
+      ...empty,
+      jobs: [job('j1', { status: 'waiting_on', wait: { for: 'x', since: 's' } }), job('j2', { status: 'waiting_on' }), job('j3', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'outside', what: 'x' } } })],
+    });
+    expect(causes).toEqual([{ cause: 'wait_unnamed', ids: ['j1', 'j2'], what: 'Jobs waiting on nothing recorded', act: 'Resume all' }]);
   });
 
   it('items left in PR open with no pull request to wait on (issue #1231): counted by their job, with what a person does', () => {

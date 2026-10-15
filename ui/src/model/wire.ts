@@ -135,4 +135,5 @@ export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/jo
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
+export type { WaitOn } from '../../../src/domain/types.ts';
 export type { PullRequestDiff, PullRequestDiffFile } from '../../../src/domain/pull-request-diff.ts';

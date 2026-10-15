@@ -5,7 +5,7 @@ import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeActi
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
+  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
@@ -112,7 +112,7 @@ export type ExecutionOutcome =
    * The job waits on something it named (issue #483): no question. Its executor state must let `answeredInPane` see it go
    * on by itself, and `resume` tell it that a person ended the wait.
    */
-  | { kind: 'wait'; wait: Omit<JobWait, 'since'> };
+  | { kind: 'wait'; wait: import('./wait-on.ts').WaitAsked };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.

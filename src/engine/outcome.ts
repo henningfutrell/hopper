@@ -6,7 +6,8 @@ import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import { namesOwnCommand } from '../domain/own-command.ts';
 import { suggestionIn } from '../domain/phase.ts';
-import type { Job, JobLiveness, JobWait, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
+import type { Job, JobLiveness, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
+import { waitOnOf, type WaitAsked } from '../domain/wait-on.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
@@ -53,10 +54,13 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
 /**
  * The job's own wait (issue #483): `waiting_on` what it named, no question, its lane freed, its pane kept on its machine. It
  * goes on when its agent goes on by itself (pane-answers.ts) or a person ends the wait (commands.ts `endWait`). A wait whose
- * `until:` names its own background command is marked `ownCommand` (issue #1037): it shows as running.
+ * `until:` names its own background command is marked `ownCommand` (issue #1037): it shows as running. `on` (issue #1245): what
+ * it waits on, from its `on:` line or what it wrote.
  */
-function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, w: Omit<JobWait, 'since'>, at: string): Recorded {
-  const masked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(namesOwnCommand(w) ? { ownCommand: true as const } : {}) };
+function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, w: WaitAsked, at: string): Recorded {
+  const asked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(w.on ? { on: maskGitHubTokens(w.on) } : {}) };
+  // What it waits on (issue #1245), typed: never none.
+  const masked = { for: asked.for, ...(asked.until ? { until: asked.until } : {}), on: waitOnOf(asked), ...(namesOwnCommand(w) ? { ownCommand: true as const } : {}) };
   c.store.jobs.update(job.id, {
     status: 'waiting_on', wait: { ...masked, since: at }, laneId: undefined, pendingAnswer: undefined,
     resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,

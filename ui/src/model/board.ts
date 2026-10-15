@@ -3,7 +3,8 @@
 // a machine or an event's subject is named.
 import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';
-import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineLaneEffect, MachineView, WorkItemState } from './wire.ts';
+import { jobHref } from './job.ts';
+import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineLaneEffect, MachineView, WaitOn, WorkItemState } from './wire.ts';
 
 /** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Waiting on, Running, Ended). */
 export const GROUP = {
@@ -29,6 +30,28 @@ const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
 export function ownWaitOf(job: Job): 'command' | 'stuck' | undefined {
   if (job.status !== 'waiting_on' || !job.wait?.ownCommand) return undefined;
   return job.wait.stuckAt ? 'stuck' : 'command';
+}
+
+const PR_ABOUT = { merge: 'to merge', checks: 'checks to end', review: 'review' } as const;
+
+/** What a job's own wait waits on, in a few words, as the daemon's `waitOnLabel` (issue #1245); and where it is, if it is a page. */
+export function waitOnLink(job: Job): { label: string; href?: string } | undefined {
+  if (job.status !== 'waiting_on' || !job.wait) return undefined;
+  const on: WaitOn | undefined = job.wait.on;
+  if (!on) return { label: 'nothing recorded' };
+  const repo = 'repo' in on ? on.repo ?? job.source?.repo : job.source?.repo;
+  const gh = (kind: 'pull' | 'issues', n: number) => (repo ? `https://github.com/${repo}/${kind}/${n}` : undefined);
+  const with_ = (label: string, href: string | undefined) => (href ? { label, href } : { label });
+  switch (on.kind) {
+    case 'pull_request': return with_(`${on.repo ? `${on.repo}#` : 'PR #'}${on.number} ${PR_ABOUT[on.about]}`, gh('pull', on.number));
+    case 'item': return with_(`${on.repo ? `${on.repo}#` : 'issue #'}${on.number}`, gh('issues', on.number));
+    case 'job': return { label: `job ${on.jobId}`, href: jobHref(on.jobId) };
+    case 'question': return { label: `a person's answer to question ${on.questionId}`, href: `#question-${encodeURIComponent(on.questionId)}` };
+    case 'approval': return { label: `${on.of} approval` };
+    case 'grant': return { label: 'a vault grant' };
+    case 'own_command': return { label: 'its own command' };
+    case 'outside': return { label: `outside: ${on.what}` };
+  }
 }
 
 /** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */

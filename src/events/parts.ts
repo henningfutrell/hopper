@@ -71,6 +71,17 @@ export const startPlan = strict({
 });
 export const holdPlan = strict({ jobId: z.string(), reason: z.string() });
 export const waitPlan = strict({ jobId: z.string(), reason: z.string() });
+/** What a job's own wait waits on (issue #1245, `WaitOn`). */
+export const waitOn = z.discriminatedUnion('kind', [
+  strict({ kind: z.literal('pull_request'), repo: z.string().optional(), number: z.number().int(), about: z.enum(['checks', 'merge', 'review']) }),
+  strict({ kind: z.literal('job'), jobId: z.string() }),
+  strict({ kind: z.literal('item'), repo: z.string().optional(), number: z.number().int() }),
+  strict({ kind: z.literal('question'), questionId: z.string() }),
+  strict({ kind: z.literal('approval'), of: z.enum(['sandbox', 'template']) }),
+  strict({ kind: z.literal('grant') }),
+  strict({ kind: z.literal('own_command') }),
+  strict({ kind: z.literal('outside'), what: z.string() }),
+]);
 /** A lane plan as decision.made v1 and v2 carried it. */
 export const legacyLanePlan = strict({
   machineId: z.string(), current: z.number(), target: z.number(), open: z.number(),

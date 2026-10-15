@@ -12,7 +12,7 @@ import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
-import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitOn, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
 // A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
@@ -141,7 +141,7 @@ export const EVENT_SCHEMAS = {
   'job.reattached': strict({ reason: z.string() }),
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
-  'job.waiting': strict({ for: z.string(), until: z.string().optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
+  'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
   'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),

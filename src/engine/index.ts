@@ -27,6 +27,7 @@ import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
+import { wakeOnPullRequest } from './wait.ts';
 export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
@@ -189,6 +190,21 @@ export function createEngine(o: EngineOptions): Engine {
         }
         if ((event.type === 'job.claimed' || event.type === 'job.cancelled') && event.jobId) placementPicks.forget(event.jobId);
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
+        // A job waiting on a pull request goes on when it is merged or closed (issue #1245): on the event, never a poll.
+        if (event.type === 'job.pull_request_merged' || event.type === 'job.pull_request_closed') {
+          const url = (event.data as { pullRequest?: string } | undefined)?.pullRequest;
+          const what = event.type === 'job.pull_request_merged' ? 'merged' : 'closed';
+          if (url) {
+            setImmediate(() => {
+              if (stopping) return;
+              try {
+                if (store.tx(() => wakeOnPullRequest(c, url, what)).length > 0) c.trigger('job.wait_ended');
+              } catch (e) {
+                console.error(`hopper: waking the jobs waiting on ${url} failed`, e);
+              }
+            });
+          }
+        }
       });
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
       o.questions.recover();

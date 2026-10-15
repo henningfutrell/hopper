@@ -47,7 +47,8 @@ describe('a job that waits on what it named', () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WAIT, DONE] });
     const a = await start(herdr);
     const job = await waiting(a, herdr);
-    expect(job.wait).toEqual({ for: 'write access to the repository', until: 'a background poll of the push', since: expect.any(String) });
+    const on = { kind: 'outside', what: 'write access to the repository' };
+    expect(job.wait).toEqual({ for: 'write access to the repository', until: 'a background poll of the push', on, since: expect.any(String) });
     expect(job.laneId).toBeUndefined();
     expect(job.questionId).toBeUndefined();
     expect(job.resumeOn).toBe('local');
@@ -57,7 +58,7 @@ describe('a job that waits on what it named', () => {
     expect(queue.waitingOn.map((j) => j.id)).toEqual([job.id]);
     expect(queue.waitingAnswer).toEqual([]);
     const events = await ofJob(a, job.id);
-    expect(events.find((e) => e.type === 'job.waiting')!.data).toEqual({ for: 'write access to the repository', until: 'a background poll of the push' });
+    expect(events.find((e) => e.type === 'job.waiting')!.data).toEqual({ for: 'write access to the repository', until: 'a background poll of the push', on });
     // Well past the nudge time: still waiting, never nudged.
     await new Promise((r) => setTimeout(r, 1000));
     expect((await a.job(job.id)).status).toBe('waiting_on');
@@ -96,6 +97,29 @@ describe('a job that waits on what it named', () => {
     expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'person', note: 'Write access is granted.' });
   });
 
+  it('a job waiting on a pull request\'s merge goes on when it merges (issue #1245): the hopper tells it, on the event', async () => {
+    const PR = 'https://github.com/o/r/pull/12';
+    const onPr = { output: ['● The fix needs the base change first.', '  HOPPER_WAITING', '  for: the base change to land', '  on: o/r#12 merge'] };
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [onPr, DONE] });
+    const a = await start(herdr);
+    const job = await waiting(a, herdr);
+    expect(job.wait!.on).toEqual({ kind: 'pull_request', repo: 'o/r', number: 12, about: 'merge' });
+
+    const { store } = a.user();
+    const other = store.jobs.create({ executor: 'test', payload: {} }, 50);
+    store.events.append({ type: 'job.pull_request_merged', jobId: other.id, data: { pullRequest: 'https://github.com/o/r/pull/13', part: false } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await a.job(job.id)).status).toBe('waiting_on');
+
+    store.events.append({ type: 'job.pull_request_merged', jobId: other.id, data: { pullRequest: PR, part: false } });
+
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.prompts).toHaveLength(2);
+    expect(herdr.prompts[1]!.text).toContain(`${PR} was merged`);
+    const events = await ofJob(a, job.id);
+    expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: `${PR} was merged` });
+  });
+
   it('ending the wait of a job that does not wait is refused', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE] });
     const a = await start(herdr);
@@ -132,7 +156,7 @@ describe('a job that waits on its own background command (issue #1037)', () => {
     const a = await start(herdr, GRACE);
     const job = await waiting(a, herdr);
     expect(job.wait).toMatchObject({ for: 'the test run to end', until: 'background command b7x2 ends', ownCommand: true });
-    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.waiting')!.data).toEqual({ for: 'the test run to end', until: 'background command b7x2 ends', ownCommand: true });
+    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.waiting')!.data).toEqual({ for: 'the test run to end', until: 'background command b7x2 ends', on: { kind: 'own_command' }, ownCommand: true });
     await new Promise((r) => setTimeout(r, 1200));
     const still = await a.job(job.id);
     expect(still.status).toBe('waiting_on');
