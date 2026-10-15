@@ -48,11 +48,8 @@ export interface FakeIssue {
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
 interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean }
 
-export interface ForgeRequest {
-  method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string;
-  /** Answered 304: it named the ETag of an answer that still holds (issue #1250). */
-  notModified?: boolean;
-}
+/** `notModified`: answered 304, as it named the ETag of an answer that still holds (issue #1250). */
+export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string; notModified?: boolean }
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
@@ -115,9 +112,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
       const out = handle(r, token ? extra.tokens.get(token) : undefined);
       if (out.location || out.text !== undefined) { res.writeHead(out.status, out.location ? { location: out.location } : { 'content-type': 'text/plain; charset=utf-8' }); res.end(out.text); return; }
       // A conditional request whose ETag still holds: 304, no body, as GitHub answers it (and does not charge it).
-      if (out.etag !== undefined && req.headers['if-none-match'] === out.etag) { r.notModified = true; res.writeHead(304, { etag: out.etag }); res.end(); return; }
-      if (out.etag !== undefined) { res.writeHead(out.status, { 'content-type': 'application/json; charset=utf-8', etag: out.etag }); res.end(JSON.stringify(out.body)); return; }
-      send(res, out.status, out.body);
+      const same = out.etag !== undefined && req.headers['if-none-match'] === out.etag; if (same) r.notModified = true; send(res, same ? 304 : out.status, same ? undefined : out.body, out.etag);
     })().catch((err: unknown) => send(res, 500, { message: String(err) }));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

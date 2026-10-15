@@ -3,10 +3,11 @@
 // has (`RELEASE_BRANCHES`, the branches no job pushes to) — the branch (`protected`, its required checks), its rulesets'
 // rules, and its branch protection; and the repository's secret scanning and push protection
 // (`security_and_analysis`). GitHub shows the branch protection and the security settings only to a repository admin:
-// a 403 or 404 there, or a missing field, is unread, never "off".
+// a 403 or 404 there, or a missing field, is unread, never "off". Each GET goes through `read`: a conditional read
+// (issue #1250, conditional.ts).
 import { RELEASE_BRANCHES } from '../github-proxy/index.ts';
 import { branchSetup, type BranchProtectionRead, type RepoSetupFound } from '../domain/types.ts';
-import { splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
+import { splitRepo, statusOf } from '../sources/github/app/http.ts';
 
 interface Rule { type?: string; parameters?: { required_status_checks?: { context?: string }[] } }
 interface Protection { required_pull_request_reviews?: unknown; allow_force_pushes?: { enabled?: boolean }; required_status_checks?: { contexts?: string[]; checks?: { context?: string }[] } }
@@ -21,9 +22,12 @@ export interface RepoAnswer {
 export const guardedBranches = (defaultBranch: string): string[] =>
   [defaultBranch, ...RELEASE_BRANCHES.filter((b) => b !== defaultBranch.toLowerCase())];
 
+/** One GET's answer. */
+export type Read = <T>(route: string, params: Record<string, unknown>) => Promise<T>;
+
 const enabled = (s: { status?: string } | undefined): boolean | null => (s?.status === undefined ? null : s.status === 'enabled');
 
-export function createSetupReader(req: Request) {
+export function createSetupReader(get: Read) {
   /** `p`, or `none` on the status GitHub answers when there is none. */
   const orNone = async <T, N>(p: Promise<T>, none: N, statuses: number[] = [404]): Promise<T | N> => {
     try {
@@ -37,12 +41,12 @@ export function createSetupReader(req: Request) {
   /** One branch as GitHub shows it; undefined when the repository has no such branch. A missing default branch throws. */
   async function branch(token: string, repo: string, name: string, isDefault: boolean): Promise<BranchProtectionRead | undefined> {
     const at = { ...splitRepo(repo), branch: name, headers: { authorization: `token ${token}` } };
-    const asked = req('GET /repos/{owner}/{repo}/branches/{branch}', at).then((r) => r.data as Branch);
+    const asked = get<Branch>('GET /repos/{owner}/{repo}/branches/{branch}', at);
     const b = isDefault ? await asked : await orNone(asked, undefined);
     if (!b) return undefined;
-    const rules = await orNone(req('GET /repos/{owner}/{repo}/rules/branches/{branch}', at).then((r) => r.data as Rule[]), []);
+    const rules = await orNone(get<Rule[]>('GET /repos/{owner}/{repo}/rules/branches/{branch}', at), []);
     const p = b.protected === true
-      ? await orNone(req('GET /repos/{owner}/{repo}/branches/{branch}/protection', at).then((r) => r.data as Protection), undefined, [403, 404])
+      ? await orNone(get<Protection>('GET /repos/{owner}/{repo}/branches/{branch}/protection', at), undefined, [403, 404])
       : undefined;
     const checks = [
       ...(b.protection?.required_status_checks?.contexts ?? []),

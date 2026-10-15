@@ -63,9 +63,9 @@ async function start() {
   return { github, db, ...(await startOn(db.dbPath, github, true)) };
 }
 
-/** The requests GitHub got about `repo` (REST under it, or the GraphQL rollups that name it). */
-const about = (requests: ForgeRequest[], repo: string): ForgeRequest[] => requests.filter((r) =>
-  r.path.startsWith(`/api/v3/repos/${repo}`) || (r.path === '/api/v3/graphql' && JSON.stringify(r.body.variables ?? {}).includes(`"${repo.split('/')[1]}"`)));
+/** The requests GitHub got about `repo`'s checks: REST under it, or the pull requests' check rollups that name it. */
+const about = (requests: ForgeRequest[], repo: string): ForgeRequest[] => requests.filter((r) => r.path.startsWith(`/api/v3/repos/${repo}`)
+  || (r.path === '/api/v3/graphql' && String(r.body.query).includes('pullRequests(last') && JSON.stringify(r.body.variables ?? {}).includes(`"${repo.split('/')[1]}"`)));
 const of = (v: RepoChecksView, repo: string): RepoChecks => v.repos.find((r) => r.repo === repo)!;
 const list = async (app: TestApp) => (await app.api<RepoChecksView>('GET', '/api/repo-checks')).body;
 
@@ -115,9 +115,11 @@ describe('Sources from the hopper\'s database', () => {
     expect(again.length).toBeGreaterThan(0);
     expect(again.filter((r) => !r.notModified).map((r) => `${r.method} ${r.path}`)).toEqual([]);
     expect(again.some((r) => r.path === '/api/v3/graphql')).toBe(false);
-    // Its answers and their ETags are in the database, beside what was read.
-    const kept = app.user(ADMIN_ID).store.repoChecks.get(STEADY)!;
-    expect(Object.keys(kept.etags).length).toBe(again.length);
+    // Its answers and their ETags are in the database, beside what was read; so are the release branches it does not
+    // have, answered 404 once and not asked again while the repository is unchanged.
+    const kept = Object.entries(app.user(ADMIN_ID).store.repoChecks.get(STEADY)!.etags);
+    expect(kept.filter(([, a]) => a.refused === undefined)).toHaveLength(again.length);
+    expect(kept.filter(([, a]) => a.refused === 404).map(([k]) => /"branch":"([^"]+)"/.exec(k)?.[1]).sort()).toEqual(['canary', 'main', 'master']);
   });
 
   it('keeps what was read across a restart, and the next Refresh still takes the 304 path', async () => {

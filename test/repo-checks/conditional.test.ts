@@ -42,10 +42,35 @@ describe('conditionalAnswers', () => {
     expect(one.kept()).toEqual({ 'GET /a {}': { etag: '"new"', data: 2 } });
   });
 
-  it('any other refusal is thrown, and nothing is kept for it', async () => {
+  it('a 5xx is thrown, and nothing is kept for it', async () => {
     const one = conditionalAnswers({ 'GET /a {}': { etag: '"old"', data: 1 } });
-    const gh = fakeGitHub(() => ({ status: 404 }));
-    await expect(one.get(gh.req, 'GET /a', {})).rejects.toMatchObject({ status: 404 });
+    const gh = fakeGitHub(() => ({ status: 503 }));
+    await expect(one.get(gh.req, 'GET /a', {})).rejects.toMatchObject({ status: 503 });
     expect(one.kept()).toEqual({});
+  });
+
+  it('a 404 or 403 is kept, and answered again with no call while the anchor answer is unchanged', async () => {
+    const anchor = 'GET /repos/{owner}/{repo}';
+    const repo = { owner: 'o', repo: 'r' };
+    const first = fakeGitHub((s) => (s.route === anchor ? { data: { default_branch: 'dev' }, etag: '"a"' } : { status: 404 }));
+    const one = conditionalAnswers({}, anchor);
+    await one.get(first.req, anchor, repo);
+    await expect(one.get(first.req, 'GET /branches/canary', repo)).rejects.toMatchObject({ status: 404 });
+
+    // Unchanged (a 304, or the limiter's own kept answer with the same ETag): the 404 is answered from what was kept.
+    for (const unchanged of [{ status: 304 }, { data: { default_branch: 'dev' }, etag: '"a"' }]) {
+      const gh = fakeGitHub((s) => (s.route === anchor ? unchanged : { data: 'never' }));
+      const two = conditionalAnswers(one.kept(), anchor);
+      await two.get(gh.req, anchor, repo);
+      await expect(two.get(gh.req, 'GET /branches/canary', repo)).rejects.toMatchObject({ status: 404 });
+      expect(gh.sent.map((x) => x.route)).toEqual([anchor]);
+      expect(two.kept()).toEqual(one.kept());
+    }
+
+    // Changed: the branch is asked again.
+    const changed = fakeGitHub((s) => (s.route === anchor ? { data: { default_branch: 'dev', pushed: 1 }, etag: '"b"' } : { data: { name: 'canary' }, etag: '"c"' }));
+    const three = conditionalAnswers(one.kept(), anchor);
+    await three.get(changed.req, anchor, repo);
+    expect(await three.get(changed.req, 'GET /branches/canary', repo)).toEqual({ name: 'canary' });
   });
 });
