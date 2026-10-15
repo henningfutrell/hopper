@@ -65,9 +65,10 @@ describe('the install page', () => {
     expect(page).toContain('ssh -L 4790:127.0.0.1:4790');
   });
 
-  it('keeps the Podman containers running after a reboot: podman-restart and lingering', () => {
+  it('keeps the Podman containers running after a reboot: the user service and lingering (issue #1320)', () => {
     const podman = page.slice(page.indexOf('id="podman"'), page.indexOf('id="first-job"'));
-    expect(podman).toContain('systemctl --user enable podman-restart.service');
+    expect(podman).toContain('bash hopper-service.sh install');
+    expect(podman).toContain('systemctl --user restart hopper-compose.service');
     expect(podman).toContain('loginctl enable-linger');
   });
 

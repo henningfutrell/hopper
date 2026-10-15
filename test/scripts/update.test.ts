@@ -193,6 +193,67 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.calls.some((c) => c.includes('pg_dump'))).toBe(false);
   });
 
+  // A folder after one update, with the key sealed to this host by the real master-key.sh (key-encryption key) and an
+  // older hopper-service.sh beside compose.yaml.
+  function sealedFolder() {
+    const first = update({ masterKey: KEY, stack: 'podman-compose' });
+    expect(first.status, first.out).toBe(0);
+    const { dir } = first;
+    const env = { HOPPER_KEY_SEAL: 'kek', XDG_CONFIG_HOME: join(dir, '.config') };
+    writeFileSync(join(dir, 'master-key.sh'), readFileSync(join(import.meta.dirname, '..', '..', 'scripts', 'master-key.sh'), 'utf8'));
+    writeFileSync(join(dir, 'hopper-service.sh'), '# an older hopper-service.sh\n');
+    const sealed = spawnSync('/bin/bash', ['master-key.sh', 'seal'], { cwd: dir, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: dir, ...env, HOPPER_MASTER_KEY: KEY } });
+    expect(sealed.status, sealed.stderr).toBe(0);
+    return { dir, env, tools: ['bash', 'openssl', 'id', 'dirname', 'mkdir'] };
+  }
+
+  it('stops and starts the stack through hopper-compose.service when it owns the stack, and puts in the new hopper-service.sh (issue #1320)', () => {
+    const { dir, env, tools } = sealedFolder();
+    const r = update({ dir, stack: 'podman-compose', tools, env, service: true });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toMatch(/hopper-compose\.service owns the stack/);
+    expect(r.calls).toContain('systemctl --user restart hopper-compose.service');
+    expect(composeCalls(r.calls).filter((c) => / (down|up -d) /.test(c))).toEqual([]);
+    expect(r.read('hopper-service.sh')).toBe(readFileSync(join(import.meta.dirname, '..', '..', 'scripts', 'hopper-service.sh'), 'utf8'));
+    expect(r.out).not.toMatch(/runs under this shell/);
+    expect(r.out).not.toContain(KEY);
+  });
+
+  it('goes back to the old compose.yaml through the service when the stack does not start under it (issue #1320)', () => {
+    const { dir, env, tools } = sealedFolder();
+    const before = readFileSync(join(dir, 'compose.yaml'), 'utf8');
+    const r = update({ dir, stack: 'podman-compose', tools, env: { ...env, STUB_SERVICE_START: '1' }, service: true });
+    expect(r.status).not.toBe(0);
+    expect(r.read('compose.yaml')).toBe(before);
+    expect(r.calls.filter((c) => c === 'systemctl --user restart hopper-compose.service')).toHaveLength(2);
+    expect(composeCalls(r.calls).filter((c) => / (down|up -d) /.test(c))).toEqual([]);
+  });
+
+  it('stops before it changes anything when the service owns the stack and the key given is not the one sealed here (issue #1320)', () => {
+    const { dir, env, tools } = sealedFolder();
+    const r = update({ dir, stack: 'podman-compose', tools, env, service: true, masterKey: 'b'.repeat(64) });
+    expect(r.status).toBe(1);
+    expect(r.out).toMatch(/the master key given is not the one sealed to this host/);
+    expect(r.calls.filter((c) => c.includes('pull') || c.includes('restart'))).toEqual([]);
+  });
+
+  it('says the line that puts the stack under the user service when no service owns it (issue #1320)', () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose' });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain(`the stack runs under this shell: its published port goes away when this shell's session ends. Put it under a user service of its own, once (docs/deploy.md "The user service"): podman run --rm ${IMAGE} hopper service script > hopper-service.sh && bash hopper-service.sh install`);
+  });
+
+  it('fails when the hopper is healthy in its container but its published port does not answer on this host (issue #1320)', async () => {
+    const { createServer } = await import('node:net');
+    const server = createServer();
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const { port } = server.address() as { port: number };
+    await new Promise((done) => server.close(done));
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_PORT: `127.0.0.1:${port}` } });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(`its published port 127.0.0.1:${port} does not answer on this host. Start the stack under the user service: bash hopper-service.sh install`);
+  });
+
   it('gives the hopper the rootless Podman socket when podman.socket is on (issue #1157)', async () => {
     const xdg = await runtimeDir();
     const r = update({ masterKey: KEY, stack: 'podman-compose', env: { XDG_RUNTIME_DIR: xdg } });
