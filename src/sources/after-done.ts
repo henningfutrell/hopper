@@ -63,11 +63,11 @@
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
-import { strayHousekeeping } from './strays.ts';
+import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
-  type ActingPerson, type BaseMerge, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
+  type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 import { pullRequestWaitOf } from '../domain/work-items.ts';
 
@@ -109,8 +109,7 @@ export function createAfterDone(c: AfterDoneContext) {
 
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
-    c.setSource(jobId, r.state);
-    if (r.retargeted) store.events.append({ type: 'job.pull_request_retargeted', jobId, data: { pullRequest: r.pullRequest, ...r.retargeted } });
+    keepFollowed(c, jobId, r);
     if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
@@ -364,7 +363,7 @@ export function createAfterDone(c: AfterDoneContext) {
     for (const j of listed) await watchBase(source, j.id);
     const jobs = listed.map((j) => get(j.id) ?? j);
     const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
-    const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
+    const merges = (repo: string, kind?: ChangeKind) => source.mergesOnReady?.(repo, kind) ?? false;
     const held = new Map<string, QueueHead>();
     for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {
       if (repo === undefined) continue;
@@ -383,7 +382,7 @@ export function createAfterDone(c: AfterDoneContext) {
         keepHold(d.jobId, 'heldBehind', undefined);
         // A base merge pushed: it holds the ones that conflict with it only on its way to the hopper's merge (issue #967).
         if (await mergedBase(source, d)) {
-          if (merges(repo)) started.push({ pullRequest: d.pullRequest, why: 'merging' });
+          if (merges(repo, changeOf(get(d.jobId))?.kind)) started.push({ pullRequest: d.pullRequest, why: 'merging' });
           continue;
         }
         const r = await tendIfDue(source, d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
@@ -434,7 +433,7 @@ export function createAfterDone(c: AfterDoneContext) {
       const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
-      const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
+      const merges = (repo: string, kind?: ChangeKind) => source.mergesOnReady?.(repo, kind) ?? false;
       const inRound = (j: Job) => all ? following(j) || rechecks(j) : round === 'in_motion' && inMotion(j, merges, c.now());
       const due = jobs.filter((j) => c.finalReported(j) && followsWhenEnded(j) && inRound(j));
       let read = due.length > 0 && source.follow !== undefined;

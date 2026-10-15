@@ -17,14 +17,37 @@ const rejected = (why: string): SessionRejected => { clearToken(); sessionEnded(
 /** A live session whose role is short of what the mutation needs: the session stays. */
 export class RoleRefused extends Error {}
 
-export async function get<T>(path: string): Promise<T> {
+/** How long a read waits for its whole answer before it fails (issue #1182): a stalled read is an error, never a wait without end. */
+export const READ_TIMEOUT_MS = 15_000;
+
+/** A read that got no whole answer in its time. */
+export class ReadTimedOut extends Error {}
+
+/**
+ * A read. It fails with ReadTimedOut when the answer is not all in after `timeoutMs`; `signal` cancels it, and then it
+ * fails with the AbortError fetch throws.
+ */
+export async function get<T>(path: string, { signal, timeoutMs = READ_TIMEOUT_MS }: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
   const token = readToken();
-  const res = await fetch(path, token ? { headers: { 'x-hopper-session': token } } : {});
-  const body = await res.json().catch(() => ({}));
-  // Across the LAN a read needs a live session: 401 with one sent means it ended.
-  if (res.status === 401 && token) throw rejected(body.error || 'session ended');
-  if (!res.ok) throw new Error(body.error || `${res.status} ${path}`);
-  return body as T;
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, timeoutMs);
+  const cancel = () => ctrl.abort();
+  if (signal?.aborted) ctrl.abort(); else signal?.addEventListener('abort', cancel);
+  try {
+    const res = await fetch(path, { signal: ctrl.signal, ...(token ? { headers: { 'x-hopper-session': token } } : {}) });
+    const body = await res.json().catch((e: unknown) => { if (ctrl.signal.aborted) throw e; return {}; });
+    // Across the LAN a read needs a live session: 401 with one sent means it ended.
+    if (res.status === 401 && token) throw rejected(body.error || 'session ended');
+    if (!res.ok) throw new Error(body.error || `${res.status} ${path}`);
+    return body as T;
+  } catch (e) {
+    if (timedOut) throw new ReadTimedOut(`no answer in ${Math.round(timeoutMs / 1000)} s`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
+  }
 }
 
 export async function post<T = unknown>(path: string, body: unknown = {}): Promise<T> {

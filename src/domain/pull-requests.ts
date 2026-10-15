@@ -11,6 +11,7 @@ import { handedToFollowOns } from './proposal-paths.ts';
 import type { Job } from './types.ts';
 import type { CrossReference } from './cross-references.ts';
 import { actionsJobOf } from './check-logs.ts';
+import type { ChangeClass, ChangeKind } from './change-kinds.ts';
 
 /** A person's act on a followed pull request (issue #677): Merge now, or Close PR without a merge. */
 export const PULL_REQUEST_ACTS = ['merge', 'close'] as const;
@@ -52,8 +53,11 @@ export interface FollowsPullRequests {
    * round. Absent: each follow reads alone.
    */
   readFollowed?(jobs: Job[]): Promise<void>;
-  /** Whether the hopper merges a ready pull request of `repo` (yolo mode): its tending queue waits for that merge (issue #796). Absent: never. */
-  mergesOnReady?(repo: string): boolean;
+  /**
+   * Whether the hopper merges a ready pull request of `repo` of change kind `kind` (yolo mode, or the kind's gate, issue
+   * #1076): its tending queue waits for that merge (issue #796). Absent: never.
+   */
+  mergesOnReady?(repo: string, kind?: ChangeKind): boolean;
   /**
    * Whether open pull requests `a` and `b` of `repo` (URLs), both into `base`, conflict with each other (issue #939): merged
    * one after the other, the second has merge conflicts. undefined: the source cannot say. Absent: it never says.
@@ -177,6 +181,11 @@ export interface PullRequestSeen {
    */
   commits?: string[];
   files?: string[];
+  /**
+   * Its change kind (issue #1076, change-kinds.ts), from the files and lines it changes, as the follow last classified
+   * it: its merge gate. Absent: not classified, and yolo mode decides.
+   */
+  change?: ChangeClass;
 }
 
 /**
@@ -229,12 +238,12 @@ export const readyToMerge = (seen: PullRequestSeen, now: number): boolean =>
  * on ready (`mergesOnReady`, yolo mode). Every other one it follows is idle, read only on the reconcile round: its checks
  * finished and it is not ready, or a draft, or it has merge conflicts or failing checks (tended from what was seen).
  */
-export function inMotion(job: Job, mergesOnReady: (repo: string) => boolean, now: number): boolean {
+export function inMotion(job: Job, mergesOnReady: (repo: string, kind?: ChangeKind) => boolean, now: number): boolean {
   if (!following(job)) return false;
   const seen = (job.sourceState?.source as { seen?: PullRequestSeen } | undefined)?.seen;
   if (!seen || seen.checks === 'pending') return true;
   if (seen.checks === 'none' && !seen.draft && !seen.conflicting && !noChecksSettled(seen, now)) return true;
-  return readyToMerge(seen, now) && job.source?.repo !== undefined && mergesOnReady(job.source.repo);
+  return readyToMerge(seen, now) && job.source?.repo !== undefined && mergesOnReady(job.source.repo, seen.change?.kind);
 }
 
 export interface FollowUp {

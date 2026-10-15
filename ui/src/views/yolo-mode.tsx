@@ -2,15 +2,18 @@
 // pass — off unless turned on, for every job repository or per repository. The warning says what it allows; the
 // summary says what is on now. Saved to the daemon, read for each job's prompt from then on, without a restart. This is
 // yolo mode's one switch (issue #897): the header and Pull requests show it and link here.
+// Change kinds (issue #1076): below it, each kind's merge gate under the built-in rule, and the admin's own rules over it
+// as JSON — per repository or for every one —, saved whole; empty is the built-in rule again.
 import { TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import type { YoloModeView } from '@/model/wire';
-import { YOLO_WARNING, yoloPatch, yoloRows, yoloSummary, type YoloDraft, type YoloSetting } from '@/model/yolo-mode';
+import type { ChangeKind, YoloModeView } from '@/model/wire';
+import { YOLO_WARNING, changeKindsText, gateText, parseChangeKinds, yoloPatch, yoloRows, yoloSummary, type YoloDraft, type YoloSetting } from '@/model/yolo-mode';
 import { useHopper } from '@/store';
 import { setPolled } from '@/store/polled';
 
@@ -66,6 +69,54 @@ function Form({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloModeView
   );
 }
 
+const KIND_LABEL: Record<ChangeKind, string> = { docs: 'Docs or comments only', tests: 'Tests only', low_risk: 'Low-risk files', code: 'Code', sensitive: 'Sensitive' };
+
+/** The change-kind rules (issue #1076): each kind's gate under the built-in rule, and the admin's own rules as JSON. */
+function ChangeKinds({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloModeView) => void }) {
+  const [text, setText] = useState(changeKindsText(view));
+  const [busy, setBusy] = useState(false);
+  const parsed = parseChangeKinds(text);
+  const builtIn = view.choices.changeRule;
+  const save = async () => {
+    if (!parsed.ok) return;
+    setBusy(true);
+    try {
+      onSaved(await post<YoloModeView>('/ui/api/yolo-mode', { changeKinds: parsed.value }));
+      toast.success('Change rules saved');
+    } catch (e) {
+      if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
+      toast.error(e instanceof RoleRefused ? 'Only an admin changes the change rules' : (e as Error).message);
+    }
+    setBusy(false);
+  };
+  return (
+    <div data-slot="change-kinds" className="space-y-2 border-t pt-3 text-sm">
+      <p className="font-medium">Change kinds</p>
+      <p className="text-xs text-muted-foreground">
+        The hopper reads what each pull request changes and gives it a kind. The kind decides how its merge is gated. The most sensitive file decides the kind.
+      </p>
+      {builtIn && (
+        <ul data-slot="change-gates" className="grid gap-0.5 text-xs">
+          {(Object.keys(KIND_LABEL) as ChangeKind[]).map((k) => <li key={k}><span className="font-medium">{KIND_LABEL[k]}</span>: {gateText(builtIn.merge[k])}</li>)}
+        </ul>
+      )}
+      <label className="grid gap-1 text-xs">
+        Your rules over the built-in rule (JSON; empty: the built-in rule). A list you name replaces the built-in list.
+        <Textarea aria-label="Change rules" rows={8} className="font-mono text-xs" disabled={busy} value={text} onChange={(e) => setText(e.target.value)}
+          placeholder={'{ "default": { "lowRisk": ["ui/**"] },\n  "repos": { "owner/repo": { "sensitive": ["src/**"], "merge": { "sensitive": "person" } } } }'} />
+      </label>
+      {!parsed.ok && <p role="alert" className="text-xs text-bad">{parsed.error}</p>}
+      {builtIn && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground">The built-in rule</summary>
+          <pre data-slot="change-built-in" className="mt-1 max-h-64 overflow-auto rounded-md border p-2">{JSON.stringify(builtIn, null, 2)}</pre>
+        </details>
+      )}
+      <Button size="sm" disabled={busy || !parsed.ok || text === changeKindsText(view)} onClick={() => void save()}>Save change rules</Button>
+    </div>
+  );
+}
+
 /** Read when shown; keyed by the saved values, so a save starts the form from them. */
 export function YoloMode() {
   const [view, setView] = useState<YoloModeView | null>(null);
@@ -73,7 +124,12 @@ export function YoloMode() {
   useEffect(() => { get<YoloModeView>('/api/yolo-mode').then((v) => { if (typeof v?.on === 'boolean' && Array.isArray(v.choices?.repos)) setView(v); }, () => {}); }, []);
   return (
     <Panel title="Yolo mode" icon={Zap} className="max-w-3xl">
-      {view ? <Form key={JSON.stringify(view)} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
+      {view ? (
+        <div className="space-y-4">
+          <Form key={JSON.stringify(view)} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} />
+          <ChangeKinds key={`kinds-${JSON.stringify(view.changeKinds ?? null)}`} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} />
+        </div>
+      ) : <p className="text-sm text-muted-foreground">Loading…</p>}
     </Panel>
   );
 }

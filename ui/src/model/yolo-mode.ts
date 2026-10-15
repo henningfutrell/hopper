@@ -1,5 +1,6 @@
-// Yolo mode in the UI (issue #579), pure: the rows the panel lists, its summary, and the change a save sends.
-import type { YoloModeView } from './wire.ts';
+// Yolo mode in the UI (issue #579), pure: the rows the panel lists, its summary, and the change a save sends. The
+// change-kind rules (issue #1076) are edited with it as JSON: the admin's own rules, over the built-in rule.
+import type { ChangeKindSettings, MergeGate, YoloModeView } from './wire.ts';
 
 /** A repository's own setting: follow the default (`on`), or on or off for it alone. */
 export type YoloSetting = 'default' | 'on' | 'off';
@@ -62,3 +63,23 @@ export function yoloIndicator(v: YoloModeView | undefined): { on: boolean; words
   const words = !on ? 'yolo off' : merging === rows.length ? 'yolo on' : `yolo on: ${merging} of ${rows.length} repos`;
   return { on, words, title: yoloSummary(v) };
 }
+
+/** The admin's change-kind rules as the editor shows them (issue #1076); '' for the built-in rule. */
+export const changeKindsText = (v: YoloModeView): string => (v.changeKinds ? JSON.stringify(v.changeKinds, null, 2) : '');
+
+/** The editor's text as the rules a save sends: `null` for empty text (the built-in rule again); else an object, or why not. */
+export function parseChangeKinds(text: string): { ok: true; value: ChangeKindSettings | null } | { ok: false; error: string } {
+  if (text.trim() === '') return { ok: true, value: null };
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, error: 'the rules are a JSON object: { "default": {…}, "repos": { "owner/repo": {…} } }' };
+    return { ok: true, value: value as ChangeKindSettings };
+  } catch (e) {
+    return { ok: false, error: `not JSON: ${(e as Error).message}` };
+  }
+}
+
+const GATE_TEXT: Record<MergeGate, string> = { ready: 'merged when ready, no person asked', yolo: 'merged when ready only with yolo mode on', person: 'only a person merges' };
+/** What a kind's merge gate does, in plain words. */
+export const gateText = (g: MergeGate): string => GATE_TEXT[g];
+

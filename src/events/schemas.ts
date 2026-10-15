@@ -4,14 +4,14 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS } from '../domain/types.ts';
 import { DISMISSED_BY } from '../domain/locked.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -24,7 +24,7 @@ const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.
 const skillAsked = { requestId: z.string(), machine: z.string().optional(), template: z.string().optional(), asset: z.string().optional() };
 const proxyAsked = { requestId: z.string(), machine: z.string().optional(), own: z.boolean(), forUser: z.string().optional(), job: z.string().optional() };
 // Who answered a job's read (issue #1074): GitHub now, or the repo-query cache.
-const proxyOp = z.enum(PROXY_OPS), answerSource = z.enum(['github', 'cache']);
+const proxyOp = z.enum(PROXY_OPS), answerSource = z.enum(['github', 'cache', 'hopper']);
 /** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
@@ -103,7 +103,8 @@ const divergence = strict({
 // Phase shifts (issue #548): a phase, a review kind, the settings an admin saves.
 const phase = z.enum(JOB_PHASES);
 const reviewKind = z.enum(REVIEW_KINDS);
-const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()) });
+// `changeKinds` (additive, issue #1076): absent on a change made before it, and while the built-in rule holds.
+const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()), changeKinds: changeKinds.optional() });
 // `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
@@ -210,8 +211,9 @@ export const EVENT_SCHEMAS = {
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(DISMISSED_BY) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
-  // `discarded` (issue #1010): a person discarded the kept work, unpushed; who, and the way.
-  'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), ...actingIfPerson }),
+  // `discarded` (issue #1010): a person discarded the kept work, unpushed; who, and the way. Or the sweep did, and `reason`
+  // says why nobody waits on it (issue #1187).
+  'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), reason: z.enum(WORK_DISCARD_REASONS).optional(), ...actingIfPerson }),
   // Issue #371: the job's cleanup could not reach its machine; it is tried again until it goes through.
   'job.cleanup_deferred': strict({ error: z.string() }),
   'job.cleaned_up': strict({ deferredAt: z.string(), by: z.enum(['user']).optional() }),
@@ -326,7 +328,7 @@ export const EVENT_SCHEMAS = {
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
   'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string(), ...actingIfPerson }), 'job.pull_request_base_merged': strict({ pullRequest: z.string(), commit: z.string(), resolved: z.array(z.string()) }), 'job.pull_request_retargeted': strict({ pullRequest: z.string(), from: z.string(), to: z.string(), stray: z.literal(true).optional() }),
-  'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }), ...WORK_ITEM_EVENT_SCHEMAS,
+  'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }), ...WORK_ITEM_EVENT_SCHEMAS, ...CHANGE_KIND_EVENT_SCHEMAS, // issue #1076
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),
@@ -358,7 +360,8 @@ export const EVENT_SCHEMAS = {
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
-  // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`.
+  // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
+  // (issue #1072, `pr.status`): the hopper's records answered it.
   'github_proxy.done': z.union([
     strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),

@@ -5,7 +5,8 @@
 // event (src/store/work-items.ts), and a rebuild replays every event through it.
 import type { GraphNode } from './issue-graph.ts';
 import type { DomainEvent, EventType } from './types.ts';
-import { LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
+import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
+import type { ChangeKind } from './change-kinds.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -71,6 +72,8 @@ export interface WorkItem {
   pullRequestState?: PullRequestState;
   /** What its open pull request waits on, as the follow last saw it (`job.pull_request_seen`). */
   pullRequestWait?: PullRequestWait;
+  /** Its pull request's change kind (issue #1076), as `job.pull_request_classified` last said. */
+  changeKind?: ChangeKind;
   /** `open` or `closed`, and why it closed (`completed`, `not_planned`, `duplicate`), as GitHub said. */
   issueState?: string;
   issueReason?: string;
@@ -103,7 +106,7 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
   'handoff.opened', 'handoff.closed',
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
-  'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned',
+  'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
   'job.work_kept', 'job.work_removed',
   'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened',
   ...LANDING_LEDGER_EVENTS,
@@ -124,9 +127,15 @@ const DONE_RESULTS: readonly string[] = ['operator-led work complete', 'issue cl
 /** Why an issue closed when it is not done by its close. */
 const NOT_COMPLETED: readonly string[] = ['not_planned', 'duplicate'];
 
-/** Where the item stands: what the events say, unless they say no job or person acts on it and GitHub says it ended. */
-export function stateOf(i: Pick<WorkItem, 'eventState' | 'pullRequestState' | 'issueState' | 'issueReason'>): WorkItemState {
-  if (isActive(i.eventState) || i.eventState === 'done') return i.eventState;
+/**
+ * Where the item stands: what the events say, unless they say no job or person acts on it and GitHub says it ended. A
+ * culprit of a red batch, and its change reverted from the landing branch, is failed (issue #1175): its merge shipped
+ * nothing that stays, whatever its issue says, until a new job takes the item over.
+ */
+export function stateOf(i: Pick<WorkItem, 'eventState' | 'pullRequestState' | 'issueState' | 'issueReason' | 'landing'>): WorkItemState {
+  if (isActive(i.eventState)) return i.eventState;
+  if (isLandingUndone(i.landing)) return 'failed';
+  if (i.eventState === 'done') return i.eventState;
   if (i.pullRequestState === 'merged' && i.eventState !== 'partly_done') return 'done';
   if (i.issueState?.toLowerCase() === 'closed') return NOT_COMPLETED.includes((i.issueReason ?? '').toLowerCase()) ? 'dropped' : 'done';
   return i.eventState;
@@ -183,7 +192,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, changeKind: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
@@ -200,6 +209,11 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
       pullRequestWait: wait, ...(named ? { pullRequest: pr, pullRequestState: 'open' as const } : {}),
       ...(base.eventState === 'pr_open' ? { waitingOn: PULL_REQUEST_WAIT_WORDS[wait] } : {}),
     });
+  }
+  // A pull request's change kind (issue #1076): its state stays; any job's, as a tend hands a pull request on.
+  if (event.type === 'job.pull_request_classified') {
+    const kind = d.kind as ChangeKind;
+    return (current || pr === base.pullRequest) && base.changeKind !== kind ? mark({ changeKind: kind }) : undefined;
   }
   if (event.type === 'job.pull_request_merged') {
     const change = { pullRequest: pr, pullRequestState: 'merged' as const, pullRequestWait: undefined, waitingOn: undefined };
@@ -258,6 +272,14 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     default:
       return undefined;
   }
+}
+
+/** The item after a `landing_batch.*` event (`applyLanding`), its state settled with its stage; undefined: it does not move it. */
+export function applyLandingEvent(item: WorkItem, event: Pick<DomainEvent, 'type' | 'at' | 'data'>): WorkItem | undefined {
+  const next = applyLanding(item, event);
+  if (!next) return undefined;
+  const { state: _s, stateSince: _ss, version: _v, ...base } = next;
+  return settled(item, base, event.at);
 }
 
 /** The item after a read of GitHub; undefined: it says nothing new. A read of the issue older than the item's newest event is old news. */
@@ -398,7 +420,7 @@ export interface WorkItemLedger {
   /** Fold what a read of the issue graph said of issues and pull requests into their items. Called in the read's transaction. */
   applyNodes(nodes: readonly GraphNode[], readAt: string): void;
   get(key: string): WorkItem | undefined;
-  /** The item whose pull request is `url` (issue #1074: a job's repo query of it); undefined: none. */
+  /** The item whose pull request is `url`, whatever its case (issue #1074: a job's repo query of it; issue #1072: its `pr status`); the newest state change first. */
   byPullRequest(url: string): WorkItem | undefined;
   /** The items, the newest state change first; `keptWork`: only those that hold kept work; `landing`: only those with a landing stage. */
   list(filter?: { state?: WorkItemState[]; keptWork?: true; landing?: true; limit?: number }): WorkItem[];

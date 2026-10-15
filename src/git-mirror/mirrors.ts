@@ -19,10 +19,15 @@
 // What a pull request changes (issue #935 part 2, design.md "A job's parts list"): its commits after the merge base with
 // its base branch, and the files it changes there, as `git log` and `git diff --name-only` of the pass's fetch say. Both
 // read commits and trees only, which a blobless mirror has: no blob comes.
+// The lines a pull request changes (issue #1076, design.md "Change kinds"): `git diff -U0` of the files asked for, each
+// added or removed line without its sign; a binary file has none (`diff-lines.ts`). The blobs come on demand. More than
+// `CHANGED_LINES` lines, or a file git names that was not asked for: git cannot say.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { BaseMerge } from '../domain/pull-requests.ts';
+import type { ChangedLines } from '../domain/change-kinds.ts';
+import { parseDiff } from './diff-lines.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 /** Where git fetches a repository, and the token it fetches with; none: a public repository, fetched as anyone's. */
@@ -36,8 +41,12 @@ export type Mergeability = 'clean' | 'conflicting';
 /** A pull request whose base branch the hopper merges into its head (issue #967): its number, base and head branch. */
 export interface BaseMergeTarget { number: number; base: string; headRef: string }
 
-/** What a pull request changes: its commits, newest first, `<short sha> <subject>`; the paths of the files it changes. */
-export interface PullRequestChanges { commits: string[]; files: string[] }
+/**
+ * What a pull request changes: its commits, newest first, `<short sha> <subject>`; the paths of the files it changes, and
+ * `filesCut` when it changes more than `CHANGES_FILES`.
+ */
+export interface PullRequestChanges { commits: string[]; files: string[]; filesCut?: true }
+
 
 /** At most this many commits and files are named of one pull request. */
 export const CHANGES_COMMITS = 100;
@@ -66,6 +75,11 @@ export interface GitMirrors {
    * again once it moves. Undefined: git cannot say (outside a pass, another base, not fetched).
    */
   baseTip(repo: string, remote: () => Promise<GitRemote>, base: string): Promise<string | undefined>;
+  /**
+   * The lines pull request `pr` of `repo` changes in `paths` (issue #1076), as git says after this pass's fetch; undefined:
+   * git cannot say.
+   */
+  changedLines(repo: string, remote: () => Promise<GitRemote>, pr: PullRequestHead, paths: string[]): Promise<ChangedLines | undefined>;
 }
 
 /** One git command in a mirror: its exit code and what it printed. Tests may give their own. */
@@ -277,7 +291,20 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
         return undefined;
       }
       const lines = (out: string) => out.split('\n').filter((l) => l.length > 0);
-      return { commits: lines(log.stdout), files: lines(diff.stdout).slice(0, CHANGES_FILES) };
+      const files = lines(diff.stdout);
+      return { commits: lines(log.stdout), files: files.slice(0, CHANGES_FILES), ...(files.length > CHANGES_FILES ? { filesCut: true as const } : {}) };
+    },
+    async changedLines(repo, remote, pr, paths) {
+      const at = await fetchedIn(repo, remote, pr.base);
+      if (!at || at.f.heads.get(pr.number) !== pr.headOid) return undefined;
+      if (paths.length === 0) return {};
+      const r = await git(['--git-dir', at.path, '-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames',
+        `refs/remotes/origin/${pr.base}...${pr.headOid}`, '--', ...paths.map((p) => `:(literal)${p}`)], at.f.env);
+      if (r.code !== 0) {
+        o.log(`hopper: git mirror of ${repo}: changed lines of #${pr.number}: ${said(r)}`);
+        return undefined;
+      }
+      return parseDiff(r.stdout, paths);
     },
   };
 

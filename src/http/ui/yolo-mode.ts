@@ -3,9 +3,11 @@
 // job's prompt is built, so it applies to the next job without a restart. Done never depends on it. Since issue #637 the
 // hopper also merges a ready pull request it follows itself, in a repository with yolo mode on; the Pull requests list
 // shows each waiting one with its repository's yolo mode.
+// Change kinds (issue #1076, design.md "Change kinds"): the change-kind rules are saved with yolo mode, whole
+// (`changeKinds`, `null` for the built-in rule): globs, content expressions — each must compile — and each kind's merge gate.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_YOLO_MODE, patchYoloMode, pullRequestList, type PullRequestsView, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
+import { CHANGE_KINDS, DEFAULT_YOLO_MODE, MERGE_GATES, patchYoloMode, pullRequestList, yoloChoices, type PullRequestsView, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
 import type { UserStore } from '../../domain/store.ts';
 import { landingCards } from '../../domain/work-item-landing.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -15,16 +17,27 @@ import { identityName } from './sessions.ts';
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
 const repoName = z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo').max(200);
-/** Any part; `repos` sets each named repository on or off, or `null` to follow `on` again. */
+const compiles = (s: string): boolean => { try { new RegExp(s, 'i'); return true; } catch { return false; } };
+const globs = z.array(z.string().min(1).max(200)).max(200).optional();
+/** A change rule's change (issue #1076): each list it names replaces the list, each gate it names that gate. */
+export const changeRulePatch = z.strictObject({
+  docs: globs, tests: globs, lowRisk: globs, sensitive: globs,
+  sensitiveContent: z.array(z.string().min(1).max(200).refine(compiles, 'a regular expression')).max(50).optional(),
+  merge: z.partialRecord(z.enum(CHANGE_KINDS), z.enum(MERGE_GATES)).optional(),
+});
+export const changeKindsBody = z.strictObject({ default: changeRulePatch.optional(), repos: z.record(repoName, changeRulePatch).optional() });
+
+/** Any part; `repos` sets each named repository on or off, or `null` to follow `on` again; `changeKinds` the rules, whole. */
 export const yoloModeBody = z.strictObject({
   on: z.boolean().optional(),
   repos: z.record(repoName, z.boolean().nullable()).optional(),
-}).refine((b) => b.on !== undefined || b.repos !== undefined, { message: 'name on or repos' });
+  changeKinds: changeKindsBody.nullable().optional(),
+}).refine((b) => b.on !== undefined || b.repos !== undefined || b.changeKinds !== undefined, { message: 'name on, repos or changeKinds' });
 
 const settingsOf = (store: UserStore): YoloModeSettings => store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE;
 
 export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
-  return { ...settingsOf(t.store), choices: { repos: t.store.settings.getJobRepositories('github') } };
+  return { ...settingsOf(t.store), choices: yoloChoices(t.store.settings.getJobRepositories('github')) };
 }
 
 /**

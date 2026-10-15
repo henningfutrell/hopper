@@ -9,7 +9,7 @@ import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/ou
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CountPushLines } from '../git-mirror/push-lines.ts';
-import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type SourceStatus, type User } from '../domain/types.ts';
+import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
@@ -23,6 +23,7 @@ import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
 import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
 import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES, landingBranch } from '../domain/landing-batches.ts';
+import { batchClosingIssues } from '../domain/work-item-landing.ts';
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
@@ -30,7 +31,7 @@ import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skill
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
-  createProxyApi, holdsProxyToken, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
+  createProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
 } from '../github-proxy/index.ts';
 
@@ -117,6 +118,21 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     const shrunk = shrunkFiles(lines.files, (o.store.settings.getShrinkGuard() ?? DEFAULT_SHRINK_GUARD).percent);
     return shrunk.length === 0 ? { ok: true } : { ok: false, shrunk, reason: shrinkReason(shrunk, push.base) };
   };
+  /**
+   * What this user's records know of a pull request (issue #1072): its card on the Pull requests list, as following it last
+   * saw it — the same view a person reads —, and its work item in the ledger.
+   */
+  const pullRequest = (repo: string, number: number): KnownPullRequest => {
+    const { store } = o;
+    const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, store.settings.getJobRepositories('github'), o.clock.now().getTime(), (id) => store.jobs.get(id));
+    const card = view.repos.flatMap((r) => r.pullRequests).find((c) => c.pullRequest && isPullRequest(c.pullRequest.url, repo, number));
+    const url = card?.pullRequest?.url ?? `${o.accounts.endpoints('github').url.replace(/\/$/, '')}/${repo}/pull/${number}`;
+    const followed = card ? store.jobs.get(card.jobId) : undefined;
+    const item = store.workItems.byPullRequest(url) ?? (followed?.source ? store.workItems.get(followed.source.key) : undefined);
+    const seen = (followed?.sourceState?.source as { seen?: PullRequestSeen } | undefined)?.seen;
+    const known = knownPullRequest(number, url, { ...(card ? { card } : {}), ...(seen ? { seen } : {}), ...(item ? { item } : {}) });
+    return { ...(known ? { known } : {}), ...(item ? { item: itemOf(item) } : {}) };
+  };
   const user: ProxyUser = {
     id: o.user.id,
     holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts),
@@ -132,6 +148,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         ...(item.issueState ? { issueState: item.issueState } : {}), ...(item.issueReason ? { issueReason: item.issueReason } : {}),
       };
     },
+    pullRequest,
   };
   return {
     jobProxy(job, machine) {
@@ -203,6 +220,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
           const url = (j.sourceState?.source as { pullRequest?: unknown } | undefined)?.pullRequest;
           return typeof url === 'string' ? [url] : [];
         }),
+        // The ledger's done items of the batch's pull requests (issue #1175): the batch run's merge closes their issues.
+        closingIssues: (repo, merges) => batchClosingIssues(o.store.workItems.list({ state: ['done'] }), repo, merges),
         now: () => o.clock.now(),
         log: (l) => o.logger.warn(l),
       }),

@@ -5,10 +5,10 @@
 import type { EventType } from '../domain/types.ts';
 import type { GraphNode } from '../domain/issue-graph.ts';
 import {
-  applyEvent, applyRead, inFlightOf, countStates, IN_FLIGHT_STATES, jobIdOfEvent, keyOfEvent, LEDGER_EVENT_TYPES,
+  applyEvent, applyLandingEvent, applyRead, inFlightOf, countStates, IN_FLIGHT_STATES, jobIdOfEvent, keyOfEvent, LEDGER_EVENT_TYPES,
   type LedgerJob, type WorkItem, type WorkItemLedger, type WorkItemState,
 } from '../domain/work-items.ts';
-import { applyLanding, LANDING_LEDGER_EVENTS, landingTargets } from '../domain/work-item-landing.ts';
+import { LANDING_LEDGER_EVENTS, landingTargets } from '../domain/work-item-landing.ts';
 import type { Db } from './db.ts';
 import { parse } from './context.ts';
 
@@ -81,7 +81,7 @@ export function rebuildWorkItems(db: Db): number {
       const event = { type: r.type as EventType, at: String(r.at), data: parse<Record<string, unknown>>(r.data), ...(r.job_id !== null ? { jobId: String(r.job_id) } : {}) };
       if (LANDING_LEDGER_EVENTS.has(event.type)) {
         for (const i of items.values()) {
-          const next = applyLanding(i, event);
+          const next = applyLandingEvent(i, event);
           if (next) items.set(i.key, next);
         }
         continue;
@@ -134,7 +134,7 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
         if (!t) return;
         // The items of the event's repository with a merged pull request; the reducer picks the ones it moves.
         for (const r of db.all("SELECT body FROM work_items WHERE lower(pull_request) LIKE ? AND body::jsonb->>'pullRequestState' = 'merged'", `%/${t.repo.replace(/[\\%_]/g, '\\$&')}/pull/%`)) {
-          const next = applyLanding(parse<WorkItem>(r.body), event);
+          const next = applyLandingEvent(parse<WorkItem>(r.body), event);
           if (next) put(db, next);
         }
         return;
@@ -161,7 +161,7 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
     },
     get,
     byPullRequest(url) {
-      const r = db.get('SELECT body FROM work_items WHERE pull_request = ? ORDER BY state_since DESC LIMIT 1', url);
+      const r = db.get('SELECT body FROM work_items WHERE lower(pull_request) = lower(?) ORDER BY state_since DESC, key LIMIT 1', url);
       return r ? parse<WorkItem>(r.body) : undefined;
     },
     list(filter) {

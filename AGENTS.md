@@ -189,8 +189,8 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "Update channels and promotion").
 - **Changes reach people main → dev → beta → canary → stable** (issue #1073, `docs/design.md` "Landing batches").
   Pull requests merge to `main`, the landing branch and the default branch, after the fast checks (the
-  gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it; a red
-  batch's culprit is reverted from `main`, and the rest of the batch moves on;
+  gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it, and that merge closes the issues of the batch's job pull requests (its text
+  names them with closing keywords, issue #1175); a red batch's culprit is reverted from `main`, and the rest of the batch moves on;
   `beta` and `canary` move only by `scripts/promote.sh`, one step at a time; `stable` moves to the canary's candidate
   when its canary window passes with no bug report that names it (the batch runner, part 5), or by `scripts/promote.sh stable`.
 - **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served

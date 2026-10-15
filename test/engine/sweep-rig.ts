@@ -11,13 +11,13 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[] } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']> } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
   const surveys = [...(o.surveys ?? [])];
-  // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done.
-  const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job);
+  // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done. `others`: newer jobs; `spec`: added to each spec.
+  const jobs = [...[job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, spec: { ...j.spec, ...o.spec }, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job), ...(o.others ?? [])];
   const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
@@ -42,7 +42,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
     machines: { list: async () => machines },
     executors: { get: (n: string) => (n === 'x' ? executor : undefined), names: () => ['x'] } as never,
     store: {
-      jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
+      jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id), getBySourceKey: (key: string) => jobs.findLast((j) => j.source?.key === key) },
       events: {
         recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
         append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },

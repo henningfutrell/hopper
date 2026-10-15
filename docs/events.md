@@ -868,13 +868,14 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 
 ## `job.work_removed`
 
-Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
+Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `discarded` and `reason` (issue #1187), the sweep discarded it with no person, as nobody waits on it: `merged` (its item is done, issue #1105), `superseded` (a newer job of its item finished with nothing kept), `proposal` or `research` (it finished a proposal or a research report, never work to push). With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
 | `discarded` | boolean | no |
 | `gone` | boolean | no |
+| `reason` | `merged` \| `superseded` \| `proposal` \| `research` | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -2080,7 +2081,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
 
 ## `proposal.accepted`
 
-Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who), by the top reviewer level where the proposal settings let it, or by the hopper itself (`stage: "hopper"`, issue #1059: one recommended path and no rule needs a person). `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
+Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who), by the top reviewer level where the proposal settings let it, or by the hopper itself (`stage: "hopper"`, issues #1059, #1174: one recommended path, or each of a recommended combination, and no rule needs a person). `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
 
 | field | type | required |
 |---|---|---|
@@ -3132,7 +3133,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -3189,7 +3190,7 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 | `own` | boolean | yes |
 | `forUser` | string | no |
 | `job` | string | no |
-| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.comments` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.diff` \| `pr.commits` \| `pr.checks` \| `pr.ready` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.comments` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.diff` \| `pr.commits` \| `pr.checks` \| `pr.status` \| `pr.ready` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
 | `repo` | string | yes |
 | `refs` | string[] | no |
 | `error` | string | yes |
@@ -3987,7 +3988,7 @@ Version 1 (`docs/schemas/vault.grant_denied.v1.json`). A person, or a delegate a
 
 ## `yolo_mode.changed`
 
-Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
+Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `changeKinds` (issue #1076): the change-kind rules over the built-in rule, `default` and per repository, and the merge gate of each kind. `from` and `to` the settings, `by` who changed them. Done never depends on it.
 
 | field | type | required |
 |---|---|---|
@@ -4204,6 +4205,26 @@ Version 1 (`docs/schemas/work_item.issue_reopened.v1.json`). GitHub reopened the
 {
   "key": "https://github.com/owner/repo/issues/9",
   "via": "read"
+}
+```
+
+## `job.pull_request_classified`
+
+Version 1 (`docs/schemas/job.pull_request_classified.v1.json`). A followed pull request's change kind (issue #1076), new or changed: `kind` — `docs` (docs or comments only), `tests`, `low_risk`, `code` or `sensitive` (auth, secrets, migrations, the sandbox, CI, infra, dependencies, agent instructions, or a line a content rule matches) —, read from the files and lines it changes by the repository's change rule, and `why`: a few files and the rule each matched. The kind names its merge gate: merged when ready with no person, merged when ready only with yolo mode on, or merged only by a person. The work-item ledger keeps it on the item.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `kind` | `docs` \| `tests` \| `low_risk` \| `code` \| `sensitive` | yes |
+| `why` | string[] | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "kind": "docs",
+  "why": [
+    "README.md: docs path (**/*.md)"
+  ]
 }
 ```
 

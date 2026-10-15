@@ -14,6 +14,8 @@
 // A read — a **repo query** (issue #1074) — is answered from the repo-query cache when what it kept answers now
 // (repo-query.ts), else read from GitHub and kept; the answer says which (`source`) and, where the work-item ledger holds
 // the item, what it says (`ledger`). A write drops what the cache kept of the issue or pull request it changed.
+// Where a pull request stands (`pr.status`, issue #1072) is answered from the asking user's records first — the Pull
+// requests list and the work-item ledger — (`source: hopper`); only else is it a repo query as above.
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
@@ -21,6 +23,7 @@ import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
+import type { KnownPullRequest } from './pr-status.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -36,6 +39,8 @@ export interface ProxyUser {
   record(event: NewEvent): void;
   /** What this user's work-item ledger says of the issue or pull request at `url` (issue #1074); undefined: it holds none. */
   ledger?(url: string): LedgerView | undefined;
+  /** What this user's records know of pull request `number` of `repo` (issue #1072). Absent: nothing; GitHub is read. */
+  pullRequest?(repo: string, number: number): KnownPullRequest;
 }
 
 /** The hopper's own GitHub connection: the repositories it works on, and its calls; or why it has none. */
@@ -151,6 +156,14 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       };
       const allowed = checkRequest(req, asker, connection.jobRepositories());
       if (!allowed.ok) return refuse(403, allowed.reason, req);
+      // Where a pull request stands (issue #1072): the hopper's records first; it costs GitHub nothing, so no limit.
+      const knownPr = req.op === 'pr.status' ? user.pullRequest?.(req.repo, req.number) ?? {} : undefined;
+      const prItem = knownPr?.item ? { item: knownPr.item } : {};
+      if (knownPr?.known) {
+        const at = now();
+        record('github_proxy.done', { op: req.op, repo: req.repo, number: knownPr.known.number, url: knownPr.known.url, source: 'hopper' });
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...knownPr.known, source: 'hopper', readAt: new Date(at).toISOString() } };
+      }
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
       if (over) return refuse(429, over, req);
@@ -171,7 +184,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         const ledger = ledgerOf(result.url);
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source });
         const seen = req.op === 'repo.view' ? { contribution } : {};
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}) } };
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}) } };
       };
       if (read) {
         const kept = cache.get(key);
