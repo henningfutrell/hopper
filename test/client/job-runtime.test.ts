@@ -80,6 +80,8 @@ describe('a job gets a container runtime of its own (issue #1295)', () => {
     expect(statSync(own()).mode & 0o777).toBe(0o700);
     expect(readFileSync(join(containers(), 'storage.conf'), 'utf8')).toContain(`graphroot = "${containers()}/storage"`);
     expect(readFileSync(join(containers(), 'storage.conf'), 'utf8')).toContain(`runroot = "${own()}/storage"`);
+    // Rootless Podman 4 reads no graphroot from a storage config that is not the user's own: only this.
+    expect(readFileSync(join(containers(), 'storage.conf'), 'utf8')).toContain(`rootless_storage_path = "${containers()}/storage"`);
     expect(readFileSync(join(containers(), 'containers.conf'), 'utf8')).toContain(`tmp_dir = "${own()}/libpod/tmp"`);
     // The user's bus is the same socket, so podman's network helpers reach systemd from inside its own /run.
     expect(statSync(join(own(), 'bus')).ino).toBe(statSync(join(host, 'bus')).ino);
@@ -200,7 +202,8 @@ describe('the reap resets the job\'s runtime and only it (issue #1295)', () => {
     const said = readReap(run(reapArgv(JOB, scratch)));
     expect(said?.removed).toEqual({ containers: ['kindnode01', 'ryuk0002'], volumes: ['kindvol'] });
     const reset = calls().find((c) => c.includes('system reset --force'));
-    expect(reset).toBe(`podman --root ${containers()}/storage --runroot ${own()}/storage --tmpdir ${own()}/libpod/tmp system reset --force | XDG_RUNTIME_DIR=${own()} DOCKER_HOST= CONTAINER_HOST=unset`);
+    // No --runroot: Podman 4 refuses one longer than 50 characters, and the runtime dir's is; storage.conf names it.
+    expect(reset).toBe(`podman --root ${containers()}/storage --tmpdir ${own()}/libpod/tmp system reset --force | XDG_RUNTIME_DIR=${own()} DOCKER_HOST= CONTAINER_HOST=unset`);
     expect(existsSync(join(containers(), 'storage'))).toBe(false);
     expect(existsSync(own())).toBe(false);
     expect(readFileSync(join(host, 'containers', 'hopper-stack'), 'utf8')).toBe('running');

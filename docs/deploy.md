@@ -851,7 +851,20 @@ Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
 node scripts/kind-check.ts --tag dev          # --cluster NAME, --set key=value, --keep
 ```
 
-A pull request that changes the chart runs it (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
+Then `scripts/kind-sandbox-check.ts` (issue #1371) runs on the cluster `--keep` kept. It needs this checkout's
+dependencies (`npm ci`). As the hopper's own service account, it runs need boxes through this checkout's Kubernetes
+runtime. Each box succeeds, fails, times out or is cancelled. After each, no pod, claim or secret with its labels may
+stay. A later box must not see an earlier one's files, and two boxes at once must not see each other's. The runtime
+must refuse to remove the hopper's pod and the release's claims. Last, the check kills the hopper's pod (scaled to 0,
+deleted with no grace), runs a need box of the hopper's instance while the hopper is down, and starts the hopper again:
+the hopper's first sweep must remove that box and its home claim.
+
+```sh
+node scripts/kind-sandbox-check.ts --context kind-hopper-check   # --namespace NAME, --image IMAGE (sh, tar, base64)
+kind delete cluster --name hopper-check
+```
+
+A pull request that changes the chart, either check or the Kubernetes runtime runs both (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
 runs to a merged pull request needs a GitHub sign-in, which no check has: with `--keep`, port-forward the hopper
 (`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in with GitHub, add a
 `kubernetes-cluster` machine for the kubernetes executor (`docs/design.md` "Job pods on Kubernetes"), and queue a job on an issue of a test repository.

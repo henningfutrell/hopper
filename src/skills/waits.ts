@@ -36,7 +36,8 @@ export interface WaitUser {
     finish(jobId: string, request: string, type: string, payload: unknown): unknown;
     repo: { openWatches(jobId?: string): { id: string; jobId: string; body: Record<string, string> }[] };
   };
-  subscribe(l: (e: DomainEvent) => void): () => void;
+  /** Their event log: the same object for as long as the user's runtime runs, so it is heard once (issue #1383). */
+  events: { subscribe(l: (e: DomainEvent) => void): () => void };
   /** Ends the job's own wait with the answer, when it is on one (issue #998); nothing otherwise. */
   endWait?(jobId: string, answer: string): void;
 }
@@ -60,17 +61,20 @@ const said = (body: unknown, key: string): string | undefined => {
 };
 
 export function createSkillWaits(o: { broker: SkillBroker; user(id: string): WaitUser | undefined; log(line: string): void }): SkillWaits {
-  /** The users whose vault changes are heard, by their event log's subscribe: one listener each. */
-  const heard = new WeakSet<WaitUser['subscribe']>();
+  /**
+   * The event logs heard: one listener each. Keyed by the log, not by what `user()` answers, which is a new object each
+   * call: keyed so, each redrive added a listener that redrives, and the listeners doubled at each change (issue #1383).
+   */
+  const heard = new WeakSet<object>();
   /** The watches being asked again now: one at a time each. */
   const busy = new Set<string>();
   /** The busy watches a change was heard for meanwhile. */
   const again = new Set<string>();
 
   const hear = (userId: string, u: WaitUser): void => {
-    if (heard.has(u.subscribe)) return;
-    heard.add(u.subscribe);
-    u.subscribe((e) => {
+    if (heard.has(u.events)) return;
+    heard.add(u.events);
+    u.events.subscribe((e) => {
       if (VAULT_CHANGES.includes(e.type)) void waits.redrive(userId);
     });
   };

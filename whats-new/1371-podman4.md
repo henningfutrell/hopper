@@ -1,0 +1,1 @@
+- On a machine with an older Podman, the containers, volumes and images a job makes now stay with that job and go when it ends.

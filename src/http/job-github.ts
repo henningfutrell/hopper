@@ -47,7 +47,7 @@ function prWaitsOf(tenants: Tenants): PrWaits {
       const pullRequest = parts?.githubProxy.user.pullRequest;
       if (!parts || !pullRequest) return undefined;
       return {
-        stream: parts.jobStream, subscribe: (l) => parts.store.events.subscribe(l), pullRequest,
+        stream: parts.jobStream, events: parts.store.events, pullRequest,
         endWait(jobId, answer) {
           if (parts.store.jobs.get(jobId)?.status !== 'waiting_on') return;
           try {

@@ -134,14 +134,25 @@ describe('the waits on pull requests (issue #1072)', () => {
         },
         repo: { openWatches: (jobId) => watches.filter((w) => !w.ended && (jobId === undefined || w.jobId === jobId)) },
       },
-      subscribe: (l) => { listeners.push(l); return () => {}; },
+      events: { subscribe: (l) => { listeners.push(l); return () => {}; } },
       pullRequest: () => known,
       endWait: (jobId, answer) => { ended.push({ jobId, answer }); },
     };
-    const waits = createPrWaits({ user: () => user, newId: () => `w-${++n}`, log: () => {} });
-    const hear = (type: string) => { for (const l of listeners) l({ type, jobId: 'job-0', data: {} } as unknown as DomainEvent); };
-    return { waits, watches, stream, ended, hear, set: (k: KnownPullRequest) => { known = k; } };
+    // A new object each call, over the same event log, as src/http/job-github.ts makes one.
+    const waits = createPrWaits({ user: () => ({ ...user }), newId: () => `w-${++n}`, log: () => {} });
+    const hear = (type: string) => { for (const l of [...listeners]) l({ type, jobId: 'job-0', data: {} } as unknown as DomainEvent); };
+    return { waits, watches, stream, ended, hear, listeners, set: (k: KnownPullRequest) => { known = k; } };
   }
+
+  // Issue #1383: each redrive added a listener, and each listener redrives on a change, so the listeners doubled with
+  // every change heard: the event loop was held longer at each one, and the memory grew.
+  it('hears a user\'s event log once, however often it is asked again', () => {
+    const t = setup();
+    t.waits.open('u1', 'job-1', { repo: 'octo/tools', number: 8, status: status() });
+    t.waits.open('u1', 'job-2', { repo: 'octo/tools', number: 8, status: status() });
+    for (let i = 0; i < 5; i++) { t.waits.redrive('u1'); t.hear('job.pull_request_seen'); }
+    expect(t.listeners).toHaveLength(1);
+  });
 
   it('opens one watch per job and pull request, and says on the stream that it waits', () => {
     const t = setup();
@@ -199,11 +210,32 @@ describe('the skill waits and a pull request\'s watch (issue #1072)', () => {
       broker: { again: async (...a: unknown[]) => { asked.push(a); return undefined; } } as unknown as SkillBroker,
       user: () => ({
         stream: { open: () => { throw new Error('not opened'); }, emit: () => undefined, finish: () => undefined, repo: { openWatches: () => watches } },
-        subscribe: () => () => {},
+        events: { subscribe: () => () => {} },
       }),
       log: () => {},
     });
     await waits.redrive('u1', 'job-1');
     expect(asked).toEqual([]);
+  });
+
+  // Issue #1383: as the pull request waits, each redrive added a listener that redrives on a vault change.
+  it('hear a user\'s event log once, however often they are asked again', async () => {
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const events = { subscribe: (l: (e: DomainEvent) => void) => { listeners.push(l); return () => {}; } };
+    const waits = createSkillWaits({
+      broker: { again: async () => undefined } as unknown as SkillBroker,
+      // A new object each call, over the same event log, as src/http/job-skill.ts makes one.
+      user: () => ({
+        stream: { open: () => { throw new Error('not opened'); }, emit: () => undefined, finish: () => undefined, repo: { openWatches: () => [] } },
+        events,
+      }),
+      log: () => {},
+    });
+    for (let i = 0; i < 5; i++) {
+      await waits.redrive('u1');
+      for (const l of [...listeners]) l({ type: 'vault.secret_set', data: {} } as unknown as DomainEvent);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(listeners).toHaveLength(1);
   });
 });

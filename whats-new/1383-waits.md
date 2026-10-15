@@ -1,0 +1,1 @@
+- The hopper no longer slows down more and more, and then stops answering, while jobs wait on their pull requests or on a skill.

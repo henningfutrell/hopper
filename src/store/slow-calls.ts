@@ -1,37 +1,31 @@
-// The slow store calls (issue #1154): every store call blocks the event loop for as long as it takes (db.ts), so a
-// slow one is a stall, or part of one. The calls that took at least SLOW_CALL_MS are kept, the latest SLOW_KEPT, each
-// named by its statement's verb and first table only (`statementOf`): never a literal, a parameter or a schema name.
-// The event loop watchdog (src/http/event-loop.ts) reads the ones that ended during a stall, to say what held it.
-// Every call is also counted by its statement, slow or not, so a test can say how many calls a piece of work sends.
+// The store calls (issue #1154): every store call blocks the event loop for as long as it takes (db.ts), so the store's
+// part of a stall is the time of the calls that ran in it. Every call is totalled by its statement's verb and first table
+// only (`statementOf`): never a literal, a parameter or a schema name. The event loop watchdog (src/http/event-loop.ts)
+// reads the totals at each of its ticks and names the difference across a stall (issue #1383: before, only the calls of
+// 100 ms or more were kept, so a stall of many fast calls said "no slow store call in it"). A test can say how many calls
+// a piece of work sends.
 
-/** A store call this long is kept. */
-export const SLOW_CALL_MS = 100;
-const SLOW_KEPT = 200;
-
-/** A slow store call: when it started and ended (`performance.now()`), and its statement. */
-export interface SlowCall { from: number; to: number; what: string }
+/** The time and the count of the calls of one statement. */
+export interface StoreTotal { ms: number; count: number }
 
 export interface SlowCalls {
   record(from: number, to: number, what: string): void;
-  /** The kept calls that ended at or after `from`, oldest first. */
-  since(from: number): SlowCall[];
-  /** How many calls of this statement (`statementOf`) were recorded, slow or not. */
+  /** The totals by statement now: a copy, which later calls do not change. */
+  totals(): Map<string, StoreTotal>;
+  /** How many calls of this statement (`statementOf`) were recorded. */
   count(what: string): number;
 }
 
-export function createSlowCalls(o: { slowMs?: number; kept?: number } = {}): SlowCalls {
-  const slowMs = o.slowMs ?? SLOW_CALL_MS, kept = o.kept ?? SLOW_KEPT;
-  const calls: SlowCall[] = [];
-  const counts = new Map<string, number>();
+export function createSlowCalls(): SlowCalls {
+  // Each total is replaced, never changed, so a shallow copy is a snapshot.
+  const totals = new Map<string, StoreTotal>();
   return {
     record(from, to, what) {
-      counts.set(what, (counts.get(what) ?? 0) + 1);
-      if (to - from < slowMs) return;
-      calls.push({ from, to, what });
-      if (calls.length > kept) calls.shift();
+      const t = totals.get(what);
+      totals.set(what, { ms: (t?.ms ?? 0) + (to - from), count: (t?.count ?? 0) + 1 });
     },
-    since: (from) => calls.filter((c) => c.to >= from),
-    count: (what) => counts.get(what) ?? 0,
+    totals: () => new Map(totals),
+    count: (what) => totals.get(what)?.count ?? 0,
   };
 }
 
@@ -44,5 +38,5 @@ export function statementOf(sql: string): string {
   return table ? `${verb} ${table}` : verb;
 }
 
-/** The process's slow store calls: every Db of this process records into it (db.ts). */
+/** The process's store calls: every Db of this process records into it (db.ts). */
 export const slowStoreCalls = createSlowCalls();

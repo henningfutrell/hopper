@@ -152,11 +152,11 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // Every answer names its hopper (issue #1295): the page drops another hopper's at the same address.
   const instanceTag = instanceTagOf(o.instance.settings.instanceId());
   installInstanceTag(app, instanceTag);
-  // The event loop watchdog (issue #1002): a stall is logged with the routes in flight and the slow store calls in it
+  // The event loop watchdog (issue #1002): a stall is logged with the routes in flight and the store calls in it
   // (issue #1154), shown on /api/health, and raised as an instance event.
   const events = o.events;
   const loop = watchEventLoop(app, {
-    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.since, ...(o.held ? { held: o.held } : {}),
+    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.totals, ...(o.held ? { held: o.held } : {}),
     ...(events ? { raise: ({ at: _at, ...data }: EventLoopStall & { skipped: number }) => { events.append({ type: 'hopper.event_loop_stalled', data }); } } : {}),
   });
   // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
