@@ -9,6 +9,8 @@
 //   Scenario: an operator opens the transcript; a step opens to its input and result
 //   Scenario: earlier turns load in front
 //   Scenario: a viewer, or a job with no kept session, gets no transcript
+//   Scenario: the transcript of a job at work follows it: read fresh each minute, earlier turns kept in front (part 7)
+//   Scenario: a fresh read that took no checkpoint says why; an ended job's transcript is not read fresh
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +24,7 @@ const kept = {
   createdAt: T, updatedAt: T, startedAt: T, laneId: 'desk/lane-1', checkpoint,
 } as unknown as Job;
 const none = { ...kept, id: 'n1', checkpoint: { ...checkpoint, session: false } } as unknown as Job;
+const ended = { ...kept, id: 'e1', status: 'finished', finishedAt: T } as unknown as Job;
 
 const turn = (index: number, extra: Partial<TranscriptTurn> = {}): TranscriptTurn => ({ index, at: T, prompt: `prompt ${index}`, parts: [{ kind: 'text', text: `answer ${index}` }], ...extra });
 const NEWEST: JobTranscript = {
@@ -41,18 +44,22 @@ const NEWEST: JobTranscript = {
   ],
 };
 const EARLIER: JobTranscript = { jobId: 'r1', checkpointAt: T, total: 3, start: 0, turns: [turn(0)] };
+const T2 = '2026-10-14T12:01:00.000Z';
+/** The read a minute later: a turn more, so the newest 20 start at turn 1 still, and turn 0 loaded before stays. */
+let FOLLOWED: JobTranscript = { jobId: 'r1', checkpointAt: T2, total: 4, start: 1, turns: [turn(1), turn(2), turn(3)] };
 
 let calls: { method: string; path: string; body?: Record<string, unknown> }[] = [];
 
 function fakeDaemon(role: 'operator' | 'viewer') {
   const routes: Record<string, (body?: Record<string, unknown>) => unknown> = {
     '/api/health': () => ({ ok: true, version: '0', router: 'pass-through', fallback: false, executors: ['herdr-claude'], uptimeS: 1 }),
-    '/api/queue': () => ({ waiting: [], running: [kept, none], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [], locked: [] }),
+    '/api/queue': () => ({ waiting: [], running: [kept, none], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
     '/api/machines': () => ({ machines: [] }), '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
     '/api/usage': () => ({ readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }), '/api/accounts': () => ({ accounts: [] }),
-    '/ui/api/jobs/r1/transcript': (body) => (body?.before === 1 ? EARLIER : NEWEST),
+    '/ui/api/jobs/r1/transcript': (body) => (body?.before === 1 ? EARLIER : transcriptPosts().filter((c) => c.body?.before === undefined).length > 1 ? FOLLOWED : NEWEST),
+    '/ui/api/jobs/e1/transcript': () => ({ ...NEWEST, jobId: 'e1' }),
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -90,12 +97,13 @@ async function boot(id: string, role: 'operator' | 'viewer' = 'operator') {
 }
 
 const button = (text: RegExp) => [...document.querySelectorAll('button')].find((b) => text.test(b.textContent ?? '')) as HTMLButtonElement | undefined;
-const transcriptPosts = () => calls.filter((c) => c.method === 'POST' && c.path === '/ui/api/jobs/r1/transcript');
+const transcriptPosts = (id = 'r1') => calls.filter((c) => c.method === 'POST' && c.path === `/ui/api/jobs/${id}/transcript`);
 const messages = () => [...document.querySelectorAll<HTMLElement>('[data-slot="job-transcript"] [data-slot="message"]')];
 
 afterEach(() => {
   act(() => root?.unmount());
   root = undefined;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -106,7 +114,7 @@ describe('the job transcript on the job view (issue #1169)', () => {
     expect(transcriptPosts()).toHaveLength(0);
     await act(async () => { button(/Open transcript/)!.click(); });
     await vi.waitFor(() => expect(messages().length).toBe(4));
-    expect(transcriptPosts()[0]!.body).toEqual({ limit: 20 });
+    expect(transcriptPosts()[0]!.body).toEqual({ limit: 20, fresh: true });
     expect(document.querySelector('[data-slot="job-transcript"] [data-slot="message-scroller"]')).not.toBeNull();
 
     const [prompt1, reply1, prompt2, reply2] = messages();
@@ -153,5 +161,44 @@ describe('the job transcript on the job view (issue #1169)', () => {
     await boot('n1');
     await new Promise((r) => setTimeout(r, 50));
     expect(button(/Open transcript/)).toBeUndefined();
+  });
+
+  it('follows a job at work: it reads again fresh each minute, and the earlier turns loaded stay in front', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await boot('r1');
+    await vi.waitFor(() => expect(button(/Open transcript/)).toBeDefined());
+    await act(async () => { button(/Open transcript/)!.click(); });
+    await vi.waitFor(() => expect(button(/Load earlier turns/)).toBeDefined());
+    expect(document.querySelector('[data-slot="job-transcript-status"]')!.textContent).toContain('follows the job');
+    await act(async () => { button(/Load earlier turns/)!.click(); });
+    await vi.waitFor(() => expect(messages().length).toBe(6));
+
+    await act(async () => { vi.advanceTimersByTime(60000); });
+    await vi.waitFor(() => expect(messages().length).toBe(8));
+    expect(transcriptPosts().at(-1)!.body).toEqual({ limit: 20, fresh: true });
+    expect(messages()[0]!.textContent).toContain('prompt 0');
+    expect(messages().at(-2)!.textContent).toContain('prompt 3');
+    expect(document.querySelector('[data-slot="job-transcript-status"]')!.textContent).toContain(`4 turns, as the checkpoint of ${T2}`);
+  });
+
+  it('says why a fresh read took no checkpoint, and does not read an ended job\'s transcript fresh', async () => {
+    FOLLOWED = { ...NEWEST, stale: 'its machine could not be reached: timeout' };
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await boot('r1');
+    await vi.waitFor(() => expect(button(/Open transcript/)).toBeDefined());
+    await act(async () => { button(/Open transcript/)!.click(); });
+    await vi.waitFor(() => expect(messages().length).toBe(4));
+    await act(async () => { vi.advanceTimersByTime(60000); });
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="job-transcript-stale"]')?.textContent).toContain('its machine could not be reached: timeout'));
+    act(() => root?.unmount());
+
+    await boot('e1');
+    await vi.waitFor(() => expect(button(/Open transcript/)).toBeDefined());
+    await act(async () => { button(/Open transcript/)!.click(); });
+    await vi.waitFor(() => expect(messages().length).toBe(4));
+    expect(transcriptPosts('e1')[0]!.body).toEqual({ limit: 20 });
+    await act(async () => { vi.advanceTimersByTime(60000); });
+    expect(transcriptPosts('e1')).toHaveLength(1);
+    expect(document.querySelector('[data-slot="job-transcript-status"]')!.textContent).not.toContain('follows the job');
   });
 });
