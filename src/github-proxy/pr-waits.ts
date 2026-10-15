@@ -34,7 +34,8 @@ export interface PrWaitUser {
     finish(jobId: string, request: string, type: string, payload: unknown): unknown;
     repo: { openWatches(jobId?: string): OpenWatch[] };
   };
-  subscribe(l: (e: DomainEvent) => void): () => void;
+  /** Their event log: the same object for as long as the user's runtime runs, so it is heard once (issue #1383). */
+  events: { subscribe(l: (e: DomainEvent) => void): () => void };
   pullRequest(repo: string, number: number): KnownPullRequest;
   /** Ends the job's own wait with the answer, when it is on one; nothing otherwise. */
   endWait?(jobId: string, answer: string): void;
@@ -56,12 +57,15 @@ const overOf = (body: Record<string, string>): PrWaitOver =>
 
 export function createPrWaits(o: { user(id: string): PrWaitUser | undefined; newId?: () => string; log(line: string): void }): PrWaits {
   const newId = o.newId ?? (() => randomUUID());
-  /** The users whose pull request changes are heard, by their event log's subscribe: one listener each. */
-  const heard = new WeakSet<PrWaitUser['subscribe']>();
+  /**
+   * The event logs heard: one listener each. Keyed by the log, not by what `user()` answers, which is a new object each
+   * call: keyed so, each redrive added a listener that redrives, and the listeners doubled at each change (issue #1383).
+   */
+  const heard = new WeakSet<object>();
   const hear = (userId: string, u: PrWaitUser): void => {
-    if (heard.has(u.subscribe)) return;
-    heard.add(u.subscribe);
-    u.subscribe((e) => {
+    if (heard.has(u.events)) return;
+    heard.add(u.events);
+    u.events.subscribe((e) => {
       if (PR_CHANGES.includes(e.type)) waits.redrive(userId);
     });
   };

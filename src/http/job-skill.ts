@@ -64,7 +64,7 @@ export function jobSkillRoutes(app: FastifyInstance, o: { tenants: Tenants; acce
       const parts = o.tenants.user(id);
       if (!parts) return undefined;
       return {
-        stream: parts.jobStream, subscribe: (l) => parts.store.events.subscribe(l),
+        stream: parts.jobStream, events: parts.store.events,
         // Issue #998: an answer the job asked for ends its own wait (HOPPER_WAITING), as a person's end-wait does.
         endWait(jobId, answer) {
           if (parts.store.jobs.get(jobId)?.status !== 'waiting_on') return;

@@ -1,5 +1,5 @@
-// Issue #1154: a store call blocks the event loop for as long as it takes. The slow ones are kept, named by their
-// statement's verb and table only — never a literal or a parameter —, so the watchdog can say what held the loop.
+// Issue #1154: a store call blocks the event loop for as long as it takes. Every call is totalled by its statement's verb
+// and table only — never a literal or a parameter —, so the watchdog can say what held the loop (issue #1383).
 import { describe, expect, it } from 'vitest';
 import { createSlowCalls, statementOf } from '../../src/store/slow-calls.ts';
 
@@ -15,29 +15,28 @@ describe('statementOf', () => {
   });
 });
 
-describe('the slow store calls', () => {
-  it('keeps the calls that took at least the slow time, and answers those that ended since a time', () => {
-    const slow = createSlowCalls({ slowMs: 100, kept: 3 });
-    slow.record(0, 50, 'SELECT jobs');
-    slow.record(100, 300, 'SELECT jobs');
-    slow.record(400, 900, 'INSERT checkpoints');
-    expect(slow.since(0)).toEqual([{ from: 100, to: 300, what: 'SELECT jobs' }, { from: 400, to: 900, what: 'INSERT checkpoints' }]);
-    expect(slow.since(500)).toEqual([{ from: 400, to: 900, what: 'INSERT checkpoints' }]);
+describe('the store calls', () => {
+  // Issue #1383: a stall of many fast calls said "no slow store call in it". Every call counts, so the watchdog can say
+  // how much of a stall the store held, however short each call was.
+  it('totals every call\'s time by statement, slow or not, and a total read is not changed by later calls', () => {
+    const calls = createSlowCalls();
+    calls.record(0, 5, 'SELECT jobs');
+    calls.record(10, 510, 'SELECT jobs');
+    calls.record(0, 2, 'UPDATE jobs');
+    const before = calls.totals();
+    expect(Object.fromEntries(before)).toEqual({ 'SELECT jobs': { ms: 505, count: 2 }, 'UPDATE jobs': { ms: 2, count: 1 } });
+    calls.record(0, 1, 'SELECT jobs');
+    expect(before.get('SELECT jobs')).toEqual({ ms: 505, count: 2 });
+    expect(calls.totals().get('SELECT jobs')).toEqual({ ms: 506, count: 3 });
   });
 
-  it('keeps only the latest ones', () => {
-    const slow = createSlowCalls({ slowMs: 1, kept: 2 });
-    for (let i = 0; i < 5; i++) slow.record(i * 10, i * 10 + 5, `SELECT t${i}`);
-    expect(slow.since(0).map((c) => c.what)).toEqual(['SELECT t3', 'SELECT t4']);
-  });
-
-  it('counts every call by its statement, slow or not', () => {
-    const slow = createSlowCalls({ slowMs: 100 });
-    slow.record(0, 1, 'SELECT jobs');
-    slow.record(0, 500, 'SELECT jobs');
-    slow.record(0, 1, 'UPDATE jobs');
-    expect(slow.count('SELECT jobs')).toBe(2);
-    expect(slow.count('UPDATE jobs')).toBe(1);
-    expect(slow.count('SELECT settings')).toBe(0);
+  it('counts every call by its statement', () => {
+    const calls = createSlowCalls();
+    calls.record(0, 1, 'SELECT jobs');
+    calls.record(0, 500, 'SELECT jobs');
+    calls.record(0, 1, 'UPDATE jobs');
+    expect(calls.count('SELECT jobs')).toBe(2);
+    expect(calls.count('UPDATE jobs')).toBe(1);
+    expect(calls.count('SELECT settings')).toBe(0);
   });
 });

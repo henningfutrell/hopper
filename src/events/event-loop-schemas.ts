@@ -1,5 +1,5 @@
 // The event loop watchdog's event (issue #1154, design.md "What holds the event loop"): the hopper's one event loop was
-// held, and for how long; the routes in flight and the slow store calls in it; where the loop ran while held and the
+// held, and for how long; the routes in flight and the store calls in it; where the loop ran while held and the
 // process's memory (issue #1383, both additive). Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 
