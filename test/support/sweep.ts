@@ -2,13 +2,19 @@
 // root `jh-run-<pid>-*` in the tmpdir, the processes carrying the run's marker HOPPER_TEST_RUN, and
 // the containers a test started — named `jh-<kind>-<pid>` or labelled `hopper.test-pid=<pid>`. A
 // pid that is alive belongs to a run still going (maybe a concurrent one), so only a dead pid's
-// leftovers are removed.
+// leftovers are removed, each container with its anonymous volumes. A run inside a hopper job also labels its containers
+// with the job's id (issue #1120), so the job's reap removes them when the job ends.
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { JOB_LABEL } from '../../src/client/reap.ts';
 
 export const RUN_MARKER = 'HOPPER_TEST_RUN';
 export const PID_LABEL = 'hopper.test-pid';
+
+/** The labels of a container a test starts: the run's pid, and in a hopper job its id (`hopper.job`). */
+export const containerLabels = (env: NodeJS.ProcessEnv = process.env, pid = process.pid): Record<string, string> =>
+  ({ [PID_LABEL]: String(pid), ...(env.HOPPER_JOB_ID ? { [JOB_LABEL]: env.HOPPER_JOB_ID } : {}) });
 const RUN_ROOT = /^jh-run-(\d+)-/;
 const CONTAINER = /^jh-.*-(\d+)$/;
 
@@ -87,7 +93,7 @@ export const dockerCli: Docker = {
   names: () => lines(['ps', '-a', '--format', '{{.Names}}']),
   labeled: () => lines(['ps', '-a', '--filter', `label=${PID_LABEL}`, '--format', `{{.ID}} {{.Label "${PID_LABEL}"}}`])
     .map((l) => { const [id = '', pid = ''] = l.split(' '); return { id, pid }; }),
-  remove: (ids) => { try { execFileSync('docker', ['rm', '-f', ...ids], { stdio: 'ignore', timeout: 60_000 }); } catch { /* gone, or no docker */ } },
+  remove: (ids) => { try { execFileSync('docker', ['rm', '-f', '-v', ...ids], { stdio: 'ignore', timeout: 60_000 }); } catch { /* gone, or no docker */ } },
 };
 
 function lines(args: string[]): string[] {

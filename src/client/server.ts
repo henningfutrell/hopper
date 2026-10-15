@@ -236,8 +236,9 @@ export function startClient(o: ClientOptions): Client {
   let link: Duplex | undefined;
   let timer: NodeJS.Timeout | undefined;
   let exited: Promise<void> = Promise.resolve();
+  // Only its scope and processes: not the job's end, so its containers stay for the reap at its end (issue #1120).
   const watch = startIsolationWatch({ ...o, log, stopJob: async (jobId) => {
-    const r = await runArgv(reapArgv(jobId), SCRIPT_TIMEOUT_MS);
+    const r = await runArgv(reapArgv(jobId, '', true), SCRIPT_TIMEOUT_MS);
     if (!readReap(r.stdout)) throw new Error(`the reap did not finish (${r.code}): ${r.stderr.slice(0, 200)}`);
   } });
 

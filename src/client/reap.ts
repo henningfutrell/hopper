@@ -11,6 +11,13 @@ export const isJobId = (id: unknown): id is string => typeof id === 'string' && 
 /** The transient user scope a job's pane shell (or a print agent's turn) runs in, when the machine has systemd. */
 export const scopeUnitOf = (jobId: string): string => `hopper-job-${jobId}`;
 
+/**
+ * The label a job's container or volume carries (issue #1120): `hopper.job=<its job id>`. Whatever a job starts in a
+ * container runtime with it (the hopper's own tests do) is the job's: its reap removes it, and the sweep reaps an ended
+ * job that still has one.
+ */
+export const JOB_LABEL = 'hopper.job';
+
 export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
 
@@ -34,6 +41,18 @@ const REAP_SCRIPT = [
   '    l=$(pids); [ -n "$l" ] && kill -KILL $l 2>/dev/null;',
   '  fi;',
   'fi;',
+  // The job's containers and volumes (issue #1120): each labelled with its id, in each container runtime there, a
+  // container with its anonymous volumes. Not a timed-out job's (keep): it may go on there. Only names a runtime gives
+  // (never an option), each call cut off at 30 s where `timeout` is, so a runtime that hangs never holds the reap.
+  'if [ "$k" != keep ]; then to=; command -v timeout >/dev/null 2>&1 && to="timeout 30"; for rt in docker podman; do',
+  '  command -v "$rt" >/dev/null 2>&1 || continue;',
+  `  for c in $($to "$rt" ps -aq --filter "label=${JOB_LABEL}=$id" 2>/dev/null); do case $c in -*|*[!A-Za-z0-9_.-]*) continue;; esac;`,
+  '    $to "$rt" rm -f -v "$c" >/dev/null 2>&1 && printf "hopper-removed-container %s\\n" "$c";',
+  '  done;',
+  `  for v in $($to "$rt" volume ls -q --filter "label=${JOB_LABEL}=$id" 2>/dev/null); do case $v in -*|*[!A-Za-z0-9_.-]*) continue;; esac;`,
+  '    $to "$rt" volume rm -f "$v" >/dev/null 2>&1 && printf "hopper-removed-volume %s\\n" "$v";',
+  '  done;',
+  'done; fi;',
   // The job's temp link /tmp/hopper-<job id> (issue #506), only while it points at this scratch dir.
   't=/tmp/hopper-$id; [ -n "$s" ] && [ -L "$t" ] && [ "$(readlink "$t")" = "$s" ] && rm -f "$t";',
   // Only ever this job's own scratch dir: <work tree>/.hopper-scratch/<job id>.
@@ -78,7 +97,7 @@ const REAP_SCRIPT = [
 ].map((l) => l.trim()).join(' ');
 
 // $@ the work trees whose scratch dirs to list. What it prints, one per line: the jobs with a scope, the
-// jobs with a process carrying their id, each work tree whose scratch area is there (issue #1120), each scratch dir with
+// jobs with a process carrying their id, the jobs with a container or a volume labelled with their id (issue #1120), each work tree whose scratch area is there (issue #1120), each scratch dir with
 // its age in seconds, and each job worktree in the work tree's workspace with its age (issue #1103). And the hopper's own
 // disk use (issue #1120): for each work tree it names, the KiB its scratch area and its job worktrees hold (`du -skx`, so
 // a link, such as a worktree's node_modules, counts as a link). Only where `timeout` is: a measure is cut off at 20 s, so a
@@ -91,6 +110,10 @@ const SURVEY_SCRIPT = [
   '  for f in /proc/[0-9]*/environ; do tr "\\0" "\\n" 2>/dev/null < "$f" | sed -n "s/^HOPPER_JOB_ID=//p"; done | sort -u | sed "s/^/hopper-proc /";',
   'fi;',
   'now=$(date +%s); to=; command -v timeout >/dev/null 2>&1 && to="timeout 20";',
+  'for rt in docker podman; do command -v "$rt" >/dev/null 2>&1 || continue;',
+  `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
+  `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
+  'done;',
   'for r in "$@"; do if [ -d "$r/.hopper-scratch" ]; then printf "hopper-root %s\\n" "$r";',
   '  [ -n "$to" ] && for p in "$r/.hopper-scratch" "$r/workspace/worktrees"; do',
   '    [ -d "$p" ] && [ ! -L "$p" ] || continue;',
@@ -120,13 +143,18 @@ export const reapArgv = (jobId: string, scratch = '', keep = false, discard = fa
 /** The argv that lists what jobs left on the machine: scopes, processes, and the scratch dirs under `roots`. */
 export const surveyArgv = (roots: readonly string[]): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', SURVEY_SCRIPT, 'sh', ...roots];
 
-/** What a finished reap said: the repositories it kept, and those whose branch was pushed (issue #630). Undefined when it did not finish. */
-export function readReap(stdout: string): { kept: string[]; pushed?: string[] } | undefined {
+/**
+ * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), and the containers and
+ * volumes of the job it removed (issue #1120). Undefined when it did not finish.
+ */
+export function readReap(stdout: string): { kept: string[]; pushed?: string[]; removed?: { containers: string[]; volumes: string[] } } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
   const pushed = named('hopper-pushed ');
-  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}) };
+  const containers = named('hopper-removed-container ');
+  const volumes = named('hopper-removed-volume ');
+  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}), ...(containers.length || volumes.length ? { removed: { containers, volumes } } : {}) };
 }
 
 /** One scratch dir the survey found: its job, path and age. */
@@ -136,7 +164,7 @@ export interface SurveyedTree { path: string; ageMs: number }
 /** One place of the hopper's in a work tree the survey measured (issue #1120): its scratch area or its job worktrees. */
 export interface SurveyedUsage { path: string; bytes: number }
 /** What a finished survey found. Undefined when it did not finish. */
-export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[] }
+export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[] }
 
 export function readSurvey(stdout: string): Survey | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
@@ -156,7 +184,7 @@ export function readSurvey(stdout: string): Survey | undefined {
     const t = /^hopper-tree (\d+) (\/.*\/workspace\/worktrees\/[^/]+)$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
-  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage };
+  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container ') };
 }
 
 /** A scratch dir a reap may name: absolute, one line, and the job's own. */

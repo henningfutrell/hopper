@@ -5,6 +5,7 @@
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rawRequest } from '../support/http.ts';
+import { containerLabels } from '../support/sweep.ts';
 import { harness, session, startWithAuth, stopAll } from '../support/sign-in-app.ts';
 
 const IMAGE = 'ghcr.io/ldapjs/docker-test-openldap/openldap:2023-10-30';
@@ -15,7 +16,7 @@ const ADMIN_STAFF = `cn=admin_staff,${PEOPLE}`;
 let ldap: StartedTestContainer;
 let url = '';
 beforeAll(async () => {
-  ldap = await new GenericContainer(IMAGE).withExposedPorts(389).withWaitStrategy(Wait.forLogMessage('slapd starting')).start();
+  ldap = await new GenericContainer(IMAGE).withExposedPorts(389).withLabels(containerLabels()).withWaitStrategy(Wait.forLogMessage('slapd starting')).start();
   url = `ldap://127.0.0.1:${ldap.getMappedPort(389)}`;
 }, 120_000);
 afterAll(async () => { await ldap?.stop(); });

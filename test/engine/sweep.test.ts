@@ -1,15 +1,9 @@
 // The sweep (issue #410): what it reaps of what jobs left on a machine, and when. The plan is pure; the
 // runner is driven with a fake machine shell, the store's jobs and work trail as plain lists.
 import { describe, expect, it } from 'vitest';
-import type { DomainEvent, Job, MachineSnapshot } from '../../src/domain/types.ts';
-import type { Executor, MachineShell, Survey } from '../../src/domain/ports.ts';
-import { createSweep, planSweep } from '../../src/engine/sweep.ts';
-
-const HOUR = 3600_000;
-const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
-  id, spec: { executor: 'x', payload: {}, machineId: 'm' }, priority: 50, status, approved: false, createdAt: '', updatedAt: '', attempts: 1, executorState: { cwd },
-});
-const none: Survey = { scopes: [], processes: [], scratch: [] };
+import type { Survey } from '../../src/domain/ports.ts';
+import { planSweep } from '../../src/engine/sweep.ts';
+import { HOUR, job, none, rig } from './sweep-rig.ts';
 
 describe('what the sweep reaps (issue #410)', () => {
   const jobs = new Map([
@@ -59,53 +53,20 @@ describe('what the sweep reaps (issue #410)', () => {
     ]);
   });
 
+  it('a job with a container or a volume left (issue #1120): reaped once it ended, whatever its age; never a parked or live job\'s, never a job it does not know', () => {
+    const parked = new Map([...jobs, ['park', job('park', 'parked')]]);
+    expect(planSweep({ ...none, containers: ['done', 'gone', 'run', 'queued', 'park', 'stranger'] }, (id) => parked.get(id), new Set(), 24 * HOUR))
+      .toEqual([{ jobId: 'done' }, { jobId: 'gone' }]);
+    expect(plan({ containers: ['done'], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }))
+      .toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);
+  });
+
   it('one reap per job: its processes and its scratch dir together', () => {
     expect(plan({ processes: ['done'], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }))
       .toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);
   });
 });
 
-/** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number } = {}) {
-  let now = Date.parse('2026-10-08T00:00:00Z');
-  // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
-  let budget = o.budget;
-  const surveys = [...(o.surveys ?? [])];
-  // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done.
-  const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job);
-  const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
-  const surveyed: string[][] = [];
-  const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
-  const logs: string[] = [];
-  const shell: MachineShell = {
-    async survey(roots) { surveyed.push(roots); return surveys.shift() ?? o.found ?? none; },
-    async reap(jobId, scratch, _keep, discard) {
-      reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
-      return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] };
-    },
-    async keepCredential() { throw new Error('not asked'); },
-    async reach() { throw new Error('not asked'); },
-    async discover() { throw new Error('not asked'); },
-  };
-  const executor = { name: 'x', validate: () => null, run: async () => ({ kind: 'failed' as const, error: '' }), machineShell: (m: MachineSnapshot) => (m.id === 'unreachable' ? undefined : shell) } satisfies Executor;
-  const machines = o.machines ?? [{ id: 'm', label: 'm', maxLanes: 1, online: true, executors: ['x'] }];
-  const sweep = createSweep({
-    clock: { now: () => new Date(now) },
-    stopping: () => false,
-    machines: { list: async () => machines },
-    executors: { get: (n: string) => (n === 'x' ? executor : undefined), names: () => ['x'] } as never,
-    store: {
-      jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
-      events: {
-        recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
-        append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
-      },
-      workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
-      settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
-    } as never,
-  }, (l) => logs.push(l));
-  return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
-}
 
 describe('the sweep runner (issue #410)', () => {
   it('asks each online machine about the work trees of the jobs it knows, then reaps what the plan says', async () => {
@@ -288,6 +249,29 @@ describe('the hopper\'s own disk use (issue #1120)', () => {
     expect(disk(r)).toHaveLength(1);
     expect(r.reaps).toHaveLength(reaps);
     expect(r.sweep.disk('m')).toEqual({ bytes: 5 * GIB, at: '2026-10-08T00:10:00.000Z', paths: places(3, 2), over: false });
+  });
+});
+
+describe('a job\'s containers and volumes (issue #1120)', () => {
+  it('the sweep reaps an ended job that still has one, and records what its reap removed: job.containers_removed', async () => {
+    const r = rig({ found: { ...none, containers: ['done', 'run'] }, containers: ['done'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'done' }]);
+    expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'] } }]);
+    expect(r.logs).toContainEqual(expect.stringContaining('removed 1 container and 1 volume of job done on m'));
+  });
+
+  it('a reap that removed none records nothing', async () => {
+    const r = rig({ found: { ...none, containers: ['done'] } });
+    await r.sweep.run(true);
+    expect(r.events).toEqual([]);
+  });
+
+  it('a discard records what its reap removed too', async () => {
+    const r = rig({ kept: ['old'], containers: ['old'] });
+    r.events[0]!.data = { paths: ['/w/.hopper-scratch/old/repo'] };
+    await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
+    expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'] } }]);
   });
 });
 
