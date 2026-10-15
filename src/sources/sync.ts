@@ -349,7 +349,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     // Run again, Continue and Rework.
     ...rerunning,
     pullRequestAct: afterDone.act,
-    tendAgain: afterDone.tendAgain,
+    tendAgain: afterDone.tendAgain, checkTendAgain: afterDone.checkTendAgain,
     async intakeAction(name, action) {
       const slot = slots.get(name);
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };

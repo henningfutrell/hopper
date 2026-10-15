@@ -6,7 +6,12 @@
       "type": "string",
       "enum": [
         "rerun",
-        "rework"
+        "rework",
+        "retry",
+        "continue",
+        "fixed",
+        "push",
+        "tend"
       ]
     },
     "error": {

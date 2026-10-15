@@ -9,7 +9,7 @@
 // its end reported again, so its issue loses `hopper:failed`. A throw is kept as a retry and asked again next sync.
 // A person's Merge now or Close PR (issue #677) is the same follow, with the act, on the same chain: recorded the same
 // way, with who pressed it; a throw goes back to the person. A person's Tend again (issue #1010) on a pull request the hopper
-// gave up on tends it at once, the same step, with who pressed it.
+// gave up on tends it at once, the same step, with who pressed it (tend-again.ts).
 // Tending (issue #736): a followed pull request that, as last seen, has merge conflicts or failing checks is not left for a
 // person. After its follow, off the report chain, the job's item runs again (`tend`, Run again by `tending`) with the tend
 // brief; the job follows it no more (`follow: tended`) and `job.pull_request_tended` names the new job, which brings the
@@ -63,12 +63,13 @@
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
 import { SourceError, type JobSource, type PullRequestActResult, type RerunResult, type SourceHost, type UserStore } from '../domain/ports.ts';
+import { createTendAgain } from './tend-again.ts';
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
 import { pullRequestCensus } from './census.ts';
 import {
-  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
+  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 import { pullRequestWaitOf } from '../domain/work-items.ts';
@@ -251,25 +252,7 @@ export function createAfterDone(c: AfterDoneContext) {
     return r;
   }
 
-  /**
-   * A person's Tend again (issue #1010) on a pull request the hopper gave up on: its tend job ended failed, cancelled or
-   * rejected. Marked (`tended.again`), so the step is due now, then tended at once — the same step, a new row of retries,
-   * `job.pull_request_tended` with who pressed it. Refused with why when the hopper did not give up, or the tend is refused.
-   */
-  async function tendAgain(jobId: string, acting: ActingPerson): Promise<RerunResult> {
-    const job = store.jobs.get(jobId);
-    if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-    const refused = (why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId}'s pull request cannot be tended again: ${why}` });
-    const why = tendAgainRefusal(job, job.source ? store.jobs.getBySourceKey(job.source.key) : undefined);
-    if (why) return refused(why);
-    const source = c.sourceOf(job);
-    if (!source) return refused('its source is not running');
-    const s = job.sourceState!.source as { tended: Tended };
-    c.setSource(jobId, { ...s, tended: { ...s.tended, again: new Date(c.now()).toISOString() } });
-    const r = await tendIfDue(source, jobId, acting);
-    // Not due: its tend job's end is not reported yet. The next sync tends it.
-    return r ?? refused('its tend job\'s end is not reported to its source yet: the hopper tends it at the next sync');
-  }
+  const again = createTendAgain({ store, sourceOf: c.sourceOf, finalReported: c.finalReported, setSource: c.setSource, now: c.now, tendIfDue });
 
   /**
    * The base merge of a due `rebase` (issue #967): whether the source merged the base branch into the pull request and
@@ -427,7 +410,8 @@ export function createAfterDone(c: AfterDoneContext) {
 
   return {
     act,
-    tendAgain,
+    tendAgain: again.tendAgain,
+    checkTendAgain: again.checkTendAgain,
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. `asked`: a census now. */
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all', asked = false): Promise<void> {
       const all = round === 'all';

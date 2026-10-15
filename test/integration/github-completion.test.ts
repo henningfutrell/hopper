@@ -10,6 +10,7 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { opensPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 import { connectGitHub } from '../support/github-account.ts';
+import { retry } from '../support/give-back.ts';
 
 const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
@@ -209,7 +210,8 @@ describe('resolve and release do not run finished work again (issue #637)', () =
     const record = await waitFor(async () => (await a.api<FailuresView>('GET', '/api/failures')).body.recent.find((r) => r.jobId === job.id), { what: 'the failure' });
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString() });
-    const r = await a.ui<{ error: string }>(`/ui/api/failures/${record.id}/retry`, {}, { token });
+    // Answered before the done-check (issue #1194): the refusal comes after, as the give-back's failure.
+    const r = await retry(a, record.id, token);
     expect(r.status).toBe(409);
     expect(r.body.error).toMatch(/needs no run again: its job is done at its source/);
     await a.waitForStatus(job.id, 'finished');
@@ -228,7 +230,7 @@ describe('resolve and release do not run finished work again (issue #637)', () =
     const record = await waitFor(async () => (await a.api<FailuresView>('GET', '/api/failures')).body.recent.find((r) => r.jobId === job.id), { what: 'the failure' });
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     gh.failNext('closingPullRequest', new GitHubApiError('pull requests: Resource not accessible by integration', true));
-    const r = await a.ui<{ error?: string }>(`/ui/api/failures/${record.id}/retry`, {}, { token });
+    const r = await retry(a, record.id, token);
     expect(r.status).toBe(200);
     await waitFor(async () => (await a.events('types=job.rerun')).some((e) => e.jobId === job.id), { what: 'the run again' });
   });

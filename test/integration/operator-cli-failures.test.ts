@@ -106,14 +106,18 @@ describe('hand-offs from the CLI (issue #623)', () => {
   it('continue, fixed and wont-do: the same resolutions as the UI\'s', async () => {
     const a = await boot();
     const one = await failed(a, 'HOPPER_FAILED the tests do not pass');
+    // Continue and I fixed it answer before the give-back (issue #1194): the job follows.
     const cont = await hopper(a, ['handoff', 'continue', one.handoff.id, '--note', 'Skip the flaky test.']);
     expect(cont.code).toBe(0);
-    const next = JSON.parse(cont.out).job as Job;
+    expect(JSON.parse(cont.out)).toEqual({ jobId: one.job.id, giveBack: 'continue' });
+    const next = await waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.rerunOf === one.job.id), { what: 'the job that goes on' });
     expect(String(next.spec.payload.prompt)).toContain('Skip the flaky test.');
 
     const two = await failed(a, 'HOPPER_FAILED no credentials for the registry');
     const again = await hopper(a, ['handoff', 'fixed', two.handoff.id, '--note', 'Added the token.']);
-    expect(JSON.parse(again.out).handoff).toMatchObject({ end: 'run_again', resolution: { action: 'fixed', note: 'Added the token.' } });
+    expect(JSON.parse(again.out)).toEqual({ jobId: two.job.id, giveBack: 'fixed' });
+    const closed = await waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.id === two.handoff.id && h.status === 'closed'), { what: 'the hand-off closed' });
+    expect(closed).toMatchObject({ end: 'run_again', resolution: { action: 'fixed', note: 'Added the token.' } });
     const rerun = (await a.events('types=job.rerun')).find((e) => e.jobId === two.job.id);
     expect(rerun?.data).toEqual({ by: 'user', ...CLI });
 
@@ -143,8 +147,8 @@ describe('failures from the CLI (issue #623)', () => {
     expect((JSON.parse(list.out) as { id: string }[]).map((r) => r.id)).toContain(record.id);
     const r = await hopper(a, ['failure', 'retry', record.id]);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.out)).toMatchObject({ rerunOf: job.id });
-    const rerun = (await a.events('types=job.rerun')).find((e) => e.jobId === job.id);
+    expect(JSON.parse(r.out)).toEqual({ jobId: job.id, giveBack: 'retry' });
+    const rerun = await waitFor(async () => (await a.events('types=job.rerun')).find((e) => e.jobId === job.id), { what: 'the run again' });
     expect(rerun?.data).toEqual({ by: 'user', ...CLI });
   });
 });

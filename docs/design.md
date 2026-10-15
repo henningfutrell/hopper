@@ -11387,8 +11387,17 @@ the next read, never from a poll.
   fails — GitHub out of reach or refusing, the issue no longer assigned and not to be assigned, a newer job made meanwhile —
   records `job.give_back_failed` with why and makes no job; the act is offered again. The same act sent again while one
   runs answers that one. The state is kept in memory, as the write-behind's is: after a restart the job is as it ended,
-  and Run again is offered. Failures' Retry, a hand-off's Continue and I fixed it, Push it and Tend again still await
-  their give-back.
+  and Run again is offered.
+- **Retry, a hand-off's Continue and I fixed it, Push it, Tend again** (`SourceRegistry.afterAnswer`, part 4). Each
+  awaited the same give-back, and Retry also its source's done-check. Now each is checked by its own service —
+  `Failures.retryable`, `Failures.handoffResolvable`, `pushable` (`src/failures/kept-work.ts`), `checkTendAgain`
+  (`src/sources/tend-again.ts`): the record, hand-off or kept work as the view offers it, and for Tend again its tend
+  job's end reported —, then the answer, `202 { jobId, giveBack }`, `jobId` the ended job. The act's own path runs after,
+  unchanged: the failure `retried`, the hand-off closed, the job continued (`job.continued`) or tended
+  (`job.pull_request_tended`). One that fails records `job.give_back_failed`, its `act` `retry`, `continue`, `fixed`,
+  `push` or `tend`; a Retry whose work is done at its source finishes its job, and says so there. The same job's act sent
+  again while one runs answers that one, whatever act it was. Done by hand and Won't do write nothing first and answer
+  as before. A stuck cause's bulk action still awaits each item, one after another.
 - **Queue order and the landing batches** record and answer without GitHub: the budget test holds them to it.
 - **The UI.** Approve and Decline wait on the card only for the answer. Discard shows removing from the click on, and
   `failureAct` reads the failures again before the action ends, so the entry shows the result, never what was before.
@@ -11398,14 +11407,17 @@ the next read, never from a poll.
   Run again (Dashboard) and Send back for rework (Pull requests; `ui/src/store/give-back.ts`): from the click on, the
   button says Running again or Sending back and sends nothing more, until the stream's `job.rerun`,
   `job.rework_requested` or `job.give_back_failed` for that job says how it ended — a toast says which, a failure with why.
+  Retry and a hand-off's Continue and I fixed it (Failures), Push it (Work not pushed, which offers no Discard
+  meanwhile) and Tend again (Pull requests) do the same, until `job.rerun`, `job.continued`, `job.pull_request_tended` or
+  `job.give_back_failed`; the Pull requests page reads its cards again then.
 - **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
   Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
-  answer in under 200 ms, their decision recorded, and the slow work ends after.
+  answer in under 200 ms, their decision recorded, and the slow work ends after;
+  `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same.
 
-Not yet so (issue #1194, later parts): Failures' Retry, a hand-off's resolution, Push it, Tend again, and Merge now and
-Close PR still await GitHub; answer, end wait and pick up are local but not measured against the budget; Take into
-Intake's write-behind shows in the source's detail only, not on its Pull requests row; and no end-to-end check measures
-the card in a browser.
+Not yet so (issue #1194, later parts): Merge now and Close PR, and a stuck cause's bulk action, still await GitHub;
+answer, end wait and pick up are local but not measured against the budget; Take into Intake's write-behind shows in the
+source's detail only, not on its Pull requests row; and no end-to-end check measures the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 

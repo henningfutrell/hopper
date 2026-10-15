@@ -26,7 +26,7 @@ import { ago } from '@/model/format';
 import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
 import { act } from '@/store';
-import { giveBack, useGivingBack } from '@/store/give-back';
+import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { setPolled } from '@/store/polled';
 import { useCanOperate } from '@/store/selectors';
 
@@ -56,7 +56,7 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   // Answered at once (issue #1194): the pull request is made a draft after, and the card waits until the stream says so.
   const rework = async () => {
     setBusy(true);
-    const ok = await giveBack(c.jobId, 'rework', { notes: notes.trim() });
+    const ok = await giveBack(c.jobId, 'rework', { body: { notes: notes.trim() }, ended: onChanged });
     setBusy(false);
     if (ok) { setReworking(false); setNotes(''); onChanged(); }
   };
@@ -93,17 +93,13 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
  */
 function TendAgain({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
   const operator = useCanOperate();
-  const [busy, setBusy] = useState(false);
+  const tending = useGivingBack((s) => s[c.jobId] === 'tend');
   if (!operator || c.state !== 'open' || c.waits !== 'tend failed' || !c.tendJobId) return null;
-  const run = async () => {
-    setBusy(true);
-    await act('/ui/api/pull-requests/tend', { jobId: c.jobId }, `${c.pullRequest ? `#${c.pullRequest.number}` : 'The pull request'} is tended again`);
-    setBusy(false);
-    onChanged();
-  };
+  // Answered at once (issue #1194): the tend runs after, and the button waits until the stream says how it ended.
+  const run = () => giveBack(c.jobId, 'tend', { path: '/ui/api/pull-requests/tend', body: { jobId: c.jobId }, ended: onChanged });
   return (
     <div data-slot="pr-tend-again" className="flex flex-wrap items-center gap-2 pt-1">
-      <Button size="sm" disabled={busy} onClick={() => void run()}><RotateCw />Tend again</Button>
+      <Button size="sm" disabled={tending} onClick={() => void run()}><RotateCw />{tending ? PENDING.tend : 'Tend again'}</Button>
       <span className="text-xs text-muted-foreground">A new job takes the same step. Read why it failed first.</span>
     </div>
   );
