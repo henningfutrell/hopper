@@ -40,7 +40,8 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
     const own = repo.issues.get(n);
     if (own?.pullRequest && own.pull) {
       const mergedAt = (pr as { mergedAt?: string } | undefined)?.mergedAt;
-      return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', url, ...pullState(own), ...(mergedAt ? { mergedAt } : {}) } } } } };
+      const errors = rollupRefused(repo) ? [rollupForbidden(['repository', 'issueOrPullRequest'])] : [];
+      return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', url, ...pullState(own, repo), ...(mergedAt ? { mergedAt } : {}) } } }, ...(errors.length ? { errors } : {}) } };
     }
     if (pr) {
       const { body: _b, repo: _r, ...rest } = pr as typeof pr & { body?: string; repo?: string };
@@ -172,13 +173,19 @@ function listing(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
 const notResolved = (alias: string, vars: Record<string, unknown>, o: string, n: string) =>
   ({ type: 'NOT_FOUND', path: [alias], message: `Could not resolve to a Repository with the name '${String(vars[o])}/${String(vars[n])}'.` });
 
+/** The token may not read the repository's checks (issue #1244): GitHub answers the rollup null, with a FORBIDDEN error on it. */
+const rollupRefused = (repo: FakeRepo): boolean => repo.lacks.length > 0;
+const rollupForbidden = (at: (string | number)[]) =>
+  ({ type: 'FORBIDDEN', path: [...at, 'commits', 'nodes', 0, 'commit', 'statusCheckRollup'], message: 'Resource not accessible by integration' });
+
 /** A pull request entry as the in-motion cycle reads it (issue #985). */
-function pullState(i: FakeIssue) {
+function pullState(i: FakeIssue, repo?: FakeRepo) {
   const p = i.pull ?? {};
+  const rollup = p.checks && !(repo && rollupRefused(repo)) ? { state: p.checks } : null;
   return {
     state: p.state ?? (i.state === 'open' ? 'OPEN' : 'CLOSED'), isDraft: p.isDraft ?? false, mergeable: p.mergeable ?? 'UNKNOWN', createdAt: p.createdAt ?? i.updatedAt,
     body: i.body, headRefName: p.headRef ?? `issue-${i.number}`, headRefOid: p.headOid ?? `h${i.number}`, baseRefName: p.base ?? 'main',
-    commits: { nodes: [{ commit: { committedDate: p.committedAt ?? p.createdAt ?? i.updatedAt, statusCheckRollup: p.checks ? { state: p.checks } : null } }] },
+    commits: { nodes: [{ commit: { committedDate: p.committedAt ?? p.createdAt ?? i.updatedAt, statusCheckRollup: rollup } }] },
   };
 }
 
@@ -202,8 +209,9 @@ function pulls(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
     const issue = repo.issues.get(Number(/issue\(number: (\d+)\)/.exec(selection)?.[1]));
     if (!pr?.pullRequest) errors.push({ type: 'NOT_FOUND', path: [alias, 'pr'], message: 'Could not resolve to a PullRequest.' });
     if (!issue) errors.push({ type: 'NOT_FOUND', path: [alias, 'issue'], message: 'Could not resolve to an Issue.' });
+    if (pr?.pullRequest && rollupRefused(repo)) errors.push(rollupForbidden([alias, 'pr']));
     data[alias] = {
-      pr: pr?.pullRequest ? pullState(pr) : null,
+      pr: pr?.pullRequest ? pullState(pr, repo) : null,
       issue: issue ? { state: issue.state.toUpperCase(), stateReason: issue.stateReason?.toUpperCase() ?? null, updatedAt: issue.updatedAt } : null,
     };
   }

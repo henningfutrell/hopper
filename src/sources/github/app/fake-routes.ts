@@ -84,6 +84,18 @@ function installationRepos(ctx: FakeCtx, req: FakeReq): FakeReply {
   return { status: 200, body: { total_count: repos.length, repositories: p.items }, headers: p.headers };
 }
 
+/**
+ * A commit's check runs or combined status (issue #1244), of the pull request entry whose head is `ref` (its head commit or
+ * branch); 403 when the token lacks the permission.
+ */
+function commitChecks(repo: FakeRepo, ref: string, what: 'checks' | 'statuses'): FakeReply {
+  if (repo.lacks.includes(what)) return { status: 403, body: { message: 'Resource not accessible by integration' } };
+  const pull = [...repo.issues.values()].find((i) => i.pullRequest && ((i.pull?.headOid ?? `h${i.number}`) === ref || (i.pull?.headRef ?? `issue-${i.number}`) === ref))?.pull;
+  if (what === 'checks') return { status: 200, body: { total_count: pull?.checkRuns?.length ?? 0, check_runs: pull?.checkRuns ?? [] } };
+  const statuses = pull?.statuses ?? [];
+  return { status: 200, body: { state: statuses.length ? statuses[0]!.state : 'pending', total_count: statuses.length, statuses } };
+}
+
 function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): FakeReply | undefined {
   const body = (req.body ?? {}) as Record<string, unknown>;
   if (req.method === 'GET' && rest === '/issues') {
@@ -109,6 +121,8 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     if (!endPull(repo, Number(merge[1]), 'MERGED', ctx.now().toISOString())) return { status: 405, body: { message: 'Pull Request is not mergeable' } };
     return { status: 200, body: { merged: true, message: 'Pull Request successfully merged' } };
   }
+  const commit = /^\/commits\/([^/]+)\/(check-runs|status)$/.exec(rest);
+  if (req.method === 'GET' && commit) return commitChecks(repo, decodeURIComponent(commit[1]!), commit[2] === 'check-runs' ? 'checks' : 'statuses');
   const m = /^\/issues\/(\d+)(\/comments|\/events|\/labels(?:\/(.+))?)?$/.exec(rest);
   const issue = m ? repo.issues.get(Number(m[1])) : undefined;
   if (!m || !issue) return notFound;

@@ -57,6 +57,8 @@ export interface PullRequestCard {
   state: 'open' | 'merged' | 'closed';
   /** Its checks as last seen: `none`, it has none; `unknown`, not seen yet. */
   checks: PullRequestSeen['checks'] | 'unknown';
+  /** Why its checks are `unknown` (issue #1244), as the follow last saw it; absent: known, or not said. */
+  checksWhy?: string;
   mergeable: 'mergeable' | 'conflicts' | 'unknown';
   draft: boolean;
   /** The branch it merges into, as last seen (issue #677). */
@@ -165,7 +167,7 @@ function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob:
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
     ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
     ...(retryAt !== undefined ? { tendWaits: retryWaits(f.tended!, tendJob!, retryAt) } : {}),
-    ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
+    ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}), ...(seen?.checks === 'unknown' && seen.checksWhy ? { checksWhy: seen.checksWhy } : {}),
   };
 }
 

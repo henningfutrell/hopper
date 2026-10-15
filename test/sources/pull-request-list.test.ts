@@ -37,6 +37,12 @@ describe('why a pull request waits (issue #677)', () => {
     expect(waits(seen()).waits).toBe('ready');
   });
 
+  it('checks the hopper cannot read: checks unknown, never ready, and the card says why (issue #1244)', () => {
+    const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
+    expect(waits(seen({ checks: 'unknown', checksWhy: why }))).toMatchObject({ waits: 'checks unknown', checksWhy: why });
+    expect(waits(seen({ checks: 'unknown' }))).not.toHaveProperty('checksWhy');
+  });
+
   it('yolo on, checks running: checks pending', () => {
     expect(waits(seen({ checks: 'pending' })).waits).toBe('checks pending');
   });

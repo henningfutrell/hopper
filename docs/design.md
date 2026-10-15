@@ -14726,6 +14726,22 @@ that field. The hopper keeps the answer and takes those checks as `unknown` (`sr
 done-check, the follow and the reconcile go on, and yolo mode never merges a pull request whose checks are `unknown`
 (card `checks unknown`). Any other GraphQL error still fails the call.
 
+**Checks fallback** (issue #1244, `src/sources/github/checks-fallback.ts`). A pull request whose checks are `unknown`
+has them read again over REST, with the same connection: its head commit's check runs
+(`GET /repos/{owner}/{repo}/commits/{ref}/check-runs`, Checks read) and its combined status
+(`GET /repos/{owner}/{repo}/commits/{ref}/status`, Commit statuses read), one state as the rollup says it — one failed
+fails it, one still running keeps it pending, all passed is passing, none is no checks (`src/sources/github/app/rest-checks.ts`).
+Every read of the port that tells a pull request's checks goes through it (the follow's batch and its read by number, the
+reconcile), in both GitHub sources, inside the pass reads. Yolo mode then merges on passing checks as on any other.
+Nothing falls back to another credential: a source reads only with its own connection.
+When GitHub refuses the REST read too (403, 404), the checks stay `unknown` and say why (`checksWhy` on what the follow
+sees and on the card): the connection (the GitHub App, or the connected GitHub account), the permissions it lacks, and
+the fix. The card says `checks unknown: <why>`. Which read works is kept per repository in memory: a refused repository is
+not asked again for ten minutes (`UNREADABLE_KEEP_MS`), so a sync over many of its pull requests asks GitHub once, and a
+permission added is seen within ten minutes. A REST read that fails otherwise (a timeout, 5xx) keeps the checks `unknown`
+with GitHub's error, and is asked again at the next read. Not done yet (part 2): one problem per repository, and a Needs
+you row, when no read of its checks works.
+
 **A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
 newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
 else one on a branch named for the issue. Found, it is named in the job's source state and followed as any other, so a
