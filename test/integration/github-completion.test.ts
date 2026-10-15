@@ -75,7 +75,7 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toMatch(new RegExp(`^not complete: the issue ${issue.url} is open, and no pull request in ${REPO} that closes or references it is ready for review or merged since the job began: #\\d+ \\(open, draft\\)(, #\\d+ \\(open, draft\\))*$`));
+    expect(failed.error).toMatch(new RegExp(`^not complete: the issue ${issue.url} is open, and PR #\\d+: a draft, and no pull request in ${REPO} that closes or references it is ready for review or merged since the job began: #\\d+ \\(open, draft\\)(, #\\d+ \\(open, draft\\))*$`));
     expect((await a.events('types=job.finish_briefed')).filter((e) => e.jobId === job.id)).toHaveLength(MAX_FINISH_BRIEFS);
   });
 

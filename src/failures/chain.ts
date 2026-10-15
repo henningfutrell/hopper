@@ -5,7 +5,7 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import type { LivenessFacts, TimeoutKind } from './timed-out.ts';
 import type { AssessInput, RecentFailure } from './assess.ts';
-import { OWN_PR_CHECKS_RED } from './causes.ts';
+import { OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
 
 type Reads = Pick<UserStore, 'jobs' | 'failures'>;
 
@@ -52,17 +52,21 @@ export function earlierTimeoutsOf(store: Reads, job: Job): TimeoutKind[] {
  * How many times its chain was sent back for the red checks of its own pull request (issue #1230): each record of the job,
  * and of the jobs a retry ran again before it, of that cause, whose Continue was made. A continued run is the same job.
  */
-export function checksFixesOf(store: Reads, job: Job): number {
+export function checksFixesOf(store: Reads, job: Job, causeId = OWN_PR_CHECKS_RED): number {
   let n = 0;
   for (let cur: Job | undefined = job; cur; cur = cur.rerunOf ? store.jobs.get(cur.rerunOf) : undefined) {
-    n += store.failures.list({ jobId: cur.id }).filter((r) => r.causeId === OWN_PR_CHECKS_RED && r.outcome === 'retried').length;
+    n += store.failures.list({ jobId: cur.id }).filter((r) => r.causeId === causeId && r.outcome === 'retried').length;
   }
   return n;
 }
 
-/** What the rules read of a failure's chain for its cause: a timed-out job's (issue #630), a red-checks one's (issue #1230). */
-export function causeInputOf(store: Reads, job: Job, causeId: string | undefined): Partial<Pick<AssessInput, 'earlierTimeouts' | 'liveness' | 'checksFixes'>> {
+/**
+ * What the rules read of a failure's chain for its cause: a timed-out job's (issue #630), a red-checks one's (issue #1230),
+ * an unfinished pull request's (issue #1265): how many times its chain was sent back for that cause.
+ */
+export function causeInputOf(store: Reads, job: Job, causeId: string | undefined): Partial<Pick<AssessInput, 'earlierTimeouts' | 'liveness' | 'checksFixes' | 'unfinishedFixes'>> {
   if (causeId === 'timed-out') return timeoutInputOf(store, job);
+  if (causeId === OWN_PR_UNFINISHED) return { unfinishedFixes: checksFixesOf(store, job, OWN_PR_UNFINISHED) };
   return causeId === OWN_PR_CHECKS_RED ? { checksFixes: checksFixesOf(store, job) } : {};
 }
 

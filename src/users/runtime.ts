@@ -378,8 +378,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
     resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
-    // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source.
-    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs,
+    // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source; Own PR unfinished (issue #1265): the step that finishes it.
+    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs, unfinishedPullRequest: async (job) => sourceOf(job)?.unfinishedPullRequest?.(job),
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
