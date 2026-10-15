@@ -160,7 +160,8 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     try { o.raise(told); } catch (e) { o.warn(`hopper: the event loop stall could not be raised: ${(e as Error).message}`); }
   };
   timer.unref();
-  app.addHook('onClose', async () => { clearInterval(timer); await o.held?.end(); });
+  // The held thread ends on its own time: a close never waits on it.
+  app.addHook('onClose', async () => { clearInterval(timer); void o.held?.end().catch(() => undefined); });
 
   return {
     last: () => (last && performance.now() - last.seen < STALL_SHOWN_MS ? last.stall : undefined),
