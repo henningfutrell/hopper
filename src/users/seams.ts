@@ -5,7 +5,6 @@ import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
 import { kubernetesPlugin } from '../plugins/executor/kubernetes/index.ts';
 import { kubernetesMachinePlugin } from '../plugins/machine-source/kubernetes-cluster/index.ts';
 import type { KubernetesPods } from '../domain/pods.ts';
-import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { localPlugin } from '../plugins/machine-source/local/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
@@ -25,8 +24,6 @@ export interface UserSeams {
   executors?: Executor[];
   /** Replaces the connected account's adapter of every github-account job source; the account still has to be connected. */
   github?: GitHubApi;
-  /** Replaces the App adapter of every github-app job source (detection says available; paused() still follows the app file). */
-  githubApp?: GitHubApi;
   /** A hand-settable usage source the decider reads, set through `engine.setFakeUsage` (tests). */
   fakeUsage?: SettableUsageSource;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
@@ -70,7 +67,6 @@ export function withSeams(seams: UserSeams, outbound: Outbound) {
     if (p.id === 'kubernetes-cluster' && seams.kubernetes) return kubernetesMachinePlugin(seams.kubernetes);
     if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
     if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
-    if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
     if (p.id === 'grokbot-routine') return grokbotRoutinePlugin({ ...seams.grokbot, outbound });
     return p;
   });

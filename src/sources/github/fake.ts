@@ -6,8 +6,7 @@
 // not (issue #430). The hopper's own merge (`merge`, yolo mode) merges as a person's does; a draft or one with
 // merge conflicts is refused (405). An issue is assigned to the fake's own login unless
 // `assignees` says otherwise (issue #387: intake is by label and assignee).
-// Default identity: a connected account (writes appear as `login`). With `app`, writes appear as the bot and the
-// app-only methods exist: the bot login and the installed repos.
+// Its identity: a connected account (writes appear as `login`, through the hopper's app).
 // A repository listing (issue #985) lists the open issues of each repository with one of the labels; a repository
 // `failRepo` names is one GitHub does not answer for. Each change to an issue moves its `updatedAt`, as on GitHub.
 
@@ -18,14 +17,14 @@ import { fakeHeadChecks } from './fake-head-checks.ts';
 import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, IssueEvent, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 import { createFakeCrossReferences } from './fake-cross-references.ts';
-import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
+import type { FakeActor, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
 import { fakeConflicts } from './fake-conflicts.ts'; import { fakeChangedLines } from './fake-changed-lines.ts';
 import { fakeIssuePlace } from './fake-issue-place.ts';
 import { fakePulls } from './fake-pulls.ts';
 import { fakePullActs } from './fake-pull-acts.ts';
 import { fakeListing } from './fake-listing.ts';
 
-export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
+export type { FakeActor, FakeGitHub, PullRequestInput } from './fake-types.ts';
 
 /** The app the fake's own writes go through (issue #652): a connected account's are marked with the hopper's app. */
 export const FAKE_HOPPER_APP = 'hopper-test-app';
@@ -34,9 +33,8 @@ const notFound = (what: string) => new GitHubApiError(`gh: Not Found (HTTP 404):
 const notOpen = (url: string): never => { throw new Error(`no open pull request ${url}`); };
 
 /** `defaultBranch` (issue #1337): a merge into another base closes no issue, as on GitHub. Absent: every merge closes it. */
-export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; defaultBranch?: string } = {}): FakeGitHub {
+export function createFakeGitHub(o: { login?: string; defaultBranch?: string } = {}): FakeGitHub {
   const human = o.login ?? 'owner';
-  let installed = [...(o.app?.installedRepos ?? [])];
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
   const assigned = new Map<string, { login: string; at: string }[]>();
@@ -47,8 +45,8 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; def
     const who: Exclude<FakeActor, string> = typeof by === 'string' ? { login: by } : by;
     events.set(k, [...(events.get(k) ?? []), { ...e, at, actor: who.login, ...('id' in who && who.id !== undefined ? { actorId: who.id } : {}), actorType: who.type ?? (/\[bot\]$/.test(who.login) ? 'Bot' : 'User'), ...(who.viaApp ? { viaApp: who.viaApp } : {}) }]);
   };
-  /** The fake's own writes: as the app's bot, or as the connected account through the hopper's app. */
-  const self: FakeActor = o.app ? { login: o.app.botLogin, type: 'Bot', viaApp: FAKE_HOPPER_APP } : { login: o.login ?? 'owner', viaApp: FAKE_HOPPER_APP };
+  /** The fake's own writes: as the connected account, through the hopper's app. */
+  const self: FakeActor = { login: human, viaApp: FAKE_HOPPER_APP };
   const labels = new Map<string, Set<string>>();
   const conflicts = fakeConflicts((m, a) => enter(m, a), (url) => { const p = pull(url); Object.assign(p, { headCommittedAt: new Date().toISOString(), conflicting: false }); if (p.checks) p.checks = 'pending'; });
   const closers = new Map<string, ClosingPullRequest>();
@@ -181,13 +179,13 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; def
       const onPull = issues.has(key(repo, n)) ? undefined : acts.comment(repo, n, body, commentId + 1);
       if (onPull) { commentId += 1; return onPull; }
       const i = find(repo, n);
-      const c: GitHubComment = { id: ++commentId, author: o.app?.botLogin ?? human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
+      const c: GitHubComment = { id: ++commentId, author: human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
       return { id: c.id, url: c.url };
     },
     async closeAsCompleted(repo, n) {
       enter('closeAsCompleted', [repo, n]);
-      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: o.app?.botLogin ?? human, closedAt: stamp(), stateReason: 'completed' }); touch(i);
+      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: stamp(), stateReason: 'completed' }); touch(i);
     },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
@@ -223,7 +221,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; def
       const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
       if (!p) throw notFound(`${repo}/pull/${n}`);
       if (p.state !== 'open' || p.isDraft || p.conflicting) throw new GitHubApiError(`Pull Request is not mergeable (HTTP 405): ${p.url}`, true, 405);
-      merged(p, new Date().toISOString(), o.app?.botLogin ?? human);
+      merged(p, new Date().toISOString(), human);
     },
     ...acts.api,
     jobLog: jobLogs.jobLog,
@@ -231,23 +229,14 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; def
     headChecks: heads.headChecks,
   };
 
-  // A connected account's listing across repos; the app's installation token has none.
-  if (!o.app) {
-    api.listAssignedIssues = async (label) => {
-      enter('listAssignedIssues', [label]);
-      return open(label).filter((i) => i.assignees.some((a) => a.toLowerCase() === human.toLowerCase())).map(copy);
-    };
-  }
-
-  if (o.app) {
-    const app = o.app;
-    api.botLogin = async () => { enter('botLogin', []); return app.botLogin; };
-    api.listInstalledRepos = async () => { enter('listInstalledRepos', []); return installed.map((repo, i) => ({ repo, installationId: 100 + i })); };
-  }
+  // A connected account's listing across repos.
+  api.listAssignedIssues = async (label) => {
+    enter('listAssignedIssues', [label]);
+    return open(label).filter((i) => i.assignees.some((a) => a.toLowerCase() === human.toLowerCase())).map(copy);
+  };
 
   const fake: FakeGitHub = {
     ...api,
-    setInstalledRepos(repos) { installed = [...repos]; },
     calls,
     createIssue({ repo, title, body, author, authorId, assignees, labels: ls, labelledBy, assignedBy, parent }) {
       const number = [...issues.values()].filter((i) => i.repo === repo).length + 1;

@@ -20,7 +20,7 @@ function setup(o: { migration?: IntakeMigration; knownKeys?: (k: string[]) => Se
   let migration = o.migration;
   const config = githubConfig({ ...(o.repos ? { repos: o.repos } : {}), ...(o.hopperName ? { hopperName: o.hopperName } : {}) });
   const options: GitHubSourceOptions = {
-    name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh,
+    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config, api: gh,
     // Assign to me is the user's act (issue #652): what this source assigned, as its events say.
     trust: testTrust(undefined, { assignedHere: (k) => events.some((e) => e.type === 'source.issues_assigned' && (e.data.keys as string[]).includes(k)) }),
     clock: { now: () => new Date('2026-10-08T10:00:00.000Z') },
@@ -70,7 +70,7 @@ describe('intake outcomes (issue #440)', () => {
   it('a rejected issue says so until it is assigned again', async () => {
     const { gh } = setup({ migration: migrated });
     const rejecting = createGitHubSource({
-      name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
+      name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
       clock: { now: () => new Date() }, trust: testTrust(), rejections: (keys) => new Map(keys.map((k) => [k, { at: '2026-10-08T09:30:00.000Z', assignee: 'owner' }])),
     });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });

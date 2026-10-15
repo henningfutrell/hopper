@@ -5,9 +5,8 @@
 // back as cancel signals; unassigning the account cancels a waiting job and flags a started one. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
 //
-// One source, two identities (`mode`): `account` writes as the connected account's user and tells
-// hopper comments by their marker; `app` writes as the app bot, scans only the repos the app is
-// installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
+// One identity (issue #1377): the connected account's user, through the hopper's GitHub App. It writes as that user and
+// tells hopper comments by their marker. It lists only the job repositories; it never searches.
 //
 // Intake reads the listing cache (issue #985, `listing.ts`): the job repositories are listed again every intake sync
 // interval, at once when a person asked for the sync, or at the next sync after a GitHub delivery said the repository
@@ -36,13 +35,12 @@ import { followedBatch } from './followed-batch.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
 import { gitHubThread } from './thread.ts';
-import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock, type SourceMode } from './context.ts';
+import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
 import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
-import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { awaitingBatch, closePromoted, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
@@ -54,14 +52,10 @@ export type GitHubSourceSettings = Pick<GitHubSourceConfig,
   'repos' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'executor' | 'model' | 'recentComments' | 'projects' | 'issueGraph' | 'graphRefreshMinutes'
 >;
 
-/** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
-export type GitHubAppInfo = { ok?: true; slug: string; htmlUrl: string; botLogin?: string } | { ok: false; reason: string };
-
 export interface GitHubSourceOptions {
   name: string;
   /** Defaults to `name`. */
   kind?: string;
-  mode: SourceMode;
   config: GitHubSourceSettings;
   api: GitHubApi;
   clock: Clock;
@@ -80,8 +74,6 @@ export interface GitHubSourceOptions {
   rejections?: (keys: string[]) => Map<string, Rejection>;
   /** A reason not to discover right now (see JobSource.paused). */
   paused?: () => string | undefined;
-  /** App mode: slug/htmlUrl for the install link, or why the app is not usable. */
-  appInfo?: () => GitHubAppInfo | undefined;
   /** Claim holders, the intake migration and intake events (issue #440); absent: claims carry no holder and nothing is migrated. */
   intake?: IntakeContext;
   /** The user's trusted actors and approvals (issue #652): an issue not of a trusted origin is a request card. */
@@ -106,9 +98,6 @@ export const MIGRATION_RELEASED = 'released a claim with no holder recorded and 
 export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to take it';
 
 
-export const CONFIG_URL = 'https://github.com/settings/installations';
-export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its private key on the setup card in Sources';
-
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { config } = o;
   const listings = o.listings ?? memoryListings();
@@ -116,8 +105,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { api } = reads;
   const listingEveryMs = o.listingEveryMs ?? (() => DEFAULT_RATE_LIMITER.intakeSyncMinutes * 60_000);
   const listing = createIntakeListing({ api, listings, clock: o.clock, everyMs: listingEveryMs });
-  const { mode } = o;
-  const app = mode === 'app';
   const login = o.whoami;
   let repoErrors: Record<string, string> = {};
   let projectErrors: Record<string, string> = {};
@@ -129,10 +116,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   // The repos outside the scope (issue #440); the user's tagged items (issue #1141), read on their own timer, the intake sync interval.
   const outside = outsideReader(api, config); const tagged = taggedReader({ source: o.name, api, label: config.label, clock: o.clock, everyMs: listingEveryMs, ...(o.intake ? { intake: o.intake } : {}) });
   let lastDiscoverAt: string | undefined;
-  let installedRepos: string[] = [];
-  /** When the installed repositories were last asked (issue #985): a timed sync asks again only each intake sync interval. */
-  let installedAt: number | undefined;
-  let nothingToScan = false;
   /** The job repositories the last discover scanned: what a GitHub delivery may name (issue #1079). */
   let scanned: string[] = [];
   const ensuredLabels = new Set<string>();
@@ -148,43 +131,19 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
-  /** App mode: the bot, once known (the app file, or the first sync). */
-  let knownBot: string | undefined;
-  const botLogin = async (): Promise<BotLogin> => {
-    if (!app) return undefined;
-    if (!api.botLogin) throw new Error('app mode needs the GitHub App adapter (no botLogin)');
-    knownBot = await api.botLogin();
-    return knownBot;
-  };
-
-  /**
-   * The installation is the allowlist; config `repos`, when set, narrows it further. A timed sync (`due`) asks GitHub for it
-   * only each intake sync interval, as the listing (issue #985); a sync a person asked for asks at once.
-   */
-  const appScope = async (due: boolean): Promise<string[]> => {
-    if (!api.listInstalledRepos) throw new Error('app mode needs the GitHub App adapter (no listInstalledRepos)');
-    const now = o.clock.now().getTime();
-    if (!due || installedAt === undefined || now - installedAt >= listingEveryMs()) {
-      installedRepos = (await api.listInstalledRepos()).map((r) => r.repo);
-      installedAt = now;
-    }
-    const wanted = new Set(config.repos.map((r) => r.toLowerCase()));
-    return config.repos.length === 0 ? installedRepos : installedRepos.filter((r) => wanted.has(r.toLowerCase()));
-  };
-
   /**
    * The issue's declared parts and how many are done (issue #729). Its merged parts cannot be read now: the ticked ones
    * only, read again next sync.
    */
   const issueParts = (issue: GitHubIssue) => partsOf(api, issue).catch(() => tickedParts(issue));
 
-  const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin, assignee: string | undefined): Promise<SourceItem> => {
+  const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, assignee: string | undefined): Promise<SourceItem> => {
     // An item whose job has not ended is offered only to follow its priority: its comments are not read (issue #662: its
     // text is compared without them).
     const unread = known.has(issue.url) && !rerun.has(issue.url) && config.recentComments !== 0;
     const comments = unread || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
-    const seen = contextComments(comments, assignee, config.recentComments, bot);
-    const untrusted = untrustedBlock(issue, seen, config.recentComments, mode);
+    const seen = contextComments(comments, assignee, config.recentComments);
+    const untrusted = untrustedBlock(issue, seen, config.recentComments);
     const parts = await issueParts(issue);
     const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false, parts);
     return {
@@ -199,37 +158,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     };
   };
 
-  const appDetail = (): Record<string, unknown> => {
-    const info = o.appInfo?.();
-    const ok = info !== undefined && info.ok !== false ? info : undefined;
-    const reason = info?.ok === false ? info.reason : undefined;
-    const installUrl = ok ? `${ok.htmlUrl}/installations/new` : undefined;
-    const setup = reason === 'missing' ? CREATE_APP_HINT
-      : nothingToScan ? `install the app: ${installUrl ?? CONFIG_URL}` : undefined;
-    return {
-      mode: 'app',
-      ...(ok ? { slug: ok.slug, htmlUrl: ok.htmlUrl, installUrl } : {}),
-      configUrl: CONFIG_URL, installedRepos,
-      ...(setup ? { setup } : {}),
-      ...(reason !== undefined && reason !== 'missing' ? { appError: reason } : {}),
-    };
-  };
-
-  /**
-   * Who this source acts as on GitHub (glossary "Account"): the connected account's user, or the app's
-   * bot and its installation repos.
-   */
-  const account = (paused: string | undefined, detail: Record<string, unknown>): Account => {
-    const info = o.appInfo?.();
-    const bot = knownBot ?? (info && info.ok !== false ? info.botLogin : undefined);
-    const identity = app ? bot : login;
-    const problem = paused ?? (typeof detail.appError === 'string' ? detail.appError : undefined);
-    return {
-      service: 'github', ...(identity ? { identity } : {}),
-      detail: app ? { via: 'GitHub App', ...(typeof detail.slug === 'string' ? { app: detail.slug } : {}), installedRepos } : { via: CONNECTED_VIA },
-      ...(problem ? { problem } : {}),
-    };
-  };
+  /** Who this source acts as on GitHub (glossary "Account"): the connected account's user. */
+  const account = (paused: string | undefined): Account => ({
+    service: 'github', ...(login ? { identity: login } : {}), detail: { via: CONNECTED_VIA }, ...(paused ? { problem: paused } : {}),
+  });
 
   /** The intake migration (issue #440): once, listing the claims it released and the issues not assigned to the user. */
   const migrate = (intake: IntakeContext, released: string[], listed: IntakeOutcome[]) => {
@@ -243,7 +175,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
-  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
     name: o.name, kind: o.kind ?? o.name,
@@ -255,10 +187,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
-      const detail = app ? appDetail() : { mode, ...(login ? { login } : {}) };
       return {
-        ...detail,
-        account: account(paused, detail),
+        ...(login ? { login } : {}),
+        account: account(paused),
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
@@ -272,11 +203,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     discover: (d) => reads.cached(async () => {
       const round = outbox.begin();
-      const bot = await botLogin();
       const assignee = o.assignee();
-      const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
-      nothingToScan = app && repos.length === 0;
-      if (nothingToScan || assignee === undefined) {
+      const repos = scanned = config.repos;
+      if (assignee === undefined) {
         repoErrors = {};
         outcomes = [];
         listedLabels = new Map();
@@ -320,7 +249,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       for (const issue of taken.filter((i) => !waits.waiting.has(i.url))) {
         const v = verdicts.get(issue.url);
         if (v && 'request' in v) { requests.set(issue.url, v.request); continue; }
-        const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
+        const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), assignee);
         items.push(v ? { ...item, origin: v.origin } : item);
       }
       // A card a rule approves (issue #1268) is the hopper's approval, no card: the next sync takes it.
@@ -348,19 +277,17 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     async rerun(job) {
       const issue = await takeBack(reportContext(), config.label, job, o.assignee());
-      const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
-      return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
+      return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), o.assignee());
     },
     async rework(job) {
       const back = await sendBack(reportContext(), config.label, job, o.assignee());
-      const bot = await botLogin();
       const projects = await readProjects(api, config, [back.issue]);
-      const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), bot, o.assignee());
+      const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), o.assignee());
       return { item, pullRequest: back.pullRequest, state: back.state };
     },
     withText(item, text) {
-      return { ...item, ...promptWithText(item, text, config.recentComments, mode) };
+      return { ...item, ...promptWithText(item, text, config.recentComments) };
     },
     async editsSince(item, since) {
       if (!api.issueEdits || item.repo === undefined || item.number === undefined) return [];

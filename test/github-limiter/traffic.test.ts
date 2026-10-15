@@ -13,7 +13,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGitHubLimiter } from '../../src/github-limiter/limiter.ts';
 import { createGitHubTraffic, graphqlNameOf, routeOf } from '../../src/github-limiter/traffic.ts';
-import { makeRequest } from '../../src/sources/github/app/http.ts';
+import { makeRequest } from '../../src/sources/github/http/http.ts';
 
 const servers: Server[] = [];
 afterEach(async () => { for (const s of servers.splice(0)) await new Promise((r) => s.close(r)); });

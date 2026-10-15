@@ -17,7 +17,7 @@ describe('ensurePluginsConfig', () => {
     expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'kept' });
   });
 
-  it('a fresh install reads GitHub only through the account each user signs in with or connects; the app-as-itself source is an admin\'s to add (#214, #359)', () => {
+  it('a fresh install reads GitHub only through the account each user signs in with or connects (#214, #359, #1377)', () => {
     const { jobSources } = builtinInstances(1000);
     expect(jobSources).toEqual([{ name: 'github-account', plugin: 'github-account' }]);
   });

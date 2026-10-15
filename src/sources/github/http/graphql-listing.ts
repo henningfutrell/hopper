@@ -1,4 +1,4 @@
-// Repository listings (issue #985, design.md "Repository listings"), shared by the App and the connected account adapters:
+// Repository listings (issue #985, design.md "Repository listings"), read by the connected account's adapter:
 // the open issues and pull requests of many repositories that carry one of the source's labels, with one token, in as few
 // GraphQL requests as GitHub allows. Each repository is an alias in a request — `r0: repository(owner: $o0, name: $n0)
 // { issues(…) pullRequests(…) }` —, at most LISTING_REPOS_MAX to a request. A repository whose issues or pull requests

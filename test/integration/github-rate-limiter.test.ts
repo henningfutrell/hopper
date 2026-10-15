@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_RATE_LIMITER, type RateLimiterView } from '../../src/domain/github-rate-limit.ts';
 import { githubLimiter } from '../../src/github-limiter/limiter.ts';
-import { makeRequest } from '../../src/sources/github/app/http.ts';
+import { makeRequest } from '../../src/sources/github/http/http.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];

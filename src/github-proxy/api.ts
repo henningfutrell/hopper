@@ -1,5 +1,5 @@
 // The GitHub calls the hopper makes for a job (issue #563), with the hopper's own connection's token: one REST
-// call per operation, through the same `@octokit/request` binding as the sources (src/sources/github/app/http.ts).
+// call per operation, through the same `@octokit/request` binding as the sources (src/sources/github/http/http.ts).
 // `token()` is asked at every call; a token GitHub refuses (401) is renewed once and the call made again. A repository's
 // read (`repo`) is what the contribution flow (issue #429) decides on: whether the user can push to it, whether it takes
 // issues, and what it is a fork of. A fork made for a repository that takes no issues gets its own issues turned on.
@@ -8,8 +8,8 @@
 import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
 import type { GitHubCallKind } from '../domain/github-rate-limit.ts';
 import { webOriginOf } from '../sources/github/api.ts';
-import { jobLog } from '../sources/github/app/rest.ts';
-import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
+import { jobLog } from '../sources/github/http/rest.ts';
+import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/http/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
 import type { PullRequestStatus } from './pr-status.ts';
 

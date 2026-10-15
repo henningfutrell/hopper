@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const url = (n: number, repo = 'octo-user/hopper') => `https://github.com/${repo}/issues/${n}`;
 const DETAIL = {
-  mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper',
+  login: 'octo-user', assignee: 'octo-user', label: 'hopper',
   intake: [
     { key: url(1), title: 'Taken one', repo: 'octo-user/hopper', jobId: 'j-1' },
     { key: url(2), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },

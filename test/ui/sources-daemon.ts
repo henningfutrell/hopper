@@ -8,8 +8,7 @@ import { vi } from 'vitest';
 export const source = (name: string, kind: string, state: string, detail: Record<string, unknown>) =>
   ({ name, kind, state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail });
 const SOURCES = [
-  source('github-account', 'github-account', 'disabled', { mode: 'account', paused: 'GitHub is not connected: Sources → Connect GitHub' }),
-  source('github-app', 'github-app', 'ok', { mode: 'app', slug: 'hopper-app' }),
+  source('github-account', 'github-account', 'disabled', { paused: 'GitHub is not connected: Sources → Connect GitHub' }),
 ];
 
 const LOGIN_CODE_SESSION = { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: 'http://localhost', realms: [] } };

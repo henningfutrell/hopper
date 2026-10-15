@@ -7,7 +7,7 @@
 // kept as refused, and answered again with no call while the `anchor` answer — the repository itself, asked first — is
 // unchanged. A new branch or a new permission changes the repository's answer, and then each refusal is asked again.
 import type { KeptAnswer } from '../domain/repo-checks.ts';
-import { statusOf } from '../sources/github/app/http.ts';
+import { statusOf } from '../sources/github/http/http.ts';
 
 /** The part of `@octokit/request` a conditional read uses. */
 export type Get = (route: string, params: Record<string, unknown>) => Promise<{ data: unknown; headers: Record<string, unknown> }>;

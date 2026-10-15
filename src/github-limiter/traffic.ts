@@ -67,7 +67,7 @@ export function graphqlNameOf(query: unknown): string {
 }
 
 /** The port's reads that look for new jobs (issue #983), and those of the in-motion cycle (issue #985). */
-const INTAKE_READS = new Set(['listRepos', 'issuesChangedSince', 'listAssignedIssues', 'listInstalledRepos', 'projectItems']);
+const INTAKE_READS = new Set(['listRepos', 'issuesChangedSince', 'listAssignedIssues', 'projectItems']);
 const CYCLE_READS: Record<string, GitHubCallKind> = { openPullRequestsIn: 'reconcile', pullRequestStates: 'pr_cycle' };
 
 /**

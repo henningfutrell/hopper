@@ -7,26 +7,7 @@ afterEach(async () => { await h?.close(); h = undefined; });
 
 const issue = (number: number, extra: Record<string, unknown> = {}) => ({ number, title: `T${number}`, labels: ['hopper'], ...extra });
 
-describe('App adapter: installations are the allowlist', () => {
-  it('lists installed repos across two installations, following pagination', async () => {
-    h = await startApp({
-      pageSize: 2,
-      installations: [
-        { id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a' }, { owner: 'owner', name: 'b' }, { owner: 'owner', name: 'c' }] },
-        { id: 22, account: 'acme', accountType: 'Organization', repos: [{ owner: 'acme', name: 'x' }] },
-      ],
-    });
-    const repos = await h.api.listInstalledRepos!();
-    expect(repos).toEqual([
-      { repo: 'owner/a', installationId: 11 }, { repo: 'owner/b', installationId: 11 },
-      { repo: 'owner/c', installationId: 11 }, { repo: 'acme/x', installationId: 22 },
-    ]);
-    expect(seen(h.fake).filter((r) => r === 'GET /installation/repositories')).toHaveLength(3);
-    expect(h.fake.state.requests.find((r) => r.path === '/app/installations')?.auth).toBe('jwt');
-  });
-});
-
-describe('App adapter: issues and comments', () => {
+describe('Account adapter: issues and comments', () => {
   it('getIssue reads one issue, closed ones included', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(7, { state: 'closed', closedBy: 'owner', closedAt: '2026-10-02T11:00:00Z', stateReason: 'completed', body: 'b' })] }] }] });
     expect(await h.api.getIssue('owner/a', 7)).toMatchObject({
@@ -129,21 +110,9 @@ describe('App adapter: issues and comments', () => {
   });
 });
 
-describe('App adapter: cold installation lookup', () => {
-  it('a report before any listInstalledRepos looks the installation up per repo (JWT), once', async () => {
-    h = await startApp({ installations: [{ id: 33, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1)] }] }] });
-    await h.api.addLabels('owner/a', 1, ['cold']);
-    await h.api.getIssue('owner/a', 1);
-    const lookups = h.fake.state.requests.filter((r) => r.path === '/repos/owner/a/installation');
-    expect(lookups).toHaveLength(1);
-    expect(lookups[0]!.auth).toBe('jwt');
-    expect(seen(h.fake)).not.toContain('GET /app/installations');
-  });
-
-  it('a repo the app is not installed on is a permanent "app not installed"', async () => {
+describe('Account adapter: a repository the token cannot reach', () => {
+  it('is a permanent 404: the hopper\'s app is not installed there', async () => {
     h = await startApp({ installations: [{ id: 33, account: 'owner', repos: [{ owner: 'owner', name: 'a' }] }] });
-    await expect(h.api.getIssue('owner/zzz', 1)).rejects.toMatchObject({
-      permanent: true, message: expect.stringMatching(/app not installed on owner\/zzz/),
-    });
+    await expect(h.api.getIssue('owner/zzz', 1)).rejects.toMatchObject({ permanent: true, status: 404 });
   });
 });

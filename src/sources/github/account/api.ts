@@ -1,20 +1,20 @@
 // The GitHubApi port over a connected account's token (issue #214): the user's own GitHub, reached
-// through the hopper's GitHub App: what it does acts as that user, with the app marked on it. The same REST and GraphQL calls as the App adapter, each with the
-// account's token instead of an installation token.
+// through the hopper's GitHub App: what it does acts as that user, with the app marked on it. The REST and GraphQL calls of
+// `../http/`, each with the account's token: the one way the hopper reaches GitHub (issue #1377).
 // `token()` is asked at every call: a disconnect or a new connection applies at once. A token GitHub refuses
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
 import { GitHubApiError, isPermanent, webOriginOf } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
-import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
-import { batchGraphQL } from '../app/graphql-batch.ts';
-import { listRepos } from '../app/graphql-listing.ts';
-import { taggedItems } from '../app/graphql-tagged.ts';
-import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
-import { mergedPullRequestsInto } from '../app/graphql-merged.ts';
-import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
-import { explained, permissionsOfError } from '../app/refusal.ts';
-import * as rest from '../app/rest.ts';
-import { headChecks } from '../app/rest-checks.ts';
+import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../http/graphql.ts';
+import { batchGraphQL } from '../http/graphql-batch.ts';
+import { listRepos } from '../http/graphql-listing.ts';
+import { taggedItems } from '../http/graphql-tagged.ts';
+import { openPullRequestsIn, pullRequestStates } from '../http/graphql-pulls.ts';
+import { mergedPullRequestsInto } from '../http/graphql-merged.ts';
+import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../http/http.ts';
+import { explained, permissionsOfError } from '../http/refusal.ts';
+import * as rest from '../http/rest.ts';
+import { headChecks } from '../http/rest-checks.ts';
 
 /**
  * What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). `installUrl`:

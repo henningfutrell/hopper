@@ -1,8 +1,8 @@
 // Issue #1141: tagged items come from GitHub's issue search, one search per reason and group of repositories, each query
 // within GitHub's length limit, batched as aliases in GraphQL requests.
 import { describe, expect, it } from 'vitest';
-import { SEARCHES_MAX, SEARCH_QUERY_MAX, taggedHits, taggedItems, taggedSearches } from '../../src/sources/github/app/graphql-tagged.ts';
-import type { Request } from '../../src/sources/github/app/http.ts';
+import { SEARCHES_MAX, SEARCH_QUERY_MAX, taggedHits, taggedItems, taggedSearches } from '../../src/sources/github/http/graphql-tagged.ts';
+import type { Request } from '../../src/sources/github/http/http.ts';
 
 describe('tagged item searches (issue #1141)', () => {
   it('one search per reason, scoped to the repositories', () => {

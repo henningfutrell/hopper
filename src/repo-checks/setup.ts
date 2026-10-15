@@ -7,7 +7,7 @@
 // (issue #1250, conditional.ts).
 import { RELEASE_BRANCHES } from '../github-proxy/index.ts';
 import { branchSetup, type BranchProtectionRead, type RepoSetupFound } from '../domain/types.ts';
-import { splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { splitRepo, statusOf } from '../sources/github/http/http.ts';
 
 interface Rule { type?: string; parameters?: { required_status_checks?: { context?: string }[] } }
 interface Protection { required_pull_request_reviews?: unknown; allow_force_pushes?: { enabled?: boolean }; required_status_checks?: { contexts?: string[]; checks?: { context?: string }[] } }

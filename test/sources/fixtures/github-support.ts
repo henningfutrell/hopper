@@ -7,20 +7,21 @@ import type { IntakeTrust } from '../../../src/domain/intake.ts';
 import type { ItemText } from '../../../src/domain/item-snapshots.ts';
 import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
 import type { AutoApproval, IntakeAutoApproval } from '../../../src/domain/intake-auto-approve.ts';
-import githubApp from '../../../src/plugins/job-source/github-app/index.ts';
+import githubAccount from '../../../src/plugins/job-source/github-account/index.ts';
 import { parseOptions } from '../../../src/plugins/options.ts';
-import { sourceConfig, type GitHubAppOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
+import { sourceConfig, type GitHubAccountOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
 import { createFakeGitHub, createGitHubSource } from '../../../src/sources/github/index.ts';
 import type { FakeGitHub, GitHubSourceOptions } from '../../../src/sources/github/index.ts';
 
 export const REPO = 'owner/sandbox';
 
-/** The source logic's config: the shared keys of the GitHub sources (parsed as the app's options, which carry `repos`). */
+/** The source logic's config: the account source's options, and `repos` — the job repositories (default REPO). */
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseOptions(githubApp, { repos: [REPO], ...over });
+  const { repos = [REPO], ...options } = over as { repos?: string[] } & Record<string, unknown>;
+  const r = parseOptions(githubAccount, options);
   if (!r.ok) throw new Error(r.error);
-  const { enabled: _e, appId: _i, slug: _s, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
-  return sourceConfig(shared);
+  const { enabled: _e, ...shared } = r.options as GitHubAccountOptions;
+  return { ...sourceConfig(shared), repos };
 }
 
 /** A test's intake trust (issue #652): `logins` (default: the connected login) are trusted actors; approvals kept in memory. */
@@ -75,31 +76,7 @@ export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHub
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh, clock, trust: testTrust(), ...o });
-  return { gh, config, source };
-}
-
-export const BOT = 'hopper-owner[bot]';
-export const APP_INFO = { slug: 'hopper-owner', htmlUrl: 'https://github.com/apps/hopper-owner' };
-
-export interface AppSetupOptions {
-  installed?: string[];
-  knownKeys?: (keys: string[]) => Set<string>;
-  paused?: () => string | undefined;
-  appInfo?: GitHubSourceOptions['appInfo'];
-}
-
-/** A source in app mode over the fake GitHub with the app identity (BOT is the app's login). */
-export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions = {}) {
-  const gh = createFakeGitHub({ app: { botLogin: BOT, installedRepos: o.installed ?? [REPO] } });
-  const config = githubConfig({ repos: [], ...over });
-  const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({
-    name: 'github-app', kind: 'github-app', mode: 'app', assignee: () => 'owner', config, api: gh, clock, trust: testTrust(),
-    appInfo: o.appInfo ?? (() => APP_INFO),
-    ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}),
-    ...(o.paused ? { paused: o.paused } : {}),
-  });
+  const source = createGitHubSource({ name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config, api: gh, clock, trust: testTrust(), ...o });
   return { gh, config, source };
 }
 

@@ -1,5 +1,5 @@
 // POST /graphql of the fake GitHub: `organization(login).projectV2(number)` and
-// `user(login).projectV2(number)` items, behaving as GitHub does for an installation token:
+// `user(login).projectV2(number)` items, behaving as GitHub does for a token of the hopper's app:
 // organization projects are readable; a user-owned project is FORBIDDEN ("Resource not
 // accessible by integration"); a login of the other kind is NOT_FOUND. Also
 // `repository(owner, name).issue(number)`: the pull request whose merge closed the issue, and the
@@ -12,7 +12,6 @@
 // entry of the repository (`pullRequest: true`) and an issue; and `u<i>: repository(owner, name) { pullRequests(states: OPEN) }`
 // aliases, each repository's open pull request entries, newest (highest number) first.
 
-import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
 import type { FakeIssue, FakePullRequest, FakeRepo } from './fake-state.ts';
 
@@ -28,7 +27,7 @@ const withHead = <P extends FakePullRequest>({ headCommittedAt, ...p }: P) =>
 /** `repository(owner, name).issue(number)` last ClosedEvent: its closer, a pull request or none. */
 function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   const repo = ctx.state.repos.get(`${b.variables?.owner}/${b.variables?.name}`);
-  if (!repo || !tokenReaches(req.token!, repo)) {
+  if (!repo) {
     return { status: 200, body: { data: { repository: null }, errors: [{ type: 'NOT_FOUND', path: ['repository'], message: 'Could not resolve to a Repository.' }] } };
   }
   if (/issueOrPullRequest/.test(b.query ?? '')) {
@@ -150,7 +149,7 @@ function listing(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   for (const m of query.matchAll(/(r\d+): repository\(owner: \$(o\d+), name: \$(n\d+)\) \{/g)) {
     const [, alias, o, n] = m as unknown as [string, string, string, string];
     const repo = ctx.state.repos.get(`${String(vars[o])}/${String(vars[n])}`);
-    if (!repo || !tokenReaches(req.token!, repo)) {
+    if (!repo) {
       data[alias] = null;
       errors.push({ type: 'NOT_FOUND', path: [alias], message: `Could not resolve to a Repository with the name '${String(vars[o])}/${String(vars[n])}'.` });
       continue;
@@ -200,7 +199,7 @@ function pulls(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   for (const m of query.matchAll(/([pu]\d+): repository\(owner: \$(o\d+), name: \$(n\d+)\) \{/g)) {
     const [, alias, o, n] = m as unknown as [string, string, string, string];
     const repo = ctx.state.repos.get(`${String(vars[o])}/${String(vars[n])}`);
-    if (!repo || !tokenReaches(req.token!, repo)) { data[alias] = null; errors.push(notResolved(alias, vars, o, n)); continue; }
+    if (!repo) { data[alias] = null; errors.push(notResolved(alias, vars, o, n)); continue; }
     if (alias.startsWith('u')) {
       const open = [...repo.issues.values()].filter((i) => i.pullRequest && i.state === 'open').sort((x, y) => y.number - x.number);
       data[alias] = { pullRequests: { nodes: open.map((i) => ({ url: `https://github.com/${repo.owner}/${repo.name}/pull/${i.number}`, title: i.title, ...pullState(i) })) } };

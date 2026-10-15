@@ -19,7 +19,7 @@ import type { UserArtifacts } from '../artifacts/index.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
 import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
-import type { Identity, InstalledAppsView, SessionKind, UiRole, User } from '../domain/types.ts';
+import type { Identity, SessionKind, UiRole, User } from '../domain/types.ts';
 import type { Access } from '../authz/service.ts';
 import type { Engine } from '../engine/index.ts';
 import type { Failures } from '../failures/index.ts';
@@ -27,7 +27,6 @@ import type { Logins, SignIns } from '../logins/index.ts';
 import type { JobTerminal } from '../engine/terminal.ts';
 import type { MachineTerminal } from '../engine/machine-terminal.ts';
 import type { MinorDecisions, TypesafeKey } from '../minor-decisions/index.ts';
-import type { GitHubAppKey } from '../sources/index.ts';
 import type { Tldrs } from '../tldr/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
@@ -70,10 +69,6 @@ export interface TenantParts {
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): its view, set and remove; never the key. */
   typesafeKey: TypesafeKey;
-  /** The GitHub App's private key (issue #1243): its view, set and remove; never the key. */
-  githubAppKey: GitHubAppKey;
-  /** The GitHub Apps installed on the organizations the user's GitHub connection knows (issue #1243). */
-  installedApps: { list(): Promise<InstalledAppsView> };
   /** The TL;DR of every long card (issue #569): its sweep, run at once when the setting turns on. */
   tldrs: Pick<Tldrs, 'sweep'>;
   /** Every job source's status (/api/sources, SSE source.updated). */

@@ -6,7 +6,7 @@
 // says how many parts are done, and the job card shows it (x/y). When a merged part makes every declared part done, the
 // issue is done (`hopper:done`): it is not offered again.
 import { describe, expect, it } from 'vitest';
-import { issueFrom, subIssueFrom } from '../../src/sources/github/app/rest.ts';
+import { issueFrom, subIssueFrom } from '../../src/sources/github/http/rest.ts';
 import { declaredParts } from '../../src/sources/github/parts.ts';
 import { REPO, discoverOne, jobForIssue, setup } from './fixtures/github-support.ts';
 

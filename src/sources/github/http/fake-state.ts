@@ -70,11 +70,15 @@ export interface FakeProjectInput {
   items: { url: string; fields: Record<string, string | number> }[];
 }
 
+/** The connected account's token the fake takes when its options name none. */
+export const FAKE_USER_TOKEN = 'ghu_fake-user-token';
+
 export interface FakeGitHubOptions {
-  appId: number;
-  publicKeyPem: string;
-  /** The app slug; comments post as `<slug>[bot]`. Default "hopper". */
-  slug?: string;
+  /** The connected account's login: its writes appear under it. Default "owner". */
+  login?: string;
+  /** The connected account's token (a user-to-server token of the hopper's app). Default FAKE_USER_TOKEN. */
+  token?: string;
+  /** Where the hopper's app is installed: the token reaches these repositories, and no other. */
   installations: FakeInstallationInput[];
   projects?: FakeProjectInput[];
   /** Forces this page size on every paginated endpoint (to exercise pagination). */
@@ -114,9 +118,6 @@ export interface FakeRepo {
 
 export interface FakeTokenRecord {
   token: string;
-  installationId: number;
-  /** The mint request body, as sent. */
-  body: { repositories?: string[]; permissions?: Record<string, string> };
   expiresAt: string;
 }
 
@@ -125,7 +126,7 @@ export interface FakeRequestRecord {
   path: string;
   query: Record<string, string>;
   /** Which credential the request carried and the fake accepted ('none' when absent or refused). */
-  auth: 'jwt' | 'token' | 'none';
+  auth: 'token' | 'none';
   body?: unknown;
   /** Answered 304 (issue #1125): its ETag still held, so GitHub would not charge it. */
   notModified?: true;
@@ -143,7 +144,7 @@ export interface FakeState {
 
 export function buildState(o: FakeGitHubOptions, now: string): FakeState {
   const state: FakeState = {
-    repos: new Map(), tokens: [], requests: [], installations: o.installations, projects: o.projects ?? [], nextCommentId: 1000,
+    repos: new Map(), tokens: [{ token: o.token ?? FAKE_USER_TOKEN, expiresAt: new Date(Date.parse(now) + 24 * 3600_000).toISOString() }], requests: [], installations: o.installations, projects: o.projects ?? [], nextCommentId: 1000,
   };
   for (const inst of o.installations) {
     for (const r of inst.repos) {

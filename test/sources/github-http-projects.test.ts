@@ -5,7 +5,7 @@ import type { AppHarness } from './fixtures/app/setup.ts';
 let h: AppHarness | undefined;
 afterEach(async () => { await h?.close(); h = undefined; });
 
-describe('App adapter: Projects (v2) over GraphQL', () => {
+describe('Account adapter: Projects (v2) over GraphQL', () => {
   it('reads an organization project: items in order with lowercased field values', async () => {
     h = await startApp({
       installations: [{ id: 22, account: 'acme', accountType: 'Organization', repos: [{ owner: 'acme', name: 'x' }] }],

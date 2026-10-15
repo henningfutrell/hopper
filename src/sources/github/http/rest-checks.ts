@@ -1,4 +1,4 @@
-// A commit's checks over REST (issue #1244), shared by the App and the connected account adapters: its check runs
+// A commit's checks over REST (issue #1244), read by the connected account's adapter: its check runs
 // (`GET /repos/{owner}/{repo}/commits/{ref}/check-runs`, Checks: read) and its combined status
 // (`GET /repos/{owner}/{repo}/commits/{ref}/status`, Commit statuses: read), as one state the way GitHub's rollup tells
 // it. The read the hopper makes when GitHub refuses the GraphQL rollup (`checksFallback`).

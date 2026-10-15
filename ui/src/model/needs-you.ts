@@ -5,14 +5,13 @@
 // the hopper tends itself, and is no decision. Tagged (issue #1141) counts the GitHub items that wait on the person's own review
 // or reply. Checks (issue #1244) counts the repositories whose pull request checks GitHub refuses to the hopper's connection,
 // one line each, with the fix: no pull request there merges until a person gives the permissions. Accounts (issue #1128) counts the machines whose agent tool is signed in as nobody, each named: its jobs wait on a sign-in.
-// Setup (issue #1243) counts the job sources on but not configured, each with what it lacks: they take no job until set up.
 // Landing (issue #1333) counts the repositories whose landing pass failed the same way on several passes in a row, each with
 // its error: nothing moves to the tested branch until a person restarts the batch or fixes the cause.
 // Machines (issue #1248) counts the online machines that are not ready, each named with why: its job user holds credentials, or it is off-network.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'setup', 'failures', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -26,8 +25,6 @@ export interface NeedsYouCounts {
   signedOut: readonly string[];
   /** The online machines that are not ready (issue #1248), one line each, with why. */
   notReady: readonly string[];
-  /** The job sources on but not configured (issue #1243), one line each, with what each lacks. */
-  notConfigured: readonly string[];
   /** The open pull requests the hopper gave up on (issue #927), one line each, with why. */
   gaveUp: readonly string[];
   /** The checks read problems (issue #1244), one line per repository, with the fix. */
@@ -58,7 +55,6 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   logins: { label: 'Logins', href: '#logins', what: 'logins a job waits on, and connections that ended' },
   accounts: { label: 'Accounts', href: '#accounts', what: 'machines whose agent tool is signed in as nobody: sign them in again' },
   machines: { label: 'Machines', href: '#machines', what: 'machines that are not ready and take no new job: give their jobs a dedicated user with no credentials, or a way to reach the hopper' },
-  setup: { label: 'Setup', href: '#sources', what: 'job sources that are on but not configured: they take no job until you set them up' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
@@ -76,7 +72,6 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
     if (k === 'checks') return { n: c.checksUnread.length, high: 0, ...(c.checksUnread.length ? { details: c.checksUnread } : {}) };
     if (k === 'accounts') return { n: c.signedOut.length, high: 0, ...(c.signedOut.length ? { details: c.signedOut } : {}) };
     if (k === 'machines') return { n: c.notReady.length, high: 0, ...(c.notReady.length ? { details: c.notReady } : {}) };
-    if (k === 'setup') return { n: c.notConfigured.length, high: 0, ...(c.notConfigured.length ? { details: c.notConfigured } : {}) };
     if (k === 'landing') return { n: c.stuckLanding.length, high: 0, ...(c.stuckLanding.length ? { details: c.stuckLanding } : {}) };
     if (k === 'tagged') return { n: c.tagged, high: 0 };
     if (k === 'sorting') return { n: c.sorting, high: 0 };

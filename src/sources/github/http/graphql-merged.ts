@@ -1,4 +1,4 @@
-// The pull requests merged into a branch (issue #1337), shared by the App and the connected account adapters: the newest
+// The pull requests merged into a branch (issue #1337), read by the connected account's adapter: the newest
 // 50 by their last update, each with its text. What tells an issue whose work merged into the landing branch, which GitHub
 // does not close, and whose timeline may show no cross-reference of the merge. NOT_FOUND and FORBIDDEN are permanent; any
 // other error is transient.

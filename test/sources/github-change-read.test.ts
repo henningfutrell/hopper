@@ -18,7 +18,7 @@ function setup(o: { listings?: GitHubListingRepository; clock?: { at: number }; 
   const gh = createFakeGitHub();
   const clock = o.clock ?? { at: Date.parse('2026-10-14T18:00:00.000Z') };
   const source = createGitHubSource({
-    name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', api: gh, trust: testTrust(),
+    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', api: gh, trust: testTrust(),
     config: githubConfig({ repos: o.repos ?? [REPO] }), clock: { now: () => new Date(clock.at) }, listingEveryMs: () => 15 * MIN,
     ...(o.listings ? { listings: o.listings } : {}),
   });

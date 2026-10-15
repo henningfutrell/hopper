@@ -1,4 +1,4 @@
-// The pull requests of an issue, over GraphQL, shared by the App and the connected account adapters: what
+// The pull requests of an issue, over GraphQL, read by the connected account's adapter: what
 // closed it (the last ClosedEvent's closer — only a merged pull request counts; a person, a commit
 // or a project closing it is undefined), and the open pull requests whose merge will close it
 // (`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch), and the pull
@@ -9,7 +9,7 @@
 // GitHub links as closing it.
 
 import { GitHubApiError } from './api.ts';
-import { explained, permissionsOfPath } from './app/refusal.ts';
+import { explained, permissionsOfPath } from './http/refusal.ts';
 import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 import { MAX_CHECK_REPORTED, MAX_CHECK_REPORTED_CHARS, MAX_FAILED_CHECKS, type ChecksState, type FailedCheck } from '../../domain/pull-requests.ts';
 import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';

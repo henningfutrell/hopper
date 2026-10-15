@@ -14,9 +14,6 @@ export const UNREADABLE_KEEP_MS = 10 * 60_000;
 /** The connection the source reads with, as a person knows it, and how to give it the permissions. */
 export interface ChecksConnection { name: string; fix: string }
 
-export const APP_CONNECTION: ChecksConnection = {
-  name: 'the GitHub App', fix: 'add them to the GitHub App and accept them on its installation',
-};
 export const ACCOUNT_CONNECTION: ChecksConnection = {
   name: 'the connected GitHub account',
   // Issue #1351: the account reaches a repository only where the hopper's app is installed with it.

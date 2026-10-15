@@ -3,9 +3,9 @@
 // reconciling. A pull request or a repository GitHub does not answer for fails only itself. Against the node:http fake
 // GitHub, through the App adapter's port.
 import { afterEach, describe, expect, it } from 'vitest';
-import { OPEN_PULLS_REPOS_MAX, PULLS_MAX } from '../../src/sources/github/app/graphql-pulls.ts';
+import { OPEN_PULLS_REPOS_MAX, PULLS_MAX } from '../../src/sources/github/http/graphql-pulls.ts';
 import { pullKey } from '../../src/sources/github/api.ts';
-import type { FakeIssueInput, FakeRepoInput } from '../../src/sources/github/app/fake-state.ts';
+import type { FakeIssueInput, FakeRepoInput } from '../../src/sources/github/http/fake-state.ts';
 import { startApp } from './fixtures/app/setup.ts';
 import type { AppHarness } from './fixtures/app/setup.ts';
 
@@ -56,7 +56,7 @@ describe('pull request states in one batched read (issue #985)', () => {
     expect(graphqlRequests(h)).toHaveLength(3);
   });
 
-  it('a pull request GitHub does not know, or a repository the app is not installed on, fails only itself', async () => {
+  it('a pull request GitHub does not know, or a repository the connected account cannot reach, fails only itself', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [repo('a', [{ number: 1 }, pull(2, 'Closes #1', {})])] }] });
     const got = await h.api.pullRequestStates([
       { repo: 'owner/a', pullRequest: 2, issue: 1 }, { repo: 'owner/a', pullRequest: 9, issue: 1 }, { repo: 'owner/gone', pullRequest: 1, issue: 1 },
@@ -64,7 +64,7 @@ describe('pull request states in one batched read (issue #985)', () => {
     expect(got.pulls.get(pullKey('owner/a', 2))).toMatchObject({ state: 'open' });
     expect(got.pulls.has(pullKey('owner/a', 9))).toBe(false);
     expect(got.errors.get(pullKey('owner/a', 9))).toMatch(/Could not resolve/);
-    expect(got.errors.get(pullKey('owner/gone', 1))).toMatch(/not installed/);
+    expect(got.errors.get(pullKey('owner/gone', 1))).toMatch(/Could not resolve to a Repository/);
   });
 
   it('a request GitHub fails throws: the cycle asks again', async () => {
@@ -109,7 +109,7 @@ describe('open pull requests of many repositories in one batched read (issue #98
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: names.map((n) => repo(n, [pull(1, '', {})])) }] });
     const got = await h.api.openPullRequestsIn([...names.map((n) => `owner/${n}`), 'owner/gone']);
     expect(got.repos.size).toBe(names.length);
-    expect(got.repoErrors.get('owner/gone')).toMatch(/not installed/);
+    expect(got.repoErrors.get('owner/gone')).toMatch(/Could not resolve to a Repository/);
     expect(graphqlRequests(h)).toHaveLength(2);
   });
 });

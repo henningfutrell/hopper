@@ -154,23 +154,16 @@ launch (`docs/deploy.md` "Sign-in set up at launch") — and the LAN or a public
 
 GitHub is how people sign in to the hopper and how it works for them: each user's issues come from
 their GitHub, and what their jobs do there acts as them, with GitHub showing the hopper's app on it.
-There are two paths; a new hopper is on the first one.
+There is one path: each user signs in with GitHub, and the `github-account` job source reads and writes
+GitHub with that sign-in. The hopper keeps no GitHub App private key and asks for none: the hopper's app
+ships only its public client id, which authorizes nothing by itself.
 
-| Path | Use it when | The hopper acts as | Job source |
-|---|---|---|---|
-| [**Sign in with GitHub**](#sign-in-with-github-default) (default) | each user works from their own GitHub | that user, through the hopper's app | `github-account` |
-| [**A GitHub App of your own**](#a-github-app-of-your-own) | an admin's choice for particular environments: labels from a bot, repos chosen by where the App is installed. Not for local deployments in general | the App's bot, `<slug>[bot]` | `github-app` (added in Plugins) |
+Where you stand: the UI's **Sources** view. The sentence in the GitHub section says whether issues are
+read through your sign-in, or what to do first (sign in, choose repositories, sign in again).
+`GET /api/accounts` names the account it acts as. (The gh CLI source and **Log in to GitHub** were removed
+by issue #359; the `github-app` source, an admin's own GitHub App and its private key, by issue #1377.)
 
-**Never use a GitHub App private key from somebody else's hopper**, and never give yours to anyone. A
-private key acts on every repository its App is installed on. The hopper's app is different: it ships
-only its public client id, which authorizes nothing by itself.
-
-Which path you are on: the UI's **Sources** view. The source that is not `paused` is the one taking
-jobs, and the sentence in the GitHub section says which. `GET /api/accounts` names the account it acts as.
-(The gh CLI source and **Log in to GitHub** were removed by issue #359: the hopper reads GitHub as a
-user only through that user's GitHub sign-in.)
-
-### Sign in with GitHub (default)
+### Sign in with GitHub
 
 Every hopper offers it, a new one too. On the sign-in page, **Sign in with GitHub** shows a code; enter
 it at `https://github.com/login/device` and approve the hopper's app. **The first person to sign in with
@@ -211,37 +204,14 @@ Enterprise, or an app of your own instead of the hopper's (an organization that 
 fork), is set in the environment: `HOPPER_GITHUB_URL`,
 `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG` (how to register one: [docs/sign-in.md](docs/sign-in.md#github)).
 
-### A GitHub App of your own
-
-You create the App; it lives on your GitHub account (or your organization), and its key on your
-hopper only. One App, one key, one hopper.
-
-1. Create it. On the hopper's host, with a browser:
-
-   ```sh
-   bash ~/.local/lib/hopper/scripts/create-github-app.sh            # --org <org> for an organization
-   ```
-
-   GitHub shows a prefilled "Create GitHub App" page; click create. The script writes the key into
-   `~/.config/hopper/daemon.env` as `GITHUB_APP_PRIVATE_KEY` and prints the App's `appId`, `slug`
-   and install link. In containers, add `--secrets-file <a file of your own>` (mode 600, not `.env`), then name
-   `GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}` in `compose.override.yaml` and give its value at launch.
-2. Install it: open the printed install link and pick the repositories it may read. Those are the
-   only repositories it takes jobs from.
-3. In the UI, Settings → Plugins → Job sources, open the `github-app` instance and set `appId` and
-   `slug` (marked "runs a command"; an admin edits them). It takes the issues assigned to your connected
-   GitHub account, as in [Give it jobs](#give-it-jobs).
-4. Open Sources, paste the App's private key into the write-only field on the `github-app` setup card, and
-   save it: the hopper keeps it in its vault. No restart is necessary. A key the daemon's environment still
-   gives as `GITHUB_APP_PRIVATE_KEY` is moved into the vault once at a start; then remove it from the
-   environment. The `github-app` source then takes the jobs of the repositories the App is installed on.
-
 ### Not built: other ways in
 
 Named so you know they are not missing steps. None is the path for a self-hosted hopper today:
 
 - **A fine-grained personal access token pasted into the UI.** Signing in with GitHub (above) is the
   built way: the hopper keeps the token GitHub grants its app.
+- **A GitHub App of your own, acting as its bot with its private key.** Removed by issue #1377: a
+  self-hosted hopper is given no App private key.
 - **A hosted relay**: one App that somebody else runs, which forwards issues to many hoppers.
 
 ## Give it jobs
@@ -249,13 +219,9 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 1. Sign in with GitHub (or **Sources → GitHub account → Connect GitHub**), then choose the job
    repositories in **Sources → GitHub account**: the issues in them that are labelled `hopper` and
    assigned to you are taken when a trusted actor wrote, labelled and assigned them; any other is a request
-   card in Intake with **Approve** (help page "How issues become jobs", `/help/intake`). To tune a source, or to use
-   [your own App](#a-github-app-of-your-own), open the instance in Settings → Plugins → Job sources —
-   `github-account` or `github-app` (your App) — and set its options:
-
-   | option | |
-   |---|---|
-   | `repos` | on `github-app`, an optional allowlist inside the App's installations (`your-org/your-repo`); `github-account` takes the job repositories chosen in Sources |
+   card in Intake with **Approve** (help page "How issues become jobs", `/help/intake`). To tune the source,
+   open the `github-account` instance in Settings → Plugins → Job sources and set its options. Which
+   repositories it lists is no option: they are the job repositories chosen in Sources.
 
    <img src="docs/screenshots/sources.webp" width="720" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button.">
 

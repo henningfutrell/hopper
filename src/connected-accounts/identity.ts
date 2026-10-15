@@ -5,7 +5,7 @@
 import { request as octokitRequest } from '@octokit/request';
 import type { AppInstallation } from '../domain/types.ts';
 import type { ConditionalAnswers, Get } from '../repo-checks/conditional.ts';
-import { makeRequest } from '../sources/github/app/http.ts';
+import { makeRequest } from '../sources/github/http/http.ts';
 import type { HopperApp } from './hopper-app.ts';
 
 /** The account a token belongs to. `subject`: GitHub's stable numeric id; `account`: the login. */

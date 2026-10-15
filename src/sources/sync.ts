@@ -21,8 +21,6 @@
 // other sync — its timer, one after a merge, a rerun — only what is due (`discover({ due: true })`).
 // A GitHub delivery (issue #1079, `repoChanged`) makes the repository due at each source whose job repository it is, and
 // that source syncs once `DELIVERY_SYNC_MS` after the first delivery of a burst: a timed sync, before its timer.
-// A source not configured (issue #1243, `JobSource.setupProblem`) runs no sync pass while no job of its own needs one: its
-// status is `needs-setup` with the problem, never ok, and the log says it once, and once when it clears.
 // The GitHub outbox (issue #1238): an intake action answers and asks for no full sync. Its source's outbox sends its rows `OUTBOX_BATCH_MS`
 // after it (a burst in one batch), and every `OUTBOX_EVERY_MS` the rows due; each repository a send wrote to is made due, and the source syncs then, a timed sync. A sync never waits for the outbox.
 // Poll backoff (issue #1264, `poll-backoff.ts`): a configured source's timed syncs that find nothing changed come further
@@ -34,7 +32,7 @@ import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
-import { needsWork, notConfigured, pauseTold, setupTold } from './sync-setup.ts';
+import { needsWork, pauseTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
@@ -258,11 +256,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
-    // Not configured (issue #1243): no sync pass at all — it would ask nothing and look like a healthy zero —, unless jobs
-    // of its own still need their checks or reports.
-    const setup = slot.removed ? undefined : slot.source.setupProblem?.();
-    if (!slot.removed) { setupTold(slot, setup); if (!setup) pauseTold(slot, paused); }
-    if (setup && !jobsOf(slot).some(needsWork)) { notConfigured(slot, setup, clock.now(), paused); schedule(slot); emit(slot); return; }
+    if (!slot.removed) pauseTold(slot, paused);
     // One pass (issue #822): the source asks GitHub once for what the steps read twice.
     const pass = async () => {
       if (paused === undefined) {
@@ -279,7 +273,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
     };
     try {
-      await (slot.source.pass ? slot.source.pass(pass, setup?.reason ?? paused) : pass()); // its line says why it takes nothing new (issue #1351)
+      await (slot.source.pass ? slot.source.pass(pass, paused) : pass()); // its line says why it takes nothing new (issue #1351)
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -293,10 +287,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    // Not configured is never ok, even while its pass runs for its own jobs (issue #1351).
-    if (setup) { st.setupProblem = setup; if (st.state === 'ok') st.state = 'needs-setup'; } else delete st.setupProblem;
     st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
-    afterSync(slot, { changed: all || (st.state !== 'ok' && st.state !== 'needs-setup') || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
+    afterSync(slot, { changed: all || st.state !== 'ok' || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);

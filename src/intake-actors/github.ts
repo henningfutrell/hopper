@@ -3,7 +3,7 @@
 // one account by user id or by login, a repository's collaborators, an organization's members, and the authors of a
 // repository's newest issues. One page of each: the picker offers, it does not list GitHub.
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts';
 import type { GitHubAccount } from '../domain/intake-origin.ts';
 
 /** The newest issues of a repository read for their authors. */

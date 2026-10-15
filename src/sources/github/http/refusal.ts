@@ -1,5 +1,5 @@
-// "Resource not accessible by integration" (issue #1351): GitHub refuses a GitHub App's token — the hopper's app for a
-// connected account, an admin's app for the app source — when the app lacks a permission, or is not installed on the
+// "Resource not accessible by integration" (issue #1351): GitHub refuses the token of the hopper's app for a connected
+// account when the app lacks a permission, or is not installed on the
 // repository's owner with that repository. GitHub's words name neither, so the hopper adds the permission GitHub asks
 // for (REST: the x-accepted-github-permissions header; GraphQL: the field it refused) and the fix.
 

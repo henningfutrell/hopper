@@ -19,6 +19,7 @@ import { REPO_CHECKS_TABLE } from './repo-checks.ts';
 import { LAST_ACCOUNT_TABLE } from './last-accounts.ts';
 import { APP_INSTALLATIONS_TABLE } from './app-installations.ts';
 import { JOB_FILTER_COLUMNS } from './job-filter-columns.ts';
+import { accountSourceOnly } from './migration-account-source.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -81,4 +82,9 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // acts on it (`wholeMerged`), so a batch run closes the issue of an item whose job still waits. Rows only, a new field in each body:
   // the build before ignores it.
   (db) => { rebuildWorkItems(db); },
+  // 69: GitHub through the sign-in alone (issue #1377): a config with no connected account's source gets one; every
+  // `github-app` instance leaves it, the account's source takes its jobs and source events (switched on where needed), the
+  // ledger is rebuilt, and the App's key leaves the vault. The build before runs on it: a config it knows, and jobs of a
+  // source it runs.
+  accountSourceOnly,
 ];
