@@ -1,0 +1,1 @@
+- A GitHub App source that is not set up now shows "needs setup" also while it finishes its own jobs, and the log says on each sync why it takes no new issues.

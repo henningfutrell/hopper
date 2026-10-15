@@ -15322,7 +15322,12 @@ installed there; then install it on the repository's owner with that repository,
 for a connected account and its repository checks), and accept its new permissions. A connected
 account reaches only the repositories where the hopper's app is installed, so its checks fix says that too. A paused source
 says why in the log, once when the pause starts or changes and once when it ends (`pauseTold`, `src/sources/sync-setup.ts`):
-its pass asks GitHub nothing new, and its traffic line alone reads as a healthy zero.
+its pass asks GitHub nothing new, and its traffic line alone reads as a healthy zero. So the traffic line of every pass that
+takes nothing new says why too — `sync pass <name> (nothing new taken: <the setup problem, else the pause>): REST 0, …`
+(`JobSource.pass`'s `idle`, `trafficLine`). A source not configured that still runs its pass for its own jobs is
+`needs-setup`, never ok. The GitHub sign-in, and the hopper's app installed on every repository, do not configure the app
+source: it is an admin's own app, with its own id, slug and key (`help/github-app-setup.md`); without them, take the issues
+through the GitHub account source.
 
 **Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
 `PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
@@ -20819,7 +20824,7 @@ said why.
 - **No empty pass** (`src/sources/sync.ts`). While a source has a setup problem and no job of its own needs a check or a
   report, the sync loop runs no pass: no traffic line, no `lastOkAt`. Its status is `needs-setup` with `setupProblem`;
   `itemsSeen` 0, and the UI shows *not configured* in place of each count. With jobs of its own to report, the pass runs
-  for them, as for a paused source, and the status still carries the setup problem.
+  for them, as for a paused source, and the status stays `needs-setup` with the setup problem, never ok (issue #1351).
 - **Said once.** The log says `hopper: source <name> not configured: <reason>` when the problem starts or changes, and
   `hopper: source <name> configured` once when it clears. No event: the status and Needs you carry it.
 - **Asked for in place.** Sources shows the source as *needs setup*, with a setup card: what is missing, the steps (an
@@ -20930,7 +20935,7 @@ said why.
 - **No empty pass** (`src/sources/sync.ts`). While a source has a setup problem and no job of its own needs a check or a
   report, the sync loop runs no pass: no traffic line, no `lastOkAt`. Its status is `needs-setup` with `setupProblem`;
   `itemsSeen` 0, and the UI shows *not configured* in place of each count. With jobs of its own to report, the pass runs
-  for them, as for a paused source, and the status still carries the setup problem.
+  for them, as for a paused source, and the status stays `needs-setup` with the setup problem, never ok (issue #1351).
 - **Said once.** The log says `hopper: source <name> not configured: <reason>` when the problem starts or changes, and
   `hopper: source <name> configured` once when it clears. No event: the status and Needs you carry it.
 - **Asked for in place.** Sources shows the source as *needs setup*, with a setup card: what is missing, the steps (an
