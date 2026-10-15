@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, Job, JobGraph } from '../../src/domain/types.ts';
 import type { WorkItem, WorkItemState } from '../../src/domain/work-items.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { ONE_PATH } from '../support/proposal-paths.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -68,6 +69,26 @@ describe('every view reads the ledger (issue #1067, part 2)', () => {
     expect(after.locked).toEqual([]);
     const graphAfter = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
     expect(graphAfter.stages.failed).toBeUndefined();
+  });
+});
+
+describe('a proposal at a person (issue #1174)', () => {
+  it('needs you in the ledger, the queue counts and in flight agree, never working', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const a = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(2) } });
+    apps.push(a);
+    const job = await a.pull({ op: 'propose', message: `${ONE_PATH}\nNeeds a person: the paths differ in cost, and no rule settles it.` });
+    await a.waitForStatus(job.id, 'waiting_answer');
+    const ledger = await waitFor(async () => {
+      const r = (await a.api<Ledger>('GET', '/api/work-items')).body;
+      return r.counts.needs_you === 1 ? r : undefined;
+    }, { what: 'the proposal at a person in the ledger' });
+    expect(ledger.counts.working).toBe(0);
+    expect(ledger.items).toEqual([expect.objectContaining({ key: job.source!.key, state: 'needs_you', waitingOn: 'a proposal', jobId: job.id })]);
+    const queue = (await a.api<Queue>('GET', '/api/queue')).body;
+    expect(queue.items).toEqual(ledger.counts);
+    expect(queue.inFlight.total).toBe(0);
   });
 });
 
