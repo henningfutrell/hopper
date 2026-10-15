@@ -87,7 +87,7 @@ describe('a question answered by typing into the pane', () => {
     expect(herdr.prompts.map((p) => p.text)).not.toContain('late');
   });
 
-  it('no free lane: it runs anyway on one more lane, over the cap until it ends', async () => {
+  it('no free lane: it runs anyway on one more lane, marked past the cap, over the cap until it ends', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, { ...DONE, steps: Array.from({ length: 30 }, (_, i) => `● Plank ${i}`) }] });
     const a = await start(herdr, {}, 1);
     const job = await a.pull({}, item);
@@ -99,9 +99,12 @@ describe('a question answered by typing into the pane', () => {
     await herdr.prompt(agentName, 'Blue.');
 
     const running = await a.waitForStatus(job.id, 'running', 4000);
-    const lanesNow = (await a.api('GET', '/api/machines')).body.machines[0].lanes as { id: string; state: string; jobId?: string }[];
+    const lanesNow = (await a.api('GET', '/api/machines')).body.machines[0].lanes as { id: string; state: string; jobId?: string; pastCap?: true }[];
     expect(lanesNow.filter((l) => l.jobId === job.id || l.jobId === other.id).map((l) => l.jobId).sort()).toEqual([job.id, other.id].sort());
     expect(lanesNow.find((l) => l.jobId === job.id)!.id).toBe(running.laneId);
+    // The lane past the cap is marked (issue #1181): it drains first, and the other job's lane stays busy.
+    expect(lanesNow.find((l) => l.jobId === job.id)!.pastCap).toBe(true);
+    expect(lanesNow.find((l) => l.jobId === other.id)!.pastCap).toBeUndefined();
     await a.waitForStatus(job.id, 'finished', 8000);
   });
 });
