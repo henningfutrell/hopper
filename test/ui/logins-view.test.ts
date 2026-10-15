@@ -289,3 +289,23 @@ describe('a tool sign-in (issue #1128)', () => {
     expect(card()!.textContent).toContain('Failed: Login failed: Request failed with status code 400. Start it again from Accounts.');
   });
 });
+
+describe('the last account (issue #1269)', () => {
+  const claude = (over: Record<string, unknown> = {}) => pending({ tool: 'claude', host: 'claude.com', userCode: undefined, ...over });
+  const line = () => card()!.querySelector('[data-slot="login-last-account"]');
+
+  it('a Claude login on a machine with a recorded account: that account, its organization and the machine', async () => {
+    await boot('#logins', { logins: [claude({ lastAccount: { machineId: 'desk', service: 'claude', identity: 'dev@example.com', organization: 'Example Org', capturedAt: at(-3600) } })] });
+    expect(line()?.textContent).toBe('Last signed in as dev@example.com (Example Org) on Desk tower');
+  });
+
+  it('a Claude login on a machine with no recorded account: says none is known there', async () => {
+    await boot('#logins', { logins: [claude({ lastAccount: null })] });
+    expect(line()?.textContent).toBe('No previous account known for this machine (Desk tower)');
+  });
+
+  it('a login that names no last account (another tool): no line', async () => {
+    await boot('#logins', { logins: [pending()] });
+    expect(line()).toBeNull();
+  });
+});

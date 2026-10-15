@@ -21,6 +21,7 @@ import { createIssueGraphRepository } from './issue-graph.ts';
 import { createWorkItemLedger } from './work-items.ts';
 import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
+import { createLastAccountRepository } from './last-accounts.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
 import { createDirectJobRepository } from './direct-jobs.ts';
 import { createPromotionRepository } from './promotions.ts';
@@ -84,6 +85,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     questions: createQuestionRepository(ctx),
     reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),
+    lastAccounts: createLastAccountRepository(ctx),
     failures: createFailureRepository(ctx),
     problems: createProblemRepository(ctx),
     handoffs: createHandoffRepository(ctx),

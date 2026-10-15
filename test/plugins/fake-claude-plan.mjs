@@ -5,6 +5,7 @@
 //   result.txt  the `/usage` panel text (default: three windows, below)
 //   calls.jsonl one line per run: { argv, cwd }
 //   login-code  the code `auth login` takes (default good-code); taken, it writes mode ok (issue #1128)
+//   email, org  the account `auth status` says it is signed in as (default user@example.com, Example Org; issue #1269)
 // `-p /usage --output-format json` prints the envelope `claude -p` prints; `auth status --json`
 // prints the auth JSON. `auth login` prints its URL as the real CLI does, reads the code on stdin, and signs in or not. Like the real CLI, a `-p` run leaves a project directory under
 // $HOME/.claude/projects/<cwd with every non-alphanumeric as ->/, which the plugin must remove.
@@ -58,7 +59,7 @@ if (mode === 'exit1') {
 if (argv[0] === 'auth' && argv[1] === 'status') {
   const loggedIn = mode !== 'logged-out';
   process.stdout.write(JSON.stringify(loggedIn
-    ? { loggedIn, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'user@example.com', orgId: 'org-1', orgName: 'Example Org', subscriptionType: 'max', accessToken: 'sk-ant-SECRET' }
+    ? { loggedIn, authMethod: 'claude.ai', apiProvider: 'firstParty', email: read('email', 'user@example.com'), orgId: 'org-1', orgName: read('org', 'Example Org'), subscriptionType: 'max', accessToken: 'sk-ant-SECRET' }
     : { loggedIn }));
   process.exit(loggedIn ? 0 : 1);
 }
