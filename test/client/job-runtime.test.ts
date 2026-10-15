@@ -200,7 +200,8 @@ describe('the reap resets the job\'s runtime and only it (issue #1295)', () => {
     const said = readReap(run(reapArgv(JOB, scratch)));
     expect(said?.removed).toEqual({ containers: ['kindnode01', 'ryuk0002'], volumes: ['kindvol'] });
     const reset = calls().find((c) => c.includes('system reset --force'));
-    expect(reset).toBe(`podman --root ${containers()}/storage --runroot ${own()}/storage --tmpdir ${own()}/libpod/tmp system reset --force | XDG_RUNTIME_DIR=${own()} DOCKER_HOST= CONTAINER_HOST=unset`);
+    // No --runroot: Podman 4 refuses one longer than 50 characters, and the runtime dir's is; storage.conf names it.
+    expect(reset).toBe(`podman --root ${containers()}/storage --tmpdir ${own()}/libpod/tmp system reset --force | XDG_RUNTIME_DIR=${own()} DOCKER_HOST= CONTAINER_HOST=unset`);
     expect(existsSync(join(containers(), 'storage'))).toBe(false);
     expect(existsSync(own())).toBe(false);
     expect(readFileSync(join(host, 'containers', 'hopper-stack'), 'utf8')).toBe('running');
