@@ -6373,3 +6373,39 @@ Version 1 (`docs/schemas/landing_batch.canary_promoted.v1.json`). The canary can
   "why": "no bug report named it in 24 hours"
 }
 ```
+
+## `hopper.event_loop_stalled`
+
+Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event loop was held for `ms` (issue #1154): for that long no request was answered and no machine's link was served. `during`: the routes of the requests in flight, never their URLs. `store`: the slow store calls in it, `ms` in all and the statements that held it longest (`what`: the verb and table, never a value). `skipped`: the stalls since the last one raised, which are logged only: at most one is raised a minute. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `ms` | integer | yes |
+| `during` | string[] | yes |
+| `store` | object | no |
+| `skipped` | integer | yes |
+
+```json
+{
+  "ms": 5200,
+  "during": [
+    "POST /job/step"
+  ],
+  "store": {
+    "ms": 3900,
+    "calls": [
+      {
+        "what": "SELECT jobs",
+        "ms": 2100,
+        "count": 3
+      },
+      {
+        "what": "INSERT checkpoints",
+        "ms": 1800,
+        "count": 1
+      }
+    ]
+  },
+  "skipped": 2
+}
+```

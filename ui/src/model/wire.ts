@@ -107,7 +107,7 @@ export interface Health {
   reviewingExecutors?: string[];
   uptimeS: number;
   /** The last time the event loop was held for more than 2 s, for 10 minutes after (issue #1002): `during`, the routes in flight. */
-  eventLoopStall?: { at: string; ms: number; during: string[] };
+  eventLoopStall?: { at: string; ms: number; during: string[]; store?: { ms: number; calls: { what: string; ms: number; count: number }[] } };
 }
 
 /** A subscription as GET /api/webhooks shows it: when its secret changed (or the variable one from before reads), and why it cannot sign (if so). Never a secret. */

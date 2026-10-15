@@ -25,7 +25,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'thread_ask.settings_changed': 'warn', 'tldr.settings_changed': 'warn', 'github_rate_limiter.settings_changed': 'warn', 'allowed_hosts.changed': 'warn', 'github_watch.settings_changed': 'warn',
   'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
-  'skill.loaded': 'ok', 'skill.refused': 'warn',
+  'skill.loaded': 'ok', 'skill.refused': 'warn', 'hopper.event_loop_stalled': 'warn',
   'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
   'landing_batch.promoted': 'ok', 'landing_batch.failed': 'bad', 'landing_batches.changed': 'warn',
   'landing_batch.culprit': 'bad', 'landing_batch.reverted': 'ok', 'landing_batch.revert_failed': 'bad', 'landing_batch.fix_filed': 'ok',

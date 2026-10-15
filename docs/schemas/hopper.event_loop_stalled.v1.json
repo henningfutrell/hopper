@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ms": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "during": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "store": {
+      "type": "object",
+      "properties": {
+        "ms": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string"
+              },
+              "ms": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "count": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "what",
+              "ms",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "ms",
+        "calls"
+      ],
+      "additionalProperties": false
+    },
+    "skipped": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "ms",
+    "during",
+    "skipped"
+  ],
+  "additionalProperties": false
+}

@@ -301,6 +301,7 @@
         "landing_batch.canary_held",
         "landing_batch.canary_issue_filed",
         "landing_batch.canary_promoted",
+        "hopper.event_loop_stalled",
         "jev.mode_changed",
         "router.mode_changed"
       ]

@@ -7,11 +7,15 @@
 //
 // Only the job's own, only while it runs resuming elsewhere (`parked.elsewhere` set): 401 the token is no job's, or its job
 // ended; 409 the job is not running to resume elsewhere now; 404 no such part. It changes nothing and records nothing.
-import { gunzipSync } from 'node:zlib';
+import { gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import { CHECKPOINT_PARTS, TERMINAL_STATUSES, type CheckpointPart } from '../domain/types.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
 import type { Tenants } from './tenants.ts';
+
+/** Unpacked in zlib's thread pool, not on the event loop (issue #1154). */
+const unpack = promisify(gunzip);
 
 export const CHECKPOINT_PATH = '/job/checkpoint';
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -29,6 +33,6 @@ export function jobCheckpointRoutes(app: FastifyInstance, o: { tenants: Tenants 
     const k = user.store.checkpoints.get(job.id);
     const gz = k && (part === 'patch' ? k.patch : k.session);
     if (!gz) return no(404, `job ${job.id}'s checkpoint holds no ${part}`);
-    return reply.code(200).type('application/octet-stream').header('cache-control', 'no-store').send(gunzipSync(gz));
+    return reply.code(200).type('application/octet-stream').header('cache-control', 'no-store').send(await unpack(gz));
   });
 }
