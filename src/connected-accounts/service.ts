@@ -379,7 +379,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     renew: (provider, refused) => renewer.renew(provider, refused),
     jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),
     token,
-    endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl }),
+    endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl, ...(o.apps[provider].slug ? { installUrl: installUrl(o.apps[provider])! } : {}) }),
     start: () => { startCheck(); renewer.start(); installations.start(); },
     renewDue: () => renewer.renewDue(),
     stop() {

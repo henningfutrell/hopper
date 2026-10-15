@@ -16,8 +16,11 @@ import { explained, permissionsOfError } from '../app/refusal.ts';
 import * as rest from '../app/rest.ts';
 import { headChecks } from '../app/rest-checks.ts';
 
-/** What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). */
-export function accountError(err: unknown, what: string): GitHubApiError {
+/**
+ * What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). `installUrl`:
+ * the hopper's app's install link, for a refusal (issue #1351).
+ */
+export function accountError(err: unknown, what: string, installUrl?: string): GitHubApiError {
   if (err instanceof GitHubApiError) return err;
   const limited = rateLimitedError(err, what);
   if (limited) return limited;
@@ -25,12 +28,12 @@ export function accountError(err: unknown, what: string): GitHubApiError {
   const status = typeof e.status === 'number' ? e.status : undefined;
   const message = typeof e.message === 'string' ? e.message : String(err);
   if (status === 401) return new GitHubApiError(`${what}: GitHub refused the connected account's token (401: ${message})`, true, 401);
-  return new GitHubApiError(`${what}: ${explained(message, permissionsOfError(err))}`, isPermanent(status, message), status);
+  return new GitHubApiError(`${what}: ${explained(message, permissionsOfError(err), installUrl)}`, isPermanent(status, message), status);
 }
 
 const refused = (err: unknown) => (err as { status?: unknown }).status === 401;
 
-export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<string>; renew?(refused: string): Promise<string> }): GitHubApi {
+export function createAccountGitHubApi(o: { apiUrl: string; installUrl?: string | undefined; token(): Promise<string>; renew?(refused: string): Promise<string> }): GitHubApi {
   const req = makeRequest(o.apiUrl, undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
   // The reads that look for new jobs stop at the intake reserve, so a job's own calls still go (issue #983).
   const intake = makeRequest(o.apiUrl, undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS, intake: true });
@@ -42,7 +45,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     try {
       return await fn(token);
     } catch (err) {
-      if (!refused(err) || !o.renew) throw accountError(err, what);
+      if (!refused(err) || !o.renew) throw accountError(err, what, o.installUrl);
     }
     let renewed: string;
     try { renewed = await o.renew(token); } catch (err) { throw new GitHubApiError(`${what}: ${(err as Error).message}`, false); }
@@ -51,7 +54,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     } catch (err) {
       // GitHub refusing the token it just renewed is GitHub refusing the connection (issue #647): the renewer ends it.
       if (refused(err)) await o.renew(renewed).catch(() => undefined);
-      throw accountError(err, what);
+      throw accountError(err, what, o.installUrl);
     }
   };
   return {

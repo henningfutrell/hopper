@@ -15317,7 +15317,9 @@ integration" and names neither the permission nor the install. Every refusal the
 connected account's adapter, the GraphQL reads of pull requests, a repository's checks read) adds what the app needs and the
 fix: the permission GitHub asks for — REST's `x-accepted-github-permissions` header, or the GraphQL field it refused, by the
 permission the hopper knows that field needs — or, when neither names one, that the app lacks a permission or is not
-installed there; then install it on the repository's owner with that repository and accept its new permissions. A connected
+installed there; then install it on the repository's owner with that repository, at the app's install link
+(`<app>/installations/new`: the app source's own app, or the hopper's app from its slug, `ConnectedAccountTokens.endpoints`,
+for a connected account and its repository checks), and accept its new permissions. A connected
 account reaches only the repositories where the hopper's app is installed, so its checks fix says that too. A paused source
 says why in the log, once when the pause starts or changes and once when it ends (`pauseTold`, `src/sources/sync-setup.ts`):
 its pass asks GitHub nothing new, and its traffic line alone reads as a healthy zero.

@@ -106,7 +106,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
   });
   const notMine = 'your GitHub is not connected: connect it in Sources → Connect GitHub';
   /** This user's own connection, for what they do themselves: Report a bug, the Add PR checks job. */
-  const mine = () => ({ apiUrl: o.accounts.endpoints('github').apiUrl, token: () => o.accounts.token('github'), renew: (refused: string) => o.accounts.renew('github', refused) });
+  const mine = () => ({ apiUrl: o.accounts.endpoints('github').apiUrl, installUrl: o.accounts.endpoints('github').installUrl, token: () => o.accounts.token('github'), renew: (refused: string) => o.accounts.renew('github', refused) });
   const reports = (): ReportGitHub | { problem: string } => (!o.accounts.account('github')
     ? { problem: o.accounts.ended('github') ?? notMine }
     : createReportGitHub(mine()));
