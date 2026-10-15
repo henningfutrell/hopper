@@ -41,7 +41,7 @@ describe('GitHub source report', () => {
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
     // No ready pull request closes it: one that references it, or one named for it on its branch, is looked for (issue #637).
-    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'addLabels']);
+    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'ensureLabel', 'addLabels']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(state).toEqual({ ...claimed, follow: 'open' });
   });
@@ -125,6 +125,7 @@ describe('GitHub source report', () => {
   it('rerun that GitHub refuses throws a SourceError with its reason', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed' });
+    await source.report({ kind: 'failed', job });
     gh.failNext('removeLabels', new GitHubApiError('gh: Resource not accessible (HTTP 403)', true, 403));
     const err = await source.rerun!(job).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SourceError);

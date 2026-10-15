@@ -134,7 +134,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let nothingToScan = false;
   /** The job repositories the last discover scanned: what a GitHub delivery may name (issue #1079). */
   let scanned: string[] = [];
-  const labelledRepos = new Set<string>();
+  const ensuredLabels = new Set<string>();
   /** The request cards this process saw opened, as `<key> <hash>`: the events are read once per text. */
   const opened = new Set<string>();
   /** Since when and by whom each issue is on the backburner (issue #808), read once while the label stays. */
@@ -143,8 +143,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
   const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
-  const reportContext = () => ({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) });
-  const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
+  const reportContext = () => ({ api, ensuredLabels, ...(o.intake ? { holder: o.intake.holder } : {}) });
+  const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -252,7 +252,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   return {
     name: o.name, kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo) => ensureLabels(reportContext(), repo), acts), actGaveUp(acts)),
+    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
     pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     giveBackAct: (job, act, acting, notes) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, notes) : undefined),
     intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),

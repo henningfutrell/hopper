@@ -30,8 +30,8 @@ import type { GitHubOutbox } from './outbox.ts';
 
 export interface ReportContext {
   api: GitHubApi;
-  /** Repos whose hopper labels were ensured by this process. */
-  labelledRepos: Set<string>;
+  /** The hopper labels this process made sure of, as `<repo> <label>` (issue #1154: only the ones it adds). */
+  ensuredLabels: Set<string>;
   /** This user's claim holder id (issue #440); absent: claims carry no holder label. */
   holder?: string;
 }
@@ -44,20 +44,36 @@ function issueOf(job: Job): { repo: string; number: number } {
   return { repo, number };
 }
 
-export async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
-  if (ctx.labelledRepos.has(repo)) return;
-  for (const l of HOPPER_LABELS) await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
-  if (ctx.holder) await ctx.api.ensureLabel(repo, holderLabel(ctx.holder), HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION);
-  ctx.labelledRepos.add(repo);
+/** Make sure `repo` has each hopper label of `names`, with its colour and description: once per label per process. */
+export async function ensureLabels(ctx: ReportContext, repo: string, names: readonly string[]): Promise<void> {
+  const own = [...HOPPER_LABELS, ...(ctx.holder ? [{ name: holderLabel(ctx.holder), color: HOLDER_LABEL_COLOR, description: HOLDER_LABEL_DESCRIPTION }] : [])];
+  for (const l of own.filter((o) => names.includes(o.name))) {
+    const key = `${repo} ${l.name}`;
+    if (ctx.ensuredLabels.has(key)) continue;
+    await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
+    ctx.ensuredLabels.add(key);
+  }
+}
+
+/**
+ * One label change on an issue: `remove` comes off, then `add` goes on. With `carried`, the issue's labels as just read
+ * (issue #1154), a label it does not carry is not removed and one it carries is not added: a write that changes nothing
+ * is not sent. Without it, every one is.
+ */
+export async function relabel(ctx: ReportContext, repo: string, number: number,
+  c: { add?: readonly string[]; remove?: readonly string[]; carried?: readonly string[] }): Promise<void> {
+  const add = (c.add ?? []).filter((l) => !c.carried?.includes(l));
+  const remove = (c.remove ?? []).filter((l) => !c.add?.includes(l) && (!c.carried || c.carried.includes(l)));
+  if (remove.length) await ctx.api.removeLabels(repo, number, [...new Set(remove)]);
+  if (add.length) {
+    await ensureLabels(ctx, repo, add);
+    await ctx.api.addLabels(repo, number, add);
+  }
 }
 
 /** End of a job on its issue: drop `hopper:claimed`, its holder label and `also`, add the outcome label. */
-async function settle(ctx: ReportContext, repo: string, number: number, add: string[], also: string[] = []): Promise<void> {
-  await ctx.api.removeLabels(repo, number, [...claimLabels(ctx.holder), ...also]);
-  if (add.length) {
-    await ensureLabels(ctx, repo);
-    await ctx.api.addLabels(repo, number, add);
-  }
+async function settle(ctx: ReportContext, repo: string, number: number, add: string[], also: string[] = [], carried?: readonly string[]): Promise<void> {
+  await relabel(ctx, repo, number, { add, remove: [...claimLabels(ctx.holder), ...also], ...(carried ? { carried } : {}) });
 }
 
 /**
@@ -70,19 +86,19 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
 async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
   if (handedToFollowOns(job)) return state;
   const issue = await ctx.api.getIssue(repo, number);
-  const also = issue.labels.includes(LABEL_FAILED) ? [LABEL_FAILED] : [];
+  const also = [LABEL_FAILED];
   if (job.partlyDone) {
-    await settle(ctx, repo, number, [LABEL_PARTLY_DONE], also);
+    await settle(ctx, repo, number, [LABEL_PARTLY_DONE], also, issue.labels);
     return { ...state, pullRequest: job.partlyDone, follow: 'open', part: true };
   }
   if (issue.state === 'closed') {
-    await settle(ctx, repo, number, [LABEL_DONE], also);
+    await settle(ctx, repo, number, [LABEL_DONE], also, issue.labels);
     return state;
   }
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
   const own = await readyPullRequest(ctx.api, repo, number);
-  await settle(ctx, repo, number, [LABEL_PR_READY], also);
+  await settle(ctx, repo, number, [LABEL_PR_READY], also, issue.labels);
   return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
 }
 
@@ -113,8 +129,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
   const { repo, number } = issueOf(job);
   switch (r.kind) {
     case 'claimed':
-      await ensureLabels(ctx, repo);
-      await ctx.api.addLabels(repo, number, claimLabels(ctx.holder));
+      await relabel(ctx, repo, number, { add: claimLabels(ctx.holder) });
       return state;
     case 'finished':
       return finished(ctx, job, repo, number, state);
@@ -154,7 +169,7 @@ export async function takeBack(ctx: ReportContext, label: string, job: Job, assi
     const issue = await ctx.api.getIssue(repo, number);
     if (assignee !== undefined && !isAssignedTo(issue, assignee)) await ctx.api.addAssignees(repo, number, [assignee]);
     if (issue.state === 'closed') await ctx.api.reopenIssue(repo, number);
-    await ctx.api.removeLabels(repo, number, [...END_LABELS, ...claimLabels(ctx.holder)]);
+    await relabel(ctx, repo, number, { remove: [...END_LABELS, ...claimLabels(ctx.holder)], carried: issue.labels });
     if (!issue.labels.includes(label)) await ctx.api.addLabels(repo, number, [label]);
     return await ctx.api.getIssue(repo, number);
   } catch (err) {

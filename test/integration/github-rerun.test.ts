@@ -50,7 +50,8 @@ describe('Run again on a GitHub job', () => {
     // A person's Run again makes no tend job (issue #967): only tending's may elbow in past a lane cap.
     expect(r.body.spec.tend).toBeUndefined();
     expect((await jobsFor()).map((j) => j.id)).toContain(r.body.id);
-    expect(gh.calls).toContainEqual(expect.objectContaining({ method: 'removeLabels', args: [REPO, issue.number, expect.arrayContaining(['hopper:failed', 'hopper:claimed'])] }));
+    // Only the end label the issue carries comes off (issue #1154): the claim went with the failure.
+    expect(gh.calls).toContainEqual(expect.objectContaining({ method: 'removeLabels', args: [REPO, issue.number, ['hopper:failed']] }));
     expect((await a.events('types=job.rerun')).map((e) => e.jobId)).toEqual([first!.id]);
     expect((await a.events('types=job.queued')).filter((e) => e.jobId === r.body.id)).toHaveLength(1);
 

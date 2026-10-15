@@ -20457,13 +20457,24 @@ nothing else") said only which routes were in flight; most stalls had none, so i
   database (`getent passwd`) when HOME is empty, and uses it for the rest of its command (the work tree); the home comes on
   a line of its own (`hopper-home <path>`), so a line a shell's startup file prints is never taken for it. Still none:
   the reason says the session has no HOME and the user database names none.
-- **Not done here.** The label writes of a `github-account` sync pass (up to 84 a pass): they are asynchronous and hold
-  no loop, but their records are store calls. What the new log line names as holding the loop is the next thing to move.
+- **Label writes that change nothing are not sent** (part 2, `relabel` in `src/sources/github/report.ts`). A sync pass
+  of a `github-account` source made up to 84 label calls. They hold no loop (asynchronous), but each costs a GitHub call
+  and its records. Most changed nothing: a remove is one `DELETE` a label, and the hopper removed every label it might
+  have set — the claim and its holder, `hopper:failed`, and on Run again all six end labels —, so most answered 404; and
+  the first label write to a repository made all eight hopper labels. Now, where the hopper holds the issue's labels as
+  just read (a job's end, a follow's end, Run again, a stale claim's release), it removes only the labels the issue
+  carries and adds only the ones it lacks; it makes only the label it adds, once per repository per process, and so does
+  an add the GitHub outbox sends (issue #1238). Where it holds
+  none (a failed, cancelled or rejected job's end), every write is sent as before: a read to save one `DELETE` costs as
+  much as it saves. Not batched: GitHub has no call that adds and removes at once but the one that sets every label, and
+  that would undo a person's label set between the read and the write.
+- **Not done here.** What the new log line names as holding the loop is the next thing to move: no hopper has yet run
+  the attribution through a stall.
 
 **Verification:** `test/store/slow-calls.test.ts`, `test/http/event-loop.test.ts` (the store's part named, none said,
 one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers what the scrub in place does),
 `test/client/stale-dial.test.ts` (the first backoff after a stale refusal, once), `test/adapters/ssh-machine.test.ts`
-(a session with no HOME).
+(a session with no HOME), `test/sources/github-label-writes.test.ts` (part 2: no label write that changes nothing).
 
 ## A job source not configured says so (issue #1243, 2026-10-15)
 
