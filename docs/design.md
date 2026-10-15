@@ -7108,6 +7108,13 @@ one podman-compose started (#1063); the person had to give the master key and ch
 - **Down, then up.** `compose pull`, `compose down` (volumes stay), `compose up -d`: every container is made again on the
   new image. Not `up -d --force-recreate`: podman-compose cannot force-recreate a service with no container yet (issue
   #894). When `up` fails, the script puts `compose.yaml.bak` back and starts the old stack.
+- **The one-shot** (issue #1247). `openfga-migrate` leaves its exited container, and podman-compose's `down` can leave it
+  too, so the next `up -d` exits 125 on the name in use while the rest of the stack starts: every update looked failed.
+  Before each `up -d` the script removes that container (`clear_one_shot`; a non-zero exit shows its last log lines
+  first). After the hopper answers its health check, it waits for the new run to exit 0 and removes its container
+  (`one_shot`): the next `up -d` makes it again. A run still non-zero when the wait ends fails the update with its log
+  tail; one restart is no failure, since it retries until postgres has made the schema. Not `--rm` or `up
+  --force-recreate`: compose has no `--rm` for a service of `up`, and podman-compose cannot force-recreate (#894).
 - **The result is checked.** The hopper container's image id equals the pulled image's; `/api/health` answers inside the
   container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` is not `missing` (limited); `hopper update drift`
   exits 0. Each failure is said and exits 1; a stopped container shows its last log lines (a wrong key stops it).

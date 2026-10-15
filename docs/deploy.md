@@ -209,7 +209,7 @@ container keeps the key it was started with: give it again at each `up` that rec
 |---|---|
 | `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. Before it starts, it makes a random database password and the database URL from it, and OpenFGA's and the vault container's preshared keys, in `runtime-secrets`, and sets the password again once it takes connections. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
 | `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `runtime-secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
-| `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. Nothing depends on it ("Access: OpenFGA" below). |
+| `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. The update removes its container once it exited 0 (issue #1247). Nothing depends on it ("Access: OpenFGA" below). |
 | `openfga` | OpenFGA, which access asks before every credential a job is given; on no host port, behind a preshared key `postgres` makes. |
 
 No secret is in a persistent volume (issue #659). `runtime-secrets` is in memory (tmpfs): the services share it while
@@ -370,6 +370,10 @@ is only in the hopper's environment, given at launch.
     a LAN install's `0.0.0.0` as `${HOPPER_BIND:-0.0.0.0}` in `compose.yaml`, prints its own services and mounts (a
     container socket for boxes, say) to add to `compose.override.yaml`, adds OpenFGA, and keeps the old file as
     `compose.yaml.bak`. Until then the stack banner names the gaps.
+  - **The `openfga-migrate` one-shot** (issue #1247): its container stays after it exits, and podman-compose's `down`
+    can leave it, so a plain `up -d` exits 125 (the container name is in use). The update removes a leftover one before
+    it starts the stack (a failed one shows its last log lines first), waits until the new run exits 0, then removes its
+    container. A run that still exits non-zero when the health wait ends fails the update, with its last log lines.
   - **Older images go with the update** (issue #1120, step 7 above): repeated upgrades do not pile up images. By hand,
     `podman image prune -f --filter label=org.opencontainers.image.title=hopper` removes the untagged ones.
   - **When.** Recreating the container is a restart. A job whose machine reattaches (a herdr pane on an

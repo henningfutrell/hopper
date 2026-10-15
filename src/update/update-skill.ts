@@ -42,9 +42,9 @@ Do not do the update another way.
 4. Run the update (Docker: \`docker\` in place of \`podman\`):
    \`${updateCommand('podman', image)}\`
 5. Read what it says. It ends with \`hopper update: done: …\` and exit 0 when the hopper runs the new image, answers its
-   health check, has its master key, and the stack has no drift. Else it says what failed and exits 1. A part of the old
-   compose.yaml the new one cannot hold is said too: it goes in \`compose.override.yaml\`. A drift is fixed by the update
-   again, never by a hand edit.
+   health check, has its master key, OpenFGA's tables are up to date, and the stack has no drift. Else it says what
+   failed and exits 1. A part of the old compose.yaml the new one cannot hold is said too: it goes in
+   \`compose.override.yaml\`. A drift is fixed by the update again, never by a hand edit.
 6. Optional: remove the image the update replaced: \`${pruneCommand('podman')}\`.
 
 ## Go back
