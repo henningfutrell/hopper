@@ -2,7 +2,8 @@
 // Issue #652 requirement 8: Sources warns of each job repository whose setup is not as the hopper asks (its default and
 // release branches need a pull request and a status check and take no force push; secret scanning and push protection
 // on), names each problem, and says what GitHub did not show. Rendered in the whole app against a fake daemon.
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { RepoChecks } from '../../src/domain/types.ts';
 import { setupLine } from '../../ui/src/model/repo-setup.ts';
 import { boot, unmount } from './sources-daemon.ts';
@@ -34,6 +35,23 @@ describe('Sources: repository setup', () => {
     expect(row('octo/ruled')!.textContent).toContain('only to a repository admin');
     expect(row('octo/good')?.getAttribute('data-repo-setup')).toBe('set up');
     expect(row('octo/good')!.querySelector('[data-repo-setup-problem]')).toBeNull();
+  });
+
+  it('shows when each repository was read, and Refresh asks the daemon to read GitHub again (issue #1250)', async () => {
+    const NEW = { ...repo('octo/new', { state: 'unknown', problems: [], unread: [] }), state: 'unknown' as const };
+    delete NEW.checkedAt;
+    delete NEW.found;
+    await boot({ '/api/repo-checks': { repos: [GOOD, NEW] }, '/ui/api/repo-checks/refresh': { repos: [{ ...GOOD, reading: true }, { ...NEW, reading: true }] } });
+    await vi.waitFor(() => expect(section()).not.toBeNull());
+    expect(row('octo/good')!.querySelector('[data-repo-setup-read]')?.getAttribute('datetime')).toBe(GOOD.checkedAt);
+    expect(row('octo/new')!.querySelector('[data-repo-setup-read]')?.textContent).toBe('not read yet');
+    const refresh = section()!.querySelector<HTMLButtonElement>('[data-repo-setup-refresh]')!;
+    expect(refresh.textContent).toBe('Refresh');
+    const fetch = globalThis.fetch as unknown as Mock;
+    expect(fetch.mock.calls.some(([u, init]) => String(u) === '/ui/api/repo-checks/refresh' && (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
+    await act(async () => { refresh.click(); });
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([u, init]) => String(u) === '/ui/api/repo-checks/refresh' && (init as RequestInit | undefined)?.method === 'POST')).toBe(true));
+    await vi.waitFor(() => expect(row('octo/new')!.querySelector('[data-repo-setup-read]')?.textContent).toBe('reading GitHub…'));
   });
 
   it('shows no section when there is no job repository, or the checks cannot be read', async () => {
