@@ -6524,13 +6524,15 @@ Version 1 (`docs/schemas/landing_batch.restarted.v1.json`). A person restarted t
 
 ## `hopper.event_loop_stalled`
 
-Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event loop was held for `ms` (issue #1154): for that long no request was answered and no machine's link was served. `during`: the routes of the requests in flight, never their URLs. `store`: the slow store calls in it, `ms` in all and the statements that held it longest (`what`: the verb and table, never a value). `skipped`: the stalls since the last one raised, which are logged only: at most one is raised a minute. An instance event: in every user's log.
+Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event loop was held for `ms` (issue #1154): for that long no request was answered and no machine's link was served. `during`: the routes of the requests in flight, never their URLs. `store`: the slow store calls in it, `ms` in all and the statements that held it longest (`what`: the verb and table, never a value). `held` (issue #1383): where the loop ran while it was held, read by a thread of its own each 5 s of it, at most three reads: `afterMs` into the stall, and the top `frames` (`function (file:line)`, the file in the hopper's tree only); absent when no read was taken. `memory`: the process's resident size and JavaScript heap in use when it ended, in MiB. `skipped`: the stalls since the last one raised, which are logged only: at most one is raised a minute. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
 | `ms` | integer | yes |
 | `during` | string[] | yes |
 | `store` | object | no |
+| `held` | object[] | no |
+| `memory` | object | no |
 | `skipped` | integer | yes |
 
 ```json
@@ -6553,6 +6555,19 @@ Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event
         "count": 1
       }
     ]
+  },
+  "held": [
+    {
+      "afterMs": 5000,
+      "frames": [
+        "parse (src/store/db.ts:212)",
+        "list (src/store/jobs.ts:88)"
+      ]
+    }
+  ],
+  "memory": {
+    "rssMb": 2480,
+    "heapMb": 1210
   },
   "skipped": 2
 }

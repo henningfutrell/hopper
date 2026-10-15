@@ -5,7 +5,12 @@
 // read from the loop once it is free again; the routes say which handler it was. A store call blocks the loop while it
 // lasts (src/store/db.ts): the slow ones that ran during a stall are named with it, by statement (issue #1154). A stall is
 // also raised as `hopper.event_loop_stalled`, at most one each RAISE_EVERY_MS, so a person is told, not only the log.
+// Issue #1383: a worker thread reads where the loop runs while it is held (event-loop-held.ts), so a stall with no store
+// call in it names its code too (`held`); a stall says the process's memory (`memory`); and the time the loop was held
+// since a moment is answered (`heldSince`), so a dial-in that waited behind a stall is not refused as stale. The process's
+// memory is logged each time its resident size grows past another GiB.
 import type { FastifyInstance } from 'fastify';
+import type { HeldSample, HeldWatch } from './event-loop-held.ts';
 import type { SlowCall } from '../store/slow-calls.ts';
 
 /** A timer this late is a stall. */
@@ -19,15 +24,26 @@ const ENDED_KEPT = 50;
 export const RAISE_EVERY_MS = 60_000;
 /** How many statements a stall names. */
 const STATEMENTS_NAMED = 3;
+/** How often the process's memory is read for growth. */
+const MEMORY_EVERY_MS = 60_000;
+const GIB = 1024 ** 3;
+/** How long a stall counts in `heldSince`. */
+const STALLS_KEPT_MS = 10 * 60_000;
 
 /** The store calls that ran during a stall: how long they held the loop in all, and the statements that held it longest. */
 export interface StallStoreCalls { ms: number; calls: { what: string; ms: number; count: number }[] }
 
+/** Where the held loop ran (issue #1383): each read, `afterMs` into the stall, its frames from the top. */
+export interface StallHeld { afterMs: number; frames: string[] }
+
+/** The process's memory when a stall ended, in MiB: its resident size and the JavaScript heap in use. */
+export interface StallMemory { rssMb: number; heapMb: number }
+
 /**
- * A stall of the event loop: when it ended, how long it was, the requests in flight during it, and the slow store calls
- * that ran in it (absent: none).
+ * A stall of the event loop: when it ended, how long it was, the requests in flight during it, the slow store calls
+ * that ran in it (absent: none), where the loop ran while it was held (absent: not read), and the memory.
  */
-export interface EventLoopStall { at: string; ms: number; during: string[]; store?: StallStoreCalls }
+export interface EventLoopStall { at: string; ms: number; during: string[]; store?: StallStoreCalls; held?: StallHeld[]; memory?: StallMemory }
 
 /** The store calls of `calls` within [from, to], by statement, longest first. */
 export function storeCallsIn(calls: readonly SlowCall[], from: number, to: number): StallStoreCalls | undefined {
@@ -49,9 +65,20 @@ const storeLine = (s: StallStoreCalls | undefined): string => (s
   ? `; store calls in it: ${seconds(s.ms)} (${s.calls.map((c) => `${c.what} ${seconds(c.ms)}${c.count > 1 ? ` ×${c.count}` : ''}`).join(', ')})`
   : '; no slow store call in it');
 
+const heldLine = (h: StallHeld[] | undefined): string => (h?.length
+  ? `; it ran ${h.map((r) => `at ${seconds(r.afterMs)}: ${r.frames.slice(0, 3).join(' ← ') || 'no JavaScript'}`).join('; ')}`
+  : '');
+
+const mib = (bytes: number): number => Math.round(bytes / 1024 ** 2);
+
 export interface EventLoopWatch {
   /** The last stall, while it is shown. */
   last(): EventLoopStall | undefined;
+  /**
+   * How long the loop was held since `from` (ms since the epoch): the stalls since, and the one still going on. A request
+   * signed at `from` and read only now waited that long behind the loop, not on the wire.
+   */
+  heldSince(from: number): number;
 }
 
 interface Span { route: string; from: number; to?: number }
@@ -63,18 +90,28 @@ export interface WatchOptions {
   storeCalls?: (from: number) => readonly SlowCall[];
   /** A stall to tell a person: at most one each `raiseEveryMs`; `skipped`, the stalls since the last one raised. */
   raise?: (stall: EventLoopStall & { skipped: number }) => void;
+  /** The thread that reads where the loop is held (event-loop-held.ts). Absent: a stall does not say. */
+  held?: HeldWatch;
+  /** The process's memory; default `process.memoryUsage()`. */
+  memory?: () => { rss: number; heapUsed: number };
   stallMs?: number;
   tickMs?: number;
   raiseEveryMs?: number;
+  memoryEveryMs?: number;
 }
 
 export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoopWatch {
-  const stallMs = o.stallMs ?? STALL_MS, tickMs = o.tickMs ?? TICK_MS, raiseEveryMs = o.raiseEveryMs ?? RAISE_EVERY_MS;
+  const stallMs = o.stallMs ?? STALL_MS, tickMs = o.tickMs ?? TICK_MS, raiseEveryMs = o.raiseEveryMs ?? RAISE_EVERY_MS, memoryEveryMs = o.memoryEveryMs ?? MEMORY_EVERY_MS;
   const open = new Map<string, Span>();
   const ended: Span[] = [];
   let last: { stall: EventLoopStall; seen: number } | undefined;
   let raised: number | undefined;
   let skipped = 0;
+  const memory = o.memory ?? (() => process.memoryUsage());
+  /** The stalls of the last STALLS_KEPT_MS, in ms since the epoch. */
+  const stalls: { from: number; to: number }[] = [];
+  let beat = o.held?.beat() ?? Date.now();
+  let rssStep = 0, memoryAt = performance.now();
 
   app.addHook('onRequest', async (req) => { open.set(req.id, { route: `${req.method} ${req.routeOptions.url ?? '(no route)'}`, from: performance.now() }); });
   app.addHook('onResponse', async (req) => {
@@ -87,24 +124,51 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
 
   let at = performance.now();
   const timer = setInterval(() => {
-    const now = performance.now(), late = now - at - tickMs;
+    const now = performance.now(), late = now - at - tickMs, since = beat, wall = Date.now();
     at = now;
+    beat = o.held?.beat() ?? wall;
+    if (now - memoryAt >= memoryEveryMs) { memoryAt = now; watchMemory(); }
     if (late < stallMs) return;
+    stalls.push({ from: wall - late, to: wall });
+    while (stalls.length && stalls[0]!.to < wall - STALLS_KEPT_MS) stalls.shift();
+    // The held thread's last read is a message still in the queue: read it after the queue's turn.
+    setImmediate(() => { stalled(now, late, o.held?.of(since) ?? []); });
+  }, tickMs);
+  const watchMemory = (): void => {
+    const rss = memory().rss, step = Math.floor(rss / GIB);
+    if (step <= rssStep) return;
+    rssStep = step;
+    o.warn(`hopper: the process's resident memory grew past ${step} GiB (${mib(rss)} MiB)`);
+  };
+  const stalled = (now: number, late: number, reads: HeldSample[]): void => {
     const from = now - late;
     const during = [...new Set([...ended.filter((s) => s.to! >= from), ...open.values()].filter((s) => s.from <= now).map((s) => s.route))];
     const store = o.storeCalls ? storeCallsIn(o.storeCalls(from), from, now) : undefined;
-    const stall: EventLoopStall = { at: o.clock.now().toISOString(), ms: Math.round(late), during, ...(store ? { store } : {}) };
+    const held = reads.map((r) => ({ afterMs: Math.round(r.heldMs), frames: r.frames }));
+    const m = memory();
+    const stall: EventLoopStall = {
+      at: o.clock.now().toISOString(), ms: Math.round(late), during, ...(store ? { store } : {}), ...(held.length ? { held } : {}),
+      memory: { rssMb: mib(m.rss), heapMb: mib(m.heapUsed) },
+    };
     last = { stall, seen: now };
-    o.warn(`hopper: the event loop stalled for ${seconds(late)}; requests in flight: ${during.length ? during.join(', ') : 'none (a timer or the engine held it)'}${o.storeCalls ? storeLine(store) : ''}`);
+    o.warn(`hopper: the event loop stalled for ${seconds(late)}; requests in flight: ${during.length ? during.join(', ') : 'none (a timer or the engine held it)'}${o.storeCalls ? storeLine(store) : ''}${heldLine(stall.held)}; memory: ${stall.memory!.rssMb} MiB resident, ${stall.memory!.heapMb} MiB heap`);
     if (!o.raise) return;
     if (raised !== undefined && now - raised < raiseEveryMs) { skipped++; return; }
     raised = now;
     const told = { ...stall, skipped };
     skipped = 0;
     try { o.raise(told); } catch (e) { o.warn(`hopper: the event loop stall could not be raised: ${(e as Error).message}`); }
-  }, tickMs);
+  };
   timer.unref();
-  app.addHook('onClose', async () => { clearInterval(timer); });
+  app.addHook('onClose', async () => { clearInterval(timer); await o.held?.end(); });
 
-  return { last: () => (last && performance.now() - last.seen < STALL_SHOWN_MS ? last.stall : undefined) };
+  return {
+    last: () => (last && performance.now() - last.seen < STALL_SHOWN_MS ? last.stall : undefined),
+    heldSince: (from) => {
+      // The stall going on now, not yet seen by the timer: this read runs as the loop is freed.
+      const going = performance.now() - at - tickMs, wall = Date.now();
+      const spans = going >= stallMs ? [...stalls, { from: wall - going, to: wall }] : stalls;
+      return Math.round(spans.reduce((n, s) => n + Math.max(0, s.to - Math.max(s.from, from)), 0));
+    },
+  };
 }

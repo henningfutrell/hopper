@@ -55,6 +55,50 @@
       ],
       "additionalProperties": false
     },
+    "held": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "afterMs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "afterMs",
+          "frames"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "rssMb": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "heapMb": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "rssMb",
+        "heapMb"
+      ],
+      "additionalProperties": false
+    },
     "skipped": {
       "type": "integer",
       "minimum": -9007199254740991,
