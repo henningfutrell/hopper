@@ -19407,11 +19407,28 @@ one removed; an ssh target gets the hopper's public key in that user's `authoriz
 vault, through a grant. Needs you: the row Machines, one line per online machine not ready, with why. Accounts: the machine's
 row says it is not ready.
 
-**Not built yet.** The hopper does not run the guided fix itself (it needs root there; the admin runs it). It does not
-check that the job user is used only for jobs: the read is what it can see. A WSL machine is not yet given the address it
-should reach the hopper at (the Windows host and WSL link of #712).
+**A WSL machine's address** (part 4). The seat of the case was a WSL distro on the computer whose WSL runs the hopper's
+container. Its probe asked the public URL and the LAN names, and the first LAN name is the container's bare name, which only
+the compose network resolves: an address problem, and no address named that it reaches. WSL distros on one computer share
+one network, and the compose file publishes the hopper's port on loopback there, so such a machine reaches the hopper at
+the **host link base** (#712), default `http://localhost:<port>`, the address Windows opens it at. So when the hopper runs
+in WSL (`/proc/version` names Microsoft, read once at start), an ssh target's probe asks that address too
+(`wslHopperUrl`, `addressCommand`, `src/machines/hopper-address.ts`): last, only when no other address answered, and only
+when the machine's own `/proc/version` names Microsoft, so a machine on another computer never asks its own loopback. It is
+verified as every address is: `GET /job/address` answers 204, else not reached. Reached, it is the machine's
+`hopperUrl`, and the machine is ready. Not reached, the address problem names it: `a WSL machine on the computer that runs
+the hopper reaches it at <url>, and this one did not (<why>)`, before what to set. A WSL machine on another computer
+than the hopper's needs an address it reaches on the LAN (`HOPPER_PUBLIC_URL`, `HOPPER_LAN_NAMES`), as any machine
+does. A client target needs none of this: it reaches the hopper at the URL it dialled in at.
 
-Tests: `test/client/infra-credentials.test.ts` (the list, a home's and an environment's read, the ssh command never printing
+Residual risk: a WSL machine on the hopper's computer that runs a second hopper on the same port reaches that one at
+`localhost`, and `/job/address` does not say which hopper answered. The reach check (#695) takes any answer, so the jobs
+there fail at their first ask of the hopper, with a 401: the proxy token is this hopper's.
+
+**Not built yet.** The hopper does not run the guided fix itself (it needs root there; the admin runs it). It does not
+check that the job user is used only for jobs: the read is what it can see.
+
+Tests: `test/machines/hopper-address.test.ts` (a WSL machine asked the host link base, a machine not in WSL not asked it, the address named when not reached), `test/client/infra-credentials.test.ts` (the list, a home's and an environment's read, the ssh command never printing
 a value, a client's answer), `test/decider/infra-credentials.test.ts` (held, pinned, resuming, ready again),
 `test/adapters/infra-credentials.test.ts` (a machine not ready until its next probe finds none, then it takes the job),
 `test/ui/machine-infra-credentials.test.ts` (the text, the guided fix, Needs you's lines), `test/ui/needs-you.test.ts`,
