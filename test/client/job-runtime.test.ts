@@ -80,6 +80,8 @@ describe('a job gets a container runtime of its own (issue #1295)', () => {
     expect(statSync(own()).mode & 0o777).toBe(0o700);
     expect(readFileSync(join(containers(), 'storage.conf'), 'utf8')).toContain(`graphroot = "${containers()}/storage"`);
     expect(readFileSync(join(containers(), 'storage.conf'), 'utf8')).toContain(`runroot = "${own()}/storage"`);
+    // Rootless Podman 4 reads no graphroot from a storage config that is not the user's own: only this.
+    expect(readFileSync(join(containers(), 'storage.conf'), 'utf8')).toContain(`rootless_storage_path = "${containers()}/storage"`);
     expect(readFileSync(join(containers(), 'containers.conf'), 'utf8')).toContain(`tmp_dir = "${own()}/libpod/tmp"`);
     // The user's bus is the same socket, so podman's network helpers reach systemd from inside its own /run.
     expect(statSync(join(own(), 'bus')).ino).toBe(statSync(join(host, 'bus')).ino);
