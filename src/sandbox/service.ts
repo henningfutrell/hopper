@@ -1,7 +1,8 @@
 // The sandbox module (issue #708, design.md "Sandbox boxes the hopper launches"): the one owner of the life of the
 // sandbox boxes the hopper starts. Everything that creates, inspects, stops or removes one goes through it: the launch
 // (Add machine → A sandbox box, POST /ui/api/machines/sandbox), the reconcile pass (every 10 s and at start), and the
-// view (GET /api/sandboxes). It drives the container runtime beside the hopper, and a client target's own through its
+// view (GET /api/sandboxes). Once an hour the reconcile pass also removes the leftover box builds beside the hopper
+// (leftover-builds.ts, issue #1120). It drives the container runtime beside the hopper, and a client target's own through its
 // client (src/sandbox/runtime.ts places each box), and keeps a sandbox record per box (the instance's `sandboxes` table). A box it cannot remove is a cleanup problem, shown on Machines.
 import { randomUUID } from 'node:crypto';
 import type { SandboxesView } from '../domain/machines.ts';
@@ -12,6 +13,7 @@ import type { StepResult } from '../domain/windows-steps.ts';
 import { runBoxStep, type BoxStepCall } from './box-step.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
 import { launchBox, type LaunchRequest } from './launch.ts';
+import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
@@ -116,6 +118,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   let timer: ReturnType<typeof setInterval> | undefined;
   let running: Promise<void> | undefined;
   const down = new Map<string, string>();
+  let buildsAt = -Infinity;
   const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, ...(o.address ? { address: o.address } : {}), ...(o.clients ? { clients: o.clients } : {}) });
 
   /**
@@ -142,6 +145,11 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       }
     }
     unclaimed = next;
+    if (o.runtime && now.getTime() - buildsAt >= LEFTOVER_PASS_MS) {
+      buildsAt = now.getTime();
+      await removeLeftoverBuilds({ runtime: o.runtime, now, inUse: o.repo.list().map((r) => r.image), logger: o.logger })
+        .catch((e: unknown) => o.logger.warn(`hopper: cannot remove the leftover box builds: ${e instanceof Error ? e.message : String(e)}`));
+    }
   };
   const reconcile = (now?: Date): Promise<void> => (running ??= pass(now ?? o.clock.now()).finally(() => { running = undefined; }));
   // The read-only check (issue #716): beside the hopper, else on a client target of the template's user (issue #708).

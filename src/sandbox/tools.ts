@@ -15,6 +15,11 @@ import { PROVIDER_MIRROR, TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFO
 
 /** The repository the hopper tags the images it builds in. Local: it is never pushed. */
 export const TOOLS_IMAGE = 'localhost/hopper-box-tools';
+/**
+ * The label on each image a build keeps of its fetch stage (issue #1120): untagged, it is known as the hopper's by this
+ * label alone, so the removal of leftover box builds (leftover-builds.ts) takes it and no image of anyone else's.
+ */
+export const TOOLS_STAGE_LABEL = 'io.hopper.tools-stage';
 /** The stage that fetches the tools: Debian, by its index digest, so a moved tag cannot change it. */
 const FETCH_BASE = 'docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587';
 const DIR = '/opt/hopper-tools';
@@ -118,6 +123,7 @@ export function toolsImage(base: { image: string; id?: string | undefined }, too
   const gated = !wrapped && set.includes('terraform');
   const containerfile = `# Made by the hopper (issue #716): ${base.image} with ${set.join(', ')}. Each download is pinned and checked by its SHA-256.
 FROM ${FETCH_BASE} AS fetch
+LABEL ${TOOLS_STAGE_LABEL}="fetch"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/* && mkdir -p ${DIR}/bin
 ${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${wrapped ? `\n${readOnlySteps()}` : ''}${gated ? `\n${applyWrapperStep()}` : ''}
 

@@ -21,7 +21,7 @@ import { createFakeContainerRuntime, type FakeContainerRuntime } from '../suppor
 const NOW = new Date('2026-10-14T12:00:00.000Z');
 const OLD = NOW.getTime() - LEFTOVER_BUILD_MS - 60_000;
 const NEW = NOW.getTime() - 60_000;
-const spec = { network: 'host', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 512 } };
+const spec = { network: 'host', volume: 'v', env: {}, labels: {}, user: 'agent', limits: { cpus: 1, memoryMb: 512 } };
 
 const tools = (hash: string, createdAt = OLD): ListedImage => ({ id: `sha256:t${hash}`, tags: [`${TOOLS_IMAGE}:${hash}`], createdAt, labels: { 'io.hopper.tools': 'kubectl' } });
 const stage = (id: string, createdAt = OLD): ListedImage => ({ id, tags: [], createdAt, labels: { [TOOLS_STAGE_LABEL]: 'fetch' } });
@@ -65,7 +65,7 @@ describe('leftover box builds (issue #1120)', () => {
     rt.put({ ...spec, name: 'hopper-sandbox-kube', image: `${TOOLS_IMAGE}:bbbb` });
     const seen = withImages(rt, [tools('aaaa'), tools('bbbb'), tools('cccc'), stage('sha256:s1'), own]);
     const lines: string[] = [];
-    const removed = await removeLeftoverBuilds({ runtime: rt, now: NOW, inUse: [`${TOOLS_IMAGE}:cccc`], logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
+    const removed = await removeLeftoverBuilds({ runtime: rt, now: NOW, inUse: [`${TOOLS_IMAGE}:cccc`], logger: { info: (l: string) => lines.push(l) } });
     expect(removed).toBe(2);
     expect(seen.removed.sort()).toEqual(['sha256:s1', 'sha256:taaaa']);
     expect(lines).toEqual(['hopper: removed 2 leftover box builds beside the hopper (images it built for box tools more than 7 days ago that no box uses)']);
@@ -73,7 +73,7 @@ describe('leftover box builds (issue #1120)', () => {
 
   it('a runtime that lists no images removes nothing', async () => {
     const rt = createFakeContainerRuntime();
-    expect(await removeLeftoverBuilds({ runtime: rt, now: NOW, inUse: [], logger: { info() {}, warn() {} } })).toBe(0);
+    expect(await removeLeftoverBuilds({ runtime: rt, now: NOW, inUse: [], logger: { info() {} } })).toBe(0);
   });
 
   it('the reconcile pass removes leftover builds at most once an hour', async () => {
