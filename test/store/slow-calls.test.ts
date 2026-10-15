@@ -30,4 +30,14 @@ describe('the slow store calls', () => {
     for (let i = 0; i < 5; i++) slow.record(i * 10, i * 10 + 5, `SELECT t${i}`);
     expect(slow.since(0).map((c) => c.what)).toEqual(['SELECT t3', 'SELECT t4']);
   });
+
+  it('counts every call by its statement, slow or not', () => {
+    const slow = createSlowCalls({ slowMs: 100 });
+    slow.record(0, 1, 'SELECT jobs');
+    slow.record(0, 500, 'SELECT jobs');
+    slow.record(0, 1, 'UPDATE jobs');
+    expect(slow.count('SELECT jobs')).toBe(2);
+    expect(slow.count('UPDATE jobs')).toBe(1);
+    expect(slow.count('SELECT settings')).toBe(0);
+  });
 });
