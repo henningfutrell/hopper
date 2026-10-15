@@ -2,7 +2,7 @@
 // shown as the last stall; a hopper with no stall shows none.
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { storeCallsIn, watchEventLoop, type EventLoopStall } from '../../src/http/event-loop.ts';
+import { storeCallsBetween, watchEventLoop, type EventLoopStall } from '../../src/http/event-loop.ts';
 import { frameOf, watchHeld, type HeldWatch } from '../../src/http/event-loop-held.ts';
 import { createSlowCalls } from '../../src/store/slow-calls.ts';
 
@@ -14,12 +14,12 @@ function setup(o: { raise?: boolean; held?: HeldWatch; rss?: () => number; memor
   apps.push(app);
   const lines: string[] = [];
   const raised: (EventLoopStall & { skipped: number })[] = [];
-  const slow = createSlowCalls({ slowMs: 50 });
+  const slow = createSlowCalls();
   const watch = watchEventLoop(app, {
     clock: { now: () => new Date('2026-10-13T10:00:00Z') }, warn: (l) => lines.push(l), stallMs: 200, tickMs: 20,
     memory: () => ({ rss: o.rss?.() ?? 300 * 1024 ** 2, heapUsed: 120 * 1024 ** 2 }), ...(o.memoryEveryMs ? { memoryEveryMs: o.memoryEveryMs } : {}),
     ...(o.held ? { held: o.held } : {}),
-    ...(o.raise ? { storeCalls: slow.since, raise: (s: EventLoopStall & { skipped: number }) => { raised.push(s); }, raiseEveryMs: 60_000 } : {}),
+    ...(o.raise ? { storeCalls: slow.totals, raise: (s: EventLoopStall & { skipped: number }) => { raised.push(s); }, raiseEveryMs: 60_000 } : {}),
   });
   app.get('/held/:id', async () => {
     const end = Date.now() + 400;
@@ -31,6 +31,15 @@ function setup(o: { raise?: boolean; held?: HeldWatch; rss?: () => number; memor
     const from = performance.now(), end = Date.now() + 400;
     while (Date.now() < end) { /* a synchronous store call */ }
     slow.record(from, performance.now(), 'SELECT jobs');
+    return { ok: true };
+  });
+  // Many store calls, each fast, that hold the loop together (issue #1383).
+  app.get('/many', async () => {
+    for (let i = 0; i < 40; i++) {
+      const from = performance.now(), end = Date.now() + 10;
+      while (Date.now() < end) { /* a fast synchronous store call */ }
+      slow.record(from, performance.now(), 'SELECT jobs');
+    }
     return { ok: true };
   });
   app.get('/quick', async () => ({ ok: true }));
@@ -73,13 +82,24 @@ describe('the event loop watchdog (issue #1002)', () => {
     expect(s.lines[0]).toMatch(/; store calls in it: 0\.\d s \(SELECT jobs 0\.\d s\); memory: /);
   });
 
-  it('says so when no slow store call ran in a stall', async () => {
+  it('says so when no store call ran in a stall', async () => {
     const s = setup({ raise: true });
     await tick(50);
     await s.app.inject({ url: '/held/1' });
     await tick(100);
     expect(s.watch.last()).not.toHaveProperty('store');
-    expect(s.lines[0]).toMatch(/; no slow store call in it; memory: /);
+    expect(s.lines[0]).toMatch(/; no store call in it; memory: /);
+  });
+
+  // Issue #1383: stalls of 57 s to 129 s each said "no slow store call in it", but a stall of many fast calls said the same.
+  it('names the store calls of a stall that were each fast, with their count', async () => {
+    const s = setup({ raise: true });
+    await tick(50);
+    await s.app.inject({ url: '/many' });
+    await tick(100);
+    expect(s.watch.last()?.store).toMatchObject({ calls: [{ what: 'SELECT jobs', count: 40 }] });
+    expect(s.watch.last()!.store!.ms).toBeGreaterThanOrEqual(300);
+    expect(s.lines[0]).toMatch(/; store calls in it: 0\.\d s \(SELECT jobs 0\.\d s ×40\); memory: /);
   });
 
   it('raises a stall at most once each interval, and counts the ones between', async () => {
@@ -159,20 +179,17 @@ describe('frameOf', () => {
   });
 });
 
-describe('storeCallsIn', () => {
-  it('counts only the part of each call inside the stall, by statement, longest first, at most three', () => {
-    const calls = [
-      { from: 0, to: 150, what: 'SELECT jobs' },
-      { from: 150, to: 400, what: 'SELECT jobs' },
-      { from: 400, to: 1000, what: 'INSERT checkpoints' },
-      { from: 1000, to: 1010, what: 'UPDATE lanes' },
-      { from: 1010, to: 1015, what: 'DELETE events' },
-      { from: 2000, to: 2500, what: 'SELECT later' },
-    ];
-    expect(storeCallsIn(calls, 100, 1100)).toEqual({
+describe('storeCallsBetween', () => {
+  it('names the store time between two totals, by statement, longest first, at most three', () => {
+    const before = new Map([['SELECT jobs', { ms: 100, count: 4 }], ['UPDATE lanes', { ms: 7, count: 1 }]]);
+    const after = new Map([
+      ['SELECT jobs', { ms: 400.4, count: 10 }], ['UPDATE lanes', { ms: 17, count: 2 }], ['INSERT checkpoints', { ms: 600, count: 1 }],
+      ['DELETE events', { ms: 5, count: 1 }],
+    ]);
+    expect(storeCallsBetween(before, after)).toEqual({
       ms: 915,
-      calls: [{ what: 'INSERT checkpoints', ms: 600, count: 1 }, { what: 'SELECT jobs', ms: 300, count: 2 }, { what: 'UPDATE lanes', ms: 10, count: 1 }],
+      calls: [{ what: 'INSERT checkpoints', ms: 600, count: 1 }, { what: 'SELECT jobs', ms: 300, count: 6 }, { what: 'UPDATE lanes', ms: 10, count: 1 }],
     });
-    expect(storeCallsIn(calls, 3000, 4000)).toBeUndefined();
+    expect(storeCallsBetween(after, after)).toBeUndefined();
   });
 });
