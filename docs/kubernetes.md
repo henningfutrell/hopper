@@ -73,6 +73,9 @@ What it does, in order:
    `--master-key-secret` or an outside store). The chart mounts it as a file. The hopper's own launch settings go to the
    chart (see "What is carried" below).
 3. **The release, with the hopper at 0.** `helm install` with `replicas=0`. Its Postgres, OpenFGA and Solr start empty.
+   The script waits for each StatefulSet and Deployment and for OpenFGA's migration Job, not with Helm's `--wait`: that
+   also waits for the hopper's home volume, which a `WaitForFirstConsumer` StorageClass (kind's, k3s's) binds only when a
+   hopper pod uses it.
    The compose hopper still runs. With `--master-key-secret` or an outside store, a one-off pod checks the key in the
    Secret now (below); a key of another fingerprint stops here, and the compose hopper runs on.
 4. **The cutover starts.** The user service's port check (`hopper-compose-check.timer`) stops, and the user service no

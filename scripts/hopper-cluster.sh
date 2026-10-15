@@ -300,8 +300,12 @@ migrate() {
 
   # 3. The release, the hopper at 0.
   say "helm install $release (namespace $namespace), the hopper at 0 replicas"
-  printf '%s' "$values" | helm install "$release" "$chart" --namespace "$namespace" -f - "${sets[@]}" --wait --wait-for-jobs --timeout 15m >&2 \
+  # Not helm's --wait: it waits for the hopper's home volume too, which a WaitForFirstConsumer StorageClass (kind's, k3s's
+  # local-path) binds only once a hopper pod takes it, and the hopper is at 0. So the parts are waited for here.
+  printf '%s' "$values" | helm install "$release" "$chart" --namespace "$namespace" -f - "${sets[@]}" --timeout 15m >&2 \
     || fail "helm install failed (above). The compose stack runs on as before. Remove the release: helm uninstall $release --namespace $namespace"
+  wait_release "$namespace" "$release" \
+    || fail "the release did not come up (above). The compose stack runs on as before. Remove the release: helm uninstall $release --namespace $namespace"
 
   # 4. The person's own Secret, or the one an outside store filled, checked in the cluster: this script never reads it.
   if [ -n "$given" ] || [ -n "$store" ]; then
@@ -326,6 +330,16 @@ migrate() {
   say "done: the hopper runs in the cluster (namespace $namespace, release $release). The compose stack is stopped, not removed: its containers, images and volumes stay"
   say "machines dial in again at the address they joined: the cluster hopper answers on port $port$( [ "$(service_type)" = LoadBalancer ] && printf ' of this host' || printf ' only through its Service: see docs/kubernetes.md "Machines after the cutover"')"
   say "roll back: bash hopper-cluster.sh rollback"
+}
+
+# The release's StatefulSets and Deployments rolled out, and OpenFGA's migration Job complete.
+wait_release() {
+  local ns=$1 release=$2 part parts
+  parts="$(kubectl --namespace "$ns" get statefulset,deployment -l "app.kubernetes.io/instance=$release" -o name)" || return 1
+  for part in $parts; do
+    kubectl --namespace "$ns" rollout status "$part" --timeout=15m >&2 || return 1
+  done
+  kubectl --namespace "$ns" wait --for=condition=complete job -l "app.kubernetes.io/instance=$release,app.kubernetes.io/component=openfga-migrate" --timeout=15m >&2
 }
 
 # Steps 5 to 8. Called in a list, so errexit is off here: every command answers for itself.
