@@ -11428,7 +11428,10 @@ the next read, never from a poll.
   answer in under 200 ms, their decision recorded, and the slow work ends after;
   `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same;
   `test/integration/action-latency-pull-requests.test.ts` Merge now and Close PR; and
-  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up.
+  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. The bound is `test/support/latency.ts`:
+  200 ms on a developer machine; 1000 ms on CI (`CI` set), where a shared runner took 210 ms for an answer that takes
+  18 ms here. 1000 ms is still half of the 2 s seam delay, so an action that waits for GitHub or the machine fails on CI
+  too. `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one run, never above 1000 ms.
 
 Not yet so (issue #1194, later parts): a stuck cause's bulk action still awaits GitHub; Take into Intake's write-behind
 shows in the source's detail only, not on its Pull requests row; and no end-to-end check measures the card in a browser.

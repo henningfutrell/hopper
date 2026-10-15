@@ -7,11 +7,10 @@ import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
+import { BUDGET_MS, SLOW_MS } from '../support/latency.ts';
 import { slowGitHub } from '../support/slow-github.ts';
 import { waitFor } from '../support/wait.ts';
 
-const BUDGET_MS = 200;
-const SLOW_MS = 2000;
 const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
 let cleanup: (() => void) | undefined;

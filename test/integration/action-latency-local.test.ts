@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { BUDGET_MS } from '../support/latency.ts';
 import { waitFor } from '../support/wait.ts';
 
-const BUDGET_MS = 200;
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
 const WAIT = {
   output: ['● The fix is committed. The push needs write access.', '  HOPPER_WAITING', '  for: write access to the repository', '  until: a background poll of the push'],
