@@ -1,0 +1,1 @@
+- On the Pull requests page, an operator can now open a pull request's changes, line by line, on its card and on each card of the Landing list.

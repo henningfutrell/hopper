@@ -16443,6 +16443,17 @@ a `Trace`, a line per step that opens to its input and result in small code bloc
 the last tool call of the newest turn with no result runs while the job is at work. A new checkpoint (its `at` changes)
 reads the newest turns again. Not live between checkpoints: the terminal shows the pane now.
 
+**Pull request diffs** (issue #1169 part 6, `src/http/ui/pull-request-acts.ts`, `ui/src/components/pull-request-diff.tsx`).
+A card on the Pull requests page with a pull request, and each Landing card — a batch's **culprit** among them —, has
+**Show diff** for an operator. `POST /ui/api/pull-requests/diff` `{ repo, number }` reads it on GitHub with the person's
+own connection, as a job's `pr diff` (issue #1074) reads it: `files` and `diff`, each file's patch as `git diff` writes
+it, cut at 200,000 characters (`truncated`). Only a job repository's (404 else); with no GitHub connection, 503. The read
+counts as a job's other read (`per_job_read`) at the rate limiter. A POST, so it is behind the role guard; it changes and
+records nothing, and nothing keeps it. The view shows it in a `CodeBlock` in diff mode (`LogBlock`: title, wrap toggle,
+copy): a file's header lines and each hunk's `@@` line highlighted, added and removed lines as such
+(`ui/src/model/pull-request-diff.ts`). Operator, not viewer: the person's connection may read a private repository the
+viewer cannot.
+
 **Part 2** (2026-10-12) adds the parts part 1 left, each from a record that exists, plus one fact the follow now keeps:
 
 - **Usage.** The route reads the job's own job runs (`MachineHistoryRepository.jobRuns` takes a `jobId` now), from a day

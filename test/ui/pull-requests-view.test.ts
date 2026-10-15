@@ -144,7 +144,8 @@ describe('Pull requests view', () => {
     const gaveUp = card({ jobId: 'j5', waits: 'tend failed', tendJobId: 't5', tendStep: 'rebase', gaveUp: 'the job that rebased it failed: Design-level conflict.' });
     const view: PullRequestsView = { ...fixture, repos: [{ repo: 'owner/a', yolo: false, pullRequests: [gaveUp] }] };
     const daemon = await boot(view);
-    expect([...cardOf('j5').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Tend again']);
+    // Its one action; Show diff (issue #1169) is a read.
+    expect([...cardOf('j5').querySelectorAll('button:not([data-slot="pr-diff-toggle"])')].map((b) => b.textContent)).toEqual(['Tend again']);
     expect(text('[data-slot="pr-tend-again"]', cardOf('j5'))).toContain('Tend again');
     await act(async () => { (cardOf('j5').querySelector('[data-slot="pr-tend-again"] button') as HTMLButtonElement).click(); });
     await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/pull-requests/tend', body: { jobId: 'j5' } }]));

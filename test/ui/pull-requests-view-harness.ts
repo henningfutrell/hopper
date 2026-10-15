@@ -35,6 +35,9 @@ export const checksFixture: RepoChecksView = {
   ],
 };
 
+/** What the fake daemon answers a `POST /ui/api/…` path; any other answers `{}`. Cleared after each test. */
+export const uiAnswers: Record<string, unknown> = {};
+
 function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin', checks: RepoChecksView) {
   const bodies: { path: string; body: unknown }[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
@@ -50,7 +53,7 @@ function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin', checks: Re
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const [path] = String(input).split('?') as [string];
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role, realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
-    if (path.startsWith('/ui/api/')) { bodies.push({ path, body: init.body ? JSON.parse(String(init.body)) : undefined }); return json(200, {}); }
+    if (path.startsWith('/ui/api/')) { bodies.push({ path, body: init.body ? JSON.parse(String(init.body)) : undefined }); return json(200, uiAnswers[path] ?? {}); }
     return json(200, routes[path] ?? {});
   });
   return { fetch, bodies };
@@ -93,6 +96,7 @@ export async function unmount(): Promise<void> {
 afterEach(async () => {
   await unmount();
   root = undefined;
+  for (const k of Object.keys(uiAnswers)) delete uiAnswers[k];
   vi.unstubAllGlobals();
 });
 
