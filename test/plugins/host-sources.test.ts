@@ -189,6 +189,12 @@ describe('the machine-source role', () => {
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 4, reservedLanes: 1 })]);
   });
 
+  it('local: a Windows machine says so (issue #1350)', async () => {
+    const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 1, windows: true } }] } });
+    await host.start();
+    expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', windows: true })]);
+  });
+
   it('no machines section: local with 4 lanes', async () => {
     const { host } = start({ file: { version: 1 } });
     await host.start();

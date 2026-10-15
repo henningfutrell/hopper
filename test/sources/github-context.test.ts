@@ -166,17 +166,16 @@ describe('GitHub source: full issue context and job environment', () => {
   });
 });
 
-describe('GitHub source: a Windows label sends the Windows work to Windows sandbox steps (issue #918)', () => {
+describe('GitHub source: a Windows label tells the job it runs on a Windows machine (issues #918, #1350)', () => {
   const windowsLine = (prompt: string) => prompt.split('\n').find((l) => l.startsWith('windows:'));
 
-  it.each(['hopper:win', 'hopper:windows', 'Hopper:Win'])('labelled %s: the job is told to run its Windows work as steps', async (label) => {
+  it.each(['hopper:win', 'hopper:windows', 'Hopper:Win'])('labelled %s: the job is told it runs on a Windows machine', async (label) => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', label] });
     expect(windowsLine((await discoverOne(source)).prompt)).toBe(WINDOWS_LINE);
-    // A native Windows machine may take the job (issue #1348): there it does the work itself; elsewhere it asks for each Windows step.
-    expect(WINDOWS_LINE).toContain('When this machine runs Windows natively, do the work and its Windows steps here');
-    expect(WINDOWS_LINE).toContain('sh "$HOPPER_STEP" hosts');
-    expect(WINDOWS_LINE).toContain('sh "$HOPPER_SKILL" windows-step');
+    // Only a Windows machine takes the job (issues #1348, #1350): it does its Windows work there, not as steps from Linux.
+    expect(WINDOWS_LINE).toContain('this job runs on a Windows machine');
+    expect(WINDOWS_LINE).not.toContain('HOPPER_STEP');
   });
 
   it('the line comes before what done means', async () => {
