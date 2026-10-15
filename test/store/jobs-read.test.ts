@@ -1,7 +1,7 @@
 // A job list reads only the rows that changed since this store last read them (issue #1154): every list of the
 // whole table sent each job's body and parsed it on the event loop, about one a second.
 import { describe, expect, it } from 'vitest';
-import type { Db, Param } from '../../src/store/db.ts';
+import type { Db, Param, Row } from '../../src/store/db.ts';
 import { createContext } from '../../src/store/context.ts';
 import { createJobRepository } from '../../src/store/jobs.ts';
 import { TENANT_SCHEMA_VERSION } from '../../src/store/tenant-migrations.ts';
@@ -13,29 +13,48 @@ const t = useTempStore();
 function openJobs() {
   const db = t.tenantAt(t.url(), TENANT_SCHEMA_VERSION);
   const sent: string[] = [];
+  /** The rows Postgres answered with a job's body. */
+  const bodies = { n: 0 };
+  const counted = (rows: Row[]) => { bodies.n += rows.filter((r) => r.body != null).length; return rows; };
   const spied: Db = {
     ...db,
-    get: (sql: string, ...p: Param[]) => { sent.push(sql); return db.get(sql, ...p); },
-    all: (sql: string, ...p: Param[]) => { sent.push(sql); return db.all(sql, ...p); },
+    get: (sql: string, ...p: Param[]) => { sent.push(sql); const r = db.get(sql, ...p); counted(r ? [r] : []); return r; },
+    all: (sql: string, ...p: Param[]) => { sent.push(sql); return counted(db.all(sql, ...p)); },
     run: (sql: string, ...p: Param[]) => { sent.push(sql); return db.run(sql, ...p); },
   };
   let n = 0;
   const ctx = createContext({ db: spied, clock: fixedClock(), idGen: () => `j${++n}` });
-  return { jobs: createJobRepository(ctx), ctx, db, sent };
+  return { jobs: createJobRepository(ctx), ctx, db, sent, bodies };
 }
 
 const bodiesRead = (sent: string[]) => sent.filter((s) => /\bbody\b/.test(s.split(/\bFROM\b/)[0]!)).length;
 
 describe('job reads (issue #1154)', () => {
   it('a second list of unchanged jobs reads no body', () => {
-    const { jobs, db, sent } = openJobs();
+    const { jobs, db, sent, bodies } = openJobs();
     jobs.create(spec, 1);
     jobs.create(spec, 2);
     expect(jobs.list().map((j) => j.id)).toEqual(['j2', 'j1']);
     sent.length = 0;
+    bodies.n = 0;
     expect(jobs.list().map((j) => j.id)).toEqual(['j2', 'j1']);
     expect(jobs.list({ status: ['queued'] })).toHaveLength(2);
     expect(bodiesRead(sent)).toBe(0);
+    expect(bodies.n).toBe(0);
+    db.close();
+  });
+
+  it('a get of an unchanged job reads no body, and a get of a changed one reads it', () => {
+    const { jobs, db, bodies } = openJobs();
+    const a = jobs.create(spec, 1);
+    expect(jobs.get(a.id)).toMatchObject({ id: a.id, status: 'queued' });
+    expect(jobs.get(a.id)).toMatchObject({ id: a.id, status: 'queued' });
+    expect(bodies.n).toBe(0);
+    const body = JSON.parse(String(db.get('SELECT body FROM jobs WHERE id = ?', a.id)!.body)) as Record<string, unknown>;
+    db.run('UPDATE jobs SET status = ?, body = ? WHERE id = ?', 'running', JSON.stringify({ ...body, status: 'running' }), a.id);
+    expect(jobs.get(a.id)).toMatchObject({ status: 'running' });
+    expect(bodies.n).toBe(1);
+    expect(jobs.get('none')).toBeUndefined();
     db.close();
   });
 
