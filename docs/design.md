@@ -15996,6 +15996,16 @@ one job. Else, on a taken item, `failed` says `already approved` (a person appro
 approval needed` (a trusted origin), and the sync loop adds `: its job is <status>` when it has one. The UI reads either
 as taken, not as a refusal: the card shows approved once the sync lists the issue taken.
 
+**Approve takes at the first click** (issue #1316). The card leaves Intake in Approve's answer: the source lists the
+item taken at once (`createApprovals` `on`), as the next sync will. A sync that read the item before the approval, and
+lists the card again with the same hash, does not bring it back; the first sync that lists the item otherwise — taken,
+or a card of new text — ends that (`listed`). So an approved item comes back to Intake only with new text, or reopened
+(issue #1126). When the last sync does not list the item as a card of `hash` — no sync since a restart, or its read was
+older than the page — Approve is **resolved again** (`resolve`): the issue is read now, and approved only while it is
+open, labelled, assigned to the user, not claimed, not `hopper:done`, has no job here, is not declined, is not of a trusted
+origin, and its title and body hash as `hash`. Else `failed` says why, and the card keeps the refusal on the page, also
+when the next list shows the new text.
+
 **Approved.** At a later sync, an issue not of a trusted origin whose title and body hash as the text a person approved
 — a snapshot of reason `approved`, or `accepted` (Accept the new text) — is taken, origin `approved`. Its first job runs
 the snapshot (issue #662 `gateItem`), and a change since holds it as a text change. An edit after the approval and before

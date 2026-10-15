@@ -247,15 +247,15 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
-  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox });
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
     name: o.name, kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
+    intake: () => outbox.on(approvals.on(outcomes)), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
     pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     giveBackAct: (job, act, acting, more) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, more) : undefined),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -330,7 +330,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
-      outcomes = next;
+      outcomes = next; approvals.listed(next);
       outbox.listed(round);
       listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();

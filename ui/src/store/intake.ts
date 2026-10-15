@@ -7,6 +7,7 @@
 // The daemon is the source of truth (issue #1178): each decision keeps the hash of the text it decided, and the source's
 // list resets it when it asks again — a request card with other text, or one with no approved text — or when the item's
 // job ended, so a card never hides Approve on an old decision and an item that is done never stays in Needs approval.
+// A refusal stays when the card's text changes (issue #1316): it says why the new text shows, until the next decision.
 import { create } from 'zustand';
 import type { IntakeActionResult, IntakeOutcome } from '../../../src/domain/intake.ts';
 import { jobEnded } from '@/model/intake';
@@ -62,14 +63,14 @@ export const forgetEndedApprovals = (): void =>
  * Whether the daemon's list makes an ended decision stale (issue #1178). One still waiting is never stale: the list can
  * arrive before the daemon answers. The item's job ended: it is done, so it needs no decision. The list asks for a decision
  * again — a request card whose text hashes otherwise, or, for an approve or a decline, one with no approved text (the
- * daemon keeps no approval of it: the issue was reopened, say) —: the old decision is not the daemon's.
+ * daemon keeps no approval of it: the issue was reopened, say) —: the old decision is not the daemon's. A refusal is not
+ * stale then (issue #1316): it says why the card shows other text.
  */
 export function staleApproval(a: Approval, x: IntakeOutcome, jobStatusNow?: JobStatus): boolean {
   if (waitsForDaemon(a)) return false;
   if (jobEnded(jobStatusNow ?? x.jobStatus)) return true;
-  if (x.action !== 'approve' || !x.request) return false;
-  if (x.request.hash !== a.hash) return true;
-  return a.state !== 'refused' && !x.request.approved;
+  if (x.action !== 'approve' || !x.request || a.state === 'refused') return false;
+  return x.request.hash !== a.hash || !x.request.approved;
 }
 
 /** Forgets each decision the daemon's list makes stale (issue #1178); `jobStatus` gives a job's status as the UI knows it now. */
