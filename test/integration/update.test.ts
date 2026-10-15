@@ -142,6 +142,27 @@ describe('self-update over HTTP', () => {
     expect(asked).toContain('openfga');
   });
 
+  // Issue #1285: in a Kubernetes pod the hopper is a cluster install: no compose file, no compose skill, and its drift is
+  // the image it runs against the update channel.
+  it('a cluster install: the Helm skill, no compose file, a status that says so, and the image against the channel (issue #1285)', async () => {
+    const w = world();
+    const root = tempDir('jh-update-it-');
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const appDir = createInstall(root, w.up.dir, w.c1, 'beta', 'image');
+    writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices:\n  openfga:\n    image: o\n');
+    const stackProbe = { resolves: async (): Promise<boolean> => { throw new Error('a cluster install probes no compose service'); }, vaultCommit: async () => null };
+    const app = await startTestApp({ dbPath: w.dbPath, secrets: { KUBERNETES_SERVICE_HOST: '10.0.0.1' }, seams: { update: { appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => {}, stackProbe } } });
+    apps.push(app);
+    expect((await app.api('GET', '/api/update/compose')).status).toBe(404);
+    const skill = await (await fetch(`${app.url}/api/update/skill`)).text();
+    expect(skill).toMatch(/^# Update a hopper on Kubernetes/);
+    expect(skill).not.toMatch(/podman|docker|compose/i);
+    const status = await app.api<UpdateStatus>('GET', '/api/update');
+    expect(status.body.cluster).toMatchObject({ release: 'hopper', chart: 'oci://ghcr.io/henningfutrell/charts/hopper' });
+    // The install came from beta, so beta is its channel: no drift.
+    expect((await app.api<StackDrift>('GET', '/api/update/drift')).body).toMatchObject({ state: 'checked', gaps: [] });
+  });
+
   it('hopper update drift: the operator reads the drift with no sign-in in a browser; exit 3 while a gap is open, else 0 (issue #1017)', async () => {
     const w = world();
     const root = tempDir('jh-update-it-');
