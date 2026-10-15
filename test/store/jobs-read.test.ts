@@ -46,9 +46,9 @@ describe('job reads (issue #1154)', () => {
     jobs.update(a.id, { status: 'running' });
     expect(jobs.list()[0]).toMatchObject({ status: 'running' });
     const body = JSON.parse(String(db.get('SELECT body FROM jobs WHERE id = ?', a.id)!.body)) as Record<string, unknown>;
-    db.run('UPDATE jobs SET status = ?, body = ? WHERE id = ?', 'done', JSON.stringify({ ...body, status: 'done' }), a.id);
-    expect(jobs.list()[0]).toMatchObject({ status: 'done' });
-    expect(jobs.get(a.id)).toMatchObject({ status: 'done' });
+    db.run('UPDATE jobs SET status = ?, body = ? WHERE id = ?', 'finished', JSON.stringify({ ...body, status: 'finished' }), a.id);
+    expect(jobs.list()[0]).toMatchObject({ status: 'finished' });
+    expect(jobs.get(a.id)).toMatchObject({ status: 'finished' });
     db.close();
   });
 
@@ -58,17 +58,17 @@ describe('job reads (issue #1154)', () => {
     ctx.tx(() => {
       jobs.update(a.id, { status: 'running' });
       expect(jobs.list()[0]).toMatchObject({ status: 'running' });
-      jobs.update(a.id, { status: 'done' });
-      expect(jobs.list()[0]).toMatchObject({ status: 'done' });
+      jobs.update(a.id, { status: 'finished' });
+      expect(jobs.list()[0]).toMatchObject({ status: 'finished' });
     });
-    expect(jobs.list()[0]).toMatchObject({ status: 'done' });
+    expect(jobs.list()[0]).toMatchObject({ status: 'finished' });
     expect(() => ctx.tx(() => {
       jobs.update(a.id, { status: 'failed' });
       expect(jobs.list()[0]).toMatchObject({ status: 'failed' });
       throw new Error('roll back');
     })).toThrow('roll back');
-    expect(jobs.list()[0]).toMatchObject({ status: 'done' });
-    expect(jobs.get(a.id)).toMatchObject({ status: 'done' });
+    expect(jobs.list()[0]).toMatchObject({ status: 'finished' });
+    expect(jobs.get(a.id)).toMatchObject({ status: 'finished' });
     db.close();
   });
 
