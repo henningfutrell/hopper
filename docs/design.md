@@ -5523,7 +5523,8 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   page that names no icon.
 - **Libraries, and why each.** React + shadcn/ui (Radix) for components, Tailwind v4 for styling,
   d3 for scales/shapes/arcs only — React renders every SVG node, axes included, so d3 never owns
-  DOM. zustand holds the one store. sonner for toasts. Hand-rolled only the static file map
+  DOM. zustand holds the one store. sonner for toasts. shiki colours code in a code block
+  (issue #1169), each language loaded the first time it is shown. Hand-rolled only the static file map
   (shorter than `@fastify/static`'s config).
 - **One job store** (issue #45). The store holds each job once, by id (`jobs`), filled only from
   `/api/queue` answers (on load, and on the refresh every stream event triggers). Every job view
@@ -19145,3 +19146,22 @@ string that starts with `//`, or a ` * ` line that continues an expression, read
 waits for its checks. A docs-only change to a repository whose build reads its Markdown (a prompt, a page) merges with
 no person: name those files in the repository's `sensitive` list.
 
+## Job activity, logs and diffs as Trace and CodeBlock (issue #1169)
+
+The job's activity, logs and diffs use shadcn's `Trace` and `CodeBlock`, added by the shadcn CLI into
+`ui/src/components/ui/` (with `ui/src/hooks/use-highlighted-code.ts` and `ui/src/lib/highlighter.tsx`).
+The registry's files import `cn` from a package named `cn`; the vendored copies import it from
+`@/lib/utils`, and the hopper takes no `cn` package.
+
+- **The job timeline** (`ui/src/components/job-timeline.tsx`) is a `Trace`: one step line per event, newest
+  first. A step whose event tells of a failure (its tone is `bad`) is an `error`; the newest step of a job at
+  work (`claimed`, `running`) is `running` and shimmers; a `queued` or `held` job shows its wait as a `pending`
+  line on top. Each step is a button that opens to its event's data, as JSON, in a small `CodeBlock`. Each line
+  says its state to a screen reader.
+- **Logs** (`ui/src/components/log-block.tsx`): the job's terminal screen (numbered lines) and the event
+  stream are a `CodeBlock` with a header: a title, a wrap toggle and Copy. Copy of the event stream copies one
+  plain line per event.
+- **Diffs**: a changed item's body (`BodyDiff`, `ui/src/components/text-change.tsx`, also on a request card)
+  is a `CodeBlock` in diff mode, one line each, `added` or `removed`.
+- **Not yet** (later parts of issue #1169): questions on `Questionnaire` with a `Marker` for who answered;
+  transcripts on `Message Scroller` and `Message`; nested steps; pull request and bisect diffs.

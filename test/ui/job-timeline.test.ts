@@ -13,7 +13,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 
 // Browser code, type-checked by ui/tsconfig.json: imported by path.
-const { JobTimeline } = (await import('../../ui/src/components/job-timeline.tsx')) as {
+const timeline = '../../ui/src/components/job-timeline.tsx';
+const { JobTimeline } = (await import(timeline)) as {
   JobTimeline: (p: { job?: Job; events: readonly DomainEvent[]; nameOf: (id: string) => string; machines: readonly never[] }) => ReturnType<typeof createElement>;
 };
 

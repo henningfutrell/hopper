@@ -1,8 +1,10 @@
 // A pane's terminal (issue #1128): its screen, read through the hopper again every 1.5 s, and a person's text or keys to
 // it. The job's terminal and the machine's share it; each names its routes and what every request carries (the pane).
-// Keyed by its pane where it changes, so a new pane starts with an empty screen.
+// Keyed by its pane where it changes, so a new pane starts with an empty screen. The screen is a code block (issue #1169):
+// numbered lines, a wrap toggle and Copy.
 import { SendHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { LogBlock } from '@/components/log-block';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { post } from '@/lib/api';
@@ -55,7 +57,11 @@ export function PaneTerminal({ base, with: extra, toolbar }: { base: string; wit
         <span className="ml-auto flex gap-1">{toolbar}</span>
       </div>
       {error && <div data-slot="pane-terminal-error" className="text-xs text-bad">{error}</div>}
-      <pre ref={bottom} data-slot="pane-terminal-screen" className="max-h-96 overflow-auto rounded border bg-muted p-2 font-mono text-xs leading-tight whitespace-pre">{screen?.screen ?? ''}</pre>
+      <div data-slot="pane-terminal-screen">
+        <LogBlock title="The pane" copy={screen?.screen ?? ''} lineNumbers contentRef={bottom} contentClassName="max-h-96 text-xs leading-tight">
+          {screen?.screen ?? ''}
+        </LogBlock>
+      </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (text !== '') void send({ text }); }}>
         <Input value={text} maxLength={MAX_TEXT} placeholder="Text for the pane, as you would type it" aria-label="Text for the pane"
           onChange={(e) => setText(e.target.value)} />

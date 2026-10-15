@@ -83,7 +83,7 @@ describe('the job terminal on the job view (issue #1128)', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-slot="pane-terminal-screen"]')!.textContent).toContain('● Checking port 8443'));
     expect(posts('/ui/api/jobs/r1/terminal/screen').length).toBeGreaterThan(0);
     // Issue #1169: the screen is a code block, its lines numbered, with a wrap toggle and Copy.
-    const screen = document.querySelector('[data-slot="job-terminal-screen"]')!;
+    const screen = document.querySelector('[data-slot="pane-terminal-screen"]')!;
     expect(screen.querySelector('[data-slot="code-block-content"]')!.hasAttribute('data-numbered')).toBe(true);
     expect([...screen.querySelectorAll('[data-slot="code-block-line"]')].map((l) => l.textContent)).toEqual(['● Checking port 8443', '> ']);
     expect(screen.querySelector('[data-slot="code-block-copy-button"]')).not.toBeNull();
