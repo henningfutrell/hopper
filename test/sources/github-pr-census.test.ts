@@ -9,9 +9,10 @@ import { REPO, setup } from './fixtures/github-support.ts';
 
 const AT = '2026-10-02T11:00:00.000Z';
 const issueUrl = (n: number) => `https://github.com/${REPO}/issues/${n}`;
-const facts = (o: { tracked?: string[]; items?: number[] } = {}): Omit<CensusFacts, 'landing'> => ({
+const facts = (o: { tracked?: string[]; items?: number[]; followed?: Record<number, string> } = {}): Omit<CensusFacts, 'landing'> => ({
   tracked: (u) => (o.tracked ?? []).includes(u),
   issueTracked: (u) => (o.items ?? []).some((n) => issueUrl(n) === u),
+  followedOf: (u) => Object.entries(o.followed ?? {}).find(([n]) => issueUrl(Number(n)) === u)?.[1],
 });
 
 async function census(landing?: string) {
@@ -47,6 +48,14 @@ describe('the census of open pull requests (issue #1176)', () => {
     expect(untracked(s)).toEqual([expect.objectContaining({ url: pr.url, base: 'main', reason: 'not_by_a_job', retargeted: { from: 'dev', to: 'main' } })]);
     await s.source.censusPullRequests!(facts({ items: [3] }));
     expect(s.gh.calls.filter((c) => c.method === 'retarget')).toHaveLength(1);
+  });
+
+  it('a job\'s branch on a base from before, of an item whose job follows another: moved, and listed as a second pull request', async () => {
+    const s = await census('main');
+    const pr = s.gh.openPartPullRequest(REPO, 3, { createdAt: AT, base: 'dev', headRef: 'issue-3-part' });
+    const other = `https://github.com/${REPO}/pull/99`;
+    await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
+    expect(untracked(s)).toEqual([expect.objectContaining({ url: pr.url, base: 'main', reason: 'second_pull_request', followed: other, retargeted: { from: 'dev', to: 'main' } })]);
   });
 
   it('a person\'s branch on a base from before: left as it is, listed with the wrong base', async () => {

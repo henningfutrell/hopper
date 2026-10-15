@@ -6,7 +6,7 @@
 // the job's machine.
 import type { RerunResult, UserStore } from '../domain/ports.ts';
 import { keptWorkShown } from '../domain/work-items.ts';
-import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type HandoffView, type Job, type KeptWork, type KeptWorkView } from '../domain/types.ts';
+import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type Discarding, type HandoffView, type Job, type KeptWork, type KeptWorkView } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
 import { handoffView, newestOfItem, type TakesBack } from './view.ts';
 
@@ -46,19 +46,25 @@ export function keptWorkLeft(store: Pick<UserStore, 'events' | 'workItems'>): Ke
   return out.sort((a, b) => b.at.localeCompare(a.at) || a.jobId.localeCompare(b.jobId));
 }
 
-/** Every ended job whose work is kept and waits on a person, newest first, with its ways out. */
-export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean, takesBack: TakesBack): KeptWorkView[] {
+/**
+ * Every ended job whose work is kept and waits on a person, newest first, with its ways out. `discarding`: its discard's
+ * removal on the machine (issue #1194) — under way, it is offered nothing; failed, Discard again with why it failed.
+ */
+export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): KeptWorkView[] {
   const out: KeptWorkView[] = [];
   for (const k of keptWorkLeft(store)) {
     const job = store.jobs.get(k.jobId);
     if (!job || !TERMINAL_STATUSES.includes(job.status)) continue;
     const handoff = store.handoffs.forJob(job.id);
     const machineId = machineRanOn(job);
+    const d = discarding?.(job.id);
+    const removing = d?.state === 'removing' ? no('its work is being removed on its machine') : undefined;
     out.push({
       ...k, status: job.status,
       ...(job.source?.title ? { title: job.source.title } : {}), ...(job.source?.url ? { url: job.source.url } : {}),
       ...(machineId ? { machineId } : {}), ...(handoff?.status === 'open' ? { handoffId: handoff.id } : {}),
-      actions: { push: pushAllowed(store, job, handoff, resumable, takesBack), discard: OK },
+      ...(d ? { discarding: d } : {}),
+      actions: { push: removing ?? pushAllowed(store, job, handoff, resumable, takesBack), discard: removing ?? OK },
     });
   }
   return out;

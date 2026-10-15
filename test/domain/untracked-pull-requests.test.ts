@@ -8,9 +8,10 @@ const url = (n: number) => `https://github.com/${REPO}/pull/${n}`;
 const issue = (n: number) => `https://github.com/${REPO}/issues/${n}`;
 const pr = (n: number, body: string, o: Partial<CensusPullRequest> = {}): CensusPullRequest =>
   ({ url: url(n), body, headRef: `issue-${n}`, base: 'main', createdAt: '2026-10-14T10:00:00Z', ...o });
-const facts = (o: { tracked?: string[]; items?: number[]; landing?: string } = {}): CensusFacts => ({
+const facts = (o: { tracked?: string[]; items?: number[]; landing?: string; followed?: Record<number, string> } = {}): CensusFacts => ({
   tracked: (u) => (o.tracked ?? []).includes(u),
   issueTracked: (u) => (o.items ?? []).some((n) => issue(n) === u),
+  followedOf: (u) => Object.entries(o.followed ?? {}).find(([n]) => issue(Number(n)) === u)?.[1],
   landing: () => o.landing,
 });
 
@@ -26,7 +27,7 @@ describe('untracked pull requests (issue #1176)', () => {
 
   it('its issue is no work item: not in Intake (no label, no assignee)', () => {
     expect(untrackedPullRequests(REPO, [pr(1115, 'Closes #1114')], facts({ landing: 'main' }))).toEqual([
-      { repo: REPO, url: url(1115), base: 'main', issue: { number: 1114, url: issue(1114), part: false }, reason: 'issue_not_in_intake' },
+      { repo: REPO, url: url(1115), base: 'main', issue: { number: 1114, url: issue(1114), part: false }, reason: 'issue_not_in_intake', offer: 'take_in' },
     ]);
   });
 
@@ -40,6 +41,17 @@ describe('untracked pull requests (issue #1176)', () => {
     expect(untrackedPullRequests(REPO, [pr(10, 'Fixes #1', { title: 'A fix' })], facts({ items: [1], landing: 'main' }))).toEqual([
       { repo: REPO, url: url(10), title: 'A fix', base: 'main', issue: { number: 1, url: issue(1), part: false }, reason: 'not_by_a_job' },
     ]);
+  });
+
+  it('its item\'s job follows another pull request: a second pull request, which names the one followed', () => {
+    expect(untrackedPullRequests(REPO, [pr(1039, 'Part of #712', { base: 'main' })], facts({ items: [712], landing: 'main', followed: { 712: url(1200) } }))).toEqual([
+      { repo: REPO, url: url(1039), base: 'main', issue: { number: 712, url: issue(712), part: true }, reason: 'second_pull_request', followed: url(1200) },
+    ]);
+  });
+
+  it('a second pull request on the wrong base: the wrong base first, so a job\'s branch is still moved', () => {
+    expect(untrackedPullRequests(REPO, [pr(1039, 'Part of #712', { base: 'dev' })], facts({ items: [712], landing: 'main', followed: { 712: url(1200) } }))[0])
+      .toMatchObject({ reason: 'wrong_base', followed: url(1200) });
   });
 
   it('a repository with no landing batches: no base is wrong', () => {

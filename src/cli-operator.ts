@@ -30,6 +30,7 @@ import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
 import { autoParkCall } from './cli-operator-auto-park.ts';
 import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
+import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
@@ -40,7 +41,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -93,6 +94,7 @@ ${REPORT_USAGE}
 ${SEARCH_USAGE}
 ${LANES_USAGE}
 ${ACCOUNTS_USAGE}
+${TERMINAL_USAGE}
 ${VAULT_USAGE}
 ${TOKEN_USAGE}
 ${WINDOWS_LINK_USAGE}
@@ -261,6 +263,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
   if (command === 'accounts') return accountsCall(args, stdin);
+  if (command === 'terminal') return terminalCall(args, stdin);
   if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
   if (command === 'grant') return grantCall(args);

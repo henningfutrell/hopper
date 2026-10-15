@@ -1,0 +1,1 @@
+- Assign to me, Release claim and Take off the backburner in Intake now answer at once. The issue says that GitHub is being updated, and says why if the update fails, so you can try again.

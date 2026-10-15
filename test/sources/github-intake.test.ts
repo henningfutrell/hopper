@@ -152,9 +152,10 @@ describe('assign to me (issue #440)', () => {
     await source.discover();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1), url(2), url(9)] }))
       .toEqual({ done: [url(1), url(2)], failed: { [url(9)]: 'not in this source\'s scope' } });
-    expect(gh.issue(REPO, 1).assignees).toEqual(['owner']);
-    expect(events).toEqual([{ type: 'source.issues_assigned', data: { source: 'github', keys: [url(1), url(2)], assignee: 'owner' } }]);
+    // The assignment runs after the answer (issue #1194); the next discover waits for it.
     expect((await source.discover()).map((i) => i.number)).toEqual([1, 2]);
+    expect(gh.issue(REPO, 1).assignees).toEqual(['owner']);
+    expect(events).toEqual([url(1), url(2)].map((k) => ({ type: 'source.issues_assigned', data: { source: 'github', keys: [k], assignee: 'owner' } })));
   });
 });
 

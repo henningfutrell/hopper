@@ -1,8 +1,9 @@
 // Work not pushed (issue #1010, design.md "Work not pushed"): in Failures, each ended job whose reap kept work not pushed —
 // where its work tree is, and the repositories holding the work —, with Push it (its own session goes on in its kept work
 // tree, told to push and open the pull request; a note for it) and Discard (asked first: the work is lost), or why Push
-// it is not taken now. Shown only when there is some.
-import { GitBranch, Trash2, Upload } from 'lucide-react';
+// it is not taken now. Shown only when there is some. A discard shows at once as removed on the machine (issue #1194): the
+// daemon answers before the removal, which the entry follows — under way, or failed with why and Discard again.
+import { GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
@@ -24,11 +25,16 @@ function KeptWorkRow({ k }: { k: KeptWorkView }) {
   const now = useNow();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  // A discard sent shows as removing at once, until the daemon's answer and the view read after it.
+  const [discardSent, setDiscardSent] = useState(false);
   const id = encodeURIComponent(k.jobId);
-  const run = async (path: string, body: unknown, done: string) => {
+  const removing = discardSent || k.discarding?.state === 'removing';
+  const run = async (path: string, body: unknown, done: string): Promise<boolean> => {
     setBusy(true);
-    if (await failureAct(`/ui/api/failures/kept-work/${id}/${path}`, body, done)) setNote('');
+    const ok = await failureAct(`/ui/api/failures/kept-work/${id}/${path}`, body, done);
+    if (ok) setNote('');
     setBusy(false);
+    return ok;
   };
   return (
     <li data-kept-work={k.jobId} className="space-y-2 px-4 py-3">
@@ -40,10 +46,12 @@ function KeptWorkRow({ k }: { k: KeptWorkView }) {
         </span>
       </div>
       <p className="text-sm">The job ended with work that is not pushed. Its work tree is kept{k.machineId ? <> on <span className="font-mono">{k.machineId}</span></> : ''}.</p>
+      {removing && <p data-slot="kept-work-removing" className="flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />Discarded: removing the work tree on its machine</p>}
+      {!removing && k.discarding?.state === 'failed' && <p data-slot="kept-work-discard-failed" role="alert" className="text-sm text-bad">The discard failed: {k.discarding.error}. The work is still kept.</p>}
       <ul className="space-y-0.5 text-xs text-muted-foreground">
         {k.paths.map((p) => <li key={p} className="flex items-center gap-1.5 break-all font-mono"><GitBranch className="size-3 shrink-0" aria-hidden />{p}</li>)}
       </ul>
-      {canAct && (
+      {canAct && !removing && (
         <div className="space-y-2">
           {k.actions.push.ok && <Textarea aria-label="Note for the job" placeholder="Note for the job (optional)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="text-sm" />}
           <div className="flex flex-wrap items-center gap-2">
@@ -51,7 +59,7 @@ function KeptWorkRow({ k }: { k: KeptWorkView }) {
               ? <Button size="sm" disabled={busy} onClick={() => void run('push', note.trim() ? { note: note.trim() } : {}, 'The job goes on to push its work')}><Upload />Push it</Button>
               : <span data-slot="push-why" className="text-xs text-muted-foreground">Push it: not now — {k.actions.push.why}.</span>}
             {k.actions.discard.ok && (
-              <Confirm title="Discard the work?" action="Discard" onConfirm={() => void run('discard', {}, 'Work discarded')}
+              <Confirm title="Discard the work?" action="Discard" onConfirm={() => { setDiscardSent(true); void run('discard', {}, 'Discard sent: the work tree is removed on its machine').then(() => setDiscardSent(false)); }}
                 description="The job's work tree is removed on its machine with all its work that is not pushed. You cannot undo this.">
                 <Button size="sm" variant="outline" disabled={busy}><Trash2 />Discard</Button>
               </Confirm>

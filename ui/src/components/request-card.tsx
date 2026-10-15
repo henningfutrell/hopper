@@ -53,10 +53,10 @@ export function RequestCard({ request, source, itemKey, canOperate }: { request:
         {approval?.state !== 'approved' && approval?.state !== 'declined' && canOperate && (
           <>
             <Button size="xs" data-slot="request-approve" disabled={waits} aria-busy={pending}
-              title="Approves this title and body: the source syncs at once and makes a job, and the job runs this text. A later edit shows the card again."
+              title="Approves this title and body: the source then syncs and makes a job, and the job runs this text. A later edit shows the card again."
               onClick={() => void approveRequest(source, itemKey, request.hash)}>
               {pending
-                ? <><Loader2 className="animate-spin motion-reduce:animate-none" />Approving: the source syncs now</>
+                ? <><Loader2 className="animate-spin motion-reduce:animate-none" />Approving</>
                 : <><Check />{request.approved ? 'Approve the new text' : 'Approve'}</>}
             </Button>
             <Button size="xs" variant="outline" data-slot="request-decline" disabled={waits} aria-busy={approval?.state === 'declining'}

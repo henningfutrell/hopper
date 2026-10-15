@@ -49,6 +49,7 @@ export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((ke
     },
     approvedText: (key) => { const a = approvals.get(key); return a && { title: a.text.title, body: a.text.body }; },
     approve: (source, key, text, request) => { approvals.set(key, { text, request, source }); },
+    approvedComments: (key, comments) => { const a = approvals.get(key); if (a) a.text = { ...a.text, comments }; },
     declined: (key, hash) => declines.get(key)?.request.hash === hash,
     decline: (source, key, request) => { declines.set(key, { request, source }); },
     assignedHere: (key) => (typeof o.assignedHere === 'function' ? o.assignedHere(key) : (o.assignedHere ?? []).includes(key)),
