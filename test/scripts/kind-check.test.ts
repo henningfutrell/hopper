@@ -8,11 +8,13 @@
 //   Scenario: a pod with a Docker socket, a Podman image or a socket variable fails the check, and names the pod
 //   Scenario: a hopper that is not healthy fails the check
 //   Scenario: with --keep the cluster stays
+//   Scenario: a pull request that changes the chart runs the check, with no secret
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const SCRIPT = join(ROOT, 'scripts', 'kind-check.ts');
@@ -118,5 +120,26 @@ describe('scripts/kind-check.ts', () => {
     expect(r.calls[0]).toBe('kind create cluster --name mine --wait 180s');
     expect(r.calls.some((c) => c.startsWith('kind delete'))).toBe(false);
     expect(r.stdout).toContain('kind delete cluster --name mine');
+  });
+});
+
+describe('.github/workflows/kind.yml, the kind check on a pull request', () => {
+  const text = readFileSync(join(ROOT, '.github', 'workflows', 'kind.yml'), 'utf8');
+  const workflow = parse(text) as {
+    on: { pull_request: { paths: string[] } };
+    permissions: Record<string, string>;
+    jobs: Record<string, { steps: { run?: string }[] }>;
+  };
+
+  it('runs on a pull request that changes the chart or the check, read-only and with no secret', () => {
+    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['deploy/helm/**', 'scripts/kind-check.ts']));
+    expect(workflow.permissions).toEqual({ contents: 'read' });
+    expect(text).not.toMatch(/secrets\./);
+    expect(text).not.toMatch(/pull_request_target/);
+  });
+
+  it('runs the kind check with the dev channel\'s image', () => {
+    const runs = Object.values(workflow.jobs).flatMap((j) => j.steps.map((s) => s.run ?? ''));
+    expect(runs).toContain('node scripts/kind-check.ts --tag dev');
   });
 });
