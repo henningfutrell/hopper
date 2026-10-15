@@ -18,6 +18,7 @@ import { rebuildWorkItems } from './work-items.ts';
 import { REPO_CHECKS_TABLE } from './repo-checks.ts';
 import { LAST_ACCOUNT_TABLE } from './last-accounts.ts';
 import { APP_INSTALLATIONS_TABLE } from './app-installations.ts';
+import { JOB_FILTER_COLUMNS } from './job-filter-columns.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -73,4 +74,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 66: Where the hopper's app is installed, as last read (issue #1250): Sources shows it, and a restart reads nothing
   // again. A table only: the build before runs on it.
   APP_INSTALLATIONS_TABLE,
+  // 67: The fields job and failure lists filter on, as generated columns (issue #1154): a filtered list makes Postgres
+  // parse no body. Generated columns only: the build before names none of them, and Postgres keeps them at its writes too.
+  JOB_FILTER_COLUMNS,
 ];
