@@ -7,7 +7,7 @@
 // account's week windows.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { machineOf } from '../failures/evidence.ts';
-import type { Account, Job, PartAccount, SourceStatus, ToolAccount, ToolAccountMachine, ToolLogin, UsageReading, UsageSourceReport } from '../domain/types.ts';
+import { lastAccountOf, type Account, type Job, type LastAccount, type PartAccount, type SourceStatus, type ToolAccount, type ToolAccountMachine, type ToolLogin, type UsageReading, type UsageSourceReport } from '../domain/types.ts';
 import type { Operation } from './openapi-operation.ts';
 import type { TenantParts } from './tenants.ts';
 
@@ -35,6 +35,8 @@ export function toolAccountsOf(o: {
   sources: UsageSourceReport[]; readings: UsageReading[]; labels: ReadonlyMap<string, string>; jobs: readonly Job[];
   /** The infra credentials each machine's job user holds, as its last read found them (issues #1128 part 7, #1248). */
   infraCredentials?: ReadonlyMap<string, readonly string[]>;
+  /** Who a machine's tool of a service was last signed in as (issue #1269): `null` when none is known, `undefined` when not read. */
+  lastAccount?: (machineId: string, service: string) => LastAccount | null | undefined;
 }): ToolAccount[] {
   const started = new Map<string, Job[]>();
   for (const j of o.jobs) {
@@ -51,10 +53,12 @@ export function toolAccountsOf(o: {
     const problem = a.problem ?? s.problem;
     const lastUsedAt = latest((started.get(machineId) ?? []).filter((j) => !s.executors || s.executors.includes(j.spec.executor)).map((j) => j.startedAt));
     const creds = o.infraCredentials?.get(machineId);
+    // A machine not signed in says who to sign it in as (issue #1269).
+    const lastAccount = login === 'signed-in' ? undefined : o.lastAccount?.(machineId, a.service);
     const machine: ToolAccountMachine = {
       machineId, label: o.labels.get(machineId) ?? machineId, source: s.name, login,
       ...(problem ? { problem } : {}), ...(s.accountReadAt ? { readAt: s.accountReadAt } : {}), ...(lastUsedAt ? { lastUsedAt } : {}), ...(s.signIn ? { signIn: true as const } : {}),
-      ...(creds?.length ? { infraCredentials: [...creds] } : {}),
+      ...(creds?.length ? { infraCredentials: [...creds] } : {}), ...(lastAccount !== undefined ? { lastAccount } : {}),
     };
     // Signed in as nobody, or not known: one entry per service, so a machine signed out is seen beside the accounts.
     const key = `${a.service}\u0000${login === 'signed-in' ? a.identity : `\u0000${login}`}`;
@@ -82,7 +86,7 @@ export function toolAccountsOf(o: {
 
 /** Its operation in the API reference: its scope is in the State and usage section. */
 export const TOOL_ACCOUNT_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/tool-accounts', tag: 'State', summary: 'The tool accounts: who each machine\'s agent tool is signed in as', description: 'Per service and identity, from the usage sources\' accounts: the machines that use it, whether each is signed in, signed out or not known, when its source last read it, when a job last started there, the infra credentials its job user holds (`infraCredentials`, names only: any makes the machine not ready), and the account\'s week windows. Machines signed out are one entry with no identity. Never a token.', returns: '`{ accounts: ToolAccount[] }`' },
+  { method: 'get', path: '/api/tool-accounts', tag: 'State', summary: 'The tool accounts: who each machine\'s agent tool is signed in as', description: 'Per service and identity, from the usage sources\' accounts: the machines that use it, whether each is signed in, signed out or not known, when its source last read it, when a job last started there, the infra credentials its job user holds (`infraCredentials`, names only: any makes the machine not ready), on a machine not signed in who it was last signed in as (`lastAccount`, the label only, `null` when none is known), and the account\'s week windows. Machines signed out are one entry with no identity. Never a token.', returns: '`{ accounts: ToolAccount[] }`' },
 ];
 
 export function accountRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
@@ -92,6 +96,7 @@ export function accountRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRe
     const [machines, readings] = await Promise.all([t.engine.getMachines(), t.engine.getUsage()]);
     const labels = new Map(machines.map((m) => [m.id, m.label || m.id]));
     const infraCredentials = new Map(machines.flatMap((m) => (m.infraCredentials ? [[m.id, m.infraCredentials] as const] : [])));
-    return { accounts: toolAccountsOf({ sources: t.engine.getUsageSources(), readings, labels, jobs: t.store.jobs.list(), infraCredentials }) };
+    return { accounts: toolAccountsOf({ sources: t.engine.getUsageSources(), readings, labels, jobs: t.store.jobs.list(), infraCredentials,
+      lastAccount: (machineId, service) => lastAccountOf(t.store.lastAccounts, machineId, service) }) };
   });
 }

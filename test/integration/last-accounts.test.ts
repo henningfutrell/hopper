@@ -93,10 +93,17 @@ describe('the last account (issue #1269)', () => {
 
   it('every Claude sign-in request names the last account: the signed-out machine on Accounts and a job\'s not-signed-in question (issue #1269)', async () => {
     writeFileSync(join(control, 'email'), 'first@example.com');
-    const a = await boot({ usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] });
-    await waitFor(() => a.user().store.lastAccounts.get('local', 'claude'), { what: 'the last account kept' });
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const plugins = { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] };
+    const first = await startTestApp({ dbPath: db.dbPath, plugins });
+    await waitFor(() => first.user().store.lastAccounts.get('local', 'claude'), { what: 'the last account kept' });
+    await first.stop();
+    // The session ended on the machine; the hopper starts again and reads it signed out.
     writeFileSync(join(control, 'mode'), 'logged-out');
-    const machine = await waitFor(async () => { const m = (await toolAccounts(a)).find((x) => x.login === 'signed-out')?.machines[0]; return m; }, { what: 'the signed-out machine' });
+    const a = await startTestApp({ dbPath: db.dbPath, plugins });
+    apps.push(a);
+    const machine = await waitFor(async () => (await toolAccounts(a)).find((x) => x.login === 'signed-out')?.machines[0], { what: 'the signed-out machine' });
     expect(machine.lastAccount).toMatchObject({ machineId: 'local', service: 'claude', identity: 'first@example.com', organization: 'Example Org' });
 
     const held = await a.pull({ op: 'ask', message: `${NOT_SIGNED_IN}.\n\nA hard screen` });

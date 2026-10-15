@@ -1,7 +1,7 @@
 // The Logins view's model (issue #477): a login's phase on the clock, its countdown, the nav badge, the order
 // of the cards and which logins stay on a card. Pure: every `now` is server time (the browser's clock plus the
 // offset read with the logins, `clockOffset`), passed in.
-import type { LoginSettings, LoginView } from './wire.ts';
+import type { LastAccount, LoginSettings, LoginView } from './wire.ts';
 
 /** `expiring`: pending, under the warning. `expired` also when the client's clock passed `expiresAt` first. */
 export type LoginPhase = 'pending' | 'expiring' | 'expired' | 'completed' | 'cancelled' | 'failed' | 'dismissed';
@@ -78,12 +78,13 @@ export function onCard(l: LoginView, now: number, settings: LoginSettings): bool
 }
 
 /**
- * Who the login's machine was last signed in as (issue #1269), so the person knows who to sign in as: the account and its
- * organization, then the machine. Undefined for a login that does not say (no machine, or a tool whose account is not read).
+ * Who a sign-in request's machine was last signed in as (issue #1269), so the person knows who to sign in as: the account and its
+ * organization, then the machine. On a login, a not-signed-in question and a machine on Accounts. Undefined for one that does not
+ * say (no machine, or a tool whose account is not read).
  */
-export function lastAccountText(l: LoginView, machine: string): string | undefined {
-  if (l.lastAccount === undefined) return undefined;
-  if (l.lastAccount === null) return `No previous account known for this machine (${machine})`;
-  const org = l.lastAccount.organization ? ` (${l.lastAccount.organization})` : '';
-  return `Last signed in as ${l.lastAccount.identity}${org} on ${machine}`;
+export function lastAccountText(lastAccount: LastAccount | null | undefined, machine: string): string | undefined {
+  if (lastAccount === undefined) return undefined;
+  if (lastAccount === null) return `No previous account known for this machine (${machine})`;
+  const org = lastAccount.organization ? ` (${lastAccount.organization})` : '';
+  return `Last signed in as ${lastAccount.identity}${org} on ${machine}`;
 }

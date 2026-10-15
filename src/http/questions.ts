@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
-import { ESCALATION_REASONS, highFirst, jobPriorityTag, REVIEW_SECTIONS, type EscalationReason, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
+import { ESCALATION_REASONS, highFirst, lastAccountOf, NOT_SIGNED_IN, jobPriorityTag, REVIEW_SECTIONS, type EscalationReason, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
 import { forksOf, running } from '../questions/stale.ts';
 import { tldrSettings, withShownTldr } from '../tldr/index.ts';
 import { HttpError, parseWith } from './errors.ts';
@@ -39,16 +39,19 @@ function questionForks(store: UserStore, q: Question): QuestionFork[] {
 
 /**
  * The question with its job's live priority: 0 and not high when its job is gone; while it is open, the phase
- * shifts it offers now (issue #548), so the UI offers only what the server takes; and the forks made from it (issue #570).
+ * shifts it offers now (issue #548), so the UI offers only what the server takes; the forks made from it (issue #570); and, on a
+ * not-signed-in question, who Claude on its machine was last signed in as (issue #1269).
  */
 export function questionView(t: { store: UserStore; engine: Pick<Engine, 'phaseShifts'> }, q: Question): QuestionView {
   const { store } = t;
   const forks = questionForks(store, q);
+  const lastAccount = q.text.startsWith(NOT_SIGNED_IN) ? lastAccountOf(store.lastAccounts, q.raisedBy?.machineId, 'claude') : undefined;
   return {
     // Its TL;DR (issue #569) only while it is shown: written from the text as it is, the setting on.
     ...withShownTldr('question', q, tldrSettings(store)), ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId) ?? { priority: 0, high: false }),
     ...(q.status === 'open' ? { shifts: t.engine.phaseShifts.offered(q) } : {}),
     ...(forks.length > 0 ? { forks } : {}),
+    ...(lastAccount !== undefined ? { lastAccount } : {}),
   };
 }
 

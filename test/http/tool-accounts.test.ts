@@ -53,7 +53,7 @@ describe('toolAccountsOf', () => {
     const kept: LastAccount = { machineId: 'm2', service: 'claude', identity: 'old@example.com', organization: 'Example Org', capturedAt: '2026-10-13T10:00:00.000Z' };
     const accounts = toolAccountsOf({
       sources: [signedIn('claude-m1', 'm1', 'a@example.com'), signedOut('claude-m2', 'm2'), signedOut('claude-m3', 'm3')],
-      readings: [], labels, jobs: [], lastAccount: (machineId, service) => (machineId === 'm2' && service === 'claude' ? kept : undefined),
+      readings: [], labels, jobs: [], lastAccount: (machineId, service) => (machineId === 'm2' && service === 'claude' ? kept : null),
     });
     expect(accounts[0]!.machines[0]).not.toHaveProperty('lastAccount');
     expect(accounts[1]!.machines.map((m) => [m.machineId, m.lastAccount])).toEqual([['m2', kept], ['m3', null]]);

@@ -68,7 +68,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
   const job = useJobIndex().get(l.jobId ?? '');
   const machine = useMachineName(l.machineId);
   const name = machine ?? 'machine unknown';
-  const lastAccount = lastAccountText(l, machine ?? l.machineId ?? name);
+  const lastAccount = lastAccountText(l.lastAccount, machine ?? l.machineId ?? name);
   const [busy, setBusy] = useState(false);
   const left = countdownText(l, now);
   const open = isOpen(phase);

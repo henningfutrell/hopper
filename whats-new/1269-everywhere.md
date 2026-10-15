@@ -1,0 +1,1 @@
+- A job's question that asks you to sign Claude in, and a signed-out machine on Accounts, now say which account the machine was last signed in as.

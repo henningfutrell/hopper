@@ -19878,7 +19878,7 @@ tool shows on its login screen, and Claude's re-auth shows none.
   --json` there at each read (the CLI's own status command), and keeps the email and the organization (`parseAuthStatus`; ids
   and the token it prints are dropped). No other read of the machine and no config file: the source is the one place that runs
   the tool there.
-- **What is kept.** `last_accounts` (tenant migration 62), one row per machine and service: `LastAccount` — the identity, the
+- **What is kept.** `last_accounts` (tenant migration 65), one row per machine and service: `LastAccount` — the identity, the
   organization, `capturedAt` (when it was last read signed in as it). Only the label: no token, no id. The logins' sweep
   (`src/logins/last-accounts.ts`, at each engine tick) keeps what the sources read signed in, and writes only what changed. A
   signed-out read keeps the row: it is the last account, so it outlives the session ending, and a restart.
@@ -19888,11 +19888,19 @@ tool shows on its login screen, and Claude's re-auth shows none.
   absent on any other login. To every reader of the login, as `GET /api/tool-accounts` shows the same identity. The Logins card
   says "Last signed in as <identity> (<organization>) on <machine>", or "No previous account known for this machine
   (<machine>)". Not in an event, so no webhook or notifier carries the email.
+- **Every Claude sign-in request shows it** (part 2). Two more places ask a person to sign Claude in, and both say the same
+  line through one lookup (`lastAccountOf`, `src/domain/logins.ts`): a job's not-signed-in question (`NOT_SIGNED_IN`, issue
+  #533; `QuestionView.lastAccount` for the machine that raised it, absent on any other question and on one with no machine),
+  and a machine on Accounts that is not signed in (`ToolAccountMachine.lastAccount`; absent on a signed-in machine, which
+  names its own account). The UI writes it once (`lastAccountText`, `ui/src/model/logins.ts`) for the Logins card, the
+  question card and the Accounts machine.
 - **Per machine, not per lane.** A usage source reads one machine's tool, and the lanes of a machine share its Claude config:
   the key is the machine and the service.
 
-Tests: `test/integration/last-accounts.test.ts` (recorded, shown on a sign-in, updated by a completed sign-in, kept across a
-restart, none known, no token), `test/ui/logins-view.test.ts`.
+Tests: `test/integration/last-accounts.test.ts` (recorded, shown on a sign-in, on the signed-out machine and on a
+not-signed-in question, updated by a completed sign-in, kept across a restart, none known, no token),
+`test/http/tool-accounts.test.ts`, `test/ui/logins-view.test.ts`, `test/ui/question-machine.test.ts`,
+`test/ui/accounts-view.test.ts`.
 
 ## The job's terminal (issue #1128, 2026-10-14, part 3)
 
