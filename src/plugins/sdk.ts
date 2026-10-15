@@ -216,5 +216,10 @@ export interface PluginDefinition<R extends Role = Role, O = any> {
    * limits as `detect`. Absent, empty or throwing → the options are typed.
    */
   choices?(sys: DetectionKit): Promise<Record<string, OptionChoice[]>>;
+  /**
+   * A job source's (issue #1264): whether two instances of this plugin, with these parsed options, take the same work, so a
+   * second is refused and one already configured shows as a duplicate. False when either is off. Absent: never.
+   */
+  sameWork?(a: O, b: O): boolean;
   create(ctx: PluginContext & RoleContext[R], options: O): RoleInstance[R] | Promise<RoleInstance[R]>;
 }

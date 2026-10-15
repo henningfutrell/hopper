@@ -369,7 +369,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const sync = createSourceSync({
     // The in-motion cycle (issue #985): the pull requests in motion every cycle, every followed one each intake sync interval.
     sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions, followEvery,
-    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? (name === directJobs.source.name ? DIRECT_POLL_MS : SEAM_SOURCE_POLL_MS),
+    // Poll backoff and the call log (issue #1264): the configured job sources poll less while nothing changes, and each pass's calls are kept.
+    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? (name === directJobs.source.name ? DIRECT_POLL_MS : SEAM_SOURCE_POLL_MS), backoff: (name) => running.some((r) => r.source.name === name), calls: store.sourceCalls,
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
   const failures = createFailures({
@@ -396,7 +397,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

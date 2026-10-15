@@ -74,6 +74,23 @@ const accountKeys = {
 /** github-account: the GitHub account the user connected. */
 export const githubAccountOptions = z.preprocess(withoutGone, z.object(accountKeys).strict());
 
+/** Both on, and the same issues by label and hopper name (issue #1264). */
+const sameIssues = (a: GitHubAccountOptions | GitHubAppOptions, b: GitHubAccountOptions | GitHubAppOptions): boolean =>
+  a.enabled && b.enabled && a.label === b.label && a.hopperName === b.hopperName;
+
+/** Repositories that overlap: none listed is every repository the app is installed on. GitHub's names ignore case. */
+const overlap = (a: readonly string[], b: readonly string[]): boolean =>
+  !a.length || !b.length || a.some((r) => b.some((o) => o.toLowerCase() === r.toLowerCase()));
+
+/**
+ * Two connected-account sources take the same work (issue #1264) when they take the same issues: both read the one account
+ * the user connected, over the user's job repositories.
+ */
+export const sameAccountWork = (a: GitHubAccountOptions, b: GitHubAccountOptions): boolean => sameIssues(a, b);
+
+/** Two app sources take the same work (issue #1264): the same issues, through the same app, over repositories that overlap. */
+export const sameAppWork = (a: GitHubAppOptions, b: GitHubAppOptions): boolean =>
+  sameIssues(a, b) && a.appId === b.appId && a.apiUrl === b.apiUrl && overlap(a.repos, b.repos);
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
 export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;

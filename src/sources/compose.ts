@@ -119,7 +119,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
-  return { ...source, setupProblem: () => appSetupProblem(app()), pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
+  return { ...source, setupProblem: () => appSetupProblem(app()), pass: reads.pass, passCalls: reads.calls, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
 }
 
 /**
@@ -180,6 +180,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     describe: () => current()?.describe() ?? unconnected(),
     afterAnswerTimings: () => current()?.afterAnswerTimings?.() ?? [],
     pass: reads.pass,
+    passCalls: reads.calls,
     discover: (d) => current()?.discover(d) ?? Promise.resolve([]),
     repoChanged: (repo) => current()?.repoChanged?.(repo) ?? false,
     check: (active) => current()?.check(active) ?? Promise.resolve([]),

@@ -69,6 +69,8 @@ export interface PluginHost {
   executors(): BuiltExecutor[];
   /** The job source instances now, running, disabled or not; follows the plugins config live (issue #356). Valid after start(). */
   jobSources(): BuiltJobSource[];
+  /** Each configured job source that takes the same work as an earlier one (issue #1264), with the name of that one. */
+  duplicateJobSources(): ReadonlyMap<string, string>;
   /** Every machine of every machine source, in the plugins config order; follows the plugins config live. One that cannot run lists none. Valid after start(). */
   machines(): MachineSource;
   /** The usage sources now that run; follows the plugins config live (issue #356). Valid after start(). */

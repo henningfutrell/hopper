@@ -25,6 +25,7 @@ import { createPointedJobRepository } from './pointed-jobs.ts';
 import { createDirectJobRepository } from './direct-jobs.ts';
 import { createPromotionRepository } from './promotions.ts';
 import { createGitHubListingRepository } from './github-listings.ts';
+import { createSourceCallLog } from './source-calls.ts';
 import { createCheckpointRepository } from './checkpoints.ts';
 import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
@@ -94,6 +95,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     promotions: createPromotionRepository(ctx),
     githubListings: createGitHubListingRepository(ctx),
     githubWatches: createGitHubWatchRepository(ctx),
+    sourceCalls: createSourceCallLog(ctx),
     checkpoints: createCheckpointRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
     searchPending: createSearchPendingRepository(ctx),

@@ -77,4 +77,6 @@ export interface HasSetup {
 export interface RunsPasses {
   /** Run one sync pass: the source may ask its service once for what `run` reads twice. Absent: run as is. */
   pass?<T>(run: () => Promise<T>): Promise<T>;
+  /** The calls to its service its last pass made (issue #1264), for the call log. Absent: not counted. */
+  passCalls?(): number;
 }

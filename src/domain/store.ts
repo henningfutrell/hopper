@@ -495,7 +495,7 @@ export interface UserStore {
   /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */
   pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
   /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing. */
-  githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository;
+  githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
   checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
   settings: UserSettingsRepository;

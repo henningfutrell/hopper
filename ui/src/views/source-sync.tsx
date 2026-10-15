@@ -2,7 +2,7 @@
 // it — on a source's card in Sources, and inside the GitHub connection's panel for that connection's source. A source on but
 // not configured (issue #1243) shows its setup card, and "not configured" in place of its counts.
 import { GhLink } from '@/components/job';
-import { ago, countdown } from '@/model/format';
+import { ago, countdown, duration } from '@/model/format';
 import type { SetupProblem, SourceStatus } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
 import { SourceIntake } from './source-intake';
@@ -52,6 +52,21 @@ function WriteBehind({ s, now }: { s: SourceStatus; now: number }) {
   );
 }
 
+/**
+ * How often a source polls (issue #1264): its poll interval, and the longer interval to its next poll while its syncs find
+ * nothing changed; and its calls to GitHub in the last hour and day, from the hopper's database.
+ */
+function PollAndCalls({ s }: { s: SourceStatus }) {
+  const backedOff = s.pollMs !== undefined && s.nextPollMs !== undefined && s.nextPollMs > s.pollMs;
+  return (
+    <>
+      {s.pollMs !== undefined && <div data-poll={s.name}>polls every {duration(s.pollMs / 1000)}
+        {backedOff && <> · <span className="text-foreground/80">nothing changed: next poll after {duration(s.nextPollMs! / 1000)}</span></>}</div>}
+      {s.calls && <div data-calls={s.name}>{s.kind.startsWith('github') ? 'GitHub calls' : 'calls'}: <span className="num text-foreground/80">{s.calls.lastHour}</span> in the last hour · <span className="num text-foreground/80">{s.calls.lastDay}</span> in the last day</div>}
+    </>
+  );
+}
+
 /** A source's sync: what it saw and made, when, and what is wrong with it; and what its intake did with each item (issue #440). */
 export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepository?: ((repo: string) => Promise<boolean>) | undefined }) {
   const now = useServerNow(); // the daemon's clock: its times are its own (issue #812)
@@ -69,6 +84,7 @@ export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepositor
         {s.syncing ? <> · <span data-syncing>syncing now</span></>
           : s.nextSyncAt && <> · next <span title={s.nextSyncAt}>{Date.parse(s.nextSyncAt) > now ? countdown(s.nextSyncAt, now) : 'now'}</span></>}
       </div>
+      {s.duplicateOf && <div data-duplicate-of={s.name} className="rounded-md border border-bad/30 bg-bad/5 p-2 text-xs text-bad">Duplicate of <span className="font-mono">{s.duplicateOf}</span>: it polls GitHub again for the same issues. Remove it from the banner above.</div>}
       {s.setupProblem && <SetupCard s={s} p={s.setupProblem} />}
       <WriteBehind s={s} now={now} />
       {s.lastError && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 text-xs break-words text-bad">{s.lastError}</div>}
@@ -81,6 +97,7 @@ export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepositor
       </div>
       {repos.length > 0 && <div className="flex flex-wrap gap-1">{repos.map((r) => <span key={r} className="rounded border px-1.5 font-mono text-[11px] text-muted-foreground">{r}</span>)}</div>}
       <div className="space-y-0.5 text-xs text-muted-foreground">
+        <PollAndCalls s={s} />
         {['owners', 'repos', 'assignee', 'label'].filter((k) => d[k] != null && list(d[k]) !== '').map((k) => <div key={k}>{k}: <span className="text-foreground/80">{list(d[k])}</span></div>)}
         {['projectErrors', 'permanentErrors'].filter((k) => !empty(d[k])).map((k) => <div key={k} className="text-bad">{k}: {typeof d[k] === 'object' ? JSON.stringify(d[k]) : String(d[k])}</div>)}
         {Array.isArray(d.notRerun) && d.notRerun.map((n: { key: string; job: string; status: string; reason: string }) => <div key={n.key} data-not-rerun className="text-warn">not run again: <GhLink url={n.key}>{n.key}</GhLink> (job {n.status}, {n.reason})</div>)}
