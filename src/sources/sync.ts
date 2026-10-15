@@ -334,7 +334,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
-  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }), acts: () => afterDone.outboxActs,
+  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }), acts: () => ({ ...afterDone.outboxActs, ...giveBackRows }),
     refresh: (slot) => { slot.status.detail = detailOf(slot, slot.removed ? REMOVED : slot.source.paused?.(), jobsOf(slot).filter((j) => flagsOf(j).permanentErrors?.length).length); emit(slot); } });
 
   /** A status with each taken item's job as it is now (issue #798). */
@@ -343,7 +343,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const emit = (slot: Slot) => { for (const l of listeners) l(live(slot.status)); };
 
   const sourceOfJob = (jobId: string) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined);
-  const retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
+  const sendNow = (source: JobSource) => { const slot = slots.get(source.name); if (slot && running) outbox.now(slot); }, retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
   const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob, kept: (s) => { const slot = slots.get(s.name); if (slot && running) outbox.soon(slot); } });
   const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
@@ -351,10 +351,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain,
-    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(), sendNow: (source) => { const slot = slots.get(source.name); if (slot && running) outbox.now(slot); },
+    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(), sendNow,
   });
 
-  const rerunning = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); } });
+  const { outboxActs: giveBackRows, ...rerunning } = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); }, sendNow });
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),

@@ -1599,7 +1599,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985), the GitHub outbox of a source (`github/outbox.ts`, issue #1238: the rows an intake action keeps, sent in batches, coalesced) and when the sync loop sends it (`outbox-flush.ts`) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985), the GitHub outbox of a source (`github/outbox.ts`, issue #1238: the rows an intake action, a hand-off resolution, Merge now, Close PR, Run again and Rework keep, sent in batches, coalesced) and when the sync loop sends it (`outbox-flush.ts`) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -11707,9 +11707,26 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   restart sends a row not sent. The act sent again sends its failed row again; Sources lists the failed row with a Retry.
   The row is no intake marker: the Pull requests card shows the act. Tests: `test/sources/github-outbox-pull-requests.test.ts`,
   `test/integration/github-outbox-pull-requests.test.ts` (sent after a restart), `test/integration/action-latency-pull-requests.test.ts`.
-- **Not in the outbox yet** (the issue's later parts): the give-backs (reopen, assign, labels before a new job) keep
-  their own path on the job's report chain, with their state in memory: a give-back makes its new job from what GitHub
-  answers, so its row needs a durable new-job step too.
+- **Run again and Rework** (part 4). A person's Run again or Rework of an ended job is one row, act `rerun` or `rework`,
+  tagged with the job's id, change `give_back` (the act, the job, who acted, Rework's notes): `JobSource.giveBackAct`
+  keeps it once the answer's checks pass (`src/sources/rerun.ts`), and answers the give-back already on its way for the
+  job, so a second click, another tab or the CLI sends nothing more. Its new job must be seen now, so its source sends at
+  once, as Merge now's does. The source's send hands the row to the sync loop (`OutboxActs.giveBack`), which runs the
+  same give-back as before on the job's report chain — on GitHub the issue reopened and assigned, its end labels gone,
+  for Rework the pull request made a draft first —, then makes the new job (`job.rerun`, `job.rework_requested`, with who
+  pressed it). **The new-job step is durable**: a row sent again once its new job was made — a stop after the job and
+  before the row was marked sent — finds the item's newest job made from this one (`rerunOf`) and makes nothing more. A
+  refusal for now (a 5xx, GitHub out of reach) waits the backoff; a permanent refusal (a refused give-back: the job no
+  longer the newest of its item, its end not reported), or the last attempt, fails the row and records
+  `job.give_back_failed` once. The act sent again sends its failed row again, with the notes it was kept with; Sources
+  lists the failed row with a Retry. A restart sends a row not sent. A source with no GitHub outbox (the `direct` source)
+  gives back as before, in memory. Tests: `test/sources/github-outbox-give-backs.test.ts`,
+  `test/integration/github-outbox-give-backs.test.ts` (sent after a restart).
+- **Not in the outbox yet** (the issue's later parts): the other give-backs — Failures' Retry, a hand-off's Continue and
+  I fixed it, Push it, Tend again — keep their own path on the job's report chain, with their state in memory: each is
+  run by its own service (failures, kept work, tending), so its row needs that service's run named in the row, to be
+  run again after a restart. The Pull requests card shows Merge now's and Close PR's act from the page's own state and
+  the stream, not from the outbox row.
 ### Stuck work (issue #1010, 2026-10-13)
 
 Failures, Parked and Pull requests each showed their own part of what waits on a person, one card at a time. With 169

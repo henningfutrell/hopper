@@ -30,7 +30,7 @@ export interface GiveBackRegistry {
    * the newest of its item, its end reported to its source, for Rework finished and following an open pull request —,
    * then the answer. Its source gives the item back after, on the job's report chain, and the new job follows
    * (`job.rerun`, `job.rework_requested`); a give-back that fails records `job.give_back_failed` and makes no job. The same
-   * act sent again while one runs answers that one.
+   * act sent again while one runs answers that one. With a GitHub outbox the act is its row (issue #1238 part 4), kept across a restart.
    */
   giveBack(jobId: string, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }, acting?: ActingPerson): GiveBackAnswer;
   /**

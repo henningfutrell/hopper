@@ -11,8 +11,9 @@
 // act is timed for `afterAnswer` (`after-answer-timings.ts`): its wait in the outbox apart from its call.
 // A person's resolution of a hand-off (issue #551) is rows too (act `resolve`, `resolution`): its end labels and its one
 // comment. Each failed row is listed (`outboxFailed`), and a person's Retry (`retry`) sends it again. A person's Merge now
-// or Close PR (part 3, `pullRequestAct`) is a row too, op `pull_request`, sent by the sync loop's own act (`OutboxSend`'s
-// `pullRequest`); one failed for good is said once (`gaveUp`).
+// or Close PR (part 3, `pullRequestAct`) is a row too, op `pull_request`, sent by the sync loop's own act (`OutboxActs`'
+// `pullRequest`); one failed for good is said once (`gaveUp`). So is a person's Run again or Rework (part 4, `giveBackAct`),
+// op `give_back`, sent by `giveBack`, and said once by `giveBackFailed`.
 import type { ActingPerson } from '../../domain/failures.ts';
 import type { IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
 import { SourceError, type Clock } from '../../domain/ports.ts';
@@ -22,7 +23,7 @@ import type { AfterAnswerTiming } from '../../domain/types.ts';
 import { createAfterAnswerTimings } from '../after-answer-timings.ts';
 import {
   OUTBOX_ATTEMPTS, coalesce, notIntake, outboxBackoffMs,
-  type GitHubOutboxRepository, type OutboxAct, type OutboxChange, type OutboxInput, type OutboxRow,
+  type GitHubOutboxRepository, type OutboxAct, type OutboxActs, type OutboxChange, type OutboxGiveBack, type OutboxInput, type OutboxRow,
 } from '../../domain/github-outbox.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
 
@@ -34,8 +35,11 @@ export type OutboxSend = (repo: string, key: string, change: OutboxChange) => Pr
 /** A row failed for good, and why: what its act says once. */
 export type OutboxGaveUp = (row: OutboxRow, error: string) => void;
 
-/** A Merge now or Close PR row sent: the job's source follows its pull request with the act, and it is recorded. */
-export type OutboxPullRequestAct = (change: Extract<OutboxChange, { op: 'pull_request' }>) => Promise<void>;
+/** A row failed for good told to the sync loop's act, when it has one: a Merge now, Close PR, Run again or Rework. */
+export const actGaveUp = (acts: OutboxActs | undefined): OutboxGaveUp => (r, error) => {
+  if (r.change.op === 'pull_request') acts?.gaveUp(r.change, error);
+  else if (r.change.op === 'give_back') acts?.giveBackFailed(r.change, error);
+};
 
 /** How long a sent row is kept: what the item's history and a check of the table read. */
 const KEEP_SENT_MS = 7 * 24 * 60 * 60_000;
@@ -136,6 +140,14 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
     return { due: due.length, wrote: [...wrote] };
   }
 
+  /** A person's act on one job (Merge now, Close PR, Run again, Rework), tagged with the job's id: its row, or the act of the row of its kind on its way. */
+  function jobAct(key: string, repo: string, change: Extract<OutboxChange, { op: 'pull_request' | 'give_back' }>, acting?: ActingPerson): OutboxAct {
+    const onWay = openOf(key).find((r) => r.change.op === change.op && r.tag === change.jobId && r.state !== 'failed');
+    if (onWay) return onWay.act;
+    self.queue(change.act, key, repo, [{ change, ...(acting ? { createdBy: acting.person } : {}) }], { tag: change.jobId });
+    return change.act;
+  }
+
   const self = {
     /** True: this act, with this tag, has rows on their way, or went through since a discover last listed the item: nothing more to do. */
     sent(act: OutboxAct, key: string, tag = ''): boolean {
@@ -163,11 +175,14 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
      * its way for the job (a second click) answered. The same act that failed is sent again, from its first attempt.
      */
     pullRequestAct(key: string, repo: string, act: PullRequestAct, jobId: string, acting: ActingPerson): PullRequestAct {
-      const mine = openOf(key).filter((r) => r.change.op === 'pull_request' && r.tag === jobId);
-      const onWay = mine.find((r) => r.state !== 'failed');
-      if (onWay) return onWay.act as PullRequestAct;
-      self.queue(act, key, repo, [{ change: { op: 'pull_request', act, jobId, acting }, createdBy: acting.person }], { tag: jobId });
-      return act;
+      return jobAct(key, repo, { op: 'pull_request', act, jobId, acting }, acting) as PullRequestAct;
+    },
+    /**
+     * A person's Run again or Rework (`notes`) of ended job `jobId`, its item `key` (part 4): kept as a row, or the give-back
+     * already on its way for the job answered. The same act that failed is sent again, from its first attempt.
+     */
+    giveBackAct(key: string, repo: string, act: OutboxGiveBack, jobId: string, acting?: ActingPerson, notes?: string): OutboxGiveBack {
+      return jobAct(key, repo, { op: 'give_back', act, jobId, ...(acting ? { acting } : {}), ...(notes !== undefined ? { notes } : {}) }, acting) as OutboxGiveBack;
     },
     /**
      * Sends the rows due, one batch, coalesced; answers how many were due and the repositories it wrote to. Each row
@@ -231,13 +246,14 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 
 /**
  * Each coalesced change on GitHub; Approve's comment read through `readComments`; the hopper's labels made first, with
- * `ensureLabels`, before an add; a Merge now or Close PR through `pullRequest`, the sync loop's: without it, it waits.
+ * `ensureLabels`, before an add; a Merge now, Close PR, Run again or Rework through `acts`, the sync loop's: without it,
+ * it waits.
  */
 export function outboxSend(
   api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment'>,
   readComments: (repo: string, key: string) => Promise<void>,
   ensureLabels: (repo: string) => Promise<void> = async () => {},
-  pullRequest?: OutboxPullRequestAct,
+  acts?: OutboxActs,
 ): OutboxSend {
   return async (repo, key, change) => {
     const n = Number(key.slice(key.lastIndexOf('/') + 1));
@@ -245,9 +261,9 @@ export function outboxSend(
     else if (change.op === 'remove_labels') await api.removeLabels(repo, n, change.labels);
     else if (change.op === 'add_assignees') await api.addAssignees(repo, n, change.assignees);
     else if (change.op === 'comment') await api.postComment(repo, n, change.body);
-    else if (change.op === 'pull_request') {
-      if (!pullRequest) throw new SourceError('the sync loop does not run: the act waits', false);
-      await pullRequest(change);
+    else if (change.op === 'pull_request' || change.op === 'give_back') {
+      if (!acts) throw new SourceError('the sync loop does not run: the act waits', false);
+      await (change.op === 'pull_request' ? acts.pullRequest(change) : acts.giveBack(change));
     }
     else await readComments(repo, key);
   };

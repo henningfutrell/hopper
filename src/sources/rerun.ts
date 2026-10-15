@@ -5,9 +5,12 @@
 // hands it the job's report chain. A person's act that gives an item back (issue #1194: Run again and Rework, `giveBack`;
 // Retry, a hand-off's Continue and I fixed it, Push it and Tend again, `afterAnswer`) answers once the checks the hopper
 // can make now pass; the source's give-back and the new job run after, on that chain, and a give-back that fails is
-// recorded (`job.give_back_failed`).
+// recorded (`job.give_back_failed`). A source with a GitHub outbox (issue #1238 part 4) keeps a person's Run again or Rework
+// as a row (`JobSource.giveBackAct`), sent at once and again after a restart: the row's send (`outboxActs.giveBack`) runs the
+// same give-back on the job's report chain, and a row sent again once its new job was made makes nothing more.
 
-import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
+import { SourceError, type JobSource, type RerunBy, type RerunResult, type SourceHost, type SourceItem } from '../domain/ports.ts';
+import type { OutboxActs } from '../domain/github-outbox.ts';
 import type { GiveBackAct, GiveBackAnswer, GiveBackChecked, GiveBackRun } from '../domain/give-back.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
 import { withAct } from './after-answer-timings.ts';
@@ -23,7 +26,13 @@ export interface RerunContext {
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
   /** Sync the source at once, not waiting for the result. */
   syncSoon(source: JobSource): void;
+  /** The source's outbox sends now: a person's Run again or Rework must be seen at once (issue #1238 part 4). */
+  sendNow(source: JobSource): void;
 }
+
+/** What a source's give-back answers, kept: the outbox waits its backoff or fails the row as GitHub said it. */
+type Wrap = <T>(p: Promise<T>) => Promise<T>;
+const as = <T>(p: Promise<T>) => p;
 
 /** The ends Run again takes. */
 const RERUN_ENDS: readonly JobStatus[] = ['failed', 'finished', 'rejected'];
@@ -103,10 +112,35 @@ export function createRerun(c: RerunContext) {
     return result;
   }
 
-  const rework = (jobId: string, notes: string, acting?: ActingPerson): Promise<RerunResult> =>
+  const rework = (jobId: string, notes: string, acting?: ActingPerson, wrap: Wrap = as): Promise<RerunResult> =>
     takeBack<Reworked>(jobId, (item, source, given) => ({
       ok: true, job: c.host.rework(jobId, item, sourceRef(source), { pullRequest: given.pullRequest, notes, state: given.state }, acting),
-    }), (source, job) => source.rework!(job), true);
+    }), (source, job) => wrap(source.rework!(job)), true);
+
+  /** A person's Run again: the item given back, and the new job. */
+  const runAgain = (jobId: string, acting?: ActingPerson, wrap: Wrap = as): Promise<RerunResult> =>
+    takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), 'user', undefined, acting) }),
+      async (source, job) => ({ item: await wrap(source.rerun!(job)) }));
+
+  /**
+   * A Run again or Rework row of the outbox sent (part 4): the same give-back on the job's report chain. Throws why it did
+   * not, as its source said it, so the outbox waits its backoff or fails the row. A row sent again once its new job was made
+   * (a stop between the two) makes nothing more.
+   */
+  const sendGiveBack: OutboxActs['giveBack'] = async ({ act, jobId, acting, notes }) => {
+    const job = store.jobs.get(jobId);
+    const newest = job?.source ? store.jobs.getBySourceKey(job.source.key) : undefined;
+    if (newest && newest.id !== jobId && newest.rerunOf === jobId) return;
+    let thrown: unknown;
+    const wrap: Wrap = (p) => p.catch((e: unknown) => { thrown = e; throw e; });
+    const r = await withAct(act, () => (act === 'rework' ? rework(jobId, notes ?? '', acting, wrap) : runAgain(jobId, acting, wrap)));
+    if (!r.ok) throw thrown ?? new SourceError(r.message, r.reason !== 'source');
+  };
+
+  /** A Run again or Rework row failed for good: said once, with why; no job was made, and the act is offered again. */
+  const giveBackFailed: OutboxActs['giveBackFailed'] = ({ act, jobId, acting }, error) => {
+    store.tx(() => store.events.append({ type: 'job.give_back_failed', jobId, data: { act, error, ...acting } }));
+  };
 
   /** Each ended job's give-back under way after a person's answer (issue #1194), until it ends. */
   const givingBack = new Map<string, GiveBackAct>();
@@ -128,19 +162,22 @@ export function createRerun(c: RerunContext) {
   }
 
   return {
+    /** What sends a Run again or Rework row of a source's outbox, and says one failed for good (issue #1238 part 4). */
+    outboxActs: { giveBack: sendGiveBack, giveBackFailed },
     /**
      * A person's Run again or Rework (issue #1194): the checks the hopper can make now, then the answer; the source gives
      * the item back after, on the job's report chain, and the new job follows (`job.rerun`, `job.rework_requested`). One
      * that fails records `job.give_back_failed` with why, and makes no job. The same act sent again while one runs (a second
-     * click, another tab) answers that one.
+     * click, another tab) answers that one. With a GitHub outbox, the act is its row, sent at once (issue #1238 part 4).
      */
     giveBack(jobId: string, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }, acting?: ActingPerson): GiveBackAnswer {
       const running = givingBack.get(jobId);
       if (running) return { ok: true, jobId, giveBack: running };
       const checked = check(jobId, act.kind === 'rework');
       if ('ok' in checked && !checked.ok) return { ok: false, reason: checked.reason === 'not_found' ? 'not_found' : 'conflict', message: checked.message };
-      const run = () => (act.kind === 'rework' ? rework(jobId, act.notes, acting)
-        : takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), 'user', undefined, acting) })));
+      const kept = 'ok' in checked ? undefined : checked.giveBackAct?.(store.jobs.get(jobId)!, act.kind, acting, act.kind === 'rework' ? act.notes : undefined);
+      if (kept) { c.sendNow(checked as JobSource); return { ok: true, jobId, giveBack: kept }; }
+      const run = () => (act.kind === 'rework' ? rework(jobId, act.notes, acting) : runAgain(jobId, acting));
       return answer(jobId, act.kind, run, acting);
     },
     /**

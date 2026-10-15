@@ -6,6 +6,7 @@ import type { IntakeOutcome } from '../../src/domain/intake.ts';
 import type { FailuresView, Job, PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { SLOW_MS, withinBudget } from '../support/latency.ts';
@@ -130,7 +131,8 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
 
   it('Run again: a give-back GitHub refuses after the answer is recorded with why, and no job is made', { timeout: 30_000 }, async () => {
     const { a, gh, slow, token, issue, ended } = await bootEnded('{"op":"fail","message":"boom"}');
-    gh.failNext('reopenIssue', new Error('issue locked'));
+    // Refused for good: Run again is a GitHub outbox row (issue #1238 part 4), so a refusal for now would be tried again.
+    gh.failNext('reopenIssue', new GitHubApiError('issue locked (HTTP 403)', true, 403));
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
     slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/jobs/${ended.id}/rerun`, {}, { token }));
