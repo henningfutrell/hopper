@@ -76,4 +76,12 @@ describe('the Helm chart\'s lane pods', () => {
     expect(policy.spec?.policyTypes).toEqual(['Ingress']);
     expect(policy.spec?.ingress ?? []).toEqual([]);
   });
+
+  it('tells the lane and the hopper their own limits through the Downward API, so a pod\'s resources are its limits (issue #1289)', () => {
+    for (const c of [lane, daemon]) {
+      expect(env(c, 'HOPPER_POD_CPU_LIMIT')?.valueFrom?.resourceFieldRef).toEqual({ containerName: c.name, resource: 'limits.cpu', divisor: '1m' });
+      expect(env(c, 'HOPPER_POD_MEMORY_LIMIT')?.valueFrom?.resourceFieldRef).toEqual({ containerName: c.name, resource: 'limits.memory', divisor: '1' });
+    }
+  });
 });
+

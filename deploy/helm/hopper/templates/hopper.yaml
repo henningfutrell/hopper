@@ -78,6 +78,7 @@ spec:
           image: {{ $image }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            {{- include "hopper.podLimits" "hopper" | nindent 12 }}
             - name: HOPPER_DATABASE_URL_FILE
               value: /run/hopper-secrets/database_url
             {{- if $keyFile }}

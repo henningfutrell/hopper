@@ -294,6 +294,8 @@ const PART_SETTINGS = [
   'HOPPER_TUNNEL_KEY', 'HOPPER_TUNNEL_KEY_FILE',
   // Read at each join of a lane pod (src/machines/lane-pool.ts, issue #1284).
   'HOPPER_LANE_POOL_KEY', 'HOPPER_LANE_POOL_KEY_FILE',
+  // A pod's own limits, read by the resource meter (src/client/cluster.ts, issue #1289).
+  'HOPPER_POD_CPU_LIMIT', 'HOPPER_POD_MEMORY_LIMIT',
 ];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 

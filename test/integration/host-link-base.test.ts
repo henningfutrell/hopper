@@ -69,7 +69,7 @@ describe('the host link base (issue #712)', () => {
   });
 
   it('a hopper in a Kubernetes pod is never in WSL, even on a node whose kernel is WSL\'s (issue #1289)', async () => {
-    const { a } = await h.boot({ env: { ...CONTAINER, KUBERNETES_SERVICE_HOST: '10.96.0.1' }, seams: { procVersion: WSL } });
+    const { a } = await h.boot({ env: CONTAINER, secrets: { KUBERNETES_SERVICE_HOST: '10.96.0.1' }, seams: { procVersion: WSL } });
     expect((await a.api('GET', '/api/host-link')).body).toMatchObject({ wsl: false });
   });
 });

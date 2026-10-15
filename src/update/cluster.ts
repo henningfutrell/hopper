@@ -1,8 +1,9 @@
 // A cluster install (issue #1285, design.md "Self-update"): the hopper's image run as a Kubernetes workload, a Helm release.
-// Found by KUBERNETES_SERVICE_HOST, which Kubernetes gives every container of a pod. Its update is `helm upgrade` of the
+// Found by KUBERNETES_SERVICE_HOST, which Kubernetes gives every container of a pod (src/client/cluster.ts). Its update is `helm upgrade` of the
 // release to a new image tag, never a compose command; its stack drift compares the image it runs with the update channel,
 // never a compose file. The update notice (ui/src/model/update.ts) keeps its own copy of the command: the UI imports nothing of src/.
 import { readFileSync } from 'node:fs';
+import { inCluster } from '../client/cluster.ts';
 import { CANARY_BRANCH } from '../domain/landing-canary.ts';
 import type { ClusterInstall, StackDrift, UpdateStatus } from '../domain/types.ts';
 
@@ -24,7 +25,7 @@ const readNamespaceFile = (): string | undefined => {
 
 /** The cluster install this hopper is, from its environment; undefined when it does not run in a Kubernetes pod. */
 export function clusterInstall(env: Record<string, string | undefined>, readNamespace: () => string | undefined = readNamespaceFile): ClusterInstall | undefined {
-  if (!env.KUBERNETES_SERVICE_HOST) return undefined;
+  if (!inCluster(env)) return undefined;
   const release = env.HOPPER_HELM_RELEASE && NAME.test(env.HOPPER_HELM_RELEASE) ? env.HOPPER_HELM_RELEASE : DEFAULT_RELEASE;
   const namespace = readNamespace();
   return { release, ...(namespace && NAME.test(namespace) ? { namespace } : {}), chart: HELM_CHART };

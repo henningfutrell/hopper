@@ -19,7 +19,7 @@ import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createAllowedHosts, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
-import { readRelease } from './client/release.ts';
+import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
@@ -162,7 +162,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   const workDir = config.workDir;
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
-  let port = config.port; const wsl = runsInWsl(seams.procVersion ?? kernelVersion()); // its container shares the kernel (issue #712); a WSL machine here is asked its host link (issue #1248 part 4)
+  let port = config.port; const inPod = inCluster(env); const wsl = !inPod && runsInWsl(seams.procVersion ?? kernelVersion()); // its container shares the kernel (issue #712); a WSL machine here is asked its host link (issue #1248 part 4); a pod is never WSL (issue #1289)
   // The base of a person's link (issues #673, #712): the user's link base, else the public URL, else the host link base
   // (Settings → Host link), else an IP or `.local` LAN name, else localhost. Never a container's bare name.
   const linkBase = (userLinkBase: string): string => personBase({ linkBase: userLinkBase, publicUrl: config.publicUrl, hostLinkBase: instance.settings.getHostLinkBase(), lanNames: config.lanNames, port });
@@ -213,7 +213,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
+      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
       installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -286,7 +286,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const sandboxes = createSandboxes({
     runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
     repo: sandboxRecords, instanceId: instance.settings.instanceId(),
-    network: hopperNetwork(config),
+    network: hopperNetwork(config), cluster: inPod,
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
     address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),
     ...(seams.startCheckMs !== undefined ? { startCheckMs: seams.startCheckMs } : {}),
