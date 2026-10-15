@@ -248,11 +248,12 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_GITHUB_CLIENT_SECRET             the GitHub App's client secret: Sign in with GitHub goes to GitHub and
                                           back in the browser on the sign-in origin. Unset: the device code only
   HOPPER_MASTER_KEY                       the master key every secret the hopper keeps is sealed under in the database
-                                          (32 bytes, openssl rand -hex 32). Given at launch, never read from a file:
-                                          keep it in a password manager. Unset on a fresh database: one is made and
-                                          shown once; unset on one that keeps secrets: the hopper starts limited
-  HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line: they still open what they sealed, and what they
-                                          sealed is sealed again under HOPPER_MASTER_KEY at start
+                                          (32 bytes, openssl rand -hex 32). Given at launch, or as the file _FILE names
+                                          (a mounted Secret; a file named but not there stops the start): keep it in
+                                          a password manager. Unset on a fresh database: one is made and shown once;
+                                          unset on one that keeps secrets: the hopper starts limited
+  HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line (also _FILE): they still open what they sealed,
+                                          and what they sealed is sealed again under HOPPER_MASTER_KEY at start
   HOPPER_TOKEN_KEY                        the old token key (also _FILE: the compose secrets volume's token_key): read
                                           only while HOPPER_MASTER_KEY is unset, to move an install to it
   HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at

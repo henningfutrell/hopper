@@ -1,6 +1,7 @@
 // The master key (issue #659, design.md "Secrets"): the key every secret the hopper keeps is sealed under. It comes
-// from the launch, as HOPPER_MASTER_KEY, and never from a file or a volume: a container is ephemeral, and a key kept
-// beside it is lost with it. The database keeps the key's fingerprint — an HMAC of a fixed label under the key, never
+// from the launch, as HOPPER_MASTER_KEY, or as the file HOPPER_MASTER_KEY_FILE names — a Secret the cluster mounts
+// (issue #1288) — and never from a volume of the hopper's own: a container is ephemeral, and a key kept beside it is
+// lost with it. A key file named but not there stops the start. The database keeps the key's fingerprint — an HMAC of a fixed label under the key, never
 // the key — and each start checks the key against it: a wrong key stops the hopper. A fresh hopper given no key makes
 // one, shown once; a hopper that keeps secrets and is given no key starts limited: nothing is opened, nothing is made
 // again. The old token key (HOPPER_TOKEN_KEY, or the file HOPPER_TOKEN_KEY_FILE names, the compose secrets volume's
@@ -92,12 +93,37 @@ function seals(keys: readonly string[], kept: KeptSecrets): boolean {
   }));
 }
 
+/**
+ * The key and previous keys the launch gives (issue #1288): each from its variable, else from the file its `_FILE`
+ * variable names (a mounted Secret). A key file named that cannot be read or is empty stops the start; a previous-keys
+ * file that is not there gives none (a Secret with no `previous`). Both the variable and its file: refused.
+ */
+function launchGiven(env: Record<string, string | undefined>, read: (path: string) => string): { key: string | undefined; previous: string[] } {
+  const fromFile = (name: string, required: boolean): string | undefined => {
+    const value = env[name] || undefined;
+    const file = env[`${name}_FILE`] || undefined;
+    if (value !== undefined && file !== undefined) throw new Error(`${name} and ${name}_FILE are both set; set one`);
+    if (file === undefined) return value;
+    let text: string;
+    try {
+      text = read(file).trim();
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (!required && code === 'ENOENT') return undefined;
+      throw new Error(`${name}_FILE: cannot read ${file}: ${code ?? (e as Error).message}${required ? '; the hopper does not start without the master key it names' : ''}`, { cause: e });
+    }
+    if (required && !text) throw new Error(`${name}_FILE: ${file} is empty; the hopper does not start without the master key it names`);
+    return text || undefined;
+  };
+  return { key: fromFile(MASTER_KEY_VARIABLE, true), previous: listOf(fromFile(PREVIOUS_KEYS_VARIABLE, false)) };
+}
+
 /** How to give the key: the line every message about a missing key ends with. */
 export const GIVE_MASTER_KEY = `give it as ${MASTER_KEY_VARIABLE} at launch and restart (docs/deploy.md "The master key")`;
 
 /**
  * The master key from the launch, checked against the database's fingerprint. Throws MasterKeyMismatch on a wrong key;
- * throws on a key that is no key and on HOPPER_MASTER_KEY_FILE (the key is never read from a file).
+ * throws on a key that is no key and on a key file named that cannot be read.
  */
 export function resolveMasterKey(o: {
   env: Record<string, string | undefined>;
@@ -107,14 +133,12 @@ export function resolveMasterKey(o: {
   readFile?: (path: string) => string;
 }): MasterKey {
   const { env, record } = o;
-  if (env[`${MASTER_KEY_VARIABLE}_FILE`]) throw new Error(`${MASTER_KEY_VARIABLE}_FILE is not read: the master key never comes from a file; give the key as ${MASTER_KEY_VARIABLE}`);
-  const recorded = record.fingerprint();
   const read = o.readFile ?? ((p: string) => readFileSync(p, 'utf8'));
-  const given = env[MASTER_KEY_VARIABLE] || undefined;
+  const { key: given, previous } = launchGiven(env, read);
+  const recorded = record.fingerprint();
 
   if (given !== undefined) {
     const fingerprint = fingerprintOf(given);
-    const previous = listOf(env[PREVIOUS_KEYS_VARIABLE]);
     for (const p of previous) fingerprintOf(p);
     const notes: string[] = [];
     if (recorded === undefined) {
@@ -145,8 +169,8 @@ export function resolveMasterKey(o: {
   const old = oldKey(env, read);
   if (old !== undefined) {
     const fingerprint = fingerprintOf(old);
-    const previous = listOf(env[OLD_PREVIOUS_VARIABLE]);
-    const matches = recorded === undefined ? seals([old, ...previous], o.kept()) : recorded === fingerprint;
+    const oldPrevious = listOf(env[OLD_PREVIOUS_VARIABLE]);
+    const matches = recorded === undefined ? seals([old, ...oldPrevious], o.kept()) : recorded === fingerprint;
     if (!matches) {
       return {
         source: 'missing',
@@ -155,7 +179,7 @@ export function resolveMasterKey(o: {
       };
     }
     if (recorded === undefined) record.setFingerprint(fingerprint);
-    return { source: 'old-token-key', key: old, previous, fingerprint, notes: [] };
+    return { source: 'old-token-key', key: old, previous: oldPrevious, fingerprint, notes: [] };
   }
 
   if (recorded !== undefined) {
@@ -197,15 +221,15 @@ export function withMasterKey(env: Record<string, string | undefined>, key: { ke
 
 /**
  * The key a part that records no fingerprint reads (the vault container, issue #586): HOPPER_MASTER_KEY, else the old
- * token key while the install is moved from it; undefined: none. Throws as resolveMasterKey does on a file or no key.
+ * token key while the install is moved from it; undefined: none. Throws as resolveMasterKey does on a key file that
+ * cannot be read or no key.
  */
 export function launchKey(env: Record<string, string | undefined>, read: (path: string) => string = (p) => readFileSync(p, 'utf8')): { key: string; previous: string[] } | undefined {
-  if (env[`${MASTER_KEY_VARIABLE}_FILE`]) throw new Error(`${MASTER_KEY_VARIABLE}_FILE is not read: the master key never comes from a file; give the key as ${MASTER_KEY_VARIABLE}`);
-  const given = env[MASTER_KEY_VARIABLE] || undefined;
-  const key = given ?? oldKey(env, read);
+  const given = launchGiven(env, read);
+  const key = given.key ?? oldKey(env, read);
   if (key === undefined) return undefined;
   fingerprintOf(key);
-  return { key, previous: listOf(env[given !== undefined ? PREVIOUS_KEYS_VARIABLE : OLD_PREVIOUS_VARIABLE]) };
+  return { key, previous: given.key !== undefined ? given.previous : listOf(env[OLD_PREVIOUS_VARIABLE]) };
 }
 
 /** Why `key` is not the key the database's fingerprint names, or undefined when it is (or none is recorded yet). */
@@ -214,7 +238,7 @@ export function mismatchOf(key: { key: string; previous: readonly string[] }, re
   return `the master key does not match this database: it was set up with the key of fingerprint ${shortFingerprint(recorded)}, and this one has fingerprint ${shortFingerprint(fingerprintOf(key.key))}`;
 }
 
-const SOURCE_WORDS = { given: `given at launch as ${MASTER_KEY_VARIABLE}`, generated: 'made for this new hopper', 'old-token-key': 'read from the old token key', rotated: 'made by a rotation' } as const;
+const SOURCE_WORDS = { given: `given at launch as ${MASTER_KEY_VARIABLE} or its file`, generated: 'made for this new hopper', 'old-token-key': 'read from the old token key', rotated: 'made by a rotation' } as const;
 
 /**
  * The start's lines about the master key: where it came from and its fingerprint, never the key (issue #685: a log goes

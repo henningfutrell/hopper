@@ -125,8 +125,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
   if (!store.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
-  // The master key (issue #659): from the launch, checked against the database's fingerprint before anything opens a
-  // secret; a wrong key stops the start. The parts read it through `keyed`, never from a file or the old token key.
+  // The master key (issue #659): from the launch (its variable or a mounted Secret file, issue #1288), checked against the database's fingerprint before anything opens a
+  // secret; a wrong key stops the start. The parts read it through `keyed`, never from the file or the old token key.
   let masterKey: MasterKey;
   try {
     const { settings } = store;
