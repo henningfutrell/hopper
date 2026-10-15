@@ -95,6 +95,8 @@ export interface AfterDoneContext {
   now(): number;
   /** Jev first, for the head of a tending queue (issue #796); absent: the rules pick. */
   jevFirst?: JevFirst;
+  /** The source's GitHub outbox sends now (issue #1238 part 3): a Merge now or Close PR is seen at once. */
+  sendNow(source: JobSource): void;
 }
 
 const NOT_COMPLETE = /^not complete: /;
@@ -159,7 +161,7 @@ export function createAfterDone(c: AfterDoneContext) {
   }
 
   /** A person's Merge now or Close PR (issue #677), answered at once; it runs on the job's report chain after (issue #1194). */
-  const act = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record });
+  const prActs = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record, sendNow: c.sendNow });
 
   async function judgeAgain(source: JobSource, jobId: string): Promise<void> {
     const job = store.jobs.get(jobId);
@@ -386,7 +388,9 @@ export function createAfterDone(c: AfterDoneContext) {
   const waitsOnPerson = (j: Job) => j.status === 'failed' && NOT_COMPLETE.test(j.error ?? '') && store.handoffs.forJob(j.id)?.status === 'open';
 
   return {
-    act,
+    act: prActs.act,
+    /** What sends a Merge now or Close PR row of a source's outbox (issue #1238 part 3). */
+    outboxActs: prActs.acts,
     tendAgain: again.tendAgain,
     checkTendAgain: again.checkTendAgain,
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. `asked`: a census now. */

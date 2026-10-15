@@ -334,7 +334,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
-  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }),
+  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }), acts: () => afterDone.outboxActs,
     refresh: (slot) => { slot.status.detail = detailOf(slot, slot.removed ? REMOVED : slot.source.paused?.(), jobsOf(slot).filter((j) => flagsOf(j).permanentErrors?.length).length); emit(slot); } });
 
   /** A status with each taken item's job as it is now (issue #798). */
@@ -351,7 +351,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain,
-    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(),
+    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(), sendNow: (source) => { const slot = slots.get(source.name); if (slot && running) outbox.now(slot); },
   });
 
   const rerunning = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); } });
