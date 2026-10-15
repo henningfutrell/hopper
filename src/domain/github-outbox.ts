@@ -2,7 +2,7 @@
 // the user's store with the action's own local change, and sent after the answer, in batches. Its rows, its port, and the
 // coalescing of the rows due for one issue into the fewest calls (pure).
 import type { ActingPerson } from './failures.ts';
-import type { GiveBackAct } from './give-back.ts';
+import type { GiveBackAct, GiveBackInput } from './give-back.ts';
 import type { IntakeActionKind } from './intake.ts';
 import type { PullRequestAct } from './pull-requests.ts';
 
@@ -10,8 +10,10 @@ import type { PullRequestAct } from './pull-requests.ts';
  * One change on one issue. `read_comments` is Approve's read of the assignee's comments, kept in the approved snapshot.
  * `comment` posts one comment: a hand-off's resolution (issue #551). `pull_request` is a person's Merge now or Close PR on
  * job `jobId`'s open pull request (issue #677, part 3): the source follows it with the act, and records it by `acting`.
- * `give_back` is a person's Run again or Rework of ended job `jobId` (part 4): the source gives its item back, and the new
- * job follows, told Rework's `notes`.
+ * `give_back` is a person's act that gives ended job `jobId`'s item back: Run again or Rework (part 4), the new job told
+ * Rework's `notes`; or Failures' Retry, a hand-off's Continue or I fixed it, Push it or Tend again (part 5), run by its own
+ * service, which `target` (the failure record, hand-off or job the act names) and the person's `input` name, so the sync
+ * loop checks and runs it again after a restart. `at`: when the act was kept, so a send again finds a job made since.
  */
 export type OutboxChange =
   | { op: 'add_labels'; labels: string[] }
@@ -20,24 +22,27 @@ export type OutboxChange =
   | { op: 'read_comments' }
   | { op: 'comment'; body: string }
   | { op: 'pull_request'; act: PullRequestAct; jobId: string; acting: ActingPerson }
-  | { op: 'give_back'; act: OutboxGiveBack; jobId: string; acting?: ActingPerson; notes?: string };
+  | { op: 'give_back'; act: OutboxGiveBack; jobId: string; acting?: ActingPerson; notes?: string; target?: string; input?: GiveBackInput; at?: string };
 
-/** The give-backs kept as outbox rows (part 4): Run again and Rework. */
-export type OutboxGiveBack = Extract<GiveBackAct, 'rerun' | 'rework'>;
+/** The give-backs kept as outbox rows: Run again and Rework (part 4), and the acts their own services run (part 5). */
+export type OutboxGiveBack = GiveBackAct;
+
+/** What a give-back row names besides its act, its job and who acted. */
+export type OutboxGiveBackMore = Pick<Extract<OutboxChange, { op: 'give_back' }>, 'notes' | 'target' | 'input' | 'at'>;
 
 /**
  * The act that asked for a row: a person's intake action, `resolve`, a person's resolution of a hand-off told to its item,
- * a person's Merge now or Close PR (part 3), or a person's Run again or Rework (part 4).
+ * a person's Merge now or Close PR (part 3), or a person's act that gives an ended job's item back (parts 4 and 5).
  */
 export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack;
 
-const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework'];
+const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend'];
 
 /** An act whose rows are not an intake item's write: the item shows no marker for them. */
 export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack => NOT_INTAKE.includes(act);
 
 /**
- * The sync loop's part of a flush: it sends a Merge now or Close PR row (part 3) or a Run again or Rework row (part 4), and
+ * The sync loop's part of a flush: it sends a Merge now or Close PR row (part 3) or a give-back row (parts 4 and 5), and
  * says one failed for good.
  */
 export interface OutboxActs {
@@ -114,7 +119,7 @@ export interface OutboxPlan {
 /**
  * The rows due for one issue, coalesced: an add and a remove of the same label cancel out; the labels left go in one
  * add call and one remove call; the assignees in one call; Approve's comment reads in one; the same comment once; a job's
- * same Merge now, Close PR, Run again or Rework once. The newest row of a label says what it ends as. Removes go first,
+ * same Merge now, Close PR or give-back once. The newest row of a label says what it ends as. Removes go first,
  * then adds, assignments, the read, the comments and the job's acts.
  */
 export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
