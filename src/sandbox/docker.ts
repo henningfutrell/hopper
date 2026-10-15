@@ -108,6 +108,15 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
       if (!ok(a) && a.status !== 404) throw refusal(`remove the volume ${name}`, a);
     },
 
+    // The volumes (issue #1371): only over the socket here, never through a machine's relay.
+    ...(guarded ? {
+      async listVolumes(labels: Record<string, string>) {
+        const a = await call('GET', `/volumes?${labelFilter(labels).slice(1)}`);
+        if (!ok(a)) throw refusal('list volumes', a);
+        return ((JSON.parse(a.text) as { Volumes?: { Name?: string }[] | null }).Volumes ?? []).map((v) => v.Name ?? '').filter((n) => n !== '');
+      },
+    } : {}),
+
     async create(spec) {
       const a = await call('POST', `/containers/create?name=${enc(spec.name)}`, dockerCreateBody(spec));
       if (!ok(a)) throw refusal(`create the box ${spec.name}`, a);

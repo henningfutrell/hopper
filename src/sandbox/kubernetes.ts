@@ -57,6 +57,8 @@ export interface KubeApi {
   createClaim(body: Record<string, unknown>): Promise<boolean>;
   /** Undefined: no such claim. */
   readClaim(name: string): Promise<{ metadata?: { labels?: Record<string, string> } } | undefined>;
+  /** The claims that carry every label of the selector. */
+  listClaims(selector: string): Promise<{ metadata?: { name?: string; labels?: Record<string, string>; annotations?: Record<string, string> } }[]>;
   /** One already gone is no error. */
   deleteClaim(name: string): Promise<void>;
   /** Made, or replaced when one of its name is there. */
@@ -168,7 +170,7 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
     async createVolume(name, labels) {
       return api.createClaim({
         apiVersion: 'v1', kind: 'PersistentVolumeClaim',
-        metadata: { name: kubeName(name), labels: { ...selectable(labels), [POD_LABEL]: 'claim' } },
+        metadata: { name: kubeName(name), labels: { ...selectable(labels), [POD_LABEL]: 'claim' }, annotations: { [NAME_ANNOTATION]: name } },
         spec: { accessModes: ['ReadWriteOnce'], resources: { requests: { storage: HOME_SIZE } } },
       });
     },
@@ -179,6 +181,12 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
       if (!claim) return;
       if (claim.metadata?.labels?.[POD_LABEL] !== 'claim') throw notASandbox(`claim ${kubeName(name)}`);
       await api.deleteClaim(kubeName(name));
+    },
+
+    // Only its own claims (issue #1371), by the hopper's name for each: removeVolume takes it.
+    async listVolumes(labels) {
+      const claims = await api.listClaims(Object.entries({ ...selectable(labels), [POD_LABEL]: 'claim' }).map(([k, v]) => `${k}=${v}`).join(','));
+      return claims.map((c) => c.metadata?.annotations?.[NAME_ANNOTATION] ?? c.metadata?.name ?? '').filter((n) => n !== '');
     },
 
     async create(spec) {

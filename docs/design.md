@@ -18791,6 +18791,29 @@ does not see a marker file an earlier one wrote), `test/adapters/podman-runtime.
 `test/adapters/docker-runtime.test.ts` and `test/sandbox/kubernetes.test.ts` (a stack container, a volume or claim of
 someone else's, the hopper's own pod: refused, nothing deleted).
 
+**Part 2 (2026-10-15): leaked homes are swept.** Before, a home volume whose remove failed, or one a hopper that stopped
+mid-step left with no box, stayed for good: the sweeps listed only containers or pods.
+
+- **The runtimes list volumes by label.** `ContainerRuntime.listVolumes(labels)` (optional, as `listImages`) answers the
+  volumes that carry every label, by the name `removeVolume` takes. Podman (`GET /volumes/json`) and Docker
+  (`GET /volumes`) answer it over their socket only; through a machine's relay there is none, so a client target's
+  leaked home is not swept yet. The Kubernetes runtime lists its own claims (`POD_LABEL=claim`, `KubeApi.listClaims`,
+  new) and answers each by the hopper's name for it, kept on the claim as the `io.hopper.name` annotation; a claim made
+  before the annotation answers its Kubernetes name.
+- **The sweeps remove a home no box holds** (`sweepHomes`, `owned.ts`). The check pass's sweep (`check.ts`, with its
+  `holds`) and the need box sweep (`service.ts`, with `stepping`) remove the boxes no run holds, as before, then each
+  home volume of the same label and this instance (`<box name>-home`) whose box no run holds. A step or check holds its
+  name before it makes its home, so a home that is being made is never swept. A volume with no sandbox label, or another
+  hopper's, is never listed; the adapters' own label check still stands behind each remove.
+- **The chart's Role reads and lists claims.** Part 1 reads a claim before it removes it (`readClaim`), and part 2 lists
+  them; the sandbox Role (`deploy/helm/hopper/templates/sandbox.yaml`, `docs/deploy.md`) now has `get` and `list` on
+  `persistentvolumeclaims`. Without `get`, a claim's remove was refused in a real cluster and the claim stayed.
+
+Tests: `test/sandbox/leaked-homes.test.ts` (each sweep removes this hopper's homes that no run holds; a stack volume, one
+with no label and another hopper's stay; the home of a step or check that runs now stays), `listVolumes` cases in
+`test/adapters/podman-runtime.test.ts`, `test/adapters/docker-runtime.test.ts` and `test/sandbox/kubernetes.test.ts`, and
+the Role in `test/scripts/helm-chart-sandbox.test.ts`.
+
 ## Approve several at once (issue #1018, 2026-10-13)
 
 Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at

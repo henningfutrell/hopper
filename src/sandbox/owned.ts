@@ -3,6 +3,8 @@
 // each a container and its home volume; on Kubernetes the runtime's pod label on its pods and claims. A hopper stack
 // container, a volume of someone else's, the hopper's own pod: none carries one, so a stop or remove of it is refused.
 // The adapters check before each stop and remove, whoever asks: a wrong id in a caller never reaches the stack.
+// A home whose remove failed, or one a hopper that stopped left with no box, the sweeps remove (sweepHomes).
+import type { ContainerRuntime } from '../domain/sandboxes.ts';
 
 /** The label on every box the hopper launches: its value is the hopper's instance id. */
 export const BOX_LABEL = 'io.hopper.box';
@@ -25,3 +27,18 @@ export const notASandbox = (what: string): Error => new Error(`the hopper leaves
  * starts only on a home it made, so nothing of an earlier step reaches it; the volume is left as it is.
  */
 export const staleHome = (volume: string): Error => new Error(`its home volume ${volume} is there already: a sandbox starts only on a fresh home`);
+
+/** A box's home volume is named for its box: `<box name>-home`. */
+const HOME_SUFFIX = '-home';
+
+/**
+ * Removes each home volume with these labels whose box is not in `held` (issue #1371): a home whose remove failed, or one
+ * a hopper that stopped mid-step left. A runtime that lists no volumes (through a machine's relay) is left as it is.
+ */
+export async function sweepHomes(runtime: ContainerRuntime, labels: Record<string, string>, held: ReadonlySet<string>): Promise<void> {
+  if (!runtime.listVolumes) return;
+  for (const name of await runtime.listVolumes(labels)) {
+    if (!name.endsWith(HOME_SUFFIX) || held.has(name.slice(0, -HOME_SUFFIX.length))) continue;
+    await runtime.removeVolume(name).catch(() => {});
+  }
+}

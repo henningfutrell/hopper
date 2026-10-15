@@ -1372,7 +1372,7 @@ rules:
   - { apiGroups: [""], resources: [pods], verbs: [get, list, create, delete] }
   - { apiGroups: [""], resources: [pods/log], verbs: [get] }
   - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
-  - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [create, delete] }
+  - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [create, delete, get, list] }
   - { apiGroups: [networking.k8s.io], resources: [networkpolicies], verbs: [create, update] }
 ```
 

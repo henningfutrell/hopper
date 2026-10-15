@@ -99,6 +99,13 @@ export function createKubeApi(namespace?: string): { api: KubeApi; ownNamespace:
         throw refusal(`read the claim ${name}`, e);
       }
     },
+    async listClaims(labelSelector) {
+      try {
+        return (await core.listNamespacedPersistentVolumeClaim({ namespace: ns, labelSelector })).items;
+      } catch (e) {
+        throw refusal('list claims', e);
+      }
+    },
     async deleteClaim(name) {
       await tolerate(`remove the claim ${name}`, () => core.deleteNamespacedPersistentVolumeClaim({ name, namespace: ns }), [404]);
     },

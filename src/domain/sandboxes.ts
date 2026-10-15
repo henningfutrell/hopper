@@ -91,6 +91,11 @@ export interface ContainerRuntime {
   createVolume(name: string, labels: Record<string, string>): Promise<boolean>;
   /** Remove the volume; one already gone is no error. */
   removeVolume(name: string): Promise<void>;
+  /**
+   * The volumes that carry every one of these labels, by the name removeVolume takes (issue #1371): what the sweeps read
+   * to find a home no box holds. Absent: this runtime lists none (one through a machine's relay).
+   */
+  listVolumes?(labels: Record<string, string>): Promise<string[]>;
   /** Create the container; answers its id. */
   create(spec: ContainerSpec): Promise<string>;
   start(id: string): Promise<void>;
