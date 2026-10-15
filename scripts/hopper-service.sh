@@ -9,11 +9,20 @@
 #   podman run --rm <image> hopper service script > hopper-service.sh
 #   bash hopper-service.sh install     write the user units, turn on linger, and start the stack through the service
 #   bash hopper-service.sh uninstall   stop the stack and remove the units (the data stays)
+#   bash hopper-service.sh start-with-key
+#                                      restart the service with the master key given at launch: HOPPER_MASTER_KEY, else
+#                                      asked on the terminal. No key needs to be sealed here
 #
 # The units, in ${XDG_CONFIG_HOME:-~/.config}/systemd/user:
-#   hopper-compose.service       owns the stack. Its start takes the stack down and starts it again with the master key
-#                                sealed to this host (bash master-key.sh run …), for compose only: never a file or a
-#                                volume. With no key sealed here, it starts the stack with no key (a new hopper makes one).
+#   hopper-compose.service       owns the stack. Its start takes the stack down and starts it again with the master key,
+#                                for compose only: never a .env, a file or a volume (issue #1372). The key, in this order:
+#                                  1. the systemd credential hopper-master-key (ImportCredential=, or a drop-in with
+#                                     LoadCredentialEncrypted= or SetCredentialEncrypted=: systemd-creds, a TPM2);
+#                                  2. HOPPER_MASTER_KEY in the service's environment at launch (start-with-key);
+#                                  3. the key sealed to this host (bash master-key.sh run …).
+#                                With none of them, it starts the stack with no key only when the hopper has no data yet
+#                                (no volume hopper_postgres): a new hopper makes one. With data and no key, the start
+#                                fails and says how to give the key: a new key would open none of the secrets.
 #                                Its stop takes the stack down; the volumes and the data stay.
 #   hopper-compose-check.timer   every minute, hopper-compose-check.service checks the published port from this host.
 #                                When the hopper's container runs and its port does not answer, twice, 10 s apart, it
@@ -30,6 +39,9 @@ set -euo pipefail
 UNIT=hopper-compose.service
 CHECK=hopper-compose-check
 PROJECT=hopper
+# The systemd credential the service reads the master key from, and the volume that holds the hopper's data.
+CREDENTIAL=hopper-master-key
+DATA_VOLUME=${PROJECT}_postgres
 
 main() {
   local command="${1:-}"
@@ -37,11 +49,12 @@ main() {
   case "$command" in
     install) install ;;
     uninstall) uninstall ;;
+    start-with-key) start_with_key ;;
     start) start ;;
     stop) stop ;;
     check) check ;;
     up) compose up -d </dev/null ;;
-    *) fail 'usage: bash hopper-service.sh install | uninstall (start, stop and check are the units'"'"' own)' ;;
+    *) fail 'usage: bash hopper-service.sh install | uninstall | start-with-key (start, stop and check are the units'"'"' own)' ;;
   esac
 }
 
@@ -98,7 +111,7 @@ install() {
   local bash; bash="$(command -v bash)"
   local tool; tool="$(compose_tool)"
   local units; units="$(unit_dir)"
-  [ -f master-key.sh ] || say 'no master-key.sh here: the service starts the stack with no master key. Seal the key first (docs/deploy.md "The master key sealed to the host")'
+  [ -f master-key.sh ] || say 'no master-key.sh here: give the master key at launch (bash hopper-service.sh start-with-key, or the systemd credential hopper-master-key), or seal it (docs/deploy.md "The master key sealed to the host")'
   mkdir -p "$units"
   local env
   env="$(printf 'Environment=%s\nEnvironment=%s\n' "$(quoted "PATH=$PATH")" "$(quoted "HOPPER_SERVICE_COMPOSE=$tool")"; settings)"
@@ -117,6 +130,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$(quoted "$dir")
 $env
+ImportCredential=$CREDENTIAL
 ExecStart=$exec start
 ExecStop=$exec stop
 TimeoutStartSec=600
@@ -188,16 +202,74 @@ clear_one_shot() {
   done
 }
 
+check_key() {
+  [[ "$1" =~ ^[0-9a-fA-F]{64}$ || "$1" =~ ^[A-Za-z0-9+/_-]{43}=?$ ]] \
+    || fail "$2 is no master key: 32 bytes, as 64 hex digits or base64. Nothing changed"
+}
+
+# The key given at launch (issue #1372): the systemd credential, else HOPPER_MASTER_KEY in the service's environment.
+# Writes "<where it came from>" on the first line and the key on the second; nothing when none is given.
+launch_key() {
+  local file="${CREDENTIALS_DIRECTORY:-}/$CREDENTIAL" key
+  if [ -n "${CREDENTIALS_DIRECTORY:-}" ] && [ -f "$file" ]; then
+    key="$(cat "$file")"
+    check_key "$key" "the systemd credential $CREDENTIAL"
+    printf 'the systemd credential %s\n%s' "$CREDENTIAL" "$key"
+  elif [ -n "${HOPPER_MASTER_KEY:-}" ]; then
+    check_key "$HOPPER_MASTER_KEY" 'HOPPER_MASTER_KEY'
+    printf 'HOPPER_MASTER_KEY given at launch\n%s' "$HOPPER_MASTER_KEY"
+  fi
+}
+
+sealed() { [ -f master-key.sh ] && { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; }; }
+
 # ExecStart: the stack, made again under this service, so its port belongs to the service and not to a caller.
 start() {
+  local given from='' key=''
+  given="$(launch_key)" || exit 1
+  if [ -n "$given" ]; then from="${given%%$'\n'*}"; key="${given#*$'\n'}"; fi
+  unset HOPPER_MASTER_KEY
+  if [ -z "$key" ] && ! sealed && podman volume exists "$DATA_VOLUME" </dev/null >/dev/null 2>&1; then
+    fail "no master key is given, and the hopper keeps data (the volume $DATA_VOLUME): the stack does not start, and no new key is made. Give the key at launch: bash hopper-service.sh start-with-key (it asks for the key, or reads HOPPER_MASTER_KEY), or the systemd credential $CREDENTIAL, or seal it to this host: bash master-key.sh seal, then systemctl --user restart $UNIT (docs/deploy.md \"The user service\")"
+  fi
   compose down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
   clear_one_shot
-  if [ -f master-key.sh ] && { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; }; then
+  if [ -n "$key" ]; then
+    say "start the stack with the master key from $from"
+    HOPPER_MASTER_KEY="$key" exec bash "$0" up
+  fi
+  if sealed; then
     say 'start the stack with the master key sealed to this host'
     exec bash master-key.sh run bash "$0" up
   fi
-  say 'no master key sealed here: the stack starts with no key (a new hopper makes one; seal it: bash master-key.sh seal)'
+  say 'no master key given and none sealed here, and the hopper has no data yet: the stack starts with no key (a new hopper makes one; save it, then give it at launch or seal it: bash master-key.sh seal)'
   compose up -d </dev/null
+}
+
+# The key a person gives: HOPPER_MASTER_KEY, else asked on the terminal (nothing is shown).
+given_key() {
+  local key="${HOPPER_MASTER_KEY:-}"
+  if [ -z "$key" ]; then
+    local tty="${HOPPER_KEY_TTY:-/dev/tty}"
+    { : <"$tty"; } 2>/dev/null || fail 'no master key: give it as HOPPER_MASTER_KEY, or run this in a terminal'
+    printf 'hopper-service: paste the master key from your password manager (nothing is shown): ' >&2
+    IFS= read -rs key <"$tty" || true
+    printf '\n' >&2
+  fi
+  check_key "$key" 'that'
+  printf '%s' "$key"
+}
+
+# The service restarted with the key given at launch (issue #1372): the key goes into the user manager's environment
+# from this process's environment, never as an argument, for the one start only, and is removed from it after.
+start_with_key() {
+  [ -f "$(unit_dir)/$UNIT" ] || fail "no $UNIT: install it first (bash hopper-service.sh install)"
+  local key; key="$(given_key)"
+  trap 'systemctl --user unset-environment HOPPER_MASTER_KEY' EXIT
+  HOPPER_MASTER_KEY="$key" systemctl --user import-environment HOPPER_MASTER_KEY
+  say 'restart the stack through the service with the master key given at launch (running jobs end)'
+  systemctl --user restart "$UNIT" || fail "the start failed: see journalctl --user -u $UNIT -n 50"
+  say "done: $UNIT started the stack with the key. It is not kept: give it again at the next start, or seal it (bash master-key.sh seal)"
 }
 
 # ExecStop: the containers go, the volumes and the data stay.

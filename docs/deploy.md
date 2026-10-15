@@ -486,10 +486,25 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
 
 - **`hopper-compose.service`** (in `~/.config/systemd/user`, `Type=oneshot`, `RemainAfterExit=yes`) owns the stack: the
   containers' `conmon` and `rootlessport` processes are in its cgroup. Its start takes the stack down and starts it
-  again, with the master key sealed to this host (`bash master-key.sh run …`, "The master key sealed to the host"), for
-  compose only: never a file or a volume. With no key sealed here, it starts the stack with no key: a new hopper makes
-  one; a hopper that keeps secrets refuses to start and names the key it needs. Its stop takes the stack down; the
+  again with the master key, for compose only: never a `.env`, a file or a volume. Its stop takes the stack down; the
   volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at the install.
+- **The master key at launch** (issue #1372). Sealing is optional. The start takes the key from the first of these:
+  1. The systemd credential `hopper-master-key`. The unit imports it (`ImportCredential=hopper-master-key`, systemd 254
+     and later) from the user's credential stores. Or give it in a drop-in
+     (`systemctl --user edit hopper-compose.service`): `LoadCredentialEncrypted=hopper-master-key:<file>` with a file
+     from `systemd-creds --user encrypt --name=hopper-master-key - <file>` (under the TPM2 when the host has one), or
+     `SetCredentialEncrypted=`. Only encrypted forms: never `SetCredential=` with the key in clear in the unit.
+  2. `HOPPER_MASTER_KEY` given at launch: `bash hopper-service.sh start-with-key` reads it from `HOPPER_MASTER_KEY`, or
+     asks for it on the terminal (nothing is shown). It puts the key in the user manager's environment from its own
+     environment (`systemctl --user import-environment`, never as an argument), restarts the service, and removes it
+     from the manager's environment after the start. The key is not kept: the next start (a reboot, the port check's
+     restart) needs it again, or a sealed key. While the start runs, other units of your user that start get it too.
+  3. The key sealed to this host (`bash master-key.sh run …`, "The master key sealed to the host").
+
+  With none of them, the start goes on with no key only when the hopper has no data yet (no volume `hopper_postgres`):
+  a new hopper makes its key and shows it once. With data and no key, the start fails before it touches the stack, says
+  how to give the key, and no new key is made (`journalctl --user -u hopper-compose.service`). The hopper itself also
+  refuses to start without the key when its database keeps secrets, and names the key it needs by its fingerprint.
 - **`hopper-compose-check.timer`** runs `hopper-compose-check.service` every minute. It reads the port the hopper's
   container publishes (`podman port`) and connects to it from the host (loopback for `0.0.0.0`). When the container runs
   and the port does not answer, twice, 10 seconds apart (`HOPPER_SERVICE_RETRY`), it restarts `hopper-compose.service`.
@@ -504,8 +519,9 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   writes the image into `compose.yaml`. Run the install again to change them.
 - **Restarts and updates go through it.** Restart: `systemctl --user restart hopper-compose.service`, never `podman
   compose up` by hand. The update ("Upgrade" below) restarts the stack through the service when it owns the stack, and
-  then checks the port from the host too. It needs the key sealed here, and stops before it changes anything when none
-  is, or when the key given is another. It puts in the new image's `hopper-service.sh`. On Podman with no service, it
+  then checks the port from the host too. It starts the stack with the key sealed here; with none sealed, with the key
+  given to the update, as `start-with-key` does. It stops before it changes anything when the key given is not the one
+  sealed here. It puts in the new image's `hopper-service.sh`. On Podman with no service, it
   says the line that installs one.
 - **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service`.
 - **Docker and Kubernetes.** Not needed and not used: Docker's daemon serves the port, and on Kubernetes ("On

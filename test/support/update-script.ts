@@ -83,10 +83,12 @@ esac
 exit 0
 `;
 
-// hopper-compose.service (issue #1320) owns the stack: enabled, and its restart exits STUB_SERVICE_START.
+// hopper-compose.service (issue #1320) owns the stack: enabled, and its restart exits STUB_SERVICE_START. An import of the
+// environment records the key it takes from its own environment (issue #1372), apart from the arguments.
 const SYSTEMCTL = `#!/bin/sh
 printf 'systemctl %s\\n' "$*" >> "$STUB_LOG"
 case "$*" in
+  "--user import-environment HOPPER_MASTER_KEY") printf 'imported key=%s\\n' "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG" ;;
   "--user is-enabled --quiet hopper-compose.service") exit 0 ;;
   "--user restart hopper-compose.service") exit "\${STUB_SERVICE_START:-0}" ;;
 esac
