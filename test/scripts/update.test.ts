@@ -317,14 +317,45 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.read('compose.override.yaml')).toBe(SANDBOXES);
   });
 
-  it('stops before it changes anything when an override of the install\'s own mounts the socket too', () => {
+  it('stops before it takes the stack down when an override of the install\'s own mounts the socket too (issue #1246)', () => {
     const own = `${SANDBOXES}  mine:\n    image: docker.io/library/alpine\n`;
     const r = update({ masterKey: KEY, stack: 'podman-compose', override: own });
     expect(r.status).not.toBe(0);
-    expect(r.out).toMatch(/compose\.override\.yaml gives the hopper the Podman socket, and compose\.yaml does that now: remove those lines/);
+    expect(r.out).toMatch(/conflict: compose\.override\.yaml: services\.hopper\.volumes: \/run\/podman\/podman\.sock/);
+    expect(r.out).toMatch(/HOPPER_UPDATE_FIX_OVERRIDE=1/);
     expect(r.read('compose.override.yaml')).toBe(own);
     expect(() => r.read('compose.yaml.bak')).toThrow();
-    expect(r.calls.filter((c) => / pull| up |carry/.test(c))).toEqual([]);
+    expect(composeCalls(r.calls).filter((c) => / pull| down| up /.test(c))).toEqual([]);
+  });
+
+  const SOCKET_OVERRIDE = 'services:\n  hopper:\n    volumes:\n      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock\n    labels: [mine]\n';
+
+  it('drops the redundant override entry when the person accepts it, keeps a backup, and goes on (issue #1246)', () => {
+    const headless = update({ masterKey: KEY, stack: 'podman-compose', override: SOCKET_OVERRIDE, env: { HOPPER_UPDATE_FIX_OVERRIDE: '1' } });
+    expect(headless.status, headless.out).toBe(0);
+    expect(headless.read('compose.override.yaml.bak')).toBe(SOCKET_OVERRIDE);
+    expect(headless.read('compose.override.yaml')).not.toContain('podman.sock');
+    expect(headless.read('compose.override.yaml')).toContain('labels: [mine]');
+    expect(headless.out).toMatch(/hopper update: done: /);
+    const dir = mkdtempSync(join(tmpdir(), 'jh-update-tty-'));
+    dirs.push(dir);
+    writeFileSync(join(dir, 'tty'), 'y\n');
+    const asked = update({ masterKey: KEY, stack: 'podman-compose', override: SOCKET_OVERRIDE, tty: join(dir, 'tty') });
+    expect(asked.status, asked.out).toBe(0);
+    expect(asked.out).toMatch(/remove them from compose\.override\.yaml/);
+    expect(asked.read('compose.override.yaml')).not.toContain('podman.sock');
+  });
+
+  it('goes back to the image it ran before, its compose.yaml and its override when the new stack does not start (issue #1246)', () => {
+    const before = 'd'.repeat(64);
+    const r = update({ masterKey: KEY, stack: 'podman-compose', override: SOCKET_OVERRIDE, env: { STUB_UP: '1', STUB_BEFORE_IMAGE: `sha256:${before}`, HOPPER_UPDATE_FIX_OVERRIDE: '1' } });
+    expect(r.status).not.toBe(0);
+    expect(r.read('compose.yaml')).toBe(r.read('compose.yaml.bak'));
+    expect(r.read('compose.override.yaml')).toBe(SOCKET_OVERRIDE);
+    const tag = r.calls.indexOf(`podman tag ${before} ${IMAGE} | HOPPER_IMAGE=`);
+    expect(tag).toBeGreaterThan(-1);
+    expect(r.calls.slice(tag + 1).filter((c) => c.startsWith('podman-compose'))).toEqual(['podman-compose -p hopper up -d | HOPPER_IMAGE=']);
+    expect(r.out).toMatch(/back on the image it ran before \(dddddddddddd\)/);
   });
 
   it('refuses an image reference a shell would read, and a folder without compose.yaml', () => {
