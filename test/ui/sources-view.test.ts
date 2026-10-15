@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 // The Sources view (issue #160) rendered in the whole app against a fake of the daemon's HTTP surface:
-// the connected GitHub account is how the hopper reads GitHub as the user (issue #359), with an admin's
-// GitHub App beside it in one GitHub section. The GitHub account is connected from there
-// (issue #214): the panel says how the hopper connects, and shows the device code to enter. Signed in
-// with GitHub, that connection is the one GitHub piece (issue #254); a GitHub App source on but not set up shows, as needing setup (issue #1243). Once connected it shows the
+// the connected GitHub account is how the hopper reads and writes GitHub (issues #359, #1377), in one GitHub section.
+// The GitHub account is connected from there (issue #214): the panel says how the hopper connects, and shows the device
+// code to enter. Signed in with GitHub, that connection is the one GitHub piece (issue #254). Once connected it shows the
 // repositories the app reaches on each account it is installed on, and asks to install it only where it is
 // installed nowhere (issue #253). Signed in with GitHub, that account is the sign-in: the panel offers
 // Sign out, never Disconnect; signed in another way, forgetting it says it keeps the sign-in (issue #322).
@@ -21,40 +20,27 @@ afterEach(unmount);
 const titles = () => [...document.querySelectorAll('[aria-labelledby="sources-github"] h2')].map((h) => h.textContent);
 
 describe('Sources view: GitHub', () => {
-  it('one GitHub section: the GitHub account, then the App in use; no gh and no gh login (#359)', async () => {
+  it('one GitHub section: the GitHub account alone, and how to sign in; no gh, no gh login and no App setup (#359, #1377)', async () => {
     await boot();
-    await vi.waitFor(() => expect(titles()).toEqual(['GitHub', 'GitHub account', 'github-app']));
-    expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read through the GitHub App, as its bot. Connect GitHub to read your own issues too.');
-    const uses = [...document.querySelectorAll('[data-source-use]')].map((e) => [e.getAttribute('data-source-use'), e.textContent]);
-    expect(uses).toEqual([['in-use', 'through the GitHub App, as its bot']]);
+    await vi.waitFor(() => expect(titles()).toEqual(['GitHub', 'GitHub account']));
+    await vi.waitFor(() => expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Sign in with GitHub, or connect GitHub below, to read issues and work through it.'));
+    expect(document.querySelector('[data-source-use]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/private key|no GitHub App configured|needs setup|No GitHub connection is configured/);
     expect(document.body.textContent).not.toContain('gh login');
     expect(document.body.textContent).not.toContain('Log in to GitHub');
-  });
-
-  it('a GitHub App source not configured: a setup card names what is missing, says how to set it up, links its help, and shows no zeros (#1243)', async () => {
-    const setupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
-    await boot({ '/api/sources': { sources: [{ ...source('github-app', 'github-app', 'needs-setup', { mode: 'app', paused: 'no GitHub App configured' }), setupProblem }] } });
-    const card = () => document.querySelector('[data-setup-problem="github-app"]');
-    await vi.waitFor(() => expect(card()).not.toBeNull());
-    expect([...card()!.querySelectorAll('[data-setup-missing]')].map((e) => e.textContent)).toEqual(['appId', 'slug', 'private key']);
-    expect(card()!.textContent).toContain('scripts/create-github-app.sh');
-    expect(card()!.querySelector('a[href="/help/github-app-setup"]')).not.toBeNull();
-    const stats = [...document.querySelectorAll('[data-source-sync="github-app"] [data-stat]')].map((e) => e.textContent);
-    expect(stats).toEqual(['not configured', 'not configured', 'not configured']);
-    expect(document.querySelector('[data-source-use="needs-setup"]')).not.toBeNull();
   });
 
   it('a sign-in that expired says so, names the account, and asks to sign in again (#359)', async () => {
     const paused = "GitHub's sign-in expired: Sources → Connect GitHub again";
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused, expired: true })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { paused, expired: true })] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'expired', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error: 'GitHub refused the refresh token (bad_refresh_token)' }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
     await vi.waitFor(() => expect(panel()?.querySelector('[data-expired]')).not.toBeNull());
     expect(panel()!.textContent).toContain('Reconnect needed: GitHub refused the connection of octo-user');
     expect(document.body.textContent).toContain('reconnect needed');
-    expect(document.querySelector('[data-github-summary]')?.textContent).toBe(`No issue is read through your GitHub connection: ${paused}.`);
+    await vi.waitFor(() => expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Your GitHub sign-in expired. Sign in with GitHub again to read issues and work through it.'));
     // The header says so on every screen, and leads to Sources (issue #441).
     const header = document.querySelector('header [data-connection-ended]') as HTMLAnchorElement | null;
     expect(header?.textContent).toBe('GitHub: reconnect needed');
@@ -71,7 +57,7 @@ describe('Sources view: GitHub', () => {
     const signedOut = { authenticated: false, signIn: GITHUB_SESSION.signIn };
     await boot({
       '/ui/api/session': () => (++reads === 1 ? GITHUB_SESSION : signedOut),
-      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused, expired: true })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { paused, expired: true })] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'expired', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error: 'GitHub refused the refresh token (bad_refresh_token)' }] },
     });
     await vi.waitFor(() => expect(reads).toBeGreaterThan(1));
@@ -86,7 +72,7 @@ describe('Sources view: GitHub', () => {
   it('a connection sealed under another key says to give the key back: no connect offered, no ended banner (#514)', async () => {
     const error = 'GitHub: a stored token cannot be opened: it was altered, or sealed under another HOPPER_MASTER_KEY; give the hopper the key it was sealed under — as HOPPER_MASTER_KEY, or as HOPPER_MASTER_KEY_PREVIOUS beside a new one — and restart';
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused: error })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { paused: error })] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'unreadable', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
@@ -100,7 +86,7 @@ describe('Sources view: GitHub', () => {
 
   it('a renewal that failed shows on the panel; the connection reads as connected, and the header stays quiet (#441)', async () => {
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [], installations: [], renewal: 'GitHub: could not renew the token: connect ECONNREFUSED' }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
@@ -113,7 +99,7 @@ describe('Sources view: GitHub', () => {
   // Issue #647: the owner sees when and how the connection was made, and how it renews.
   it('shows when and how the connection was made, its last and next renewal, and its last error (#647)', async () => {
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
       '/api/connected-accounts': { accounts: [{
         provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [], installations: [],
         connectedBy: 'sign-in', grantedBy: 'web', renewedAt: '2026-10-07T07:00:00.000Z', nextRenewalAt: '2026-10-07T14:00:00.000Z',
@@ -131,7 +117,7 @@ describe('Sources view: GitHub', () => {
   it('a sign-in held while the connection works: Use this sign-in, or Keep this connection (#647)', async () => {
     const connected = { provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [], installations: [] };
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
       '/api/connected-accounts': { accounts: [{ ...connected, held: { account: 'octo-user', at: '2026-10-09T18:50:00.000Z' } }] },
       '/ui/api/connected-accounts': connected,
     });
@@ -148,7 +134,7 @@ describe('Sources view: GitHub', () => {
   // Issue #518: a connection GitHub gave no refresh token ended after 8 hours with no word before it.
   it('a connection that cannot renew says so, and when it ends, while it still works; connecting again is offered (#518)', async () => {
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [], installations: [], expiresAt: '2026-10-07T08:00:00.000Z', unrenewable: 'GitHub gave this connection no refresh token' }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
@@ -172,21 +158,19 @@ describe('Sources view: GitHub', () => {
     expect(document.querySelector('[aria-labelledby="sources-gitlab"]')).toBeNull();
   });
 
-  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; an unset GitHub App that is on needs setup (#254, #1243)', async () => {
-    const setupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
+  it('signed in with GitHub: the connection is the one GitHub piece, with its sync (#254, #1377)', async () => {
     await boot({
       '/api/sources': { sources: [
-        source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' }),
-        { ...source('github-app', 'github-app', 'needs-setup', { mode: 'app', paused: 'no GitHub App configured' }), setupProblem },
+        source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' }),
       ] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'], installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
     await vi.waitFor(() => expect(panel()?.querySelector('[data-source-sync="github-account"]')).not.toBeNull());
-    expect(titles()).toEqual(['GitHub', 'GitHub account', 'github-app']);
-    expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
+    expect(titles()).toEqual(['GitHub', 'GitHub account']);
+    await vi.waitFor(() => expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.'));
     expect(panel()!.textContent).toContain('Connected as octo-user.');
-    expect([...document.querySelectorAll('[data-source-use]')].map((e) => e.getAttribute('data-source-use'))).toEqual(['needs-setup']);
+    expect(document.querySelector('[data-source-use]')).toBeNull();
   });
 
   const connected = (installations?: unknown[]) => ({

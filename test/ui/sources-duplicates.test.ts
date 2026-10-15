@@ -10,36 +10,37 @@ afterEach(unmount);
 
 const text = (sel: string) => document.querySelector(sel)?.textContent ?? '';
 const PLUGINS = { config: { version: 'v1', warnings: [] }, instances: [], plugins: [], errors: [], warnings: [] };
-const app = (name: string, over: Record<string, unknown> = {}) => ({ ...source(name, 'github-app', 'ok', { mode: 'app' }), ...over });
+const app = (name: string, over: Record<string, unknown> = {}) => ({ ...source(name, 'custom', 'ok', {}), ...over });
 
 describe('Sources: duplicate GitHub sources (issue #1264)', () => {
   it('a duplicate shows a banner and a marker on its card; Remove sends its removal', async () => {
+    const account = (name: string, over: Record<string, unknown> = {}) => ({ ...source(name, 'github-account', 'ok', { login: 'octo-user' }), ...over });
     await boot({
-      '/api/sources': { sources: [app('github-app'), app('app-2', { duplicateOf: 'github-app' })] },
+      '/api/sources': { sources: [account('github-account'), account('gh-2', { duplicateOf: 'github-account' })] },
       '/api/plugins': PLUGINS, '/ui/api/plugins': PLUGINS,
     });
-    await vi.waitFor(() => expect(text('[data-duplicate-sources]')).toContain('app-2'));
-    expect(text('[data-duplicate-sources]')).toContain('github-app');
-    expect(document.querySelector('[data-duplicate-of="app-2"]')).not.toBeNull();
-    expect(document.querySelector('[data-duplicate-of="github-app"]')).toBeNull();
-    const remove = document.querySelector<HTMLButtonElement>('[data-remove-duplicate="app-2"]')!;
+    await vi.waitFor(() => expect(text('[data-duplicate-sources]')).toContain('gh-2'));
+    expect(text('[data-duplicate-sources]')).toContain('github-account');
+    expect(document.querySelector('[data-duplicate-of="gh-2"]')).not.toBeNull();
+    expect(document.querySelector('[data-duplicate-of="github-account"]')).toBeNull();
+    const remove = document.querySelector<HTMLButtonElement>('[data-remove-duplicate="gh-2"]')!;
     await act(async () => { remove.click(); });
     const posted = () => vi.mocked(fetch).mock.calls.find(([url, init]) => String(url) === '/ui/api/plugins' && init?.method === 'POST');
     await vi.waitFor(() => expect(posted()).toBeDefined());
-    expect(JSON.parse(String(posted()![1]!.body))).toEqual({ action: 'remove', role: 'job-source', name: 'app-2', version: 'v1' });
+    expect(JSON.parse(String(posted()![1]!.body))).toEqual({ action: 'remove', role: 'job-source', name: 'gh-2', version: 'v1' });
   });
 
   it('no banner when no source is a duplicate', async () => {
-    await boot({ '/api/sources': { sources: [app('github-app')] } });
-    await vi.waitFor(() => expect(document.querySelector('[data-source-sync="github-app"]')).not.toBeNull());
+    await boot({ '/api/sources': { sources: [app('custom')] } });
+    await vi.waitFor(() => expect(document.querySelector('[data-source-sync="custom"]')).not.toBeNull());
     expect(document.querySelector('[data-duplicate-sources]')).toBeNull();
   });
 
   it('a card shows its poll interval, its backed-off next poll and its GitHub calls', async () => {
-    await boot({ '/api/sources': { sources: [app('github-app', { pollMs: 60_000, nextPollMs: 240_000, calls: { lastHour: 42, lastDay: 900 } })] } });
-    await vi.waitFor(() => expect(text('[data-poll="github-app"]')).toContain('every 1m'));
-    expect(text('[data-poll="github-app"]')).toContain('4m');
-    expect(text('[data-calls="github-app"]')).toContain('42');
-    expect(text('[data-calls="github-app"]')).toContain('900');
+    await boot({ '/api/sources': { sources: [app('custom', { pollMs: 60_000, nextPollMs: 240_000, calls: { lastHour: 42, lastDay: 900 } })] } });
+    await vi.waitFor(() => expect(text('[data-poll="custom"]')).toContain('every 1m'));
+    expect(text('[data-poll="custom"]')).toContain('4m');
+    expect(text('[data-calls="custom"]')).toContain('42');
+    expect(text('[data-calls="custom"]')).toContain('900');
   });
 });

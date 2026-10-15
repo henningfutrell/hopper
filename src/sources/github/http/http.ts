@@ -1,11 +1,10 @@
-// HTTP plumbing for the App adapter: one `@octokit/request` bound to the API base URL, through the shared rate limiter
-// (issue #436), Link-header pagination, and the mapping of Octokit request errors onto GitHubApiError.
+// HTTP plumbing for the connected account's adapter: one `@octokit/request` bound to the API base URL, through the shared
+// rate limiter (issue #436), and Link-header pagination.
 
 import { request as octokitRequest } from '@octokit/request';
 import { holdAfter } from '../../../domain/github-rate-limit.ts';
 import { GitHubRateLimited, githubLimiter, type GitHubLimiter, type LimiterCall } from '../../../github-limiter/limiter.ts';
-import { GitHubApiError, isPermanent } from '../api.ts';
-import { explained, permissionsOfError } from './refusal.ts';
+import { GitHubApiError } from '../api.ts';
 
 export type Request = typeof octokitRequest;
 
@@ -57,24 +56,6 @@ export async function paginate<T>(
     if (!next || page >= MAX_PAGES) return out;
     r = await req(`GET ${next}`, { headers });
   }
-}
-
-/**
- * An Octokit RequestError (or anything else) as a GitHubApiError. A 401 is the app's credentials
- * being refused (wrong or revoked key, wrong app id): permanent, and the message names the file. `installUrl`: the
- * app's install link, for a refusal (issue #1351).
- */
-export function toApiError(err: unknown, what: string, installUrl?: string): GitHubApiError {
-  if (err instanceof GitHubApiError) return err;
-  const limited = rateLimitedError(err, what);
-  if (limited) return limited;
-  const e = err as { status?: unknown; message?: unknown };
-  const status = typeof e.status === 'number' ? e.status : undefined;
-  const message = typeof e.message === 'string' ? e.message : String(err);
-  if (status === 401) {
-    return new GitHubApiError(`${what}: GitHub rejected the app's credentials (401: ${message}); check the app id and the private key`, true, 401);
-  }
-  return new GitHubApiError(`${what}: ${explained(message, permissionsOfError(err), installUrl)}`, isPermanent(status, message), status);
 }
 
 export function statusOf(err: unknown): number | undefined {

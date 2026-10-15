@@ -1,6 +1,5 @@
-// The GitHubApi port: everything the GitHub source asks of GitHub. Adapters: the `gh` CLI
-// (gh-cli.ts, posts as the owner), the GitHub App (app/, posts as the app bot), and the in-memory
-// fake (fake.ts, either identity). Errors are GitHubApiError, classified
+// The GitHubApi port: everything the GitHub source asks of GitHub. Adapters: the connected account's (account/api.ts,
+// the user's token from the hopper's GitHub App, over the REST and GraphQL calls in app/), and the in-memory fake (fake.ts). Errors are GitHubApiError, classified
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
@@ -304,8 +303,7 @@ export interface GitHubApi {
 
   /**
    * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one
-   * listing, not a search; issue #440). Only to suggest repos outside the job repositories, never intake.
-   * Absent on the App adapter: an installation token has no user.
+   * listing, not a search; issue #440). Only to suggest repos outside the job repositories, never intake. Absent: none is read.
    */
   listAssignedIssues?(label: string): Promise<GitHubIssue[]>;
   /**
@@ -325,17 +323,10 @@ export interface GitHubApi {
   /**
    * The open issues and pull requests of `repos` where `login` is a requested reviewer, is @mentioned, or is assigned (issue
    * #1141, **tagged items**): GitHub's issue search, batched GraphQL, one hit per item and reason. Through the intake reserve.
-   * Absent on the App adapter: an installation token has no user. Absent: none is read.
+   * Absent: none is read.
    */
   taggedItems?(login: string, repos: string[]): Promise<TaggedSearchHit[]>;
 
-  // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
-
-  /**
-   * The login the adapter's writes appear under — the app bot, e.g. "hopper-owner[bot]".
-   * Present ⇒ hopper comments are identified by this author (the marker is a secondary check).
-   */
-  botLogin?(): Promise<string>;
   /** Where git fetches `repo` and the token it fetches with, this adapter's own (issue #858: the hopper's mirror). Absent: no mirror. */
   gitRemote?(repo: string): Promise<GitRemote>;
   /**
@@ -358,8 +349,6 @@ export interface GitHubApi {
    * undefined: git cannot say. Absent: no mirror.
    */
   changedLines?(repo: string, pr: { number: number; base?: string; headOid?: string }, paths: string[]): Promise<ChangedLines | undefined>;
-  /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
-  listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
 }
 
 /** The most changes one change read answers (issue #1125): a full page may hold more, so it counts as a change. */

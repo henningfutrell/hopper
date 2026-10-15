@@ -1,5 +1,5 @@
-// Batched GraphQL reads (issue #822, design.md "Batched GraphQL reads"), shared by the App and the connected account
-// adapters: the GraphQL reads of one issue or pull request — `repository(owner: $owner, name: $name) { … $number … }` —
+// Batched GraphQL reads (issue #822, design.md "Batched GraphQL reads"), read by the connected account's
+// adapter: the GraphQL reads of one issue or pull request — `repository(owner: $owner, name: $name) { … $number … }` —
 // asked with the same token in the same turn of the event loop go to GitHub as one request, each read an alias (`q0`,
 // `q1`, …) in it, at most GRAPHQL_BATCH_MAX to a request. The follows of a sync run side by side, so their reads meet
 // here; GraphQL charges at least one point a request, and a request with many small reads costs about what one does.

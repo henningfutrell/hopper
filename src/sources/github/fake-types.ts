@@ -82,7 +82,6 @@ export interface FakeGitHub extends GitHubApi {
   pullRequestComments(url: string): string[];
   labelsIn(repo: string): string[];
   /** App identity only: replace the repos the app is installed on. */
-  setInstalledRepos(repos: string[]): void;
   readonly calls: { method: Method; args: unknown[] }[];
 }
 
@@ -99,8 +98,4 @@ export interface PullRequestInput {
   crossReferenced?: false;
 }
 
-export interface FakeAppIdentity {
-  botLogin: string;
-  installedRepos?: string[];
-}
 

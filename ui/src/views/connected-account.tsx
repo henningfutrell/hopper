@@ -44,8 +44,10 @@ type Provider = ConnectedAccountStatus['provider'];
 const NAME: Record<Provider, string> = { github: 'GitHub' };
 const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'reconnect needed', unreadable: 'cannot be read' };
 
-export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
+export function ConnectedAccountPanel({ provider, source, onStatus }: { provider: Provider; source?: SourceStatus | undefined; onStatus?: (s: ConnectedAccountStatus) => void }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
+  // The Sources summary reads the sign-in as the panel has it (issue #1377).
+  useEffect(() => { if (s) onStatus?.(s); }, [s, onStatus]);
   const canAdmin = useCanAdmin();
   const signedInWith = useSignedInWith(provider);
   const waiting = s?.state === 'waiting' || (s?.state === 'connected' && s.installationsReading === true);

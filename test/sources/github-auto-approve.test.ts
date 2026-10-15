@@ -23,7 +23,7 @@ function setup(o: { autoApproval?: IntakeAutoApproval; ended?: string[]; takenIn
     requestsWaiting: () => [], history: (key) => (ended.has(key) ? { jobs: [{ id: 'job-1', status: 'finished' }] } : undefined),
   };
   const source = createGitHubSource({
-    name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
+    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
     clock: { now: () => new Date('2026-10-15T10:00:00.000Z') }, trust, intake,
     knownKeys: (keys) => new Set(keys.filter((k) => ended.has(k))), rerunnable: (keys) => new Set(keys.filter((k) => ended.has(k))),
   });

@@ -1,5 +1,5 @@
-// The in-motion cycle's batched reads (issue #985, design.md "Batched GraphQL reads"), shared by the App and the connected
-// account adapters. `pullRequestStates`: the pull requests the jobs follow and their issues, each an alias in a request —
+// The in-motion cycle's batched reads (issue #985, design.md "Batched GraphQL reads"), read by the connected account's
+// adapter. `pullRequestStates`: the pull requests the jobs follow and their issues, each an alias in a request —
 // `p0: repository(owner: $o0, name: $n0) { pr: pullRequest(number: 7) { … } issue: issue(number: 3) { … } }` —, at most
 // PULLS_MAX to a request. `openPullRequestsIn`: the open pull requests of many repositories, for reconciling, each
 // repository an alias, at most OPEN_PULLS_REPOS_MAX to a request, newest 100 each as `openPullRequests` reads one. Neither

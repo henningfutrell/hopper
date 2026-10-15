@@ -3,7 +3,7 @@
 // read gets its own answer or its own error. Against the node:http fake GitHub, through the App adapter's port.
 import { afterEach, describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/api.ts';
-import { GRAPHQL_BATCH_MAX } from '../../src/sources/github/app/graphql-batch.ts';
+import { GRAPHQL_BATCH_MAX } from '../../src/sources/github/http/graphql-batch.ts';
 import { startApp } from './fixtures/app/setup.ts';
 import type { AppHarness } from './fixtures/app/setup.ts';
 
@@ -71,27 +71,10 @@ describe('batched GraphQL reads (issue #822)', () => {
     const all = await Promise.all(numbers.map((n) => h!.api.openClosingPullRequests('owner/a', n)));
     expect(all.map((prs) => prs[0]?.url)).toEqual(numbers.map((n) => `https://github.com/owner/a/pull/${n}`));
     expect(graphqlRequests(h)).toHaveLength(2);
-    // A cold adapter asks for the installation and its token once, for every read that waits on them.
-    expect(h.fake.state.requests.filter((r) => r.path === '/repos/owner/a/installation')).toHaveLength(1);
-    expect(h.fake.state.requests.filter((r) => r.path === '/app/installations/11/access_tokens')).toHaveLength(1);
-  });
-
-  it('repositories of two installations ask with two tokens: one request for each', async () => {
-    h = await startApp({ installations: [
-      { id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1, { openPullRequests: [pr('owner/a', 11)] }), issue(2)] }] },
-      { id: 12, account: 'other', repos: [{ owner: 'other', name: 'b', issues: [issue(1, { openPullRequests: [pr('other/b', 21)] }), issue(2)] }] },
-    ] });
-    const got = await Promise.all([
-      h.api.openClosingPullRequests('owner/a', 1), h.api.openClosingPullRequests('other/b', 1),
-      h.api.openClosingPullRequests('owner/a', 2), h.api.openClosingPullRequests('other/b', 2),
-    ]);
-    expect(got.map((prs) => prs[0]?.url)).toEqual(['https://github.com/owner/a/pull/11', 'https://github.com/other/b/pull/21', undefined, undefined]);
-    expect(graphqlRequests(h)).toHaveLength(2);
   });
 
   it('a request GitHub fails fails each read in it, as the read alone would fail', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1), issue(2)] }] }] });
-    await h.api.openClosingPullRequests('owner/a', 1); // the installation and its token, before the failure
     h.fake.fail('POST /graphql', 502, 'bad gateway', 1);
     const got = await Promise.allSettled([h.api.openClosingPullRequests('owner/a', 1), h.api.referencingPullRequests('owner/a', 2)]);
     expect(got.map((r) => r.status)).toEqual(['rejected', 'rejected']);

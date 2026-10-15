@@ -1,15 +1,14 @@
-// A node:http fake GitHub API for tests of the App adapter and everything built on it. It checks
-// credentials the way GitHub does: a JWT (RS256, signed by the app key, iss = appId, exp at most
-// 10 min ahead) on `/app/*` and `/repos/{o}/{r}/installation`; an unexpired installation token
-// (`token` or `Bearer`) with the right repo scope everywhere else. Bound to 127.0.0.1 only.
+// A node:http fake GitHub API for tests of the connected account's adapter and everything built on it. It checks the
+// credential the way GitHub does: the connected account's unexpired token (`token` or `Bearer`), which reaches the
+// repositories the hopper's app is installed on. It answers at github.com's paths and at a GitHub Enterprise's. Bound to
+// 127.0.0.1 only.
 
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { verify } from 'node:crypto';
 import { buildState } from './fake-state.ts';
 import type { FakeGitHubOptions, FakeRequestRecord, FakeState, FakeTokenRecord } from './fake-state.ts';
-import { routeJwt, routeToken } from './fake-routes.ts';
+import { routeToken } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
 import { graphql } from './fake-graphql.ts';
 
@@ -22,28 +21,6 @@ export interface FakeGitHubServer {
   /** The next `times` requests matching "METHOD /path" (no query) answer `status`. */
   fail(route: string, status: number, message?: string, times?: number): void;
   close(): Promise<void>;
-}
-
-const JWT_PATH = /^\/app\/|^\/repos\/[^/]+\/[^/]+\/installation$/;
-
-function b64json(part: string): Record<string, unknown> {
-  return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as Record<string, unknown>;
-}
-
-/** RS256 signature by `publicKeyPem`, iss = appId, iat not in the future, exp in (now, now+600]. */
-export function verifyAppJwt(jwt: string, publicKeyPem: string, appId: number, nowSec: number): boolean {
-  try {
-    const [h, p, s] = jwt.split('.');
-    if (!h || !p || !s) return false;
-    if (b64json(h).alg !== 'RS256') return false;
-    if (!verify('RSA-SHA256', Buffer.from(`${h}.${p}`), publicKeyPem, Buffer.from(s, 'base64url'))) return false;
-    const claims = b64json(p);
-    const exp = Number(claims.exp);
-    const iat = Number(claims.iat);
-    return String(claims.iss) === String(appId) && exp > nowSec && exp <= nowSec + 600 && iat <= nowSec + 60;
-  } catch {
-    return false;
-  }
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -62,11 +39,13 @@ function send(res: ServerResponse, r: FakeReply): void {
 export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<FakeGitHubServer> {
   const state = buildState(o, new Date().toISOString());
   const failures = new Map<string, { status: number; message: string; times: number }>();
-  const ctx: FakeCtx = { state, opts: o, baseUrl: '', bot: `${o.slug ?? 'hopper'}[bot]`, now: () => new Date() };
+  const ctx: FakeCtx = { state, opts: o, baseUrl: '', login: o.login ?? 'owner', now: () => new Date() };
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const u = new URL(req.url ?? '/', ctx.baseUrl);
-    const r: FakeReq = { method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: await readBody(req) };
+    // Served at a GitHub Enterprise's paths too (`/api/v3`, `/api/graphql`): a daemon whose HOPPER_GITHUB_URL names the fake.
+    const path = u.pathname === '/api/graphql' ? '/graphql' : u.pathname.replace(/^\/api\/v3(?=\/)/, '');
+    const r: FakeReq = { method: req.method ?? 'GET', path, query: Object.fromEntries(u.searchParams), body: await readBody(req) };
     const record: FakeRequestRecord = { method: r.method, path: r.path, query: r.query, auth: 'none', ...(r.body === undefined ? {} : { body: r.body }) };
     state.requests.push(record);
 
@@ -78,14 +57,6 @@ export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<Fake
 
     const m = /^(token|bearer)\s+(\S+)$/i.exec(req.headers.authorization ?? '');
     const credential = m?.[2] ?? '';
-    const nowSec = Math.floor(Date.now() / 1000);
-    if (JWT_PATH.test(r.path)) {
-      if (!verifyAppJwt(credential, o.publicKeyPem, o.appId, nowSec)) {
-        return send(res, { status: 401, body: { message: 'A JSON web token could not be decoded' } });
-      }
-      record.auth = 'jwt';
-      return send(res, routeJwt(ctx, r));
-    }
     const token: FakeTokenRecord | undefined = state.tokens.find((t) => t.token === credential);
     if (!token || Date.parse(token.expiresAt) <= Date.now()) return send(res, { status: 401, body: { message: 'Bad credentials' } });
     record.auth = 'token';

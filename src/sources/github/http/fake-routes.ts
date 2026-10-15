@@ -1,13 +1,13 @@
-// REST endpoints of the fake GitHub: app installations, token minting, installation repos,
-// issues (read; a repository's issue list with `since`, newest change first, and an ETag), comments, assignment events, labels, a pull request's merge. Response shapes follow the GitHub REST API (the fields the adapter
+// REST endpoints of the fake GitHub, as a connected account's token reaches them:
+// issues (read; a repository's issue list with `since`, newest change first, and an ETag), comments, assignment events, assignees, labels, a pull request's merge. Response shapes follow the GitHub REST API (the fields the adapter
 // reads). Authentication is checked by fake-server.ts before a route runs.
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { FakeGitHubOptions, FakeIssue, FakeRepo, FakeState, FakeTokenRecord } from './fake-state.ts';
 import { endPull } from './fake-pull-end.ts';
 
 export interface FakeReply { status: number; body?: unknown; headers?: Record<string, string> }
-export interface FakeCtx { state: FakeState; opts: FakeGitHubOptions; baseUrl: string; bot: string; now(): Date }
+export interface FakeCtx { state: FakeState; opts: FakeGitHubOptions; baseUrl: string; login: string; now(): Date }
 export interface FakeReq { method: string; path: string; query: Record<string, string>; body: unknown; token?: FakeTokenRecord }
 
 const notFound: FakeReply = { status: 404, body: { message: 'Not Found' } };
@@ -37,51 +37,6 @@ function restIssue(r: FakeRepo, i: FakeIssue) {
 
 function restComment(r: FakeRepo, n: number, c: { id: number; author: string; body: string; createdAt: string }) {
   return { id: c.id, body: c.body, user: { login: c.author }, created_at: c.createdAt, html_url: `${issueUrl(r, n)}#issuecomment-${c.id}` };
-}
-
-/** Repos a token may reach: its installation's, narrowed by the minted `repositories`. */
-export function tokenReaches(t: FakeTokenRecord, repo: FakeRepo): boolean {
-  return repo.installationId === t.installationId && (t.body.repositories === undefined || t.body.repositories.includes(repo.name));
-}
-
-function appRoutes(ctx: FakeCtx, req: FakeReq): FakeReply | undefined {
-  const { state } = ctx;
-  if (req.method === 'GET' && req.path === '/app/installations') {
-    const all = state.installations.map((i) => ({ id: i.id, account: { login: i.account, type: i.accountType ?? 'User' } }));
-    const p = paginate(ctx, req, all);
-    return { status: 200, body: p.items, headers: p.headers };
-  }
-  const mint = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(req.path);
-  if (req.method === 'POST' && mint) {
-    const inst = state.installations.find((i) => i.id === Number(mint[1]));
-    if (!inst) return notFound;
-    const body = (req.body ?? {}) as FakeTokenRecord['body'];
-    const names = inst.repos.map((r) => r.name);
-    if (body.repositories?.some((n) => !names.includes(n))) return { status: 422, body: { message: 'There is at least one repository that does not exist or is not accessible to the parent installation.' } };
-    const record: FakeTokenRecord = {
-      token: `ghs_${randomBytes(16).toString('hex')}`, installationId: inst.id, body,
-      expiresAt: new Date(ctx.now().getTime() + 3600_000).toISOString(),
-    };
-    state.tokens.push(record);
-    return { status: 201, body: {
-      token: record.token, expires_at: record.expiresAt, permissions: body.permissions ?? { issues: 'write', metadata: 'read' },
-      repository_selection: body.repositories ? 'selected' : 'all',
-      ...(body.repositories ? { repositories: body.repositories.map((name, id) => ({ id: id + 1, name })) } : {}),
-    } };
-  }
-  const lookup = /^\/repos\/([^/]+)\/([^/]+)\/installation$/.exec(req.path);
-  if (req.method === 'GET' && lookup) {
-    const repo = state.repos.get(`${lookup[1]}/${lookup[2]}`);
-    return repo ? { status: 200, body: { id: repo.installationId } } : notFound;
-  }
-  return undefined;
-}
-
-function installationRepos(ctx: FakeCtx, req: FakeReq): FakeReply {
-  const t = req.token!;
-  const repos = [...ctx.state.repos.values()].filter((r) => tokenReaches(t, r));
-  const p = paginate(ctx, req, repos.map((r) => ({ name: r.name, full_name: `${r.owner}/${r.name}`, owner: { login: r.owner } })));
-  return { status: 200, body: { total_count: repos.length, repositories: p.items }, headers: p.headers };
 }
 
 /**
@@ -123,7 +78,7 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
   }
   const commit = /^\/commits\/([^/]+)\/(check-runs|status)$/.exec(rest);
   if (req.method === 'GET' && commit) return commitChecks(repo, decodeURIComponent(commit[1]!), commit[2] === 'check-runs' ? 'checks' : 'statuses');
-  const m = /^\/issues\/(\d+)(\/comments|\/events|\/labels(?:\/(.+))?)?$/.exec(rest);
+  const m = /^\/issues\/(\d+)(\/comments|\/events|\/assignees|\/labels(?:\/(.+))?)?$/.exec(rest);
   const issue = m ? repo.issues.get(Number(m[1])) : undefined;
   if (!m || !issue) return notFound;
   const sub = m[2] ?? '';
@@ -133,7 +88,7 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     return { status: 200, body: p.items, headers: p.headers };
   }
   if (req.method === 'POST' && sub === '/comments') {
-    const c = { id: ctx.state.nextCommentId++, author: ctx.bot, body: String(body.body ?? ''), createdAt: ctx.now().toISOString() };
+    const c = { id: ctx.state.nextCommentId++, author: ctx.login, body: String(body.body ?? ''), createdAt: ctx.now().toISOString() };
     issue.comments.push(c);
     return { status: 201, body: restComment(repo, issue.number, c) };
   }
@@ -145,6 +100,11 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
       ...issue.assignees.map((login) => ({ event: 'assigned', created_at: issue.updatedAt, actor, assignee: { login } })),
     ]);
     return { status: 200, body: p.items, headers: p.headers };
+  }
+  if (req.method === 'POST' && sub === '/assignees') {
+    for (const login of (body.assignees as string[] | undefined) ?? []) if (!issue.assignees.includes(login)) issue.assignees.push(login);
+    issue.updatedAt = ctx.now().toISOString();
+    return { status: 201, body: restIssue(repo, issue) };
   }
   if (req.method === 'POST' && sub === '/labels') {
     for (const l of (body.labels as string[] | undefined) ?? []) {
@@ -162,16 +122,10 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
   return undefined;
 }
 
-/** Routes for a JWT-authenticated request (`/app/*`, repo installation lookup). */
-export function routeJwt(ctx: FakeCtx, req: FakeReq): FakeReply {
-  return appRoutes(ctx, req) ?? notFound;
-}
-
-/** Routes for an installation-token request. */
+/** Routes for a request with the connected account's token: the repositories the hopper's app is installed on. */
 export function routeToken(ctx: FakeCtx, req: FakeReq): FakeReply {
-  if (req.method === 'GET' && req.path === '/installation/repositories') return installationRepos(ctx, req);
   const m = /^\/repos\/([^/]+)\/([^/]+)(\/.*)$/.exec(req.path);
   const repo = m ? ctx.state.repos.get(`${m[1]}/${m[2]}`) : undefined;
-  if (!m || !repo || !tokenReaches(req.token!, repo)) return notFound;
+  if (!m || !repo) return notFound;
   return issueRoutes(ctx, req, repo, m[3]!) ?? notFound;
 }

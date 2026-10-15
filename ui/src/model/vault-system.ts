@@ -19,7 +19,6 @@ export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): s
   if (s.kind === 'webhook') return 'Webhook signing secret';
   if (s.kind === 'remote-access') return `Remote access: ${REMOTE_ACCESS[s.name.slice('remote-access.'.length)] ?? s.name}`;
   if (s.kind === 'github-webhook') return 'GitHub webhook secret';
-  if (s.kind === 'github-app') return 'GitHub App private key';
   const [, realm, setting] = s.name.split('.');
   return `Sign-in realm ${realm ?? ''}: ${setting === 'bindPassword' ? 'bind password' : 'client secret'}`;
 }
@@ -32,15 +31,14 @@ export function systemSecretWhere(s: Pick<SystemSecretView, 'kind'>): string {
   if (s.kind === 'webhook') return 'Settings → Webhooks';
   if (s.kind === 'remote-access') return 'Settings → Remote access';
   if (s.kind === 'github-webhook') return 'Settings → GitHub webhook';
-  if (s.kind === 'github-app') return 'Sources → github-app → setup card';
   return 'Settings → Sign-in';
 }
 
 /**
- * Whether a person may keep it in a vault backend (issue #658, requirement 6): a user's TypeSafe key, webhook signing
- * secret or GitHub App private key (issue #1243), each a value a person gives. The hopper writes the others itself, and the sign-in realms' are the whole hopper's.
+ * Whether a person may keep it in a vault backend (issue #658, requirement 6): a user's TypeSafe key or webhook signing
+ * secret, each a value a person gives. The hopper writes the others itself, and the sign-in realms' are the whole hopper's.
  */
-export const mayKeepInBackend = (s: Pick<SystemSecretView, 'kind' | 'scope'>): boolean => s.scope === 'user' && (s.kind === 'typesafe' || s.kind === 'webhook' || s.kind === 'github-app');
+export const mayKeepInBackend = (s: Pick<SystemSecretView, 'kind' | 'scope'>): boolean => s.scope === 'user' && (s.kind === 'typesafe' || s.kind === 'webhook');
 
 /** The card's line: set, its last 4 characters, who and when; how it is kept; why it cannot be opened. */
 export function systemSecretLine(s: SystemSecretView): string {

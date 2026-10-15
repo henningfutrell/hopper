@@ -2626,8 +2626,7 @@ inbound webhook to the laptop.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/github/app/` | the App `GitHubApi` adapter: app config file loader, JWT + installation tokens (`@octokit/auth-app`), REST + GraphQL via `@octokit/request`, per-repo scoped token minting | engine, http, store |
-| `scripts/create-github-app.*` | the manifest-flow helper the owner runs once | everything in `src/` except small pure helpers it imports explicitly |
+| `src/sources/github/http/` | the REST and GraphQL calls the connected account's adapter (`src/sources/github/account/api.ts`) makes, via `@octokit/request`, and the node:http fake GitHub for tests. Until issue #1377 `src/sources/github/app/`, with the App adapter (JWT and installation tokens): removed | engine, http, store |
 | `scripts/hopper.cmd`, `scripts/hopper.ps1` | the **Windows CLI wrapper** (issue #712, `docs/deploy.md` "The hopper CLI from Windows"): runs `hopper` in the hopper's container in WSL, found by its compose labels, through `wsl.exe -e podman exec`; `hopper doctor` checks from Windows what a hopper in WSL needs; served by the site | everything in `src/`; it keeps no credential |
 
 ## App configuration (files the owner's one click produces)
@@ -3019,7 +3018,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `gate-router`, `pass-through` | live |
 | `escalation-level` | `EscalationLevel { name; answer(req, signal) → { answer?, escalate, reason } }` | 0..n, in order | `claude-cli` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | live (since issue #142) |
-| `job-source` | `JobSource` (unchanged) | 0..n | `github-account`, `github-app` (`github-gh` removed by issue #359) | live (since issue #356) |
+| `job-source` | `JobSource` (unchanged) | 0..n | `github-account` (`github-gh` removed by issue #359, `github-app` by issue #1377) | live (since issue #356) |
 | `machine-source` | `MachineSource` (unchanged) | 1 | `local` | live (since issue #18) |
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | live (since issue #356) |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | live (since issue #356) |
@@ -8103,7 +8102,7 @@ redirect a credential:
 | part | option (default) | was |
 |------|------------------|-----|
 | database | `HOPPER_DATABASE_URL` (it carries the password; also `_FILE`) | — |
-| github-app source | none since issue #1243: the private key is the hopper's own, pasted on the source's setup card and kept in the vault's system scope; `appId`, `slug` options. A key the runtime still gives as `GITHUB_APP_PRIVATE_KEY` is imported once | `appFile` → github-app.json + .pem, then `privateKeyEnv` |
+| github-app source | removed by issue #1377: there is no App private key, and no `github-app` source. Every GitHub call uses the signed-in user's token of the hopper's app | `appFile`, then the vault (issue #1243) |
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
 | gate-router | none since issue #657: the TypeSafe API key is the hopper's own, set on the Jev page and kept in the vault's system scope. A key the runtime still gives as `TYPESAFE_API_KEY` is imported once | `typesafeKeyFile`, `TYPESAFE_API_KEY` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
@@ -21678,3 +21677,45 @@ migration of GitHub-signed-in users; Kubernetes and service-account tokens.
 the test holds: a valid token; a token signed by a key the issuer does not publish (same key id); a wrong `iss`, `aud`,
 `exp` or `nonce`; a rotated key read again after a minute; a removed key refused after five minutes, the new key
 accepted; an unverified email left out.
+
+## GitHub through the sign-in alone (issue #1377, 2026-10-15)
+
+The problem: a hopper with a GitHub sign-in (the device code of the hopper's app), a token that renews and five job
+repositories listed nothing. Intake showed `Not listing issues: no GitHub App configured`, Sources said `No GitHub
+connection is configured`, and the `github-app` source said `needs setup: private key not set`. Two causes. The hopper had
+two identities on GitHub: the user's sign-in, and an admin's own GitHub App with its private key (`github-app`). And the
+plugins config of that hopper held no `github-account` instance, so no source read through the sign-in, while the Sources
+card of the connection still showed the account and its repositories. A self-hosted hopper cannot be given an App private
+key, so the second identity goes, not only its pause.
+
+- **One identity.** The device-code sign-in is the hopper's app's user-to-server token. Every GitHub read and write —
+  listing, intake, labels, comments, pull requests, checks, merges — uses it, through the connected account's source
+  (`github-account`, `src/sources/compose.ts` `createAccountSource`). Jobs label, comment, push and open pull requests
+  through the same token (the GitHub proxy and git through the hopper, unchanged).
+- **Removed.** The `github-app` job-source plugin; the App adapter (`createAppAuth` JWT and installation tokens,
+  `loadGitHubApp`, `@octokit/auth-app`); the vault's `github-app-private-key` system secret and `GITHUB_APP_PRIVATE_KEY`;
+  the private-key setup card, `POST /ui/api/github-app-key`, `GET /api/github-app-key` and `GET /api/github-apps`; the
+  help page `github-app-setup`; `scripts/create-github-app.*`; the source's app mode (`mode`, bot comments, installed
+  repositories as the allowlist); and the setup problem of a source (`JobSource.setupProblem`, the `needs-setup` source
+  state, Needs you's Setup row), which only the App source had. A plugin's detection keeps its own `needs-setup`.
+  `src/sources/github/app/` is `src/sources/github/http/`: the REST and GraphQL calls the account's adapter makes.
+- **Migration** (tenant migration 69, `src/store/migration-account-source.ts`). A plugins config whose job sources hold no
+  `github-account` instance gets one. Each `github-app` instance leaves the config; the account's source takes its jobs and
+  its source events (claims, request cards, intake), switched on where the app source was on and it was off; the
+  work-item ledger is rebuilt from them, so a request card waits on a source that runs. The key's vault row goes. A config
+  with no job sources section is left as it is: the built-in instances apply. The build before runs on the result.
+- **A source that cannot be built shows.** Sources and Intake show the account's source with its error (state `error`,
+  `lastError`) when the plugin host cannot build it, never leave it out.
+- **The Sources summary reads the sign-in** (`ui/src/model/sources.ts`), never only whether a source status exists:
+  signed in with repositories, issues are read through the connection; with none, it asks to choose them; with an
+  expired token, to sign in again; with the source missing, switched off or unable to run, it says which. It never says
+  `No GitHub connection is configured`.
+
+**Verification:** `test/store/tenant-migration-69.test.ts` (a config with only `github-app` migrated: instance, jobs,
+request cards and key; beside an account source; a config with none added; one left as it is), `test/sources/no-app-key.test.ts`
+(no code names the key, its vault row, installation tokens, the setup route or the App source's states; no `github-app`
+plugin; no `@octokit/auth-app`), `test/integration/github-writes.test.ts` and `test/integration/github-graphql-batch.test.ts`
+(a daemon with only a sign-in and chosen repositories, its GitHub the node:http fake: it lists, takes, labels and posts on
+the thread through the account's token), `test/integration/github-budget.test.ts` (the budget, through the account's
+source), `test/ui/sources.test.ts` (the summary per state), `test/ui/intake-view.test.ts` (the account's source that
+cannot run has its panel, with the error).

@@ -1,8 +1,8 @@
-// An issue's place for the issue graph (issue #437), over GraphQL, shared by the App and the connected account adapters:
+// An issue's place for the issue graph (issue #437), over GraphQL, read by the connected account's adapter:
 // its repository's owner, the Projects (v2) it is an item of, the pull requests whose merge closes it (any state), the
 // issues and pull requests that mention it (its cross-references), its parent, its sub-issues and the issues that block it
 // (issue #900), and why each closed issue closed (issue #1036). One query per issue; a GitHub with no issue dependencies (an older GitHub Enterprise) is asked again without them.
-// A token that cannot read a part (an installation token and a user's Project) leaves that part out: GitHub answers the
+// A token that cannot read a part (a Project GitHub refuses to the hopper's app) leaves that part out: GitHub answers the
 // rest with an error beside it.
 
 import { GitHubApiError } from './api.ts';

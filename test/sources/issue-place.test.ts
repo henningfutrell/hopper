@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { issuePlaceFrom } from '../../src/sources/github/issue-place.ts';
-import { issuePlace } from '../../src/sources/github/app/graphql.ts';
+import { issuePlace } from '../../src/sources/github/http/graphql.ts';
 
 const item = (url: string, number: number, state: string, repo = 'Acme/app') => ({ url, number, state, repository: { nameWithOwner: repo } });
 

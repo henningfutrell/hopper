@@ -28,7 +28,7 @@ function setup(o: { landing?: boolean; ended?: string[] } = {}) {
     requestsWaiting: () => [], history: () => ({ jobs: [{ id: 'job-1', status: 'finished' }] }),
   };
   const source = createGitHubSource({
-    name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
+    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
     clock: { now: () => new Date(NOW) }, trust: testTrust(), intake,
     knownKeys: (keys) => new Set(keys.filter((k) => ended.has(k))), rerunnable: (keys) => new Set(keys.filter((k) => ended.has(k))),
     ...(o.landing === false ? {} : { landingBranch: () => 'main' }),

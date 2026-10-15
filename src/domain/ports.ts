@@ -10,7 +10,7 @@ import type {
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
-import type { HasSetup, RunsPasses, SourceItem, SourceRef } from './source-item.ts';
+import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
 import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
@@ -453,14 +453,14 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, HasSetup, Partial<AfterAnswerTimed> {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, Partial<AfterAnswerTimed> {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
   describe(): Record<string, unknown>;
   /**
    * A reason the source must not discover new items right now (e.g. a connected account's source
-   * while none is connected, or the app source while no app is configured). While paused the sync loop
+   * while none is connected, or while no job repository is chosen). While paused the sync loop
    * skips `discover` but still runs `check` and reports for the source's own active jobs;
    * status `disabled` when it has none, with `detail.paused` = the reason. Absent → never paused.
    */

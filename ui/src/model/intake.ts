@@ -64,8 +64,12 @@ export function intakeTrouble(s: SourceStatus): IntakeTrouble {
     repoErrors,
   };
 }
-/** A source Intake shows: one that lists issues, or one that is paused, so Intake says why it lists none. */
-export const inIntake = (s: SourceStatus): boolean => Array.isArray(s.detail?.intake) || typeof s.detail?.paused === 'string';
+/**
+ * A source Intake shows: one that lists issues, or one that is paused, so Intake says why it lists none; and the GitHub
+ * connection's source while it cannot run (issue #1377), with its error, never left out.
+ */
+export const inIntake = (s: SourceStatus): boolean => Array.isArray(s.detail?.intake) || typeof s.detail?.paused === 'string'
+  || (s.kind === 'github-account' && s.state === 'error');
 
 /** The issues on the backburner across the sources (issue #808): Intake's second badge, and the Queue's link. */
 export const onTheBackburner = (sources: SourceStatus[]): number => sources.reduce((n, s) => n + intakeOf(s).filter((x) => groupOf(x) === 'backburner').length, 0);

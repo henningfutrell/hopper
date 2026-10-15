@@ -5,7 +5,7 @@
 import type { Pointer } from '../domain/pointed-jobs.ts';
 import type { WatchComment, WatchReview, WatchSnapshot } from '../domain/github-watch.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, paginate, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, paginate, splitRepo, statusOf } from '../sources/github/http/http.ts';
 
 export interface WatchGitHub {
   snapshot(repo: string, pointer: Pointer): Promise<WatchSnapshot>;

@@ -1,5 +1,5 @@
-// Issue, comment-read and label calls of the App adapter, each with an installation token for the
-// issue's repo. REST shapes mapped onto the GitHubApi port's types.
+// Issue, comment-read and label calls of the connected account's adapter, each with the account's token. REST shapes mapped
+// onto the GitHubApi port's types.
 
 import { CHANGE_READ_PAGE, type GitHubComment, type GitHubIssue, type IssueChange, type IssueEvent, type SubIssue } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';

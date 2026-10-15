@@ -4,7 +4,7 @@
 // same `@octokit/request` binding and token renewal as Report a bug (src/bug-reports/github.ts).
 import type { RepoVisibility } from '../domain/promotions.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts';
 
 export interface PromotionGitHub {
   repo(repo: string): Promise<{ visibility: RepoVisibility; hasIssues: boolean; defaultBranch: string }>;

@@ -20,7 +20,7 @@ function setup(kept: { record?: TaggedRecord } = {}) {
   gh.taggedItems = async (login, repos) => { asked.push([login, repos]); return hits; };
   const events: { type: string; data: Record<string, unknown> }[] = [];
   const source = createGitHubSource({
-    name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
+    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
     trust: testTrust(), clock: { now: () => new Date('2026-10-14T10:00:00.000Z') }, knownKeys: () => new Set(),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: '2026-10-08T09:00:00.000Z', changes: [] }), migrated: () => {},

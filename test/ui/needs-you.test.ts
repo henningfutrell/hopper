@@ -12,7 +12,7 @@ import type { LandingBatchesView, PlanView, PullRequestCard, PullRequestsView, T
 
 const none = { n: 0, high: 0 };
 const counts = (o: Partial<NeedsYouCounts> = {}): NeedsYouCounts => ({
-  intake: 0, access: 0, plans: 0, signedOut: [], notReady: [], notConfigured: [], gaveUp: [], checksUnread: [], stuckLanding: [], tagged: 0, sorting: 0,
+  intake: 0, access: 0, plans: 0, signedOut: [], notReady: [], gaveUp: [], checksUnread: [], stuckLanding: [], tagged: 0, sorting: 0,
   sections: { questions: none, proposals: none, research: none, logins: none, failures: none, parked: none },
   ...o,
 });
@@ -21,15 +21,15 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#sources', '#failures', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#failures', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], notConfigured: ['github-app: slug not set'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, setup: 1, failures: 4, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, sorting: 3 });
-    expect(needsYouTotal(rows)).toEqual({ n: 21, high: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, sorting: 3 });
+    expect(needsYouTotal(rows)).toEqual({ n: 20, high: 3 });
   });
 
   it('a landing pass stuck on the same failure waits on a person (issue #1333): the Landing row names each repository with its error', () => {
@@ -55,13 +55,6 @@ describe('Needs you rows (issue #897)', () => {
     const row = needsYouRows(counts({ notReady: ['WSL: not ready — its job user holds .kube'] })).find((r) => r.kind === 'machines')!;
     expect(row).toMatchObject({ n: 1, href: '#machines', details: ['WSL: not ready — its job user holds .kube'] });
     expect(needsYouRows(counts()).find((r) => r.kind === 'machines')!.details).toBeUndefined();
-  });
-
-  it('a job source on but not configured waits on its setup (issue #1243): the Setup row names what each lacks', () => {
-    const line = 'github-app: appId, slug, private key not set';
-    const row = needsYouRows(counts({ notConfigured: [line] })).find((r) => r.kind === 'setup')!;
-    expect(row).toMatchObject({ n: 1, href: '#sources', details: [line] });
-    expect(needsYouRows(counts()).find((r) => r.kind === 'setup')!.details).toBeUndefined();
   });
 
   it('a repository whose checks no read gets (issue #1244): one Checks row line per repository, with the fix', () => {

@@ -57,7 +57,6 @@ export function JobTitle({ job, className, wrap = false }: { job: Job; className
             title={`${parts.done} of the ${parts.total} parts its issue declares are done`}>{parts.label}</span>
         )}
         <LineageChips job={job} />
-        {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}
         <ArtifactChips jobId={job.id} />
       </div>

@@ -2,9 +2,8 @@
 // LISTING_REPOS_MAX repositories, each an alias in it, paged only for a repository with more. A repository GitHub does not
 // answer for fails only itself. Against the node:http fake GitHub, through the App adapter's port.
 import { afterEach, describe, expect, it } from 'vitest';
-import { LISTING_REPOS_MAX, listRepos } from '../../src/sources/github/app/graphql-listing.ts';
-import { makeRequest } from '../../src/sources/github/app/http.ts';
-import type { FakeIssueInput, FakeRepoInput } from '../../src/sources/github/app/fake-state.ts';
+import { LISTING_REPOS_MAX } from '../../src/sources/github/http/graphql-listing.ts';
+import type { FakeIssueInput, FakeRepoInput } from '../../src/sources/github/http/fake-state.ts';
 import { startApp } from './fixtures/app/setup.ts';
 import type { AppHarness } from './fixtures/app/setup.ts';
 
@@ -79,40 +78,16 @@ describe('repository listings (issue #985)', () => {
     expect(numbers(got.repos.get('owner/a'))).toEqual([1, 2, 3]);
   });
 
-  it('repositories of two installations ask with two tokens: one request for each', async () => {
-    h = await startApp({ installations: [
-      { id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] },
-      { id: 12, account: 'other', repos: [repo('b', [{ number: 2, labels: ['hopper'] }], 'other')] },
-    ] });
-    const got = await h.api.listRepos(['owner/a', 'other/b'], LABELS);
-    expect(numbers(got.repos.get('owner/a'))).toEqual([1]);
-    expect(numbers(got.repos.get('other/b'))).toEqual([2]);
-    expect(graphqlRequests(h)).toHaveLength(2);
-  });
-
-  it('a repository the app is not installed on fails only itself', async () => {
+  it('a repository the connected account cannot reach (the hopper\'s app not installed there) fails only itself', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] }] });
     const got = await h.api.listRepos(['owner/a', 'owner/gone'], LABELS);
     expect(numbers(got.repos.get('owner/a'))).toEqual([1]);
     expect(got.repos.has('owner/gone')).toBe(false);
-    expect(got.repoErrors.get('owner/gone')).toMatch(/not installed/);
-  });
-
-  it('a repository GitHub does not resolve in a request fails only its alias', async () => {
-    h = await startApp({ installations: [
-      { id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] },
-      { id: 12, account: 'other', repos: [repo('b', [{ number: 2, labels: ['hopper'] }], 'other')] },
-    ] });
-    const { token } = await h.api.gitRemote!('owner/a');
-    const got = await listRepos(makeRequest(h.fake.url), token!, ['owner/a', 'other/b'], LABELS);
-    expect(numbers(got.repos.get('owner/a'))).toEqual([1]);
-    expect(got.repoErrors.get('other/b')).toMatch(/Could not resolve to a Repository/);
-    expect(graphqlRequests(h)).toHaveLength(1);
+    expect(got.repoErrors.get('owner/gone')).toMatch(/Could not resolve to a Repository/);
   });
 
   it('a request GitHub fails throws: the sync asks again', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] }] });
-    await h.api.listRepos(['owner/a'], LABELS); // the installation and its token, before the failure
     h.fake.fail('POST /graphql', 502, 'bad gateway', 1);
     await expect(h.api.listRepos(['owner/a'], LABELS)).rejects.toMatchObject({ permanent: false });
   });

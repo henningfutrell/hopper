@@ -1,7 +1,6 @@
-// Projects (v2) items over GraphQL with an installation token. Tried as an organization project,
-// then as a user project. Installation tokens can read organization projects
-// (`organization_projects: read`); user-owned projects need a personal token, so for those this
-// ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
+// Projects (v2) items over GraphQL with the connected account's token. Tried as an organization project,
+// then as a user project. A project GitHub refuses to the hopper's app ends in a permanent error, and the source falls back
+// to labels (projectErrors). Also: the pull
 // request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
 // pull requests of a repository, and an issue's cross-references (issue #430) (closer.ts).
 // And an issue's place for the issue graph (issue-place.ts, issue #437). The reads of one issue or pull request go through
@@ -92,7 +91,7 @@ export async function projectItems(req: Request, token: string, owner: string, n
   if ('items' in org) return org.items;
   const user = await readAs(req, token, 'user', owner, number);
   if ('items' in user) return user.items;
-  const hint = user.forbidden ? ' (a GitHub App installation token cannot read user-owned Projects; priority comes from labels)' : '';
+  const hint = user.forbidden ? ' (GitHub refused this user-owned Project to the hopper\'s app; priority comes from labels)' : '';
   throw new GitHubApiError(`project ${owner}/projects/${number}: organization: ${org.error}; user: ${user.error}${hint}`, true);
 }
 

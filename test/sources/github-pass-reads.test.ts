@@ -63,8 +63,7 @@ describe('pass reads (issue #822)', () => {
 
   it('keeps an adapter without the optional reads without them', () => {
     const gh = createFakeGitHub();
-    expect(passReads(gh, 'test').api.botLogin).toBeUndefined();
-    expect(passReads(gh, 'test').api.listInstalledRepos).toBeUndefined();
+    expect(passReads({ ...gh, listAssignedIssues: undefined }, 'test').api.listAssignedIssues).toBeUndefined();
     expect(passReads(gh, 'test').api.listAssignedIssues).toBeTypeOf('function');
   });
 

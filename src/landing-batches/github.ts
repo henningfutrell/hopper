@@ -9,8 +9,8 @@
 import { REPORT_LABEL } from '../bug-reports/context.ts';
 import type { BatchCheckRun } from '../domain/landing-batches.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, paginate, splitRepo, statusOf } from '../sources/github/app/http.ts';
-import { jobLog } from '../sources/github/app/rest.ts';
+import { makeRequest, paginate, splitRepo, statusOf } from '../sources/github/http/http.ts';
+import { jobLog } from '../sources/github/http/rest.ts';
 import type { LandingBatchGitHub } from './runner.ts';
 
 const REVERT = `mutation($id: ID!, $title: String, $body: String) {
