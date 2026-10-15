@@ -1,9 +1,10 @@
 // A failed end the hopper fixes itself (issue #1230, design.md "Own PR checks red"): a job that ended done while the checks
-// of its own pull request were red is reported once assessed. While its Continue is pending, its end is told as one the
+// of its own pull request were red, or its own pull request had merge conflicts or was a draft (issue #1265), is reported
+// once assessed. While its Continue is pending, its end is told as one the
 // hopper fixes (`fixing`): the issue stays as it is, never `hopper:failed`. Once a person has it — its hand-off opened, its
 // retries spent or its Continue refused —, its end is told again, as failed.
 import type { UserStore } from '../domain/ports.ts';
-import { OWN_PR_CHECKS_RED_TEXT, type DomainEvent, type Job } from '../domain/types.ts';
+import { OWN_PR_CHECKS_RED_TEXT, OWN_PR_UNFINISHED_TEXT, type DomainEvent, type Job } from '../domain/types.ts';
 import type { SyncFlags } from './sync-signals.ts';
 
 export interface FixingReportsContext {
@@ -13,7 +14,7 @@ export interface FixingReportsContext {
   reportAgain(jobId: string): void;
 }
 
-const redChecks = (job: Job): boolean => job.status === 'failed' && OWN_PR_CHECKS_RED_TEXT.test(job.error ?? '');
+const redChecks = (job: Job): boolean => job.status === 'failed' && [OWN_PR_CHECKS_RED_TEXT, OWN_PR_UNFINISHED_TEXT].some((t) => t.test(job.error ?? ''));
 
 export function createFixingReports(c: FixingReportsContext) {
   return {

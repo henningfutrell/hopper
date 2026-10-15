@@ -2028,7 +2028,9 @@ on in its own session (`Executor.resume`, in the same pane and work tree) told t
 is judged again. At most `MAX_FINISH_BRIEFS` (3) per run; after them, or with no such pull request, an executor that
 cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before — except a job whose
 own pull request is there with red checks (issue #1230): its miss names that pull request and its failed checks
-(`PR #N: checks failed: <names>`), and the hopper finishes it ("Own PR checks red").
+(`PR #N: checks failed: <names>`), and the hopper finishes it ("Own PR checks red"), and a job whose own pull request is
+there with merge conflicts or as a draft (issue #1265): its miss names that pull request and its step, and the hopper
+finishes it ("Own PR unfinished").
 
 **Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
 can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
@@ -11174,6 +11176,35 @@ empty commit.
 **Scope.** Only a job's own pull request whose checks were red when it ended. A PR waiting job's pull request that goes
 red later is tended ("Tending a waiting pull request"); a landing batch's red run has its own path (bisect, revert, fix
 issue: "Landing batches"). Within a run, the finish brief `fix_checks` still comes first (`MAX_FINISH_BRIEFS`).
+
+## Own PR unfinished (issue #1265, 2026-10-15)
+
+A job opened its pull request; a merge on the base branch left it with merge conflicts; the job ended done. The cause
+**Not complete** matched, its decision `person`: a hand-off whose card recommended Continue, "the job can fix the
+conflicts". Merge conflicts on the hopper's own pull requests are expected, and the fix is the hopper's own work.
+
+**The miss says it.** `notComplete` (`src/sources/github/completion.ts`) asks for the job's own open pull request that one
+fixed step finishes (`unfinishedPullRequest`: opened by the job, updated by it, or the one it reworks). With merge
+conflicts or as a draft, the miss names it and its step (`unfinishedLine`): `PR #1260: merge conflicts with its base`, or
+`PR #1260: a draft`. A pull request with red checks only is said as in "Own PR checks red".
+
+**Its own cause.** The built-in cause **Own PR unfinished** (`own-pr-unfinished`, class `transient`, decision `continue`),
+matched before **Not complete** by that text (`OWN_PR_UNFINISHED_TEXT`). The rules (`assess.ts`) are those of Own PR checks
+red: never grouped, never joined to a problem; while its chain was sent back for it fewer than `maxAttempts` times
+(`checksFixesOf` of this cause, `chain.ts`), **Continue**; then a person, `retry limit reached: sent back N times to finish
+its pull request`. Automatic Continue off (`auto.continue`): it waits for a person, as before. Any other Not complete is
+unchanged.
+
+**Its Continue** (`src/failures/unfinished.ts`), after the done check: the job's source names the step now
+(`JobSource.unfinishedPullRequest`; it cannot tell: asked again later). The job goes on in its own agent session in its
+kept work tree when it can (`job.continued` with `recordId`), else its item runs again (`job.rerun`, `by: "assessor"`),
+told the **unfinished brief** (`unfinishedBrief`, `src/domain/pull-requests.ts`): fixed text, the step — rebase onto the
+base branch, resolve every conflict keeping the intent of both sides, run the checks and push, or mark it ready —, make
+the checks pass, open no new pull request, end done. No `hopper:failed` while it is pending, as for Own PR checks red
+(`src/sources/fixing-reports.ts`).
+
+**Scope.** Within a run, the finish briefs still come first (`MAX_FINISH_BRIEFS`); this cause is the job's end after them.
+A PR waiting job's pull request that has conflicts later is tended ("Tending a waiting pull request").
 
 ## Needs a person (issue #516, 2026-10-08)
 

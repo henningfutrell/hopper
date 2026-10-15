@@ -183,6 +183,10 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
   const own = await ownPullRequestChecks(api, job);
   const red = own?.checks === 'failing' ? own : undefined;
   if (red) lines.push(redChecksLine(red));
+  // The job's own pull request with merge conflicts or as a draft (issue #1265): said by its number and its step, so the
+  // assessor sends the job back to finish it, never a person.
+  const unfinished = red ? undefined : await unfinishedPullRequest(api, job);
+  if (unfinished && unfinished.step !== 'fix_checks') lines.push(unfinishedLine(unfinished));
   if (!red || found.size > 0) {
     lines.push(found.size === 0 ? `no pull request in ${repo} closes or references it`
       : `no pull request in ${repo} that closes or references it is ready for review or merged since the job began: ${[...found.values()].map(described).join(', ')}`);
@@ -204,14 +208,15 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
 /**
  * The job's own open pull request that one fixed step finishes (issue #626): one that closes the issue or ships part
  * of it, with merge conflicts (rebase it first), failing checks (fix them, issue #736) or a draft (mark it ready). The
- * one it reworks counts as its own (issue #724). The newest first; undefined: none.
+ * one it reworks counts as its own (issue #724), and so does one it pushed to (issue #1265: a job of its item run again).
+ * The newest first; undefined: none.
  */
 export async function unfinishedPullRequest(api: GitHubApi, job: Job): Promise<UnfinishedPullRequest | undefined> {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
   const parts = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && isPartOf(pr, repo, number));
   const own = [...await api.openClosingPullRequests(repo, number), ...parts]
-    .filter((pr) => isOwnOrReworked(pr, job) && (pr.conflicting || pr.checks === 'failing' || pr.isDraft))
+    .filter((pr) => (isOwnOrReworked(pr, job) || isUpdatedBy(pr, job)) && (pr.conflicting || pr.checks === 'failing' || pr.isDraft))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   return own && { pullRequest: own.url, step: own.conflicting ? 'rebase' : own.checks === 'failing' ? 'fix_checks' : 'mark_ready' };
 }
@@ -219,6 +224,10 @@ export async function unfinishedPullRequest(api: GitHubApi, job: Job): Promise<U
 /** `PR #N: checks failed: <names>` (issue #1230): what the job's miss says of its own pull request with red checks. */
 export const redChecksLine = (own: OwnPullRequestChecks): string =>
   `PR #${numberOf(own.pullRequest)}: checks failed: ${own.failed.length > 0 ? own.failed.map((c) => c.name).join(', ') : 'names not known'}`;
+
+/** `PR #N: merge conflicts with its base` or `PR #N: a draft` (issue #1265): what the job's miss says of its own unfinished pull request. */
+export const unfinishedLine = (u: UnfinishedPullRequest): string =>
+  `PR #${numberOf(u.pullRequest)}: ${u.step === 'rebase' ? 'merge conflicts with its base' : 'a draft'}`;
 
 /**
  * The job's own open pull request and its checks (issue #1230): opened by the job, updated by it, or the one it reworks;
