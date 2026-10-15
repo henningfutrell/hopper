@@ -69,6 +69,8 @@ async function start() {
 }
 
 async function checked(app: TestApp): Promise<RepoChecksView> {
+  // A list never reads GitHub (issue #1250): Refresh reads each repository in the background.
+  expect((await app.ui('/ui/api/repo-checks/refresh', {}, { token: await app.login() })).status).toBe(200);
   let view: RepoChecksView = { repos: [] };
   await expect.poll(async () => {
     view = (await app.api<RepoChecksView>('GET', '/api/repo-checks')).body;

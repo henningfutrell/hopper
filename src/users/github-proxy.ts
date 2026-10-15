@@ -9,9 +9,9 @@ import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/ou
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CountPushLines } from '../git-mirror/push-lines.ts';
-import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
+import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, yoloModeFor, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
-import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
+import { createRepoChecks, createRepoChecksGitHub, type RepoChecksService } from '../repo-checks/index.ts';
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
@@ -44,8 +44,11 @@ export interface UserGitHubProxy {
   reports(): ReportGitHub | { problem: string };
   /** A person's reads of a job repository's pull request (issue #1169: its diff): this user's own connection, or why there is none. */
   reads(): ProxyApi | { problem: string };
-  /** Repositories with no checks (issue #677): this user's own GitHub connection and its login, or why there is none. */
-  repoChecks(): { api: RepoChecksGitHub; login: string } | { problem: string };
+  /**
+   * Repositories with no checks (issue #677): read with this user's own GitHub connection, kept in their store (issue
+   * #1250); its schedule reads with the user's runtime.
+   */
+  repoChecks: RepoChecksService;
   /** The trusted actor picker (issue #930): this user's own GitHub connection and its login, or why there is none. */
   actors(): { api: ActorsGitHub; login: string } | { problem: string };
   /** Promote to GitHub (issue #946): this user's direct jobs posted with this user's own GitHub connection, never a job's. */
@@ -233,10 +236,13 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
       }),
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
-      repoChecks: () => {
-        const login = o.accounts.account('github');
-        return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login };
-      },
+      repoChecks: createRepoChecks({
+        github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login }; },
+        repos: () => o.store.settings.getJobRepositories('github'), reads: o.store.repoChecks,
+        yolo: (repo) => yoloModeFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+        dismissed: () => o.store.settings.getRepoChecksDismissed(), setDismissed: (repos) => o.store.settings.setRepoChecksDismissed(repos),
+        record: (e) => { o.store.events.append(e); }, now: () => o.clock.now().getTime(), log: (l) => o.logger.warn(l),
+      }),
       actors: () => {
         const login = o.accounts.account('github');
         return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createActorsGitHub(mine()), login };

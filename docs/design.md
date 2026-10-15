@@ -71,7 +71,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
-| `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
+| `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps") and box steps (issue #1004, "Box steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host or box, stopped at the timeout, recorded, results kept an hour; a box step runs through the sandbox module, given as `StepBoxes` (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
@@ -15157,11 +15157,32 @@ are read through the contents API, a permission the hopper's GitHub App has; the
 for. All of it is read with the person's own GitHub connection (`src/repo-checks/github.ts`, the same binding and token
 renewal as Report a bug; `UserGitHubProxy.repoChecks`).
 
-**Never at read time.** `GET /api/repo-checks` (`src/repo-checks/service.ts`) answers what was read last for each job
-repository, and starts a read of each one older than ten minutes (one after a failure) in the background, one at a time
-per repository; the Pull requests page shows it at its next poll. What is read is kept in memory beside the user's store
-(`src/http/ui/repo-checks.ts`), so it is read again after a restart: it is GitHub's, not the user's. `?repo=owner/name`
-reads that one repository now, which is what `hopper repo checks <repo>` (`src/cli-operator-repo.ts`) asks.
+**Never at read time** (issue #1250, 2026-10-15). Each job repository's last read is kept in the user's database
+(`repo_checks`, tenant migration 64, `RepoChecksRead`: when, what was found, the reason a read failed, the queued job,
+when it is read again, and the answers' ETags), so a restart reads nothing again. `GET /api/repo-checks`
+(`src/repo-checks/service.ts`) answers only from it and never reads GitHub: a repository never read is `unknown` with no
+`checkedAt`; one read now has `reading`. GitHub is read in the background, one read per repository at a time, a second
+ask joining the read under way:
+
+- **Refresh** (`POST /ui/api/repo-checks/refresh`, operator; `repo` for one): Sources' Repository setup has the button.
+  It answers at once with the list, `reading` on each repository it reads.
+- **The schedule** (`tick`, every minute, with the user's runtime): each repository whose `nextAt` passed. That is 30
+  minutes after a read (`FRESH_MS`); after a failure, 1 minute (`RETRY_MS`), doubled with each failure in a row, at most
+  30 (`MAX_RETRY_MS`), and never before GitHub's rate limit lets it (`retryAt`). A failure keeps what was read before,
+  as of when it was read, with the reason.
+- `?repo=owner/name` reads that one repository now, which is what `hopper repo checks <repo>`
+  (`src/cli-operator-repo.ts`) asks.
+
+**Conditional reads** (`src/repo-checks/conditional.ts`). Every GET of a read is sent with the ETag of the answer kept
+from the read before (`If-None-Match`); GitHub's 304, which costs no call, is answered with what was kept. Answers are
+kept by route and parameters, not by token, so a renewed token keeps them. A 404 or 403 has no ETag — a release branch
+the repository does not have, branch protection only an admin sees —: it is kept as refused, and answered again with no
+call while the repository's own answer (read first, the anchor) is unchanged; a new branch or permission changes that
+answer, and each refusal is asked again. GraphQL has no conditional request, so the newest pull requests' check rollups
+are read only when they decide the state: no required check and no workflow on pull requests found (else `pullRequests`
+is `{ read: 0, withChecks: 0 }`). An unchanged repository with checks is all 304s. All calls go through the shared rate
+limiter (issue #436), as before. Not yet so: the GitHub App installations Sources shows (`GET /api/connected-accounts`)
+are still read from GitHub at each load.
 
 **The recommendation.** A repository with no checks, not dismissed, recommends the job "Add PR checks to <repo>"
 (`addChecksJob`: find the stack; add a GitHub Actions workflow on pull requests for the typecheck, the lint, the tests and
@@ -15182,9 +15203,13 @@ with the recommended job, Queue job and Dismiss for an operator.
 **GitHub text.** The job's issue is the person's own act, through their own connection: the eighth exception to the
 "GitHub text is neutral" rule (AGENTS.md). Its text is fixed and names no person.
 
-**Persisted state.** One new settings record, `repoChecksDismissed`; a build before this one ignores it.
+**Persisted state.** One new settings record, `repoChecksDismissed`; a build before this one ignores it. The table
+`repo_checks` (issue #1250): derived data, a table only; the build before runs on it.
 
-Tests: `test/repo-checks/checks.test.ts` (the triggers, the state, the job's text), `test/integration/repo-checks.test.ts`
+Tests: `test/repo-checks/checks.test.ts` (the triggers, the state, the job's text), `test/repo-checks/service.test.ts`
+(a list reads nothing; Refresh is coalesced; the schedule and its backoff), `test/repo-checks/conditional.test.ts` (304s
+and kept refusals), `test/integration/repo-checks-local.test.ts` (loads make no GitHub call; an unchanged repository is
+all 304s; a restart keeps the reads and their ETags), `test/integration/repo-checks.test.ts`
 (the real daemon and CLI, GitHub a fake on loopback: each of the three makes checks, none makes no checks with the
 recommendation; Queue job files the issue once; a job queued by hand is found; Dismiss and back; checks added drop the
 recommendation; GitHub down and no connection say unknown; `hopper repo checks`), `test/ui/pull-requests-view.test.ts`
@@ -15220,10 +15245,11 @@ wants every point read connects as a repository admin, or checks the settings by
 `found.setup` holds what was read (`{ branches: [{ branch, pullRequest, statusCheck, forcePushBlocked }], secretScanning,
 pushProtection }`); `hopper repo checks <repo>` prints the same. Sources (`ui/src/views/repo-setup.tsx`) shows a
 "Repository setup" section under GitHub: a line naming the repositories not set up and those not known, then each job
-repository with its state, its problems and what GitHub did not show. It is read when the repository's checks are, every
-ten minutes. No event: a read is GitHub's state, not an act.
+repository with its state, its problems, what GitHub did not show, and when it was read (`read 5m ago`, `reading
+GitHub…`, `not read yet`), with **Refresh**. It is read when the repository's checks are: on Refresh or on the schedule,
+never at a page load (issue #1250, "Repositories with no checks"). No event: a read is GitHub's state, not an act.
 
-**Persisted state.** None: the read is kept in memory with the checks.
+**Persisted state.** The read is kept with the checks, in `repo_checks` (issue #1250).
 
 Tests: `test/repo-checks/setup.test.ts` (each point from what GitHub shows, the state and the words),
 `test/integration/repo-setup.test.ts` (the real daemon and CLI, GitHub a fake on loopback that shows the branch protection

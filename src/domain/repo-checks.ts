@@ -37,6 +37,8 @@ export interface RepoChecks {
   found?: RepoChecksFound;
   /** When GitHub was read for it last; absent: not read yet. */
   checkedAt?: string;
+  /** A read of it from GitHub is under way (issue #1250): the list answers what the store held before it. */
+  reading?: true;
   /** Why the state is unknown. */
   error?: string;
   /** Its yolo mode: with no checks, yolo mode merges unverified code. */
@@ -49,6 +51,36 @@ export interface RepoChecks {
 }
 
 export interface RepoChecksView { repos: RepoChecks[] }
+
+/**
+ * An answer GitHub gave with an ETag (issue #1250): sent back as `If-None-Match`, and a 304 is answered with `data`. Or
+ * GitHub's 404 or 403 (`refused`, `etag` empty), which has no ETag: answered again with no call while the read's anchor
+ * answer (the repository itself) is unchanged.
+ */
+export interface KeptAnswer { etag: string; data: unknown; refused?: number }
+
+/**
+ * One job repository's last read from GitHub (issue #1250), kept in the database, so Sources answers from it and a
+ * restart reads nothing again. `repo` lower case. `nextAt`: when the schedule reads it again — `FRESH_MS` after a read,
+ * a backoff that doubles with each failure in a row (`failures`), or when GitHub's rate limit lets it. `etags`: the
+ * answers of the read, by request, for the next read's conditional requests.
+ */
+export interface RepoChecksRead {
+  repo: string;
+  at: string;
+  nextAt: string;
+  failures: number;
+  found?: RepoChecksFound;
+  error?: string;
+  queued?: { number: number; url: string };
+  etags: Record<string, KeptAnswer>;
+}
+
+/** The kept reads (tenant migration 61): one row per job repository. */
+export interface RepoChecksReadRepository {
+  get(repo: string): RepoChecksRead | undefined;
+  put(read: RepoChecksRead): void;
+}
 
 /** What queuing the job answers: the issue filed now, or the open one queued before. */
 export interface RepoChecksQueued { kind: 'filed' | 'exists'; number: number; url: string }
