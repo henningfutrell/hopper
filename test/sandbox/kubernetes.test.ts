@@ -12,6 +12,8 @@
 //   Scenario: the start check runs in the box through exec
 //   Scenario: a command runs in the box with its environment; files are copied in through tar
 //   Scenario: the home is a claim; one that exists is kept
+//   Scenario: stop, remove and removeVolume refuse a pod or claim that is not the runtime's: the hopper's own pod, a
+//     claim of the hopper's Postgres (issue #1371)
 //   Scenario: an API it cannot reach is its problem
 //   Scenario: the image's user is the box image's agent user, by number, and nothing is built
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -221,6 +223,19 @@ describe('the Kubernetes container runtime', () => {
     });
     await rt.removeVolume('hopper-sandbox-infra-home');
     expect(api.claims.size).toBe(0);
+  });
+
+  it('stop, remove and removeVolume refuse a pod or claim that is not the runtime\'s: the hopper\'s own pod, a claim of its Postgres (issue #1371)', async () => {
+    const api = createFakeKubeApi();
+    api.pods.set('hopper-0', { metadata: { name: 'hopper-0', labels: { 'app.kubernetes.io/name': 'hopper' } }, spec: { containers: [] }, status: { phase: 'Running' } });
+    api.claims.set('data-hopper-postgres-0', { metadata: { name: 'data-hopper-postgres-0', labels: { 'app.kubernetes.io/name': 'postgres' } } });
+    const rt = runtime(api);
+    await expect(rt.stop('hopper-0')).rejects.toThrow('the hopper leaves the pod hopper-0: it carries no sandbox label');
+    await expect(rt.remove('hopper-0')).rejects.toThrow('the hopper leaves the pod hopper-0: it carries no sandbox label');
+    await expect(rt.removeVolume('data-hopper-postgres-0')).rejects.toThrow('the hopper leaves the claim data-hopper-postgres-0: it carries no sandbox label');
+    expect(api.pods.has('hopper-0')).toBe(true);
+    expect(api.claims.has('data-hopper-postgres-0')).toBe(true);
+    expect(api.calls.filter((c) => c.startsWith('delete'))).toEqual([]);
   });
 
   it('an API it cannot reach is its problem', async () => {

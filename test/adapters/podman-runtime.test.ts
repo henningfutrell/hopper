@@ -10,6 +10,8 @@
 //   Scenario: a build whose stream carries an error fails with it
 //   Scenario: inspect, list, start, stop and remove use the container id; gone is no error
 //   Scenario: volumes are made and removed by name; one that exists or is gone is no error
+//   Scenario: stop, remove and removeVolume refuse what carries no sandbox label: a hopper stack container, a volume of
+//     someone else's (issue #1371)
 //   Scenario: a rootful Podman is a problem; a reachable rootless one is none
 //   Scenario: a box's start check is its health check: bash with no profile and no rc fetches the hopper, run only when
 //     the hopper asks (issue #708)
@@ -121,9 +123,24 @@ describe('the Podman container runtime', () => {
     expect(api.seen.find((r) => r.path === `${API}/containers/c0ffee/stop`)!.query.get('timeout')).toBe('10');
   });
 
+  it('stop, remove and removeVolume refuse what carries no sandbox label: a hopper stack container, a volume of someone else\'s (issue #1371)', async () => {
+    api = await startFakeRuntimeApi([
+      on('GET', `${API}/containers/stack/json`, { status: 200, body: { Id: 'stack', Name: 'hopper_hopper_1', Config: { Labels: { 'com.docker.compose.project': 'hopper' } }, State: { Status: 'running' } } }),
+      on('GET', `${API}/volumes/hopper_pgdata/json`, { status: 200, body: { Name: 'hopper_pgdata', Labels: { 'com.docker.compose.project': 'hopper' } } }),
+      on('GET', `${API}/volumes/bare/json`, { status: 200, body: { Name: 'bare', Labels: null } }),
+    ]);
+    const rt = createPodmanRuntime(api.socket);
+    await expect(rt.stop('stack')).rejects.toThrow('the hopper leaves the box stack: it carries no sandbox label');
+    await expect(rt.remove('stack')).rejects.toThrow('the hopper leaves the box stack: it carries no sandbox label');
+    await expect(rt.removeVolume('hopper_pgdata')).rejects.toThrow('the hopper leaves the volume hopper_pgdata: it carries no sandbox label');
+    await expect(rt.removeVolume('bare')).rejects.toThrow('the hopper leaves the volume bare: it carries no sandbox label');
+    expect(api.seen.filter((r) => r.method !== 'GET')).toEqual([]);
+  });
+
   it('volumes are made and removed by name; one that exists or is gone is no error', async () => {
     api = await startFakeRuntimeApi([
       on('POST', `${API}/volumes/create`, (r) => ({ status: (r.body as { Name: string }).Name === 'taken' ? 409 : 201, body: {} })),
+      on('GET', `${API}/volumes/home/json`, { status: 200, body: { Name: 'home', Labels: { 'io.hopper.box': 'i-1' } } }),
       on('DELETE', `${API}/volumes/home`, { status: 204 }),
     ]);
     const rt = createPodmanRuntime(api.socket);
@@ -132,7 +149,7 @@ describe('the Podman container runtime', () => {
     await rt.removeVolume('home');
     await rt.removeVolume('gone');
     expect(api.seen[0]!.body).toEqual({ Name: 'home', Label: { 'io.hopper.box': 'i-1' } });
-    expect(api.seen[2]!.query.get('force')).toBe('true');
+    expect(api.seen.find((r) => r.method === 'DELETE')!.query.get('force')).toBe('true');
   });
 
   it('build sends the Containerfile in a tar, only when the image is not there yet (issue #716)', async () => {
