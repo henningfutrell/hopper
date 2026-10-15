@@ -1,10 +1,11 @@
 // The latency budget of the acts on a job that are the hopper's own (issue #1194, part 5): Answer, End wait and Pick up
-// record and answer within the budget; the job's machine is told after. Real daemon, real database; the fake herdr.
+// record and answer, and the job's machine is told after; the answer's time is asserted off CI only
+// (`test/support/latency.ts`). Real daemon, real database; the fake herdr.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { BUDGET_MS } from '../support/latency.ts';
+import { withinBudget } from '../support/latency.ts';
 import { waitFor } from '../support/wait.ts';
 
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
@@ -47,7 +48,7 @@ describe('Answer, End wait and Pick up answer within the budget (issue #1194)', 
     const q = await a.waitForQuestion(job.id, (x) => x.status === 'open', 8000);
     const { r, ms } = await timed(() => a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token }));
     expect(r.status).toBe(200);
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     expect((await a.questionsOf(job.id))[0]).toMatchObject({ status: 'answered', answer: 'Blue.' });
     await a.waitForStatus(job.id, 'finished', 8000);
   });
@@ -59,7 +60,7 @@ describe('Answer, End wait and Pick up answer within the budget (issue #1194)', 
     await a.waitForStatus(job.id, 'waiting_on', 8000);
     const { r, ms } = await timed(() => a.ui(`/ui/api/jobs/${job.id}/end-wait`, { note: 'Granted.' }, { token }));
     expect(r.status).toBe(200);
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     expect((await a.events('types=job.wait_ended')).filter((e) => e.jobId === job.id)).toHaveLength(1);
     await a.waitForStatus(job.id, 'finished', 8000);
   });
@@ -74,7 +75,7 @@ describe('Answer, End wait and Pick up answer within the budget (issue #1194)', 
     await a.waitForStatus(job.id, 'parked');
     const { r, ms } = await timed(() => a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, {}, { token }));
     expect(r.status).toBe(200);
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     expect(r.body.status).not.toBe('parked');
     await a.waitForStatus(job.id, 'finished', 8000);
   });

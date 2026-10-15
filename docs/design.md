@@ -11488,16 +11488,35 @@ the next read, never from a poll.
   request's `writeBehind` (`census.detail`, from the source's write-behind of its issue), since the issue is in no Intake
   list yet. From the click on, the row says the issue is taken into Intake on GitHub and offers it no more, until a list
   read after the click says how it ended: failed, with why, and offered again; or the issue in Intake.
-- **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
+- **Budget.** `test/integration/action-latency.test.ts`: with GitHub held and the machine slowed to 2 s, Approve, Decline,
   Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
   answer in under 200 ms, their decision recorded, and the slow work ends after;
   `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same;
   `test/integration/action-latency-give-back.test.ts` holds a stuck cause's bulk action to it too;
   `test/integration/action-latency-pull-requests.test.ts` Merge now and Close PR; and
-  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. The bound is `test/support/latency.ts`:
-  200 ms on a developer machine; 1000 ms on CI (`CI` set), where a shared runner took 210 ms for an answer that takes
-  18 ms here. 1000 ms is still half of the 2 s seam delay, so an action that waits for GitHub or the machine fails on CI
-  too. `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one run, never above 1000 ms.
+  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. **CI asserts the order, not the time**
+  (`test/support/latency.ts`): a clock on a shared runner is not reliable — one took 210 ms for an answer that takes
+  18 ms on a developer machine. So GitHub is **held** (`test/support/slow-github.ts`): each of its calls waits until the
+  test releases it. An action that waited for GitHub would never answer, and the test fails by its timeout; one that
+  answers first answers, and its GitHub work is recorded only after the release. The time of an answer is asserted
+  against the 200 ms target only off CI, or with `HOPPER_PERF=1`; `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one
+  run.
+
+- **Approve of a sandbox request** answers before the box starts, since issue #1002 ("Sandboxes jobs start"): the
+  approval is recorded, and the start runs after, in the background. `test/integration/sandbox-start-hangs.test.ts` holds
+  the answer to the budget (part 7).
+- **After-answer timings** (`src/sources/after-answer-timings.ts`, part 7). The work an act leaves after its answer runs
+  on a queue: the job's report chain (a give-back, Merge now, Close PR) or the source's sync chain (the sync an act asks
+  for). A slow act was either slow itself or stood behind other work: before this issue, an Approve waited up to 15 s for
+  a sync already running, then ran its own sync for 5 s. So each run is kept as its wait on the queue apart from its run,
+  per act. The act is named where it starts (`withAct`, an `AsyncLocalStorage`, so every await under it keeps the name):
+  a give-back act, `merge` or `close` on the job's report chain, and `sync:<act>` for each sync an act asks for — an
+  intake action's (`sync:approve`), or the sync after a Run again (`sync:rerun`). A sync that several acts asked for is
+  timed once for each, each wait from its own ask. Work no act started (a timer's sync, a report) is not timed. Kept in
+  memory, the last 100 runs of each act; `GET /api/sources` answers `afterAnswer`: per act, `count`, `waitMs` and `runMs`
+  (each `{ p50, p95, max }`) and `lastAt`. `test/integration/action-latency-after-answer.test.ts`: an Approve sent while
+  a sync runs answers within the budget, and its `sync:approve` shows the wait for the running sync apart from its own
+  run; `test/integration/action-latency-pull-requests.test.ts`: Merge now's `merge` wait and run together cover the time GitHub held it.
 
 - **Fixed waits on the action paths** (part 6, checked). `PR_LOOKUP_MS` (10 s, `src/failures/timeouts.ts`) bounds a
   done-check's look at its source: on Retry it runs after the answer (part 4), never before it. `RECONCILE_MS` (10 s,
@@ -11505,9 +11524,9 @@ the next read, never from a poll.
   The UI's 10 s tick (`ui/src/store/stream.ts`) reads the health and the update notice only; an action's result comes
   from its answer and the stream.
 
-Not yet so (issue #1194, later parts): approving a sandbox request (`POST /ui/api/sandbox-requests`) answers once the
-box started; an outbox that batches and merges GitHub writes; a measure of queue wait apart from run time per action;
-and no end-to-end check measures the card in a browser.
+Not yet so (issue #1194, later parts): an outbox that batches and merges GitHub writes; the after-answer timings on a
+page of the UI, and of the write-behind's GitHub work, which runs inside the source; and no end-to-end check measures
+the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 

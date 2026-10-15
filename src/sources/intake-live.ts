@@ -19,3 +19,11 @@ export function intakeOutcomeOf(statuses: readonly SourceStatus[], key: string):
   }
   return undefined;
 }
+
+/** A refusal because the item is taken names its job's status (issue #1045). */
+export function withTakenStatus(failed: Record<string, string>, jobOf: (key: string) => Job | undefined): void {
+  for (const [key, why] of Object.entries(failed)) {
+    const job = why.startsWith('already ') ? jobOf(key) : undefined;
+    if (job) failed[key] = `${why}: its job is ${job.status}`;
+  }
+}

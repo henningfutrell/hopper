@@ -4,6 +4,7 @@
 // until the sync loop finds nothing of its own left to report.
 import type { Clock, JobSource, UserStore } from '../domain/ports.ts';
 import type { SourceStatus } from '../domain/types.ts';
+import type { SyncAsk } from './after-answer-timings.ts';
 
 /** Why a removed source pulls nothing more (issue #356): it only finishes its own jobs. */
 export const REMOVED = 'removed from the plugins config';
@@ -15,7 +16,7 @@ export interface Slot {
   status: SourceStatus;
   chain: Promise<void>;
   /** The sync queued on the chain that has not started yet (issue #1019): a sync asked for meanwhile joins it. */
-  queued?: { asked: boolean; done: Promise<void> };
+  queued?: { asked: boolean; done: Promise<void>; asks: SyncAsk[] };
   timer?: NodeJS.Timeout;
   /** Last transient report error per job, shown as detail.reportRetries. */
   retrying: Map<string, string>;
@@ -36,6 +37,17 @@ export interface Slot {
   followedAllAt?: number;
   /** A GitHub delivery named one of its job repositories (issue #1079): the sync it starts soon after. */
   delivered?: NodeJS.Timeout;
+}
+
+/**
+ * A sync asked for while one waits to start joins it (issue #1019): what it is answered, or undefined when none waits.
+ * Its asks are timed with that sync (issue #1194).
+ */
+export function joined(slot: Slot, asked: boolean, asks: readonly SyncAsk[]): Promise<void> | undefined {
+  if (!slot.queued) return undefined;
+  slot.queued.asked ||= asked;
+  slot.queued.asks.push(...asks);
+  return slot.queued.done;
 }
 
 export function newSlot(source: JobSource): Slot {

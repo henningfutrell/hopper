@@ -5,6 +5,7 @@
 // it; one GitHub refuses, or that cannot reach GitHub, records `job.pull_request_act_failed` with why. The same job's act
 // sent again while one runs (a second click, another tab, the CLI) answers that one. Kept in memory, as a give-back is.
 import type { JobSource, PullRequestActAnswer, UserStore } from '../domain/ports.ts';
+import { withAct } from './after-answer-timings.ts';
 import { following, type ActingPerson, type FollowUp, type Job, type PullRequestAct } from '../domain/types.ts';
 
 export interface PullRequestActsContext {
@@ -49,7 +50,7 @@ export function createPullRequestActs(c: PullRequestActsContext) {
     if (!following(job)) return { ok: false, reason: 'conflict', message: noPullRequest(jobId) };
     acting.set(jobId, what);
     let error: string | undefined;
-    void c.enqueue(jobId, async () => { error = await run(source, jobId, what, person); })
+    void withAct(what, () => c.enqueue(jobId, async () => { error = await run(source, jobId, what, person); }))
       .catch((e: unknown) => { error = message(e); })
       .then(() => {
         acting.delete(jobId);

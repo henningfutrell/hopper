@@ -3,5 +3,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { TenantParts } from './tenants.ts';
 
 export function sourceRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
-  app.get('/api/sources', async (req) => ({ sources: o.tenant(req).registry.statuses() }));
+  app.get('/api/sources', async (req) => {
+    const { registry } = o.tenant(req);
+    return { sources: registry.statuses(), afterAnswer: registry.afterAnswerTimings() };
+  });
 }
