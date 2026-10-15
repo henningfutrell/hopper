@@ -115,6 +115,9 @@ export interface ReferencingPullRequest extends OpenPullRequest {
   repo: string;
 }
 
+/** A pull request merged into a branch (issue #1337): what tells whether an issue's work waits on its batch run. */
+export interface MergedPullRequest { url: string; number: number; createdAt: string; mergedAt: string; body: string }
+
 export interface GitHubComment {
   /** Numeric and increasing: the order of comments on an issue. */
   id: number;
@@ -256,6 +259,8 @@ export interface GitHubApi {
   pullRequest(repo: string, number: number): Promise<NumberedPullRequest | undefined>;
   /** The open pull requests of `repo`, newest 100, each with its branch (issue #637: one named for an issue); none is []. */
   openPullRequests(repo: string): Promise<BranchPullRequest[]>;
+  /** The pull requests merged into branch `base` of `repo`, the newest 50 by their last update (issue #1337: the landing branch); none is []. */
+  mergedPullRequestsInto(repo: string, base: string): Promise<MergedPullRequest[]>;
   /**
    * The open pull requests of each of `repos`, newest 100 each (issue #985: reconciling): batched GraphQL, about one request
    * for each 25 repositories with one credential, never one listing for each repository.

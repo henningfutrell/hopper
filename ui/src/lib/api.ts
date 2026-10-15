@@ -1,7 +1,9 @@
 // HTTP to the daemon. Reads are GETs, open on loopback and carrying the UI session header across
 // the LAN; mutations only through POST /ui/api/* with JSON and that header (design.md "UI session
-// and mutations", "Reaching the UI across the LAN").
+// and mutations", "Reaching the UI across the LAN"). Every answer is checked to be this page's hopper's before it is
+// read (issue #1295, lib/instance.ts): another hopper's is dropped, and nothing more is sent to it.
 import type { SessionView } from '@/model/wire';
+import { checkInstance, INSTANCE_HEADER, refuseOtherHopper } from './instance';
 
 const TOKEN_KEY = 'jh_session';
 
@@ -28,6 +30,7 @@ export class ReadTimedOut extends Error {}
  * fails with the AbortError fetch throws.
  */
 export async function get<T>(path: string, { signal, timeoutMs = READ_TIMEOUT_MS }: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
+  refuseOtherHopper();
   const token = readToken();
   const ctrl = new AbortController();
   let timedOut = false;
@@ -36,6 +39,7 @@ export async function get<T>(path: string, { signal, timeoutMs = READ_TIMEOUT_MS
   if (signal?.aborted) ctrl.abort(); else signal?.addEventListener('abort', cancel);
   try {
     const res = await fetch(path, { signal: ctrl.signal, ...(token ? { headers: { 'x-hopper-session': token } } : {}) });
+    checkInstance(res.headers.get(INSTANCE_HEADER));
     const body = await res.json().catch((e: unknown) => { if (ctrl.signal.aborted) throw e; return {}; });
     // Across the LAN a read needs a live session: 401 with one sent means it ended.
     if (res.status === 401 && token) throw rejected(body.error || 'session ended');
@@ -51,11 +55,13 @@ export async function get<T>(path: string, { signal, timeoutMs = READ_TIMEOUT_MS
 }
 
 export async function post<T = unknown>(path: string, body: unknown = {}): Promise<T> {
+  refuseOtherHopper();
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-hopper-session': readToken() ?? '' },
     body: JSON.stringify(body),
   });
+  checkInstance(res.headers.get(INSTANCE_HEADER));
   const out = await res.json().catch(() => ({}));
   // Only the session guard's own refusal ends the session (issue #696): a 403 or 503 for anything else — Access denied,
   // OpenFGA down — is that change failing, and the person stays signed in.
@@ -70,8 +76,10 @@ export const deviceLinks = (keep?: string) => post<{ links: string[] }>('/ui/api
 
 /** The session the stored token names (or none), and the ways to sign in. Throws only when the daemon is unreachable. */
 export async function readSession(): Promise<SessionView> {
+  refuseOtherHopper();
   const token = readToken();
   const res = await fetch('/ui/api/session', token ? { headers: { 'x-hopper-session': token } } : {});
+  checkInstance(res.headers.get(INSTANCE_HEADER));
   const out = await res.json().catch(() => ({})) as Partial<SessionView>;
   if (!res.ok || !out.signIn) throw new Error(`${res.status} /ui/api/session`);
   if (out.authenticated !== true && token) clearToken();

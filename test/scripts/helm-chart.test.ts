@@ -4,7 +4,7 @@
 // Operator ExternalSecret fills), and AWS KMS for the vault's data key. Asserted on what `helm template` renders: `helm`
 // on PATH, else Helm's image through the docker CLI, the chart mounted read-only.
 import { describe, expect, it } from 'vitest';
-import { composeImage, type Container, container, env, type ExternalSecret, find, helm, pod, render, type Resource, workloads } from '../support/helm-chart.ts';
+import { composeImage, container, env, type ExternalSecret, find, helm, pod, render, type Resource, workloads } from '../support/helm-chart.ts';
 
 describe('the Helm chart, installed with no values', () => {
   const rs = render();
@@ -62,11 +62,11 @@ describe('the Helm chart, installed with no values', () => {
     expect(wait?.command?.join(' ')).toContain('pg_isready -q -h hopper-postgres');
   });
 
-  it('gives the hopper its database URL and OpenFGA\'s key as files of a generated Secret, kept across an uninstall', () => {
+  it('gives the hopper its database URL, OpenFGA\'s key and the tunnel key as files of a generated Secret, kept across an uninstall', () => {
     const secret = find(rs, 'Secret', 'hopper-runtime');
     expect(secret.metadata.annotations?.['helm.sh/resource-policy']).toBe('keep');
     const values = secret.stringData ?? {};
-    expect(Object.keys(values).sort()).toEqual(['database_url', 'openfga_datastore_uri', 'openfga_key', 'postgres_password']);
+    expect(Object.keys(values).sort()).toEqual(['database_url', 'openfga_datastore_uri', 'openfga_key', 'postgres_password', 'tunnel_key', 'vault_key']);
     expect(values.database_url).toBe(`postgres://hopper:${values.postgres_password}@hopper-postgres:5432/hopper`);
     expect(values.openfga_datastore_uri).toBe(`postgres://hopper:${values.postgres_password}@hopper-postgres:5432/hopper?sslmode=disable&search_path=openfga`);
     expect(values.postgres_password).toMatch(/^[A-Za-z0-9]{32,}$/);
@@ -107,12 +107,15 @@ describe('the Helm chart, installed with no values', () => {
     find(rs, 'PersistentVolumeClaim', 'hopper-home');
   });
 
-  it('migrates OpenFGA\'s schema before OpenFGA starts, with the datastore it serves', () => {
+  it('migrates OpenFGA\'s schema in a Job, and OpenFGA serves the datastore it migrated', () => {
     const fga = find(rs, 'Deployment', 'hopper-openfga');
-    const migrate = pod(fga).initContainers?.find((c) => c.name === 'migrate');
-    expect(migrate?.args).toEqual(['migrate']);
+    expect(pod(fga).initContainers).toBeUndefined();
+    const jobs = rs.filter((r) => r.kind === 'Job');
+    expect(jobs.map((j) => j.metadata.name)).toEqual([expect.stringMatching(/^hopper-openfga-migrate-[0-9a-f]{10}$/)]);
+    const migrate = container(jobs[0]!, 'migrate');
+    expect(migrate.args).toEqual(['migrate']);
     for (const c of [migrate, container(fga, 'openfga')]) {
-      expect(env(c as Container, 'OPENFGA_DATASTORE_URI')?.valueFrom?.secretKeyRef).toEqual({ name: 'hopper-runtime', key: 'openfga_datastore_uri' });
+      expect(env(c, 'OPENFGA_DATASTORE_URI')?.valueFrom?.secretKeyRef).toEqual({ name: 'hopper-runtime', key: 'openfga_datastore_uri' });
     }
     const run = container(fga, 'openfga');
     expect(env(run, 'OPENFGA_AUTHN_METHOD')?.value).toBe('preshared');
@@ -120,10 +123,10 @@ describe('the Helm chart, installed with no values', () => {
     expect(env(run, 'OPENFGA_PLAYGROUND_ENABLED')?.value).toBe('false');
   });
 
-  it('lets only the hopper and OpenFGA reach Postgres, and only the hopper reach OpenFGA and Solr', () => {
+  it('lets only the hopper, OpenFGA and its migration reach Postgres, and only the hopper reach OpenFGA and Solr', () => {
     const from = (name: string): string[] => (find(rs, 'NetworkPolicy', name).spec?.ingress ?? [])
       .flatMap((i) => i.from ?? []).map((f) => f.podSelector?.matchLabels?.['app.kubernetes.io/component'] ?? '?').sort();
-    expect(from('hopper-postgres')).toEqual(['hopper', 'openfga']);
+    expect(from('hopper-postgres')).toEqual(['hopper', 'openfga', 'openfga-migrate']);
     expect(from('hopper-openfga')).toEqual(['hopper']);
     expect(from('hopper-solr')).toEqual(['hopper']);
   });

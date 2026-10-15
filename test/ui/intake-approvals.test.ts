@@ -43,7 +43,7 @@ describe('the daemon is the source of truth for a decision on a request card (is
     expect(now()).toBeUndefined();
   });
 
-  it('a request card with the same hash and the approved text keeps an approval; a refusal stays until the hash changes', () => {
+  it('a request card with the same hash and the approved text keeps an approval; a refusal stays, also when the hash changes (issue #1316)', () => {
     store.useApprovals.setState({ [KEY]: { hash: A, state: 'approved' } });
     store.reconcileApprovals([card(A, { title: 'Fix it', body: 'Before.' })]);
     expect(now()).toEqual({ hash: A, state: 'approved' });
@@ -51,7 +51,7 @@ describe('the daemon is the source of truth for a decision on a request card (is
     store.reconcileApprovals([card(A)]);
     expect(now()?.state).toBe('refused');
     store.reconcileApprovals([card(B)]);
-    expect(now()).toBeUndefined();
+    expect(now()?.state).toBe('refused');
   });
 
   it('a decision that waits for the daemon is never reset: the list can arrive before the answer', () => {

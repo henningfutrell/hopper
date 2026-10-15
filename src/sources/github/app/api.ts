@@ -12,6 +12,7 @@ import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosin
 import { batchGraphQL } from './graphql-batch.ts';
 import { listRepos } from './graphql-listing.ts';
 import { openPullRequestsIn, pullRequestStates } from './graphql-pulls.ts';
+import { mergedPullRequestsInto } from './graphql-merged.ts';
 import type { RepoListing } from '../../../domain/github-listing.ts';
 import type { OpenPullRequestsIn, PullRequestStates } from '../api.ts';
 import { pullKey } from '../api.ts';
@@ -217,6 +218,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; baseUrl?: string; 
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, async (l) =>
       pullRequest(ask, await tokenFor(l, repo), repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, async (l) => openPullRequests(req, await tokenFor(l, repo), repo)),
+    mergedPullRequestsInto: (repo, base) => call(`pull requests merged into ${base} of ${repo}`, async (l) => mergedPullRequestsInto(req, await tokenFor(l, repo), repo, base)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, async (l) => rest.mergePullRequest(req, await tokenFor(l, repo), repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closePullRequest(req, await tokenFor(l, repo), repo, number)),
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, async (l) => rest.retargetPullRequest(req, await tokenFor(l, repo), repo, number, base)),

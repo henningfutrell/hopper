@@ -25,7 +25,8 @@ import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, t
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
+import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
+import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
 import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
@@ -144,6 +145,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
   const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
   const reportContext = () => ({ api, ensuredLabels, ...(o.intake ? { holder: o.intake.holder } : {}) });
+  const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
@@ -174,13 +176,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
    * The issue's declared parts and how many are done (issue #729). Its merged parts cannot be read now: the ticked ones
    * only, read again next sync.
    */
-  const issueParts = async (issue: GitHubIssue) => {
-    try {
-      return await partsOf(api, issue);
-    } catch {
-      return tickedParts(issue);
-    }
-  };
+  const issueParts = (issue: GitHubIssue) => partsOf(api, issue).catch(() => tickedParts(issue));
 
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin, assignee: string | undefined): Promise<SourceItem> => {
     // An item whose job has not ended is offered only to follow its priority: its comments are not read (issue #662: its
@@ -247,15 +243,15 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
-  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox });
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
     name: o.name, kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
+    intake: () => outbox.on(approvals.on(outcomes)), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
     pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     giveBackAct: (job, act, acting, more) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, more) : undefined),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -312,13 +308,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const urls = taken.map((i) => i.url);
       const known = o.knownKeys && urls.length > 0 ? o.knownKeys(urls) : new Set<string>();
       const rerun = o.rerunnable && urls.length > 0 ? o.rerunnable(urls) : new Set<string>();
+      // Waits on its batch, read from GitHub (issue #1337): neither offered nor run again, whatever the ledger says.
+      const waits = await waitingOnBatch(api, o.landingBranch, o.clock.now().getTime(), next, found.seen, taken.filter((i) => !known.has(i.url) || rerun.has(i.url)));
+      next = waits.outcomes;
       // An issue whose job has not ended keeps it, unless that job waits for its origin (the backfill); any other is judged
       // by its origin (issue #652).
-      const judged = taken.filter((i) => !known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url));
+      const judged = taken.filter((i) => !waits.waiting.has(i.url) && (!known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url)));
       const verdicts = await originsOf(api, o.trust, judged, config.label, assignee);
       const requests = await reopenedRequests(api, found.seen, next, o.rerunnable, intake);
       const items: SourceItem[] = [];
-      for (const issue of taken) {
+      for (const issue of taken.filter((i) => !waits.waiting.has(i.url))) {
         const v = verdicts.get(issue.url);
         if (v && 'request' in v) { requests.set(issue.url, v.request); continue; }
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
@@ -330,7 +329,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
-      outcomes = next;
+      outcomes = next; approvals.listed(next);
       outbox.listed(round);
       listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();
@@ -369,7 +368,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     resolved: (job, resolution) => keepResolution(outbox, job, resolution, o.intake?.holder),
     notComplete(job) {
-      return notComplete(api, job, o.jobArtifacts);
+      return notComplete(api, job, o.jobArtifacts, waitsOn);
     },
     partlyDone(job) {
       return partlyDone(api, job);

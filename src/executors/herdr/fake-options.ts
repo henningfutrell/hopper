@@ -98,6 +98,8 @@ export interface FakeHerdrOptions {
   checkpoint?: CheckpointCapture;
   /** What the restore of a checkpoint in a pane says (issue #921). Default `restored`. */
   restore?: 'restored' | 'kept' | 'failed';
+  /** What setting up the job's own container runtime says (issue #1295); `silent` says nothing. Default `none`: no podman. */
+  runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */

@@ -72,6 +72,23 @@ describe('when a batch run starts (issue #1073)', () => {
     const state = { repo: REPO, lastStartedAt: ago(5), running: { tip: 'a1', branch: 'hopper-batch/a1', pullRequest: 9, url: 'u', startedAt: ago(5), merges: [] } };
     expect(batchDue(state, { tip: 'a2', aheadBy: 9, merges: 9 }, CFG, NOW)).toEqual({ due: false, why: 'batch run #9 is at work' });
   });
+
+  it('a person restarted the batch (issue #1333): the batch run and the bisect at work end, and a run starts at once, the same tip too', () => {
+    const events = [
+      ev('landing_batch.started', { repo: REPO, tip: 'a1', branch: 'hopper-batch/a1', pullRequest: 9, url: 'u', merges: [1] }, ago(5)),
+      ev('landing_batch.restarted', { repo: REPO, tip: 'a1', by: 'admin', closed: [9] }, ago(1)),
+    ];
+    const state = landingBatchStates(events)[REPO]!;
+    expect(state.running).toBeUndefined();
+    expect(state.restarted).toEqual({ at: ago(1), by: 'admin' });
+    expect(batchDue(state, { tip: 'a1', aheadBy: 1, merges: 0 }, CFG, NOW)).toEqual({ due: true, why: 'a person restarted the landing batch' });
+    expect(batchDue({ ...state, lastTestedTip: 'a1' }, { tip: 'a1', aheadBy: 1, merges: 0 }, CFG, NOW).due).toBe(true);
+    // Nothing new: nothing to batch, restarted or not.
+    expect(batchDue(state, { tip: 'a1', aheadBy: 0, merges: 0 }, CFG, NOW).due).toBe(false);
+    // The next batch run ends the restart.
+    const next = landingBatchStates([...events, ev('landing_batch.started', { repo: REPO, tip: 'a1', branch: 'hopper-batch/a1', pullRequest: 10, url: 'u', merges: [1] })])[REPO]!;
+    expect(next.restarted).toBeUndefined();
+  });
 });
 
 describe('what a batch run\'s checks say (issue #1073)', () => {

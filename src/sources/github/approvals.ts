@@ -8,8 +8,12 @@
 // discover listed the issue taken (a second click, another tab) is done, and records nothing more: one approval, one job.
 // An auto-approval (issue #1268) is the same approval, by the hopper: recorded at the sync that found it, its rows the
 // same, so a sync after they are sent takes the item.
-import type { IntakeAction, IntakeTrust } from '../../domain/intake.ts';
-import type { IntakeRequest } from '../../domain/intake-origin.ts';
+// Approve takes at the first click (issue #1316): the card leaves Intake in the answer (`on`). A sync that read the item
+// before the approval, and lists the card again, does not bring it back; a sync that lists the item otherwise ends that
+// (`listed`). Approve on an item the last sync does not list with that text — no sync since a restart, or a read older
+// than the page — is resolved again (`resolve`): the issue is read now, and approved while it is a request card of that text.
+import type { IntakeAction, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
+import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { AutoApproval } from '../../domain/intake-auto-approve.ts';
 import { autoApprovals, cardsOf } from './auto-approve.ts';
 import type { OutboxChange } from '../../domain/github-outbox.ts';
@@ -17,18 +21,30 @@ import type { GitHubApi, GitHubIssue } from './api.ts';
 import { contextComments } from './context.ts';
 import type { GitHubOutbox } from './outbox.ts';
 import type { BotLogin } from './identity.ts';
-import { LABEL_DONE } from './labels.ts';
+import { LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
+import { originsOf } from './origin.ts';
+import { ALREADY_TAKEN, DECLINED, HAS_JOB, NOT_SHOWN, TEXT_CHANGED_SINCE_SHOWN } from './intake-actions.ts';
 
 export interface ApprovalsContext {
   source: string;
   api: GitHubApi;
-  trust: Pick<IntakeTrust, 'approve' | 'approvedComments' | 'trusted' | 'autoApproval' | 'autoApprove' | 'approvedText' | 'takenIn'>;
+  trust: IntakeTrust;
   /** The source's `recentComments`: 0 reads none. */
   recentComments: number;
   assignee(): string | undefined;
   botLogin(): Promise<BotLogin>;
   outbox: GitHubOutbox;
+  /** The source's label: an issue resolved again still has it. */
+  label: string;
+  /** The job repositories the source scans: an issue resolved again is in one. */
+  scope(): readonly string[];
+  /** Whether the item has a job here: it is never resolved again, so its snapshot stays its job's. */
+  known(key: string): boolean;
 }
+
+/** What Approve resolved again (`resolve`) did: `approved`, `done` (its text was approved before), or why not. */
+export type Resolved = 'approved' | 'done' | (string & {});
+
 
 const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
 
@@ -42,13 +58,49 @@ export function createApprovals(c: ApprovalsContext) {
     c.outbox.queue('approve', key, repo, changes, { tag: request.hash, local });
   };
   const text = (r: IntakeRequest) => ({ title: r.title, body: r.body, comments: [] });
+  /** The cards approved here that no sync since listed otherwise: key → the hash approved. */
+  const fresh = new Map<string, string>();
+  const isFresh = (x: IntakeOutcome): boolean => x.action === 'approve' && x.request !== undefined && fresh.get(x.key) === x.request.hash;
+
+  const approve = (repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): boolean => {
+    if (!request || request.hash !== a.hash) return false;
+    queue(repo, key, request, () => c.trust.approve(c.source, key, text(request), request, a.acting));
+    fresh.set(key, request.hash);
+    return true;
+  };
 
   return {
     /** False: `hash` is not the hash of the text the last sync showed. */
-    approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): boolean {
-      if (!request || request.hash !== a.hash) return false;
-      queue(repo, key, request, () => c.trust.approve(c.source, key, text(request), request, a.acting));
-      return true;
+    approve,
+    /** The outcomes with each card approved here taken, as a discover lists an approved item it takes. */
+    on: (xs: readonly IntakeOutcome[]): IntakeOutcome[] => xs.map((x) => {
+      if (!isFresh(x)) return x;
+      const { reason: _reason, action: _action, group: _group, request: _request, ...taken } = x;
+      return taken;
+    }),
+    /** At a discover's end: an approval whose card it lists no more is the sync's now. */
+    listed(xs: readonly IntakeOutcome[]): void {
+      for (const key of [...fresh.keys()]) if (!xs.some((x) => x.key === key && isFresh(x))) fresh.delete(key);
+    },
+    /**
+     * Approve resolved again: the issue `key` read now, and approved when it is still a request card of this source with
+     * the text `a.hash` names — open, labelled, assigned to the user, not claimed, not reopened (its card needs the sync's
+     * history), no job here, not declined, its origin not trusted.
+     */
+    async resolve(key: string, a: IntakeAction): Promise<Resolved> {
+      const at = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(key);
+      const repo = at ? c.scope().find((r) => r.toLowerCase() === at[1]!.toLowerCase()) : undefined;
+      const assignee = c.assignee();
+      if (!at || !repo || !assignee || !a.hash) return NOT_SHOWN;
+      if (c.known(key)) return HAS_JOB;
+      const issue = await c.api.getIssue(repo, Number(at[2]));
+      const assigned = issue.assignees.some((x) => x.toLowerCase() === assignee.toLowerCase());
+      if (issue.state !== 'open' || !issue.labels.includes(c.label) || !assigned || issue.labels.includes(LABEL_CLAIMED) || issue.labels.includes(LABEL_DONE)) return NOT_SHOWN;
+      if (requestHash(issue) !== a.hash) return TEXT_CHANGED_SINCE_SHOWN;
+      if (c.trust.declined(key, a.hash)) return DECLINED;
+      const v = (await originsOf(c.api, c.trust, [issue], c.label, assignee)).get(key);
+      if (!v || !('request' in v)) return v?.origin === 'approved' ? 'done' : ALREADY_TAKEN;
+      return approve(repo, key, v.request, a) ? 'approved' : TEXT_CHANGED_SINCE_SHOWN;
     },
     /**
      * The cards of `requests` a rule approves (issue #1268), each recorded as the hopper's approval with Approve's rows, and

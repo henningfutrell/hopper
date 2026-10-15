@@ -10,6 +10,7 @@ import { batchGraphQL } from '../app/graphql-batch.ts';
 import { listRepos } from '../app/graphql-listing.ts';
 import { taggedItems } from '../app/graphql-tagged.ts';
 import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
+import { mergedPullRequestsInto } from '../app/graphql-merged.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 import { headChecks } from '../app/rest-checks.ts';
@@ -78,6 +79,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, (t) => crossReferences(ask, t, repo, number)),
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, (t) => pullRequest(ask, t, repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, (t) => openPullRequests(req, t, repo)),
+    mergedPullRequestsInto: (repo, base) => call(`pull requests merged into ${base} of ${repo}`, (t) => mergedPullRequestsInto(req, t, repo, base)),
     openPullRequestsIn: (repos) => call(`open pull requests of ${repos.length} repositories`, (t) => openPullRequestsIn(req, t, repos)),
     pullRequestStates: (refs) => call(`${refs.length} pull requests`, (t) => pullRequestStates(req, t, refs)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),

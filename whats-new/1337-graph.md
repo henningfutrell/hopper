@@ -1,0 +1,1 @@
+- The Jobs view shows an issue whose fix is merged and waits for its batch as merged, not as failed or waiting on you.

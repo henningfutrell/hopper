@@ -1,13 +1,14 @@
 // GET /api/events/stream (design.md "SSE"): replay after a seq, then live; delivery updates, source status
 // updates (`source.updated`), new usage samples (`usage.recorded`, issue #502) and new machine samples
 // (`machine.recorded`, issue #560) interleaved without an id;
-// a comment ping every 15 s.
+// a comment ping every 15 s. It opens with the hopper's tag (`hopper.instance`, issue #1295).
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { TenantParts } from './tenants.ts';
 import type { DomainEvent } from '../domain/types.ts';
 import { parseWith } from './errors.ts';
+import { INSTANCE_EVENT } from './instance-tag.ts';
 
 const PING_MS = 15_000;
 const REPLAY_PAGE = 1000;
@@ -16,7 +17,7 @@ const seq = z.coerce.number().int().min(0);
 export const streamQuery = z.object({ after: seq.optional() });
 
 /** The request's user's events, deliveries, source statuses and usage samples only (issue #158). */
-export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
+export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; instanceTag: string }): void {
   const open = new Set<ServerResponse>();
   app.addHook('onClose', async () => {
     for (const res of open) res.end();
@@ -40,6 +41,8 @@ export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     });
     res.flushHeaders();
     open.add(res);
+    // First the hopper's tag (issue #1295): the page takes no event of this stream until it is its hopper's.
+    res.write(`event: ${INSTANCE_EVENT}\ndata: ${JSON.stringify(o.instanceTag)}\n\n`);
 
     let lastSeq = after ?? 0;
     const send = (e: DomainEvent): void => {

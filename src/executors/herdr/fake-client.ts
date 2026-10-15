@@ -4,7 +4,7 @@
 
 import { HerdrError } from './client.ts';
 import { fakeMachineShell } from './fake-machine.ts';
-import { seedSays, shellSays, type FakeClaudeConfig } from './fake-shell.ts';
+import { echoOf, seedSays, shellSays, type FakeClaudeConfig } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 import { listedPanes, newPane, type Pane } from './fake-panes.ts';
@@ -282,7 +282,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         p.pending = { lines: [...said.lines.slice(1), '$ '], lag: o.worktreeLag };
         return;
       }
-      p.lines.push(`$ ${command}`, ...said.lines, '$ ');
+      p.lines.push(echoOf(command), ...said.lines, '$ ');
     },
     async waitOutput(paneId, text, timeoutMs) {
       record('waitOutput', paneId, text, timeoutMs);

@@ -3,6 +3,12 @@
 // token and reloads. A device link carries the code in the URL fragment, never sent to a server. No
 // sign-in, password sign-in and a gateway realm answer JSON with the token (design.md "Sign-in", issues #53, #215).
 import type { SessionView } from '../model/wire.ts';
+import { checkInstance, INSTANCE_HEADER } from './instance.ts';
+
+/** Another hopper's answer (issue #1295): why its token is not kept, or undefined when it is this page's hopper's. */
+function otherHopperIn(res: Response): string | undefined {
+  try { checkInstance(res.headers.get(INSTANCE_HEADER)); return undefined; } catch (e) { return (e as Error).message; }
+}
 
 const CODE = /^[0-9a-f]{64}$/;
 
@@ -62,6 +68,8 @@ export async function beginDeviceSignIn(realm: string): Promise<DeviceSignIn | {
 /** One poll of a device sign-in: still waiting (null), signed in (the token is kept; ''), or the error. */
 export async function pollDeviceSignIn(s: Pick<DeviceSignIn, 'flow' | 'binding'>): Promise<string | null> {
   const res = await fetch('/ui/auth/device/poll', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flow: s.flow, binding: s.binding }) });
+  const other = otherHopperIn(res);
+  if (other) return other;
   const out = await res.json().catch(() => ({})) as { state?: string; token?: string; error?: string };
   if (res.ok && out.state === 'waiting') return null;
   if (!res.ok || !out.token) return out.error ?? `${res.status}`;
@@ -78,6 +86,8 @@ export const wantsGatewaySignIn = (authed: boolean, offer: Pick<SessionView['sig
 /** POST a sign-in that answers `{ token }` as JSON (no sign-in, password); keeps the token. Resolves the error, or null. */
 async function jsonSignIn(path: string, body: unknown): Promise<string | null> {
   const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const other = otherHopperIn(res);
+  if (other) return other;
   const out = await res.json().catch(() => ({})) as { token?: string; error?: string };
   if (!res.ok || !out.token) return res.status === 429 ? 'too many sign-in attempts; wait a minute' : (out.error ?? `${res.status}`);
   try { localStorage.setItem('jh_session', out.token); } catch { return 'browser storage is blocked: the session cannot be kept'; }

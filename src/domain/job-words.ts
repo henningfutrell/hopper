@@ -27,6 +27,8 @@ export interface Worded {
   dismissed?: true;
   /** A failed job whose item is handed to a person on its failure (issue #1067). */
   handedOff?: true;
+  /** An issue that waits on its batch (issue #1337). */
+  awaitsBatch?: true;
 }
 
 const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person works on it', parked: 'Parked' };
@@ -79,7 +81,7 @@ export function stageWords(n: Worded): string {
       return (n.status && WAITING[n.status]) ?? 'Waiting';
     case 'pr_open': return n.pullRequest ? pullRequestWords(n.pullRequest) : PR_OPEN_WAIT;
     case 'partly_done': return 'Part shipped: the rest runs after the merge';
-    case 'done': return n.pullRequest?.state === 'merged' ? 'Merged' : 'Done';
+    case 'done': return n.awaitsBatch ? 'Merged: waits on its batch run' : n.pullRequest?.state === 'merged' ? 'Merged' : 'Done';
     case 'failed': return 'Failed';
     case 'cancelled': return 'Cancelled';
     case 'superseded': return n.dismissed ? 'Dismissed' : 'Superseded';
@@ -100,7 +102,7 @@ export function nextWords(n: Worded, tasks?: { done: number; total: number }): s
     case 'waiting': return n.status === 'operator_led' ? 'A person finishes it.' : 'It goes on when what it waits for happens.';
     case 'pr_open': return n.pullRequest?.checks === 'failing' ? 'Fix the failed checks, or run it again.' : n.pullRequest?.checks === 'pending' ? 'It goes on to the merge once its checks pass.' : 'Merge the pull request, or yolo mode merges it.';
     case 'partly_done': return 'Merge the pull request: then the next part runs.';
-    case 'done': return 'Nothing: it is done.';
+    case 'done': return n.awaitsBatch ? 'Nothing: its batch run closes the issue.' : 'Nothing: it is done.';
     case 'failed': return 'Read why it failed, then run it again or close it.';
     case 'cancelled': return 'Nothing: it was cancelled.';
     case 'superseded': return n.dismissed ? 'Nothing: it was dismissed.' : 'Nothing: other work finished its issue.';
@@ -152,7 +154,7 @@ export function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<stri
 export function wordNodes(nodes: ReadonlyMap<string, JobGraphNode>, newestOf: ReadonlyMap<string, Job>): void {
   for (const n of nodes.values()) {
     const newest = n.kind === 'issue' ? nodes.get(`job:${newestOf.get(n.id)?.id}`) : undefined;
-    const worded = newest?.stage === n.stage ? newest : n;
+    const worded = newest?.stage === n.stage && !n.awaitsBatch ? newest : n;
     n.stageText = stageWords(worded);
     if (waitsOnYou(worded)) n.waitsOnYou = true;
   }

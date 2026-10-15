@@ -49,6 +49,7 @@ import { createApiGrants } from './ui/api-grants.ts';
 import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
+import { installInstanceTag, instanceTagOf } from './instance-tag.ts';
 import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
@@ -144,6 +145,9 @@ export interface ServerOptions {
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
+  // Every answer names its hopper (issue #1295): the page drops another hopper's at the same address.
+  const instanceTag = instanceTagOf(o.instance.settings.instanceId());
+  installInstanceTag(app, instanceTag);
   // The event loop watchdog (issue #1002): a stall is logged with the routes in flight and the slow store calls in it
   // (issue #1154), shown on /api/health, and raised as an instance event.
   const events = o.events;
@@ -206,7 +210,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
-  sseRoutes(app, tenant);
+  sseRoutes(app, { ...tenant, instanceTag });
   updateRoutes(app, o);
   masterKeyRoutes(app, o);
   pluginStoreRoutes(app, o);

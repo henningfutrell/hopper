@@ -1,8 +1,30 @@
 {{- if .Values.networkPolicy.enabled -}}
-{{- /* Who reaches each part: Postgres the hopper and OpenFGA, OpenFGA and Solr the hopper alone, the lane pods no one. */ -}}
-{{- $parts := list (list "postgres" 5432 (list "hopper" "openfga")) (list "openfga" 8080 (list "hopper")) (list "lanes" 0 list) -}}
+{{- /*
+Who reaches each part: Postgres the hopper, OpenFGA, its migration and the vault pod; OpenFGA, Solr, the vault pod and the
+tunnel services the hopper alone; the local KMS the pod the vault runs in; the lane pods no one.
+*/ -}}
+{{- $parts := list (list "openfga" 8080 (list "hopper")) (list "lanes" 0 list) -}}
+{{- if .Values.postgres.bundled -}}
+{{- $db := list "hopper" "openfga" "openfga-migrate" -}}
+{{- if .Values.hopperVault.enabled -}}
+{{- $db = append $db "vault" -}}
+{{- end -}}
+{{- $parts = append $parts (list "postgres" 5432 $db) -}}
+{{- end -}}
 {{- if .Values.solr.enabled -}}
 {{- $parts = append $parts (list "solr" 8983 (list "hopper")) -}}
+{{- end -}}
+{{- if .Values.hopperVault.enabled -}}
+{{- $parts = append $parts (list "vault" 4791 (list "hopper")) -}}
+{{- end -}}
+{{- if .Values.kms.local.enabled -}}
+{{- $parts = append $parts (list "kms" 8080 (list (include "hopper.vaultRunner" $))) -}}
+{{- end -}}
+{{- if .Values.tunnel.ngrok.enabled -}}
+{{- $parts = append $parts (list "tunnel" 4040 (list "hopper")) -}}
+{{- end -}}
+{{- if .Values.tunnel.cloudflared.enabled -}}
+{{- $parts = append $parts (list "cloudflared" 2000 (list "hopper")) -}}
 {{- end -}}
 {{- range $i, $p := $parts }}
 {{- if $i }}
@@ -11,7 +33,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ printf "%s-%s" (include "hopper.fullname" $) (index $p 0) }}
+  name: {{ printf "%s-%s" (include "hopper.fullname" $) (index $p 0 | trimPrefix "hopper-") }}
   labels:
     {{- include "hopper.labels" (dict "ctx" $ "component" (index $p 0)) | nindent 4 }}
 spec:

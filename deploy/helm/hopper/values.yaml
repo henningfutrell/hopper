@@ -44,6 +44,15 @@ masterKey:
 # A key management service wraps the vault's data key (docs/deploy.md "On Kubernetes, with Helm"). Then the master key is not needed to
 # open the vault's secrets. Empty region: no KMS, and the vault seals under the master key.
 kms:
+  # A local KMS (local-kms, the compose profile `kms`, issue #586) in a pod of its own, which speaks AWS KMS's API. It
+  # checks no credentials: only the pod the vault runs in reaches it. Its keys are on its volume: lose that volume and
+  # every value sealed under a data key is lost. Set one KMS: this one, or AWS KMS below.
+  local:
+    enabled: false
+    image: docker.io/nsmithuk/local-kms:3.12.0
+    size: 1Gi
+    storageClass: ""
+    resources: {}
   aws:
     # AWS KMS in this region (HOPPER_KMS_REGION). The pod uses the AWS credentials of its service account's role (IRSA
     # or EKS Pod Identity): see serviceAccount. The role needs kms:GenerateDataKey and kms:Decrypt on the key.
@@ -52,6 +61,14 @@ kms:
     key: ""
     # An endpoint other than the region's own (a VPC endpoint); empty: the region's own.
     endpoint: ""
+
+# The hopper's vault in a pod of its own (the compose profile `hopper-vault`, issue #586), from the hopper's image. It
+# holds the vault's key — the master key, or the data key the KMS opens — and the secret values, in the hopper's Postgres;
+# the hopper asks it with a preshared key. Only the hopper reaches it. With a KMS, the vault pod asks the KMS, not the
+# hopper. Off: the vault runs in the hopper.
+hopperVault:
+  enabled: false
+  resources: {}
 
 # The hopper's service account. Unset: the namespace's default, or, with sandbox.enabled, one the chart makes. For AWS
 # KMS, make one with the role's annotation, as eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>.
@@ -93,16 +110,35 @@ home:
   storageClass: ""
 
 postgres:
+  # true: a Postgres in the release, on a volume of its own. false: the database postgres.external names (issue #1282).
+  bundled: true
+  # A Secret you make, for an external database, with two keys: `database_url`, the hopper's
+  # (postgres://user:password@host:port/database), and `openfga_datastore_uri`, OpenFGA's: the same database with
+  # `?sslmode=…&search_path=openfga`. The OpenFGA migration Job makes the `openfga` schema.
+  external:
+    existingSecret: ""
+  # Also the image of the steps that wait for the database and make OpenFGA's schema.
   image: postgres:17-alpine
   size: 10Gi
   storageClass: ""
   resources: {}
 
 # OpenFGA (docs/deploy.md "Access: OpenFGA"): access asks it before every credential a job is given. Its tables are the
-# `openfga` schema of the hopper's Postgres.
+# `openfga` schema of the hopper's Postgres. Its migration is a Job named by a hash of its spec (issue #1282): an upgrade
+# that changes nothing in it runs it no second time, and `openfga migrate` only adds what the schema lacks.
 openfga:
   image: docker.io/openfga/openfga:v1.22.0
   resources: {}
+
+# Remote access (docs/deploy.md "Remote access", issue #1282): compose's tunnel services, with compose's own scripts.
+# Each runs no tunnel agent until remote access is turned on in the UI with its provider. Only the hopper reaches them.
+tunnel:
+  ngrok:
+    enabled: true
+    image: docker.io/ngrok/ngrok:3.39.11-alpine
+  # cloudflared runs in the hopper's image, which carries its binary.
+  cloudflared:
+    enabled: true
 
 # Search (docs/deploy.md "Search"): one Solr core. Off: the hopper has no search. Its index is built again from Postgres
 # when lost.
@@ -121,8 +157,9 @@ solr:
 sandbox:
   enabled: false
 
-# NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. They take effect
-# only where the cluster's network plugin enforces them.
+# NetworkPolicies: only the hopper, OpenFGA, its migration and the vault pod reach Postgres, only the hopper reaches
+# OpenFGA, Solr, the vault pod and the tunnel services, and only the pod the vault runs in reaches the local KMS. They
+# take effect only where the cluster's network plugin enforces them.
 networkPolicy:
   enabled: true
 

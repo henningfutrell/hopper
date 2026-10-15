@@ -44,10 +44,10 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key (`lane-pool.ts`, issue #1284), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
-| `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
+| `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
-| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the slow store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the slow store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -94,7 +94,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
 | `scripts/kind-check.ts` | the kind check (issue #1281, docs/deploy.md "Check the chart on kind"): `kind`, `helm` and `kubectl` bring up a fresh kind cluster with the Helm chart, ask the hopper's health in its pod, and look in every pod for a Podman or Docker socket or runtime; run by `.github/workflows/kind.yml` | everything in `src/`; it never runs in the daemon |
-| `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, and its lane pods (issue #1284, "Lane pods"), the same images as `compose.yaml`; tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
+| `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, and its lane pods (issue #1284, "Lane pods"), the same images as `compose.yaml`; an external Postgres and the tunnel services, whose scripts in `files/` are compose's own, unchanged, and OpenFGA's migration as a Job named by its spec (issue #1282, tested by `test/scripts/helm-chart-parts.test.ts`); tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
@@ -414,7 +414,8 @@ Domain events: `id: <seq>`, `event: <type>`, `data: <DomainEvent JSON>`. New usa
 issue #502) and new machine samples (`machine.recorded`, issue #560), `data: { added }`, no `id`. Delivery updates
 (not domain events, never persisted or webhooked, so a delivery cannot trigger a delivery):
 `event: delivery.updated`, `data: <WebhookDelivery JSON>`, no `id`. Comment heartbeat
-`: ping` every 15 s. A running job's own stream is another, `GET /job/stream` ("The job stream", issue #613).
+`: ping` every 15 s. Before all of it, the hopper's **instance tag** (`event: hopper.instance`, `data: "<tag>"`, issue #1295,
+"Which hopper answers"). A running job's own stream is another, `GET /job/stream` ("The job stream", issue #613).
 
 ## Webhooks
 
@@ -846,6 +847,14 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   where it runs (`/proc/self/cgroup`) until it answers (`hopper-scope-entered`; the pane state records
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
   without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
+- **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
+  below). After the scope, the pane's shell runs the runtime command: the job gets a podman of its own — its runtime dir
+  `<the user's runtime dir>/hopper-runtime-<job id>`, its storage `<scratch dir>/containers/storage`, its socket
+  `<runtime dir>/podman/podman.sock`, started in the scope — as the shell's environment (`<scratch dir>/containers/env.sh`),
+  with guards named `podman` and `docker` first on its PATH. It prints `hopper-runtime-own`; with no podman or no runtime
+  dir of the user's, `hopper-runtime-none`, and DOCKER_HOST names a socket that is not there. `hopper-runtime-failed`
+  fails the job before Claude starts; no answer within 60000 ms is a start that timed out. A print-agent turn runs the
+  same setup before its scope, with no socket of its own.
 - **The reap** (issues #401, #410; the script in `src/client/reap.ts`, run by
   `src/executors/machine-shell.ts`). A job left processes and copies behind: dev servers and watchers
   started with `&` or `setsid` outlive the pane (herdr's close hangs up only the pane's own session),
@@ -862,6 +871,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
      unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
+     Then the job's own container runtime (issue #1295), unless the reap keeps (`keep`): its containers and volumes
+     printed as removed, a `podman system reset --force` of it alone, and its runtime dir removed ("Each job its own
+     container runtime" below).
   3. removes the job's scratch dir — only a path that is `…/.worktrees/@scratch/<job id>` — unless a
      repository in it (`.git`, outside `node_modules`) has uncommitted changes (a `node_modules` link to
      shared dependencies aside), or commits no remote has (a worktree: its `HEAD`; a clone: `HEAD` and
@@ -5377,8 +5389,12 @@ code over the API's WebSocket protocol, which that adapter does not do, so it ta
 - **Egress is a NetworkPolicy**, `hopper-sandbox`, applied before each pod so no box runs without it, over every pod
   the runtime makes (label `io.hopper.sandbox-pod`): no ingress; egress to DNS, the hopper's pods
   (`HOPPER_KUBERNETES_HOPPER_LABELS`, in the hopper's namespace) on its port, and public addresses only. A box reaches
-  no other pod and no private range, which a box on Podman can. It is not yet the template's allowlist: a
-  NetworkPolicy matches addresses, not host names, so an allowlist of hosts needs the allowlisting proxy of #849.
+  no other pod and no private range, which a box on Podman can. One exception, of Kubernetes itself: traffic between a
+  pod and the node it runs on is always allowed, so on a node that also runs the API server (kind, a one-node
+  cluster) a box reaches the API server, with no token. **Decision (owner, 2026-10-15): this policy is the
+  Kubernetes match of Podman, and no allowlist of hosts per template is built here.** A NetworkPolicy matches
+  addresses, not host names, so an allowlist needs an allowlisting proxy: #849 builds it for Podman and Kubernetes
+  together. No proxy pod runs with a box.
 - **Tools images are published, not built** (decision: one image per box image and kind, with every tool). CI
   (`.github/workflows/image.yml` `box-tools`) writes the Containerfile with the hopper's own `toolsImage`
   (`scripts/box-tools-containerfile.ts`) and publishes `box-<agent>…-tools` and `…-tools-read-only` beside each box
@@ -5397,8 +5413,17 @@ code over the API's WebSocket protocol, which that adapter does not do, so it ta
   makes the hopper's service account (unless one is named), a Role in the release's namespace with only the calls the
   runtime makes, and its RoleBinding; no ClusterRole. Only the hopper's pod mounts the token. The boxes start in the
   release's namespace: there the hopper's first LAN name, its Service's short name, resolves from a box.
-- **Not built yet** (carried on #1286): an allowlist of hosts per template (with #849's proxy); a live run on a
-  cluster with no socket (a sandbox step, a denied egress, the read-only probes).
+- **The live run** (2026-10-15, kind v0.30 on rootless Podman, Kubernetes v1.34, kindnet enforcing NetworkPolicy, no
+  container socket in the cluster). Through the runtime: a box of the read-only tools image (the Containerfile CI
+  writes) started, its start check passed, a box step with its files copied in ran to completion as `agent`; from the
+  box, the hopper's pod on its port answered, and its other port, another pod, that pod's Service, another private
+  address and `169.254.169.254` timed out; a public host answered; the root was read-only, `NoNewPrivs` 1, no
+  capability, no token; the read-only terraform wrapper refused `apply`. The read-only check (`runCheck`, the
+  hopper's own probes, a `view` service account's kubeconfig) gave the same result for each probe on Podman and on
+  Kubernetes. Through the chart (`helm install` with `sandbox.enabled=true`, the hopper's image built from this
+  change): `hopper sandbox launch` started `box-claude` as a pod, its start check passed, it joined and was online, its
+  record `ready`; from it the hopper's Service answered, and Postgres, OpenFGA and Solr timed out; a public host
+  answered. Not run: the AWS and terraform-workspace probes, which need an AWS account.
 
 Tests: `test/sandbox/kubernetes.test.ts` (the pod and its flags, the egress policy before it, one-shot, names, only its
 own pods, start, wait, the start check, exec, copy, claims, problem), `test/sandbox/kubernetes-images.test.ts`
@@ -5514,9 +5539,8 @@ every new job pod.
   pod's process list as herdr's argument, seen only by the pod's one user. A token a person revokes at Anthropic stops every
   new pod; set a new value and the next start takes it.
 
-**Not done here** (still in #1287): the hopper running `claude setup-token` itself and keeping what it prints, so the sign-in
-is one paste from the Logins page and names the account (a pty: `setup-token` prints nothing without a terminal). Lane pods'
-restarts: "The agent's sign-in in a lane pod" below.
+The hopper runs `claude setup-token` itself, so the sign-in is one paste from the Logins page: "The hopper's Claude sign-in
+for pods" below (part 4). Lane pods' restarts: "The agent's sign-in in a lane pod" below.
 
 **Verification.** `test/integration/kubernetes-executor.test.ts`: through the real daemon, with the vault in the hopper and in
 a container of its own, two jobs each run in a new pod whose pane starts with the token; no pod spec, event or log line holds
@@ -5561,6 +5585,48 @@ machine joined with a join code gets no token; a value that is no setup token fa
 `claude-plan` usage source on a lane pod with no sign-in of its own reads it signed in, every call with the token, and its
 job is not held. `test/plugins/claude-plan-client.test.ts` (a refusal runs no claude), `test/adapters/client-transport.test.ts`
 (the client refuses a value that is no setup token), `test/vault/agent-credential.test.ts` (a read records nothing).
+
+### The hopper's Claude sign-in for pods (issue #1287, part 4, 2026-10-15)
+
+Before it, the token job pods and lane pods start with came from a person who ran `claude setup-token` on a machine of their
+own, copied what it printed, and set it in Settings → Vault. Now the hopper runs it, and the sign-in is one paste on Logins,
+naming the account.
+
+- **Started by an admin, naming the account.** Logins → **Claude sign-in for pods**: the Claude account (an email) and Sign
+  in (`POST /ui/api/logins/claude-setup-token {account}`, admin: its end writes the user's vault, which only an admin sets;
+  a box action, `run a command`). The hopper runs `claude setup-token` (`setupTokenSignIn`, `src/logins/setup-token.ts`) and
+  opens a `paste_code` **login** on no machine, `tool` `claude setup-token`, `run` `sign-in`, which names the account
+  (`account`, in memory with the URL, answered only to a UI session of the user, as any login's). The CLI cannot be told the
+  account (`setup-token` takes no `--email`): the person signs in as the account the card names. A new one cancels the one
+  before (one per machine and tool; this one is on none).
+- **In a pseudo-terminal.** `setup-token` prints nothing without a terminal and waits. The hopper runs it under util-linux
+  `script` (`script -qfec`, in the image as Debian's essential `bsdutils`), 500 columns wide so the token is on one line.
+  The URL is the target of the terminal link it prints (OSC 8), whose visible text the terminal's width cuts; the code is
+  written with Enter as a raw-mode terminal reads it (`\r`). No native pty library: `script` is on every Linux the hopper
+  runs on, and a native module needs a build toolchain in the image.
+- **Its own home and environment.** Each run has a home of its own under the user's work dir, removed when it ends, however
+  it ends; its environment is `PATH`, `HOME`, `SHELL`, `TERM` and `LANG` only, so no token of the hopper's or of a sign-in
+  before reaches it, and nothing of the sign-in stays on disk.
+- **One paste.** The person opens the URL, signs in, and pastes the code the page shows into the card (`POST
+  /ui/api/logins/:id/code`, as a **tool sign-in**'s). The hopper reads the token out of what the CLI printed (its last
+  `sk-ant-oat…`, checked as an **agent credential**), sets it as the user's vault secret `CLAUDE_TOKEN` (sealed,
+  `vault.secret_set` with no value, by the admin who started it; a second sign-in replaces it), its scope
+  `Claude account <email>`, so Settings → Vault says whose it is; then the login completes. A wrong code fails the login with
+  the CLI's reason and keeps the token before; a run that ends with no token fails it and keeps nothing.
+- **Never answered, logged or in an event.** The token goes from the CLI's output to `vault.set` and nowhere else; a reason
+  masks any Claude token (`maskClaudeTokens`) and hides the code. Job pods (`CLAUDE_TOKEN` unless the executor's
+  `agentCredential` names another) and lane pods take it from the vault as before.
+- **After a restart** the run is gone: its login fails (`the hopper restarted while the sign-in waited`), as a tool
+  sign-in's; start it again.
+
+**Verification.** `test/logins/setup-token.test.ts`: a real pty (`script`) and a fake claude that prints nothing without a
+terminal: its URL from the link, the right code answers the token, the home is removed, the hopper's own
+`CLAUDE_CODE_OAUTH_TOKEN` does not reach it; a wrong code and a run with no token say why, never the code or a token.
+`test/integration/claude-setup-token.test.ts`, through the real daemon: the login names the account, one paste keeps the
+token as `CLAUDE_TOKEN` with the account in its scope, a pod is then given it, and no event, log line or answer holds it; a
+second sign-in replaces it, a wrong code keeps the one before; the account must be an email; only an admin starts it.
+`test/ui/logins-view.test.ts`: the form and the card. By hand: the real CLI under `script` printed its whole URL. Not checked
+here: a real sign-in to the end, and the token the real CLI prints.
 
 ## Client releases (issue #70, 2026-10-05)
 
@@ -16000,6 +16066,16 @@ one job. Else, on a taken item, `failed` says `already approved` (a person appro
 approval needed` (a trusted origin), and the sync loop adds `: its job is <status>` when it has one. The UI reads either
 as taken, not as a refusal: the card shows approved once the sync lists the issue taken.
 
+**Approve takes at the first click** (issue #1316). The card leaves Intake in Approve's answer: the source lists the
+item taken at once (`createApprovals` `on`), as the next sync will. A sync that read the item before the approval, and
+lists the card again with the same hash, does not bring it back; the first sync that lists the item otherwise — taken,
+or a card of new text — ends that (`listed`). So an approved item comes back to Intake only with new text, or reopened
+(issue #1126). When the last sync does not list the item as a card of `hash` — no sync since a restart, or its read was
+older than the page — Approve is **resolved again** (`resolve`): the issue is read now, and approved only while it is
+open, labelled, assigned to the user, not claimed, not `hopper:done`, has no job here, is not declined, is not of a trusted
+origin, and its title and body hash as `hash`. Else `failed` says why, and the card keeps the refusal on the page, also
+when the next list shows the new text.
+
 **Approved.** At a later sync, an issue not of a trusted origin whose title and body hash as the text a person approved
 — a snapshot of reason `approved`, or `accepted` (Accept the new text) — is taken, origin `approved`. Its first job runs
 the snapshot (issue #662 `gateItem`), and a change since holds it as a text change. An edit after the approval and before
@@ -18283,7 +18359,7 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
   repository, kind, number, URL, the comment's id, the artifact revisions linked, who promoted it and when, the revoke.
   Never the text: GitHub has it. `direct_job.promoted` (`id`, `repo`, `kind`, `number`, `url`, `by`, `artifacts`, `update`;
   on the job's timeline) and `direct_job.promotion_revoked` — never the text.
-- **UI.** On a direct job's row (`ui/src/views/direct-job-promotion.tsx`, `ui/src/model/promotions.ts`): the offer, the
+- **UI.** On a direct job's row (`ui/src/views/direct-job-batch-wait.tsx`, `ui/src/model/promotions.ts`): the offer, the
   promotion with its link, **stale** and **Revoke** (confirmed), and **Promote to GitHub** (operator or admin): the
   repository and the target, **Name the requester**, then **Preview**; the preview's title, text, labels and artifact
   ticks are editable, the footer and the notes are shown, and **Confirm and post** waits for **Post to this public
@@ -18313,7 +18389,7 @@ committed to a branch", big or private ones linked. GitHub's API takes no attach
   say so. `direct_job.promoted` is unchanged (version 1): it counts the linked artifacts, never the text.
 - **Promote from the job view** (issue #935). A job whose source is `direct` (`directJobOf`, `ui/src/model/promotions.ts`)
   shows, under its facts on `#job/<id>`, its direct job's title with a link to Direct jobs and the same promotion part
-  (`JobPromotion`, `ui/src/views/direct-job-promotion.tsx`, reading `GET /api/direct-jobs/:id`): the offer, the
+  (`JobPromotion`, `ui/src/views/direct-job-batch-wait.tsx`, reading `GET /api/direct-jobs/:id`): the offer, the
   promotion, **Revoke** and **Promote to GitHub**. A job from anything else reads no direct job.
 
 Tests: `test/promotions/promotion.test.ts` (what may be committed, the branch and path, the footer's lines),
@@ -19362,12 +19438,42 @@ the hopper's own (a batch run, a bisect, a back-merge: its branch starts `hopper
 (issue #1311): its head is a landing branch tip, so GitHub refuses the move. A move GitHub refuses skips only that pull
 request: the others move and the batch run goes on, and the refusal is logged once, not on every pass.
 
-**The state.** Every step is an event (`landing_batch.started`, `.promoted`, `.failed`, `.retargeted`,
-`landing_batches.changed`); the state of each repository — the batch run at work, the last tip tested and the last tip
+**The state.** Every step is an event (`landing_batch.started`, `.promoted`, `.failed`, `.retargeted`, `.stuck`,
+`.restarted`, `landing_batches.changed`); the state of each repository — the batch run at work, the last tip tested and the last tip
 promoted, when the last run started, how it ended — is reduced from them (`landingBatchStates`, pure). The last tested
 tip and the last promoted commit are therefore events, not a table. `GET /api/landing-batches` answers the settings and
 each configured repository's state with what the last pass found (`why` no run started, or the `problem`); Settings →
 Landing batches shows it.
+
+**A stuck landing pass, and how it is recovered** (issue #1333). The problem: the landing pass stopped on a 422 when it
+moved its own batch pull request (#1311). The fix merged into `main`, but the running hopper updates from `dev`, and
+`dev` moves only through the landing pass: the stuck pass held back its own fix, and `main` was 172 commits ahead of
+`dev`. The batch run was green the whole time; the pass never reached its merge. A person closed it on GitHub by hand.
+Now:
+
+- **One step's error never stops the others.** A pass of a repository is steps (`passRepo`): the move of job pull
+  requests to the landing branch, the batch run at work (read, merged on green, ended on red), the bisect, the culprit's
+  revert, the back-merge, the start of a batch run. A step that throws is a problem of the pass, and the next step still
+  runs; a move or a comment GitHub refuses never holds a green batch run back. The pass's `problem` lists each step that
+  failed, with its error.
+- **A pass that fails the same way again is surfaced.** The runner keeps, in memory, the run of passes that ended with
+  the same `problem`. At `LANDING_BATCH_STUCK_PASSES` (3, about 6 minutes) the pass is **stuck**:
+  `landing_batch.stuck { repo, error, since, passes }`, once per run of failures, and the repository's view has `stuck`
+  while it lasts. Needs you's **Landing** row lists each stuck repository with its error, and links to Settings →
+  Landing batches, which shows it too. A changed error is logged once, not on every pass. A pass with no problem ends the
+  run; a restart of the hopper finds it again after 3 passes.
+- **Restart batch is the way out, with no hand edit on GitHub.** `POST /ui/api/landing-batches/restart { repo }`, an
+  admin's, on Settings → Landing batches while a batch run or a bisect is at work, or the pass is stuck. It records
+  `landing_batch.restarted { repo, tip, by, closed }` at once and answers (issue #1194): the event ends the batch run and
+  the bisect at work in the state, and the next batch run starts at once (`restarted`, `batchDue`), at the landing
+  branch's tip, the same tip too. After the answer, and after the pass in flight, the runner closes their pull requests,
+  removes their branches and passes. A close or a removal GitHub refuses is logged and the restart goes on: a removed
+  branch closes its pull request all the same. A culprit's revert or a back-merge that waits still holds the next batch
+  run: each has its own way out (a person reverts or merges by hand). Not a box action: it starts no job and merges
+  nothing itself; the new batch run's merge is the runner's, on green, as for any batch run.
+- **Not built.** An automatic restart after N refusals on the batch pull request: a stuck pass now goes to a person, with
+  the error. Once the step isolation above is in, a refusal on one step no longer stops the merge of a green batch, so
+  the case that needed it is gone.
 
 **A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
 checks say that the batch itself fails; a red batch for no check in time waits for the next merge as before, and one with
@@ -19531,6 +19637,38 @@ it, and the next reopen is a reopened card.
 
 **A part.** An item whose last merge was a part (`partly_done`) has no `hopper:done`: the next sync takes its next part as
 before, and none of this applies.
+
+## Waits on its batch, read from GitHub (issue #1337, 2026-10-15)
+
+**The problem.** A job pull request merged into the landing branch (`main`) while the default branch is `dev`. GitHub
+closes an issue only on a merge into the default branch, so the issue stayed open until the batch run's merge. In that
+window the done-check said "no pull request closes or references it" (the issue's timeline showed no cross-reference of
+the merge, and a job made after the merge did not count an older merge), and the job went to Needs a person. Intake offered
+such issues again as requests, and their approval ran jobs that found nothing to do.
+
+**Why #1175 and #1232 missed it.** Both read the work-item ledger (`awaitsBatch`, `promotedOpen`). The ledger knows the
+merge only when the hopper saw it: a merge it missed, or an item a failed done-check left not `done`, waits on nothing.
+
+**One rule, read from GitHub** (`waitsOnBatch`, `src/sources/github/batch-wait.ts`). An open issue of a
+repository with a landing branch **waits on its batch** when an open batch run (`hopper-batch/…`) closes it in
+its text, or a pull request merged into the landing branch that closes it (a closing keyword) is listed in an open batch
+run's text, or merged after the newest open batch run was opened and within `BATCH_WAIT_MS` (three hours). An older
+merge that no open batch run lists went out with an earlier batch run: the issue is open for another reason, as when a
+person reopened it. The landing branch is read by `mergedPullRequestsInto` (the newest 50 merged pull requests into a
+branch, one GraphQL read, shared in a sync pass), the open batch runs by `openPullRequests`.
+
+- **The done-check** (`notComplete`): an open issue that waits on its batch is done; a merge into the landing branch
+  at or after the job was created counts at any age. The batch run's merge closes the issue; nothing more is needed.
+- **Intake** (`waitingOnBatch`): an issue with `hopper:done`, and an issue it would take with no job here or one that
+  ended, is "done: merged into the landing branch; its batch run closes the issue", in the pull request waiting group with
+  no action. No request card, no reopened card, no job.
+- A read GitHub refuses leaves Intake as it was (said in the log); in the done-check it throws, and the check asks again.
+- **The job graph** (`GET /api/jobs/graph`, part 2): an issue node that waits on its batch is `done`, with
+  `awaitsBatch`, and says "Merged: waits on its batch run", whatever its job's end or its item. The route reads the issues
+  Intake's last sync said so (`awaitingBatchKeys`, `src/sources/intake-live.ts`: the reason above, from GitHub or from the
+  ledger) and the items of the graph's jobs the ledger has waiting (`awaitsBatch`); `awaitBatch` (`src/domain/job-rollup.ts`)
+  marks only the issue nodes already in the graph. The graph makes no read of its own. Not taken: a job stage of its own
+  for it; the job keeps its stage, as the ledger has its item.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
@@ -20666,8 +20804,15 @@ nothing else") said only which routes were in flight; most stalls had none, so i
   changed); the newest job of each item comes from that list; only a tended job watches its base; and only a job held
   now or held before has its hold kept or dropped. A get of a job that did not change sends no body ("Database").
   Every store call is counted by its statement (`slowStoreCalls.count`), so a test says how many a piece of work sends.
-- **Not done here.** What the new log line names as holding the loop is the next thing to move: no hopper has yet run
-  the attribution through a stall.
+- **An idle hopper's store calls, measured** (part 6). With the test app's 50 ms tick and 40 ended jobs, an idle hopper
+  sends about 30 small store calls a tick: about ten reads of `jobs` (ids and versions; no bodies), six `settings` rows
+  by key, and three each of open `handoffs`, `questions` and `problems`. At the 2 s production tick that is about 15
+  calls a second, none of them a stall. Before part 5 a sync added about eight reads of `jobs` for each job.
+  `test/integration/idle-store-calls.test.ts` keeps the reads of `jobs` a tick bounded, whatever the job count.
+- **Not done here.** No cache of `settings`, `handoffs` or `questions`: their reads are small rows by key or by status,
+  and a cache would serve a value older than a write made past this process (the operator CLI). What a stall's log line
+  names as holding the loop, on a build with these parts, is the next thing to move: no hopper has yet run the
+  attribution through a stall.
 
 **Verification:** `test/store/slow-calls.test.ts`, `test/http/event-loop.test.ts` (the store's part named, none said,
 one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers what the scrub in place does),
@@ -20676,7 +20821,8 @@ one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers
 `test/store/jobs-read.test.ts` (part 3: a list reads only the bodies that changed; part 5: nor does a get), `test/store/job-filter-columns.test.ts`
 (part 4: a filter sends no JSON cast, and answers as before on rows from before the migration and from the build before),
 `test/integration/sync-job-reads.test.ts` (part 5: a sync of a source with 40 ended jobs reads `jobs` fewer than 40
-times; it read it 332 times before).
+times; it read it 332 times before), `test/integration/idle-store-calls.test.ts` (part 6: an idle hopper with 40 ended
+jobs reads `jobs` fewer than 20 times a tick; 971 times in 2 s before part 5, about 420 after).
 
 ## A job source not configured says so (issue #1243, 2026-10-15)
 
@@ -20922,3 +21068,120 @@ limits against the cgroup's use; a pod on a WSL node), `test/client/windows-link
 `test/scripts/helm-chart-lanes.test.ts`. `test/support/isolate.ts` unsets `KUBERNETES_SERVICE_HOST`, so a test run in a
 lane pod reads as a host.
 
+## Each job its own container runtime (issue #1295, 2026-10-15)
+
+**What happened.** A job ran `podman system reset --force` on the host. It had moved `HOME` and `XDG_DATA_HOME` to a
+temp dir, but not `XDG_RUNTIME_DIR`, so the reset wiped the user's rootless runtime dir. Podman then refreshed as after a
+reboot: every container of the hopper stack showed as exited, the rootless network went, and the live hopper stopped
+answering while its processes ran on untracked. The kind clusters and testcontainers of other jobs ran on the host's
+podman socket too, beside the stack. A job's shell was the user's shell: every container runtime the user had was the
+job's.
+
+**As built** (`src/client/job-runtime.ts`, used by `src/executors/herdr/start.ts`, `src/executors/print-agent.ts` and
+`src/client/reap.ts`):
+
+- **The job's runtime.** In the job's scope, before Claude starts, the pane's shell runs a fixed setup script. Where the
+  machine has podman and the user a runtime dir (`XDG_RUNTIME_DIR`, else `/run/user/<uid>`), the job gets its own:
+  - runtime dir `<the user's runtime dir>/hopper-runtime-<job id>`, mode 700 — never the user's runtime dir itself;
+  - storage `<scratch dir>/containers/storage` (graphroot), its run state in the runtime dir (runroot, `tmp_dir`):
+    `<scratch dir>/containers/storage.conf` in place of the user's (`CONTAINERS_STORAGE_CONF`), and
+    `containers.conf` read over theirs (`CONTAINERS_CONF_OVERRIDE`);
+  - socket `<runtime dir>/podman/podman.sock`, a `podman system service --time=0` started in the job's scope, so the
+    reap's scope stop ends it. `DOCKER_HOST` names it, for the docker CLI and testcontainers; `KIND_EXPERIMENTAL_PROVIDER`
+    is `podman`, so kind runs its cluster inside the job's runtime.
+  - The user's bus and systemd's private socket are hard links in the runtime dir (the same tmpfs): podman's rootless
+    network namespace has a `/run` of its own with only the runtime dir in it, and aardvark-dns (a network with DNS, as
+    kind makes) reaches systemd only through them. The job reached both before; nothing is added.
+  These are written to `<scratch dir>/containers/env.sh`, which the shell sources; `CONTAINER_HOST`,
+  `CONTAINER_CONNECTION` and `DOCKER_CONTEXT` are unset. A print-agent turn sources the same, with no socket: nothing of a
+  turn outlives it.
+- **No runtime here.** A machine with no podman, or no runtime dir the user can write: `DOCKER_HOST` names
+  `<scratch dir>/containers/no-container-runtime.sock`, which is not there. The host's docker socket is closed to the job
+  all the same (`hopper-runtime-none`); a job that needs containers there has none.
+- **The guards.** `<scratch dir>/containers/bin/podman` and `…/docker`, first on the job's PATH. Each sources `env.sh`
+  again, so a job that changed HOME, `XDG_*`, DOCKER_HOST or a context gets its own runtime all the same, then runs the
+  real command of its name further on PATH. Refused, exit 126: `podman system reset|migrate|renumber` (after any global
+  options), and a global option that names another runtime or its storage (`podman --url|--connection|-c|--remote|-r|
+  --root|--runroot|--tmpdir|--imagestore|--volumepath|--network-config-dir|--config`, `docker -H|--host|-c|--context|
+  --config`), and an argument anywhere that names the user's runtime dir (`podman`, `containers`, `libpod`,
+  `docker.sock` in it), the user's storage (`.local/share/containers`) or a host socket (`/run/docker.sock`,
+  `/run/podman/podman.sock`): a job never mounts or dials the host's runtime through its own. A job's own runtime holds
+  only its own containers, so `podman rm|stop` of anything not its own has nothing to find, and the hopper stack's
+  containers, volumes and network are not in it.
+- **Health checks.** podman runs a container's health check from a systemd timer it makes with `systemd-run`, found on
+  PATH. The timer's podman has the user manager's environment, so it took the user's runtime dir, joined the user's own
+  user namespace and never found the job's container: testcontainers (Postgres waits on its health check) waited until it
+  timed out. `<scratch dir>/containers/bin/systemd-run`, first on the job's PATH, adds the job's runtime variables
+  (`--setenv`, from `env.sh`) to podman's `healthcheck run` timers and passes every other call to the real `systemd-run`
+  as it was.
+- **The reap** (step 2 of "The reap"). Unless it keeps (`keep`: a timed-out job may go on), it finds the runtime dir by
+  the job id in the user's runtime dir, and the scratch dir as given, else as the runtime dir names it — only ever a
+  `…/.worktrees/@scratch/<job id>`. It writes the config again (a job that changed it cannot point the reset at another
+  runtime), prints each container and volume as removed (`job.containers_removed`), runs `podman system reset --force`
+  with `--root`, `--runroot` and `--tmpdir` the job's, removes what of the storage is left through `podman unshare`, stops
+  every process still started from the runtime dir (its environment's `XDG_RUNTIME_DIR`: the pause process, network
+  helpers), stops the health check timers of the containers it named and kills their scopes (what a reset that failed
+  left in the user's systemd), and removes the runtime dir. The reap may take 180 s (`REAP_TIMEOUT_MS`): a kind cluster is slow to stop.
+- **The survey** names each job whose runtime dir is still there as a job with a container left, so the sweep reaps an
+  ended job's at once ("The sweep").
+- **Labels.** Everything in a job's runtime is the job's, and its name carries the job id. The guards also put the
+  `hopper.job=<job id>` label (issue #1120) on what a job makes by name — `run`, `create`, `container run|create`,
+  `pod create`, `volume create`, `network create` —, the job id read from the scratch dir the guard is in. What a job
+  makes through the socket (testcontainers) has no label added; it is in the job's runtime all the same.
+
+**Residual risk.** The job is still the user's OS user. The guards stop a mistake made by name — the one that happened,
+and what kind and testcontainers call —, not a job that runs `/usr/bin/podman` with the user's runtime named again, opens
+the user's sockets by path, or signals the stack's processes. A boundary against that is a box ("Agent boxes",
+"Sandboxing jobs: mechanisms compared"): a VM or another OS user. The job's image pulls are its own (no image store shared
+with the user's), so each job pulls what it runs once.
+
+**Not done here.** The hard boundary above: a job as another OS user, or in a VM. It differs in security and cost from
+what is built, so a person decides it (the part of issue #1295 left). A test hopper's banner on the admin's page is
+"Which hopper answers" below.
+
+**Verification:** `test/client/job-runtime.test.ts` (the setup, the guards, the reap and the survey for real, with a
+stand-in podman and docker on PATH and a stand-in user runtime dir: a reset refused whatever HOME and `XDG_*` say, a flag
+naming another runtime refused, an argument naming the host's runtime or a host socket refused, the job label on what a
+job makes, podman's health check timers given the job's runtime, everything else run on the job's runtime, the reap resetting only the job's runtime with its
+config written again, stopping what runs from it, and leaving the user's runtime dir as it was),
+`test/herdr/executor-runtime.test.ts` (set up after the scope, before Claude; failed fails the job), and by hand on a
+machine with podman 6: a job's network with DNS, a container listed by the job's docker and not by the user's podman, a
+reset refused, a mount of the user's podman socket refused, the job label on a container, a health check passing, the
+repository's own database tests (testcontainers, Postgres) passing on the job's runtime, and the reap leaving the stack's
+containers as they were. kind was not run by hand: no kind on that machine.
+
+## Which hopper answers (issue #1295, 2026-10-15)
+
+**What happened.** A job installed a test hopper in its kind cluster. The test hopper made its own master key, and its
+banner ("the master key is missing") reached the admin's page as if it were the real hopper's. The likely path: the job's
+podman reset took the hopper stack down (the reset "Each job its own container runtime" stops), and the address of the
+user's hopper, `127.0.0.1:4790`, was free; the test hopper took it (the chart's `kubectl port-forward svc/hopper 4790`,
+or a port its kind cluster publishes). The page open on that address went on reading it, now from the test hopper, on
+the same origin: with the user's session token sent along, and a session the test hopper did not know cleared.
+
+**As built.**
+- **The instance tag** (`src/http/instance-tag.ts`): every answer carries `x-hopper-instance`, 16 hex characters, a hash
+  of the instance id (`settings.instanceId`), set on the raw response first thing, so a guard's refusal and the event
+  stream have it too. The event stream's first event is the tag (`hopper.instance`, "SSE").
+- **The page** (`ui/src/lib/instance.ts`): its hopper is the first tag it reads, else the tag this browser kept
+  (`jh_instance` in localStorage), which the first tag it ever reads sets. An answer to `get`, `post`, the session read or
+  a sign-in with another tag, or with none once the page knows its hopper, is another hopper's: dropped, with
+  `OtherHopper`. From then on the page sends nothing more to that address — the session neither sent nor cleared — and
+  takes nothing of it. The event stream takes no event before its tag once the page knows its hopper, and closes on
+  another hopper's tag.
+- **The notice** (`ui/src/app/other-hopper.tsx`, `HopperGate`): one card in place of the whole page — no view, no banner:
+  which hopper the page talks to, which one answered, and that the page shows nothing of it. **Reload** reads the page
+  again (the real hopper back: all is as before). **This is my hopper now** is for a hopper set up again (a new
+  database, a new instance id): the kept tag and the session are forgotten, and the person signs in again.
+
+**Residual risk.** The tag is no proof. A hopper a job changed can send the user's tag (it is on every answer), and a
+page that loads from the other hopper runs that hopper's code. It stops the mistake that happened — a test hopper built
+from this repository on the user's address —, not a job that means harm: that is the hard boundary of "Each job its own
+container runtime". The first request after the switch still carries the session token to the other address; the page
+stops at its answer.
+
+**Verification:** `test/integration/instance-tag.test.ts` (the tag on every route, the page and a 404 alike, another
+hopper's another, the stream's first event), `test/ui/other-hopper.test.ts` (an answer from another hopper dropped and
+nothing more sent, the session kept; a fresh page knows its hopper from the browser; an answer with no tag; the master
+key banner of a test hopper never shown, the notice in its place; This is my hopper now; the stream takes no event before
+its tag and closes on another's).

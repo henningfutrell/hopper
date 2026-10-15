@@ -161,8 +161,8 @@ describe('GitHub source: request cards (issue #652)', () => {
     hold = new Promise((r) => { held = r; });
     const sync = source.discover();
     await atHold;
-    // The sync is half way: the cards it lists are still the cards of the last sync, and Approve on them takes.
-    expect(source.intake!().filter((x) => x.action === 'approve').map((x) => x.key)).toEqual([url(1), url(2), url(3)]);
+    // The sync is half way: the cards it lists are still the cards of the last sync, but the one approved (issue #1316), and Approve on them takes.
+    expect(source.intake!().filter((x) => x.action === 'approve').map((x) => x.key)).toEqual([url(2), url(3)]);
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(2)], hash: h2 })).toEqual({ done: [url(2)], failed: {} });
     await source.flushOutbox?.();
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(3)], hash: h3 })).toEqual({ done: [url(3)], failed: {} });

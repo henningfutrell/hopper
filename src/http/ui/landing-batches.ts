@@ -25,9 +25,13 @@ export const landingBatchesBody = z.strictObject({
   }).nullable()),
 });
 
+/** The repository whose landing batch a person restarts (issue #1333). */
+export const restartLandingBatchBody = z.strictObject({ repo: repoName });
+
 export const LANDING_BATCH_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/landing-batches', tag: 'Jobs', summary: 'Landing batches', description: 'Issue #1073: per repository (`owner/repo`, lowercased), the `landing` branch a batch run tests (issue #1142; `main` when left out), the `tested` branch a green batch run moves, and when a batch run starts (`everyMerges` merges, or `everyMinutes` since the last one; none while nothing is new). `repos`: each configured repository\'s state — the batch run at work, the last tip tested and promoted, how the last run ended, a red batch\'s bisect and culprit, the `backMerge` after merge conflicts and its `backMergeIssue` (part 4), the `canary` candidate (part 5) —, and what the last pass found: `why` no run started, or the `problem`, and of the canary `canary.why` or `canary.problem`. `choices.repos` the job repositories. Not cached.', returns: '`LandingBatchesView`' },
   { method: 'post', path: '/ui/api/landing-batches', tag: 'Jobs', summary: 'Change the landing batches', description: 'Issue #1073: `repos` sets each named repository\'s parts (a new one names its `tested` branch; `landing` `main`, `everyMerges` 5 and `everyMinutes` 60 when left out; `canaryHours` the canary window, part 5, `null` for no canary step), or `null` to take its landing batches away (`landing_batches.changed`). The landing branch is this setting, whatever the repository\'s default branch on GitHub (issue #1142). Applies at the next pass, with no restart; a save that changes nothing records nothing.', role: 'admin', body: landingBatchesBody, returns: '`LandingBatchesView`', errors: [400] },
+  { method: 'post', path: '/ui/api/landing-batches/restart', tag: 'Jobs', summary: 'Restart a landing batch', description: 'Issue #1333: the way out of a stuck landing pass, with no hand edit on GitHub. Records `landing_batch.restarted` at once, which ends the batch run and the bisect at work of `repo`; then, after the answer, their pull requests are closed and their branches removed, and a pass starts a new batch run at the landing branch\'s tip, the same tip too. 404: `repo` has no landing batches; 409: no GitHub connection.', role: 'admin', body: restartLandingBatchBody, returns: '`LandingBatchesView`', errors: [400, 404, 409] },
 ];
 
 export function landingBatchesView(t: Pick<TenantParts, 'store' | 'githubProxy'>): LandingBatchesView {
@@ -59,6 +63,22 @@ export function registerLandingBatchRoutes(app: FastifyInstance, o: { admin: Gua
       t.store.events.append({ type: 'landing_batches.changed', data: { from, to, by: identityName(s.identity) } });
     });
     void t.githubProxy.landingBatches.pass().catch(() => undefined);
+    return landingBatchesView(t);
+  });
+  app.post('/ui/api/landing-batches/restart', o.admin, async (req) => {
+    const s = signedInOf(req);
+    if (!s) throw new HttpError(401, 'sign in to restart a landing batch');
+    const t = o.tenant(req);
+    const { repo } = parseWith(restartLandingBatchBody, req.body);
+    if (!(t.store.settings.getLandingBatches() ?? DEFAULT_LANDING_BATCHES).repos[repo.toLowerCase()]) throw new HttpError(404, `${repo} has no landing batches`);
+    let done: Promise<void>;
+    try {
+      ({ done } = t.githubProxy.landingBatches.restart(repo, identityName(s.identity)));
+    } catch (e) {
+      throw new HttpError(409, (e as Error).message);
+    }
+    // The GitHub work runs after the answer (issue #1194).
+    void done.catch(() => undefined);
     return landingBatchesView(t);
   });
 }

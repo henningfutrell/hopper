@@ -1,5 +1,6 @@
 // The page: nothing until the session is read, then the landing page logged out (issue #213), or the
-// shell — header, navigation, the current view — signed in. Loads once, then lives on SSE.
+// shell — header, navigation, the current view — signed in. Loads once, then lives on SSE. Another hopper at this
+// address (issue #1295): its notice alone, in place of all of it.
 import { AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,6 +40,7 @@ import { Header } from './header';
 import { Landing } from './landing';
 import { StackNotices } from './drift';
 import { MasterKeyNotice } from './master-key';
+import { HopperGate } from './other-hopper';
 import { WindowsLinkNotice } from '@/components/windows-link';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
@@ -103,12 +105,15 @@ export function App() {
     document.addEventListener('visibilitychange', check);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', check); };
   }, [authed]);
-  // Nothing until the session is read: no flash of the app before the landing page.
-  if (!sessionRead) return null;
   return (
-    <TooltipProvider delayDuration={300}>
-      {signInFirst ? <Landing /> : <Shell />}
-      <Toaster position="bottom-right" closeButton />
-    </TooltipProvider>
+    <HopperGate>
+      {/* Nothing until the session is read: no flash of the app before the landing page. */}
+      {sessionRead && (
+        <TooltipProvider delayDuration={300}>
+          {signInFirst ? <Landing /> : <Shell />}
+          <Toaster position="bottom-right" closeButton />
+        </TooltipProvider>
+      )}
+    </HopperGate>
   );
 }

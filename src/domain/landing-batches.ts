@@ -87,6 +87,8 @@ export interface LandingBatchState extends BackMergeState, CanaryState {
   culprit?: Culprit;
   /** A culprit's revert merged since the newest batch run started: the next one starts at once. */
   revertedSinceRun?: boolean;
+  /** A person restarted the batch since the newest batch run started (issue #1333): the next one starts at once, the same tip too. */
+  restarted?: { at: string; by: string };
   /** The pull requests merged into the landing branch that wait for a batch run, as last recorded (part 3); none once one starts. */
   pending?: { tip: string; merges: number[] };
 }
@@ -97,7 +99,7 @@ export const LANDING_BATCH_EVENT_TYPES = [
   'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed',
   'landing_batch.back_merge_issue_filed', 'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed',
-  'landing_batch.canary_promoted',
+  'landing_batch.canary_promoted', 'landing_batch.stuck', 'landing_batch.restarted',
 ] as const;
 
 /** A red batch's events onto the state: the bisect, its runs and results, the culprit, its revert and its fix issue. */
@@ -154,6 +156,7 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       s.running = { tip, branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: e.at, merges: (d.merges as number[] | undefined) ?? [] };
       delete s.revertedSinceRun;
       delete s.backMergedSinceRun;
+      delete s.restarted;
       delete s.pending;
     } else if (e.type === 'landing_batch.pending') {
       s.pending = { tip, merges: (d.merges as number[] | undefined) ?? [] };
@@ -163,6 +166,13 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       if (outcome === 'promoted') { s.lastPromotedTip = tip; delete s.backMergeIssue; }
       if (s.running?.tip === tip) delete s.running;
       s.last = { outcome, tip, at: e.at, pullRequest: Number(d.pullRequest), url: String(d.url), ...(typeof d.reason === 'string' ? { reason: d.reason } : {}) };
+    } else if (e.type === 'landing_batch.restarted') {
+      // A person ended the batch run and the bisect at work (issue #1333).
+      delete s.running;
+      delete s.bisect;
+      s.restarted = { at: e.at, by: String(d.by ?? '') };
+    } else if (e.type === 'landing_batch.stuck') {
+      // Only said: what is stuck is the runner's, in memory.
     } else if (e.type.startsWith('landing_batch.back_merge')) reduceBackMerge(s, e.type, d, e.at);
     else if (e.type.startsWith('landing_batch.canary_')) reduceCanary(s, e.type, d, e.at);
     else reduceRed(s, e.type, d, e.at);
@@ -190,6 +200,7 @@ export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg:
   }
   if (s?.backMerge?.state === 'open') return { due: false, why: `the merge of ${cfg.tested} into the landing branch (#${s.backMerge.pullRequest}) waits to merge` };
   if (f.aheadBy <= 0) return { due: false, why: `nothing new on the landing branch beyond ${cfg.tested}` };
+  if (s?.restarted) return { due: true, why: 'a person restarted the landing batch' };
   if (s?.lastTestedTip === f.tip) return { due: false, why: `the landing branch tip ${short(f.tip)} was tested already` };
   if (s?.lastStartedAt === undefined) return { due: true, why: 'no batch run before' };
   if (s.revertedSinceRun && c) return { due: true, why: `the culprit ${c.pullRequest !== undefined ? `#${c.pullRequest}` : short(c.sha)} was reverted` };
@@ -261,6 +272,9 @@ export interface LandingBatchesView {
   repos: LandingBatchRepoView[];
 }
 
+/** A landing pass that failed the same way on `passes` passes in a row, since `since` (issue #1333). */
+export interface LandingBatchStuck { error: string; since: string; passes: number }
+
 /** One configured repository: its settings, state, and what the last pass found (why no run, or a problem). */
 export interface LandingBatchRepoView {
   repo: string;
@@ -269,6 +283,8 @@ export interface LandingBatchRepoView {
   why?: string;
   problem?: string;
   checkedAt?: string;
+  /** The same problem on several passes in a row (issue #1333): the landing pass is stuck. */
+  stuck?: LandingBatchStuck;
   /** What the last pass found of the canary (part 5), when its window is set. */
   canary?: { why?: string; problem?: string; checkedAt: string };
 }

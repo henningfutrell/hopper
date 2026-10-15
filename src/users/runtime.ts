@@ -29,7 +29,7 @@ import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
 import { checksRedOf, createFailures, type Failures } from '../failures/index.ts'; import { giveBackChecks } from '../failures/give-backs.ts';
-import { createLastAccounts, createLogins, createSignIns, type Logins, type SignIns } from '../logins/index.ts';
+import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts'; import { userGitHubAppKey } from './github-app-key.ts'; import { userInstalledApps, type InstalledApps } from './installed-apps.ts';
@@ -314,7 +314,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
   // And the tool sign-ins (issue #1128): started by the usage sources that read each machine's tool. One that completes answers
   // the not-signed-in questions on its machine (`onSignedIn`, reached only after `questions` exists).
-  const logins = createLogins({ store, clock, lastAccounts: createLastAccounts({ repo: store.lastAccounts, sources: () => host.usageSources().map((u) => ({ name: u.name, ...u.state?.() })) }) }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, onSignedIn: (s) => { answerSignedOut({ store, questions }, s); } });
+  const logins = createLogins({ store, clock, lastAccounts: createLastAccounts({ repo: store.lastAccounts, sources: () => host.usageSources().map((u) => ({ name: u.name, ...u.state?.() })) }) }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, onSignedIn: (s) => { answerSignedOut({ store, questions }, s); }, setupToken: setupTokenSignIn({ ...seams.setupToken, dir: dataDir, set: (x, by) => vault.set(x, by) }) }); // the Claude sign-in for pods (issue #1287)
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.

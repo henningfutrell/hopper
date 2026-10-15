@@ -1,0 +1,75 @@
+{{- if .Values.kms.local.enabled -}}
+{{- /*
+A local KMS (local-kms, the compose profile `kms`, issue #586), which speaks AWS KMS's API. The vault asks it for a data
+key per user, wrapped by its key alias/hopper-vault (made at the first ask), and to open that data key at each start. It
+checks no credentials: only the pod the vault runs in reaches it.
+*/ -}}
+{{- $name := printf "%s-kms" (include "hopper.fullname" .) -}}
+{{- $sel := dict "ctx" . "component" "kms" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  selector:
+    {{- include "hopper.selector" $sel | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
+      enableServiceLinks: false
+      # The image has no user of its own; local-kms needs none, only its volume.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: kms
+          image: {{ .Values.kms.local.image }}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.kms.local.resources | nindent 12 }}
+          # Its keys: lose this volume and every value sealed under a data key is lost.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "hopper.storageClass" .Values.kms.local.storageClass | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.kms.local.size }}
+{{- end }}

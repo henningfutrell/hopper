@@ -1,0 +1,1 @@
+- If another hopper answers at the address of your hopper (for example, a test hopper while yours is down), the page now tells you and shows nothing from it.

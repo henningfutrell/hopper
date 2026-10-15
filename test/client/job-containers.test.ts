@@ -39,7 +39,8 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(fake, { recursive: true, force: true }));
 
-const env = (): NodeJS.ProcessEnv => ({ ...process.env, FAKE: fake, PATH: `${fake}${delimiter}${process.env.PATH ?? ''}` });
+// The user's runtime dir is the fake's too, so the job runtimes other tests make in this machine's (issue #1295) are not found.
+const env = (): NodeJS.ProcessEnv => ({ ...process.env, FAKE: fake, XDG_RUNTIME_DIR: fake, PATH: `${fake}${delimiter}${process.env.PATH ?? ''}` });
 const run = (argv: string[], e = env()): string => {
   const [file, ...args] = argv;
   return execFileSync(file!, args, { encoding: 'utf8', env: e, timeout: 30000 });
