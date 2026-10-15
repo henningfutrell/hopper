@@ -14,8 +14,9 @@ import { toolsImage } from './tools.ts';
 import { launchCredential } from './agent-credential.ts';
 import type { AgentCredentialAnswer, AgentCredentialAsk } from '../vault/agent-credential.ts';
 
-/** The label on every box the hopper launches: its value is the hopper's instance id. */
-export const BOX_LABEL = 'io.hopper.box';
+import { BOX_LABEL } from './owned.ts';
+
+export { BOX_LABEL };
 /** The label naming the user whose box it is. */
 export const USER_LABEL = 'io.hopper.user';
 /** The label naming the sandbox record of the box: its id. */

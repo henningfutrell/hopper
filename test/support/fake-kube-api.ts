@@ -70,6 +70,11 @@ export function createFakeKubeApi(namespace = 'hopper'): FakeKubeApi {
       api.claims.set(name, body);
       return true;
     },
+    async readClaim(name) {
+      api.calls.push(`readClaim ${name}`);
+      if (api.refuse) throw api.refuse;
+      return api.claims.get(name) as { metadata?: { labels?: Record<string, string> } } | undefined;
+    },
     async deleteClaim(name) {
       api.calls.push(`deleteClaim ${name}`);
       if (api.refuse) throw api.refuse;

@@ -21,10 +21,11 @@ import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
 import { boxImage, USER_LABEL } from './launch.ts';
+import { CHECK_LABEL, staleHome } from './owned.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 
-/** The label on every check box: its value is the hopper's instance id. */
-export const CHECK_LABEL = 'io.hopper.check';
+export { CHECK_LABEL };
+
 /** How long a whole check may run. */
 export const CHECK_MS = 30 * 60_000;
 /** How often a passed check runs again (issue #715). */
@@ -122,7 +123,10 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
   return problems.length > 0 ? { problem: problems.join('; ') } : { credentials };
 }
 
-/** One check of the template's current version, in a check box; the box and its volume are removed after it. */
+/**
+ * One check of the template's current version, in a check box on a fresh home (issue #1371); the box and its volume are
+ * removed after it.
+ */
 export async function runCheck(c: CheckContext, userId: string, t: Template, name: string): Promise<ReadOnlyCheck> {
   const needs = (t.profiles ?? []).filter((p) => p.operation === 'read');
   // A person's marks on its read probes (issue #916): an expected refusal, or a probe not run.
@@ -135,9 +139,11 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   const labels = { [CHECK_LABEL]: c.instanceId, [USER_LABEL]: userId };
   const volume = `${name}-home`;
   let id = '';
+  let madeHome = false;
   try {
     const { image, user } = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
-    await c.runtime.createVolume(volume, labels);
+    if (!(await c.runtime.createVolume(volume, labels))) throw staleHome(volume);
+    madeHome = true;
     id = await c.runtime.create({ name, image, network: c.network, volume, labels, user, env: checkEnv(given.credentials), limits: LIMITS, script: checkScript(runs, given.credentials) });
     await c.runtime.start(id);
     const exit = await c.runtime.wait(id, CHECK_MS);
@@ -149,7 +155,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     return ended('failed', [], `the check box did not run: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
     if (id) await c.runtime.remove(id).catch(() => {});
-    await c.runtime.removeVolume(volume).catch(() => {});
+    if (madeHome) await c.runtime.removeVolume(volume).catch(() => {});
   }
 }
 

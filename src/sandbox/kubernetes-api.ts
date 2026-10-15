@@ -91,6 +91,14 @@ export function createKubeApi(namespace?: string): { api: KubeApi; ownNamespace:
       const name = String((body.metadata as { name?: string }).name);
       return (await tolerate(`make the claim ${name}`, () => core.createNamespacedPersistentVolumeClaim({ namespace: ns, body: body as V1PersistentVolumeClaim }), [409])) === undefined;
     },
+    async readClaim(name) {
+      try {
+        return await core.readNamespacedPersistentVolumeClaim({ name, namespace: ns });
+      } catch (e) {
+        if (codeOf(e) === 404) return undefined;
+        throw refusal(`read the claim ${name}`, e);
+      }
+    },
     async deleteClaim(name) {
       await tolerate(`remove the claim ${name}`, () => core.deleteNamespacedPersistentVolumeClaim({ name, namespace: ns }), [404]);
     },

@@ -30,6 +30,8 @@ export function createFakeLibpod(): FakeLibpod {
   const volumes = new Set<string>();
   const images = new Set<string>();
   const builds = new Map<string, string>();
+  /** Each volume's labels, as its create gave them: an inspect answers them (issue #1371). */
+  const volumeLabels = new Map<string, Record<string, string>>();
   const byRef = (ref: string): LibpodContainer | undefined => containers.get(ref) ?? [...containers.values()].find((c) => c.name === ref);
   const path = (r: SeenRequest, re: RegExp): RegExpExecArray | null => (r.path.startsWith(API) ? re.exec(r.path.slice(API.length)) : null);
   const listed = (c: LibpodContainer) => ({ Id: c.id, Names: [c.name], Image: c.image, Labels: c.labels, State: c.state });
@@ -56,7 +58,12 @@ export function createFakeLibpod(): FakeLibpod {
       const name = (r.body as { Name: string }).Name;
       if (volumes.has(name)) return { status: 409, body: { message: 'volume exists' } };
       volumes.add(name);
+      volumeLabels.set(name, (r.body as { Label?: Record<string, string> }).Label ?? {});
       return { status: 201, body: { Name: name } };
+    }
+    if (r.method === 'GET' && (m = path(r, /^\/volumes\/([^/]+)\/json$/))) {
+      const name = decodeURIComponent(m[1]!);
+      return volumes.has(name) ? { status: 200, body: { Name: name, Labels: volumeLabels.get(name) ?? {} } } : { status: 404, body: { message: 'no such volume' } };
     }
     if (r.method === 'DELETE' && (m = path(r, /^\/volumes\/([^/]+)$/))) return volumes.delete(decodeURIComponent(m[1]!)) ? { status: 204 } : { status: 404, body: { message: 'no such volume' } };
     if (r.method === 'POST' && path(r, /^\/containers\/create$/)) {
