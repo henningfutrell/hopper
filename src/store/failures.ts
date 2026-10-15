@@ -27,10 +27,11 @@ export function createFailureRepository(c: StoreContext): FailureRepository {
       if (filter?.jobId !== undefined) { conds.push('job_id = ?'); args.push(filter.jobId); }
       if (filter?.since !== undefined) { conds.push('at >= ?'); args.push(filter.since); }
       if (filter?.signature !== undefined) { conds.push('signature = ?'); args.push(filter.signature); }
-      if (filter?.problemId !== undefined) { conds.push("body::jsonb->>'problemId' = ?"); args.push(filter.problemId); }
-      if (filter?.outcome?.length) { conds.push(`body::jsonb->>'outcome' IN (${filter.outcome.map(() => '?').join(',')})`); args.push(...filter.outcome); }
+      // problem_id and outcome are generated columns (job-filter-columns.ts): a filter parses no body.
+      if (filter?.problemId !== undefined) { conds.push('problem_id = ?'); args.push(filter.problemId); }
+      if (filter?.outcome?.length) { conds.push(`outcome IN (${filter.outcome.map(() => '?').join(',')})`); args.push(...filter.outcome); }
       if (filter?.notOutcome?.length) {
-        conds.push(`(body::jsonb->>'outcome' IS NULL OR body::jsonb->>'outcome' NOT IN (${filter.notOutcome.map(() => '?').join(',')}))`);
+        conds.push(`(outcome IS NULL OR outcome NOT IN (${filter.notOutcome.map(() => '?').join(',')}))`);
         args.push(...filter.notOutcome);
       }
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';

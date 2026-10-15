@@ -7888,6 +7888,11 @@ build before, the operator CLI), and a rolled back write leaves the old one, so 
 row. Before, every list sent and parsed the body of every job it named — about 20 KB each, some lists the whole
 table, about one a second — and the call blocks the event loop: a stall, and a terabyte a day out of Postgres. A
 job the store hands out may be a kept one: never change it in place (the store's own writes make a new one).
+**A filter parses no body** (issue #1154, `src/store/job-filter-columns.ts`). The fields a job list filters on
+(`follow`, `pull_request`, `assessed`, `dismissed`) and a failure list filters on (`problem_id`, `outcome`) are generated
+columns: Postgres computes them from the body at each write of the row, whoever writes it, so the build before keeps
+them right with no change. Before, each such filter cast every row's body to JSON in Postgres on every list, while the
+event loop waited. A generated column takes no value: a copy of rows (`foldUserSchema`) names only the columns that do.
 
 SQL (`src/store/db.ts`): `?` placeholders, numbered `$n` before sending; `RETURNING` for generated
 keys; `ON CONFLICT … DO UPDATE` for upserts. A BIGINT seq comes back as a number. The schema version
@@ -20628,13 +20633,21 @@ nothing else") said only which routes were in flight; most stalls had none, so i
   none (a failed, cancelled or rejected job's end), every write is sent as before: a read to save one `DELETE` costs as
   much as it saves. Not batched: GitHub has no call that adds and removes at once but the one that sets every label, and
   that would undo a person's label set between the read and the write.
+- **A job list reads only the jobs that changed** (part 3, "Database": jobs are read by row version). Postgres's own
+  stats on the hopper that stalled showed about one full read of `jobs` a second, about 15 MB each, all parsed on the
+  event loop.
+- **A job or failure filter parses no body** (part 4, "Database": a filter parses no body). The `followed`,
+  `namesPullRequest`, `unassessed` and `undismissed` job filters and the `problemId` and `outcome` failure filters cast
+  every row's body to JSON in Postgres, on every list, while the loop waited. They read generated columns now.
 - **Not done here.** What the new log line names as holding the loop is the next thing to move: no hopper has yet run
   the attribution through a stall.
 
 **Verification:** `test/store/slow-calls.test.ts`, `test/http/event-loop.test.ts` (the store's part named, none said,
 one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers what the scrub in place does),
 `test/client/stale-dial.test.ts` (the first backoff after a stale refusal, once), `test/adapters/ssh-machine.test.ts`
-(a session with no HOME), `test/sources/github-label-writes.test.ts` (part 2: no label write that changes nothing).
+(a session with no HOME), `test/sources/github-label-writes.test.ts` (part 2: no label write that changes nothing),
+`test/store/jobs-read.test.ts` (part 3: a list reads only the bodies that changed), `test/store/job-filter-columns.test.ts`
+(part 4: a filter sends no JSON cast, and answers as before on rows from before the migration and from the build before).
 
 ## A job source not configured says so (issue #1243, 2026-10-15)
 
