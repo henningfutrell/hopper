@@ -47,8 +47,11 @@ describe('Stuck work (issue #1010)', () => {
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ cause: cause.cause, refused: [] });
     expect([...r.body.done].sort()).toEqual([h1.id, h2.id].sort());
-    const after = await failuresOf(a);
-    expect(after.handoffs.filter((h) => h.status === 'open' && (h.id === h1.id || h.id === h2.id))).toEqual([]);
+    // Answered at once (issue #1194): each give-back runs after, and closes its hand-off.
+    const after = await waitFor(async () => {
+      const v = await failuresOf(a);
+      return v.handoffs.some((h) => h.status === 'open' && (h.id === h1.id || h.id === h2.id)) ? undefined : v;
+    }, { what: 'both hand-offs closed' });
     expect(after.stuck.flatMap((c) => c.ids)).not.toContain(h1.id);
   });
 

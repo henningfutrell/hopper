@@ -11398,7 +11398,13 @@ the next read, never from a poll.
   (`job.pull_request_tended`). One that fails records `job.give_back_failed`, its `act` `retry`, `continue`, `fixed`,
   `push` or `tend`; a Retry whose work is done at its source finishes its job, and says so there. The same job's act sent
   again while one runs answers that one, whatever act it was. Done by hand and Won't do write nothing first and answer
-  as before. A stuck cause's bulk action still awaits each item, one after another.
+  as before.
+- **A stuck cause's bulk action** (`src/failures/stuck.ts` `actOnStuck`, part 6). It awaited each item's give-back, one
+  after another: two hand-offs took 16 s with GitHub slowed to 2 s a call. Now each item is checked and answered as its
+  own button is (`giveBackOf`, `src/http/ui/failures.ts`), and its give-back runs after, in the same runner, with the same
+  `job.give_back_failed` when it fails. The answer is `{ cause, done, refused }` as before: `done` the items answered, their
+  give-back running; `refused` the items a check refused now. Won't do writes nothing first, and is resolved before the
+  answer as before. The toast says how many move.
 - **Merge now and Close PR** (`src/sources/pull-request-acts.ts`, part 5). Merge now took 12 s with GitHub slowed to 2 s a
   call, and a merge GitHub refused 4 s: the route awaited the source's merge on the job's report chain — the pull request
   read, merged, the issue read, labelled and maybe closed. Now the checks the hopper can make itself (the job, its source
@@ -11424,18 +11430,30 @@ the next read, never from a poll.
   (`ui/src/store/pull-request-acts.ts`): from the click on, the button says Merging or Closing, and the card sends
   nothing more, until the stream's `job.pull_request_merged`, `job.pull_request_closed` or `job.pull_request_act_failed`
   for that job says how it ended — a toast says which, a failure with why —; the page reads its cards again then.
+  Take into Intake (Pull requests, Not tracked; part 6): its write-behind shows on its row too, as the untracked pull
+  request's `writeBehind` (`census.detail`, from the source's write-behind of its issue), since the issue is in no Intake
+  list yet. From the click on, the row says the issue is taken into Intake on GitHub and offers it no more, until a list
+  read after the click says how it ended: failed, with why, and offered again; or the issue in Intake.
 - **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
   Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
   answer in under 200 ms, their decision recorded, and the slow work ends after;
   `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same;
+  `test/integration/action-latency-give-back.test.ts` holds a stuck cause's bulk action to it too;
   `test/integration/action-latency-pull-requests.test.ts` Merge now and Close PR; and
   `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. The bound is `test/support/latency.ts`:
   200 ms on a developer machine; 1000 ms on CI (`CI` set), where a shared runner took 210 ms for an answer that takes
   18 ms here. 1000 ms is still half of the 2 s seam delay, so an action that waits for GitHub or the machine fails on CI
   too. `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one run, never above 1000 ms.
 
-Not yet so (issue #1194, later parts): a stuck cause's bulk action still awaits GitHub; Take into Intake's write-behind
-shows in the source's detail only, not on its Pull requests row; and no end-to-end check measures the card in a browser.
+- **Fixed waits on the action paths** (part 6, checked). `PR_LOOKUP_MS` (10 s, `src/failures/timeouts.ts`) bounds a
+  done-check's look at its source: on Retry it runs after the answer (part 4), never before it. `RECONCILE_MS` (10 s,
+  `src/sandbox/service.ts`) is how often the sandbox module checks its boxes; no action this section names waits for it.
+  The UI's 10 s tick (`ui/src/store/stream.ts`) reads the health and the update notice only; an action's result comes
+  from its answer and the stream.
+
+Not yet so (issue #1194, later parts): approving a sandbox request (`POST /ui/api/sandbox-requests`) answers once the
+box started; an outbox that batches and merges GitHub writes; a measure of queue wait apart from run time per action;
+and no end-to-end check measures the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 
@@ -11455,8 +11473,8 @@ one press per cause where the hopper can move each item.
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend` (else 400).
-  It reads the view at the press and runs the cause's action on each item, one after another, through the same path as
-  its own button, with who pressed it: the hand-off's resolution (Won't do with its card's why as the note, so the
+  It reads the view at the press and runs the cause's action on each item, through the same path as its own button, with
+  who pressed it, answered once each is checked, its give-back running after (issue #1194, "Actions answer at once"): the hand-off's resolution (Won't do with its card's why as the note, so the
   source is told why), the failure's Run again, Push it, Tend again. An item refused meanwhile is skipped and said with
   why (`refused`); the others go on. The answer: `{ cause, done, refused }`.
 - **The view** (`ui/src/views/stuck.tsx`). First in Failures, only when some work is stuck: the total, then each cause's
