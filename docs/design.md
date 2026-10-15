@@ -94,6 +94,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
 | `scripts/kind-check.ts` | the kind check (issue #1281, docs/deploy.md "Check the chart on kind"): `kind`, `helm` and `kubectl` bring up a fresh kind cluster with the Helm chart, ask the hopper's health in its pod, and look in every pod for a Podman or Docker socket or runtime; run by `.github/workflows/kind.yml` | everything in `src/`; it never runs in the daemon |
+| `scripts/hopper-cluster.sh` | a compose install moved onto Kubernetes (issue #1373, "Moving a compose install onto a cluster", `docs/kubernetes.md`): `bootstrap` (k3s rootless, beside Podman), `migrate` (the database and the master key into the chart's release, the cutover) and `rollback`; in every image, `hopper cluster script`. `scripts/kind-migrate-check.ts` checks it end to end on kind | everything in `src/`; it never runs in the daemon |
 | `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, and its lane pods (issue #1284, "Lane pods"), the same images as `compose.yaml`; an external Postgres and the tunnel services, whose scripts in `files/` are compose's own, unchanged, and OpenFGA's migration as a Job named by its spec (issue #1282, tested by `test/scripts/helm-chart-parts.test.ts`); tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
@@ -21344,3 +21345,51 @@ the next mergeability seen, the job's wait ended with it), `test/github-proxy/po
 the note, the engine told only for a wait on its own command, a `pr wait` no poll), `test/domain/own-command.test.ts`
 (`polledWait`: typed once, still its own command, ended at the cap), `test/domain/work-items.test.ts` (the ledger's words),
 `test/integration/job-wait.test.ts` (the engine types the wait, then ends it after an hour, and the job goes on).
+
+## Moving a compose install onto a cluster (issue #1373, 2026-10-15)
+
+**Problem.** The chart (#1282), the kubernetes executor (#1283), lane pods (#1284), the cluster update (#1285), sandbox pods
+(#1286) and the cluster gates (#1289) run a hopper in a cluster. A person who runs the hopper with compose had no way to
+get there with their data: no cluster on the host, no tool to move the database, and the master key had to be typed into
+a Secret by hand.
+
+**Decision.** One host script, `scripts/hopper-cluster.sh`, in every image (`hopper cluster script`), as `master-key.sh`
+and `hopper-service.sh` are. The steps are in `docs/kubernetes.md`; here, why they are as they are.
+
+- **k3s rootless, under a user unit.** One binary with its own containerd and image store in a folder of its own, so
+  nothing of Podman changes. kind or k3d would run the cluster in Podman's own store: a container, an image and a volume
+  beside the stack. The root steps it needs (cgroup delegation, subordinate ids) are said, never run.
+- **Binaries checked against the checksums their release publishes.** They come from the same place, so this catches a
+  broken download, not a release that was taken over. Pinned versions, which a person can change.
+- **The data on a pipe**: `pg_dump` from compose's Postgres into `pg_restore` in the chart's, into a database made new.
+  OpenFGA's store is the schema `openfga` of that database, so it moves with it; its migration runs again after.
+  Solr's index is built again from the database, as when its volume is lost. Both sides must hold the same number of
+  tables.
+- **One writer at a time.** The release comes up with the hopper at 0 (`replicas`, a chart value for this) while the
+  compose hopper runs; the compose hopper stops before the dump; the cluster hopper starts after it. The user service's
+  port check is stopped first, or it would start the compose hopper again.
+- **The master key never in a file or an argument.** It is read from the launch source — `HOPPER_MASTER_KEY`, the key
+  sealed to the host, the compose hopper's launch environment, the terminal — and goes on a pipe into the Secret (no
+  here-string: bash before 5.1 writes one to a file). Its fingerprint is worked out by `node` in the compose hopper, from
+  stdin, so a compose image of any version can be moved; it must match the running hopper's before anything stops, and
+  the cluster hopper's after it starts. With an outside store (`--external-secret-store`), the person puts the key there
+  and the External Secrets Operator fills the Secret; the script checks it and writes nothing to the store.
+- **Machines keep their lanes.** Their link keys are in the database. On a cluster bootstrap made, the Service is a
+  `LoadBalancer` at compose's port, which k3s's load balancer takes on the host: a machine dials the address it joined.
+  The names it dialled (compose's `HOPPER_LAN_NAMES`, the host's names, its tailnet name) go to the chart's `lanNames`.
+- **The hopper's own launch settings** are carried in `extraEnv`: each variable the compose hopper was started with that
+  its image does not set and compose's plumbing does not name. A secret one goes to a Secret of its own.
+- **Rollback is compose again.** The cutover rolls back by itself when a step fails: the cluster hopper to 0, the
+  compose stack started (through its user service when it has one). Nothing of compose is removed at any step: `stop`,
+  never `rm` or `down`.
+
+**Refused.** A compose install with the local KMS (profile `kms`): the keys of its data key are in the compose volume
+`kms`, and the chart's local KMS starts with none. A `localhost/` image, unless the person names one the cluster pulls.
+
+**Not built.** A move back from the cluster to compose; the job run of the acceptance in a check (it needs a GitHub
+sign-in, which no check has).
+
+**Verification:** `test/scripts/hopper-cluster.test.ts` (stubs for podman, kubectl, helm, systemctl and curl: the order
+of the cutover, the key never in an argument or a file, the rollback, the refusals),
+`test/scripts/helm-chart.test.ts` (`replicas`, `service.type`, `lanNames`, the chart in the image),
+`test/scripts/kind-migrate-check.test.ts`, and `scripts/kind-migrate-check.ts` on kind.

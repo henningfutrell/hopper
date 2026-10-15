@@ -60,6 +60,9 @@ COPY whats-new ./whats-new
 COPY help ./help
 # The compose file of this release (issue #697): `hopper update` puts it in, so an update never keeps an old one.
 COPY compose.yaml ./
+# The Helm chart of this release (issue #1373): `hopper-cluster.sh migrate` installs it when it moves this install onto a
+# cluster, so the cluster runs the chart of the version that ran here.
+COPY deploy/helm ./deploy/helm
 COPY --from=ui /build/ui/dist ./ui/dist
 RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 # What this image is built from (issue #409): install.json, as an install has, and the OCI labels — so Settings →
