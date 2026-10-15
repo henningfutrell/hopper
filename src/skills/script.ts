@@ -5,7 +5,7 @@
 // #613), and the script reads it there, reconnecting with Last-Event-ID when the stream drops, until its deadline.
 
 import { HCURL_SH } from '../github-proxy/retry-after.ts';
-import { STREAM_PATH } from '../job-stream/wire.ts';
+import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 
 export const SKILL_SCRIPT_VARIABLE = 'HOPPER_SKILL';
 
@@ -14,43 +14,6 @@ export const SKILL_PATH = '/job/skill';
 
 /** The file under the job's credentials dir. */
 export const SKILL_SCRIPT_FILE = 'hopper/skill';
-
-/**
- * Reads a saved job stream (the SSE text of one request): prints the last event id seen, then the request's ending
- * phase and the pointer's URL when its event is one; writes its payload to the file \`out\` names, a JSON string decoded.
- * No single quote: the script passes it in one.
- */
-export const STREAM_AWK = String.raw`
-function hexval(h,   i, n) { n = 0; for (i = 1; i <= 4; i++) n = n * 16 + index("0123456789abcdef", tolower(substr(h, i, 1))) - 1; return n }
-function unjson(s,   o, i, c, n) {
-  o = ""; n = length(s)
-  for (i = 1; i <= n; i++) {
-    c = substr(s, i, 1)
-    if (c != "\\") { o = o c; continue }
-    c = substr(s, ++i, 1)
-    if (c == "n") o = o "\n"; else if (c == "t") o = o "\t"; else if (c == "r") o = o "\r"
-    else if (c == "b") o = o "\b"; else if (c == "f") o = o "\f"
-    else if (c == "u") { o = o sprintf("%c", hexval(substr(s, i + 1, 4))); i += 4 }
-    else o = o c
-  }
-  return o
-}
-/^id: / { last = substr($0, 5) }
-/^data: / {
-  line = substr($0, 7); p = ""
-  if (index(line, "\"phase\":\"done\"")) p = "done"
-  else if (index(line, "\"phase\":\"failed\"")) p = "failed"
-  else if (index(line, "\"phase\":\"expired\"")) p = "expired"
-  if (p == "") next
-  phase = p
-  i = index(line, "\"ref\":{\"url\":\"")
-  if (i) { r = substr(line, i + 14); ref = substr(r, 1, index(r, "\"") - 1); next }
-  v = substr(line, index(line, "\"payload\":") + 10); v = substr(v, 1, length(v) - 1)
-  if (substr(v, 1, 1) == "\"") v = unjson(substr(v, 2, length(v) - 2))
-  printf "%s", v > out
-}
-END { print last, phase, ref }
-`;
 
 /** The script. The token goes to curl on stdin, never on a command line. */
 export const SKILL_SCRIPT = `#!/bin/sh
@@ -74,6 +37,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 ${HCURL_SH}
+${STREAM_WAIT_SH}
 wait=; opt=; pos=0
 for a in "$@"; do
   shift
@@ -110,33 +74,6 @@ printf '%s\\n' "$body" >&2
 id=$(printf '%s\\n' "$body" | sed -n 's/^wait: \\([A-Za-z0-9_-]*\\) until .* (\\([0-9]*\\) s).*/\\1/p')
 secs=$(printf '%s\\n' "$body" | sed -n 's/^wait: \\([A-Za-z0-9_-]*\\) until .* (\\([0-9]*\\) s).*/\\2/p')
 [ -n "$id" ] && [ -n "$secs" ] || { echo 'no: the hopper opened no wait for this request' >&2; exit 1; }
-ends=$(( $(date +%s) + secs + 5 ))
-dir=$(mktemp -d "\${TMPDIR:-/tmp}/hopper-skill.XXXXXX") || exit 1
-trap 'rm -rf "$dir"' EXIT
-last=0
-while :; do
-  left=$(( ends - $(date +%s) ))
-  if [ "$left" -le 0 ]; then echo 'expired: no answer came before the wait ended. Go on without it, or ask again to wait longer.'; exit 4; fi
-  # The stream of this request alone: the hopper ends it after the request's last event.
-  code=$( (token; printf 'last-event-id: %s\\naccept: text/event-stream\\n' "$last") | curl -sSN -H @- --max-time "$left" -o "$dir/s" -w '%{http_code}' "$HOPPER_URL${STREAM_PATH}?request=$id" 2>/dev/null)
-  case $code in
-    200) ;;
-    401|403|404) cat "$dir/s"; exit 1 ;;
-    *) sleep 1; continue ;;
-  esac
-  # The last event id seen, then the request's end: its phase, and its payload (into $dir/out) or a pointer to it.
-  set -- $(awk -v out="$dir/out" -v last="$last" '${STREAM_AWK}' "$dir/s")
-  [ -n "$1" ] && last=$1
-  case $2 in
-    '') sleep 1; continue ;;
-    done) status=0 ;;
-    expired) status=4 ;;
-    *) status=1 ;;
-  esac
-  if [ -n "$3" ]; then
-    hcurl -sS -H @- -H 'accept: text/plain' "$HOPPER_URL$3" > "$dir/out" || exit 1
-  fi
-  printf '%s' "$(cat "$dir/out")"
-  exit "$status"
-done
+stream_wait "$id" "$secs"
+exit $?
 `;

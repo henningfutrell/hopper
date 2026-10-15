@@ -104,6 +104,8 @@ export function createSkillWaits(o: { broker: SkillBroker; user(id: string): Wai
       if (!u) return;
       hear(userId, u);
       for (const w of u.stream.repo.openWatches(jobId)) {
+        // A watch another part opened (`owner`, issue #1072: `pr wait`) is its own to answer; a skill request's names none.
+        if (w.body.owner !== undefined) continue;
         // A change heard while the watch is asked again: asked once more after, so no change is missed.
         if (busy.has(w.id)) { again.add(w.id); continue; }
         busy.add(w.id);

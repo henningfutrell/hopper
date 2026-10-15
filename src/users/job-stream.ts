@@ -7,6 +7,7 @@ import { userArtifactKey } from './artifact-key.ts';
 import { TERMINAL_STATUSES } from '../domain/types.ts';
 import { createJobStream, createStreamTypes, registerHopperTypes, type JobStream } from '../job-stream/index.ts';
 import { SKILL_STREAM_TYPES } from '../skills/index.ts';
+import { GITHUB_STREAM_TYPES } from '../github-proxy/index.ts';
 import { ARTIFACT_STREAM_TYPES, createUserArtifacts, streamArtifactEvents, type UserArtifacts } from '../artifacts/index.ts';
 
 type Options = {
@@ -47,6 +48,7 @@ function openStream(o: Options): JobStream {
   registerHopperTypes(types);
   types.register('skill', SKILL_STREAM_TYPES);
   types.register('artifact', ARTIFACT_STREAM_TYPES);
+  types.register('github', GITHUB_STREAM_TYPES); // `pr wait` (issue #1072 part 2)
   return createJobStream({
     repo: o.store.jobStream, types, clock: o.clock, log: (line) => o.logger.warn(line),
     ended(jobId) {

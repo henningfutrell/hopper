@@ -360,9 +360,10 @@ export const EVENT_SCHEMAS = {
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
-  // (issue #1072, `pr.status`): the hopper's records answered it.
+  // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
+  // the job's stream, or `settled` or `none`.
   'github_proxy.done': z.union([
-    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional() }),
+    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),

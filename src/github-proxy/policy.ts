@@ -68,6 +68,15 @@ export const reportRequest = z.strictObject({
 });
 export type ReportRequest = z.infer<typeof reportRequest>;
 
+/**
+ * A wait on a pull request's checks (issue #1072 part 2, `pr wait`): asked as `pr.status`; while the checks of a pull
+ * request the hopper follows run, the answer comes on the job's stream (issue #613) once they end. `timeout`: the most
+ * seconds to wait (the stream's default, an hour, unless said).
+ */
+export const WAIT_OP = 'pr.wait';
+export const waitRequest = z.strictObject({ op: z.literal(WAIT_OP), repo, number, timeout: number.optional() });
+export type WaitRequest = z.infer<typeof waitRequest>;
+
 /** Who asks: the job, whether it is the hopper's own user's, and the repository it came from. */
 export interface ProxyAsker {
   jobId: string;
