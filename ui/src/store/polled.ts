@@ -4,7 +4,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { get } from '@/lib/api';
-import type { HeaderBadgeSettings, OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
+import type { HeaderBadgeSettings, LandingBatchesView, OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
 const POLL_MS = 30_000;
@@ -41,6 +41,8 @@ export const usePullRequestsView = (): PullRequestsView | undefined => usePolled
 export const useInfraPlans = (): { plans: PlanView[] } | undefined => usePolled('/api/infra-plans');
 export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => usePolled('/api/out-of-band', ['infra.out_of_band_']);
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
+/** The landing batches (issue #1333): Needs you's stuck landing passes. What is stuck is found by the pass, with no event: polled. */
+export const useLandingBatches = (): LandingBatchesView | undefined => usePolled('/api/landing-batches', ['landing_batch.']);
 /** The tool accounts (issue #1128): the Accounts view and its badge. A usage source reads with no event: polled only. */
 export const useToolAccounts = (): ToolAccountsReport | undefined => usePolled('/api/tool-accounts');
 /** The header badges the user chose (issue #1181): saved with no event, so a save keeps its answer (`setPolled`). */

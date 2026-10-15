@@ -907,7 +907,7 @@ Version 1 (`docs/schemas/job.work_discard_failed.v1.json`). A person discarded t
 
 ## `job.give_back_failed`
 
-Version 1 (`docs/schemas/job.give_back_failed.v1.json`). A person's act on this ended job that gives its item back was answered at once — Run again (`act` `rerun`), Rework (`rework`), Failures' Retry (`retry`), a hand-off's Continue (`continue`) or I fixed it (`fixed`), Push it (`push`), Tend again (`tend`) —, and its source's give-back, which runs after the answer (issue #1194) — on GitHub the issue reopened, assigned and its end labels gone, for Rework the pull request made a draft first —, or what follows it, failed: `error` says why (GitHub out of reach or refusing, the issue no longer assigned to the connected account, a newer job of its item made meanwhile, for Retry its work done at its source). No new job was made, and the act is offered again. `person` and `via` say who and the way.
+Version 1 (`docs/schemas/job.give_back_failed.v1.json`). A person's act on this ended job that gives its item back was answered at once — Run again (`act` `rerun`), Rework (`rework`), Failures' Retry (`retry`), a hand-off's Continue (`continue`) or I fixed it (`fixed`), Push it (`push`), Tend again (`tend`) —, and its source's give-back, which runs after the answer (issue #1194) — on GitHub the issue reopened, assigned and its end labels gone, for Rework the pull request made a draft first —, or what follows it, failed: `error` says why (GitHub out of reach or refusing, the issue no longer assigned to the connected account, a newer job of its item made meanwhile, for Retry its work done at its source). No new job was made, and the act is offered again. Through a GitHub outbox each act is a row (issue #1238 parts 4 and 5): for Run again and Rework GitHub refusing for now is tried again after a backoff; the other acts are checked again at the send, and a run that fails fails the row at once. This is recorded once the row failed for good. `person` and `via` say who and the way.
 
 | field | type | required |
 |---|---|---|
@@ -6458,6 +6458,48 @@ Version 1 (`docs/schemas/landing_batch.canary_promoted.v1.json`). The canary can
   "stable": "stable",
   "tip": "0123456789abcdef0123456789abcdef01234567",
   "why": "no bug report named it in 24 hours"
+}
+```
+
+## `landing_batch.stuck`
+
+Version 1 (`docs/schemas/landing_batch.stuck.v1.json`). The landing pass of a repository failed the same way on `passes` passes in a row since `since` (issue #1333): `error` is what failed, step by step. Recorded once per run of failures; Needs you and Settings → Landing batches show it while it lasts, and Restart batch is the way out.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `error` | string | yes |
+| `since` | string | yes |
+| `passes` | integer | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "error": "the start of a batch run: GitHub answered 422",
+  "since": "2026-10-15T13:44:00.000Z",
+  "passes": 3
+}
+```
+
+## `landing_batch.restarted`
+
+Version 1 (`docs/schemas/landing_batch.restarted.v1.json`). A person restarted the landing batch of a repository (issue #1333, Restart batch): the batch run and the bisect run at work were closed and their branches removed (`closed`), and the next batch run starts at once at the landing branch's tip, the same `tip` too. `by` who restarted it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | no |
+| `by` | string | yes |
+| `closed` | integer[] | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "by": "admin",
+  "closed": [
+    1261
+  ]
 }
 ```
 

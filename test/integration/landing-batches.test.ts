@@ -1,6 +1,7 @@
 // Landing batches (issue #1073) over the real HTTP server and database: none by default; an admin names a repository's
 // tested branch, with the defaults for when a batch run starts, changes one part, and takes it away with null; each
 // change is recorded with who, a save that changes nothing records nothing, and a change needs an admin's UI session.
+// Restart batch (issue #1333): a repository with no landing batches is 404; else recorded at once with who.
 // Fake GitHub at the GitHubApi seam: the runner's own calls find no GitHub here, and the view says so.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeGitHub } from '../../src/sources/index.ts';
@@ -54,5 +55,20 @@ describe('landing batches', () => {
     expect((await app.ui('/ui/api/landing-batches', { repos: { [REPO]: { everyMerges: 0 } } }, { token })).status).toBe(400);
     expect((await app.ui('/ui/api/landing-batches', { repos: { 'no-repo': { tested: 'dev' } } }, { token })).status).toBe(400);
     expect((await app.ui('/ui/api/landing-batches', { on: true }, { token })).status).toBe(400);
+  });
+
+  it('Restart batch (issue #1333): 404 with no landing batches, else recorded with who', async () => {
+    const app = await boot();
+    expect((await app.ui('/ui/api/landing-batches/restart', { repo: REPO })).status).toBe(403);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/landing-batches/restart', { repo: REPO }, { token })).status).toBe(404);
+    expect((await app.ui('/ui/api/landing-batches/restart', { repo: 'no-repo' }, { token })).status).toBe(400);
+    await app.ui('/ui/api/landing-batches', { repos: { [REPO]: { tested: 'dev' } } }, { token });
+    const restarted = await app.ui('/ui/api/landing-batches/restart', { repo: REPO }, { token });
+    expect(restarted.status).toBe(200);
+    const events = await app.events('types=landing_batch.restarted');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({ repo: REPO, closed: [] });
+    expect(typeof events[0]!.data.by).toBe('string');
   });
 });

@@ -6,11 +6,13 @@
 // or reply. Checks (issue #1244) counts the repositories whose pull request checks GitHub refuses to the hopper's connection,
 // one line each, with the fix: no pull request there merges until a person gives the permissions. Accounts (issue #1128) counts the machines whose agent tool is signed in as nobody, each named: its jobs wait on a sign-in.
 // Setup (issue #1243) counts the job sources on but not configured, each with what it lacks: they take no job until set up.
+// Landing (issue #1333) counts the repositories whose landing pass failed the same way on several passes in a row, each with
+// its error: nothing moves to the tested branch until a person restarts the batch or fixes the cause.
 // Machines (issue #1248) counts the online machines that are not ready, each named with why: its job user holds credentials, or it is off-network.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'setup', 'failures', 'pull-requests', 'checks', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'setup', 'failures', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -30,6 +32,8 @@ export interface NeedsYouCounts {
   gaveUp: readonly string[];
   /** The checks read problems (issue #1244), one line per repository, with the fix. */
   checksUnread: readonly string[];
+  /** The stuck landing passes (issue #1333), one line per repository, with its error. */
+  stuckLanding: readonly string[];
   /** Tagged items (issue #1141): open issues and pull requests that ask for the user's review, mention or are assigned to the user. */
   tagged: number;
   /** Jobs that wait on the pre-sort. */
@@ -58,6 +62,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
+  landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },
   tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
   sorting: { label: 'Pre-sort', href: '#queue', what: 'jobs that wait on the pre-sort before a lane takes them' },
 };
@@ -72,6 +77,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
     if (k === 'accounts') return { n: c.signedOut.length, high: 0, ...(c.signedOut.length ? { details: c.signedOut } : {}) };
     if (k === 'machines') return { n: c.notReady.length, high: 0, ...(c.notReady.length ? { details: c.notReady } : {}) };
     if (k === 'setup') return { n: c.notConfigured.length, high: 0, ...(c.notConfigured.length ? { details: c.notConfigured } : {}) };
+    if (k === 'landing') return { n: c.stuckLanding.length, high: 0, ...(c.stuckLanding.length ? { details: c.stuckLanding } : {}) };
     if (k === 'tagged') return { n: c.tagged, high: 0 };
     if (k === 'sorting') return { n: c.sorting, high: 0 };
     return c.sections[k];
