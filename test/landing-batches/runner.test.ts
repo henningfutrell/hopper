@@ -11,6 +11,7 @@
 //   Scenario: a job's open pull request on the tested branch moves to the landing branch, and says so on it; another's does not
 //   Scenario: the landing branch is the one the settings name, whatever the repository's default branch (issue #1142)
 //   Scenario: a landing branch that is the tested branch runs nothing and says why
+//   Scenario: a batch run's pull request closes the issues of the job pull requests in it (issue #1175)
 import { describe, expect, it } from 'vitest';
 import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
@@ -25,7 +26,7 @@ interface World {
   aheadBy: number;
   tip: string;
   messages: string[];
-  pulls: Map<number, { head: string; base: string; state: 'open' | 'closed'; merged: boolean; mergeable: boolean | null; url: string; headSha: string }>;
+  pulls: Map<number, { head: string; base: string; state: 'open' | 'closed'; merged: boolean; mergeable: boolean | null; url: string; headSha: string; body?: string }>;
   checks: { name: string; status: string; conclusion?: string }[];
   calls: string[];
 }
@@ -49,7 +50,7 @@ function fake(w: World): LandingBatchGitHub {
     deleteBranch: async (_repo, name) => { w.calls.push(`delete ${name}`); },
     openPullRequest: async (_repo, p) => {
       const n = next++;
-      w.pulls.set(n, { head: p.head, base: p.base, state: 'open', merged: false, mergeable: true, url: `https://github.test/${REPO}/pull/${n}`, headSha: w.tip });
+      w.pulls.set(n, { head: p.head, base: p.base, state: 'open', merged: false, mergeable: true, url: `https://github.test/${REPO}/pull/${n}`, headSha: w.tip, body: p.body });
       w.calls.push(`open ${p.head} -> ${p.base}`);
       return { number: n, url: `https://github.test/${REPO}/pull/${n}` };
     },
@@ -73,7 +74,7 @@ function fake(w: World): LandingBatchGitHub {
   };
 }
 
-function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?: LandingBatchSettings } = {}) {
+function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?: LandingBatchSettings; closingIssues?: (repo: string, merges: readonly number[]) => string[] } = {}) {
   const events: DomainEvent[] = [];
   let seq = 0;
   const r = createLandingBatches({
@@ -83,6 +84,7 @@ function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?
     events: () => events,
     record: (e: NewEvent) => { events.push({ ...e, seq: ++seq, id: `e${seq}`, at: (o.now ?? new Date()).toISOString(), schemaVersion: 1 } as DomainEvent); },
     jobPullRequests: () => o.jobPullRequests ?? [],
+    ...(o.closingIssues ? { closingIssues: o.closingIssues } : {}),
     now: () => o.now ?? new Date(),
     log: () => {},
   });
@@ -98,6 +100,15 @@ describe('the batch runner (issue #1073)', () => {
     expect(events.map((e) => e.type)).toEqual(['landing_batch.started']);
     expect(events[0]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: TIP, branch: 'hopper-batch/abcdef012345', pullRequest: 100, merges: [12, 14] });
     expect(r.view().repos[0]).toMatchObject({ repo: REPO, state: { running: { pullRequest: 100 } } });
+  });
+
+  it('a batch run\'s pull request closes the issues of the job pull requests in it (issue #1175)', async () => {
+    const w = world();
+    const asked: [string, readonly number[]][] = [];
+    const { r } = runner(w, { closingIssues: (repo, merges) => { asked.push([repo, merges]); return ['#1', '#2']; } });
+    await r.pass();
+    expect(asked).toEqual([[REPO, [12, 14]]]);
+    expect(w.pulls.get(100)!.body).toMatch(/- #12\n- #14\n\nCloses #1\nCloses #2$/);
   });
 
   it('nothing new: no branch, no pull request, no event', async () => {
