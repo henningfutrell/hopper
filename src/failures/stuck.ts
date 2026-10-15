@@ -4,7 +4,7 @@
 // skipped and said with why; the others go on. It answers at once (issue #1194): each give-back is checked now and runs
 // after the answer, as its own button's does; Won't do is the hopper's alone, and is resolved now. Resume all (issue #1245)
 // ends each wait that names nothing it waits on, now: the job goes on, or names what it waits on.
-import type { GiveBackAct, GiveBackAnswer } from '../domain/give-back.ts';
+import type { AfterAnswerAct, GiveBackAnswer } from '../domain/give-back.ts';
 import type { ActingPerson, FailuresView, HandoffView, Job, StuckActResult, StuckBulkCause } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
 import type { FailureAction } from './failures.ts';
@@ -15,7 +15,7 @@ export interface StuckActs {
   /** Won't do: the hand-off resolved now. */
   resolveHandoff(id: string, input: HandoffResolve, by: ActingPerson): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
   /** The item's own button's give-back, checked now and answered; its give-back runs after (issue #1194). */
-  giveBack(act: GiveBackAct, id: string, by: ActingPerson): GiveBackAnswer;
+  giveBack(act: AfterAnswerAct, id: string, by: ActingPerson): GiveBackAnswer;
   /** A person ends the job's own wait with the note (issue #1245). */
   endWait(id: string, note: string): void;
 }
@@ -26,7 +26,7 @@ export const WAIT_UNNAMED_NOTE = 'Your wait named nothing the hopper can watch. 
 type One = { ok: true } | { ok: false; message: string };
 
 /** The give-back of each cause that gives its items back. */
-const GIVE_BACK: Record<Exclude<StuckBulkCause, 'wont_do' | 'wait_unnamed'>, GiveBackAct> = { continue: 'continue', run_again: 'fixed', retry: 'retry', push: 'push', tend: 'tend' };
+const GIVE_BACK: Record<Exclude<StuckBulkCause, 'wont_do' | 'wait_unnamed'>, AfterAnswerAct> = { continue: 'continue', run_again: 'fixed', retry: 'retry', push: 'push', tend: 'tend' };
 
 function oneOf(d: StuckActs, cause: StuckBulkCause, view: FailuresView, by: ActingPerson): (id: string) => Promise<One> {
   // Won't do says why: the card's why, as a person reads it.

@@ -1,0 +1,1 @@
+- Retry, Continue, I fixed it, Push it and Tend again are now kept until they run: a restart no longer loses them.

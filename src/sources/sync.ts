@@ -29,7 +29,7 @@
 // apart; each pass's calls go to the call log, and its status shows its poll interval and its calls in the last hour and day.
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
-import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
@@ -75,7 +75,7 @@ export type SourceSync = SourceRegistry & {
   /** The sources as the plugins config names them now (issue #356). */
   setSources(sources: JobSource[]): void;
   /** The source synced under `name` now, a removed one still reporting its jobs included. */
-  source(name: string): JobSource | undefined;
+  source(name: string): JobSource | undefined; giveBackChecks(check: GiveBackCheck): void; checkTendAgain(jobId: string, acting: ActingPerson): GiveBackChecked; // the services' checks of Retry, Continue, I fixed it, Push it and Tend again (issue #1238 part 5), set once they exist; Tend again's own, which they ask for `tend`
 };
 
 
@@ -354,7 +354,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(), sendNow,
   });
 
-  const { outboxActs: giveBackRows, ...rerunning } = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); }, sendNow });
+  const { outboxActs: giveBackRows, ...rerunning } = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); }, sendNow, now: () => clock.now().toISOString() });
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),

@@ -26,14 +26,14 @@ describe('Run again and Rework in the GitHub outbox (issue #1238 part 4)', () =>
     const { calls, outbox, flush } = counting();
     expect(outbox.giveBackAct(url(1), REPO, 'rerun', 'j1', PAT)).toBe('rerun');
     expect(outbox.giveBackAct(url(1), REPO, 'rerun', 'j1', PAT)).toBe('rerun');
-    expect(outbox.giveBackAct(url(1), REPO, 'rework', 'j1', PAT, 'Rename the flag.')).toBe('rerun');
+    expect(outbox.giveBackAct(url(1), REPO, 'rework', 'j1', PAT, { notes: 'Rename the flag.' })).toBe('rerun');
     expect(outbox.detail()).toMatchObject({ writeBehindPending: 1 });
     // The act shows on the job, not as an intake item's write.
     expect(outbox.of(url(1))).toBeUndefined();
     expect(await flush()).toEqual({ due: 1, wrote: [REPO] });
     expect(calls).toEqual([[REPO, url(1), { op: 'give_back', act: 'rerun', jobId: 'j1', acting: PAT }]]);
     // Sent: a new act on the job is a new row, with its notes.
-    expect(outbox.giveBackAct(url(1), REPO, 'rework', 'j1', PAT, 'Rename the flag.')).toBe('rework');
+    expect(outbox.giveBackAct(url(1), REPO, 'rework', 'j1', PAT, { notes: 'Rename the flag.' })).toBe('rework');
     await flush();
     expect(calls[1]![2]).toEqual({ op: 'give_back', act: 'rework', jobId: 'j1', acting: PAT, notes: 'Rename the flag.' });
   });
@@ -61,8 +61,8 @@ describe('a give-back row sent by the sync loop (issue #1238 part 4)', () => {
     const source = createFakeSource();
     Object.assign(source, {
       async rerun() { reruns++; const e = rerunError.shift(); if (e) throw e; return item('k1'); },
-      giveBackAct: (job: { id: string; source?: { key: string } }, act: 'rerun' | 'rework', acting?: typeof PAT, notes?: string) =>
-        outbox.giveBackAct(job.source!.key, REPO, act, job.id, acting, notes),
+      giveBackAct: (job: { id: string; source?: { key: string } }, act: 'rerun' | 'rework', acting?: typeof PAT, more?: { notes?: string }) =>
+        outbox.giveBackAct(job.source!.key, REPO, act, job.id, acting, more),
       flushOutbox: (acts?: Parameters<NonNullable<typeof source.flushOutbox>>[0]) => outbox.flush(async (_repo, _key, change) => {
         if (change.op === 'give_back') await acts!.giveBack(change);
       }, (r: OutboxRow, error: string) => { if (r.change.op === 'give_back') acts!.giveBackFailed(r.change, error); }),
