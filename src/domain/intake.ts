@@ -35,7 +35,12 @@ export interface IntakeOutcome {
   request?: IntakeRequest;
   /** On the backburner (issue #808): since when and by whom, from its newest `labeled` event. Absent: not read. */
   backburner?: BackburnerSince;
+  /** The GitHub work a person's action left after its answer (issue #1194): while it runs, and once it failed. */
+  writeBehind?: IntakeWriteBehind;
 }
+
+/** An intake action's write-behind: its GitHub work after the answer (issue #1194): running, or failed with why. Absent once it went through. */
+export type IntakeWriteBehind = { act: IntakeActionKind; state: 'running' } | { act: IntakeActionKind; state: 'failed'; error: string };
 
 /** When an item went on the backburner, and who put it there (issue #808); a part absent: GitHub did not say. */
 export interface BackburnerSince {

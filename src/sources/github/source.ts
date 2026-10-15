@@ -38,6 +38,7 @@ import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, u
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts';
+import { createWriteBehind } from './write-behind.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
@@ -242,14 +243,15 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake.record('source.intake_migrated', { source: o.name, changes });
   };
 
-  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin });
+  const writeBehind = createWriteBehind();
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, writeBehind });
 
   return {
     name: o.name,
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outcomes.map((x) => ({ ...x })),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn() }, a),
+    intake: () => outcomes.map(writeBehind.on),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), writeBehind }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -264,12 +266,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
-        ...approvals.detail(),
+        ...writeBehind.detail(),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
     discover: (d) => reads.cached(async () => {
-      const approved = await approvals.begin();
+      const round = await writeBehind.begin();
       const bot = await botLogin();
       const assignee = o.assignee();
       const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
@@ -322,7 +324,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
       outcomes = next;
-      approvals.listed(approved);
+      writeBehind.listed(round);
       listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();
       return items;

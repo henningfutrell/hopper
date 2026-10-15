@@ -2,13 +2,15 @@
 // text the last sync showed, that text is the item's approved snapshot, recorded at once: the issue is not read again —
 // the person approves what they read, and an edit since shows the card again at the sync. Its GitHub reads and writes run
 // after the answer, not awaited: the assignee's comments the job would see, added to the snapshot, and on a reopened card
-// (issue #1126) `hopper:done` taken off the issue, so the sync takes it again. The next discover waits for them; one that
-// failed is kept in `detail.approvalErrors` until Approve again goes through. An Approve again of the same text before a
-// discover listed the issue taken (a second click, another tab) is done, and records nothing more: one approval, one job.
+// (issue #1126) `hopper:done` taken off the issue, so the sync takes it again — its write-behind (`write-behind.ts`): the next
+// discover waits for it, and one that failed shows until Approve again goes through. An Approve again of the same text
+// before a discover listed the issue taken (a second click, another tab) is done, and records nothing more: one approval,
+// one job.
 import type { IntakeAction, IntakeTrust } from '../../domain/intake.ts';
 import type { IntakeRequest } from '../../domain/intake-origin.ts';
 import type { GitHubApi } from './api.ts';
 import { contextComments } from './context.ts';
+import type { WriteBehind } from './write-behind.ts';
 import type { BotLogin } from './identity.ts';
 import { LABEL_DONE } from './labels.ts';
 
@@ -20,20 +22,13 @@ export interface ApprovalsContext {
   recentComments: number;
   assignee(): string | undefined;
   botLogin(): Promise<BotLogin>;
+  writeBehind: WriteBehind;
 }
 
 const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
 
 export function createApprovals(c: ApprovalsContext) {
-  /** Each approval's follow-up on GitHub, until it ends. */
-  const followUps = new Set<Promise<void>>();
-  /** Why an approval's follow-up failed, by issue, until one of it goes through. */
-  const errors: Record<string, string> = {};
-  /** The hash approved for each issue and the discover it was approved in, until a later discover listed it. */
-  const recent = new Map<string, { hash: string; round: number }>();
-  let round = 0;
-
-  const followUp = async (repo: string, key: string, request: IntakeRequest): Promise<void> => {
+  const writeBehind = async (repo: string, key: string, request: IntakeRequest): Promise<void> => {
     if (request.reopened) await c.api.removeLabels(repo, numberOf(key), [LABEL_DONE]);
     if (c.recentComments === 0) return;
     const seen = contextComments(await c.api.listComments(repo, numberOf(key)), c.assignee(), c.recentComments, await c.botLogin());
@@ -44,18 +39,10 @@ export function createApprovals(c: ApprovalsContext) {
     /** False: `hash` is not the hash of the text the last sync showed. */
     async approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean> {
       if (!request || request.hash !== a.hash) return false;
-      if (recent.get(key)?.hash === a.hash && !errors[key]) return true;
-      recent.set(key, { hash: a.hash, round });
+      if (c.writeBehind.sent('approve', key, a.hash)) return true;
       c.trust.approve(c.source, key, { title: request.title, body: request.body, comments: [] }, request, a.acting);
-      const done = followUp(repo, key, request).then(() => { delete errors[key]; }, (e: unknown) => { errors[key] = (e as Error).message; });
-      followUps.add(done);
-      void done.finally(() => followUps.delete(done));
+      c.writeBehind.run('approve', key, () => writeBehind(repo, key, request), a.hash);
       return true;
     },
-    /** At a discover's start: ends when every follow-up under way ended, and answers the discover's round. */
-    async begin(): Promise<number> { await Promise.allSettled([...followUps]); return ++round; },
-    /** At a discover's end: what it listed holds the approvals made before it began. */
-    listed(r: number): void { for (const [key, x] of recent) if (x.round < r) recent.delete(key); },
-    detail: (): Record<string, unknown> => (Object.keys(errors).length ? { approvalErrors: { ...errors } } : {}),
   };
 }

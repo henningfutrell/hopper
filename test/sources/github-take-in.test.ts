@@ -38,10 +38,11 @@ describe('take into Intake (issue #1176)', () => {
     await source.censusPullRequests!({ ...notTracked, issueTracked: (u) => u === url(1) });
     expect(source.describe().untrackedPullRequests).toEqual([expect.objectContaining({ url: pr.url, reason: 'issue_not_in_intake', offer: 'take_in' })]);
     expect(await source.intakeAction?.({ kind: 'take_in', keys: [url(2)] })).toEqual({ done: [url(2)], failed: {} });
+    // The writes run after the answer (issue #1194); the next discover waits for them.
+    await source.discover();
     expect(gh.issue(REPO, 2).labels).toContain('hopper');
     expect(gh.issue(REPO, 2).assignees).toEqual(['owner']);
     expect(events).toContainEqual({ type: 'source.issue_taken_in', data: { source: 'github', key: url(2), pullRequest: pr.url, assignee: 'owner' } });
-    await source.discover();
     expect(source.intake?.().map((x) => x.key)).toContain(url(2));
   });
 

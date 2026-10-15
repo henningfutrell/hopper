@@ -71,6 +71,27 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
     slow.delay.ms = 0;
   });
 
+  it('Assign to me, Release claim and Take off the backburner: answered at once; the GitHub write follows, and the sync takes the issues', { timeout: 30_000 }, async () => {
+    const { a, gh, slow, token } = await bootIntake();
+    const unassigned = gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+    const claimed = gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed', 'hopper:held-by:0f0f0f0f0f0f'] });
+    const backburner = gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:backburner'] });
+    await a.sync();
+    slow.delay.ms = SLOW_MS;
+    for (const [kind, issue] of [['assign', unassigned], ['release', claimed], ['unbackburner', backburner]] as const) {
+      const { r, ms } = await timed(() => a.ui('/ui/api/sources/github/intake', { kind, keys: [issue.url] }, { token }));
+      expect(r).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+      expect(ms).toBeLessThan(BUDGET_MS);
+    }
+    slow.delay.ms = 0;
+    const jobs = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
+    await waitFor(async () => {
+      const keys = new Set((await jobs()).map((j) => j.source?.key));
+      return [unassigned, claimed, backburner].every((i) => keys.has(i.url)) || undefined;
+    }, { what: 'the three issues taken', timeoutMs: 20_000 });
+    expect((await a.events('types=source.issues_assigned')).map((e) => e.data.keys)).toEqual([[unassigned.url]]);
+  });
+
   it('Discard kept work: answered at once and shown removing; the work leaves the list once its machine removed it', { timeout: 30_000 }, async () => {
     const herdr = createFakeHerdrClient({
       session: 'jh-test', turns: [{ output: ['● The paint ran out halfway.', '  HOPPER_FAILED the paint ran out'] }],
