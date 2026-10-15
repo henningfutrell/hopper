@@ -33,14 +33,30 @@ export const CONF_SH = [
   '};',
 ].join(' ');
 
+/**
+ * The label a job's container or volume carries (issue #1120): `hopper.job=<its job id>`. Whatever a job starts in a
+ * container runtime with it (the hopper's own tests do) is the job's: its reap removes it, and the sweep reaps an ended
+ * job that still has one. The guards put it on everything a job makes in its own runtime (issue #1295).
+ */
+export const JOB_LABEL = 'hopper.job';
+
 // The guard, one line after its `#!/bin/sh`, named podman or docker: the job's runtime from env.sh beside its directory,
 // whatever the caller changed (HOME, XDG_*, DOCKER_HOST, a context), then the real command of that name further on PATH.
-// Refused, exit 126: a global flag that names another runtime or its storage, and `podman system reset|migrate|renumber`.
-// Only the options before the command are read; a value-taking global option skips its value.
+// Refused, exit 126: a global flag that names another runtime or its storage, `podman system reset|migrate|renumber`, and
+// an argument that names the host's runtime dir, its storage or a host container socket (a mount of it, a URL). Only the
+// options before the command are read as flags; a value-taking global option skips its value. What makes a container,
+// pod, volume or network gets the job's label (`k`: the argument it goes after); the job is the scratch dir's name.
 const GUARD = [
   'e="${0%/*}/../env.sh"; if [ -r "$e" ]; then . "$e"; else printf "hopper: %s\\n" "the job container runtime is not set up" >&2; exit 125; fi;',
   'n=${0##*/}; deny() { printf "hopper: %s %s: %s\\n" "$n" "$1" "$2" >&2; exit 126; };',
-  'w=; v=; for a in "$@"; do',
+  `jid=\${0%/${RUNTIME_SUBDIR}/bin/*}; jid=\${jid##*/}; case $jid in ""|*[!A-Za-z0-9-]*) jid=;; esac;`,
+  HOST_RUNTIME_SH,
+  'u=/run/user/$(id -u); for a in "$@"; do case $a in',
+  '  *"$h/podman"*|*"$h/containers"*|*"$h/libpod"*|*"$h/docker.sock"*|*"$u/podman"*|*"$u/containers"*|*"$u/libpod"*|*"$u/docker.sock"*'
+    + '|*/run/docker.sock*|*/run/podman/podman.sock*|*/.local/share/containers*)',
+  '    deny "$a" "names the host\'s container runtime, which a job never reaches";;',
+  'esac; done;',
+  'w=; v=; i=0; k=0; for a in "$@"; do i=$((i+1));',
   '  if [ -n "$v" ]; then v=; continue; fi;',
   '  if [ -z "$w" ]; then case $n:$a in',
   '    podman:--url|podman:--url=*|podman:--connection|podman:--connection=*|podman:-c|podman:-c?*|podman:--remote|podman:--remote=*|podman:-r'
@@ -51,20 +67,39 @@ const GUARD = [
   '    *:--log-level|*:-l|*:--cgroup-manager|*:--events-backend|*:--hooks-dir|*:--module|*:--network-cmd-path|*:--out|*:--runtime|*:--runtime-flag'
     + '|*:--ssh|*:--identity|*:--storage-driver|*:--storage-opt|*:--cdi-spec-dir|*:--tlscacert|*:--tlscert|*:--tlskey) v=1;;',
   '    *:-*) ;;',
-  '    *) w=$a;;',
+  '    *) w=$a; case $a in run|create) k=$i;; esac;;',
   '  esac; continue; fi;',
-  '  [ "$n:$w" = podman:system ] || break;',
-  '  case $a in -*) ;; reset|migrate|renumber) deny "system $a" "refused in a job";; *) break;; esac;',
+  '  case $a in -*) continue;; esac;',
+  '  case $n:$w:$a in',
+  '    podman:system:reset|podman:system:migrate|podman:system:renumber) deny "system $a" "refused in a job";;',
+  '    *:container:run|*:container:create|*:pod:create|*:volume:create|*:network:create) k=$i;;',
+  '  esac; break;',
   'done;',
+  `if [ "$k" -gt 0 ] && [ -n "$jid" ]; then i=0; for a in "$@"; do i=$((i+1)); shift; set -- "$@" "$a"; [ "$i" -eq "$k" ] && set -- "$@" --label "${JOB_LABEL}=$jid"; done; fi;`,
   'r=; o=$IFS; IFS=:; for p in $PATH; do [ -n "$p" ] && [ -x "$p/$n" ] && ! [ "$p/$n" -ef "$0" ] && { r=$p/$n; break; }; done; IFS=$o;',
   '[ -n "$r" ] || { printf "hopper: %s: not found\\n" "$n" >&2; exit 127; };',
   'exec "$r" "$@"',
 ].map((l) => l.trim()).join(' ');
 
-// $1 the job id, $2 its scratch dir, $3 the guard, $4 `service` to start the runtime's socket (a pane's job: it lives in
-// the job's scope until the reap stops it). Prints one word: own, none or failed. The user's bus and systemd's private
-// socket are hard links in the runtime dir: podman's rootless network namespace sees a /run of its own, with only the
-// runtime dir in it, and aardvark-dns reaches systemd through them.
+// The job's `systemd-run`, one line after its `#!/bin/sh`: podman starts each health check as a systemd timer whose
+// podman runs with the user manager's environment, so it took the user's runtime dir, joined the user's namespace and never
+// found the job's container — testcontainers then waits on a health check that never passes. For podman's `healthcheck
+// run` it adds the job's runtime variables (env.sh); every other call goes to the real systemd-run as it was.
+const SYSTEMD_RUN = [
+  'r=; o=$IFS; IFS=:; for p in $PATH; do [ -n "$p" ] && [ -x "$p/systemd-run" ] && ! [ "$p/systemd-run" -ef "$0" ] && { r=$p/systemd-run; break; }; done; IFS=$o;',
+  '[ -n "$r" ] || { printf "hopper: %s\\n" "systemd-run: not found" >&2; exit 127; };',
+  'case " $* " in *" healthcheck run "*)',
+  '  e="${0%/*}/../env.sh"; [ -r "$e" ] && . "$e";',
+  '  set -- --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" --setenv=CONTAINERS_CONF_OVERRIDE="$CONTAINERS_CONF_OVERRIDE"'
+    + ' --setenv=CONTAINERS_STORAGE_CONF="$CONTAINERS_STORAGE_CONF" ${DBUS_SESSION_BUS_ADDRESS:+"--setenv=DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"} "$@";;',
+  'esac;',
+  'exec "$r" "$@"',
+].map((l) => l.trim()).join(' ');
+
+// $1 the job id, $2 its scratch dir, $3 the guard, $4 the job's systemd-run, $5 `service` to start the runtime's socket
+// (a pane's job: it lives in the job's scope until the reap stops it). Prints one word: own, none or failed. The user's
+// bus and systemd's private socket are hard links in the runtime dir: podman's rootless network namespace sees a /run of
+// its own, with only the runtime dir in it, and aardvark-dns reaches systemd through them.
 const SETUP_SCRIPT = [
   'i=$1; s=$2; c=$s/' + RUNTIME_SUBDIR + ';',
   CONF_SH,
@@ -77,6 +112,7 @@ const SETUP_SCRIPT = [
   '  [ -S "$h/bus" ] && ln -f "$h/bus" "$j/bus" 2>/dev/null;',
   '  [ -S "$h/systemd/private" ] && ln -f "$h/systemd/private" "$j/systemd/private" 2>/dev/null;',
   '  printf "%s\\n" "$s" > "$j/scratch" && conf "$j" "$c" || { echo failed; exit 0; };',
+  '  { printf "#!/bin/sh\\n%s\\n" "$4" > "$c/bin/systemd-run" && chmod 755 "$c/bin/systemd-run"; } || { echo failed; exit 0; };',
   '  { printf "export XDG_RUNTIME_DIR=\\"%s\\" CONTAINERS_CONF_OVERRIDE=\\"%s/containers.conf\\" CONTAINERS_STORAGE_CONF=\\"%s/storage.conf\\" DOCKER_HOST=\\"unix://%s/podman/podman.sock\\" KIND_EXPERIMENTAL_PROVIDER=podman\\n" "$j" "$c" "$c" "$j";',
   '    if [ -S "$j/bus" ]; then printf "export DBUS_SESSION_BUS_ADDRESS=\\"unix:path=%s/bus\\"\\n" "$j"; fi; } > "$c/env.sh" || { echo failed; exit 0; };',
   '  how=own;',
@@ -86,7 +122,7 @@ const SETUP_SCRIPT = [
   'fi;',
   '{ printf "unset CONTAINER_HOST CONTAINER_CONNECTION DOCKER_CONTEXT\\n";',
   '  printf "case :\\$PATH: in *:%s/bin:*) ;; *) PATH=\\"%s/bin:\\$PATH\\"; export PATH;; esac\\n" "$c" "$c"; } >> "$c/env.sh" || { echo failed; exit 0; };',
-  'if [ "$how" = own ] && [ "$4" = service ]; then',
+  'if [ "$how" = own ] && [ "$5" = service ]; then',
   '  ( . "$c/env.sh"; nohup "$c/bin/podman" system service --time=0 "unix://$j/podman/podman.sock" </dev/null >/dev/null 2>&1 & );',
   'fi;',
   'echo "$how"',
@@ -110,13 +146,13 @@ export const runtimeEnvOf = (scratch: string): string => `${scratch}/${RUNTIME_S
  */
 export function runtimeCommand(jobId: string, scratch: string, service: boolean): string {
   const env = shq(runtimeEnvOf(scratch));
-  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-runtime ${shq(jobId)} ${shq(scratch)} ${shq(GUARD)}${service ? ' service' : ''}); `
+  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-runtime ${shq(jobId)} ${shq(scratch)} ${shq(GUARD)} ${shq(SYSTEMD_RUN)}${service ? ' service' : ''}); `
     + `[ -r ${env} ] && . ${env}; printf 'hopper-runtime-%s\\n' "\${o:-failed}"`;
 }
 
 /** The argv that runs the setup script outside a shell's own environment, for a test. */
 export const runtimeSetupArgv = (jobId: string, scratch: string, service: boolean): string[] =>
-  ['sh', '-c', SETUP_SCRIPT, 'hopper-runtime', jobId, scratch, GUARD, ...(service ? ['service'] : [])];
+  ['sh', '-c', SETUP_SCRIPT, 'hopper-runtime', jobId, scratch, GUARD, SYSTEMD_RUN, ...(service ? ['service'] : [])];
 
 /** The last runtime outcome on the screen, if any. */
 export function runtimeOutcome(screen: string): RuntimeOutcome | undefined {
@@ -144,11 +180,17 @@ export const REAP_RUNTIME_SH = [
   `      ${CONF_SH}`,
   '      if conf "$j" "$c"; then',
   '        pm() { pt=$1; shift; $pt env -u CONTAINER_HOST -u CONTAINER_CONNECTION XDG_RUNTIME_DIR="$j" CONTAINERS_CONF_OVERRIDE="$c/containers.conf" CONTAINERS_STORAGE_CONF="$c/storage.conf" podman --root "$c/storage" --runroot "$j/storage" --tmpdir "$j/libpod/tmp" "$@"; };',
-  '        for x in $(pm "$to" ps -aq 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-container %s\\n" "$x"; done;',
+  '        ids=; for x in $(pm "$to" ps -aq 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-container %s\\n" "$x"; ids="$ids $x"; done;',
   '        for x in $(pm "$to" volume ls -q 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-volume %s\\n" "$x"; done;',
   '        tr=; command -v timeout >/dev/null 2>&1 && tr="timeout 120";',
   '        pm "$tr" system reset --force >/dev/null 2>&1;',
   '        [ -e "$c/storage" ] && pm "$tr" unshare rm -rf "$c/storage" >/dev/null 2>&1;',
+  // What of a container the reset could not stop, in the user's systemd: its health check timer (`<id>-<n>.timer`) stopped,
+  // its scope and its conmon's scope killed (a stop waits out the scope's own timeout).
+  '        if [ -n "$ids" ] && command -v systemctl >/dev/null 2>&1; then',
+  '          set --; for x in $ids; do set -- "$@" "$x*.timer" "$x*.service"; done; $to systemctl --user stop "$@" >/dev/null 2>&1;',
+  '          set --; for x in $ids; do set -- "$@" "libpod-$x*.scope" "libpod-conmon-$x*.scope"; done; $to systemctl --user kill -s KILL "$@" >/dev/null 2>&1;',
+  '        fi;',
   '      fi;',
   '    fi;',
   // Whatever still runs from the job's runtime dir: its pause process, a network helper. Never this script.

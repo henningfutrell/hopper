@@ -4,21 +4,17 @@
 // `/survey`), never typed into a pane where Claude may still be. They live in the client's directory because a client
 // target runs them, and a client release is the files in that directory. Imports nothing of hopper but its own directory.
 
-/** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
-import { REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
+import { JOB_LABEL, REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
 
+/** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 export const isJobId = (id: unknown): id is string => typeof id === 'string' && JOB_ID.test(id);
 
 /** The transient user scope a job's pane shell (or a print agent's turn) runs in, when the machine has systemd. */
 export const scopeUnitOf = (jobId: string): string => `hopper-job-${jobId}`;
 
-/**
- * The label a job's container or volume carries (issue #1120): `hopper.job=<its job id>`. Whatever a job starts in a
- * container runtime with it (the hopper's own tests do) is the job's: its reap removes it, and the sweep reaps an ended
- * job that still has one.
- */
-export const JOB_LABEL = 'hopper.job';
+/** The label a job's container or volume carries (issue #1120), job-runtime.ts. */
+export { JOB_LABEL };
 
 /**
  * How long a reap may take (issue #1295): a scope stop waits up to 10 s, and a job's own container runtime is reset, its
