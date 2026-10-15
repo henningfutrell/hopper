@@ -78,7 +78,7 @@ describe('own PR checks red (issue #1230)', () => {
     expect((await app.events('types=job.checks_rerun')).map((e) => e.data)).toEqual([{ recordId: expect.any(String), pullRequest: url(), head: expect.any(String), checks: ['test (node 24)'] }]);
     const view = await failuresOf(app);
     expect(view.handoffs).toEqual([]);
-    expect(view.recent[0]).toMatchObject({ jobId: job.id, causeId: 'own-pr-checks-red', decision: 'continue', outcome: 'retried' });
+    expect((await app.events('types=job.assessed&limit=1000')).filter((e) => e.jobId === job.id).map((e) => e.data)).toEqual([expect.objectContaining({ causeId: 'own-pr-checks-red', decision: 'continue', auto: true })]);
     expect(failedLabels(gh)).toEqual([]);
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
   });
