@@ -7299,11 +7299,11 @@ one podman-compose started (#1063); the person had to give the master key and ch
   tail; one restart is no failure, since it retries until postgres has made the schema. Not `--rm` or `up
   --force-recreate`: compose has no `--rm` for a service of `up`, and podman-compose cannot force-recreate (#894).
 - **The result is checked.** The hopper container's image id equals the pulled image's; `/api/health` answers inside the
-  container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` is not `missing` (limited); `hopper update drift`
+  container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` gives the fingerprint (a hopper with no key does not start, issue #1296); `hopper update drift`
   exits 0. Each failure is said and exits 1; a stopped container shows its last log lines (a wrong key stops it).
 - **Residual risk, stated.** The update does not check the key against the database before it stops the stack: a wrong
   key is found when the new hopper refuses to start, and the stack is down until the update runs again with the right
-  key. A `compose up` run by hand without the key still recreates the hopper limited. Running jobs are not counted by
+  key. A `compose up` run by hand without the key, and none sealed (issue #1296), stops the hopper. Running jobs are not counted by
   the script: the notice shows the count, and the person waits until none.
 
 ### The update is plain compose commands; the master key is required (issue #970, 2026-10-12)

@@ -177,6 +177,14 @@ rotate() {
   how="$(method)"
   local runtime id
   read -r runtime id <<<"$(hopper_container)"
+  # First a throwaway key, sealed and unsealed the same way: the rotation is asked only once a seal works here.
+  local trial; trial="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  local probe; probe="$(mktemp -d)"
+  if ! (cd "$probe" && HOPPER_KEY_SEAL="$how" seal "$trial" 2>/dev/null); then
+    rm -rf "$probe"
+    fail "a key does not seal with $how on this host now: the rotation is not asked, and nothing changed"
+  fi
+  rm -rf "$probe"
   local answer
   answer="$("$runtime" exec "$id" hopper master-key rotate --host-seals </dev/null)" || fail "the rotation was refused (above): nothing changed"
   local key; key="$(printf '%s' "$answer" | sed -n 's/.*"key": *"\([^"]*\)".*/\1/p' | head -n 1)"

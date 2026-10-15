@@ -250,10 +250,9 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_GITHUB_CLIENT_SECRET             the GitHub App's client secret: Sign in with GitHub goes to GitHub and
                                           back in the browser on the sign-in origin. Unset: the device code only
   HOPPER_MASTER_KEY                       the master key every secret the hopper keeps is sealed under in the database
-                                          (32 bytes, openssl rand -hex 32). Given at launch, or as the file _FILE names
-                                          (a mounted Secret; a file named but not there stops the start): keep it in
-                                          a password manager. Unset on a fresh database: one is made and shown once;
-                                          unset on one that keeps secrets: the hopper does not start
+                                          (32 bytes, openssl rand -hex 32), given at launch or as the file _FILE names
+                                          (a mounted Secret; one named but not there stops the start). Unset: made and
+                                          shown once on a fresh database; on one that keeps secrets, no start
   HOPPER_MASTER_KEY_SEALED                set by master-key.sh run: the host sealed the key, and only it rotates it
   HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line (also _FILE): they still open what they sealed,
                                           and what they sealed is sealed again under HOPPER_MASTER_KEY at start

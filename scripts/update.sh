@@ -274,9 +274,6 @@ check() {
 
   local status
   status="$("$runtime" exec "$id" hopper master-key status </dev/null)" || fail 'hopper master-key status failed'
-  if printf '%s' "$status" | grep -Eq '"source": *"missing"'; then
-    fail "the hopper started limited: the master key it was given does not open its secrets. $(printf '%s' "$status" | sed -n 's/.*"problem": *"\(.*\)".*/\1/p')"
-  fi
   local fingerprint; fingerprint="$(printf '%s' "$status" | sed -n 's/.*"fingerprint": *"\([0-9a-f]*\)".*/\1/p')"
 
   one_shot "$runtime" "$wait"
