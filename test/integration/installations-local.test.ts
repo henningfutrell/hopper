@@ -123,10 +123,12 @@ describe('the app\'s installations from the hopper\'s database', () => {
     const { app, github, token } = await start();
     const first = await refreshed(app, token);
     github.installationsDown = true;
-    const down = await refreshed(app, token, first.installationsCheckedAt);
-    expect(down.installations).toMatchObject(READ);
-    expect(down.installationsCheckedAt).toBe(first.installationsCheckedAt);
-    expect(down.installationsError).toMatch(/^GitHub could not say where the app is installed: .+/);
+    expect((await app.ui('/ui/api/connected-accounts/refresh', { provider: 'github' }, { token })).status).toBe(200);
+    let down: Connected | undefined;
+    await expect.poll(async () => { down = await account(app); return down.installationsError !== undefined && !down.installationsReading; }, { timeout: 10_000 }).toBe(true);
+    expect(down!.installations).toMatchObject(READ);
+    expect(down!.installationsCheckedAt).toBe(first.installationsCheckedAt);
+    expect(down!.installationsError).toMatch(/^GitHub could not say where the app is installed: .+/);
     github.installationsDown = false;
     const up = await refreshed(app, token, first.installationsCheckedAt);
     expect(up).not.toHaveProperty('installationsError');

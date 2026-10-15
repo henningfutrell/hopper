@@ -21,6 +21,9 @@
 // connection the runtime cannot open reads `unreadable`: give the key back, never a new grant; the start check says
 // which key is missing (issue #647).
 //
+// Where the app is installed (issue #1250, installations.ts) is kept in the database and read from GitHub only on Refresh,
+// on its schedule and when an account is connected: the status never reads GitHub.
+//
 // A connection's health (issue #647): a GitHub sign-in made while the connection is healthy never replaces it quietly:
 // its grant is held (a **held grant**, held.ts) until the person takes it or drops it. No job holds a token of it (issue
 // #652): a job's GitHub goes through the hopper, which asks for the token as it is at each call.
@@ -33,6 +36,7 @@ import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 import type { Renewal } from './renewal.ts';
 import { createHeldGrants } from './held.ts';
+import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
 import { createRenewer, type Live } from './renewer.ts';
 
 export { PROVIDER_NAME };
@@ -47,12 +51,15 @@ interface Waiting { userCode: string; verificationUri: string; expiresAt: string
 
 
 export interface ConnectedAccountsOptions {
-  store: Pick<UserStore, 'connectedAccounts' | 'settings' | 'tx'>;
+  store: Pick<UserStore, 'connectedAccounts' | 'settings' | 'tx' | 'appInstallations'>;
   apps: HopperApps;
   /** Who a token belongs to. */
   whoIs(provider: ConnectedAccountProvider, token: string): Promise<AccountIdentity>;
-  /** GitHub: the installations of the hopper's GitHub App that the token's user sees, with the repositories each reaches. */
-  installations(token: string): Promise<AppInstallation[]>;
+  /**
+   * GitHub: the installations of the hopper's GitHub App that the token's user sees, with the repositories each reaches;
+   * each GET through `answers` (issue #1250). Asked only on Refresh, on the schedule and when an account is connected.
+   */
+  installations(token: string, answers: ConditionalAnswers): Promise<AppInstallation[]>;
   /** Called once an account is connected from Sources: a later sign-in with it lands in this user. */
   link?(provider: ConnectedAccountProvider, subject: string): void;
   clock: { now(): Date };
@@ -82,7 +89,7 @@ export interface ConnectedAccountsOptions {
 export type { Renewal };
 
 export type ConnectedAccountsService = ConnectedAccounts & ConnectedAccountTokens & {
-  /** Starts the renewer (issue #441): it looks at once, then every `renewEveryMs`. */
+  /** Starts the renewer (issue #441): it looks at once, then every `renewEveryMs`; and the installations' schedule (issue #1250). */
   start(): void;
   /** One look of the renewer; resolves once every renewal it started has settled. */
   renewDue(): Promise<void>;
@@ -128,6 +135,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     if (ended && !r.account.ended) end(r.stored, ended);
     return ended ? { ...r, ended } : r;
   };
+
+  /** The account's login while its sign-in lives. */
+  const accountOf = (provider: ConnectedAccountProvider): string | undefined => { const c = current(provider); return c && !('unreadable' in c) && !c.ended ? c.account.account : undefined; };
 
   /** The account while its sign-in lives, with its stored row; throws what to do when none is connected, it ended, or it cannot be read. */
   const live = (provider: ConnectedAccountProvider): Live => {
@@ -180,17 +190,13 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     return error ? { ...base, state: 'failed', error } : { ...base, state: 'not-connected' };
   };
 
-  /** With where the app is installed; GitHub not answering says why instead (never that it is not installed). */
-  const withInstallations = async (s: ConnectedAccountStatus): Promise<ConnectedAccountStatus> => {
-    if (s.state !== 'connected') return s;
-    try {
-      return { ...s, installations: await o.installations(await token(s.provider)) };
-    } catch (e) {
-      const error = `${PROVIDER_NAME[s.provider]} could not say where the app is installed: ${(e as Error).message}`;
-      o.logger.warn(`hopper: ${error}`);
-      return { ...s, installationsError: error };
-    }
-  };
+  /**
+   * Where the app is installed, as last read (issue #1250): kept in the database, never read here. A read GitHub did not
+   * answer says why (never that it is not installed), with the installations read before it.
+   */
+  const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => o.installations(await token(p), answers),
+    now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line) });
+  const withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account) } : s);
 
   /**
    * Delete the old access token at GitHub (issue #597, issue #514), unless it ended — GitHub holds it no
@@ -254,6 +260,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         if (waiting.get(provider) !== w) return;
         await keep(provider, who, g, o.clock.now().toISOString(), 'sources');
         await held.release(provider, false);
+        await installations.refresh(provider); // while it still reads as waiting: connected, it shows where the app is installed
         failed.delete(provider);
         o.link?.(provider, who.subject);
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} connected as ${who.account}`);
@@ -299,7 +306,8 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   }
 
   return {
-    status: () => Promise.all(CONNECTED_ACCOUNT_PROVIDERS.map((p) => withInstallations(status(p)))),
+    status: () => Promise.resolve(CONNECTED_ACCOUNT_PROVIDERS.map((p) => withInstallations(status(p)))),
+    refresh: (provider) => { void installations.refresh(provider); return withInstallations(status(provider)); },
     async adopt(c: Connection) {
       stopWaiting(c.provider);
       failed.delete(c.provider);
@@ -313,6 +321,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       if (!atRest.keeps) { o.logger.warn(`hopper: ${PROVIDER_NAME[c.provider]} sign-in of ${c.account}: its grant is not kept: ${NO_KEY}`); return; }
       await keep(c.provider, c, g, o.clock.now().toISOString(), 'sign-in');
       await held.release(c.provider, false);
+      void installations.refresh(c.provider); // in the background: the sign-in does not wait on it
       o.logger.info(`hopper: ${PROVIDER_NAME[c.provider]} connected as ${c.account} (signed in with it)`);
       o.onChange?.(c.provider);
     },
@@ -320,6 +329,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       const h = await held.release(provider, true);
       if (!h) throw new Error(`no ${PROVIDER_NAME[provider]} sign-in is held`);
       await keep(provider, h.who, h.grant, o.clock.now().toISOString(), 'sign-in');
+      await installations.refresh(provider);
       o.logger.info(`hopper: ${PROVIDER_NAME[provider]} connected as ${h.who.account} (the held sign-in, taken)`);
       o.onChange?.(provider);
       return withInstallations(status(provider));
@@ -350,6 +360,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       await replace(provider, undefined, () => { gone = atRest.remove(provider); });
       renewer.clear(provider);
       if (gone) {
+        installations.forget(provider);
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} disconnected`);
         o.onChange?.(provider);
       }
@@ -362,17 +373,18 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       o.onChange?.(provider);
       return withInstallations(status(provider));
     },
-    account: (provider) => { const c = current(provider); return c && !('unreadable' in c) && !c.ended ? c.account.account : undefined; },
+    account: (provider) => accountOf(provider),
     expired: (provider) => { const c = current(provider); return c !== undefined && !('unreadable' in c) && c.ended !== undefined; },
     ended: (provider) => { const c = current(provider); return !c ? undefined : 'unreadable' in c ? c.unreadable : c.ended ? expired(provider) : undefined; },
     renew: (provider, refused) => renewer.renew(provider, refused),
     jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),
     token,
     endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl }),
-    start: () => { startCheck(); renewer.start(); },
+    start: () => { startCheck(); renewer.start(); installations.start(); },
     renewDue: () => renewer.renewDue(),
     stop() {
       renewer.stop();
+      void installations.stop();
       held.stop();
       for (const p of CONNECTED_ACCOUNT_PROVIDERS) stopWaiting(p);
     },

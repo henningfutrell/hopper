@@ -20,7 +20,7 @@ import type { AddressInfo } from 'node:net';
 import { commentEditRoute, editIssue, forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
-import { etagOf, jobLogBlobRoute, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
+import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
@@ -263,17 +263,14 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           // What the installation grants, as GitHub answers it: the shipped app's permissions.
           permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
         })), r.query);
-        // With an ETag, as on GitHub (issue #1250): an unchanged list is a 304 to a request that names it.
-        const body = { total_count: on.length, installations: page };
-        return { status: 200, body, etag: etagOf(body) };
+        return tagged({ total_count: on.length, installations: page }); // with an ETag (issue #1250)
       }
       const ir = /^\/user\/installations\/(\d+)\/repositories$/.exec(path);
       if (r.method === 'GET' && ir) {
         const account = (forge?.installedOn ?? [login])[Number(ir[1]) - 1];
         if (!account) return { status: 404, body: { message: 'Not Found' } };
         const repos = forge?.chosenRepos?.[account] ?? [...new Set(issues.map((i) => i.repo).filter((repo) => repo.split('/')[0] === account))];
-        const body = { total_count: repos.length, repositories: pageOf(repos.map((full_name) => ({ full_name })), r.query) };
-        return { status: 200, body, etag: etagOf(body) };
+        return tagged({ total_count: repos.length, repositories: pageOf(repos.map((full_name) => ({ full_name })), r.query) });
       }
       if (r.method === 'GET' && path === '/search/issues') {
         const q = r.query.q ?? '';

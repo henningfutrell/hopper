@@ -262,7 +262,7 @@ describe('Sources view: GitHub', () => {
     expect(panel()!.textContent).not.toContain('Connected as');
     expect(panel()!.textContent).not.toMatch(/disconnect/i);
     expect(panel()!.textContent).toContain('Settings → Plugins');
-    expect(buttons()).toEqual(['Sign out']);
+    expect(buttons()).toEqual(['Refresh', 'Sign out']); // Refresh reads where the app is installed again (issue #1250)
     const f = fetch as unknown as ReturnType<typeof vi.fn>;
     await act(async () => { [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Sign out')!.click(); });
     await vi.waitFor(() => expect(posts(f, '/ui/api/logout')).toHaveLength(1));
@@ -273,7 +273,7 @@ describe('Sources view: GitHub', () => {
     await boot(withAccount(connected([])));
     await vi.waitFor(() => expect(panel()?.textContent).toContain('Connected as octo-user.'));
     expect(panel()!.textContent).not.toMatch(/disconnect/i);
-    expect(buttons()).toEqual(['Stop working through GitHub']);
+    expect(buttons()).toEqual(['Refresh', 'Stop working through GitHub']);
     const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Stop working through GitHub')!;
     expect(button.title).toContain('you stay signed in');
     const f = fetch as unknown as ReturnType<typeof vi.fn>;

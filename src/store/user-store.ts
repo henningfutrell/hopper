@@ -33,6 +33,7 @@ import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createRepoChecksReadRepository } from './repo-checks.ts';
+import { createAppInstallationsReadRepository } from './app-installations.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
@@ -102,6 +103,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     githubWatches: createGitHubWatchRepository(ctx),
     sourceCalls: createSourceCallLog(ctx),
     repoChecks: createRepoChecksReadRepository(ctx),
+    appInstallations: createAppInstallationsReadRepository(ctx),
     checkpoints: createCheckpointRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
     searchPending: createSearchPendingRepository(ctx),

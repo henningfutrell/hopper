@@ -566,7 +566,7 @@ export { isUpdateChannel, UPDATE_CHANNELS, type ClusterInstall, type InstallInfo
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
-export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
+export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type AppInstallationsRead, type AppInstallationsReadRepository, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
 export * from './vault.ts';
 export type { SandboxApprovals, SandboxRequestState, SandboxRequestView } from './sandbox-approvals.ts';
 export type { RememberedWrite, RememberedWriteView } from './remembered-writes.ts';

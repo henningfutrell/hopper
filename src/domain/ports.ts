@@ -768,8 +768,12 @@ export interface Connection {
 
 /** A user's connected accounts (issue #214): GET /api/connected-accounts, POST /ui/api/connected-accounts. */
 export interface ConnectedAccounts {
-  /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
-  status(): Promise<ConnectedAccountStatus[]>;
+  /**
+   * `status`: every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed, as last read
+   * (issue #1250): never reads GitHub. `refresh`: reads where the app is installed from GitHub again, in the background;
+   * answers at once, `installationsReading` while it reads.
+   */
+  status(): Promise<ConnectedAccountStatus[]>; refresh(provider: ConnectedAccountProvider): ConnectedAccountStatus;
   /**
    * Keep the connection a GitHub sign-in made: it replaces the account there was, unless that one is healthy — then it is
    * held until the person takes or drops it (issue #647).

@@ -1,8 +1,11 @@
 // Who a token of the hopper's GitHub App belongs to, and where the app is installed (issue #214):
 // GitHub's own answer, through @octokit/request as the sources use it. The identity signs a person in
-// and names their connected account.
+// and names their connected account. Where the app is installed is read through the shared rate limiter, each GET
+// conditional (issue #1250, conditional.ts): an unchanged answer is a 304, which costs no call.
 import { request as octokitRequest } from '@octokit/request';
 import type { AppInstallation } from '../domain/types.ts';
+import type { ConditionalAnswers, Get } from '../repo-checks/conditional.ts';
+import { makeRequest } from '../sources/github/app/http.ts';
 import type { HopperApp } from './hopper-app.ts';
 
 /** The account a token belongs to. `subject`: GitHub's stable numeric id; `account`: the login. */
@@ -33,13 +36,18 @@ async function all<T>(get: (page: number) => Promise<unknown>, pick: (data: unkn
 
 interface Installation { id: number; account?: { login?: string } | null; html_url?: string; repository_selection?: string; permissions?: Record<string, string> }
 
-/** The installations of the app the token's user can see, each with the repositories it reaches there that the user can see. */
-export async function installations(app: HopperApp, token: string): Promise<AppInstallation[]> {
-  const req = github(app, token);
-  const found = await all((page) => req('GET /user/installations', { per_page: PER_PAGE, page }).then((r) => r.data),
+/**
+ * The installations of the app the token's user can see, each with the repositories it reaches there that the user can
+ * see. Each GET through `answers`, with the ETag kept from the read before.
+ */
+export async function installations(app: HopperApp, token: string, answers: ConditionalAnswers): Promise<AppInstallation[]> {
+  const req = makeRequest(app.apiUrl) as unknown as Get;
+  const headers = { authorization: `token ${token}` };
+  const get = (route: string, params: Record<string, unknown>) => answers.get<unknown>(req, route, { ...params, headers });
+  const found = await all((page) => get('GET /user/installations', { per_page: PER_PAGE, page }),
     (d) => (d as { installations: Installation[] }).installations);
   return Promise.all(found.filter((i) => i.account?.login).map(async (i) => {
-    const repositories = await all((page) => req('GET /user/installations/{installation_id}/repositories', { installation_id: i.id, per_page: PER_PAGE, page }).then((r) => r.data),
+    const repositories = await all((page) => get('GET /user/installations/{installation_id}/repositories', { installation_id: i.id, per_page: PER_PAGE, page }),
       (d) => (d as { repositories: { full_name: string }[] }).repositories.map((r) => r.full_name));
     return {
       account: i.account!.login!, repositorySelection: i.repository_selection === 'selected' ? 'selected' : 'all', repositories,

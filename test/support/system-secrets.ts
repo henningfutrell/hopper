@@ -44,6 +44,7 @@ export function memoryAccountStore(record?: ConnectedAccount, extra: Record<stri
   const rows = new Map<string, StoredAccount>();
   const secrets = new Map<string, { secret: VaultSecret; sealed: string | null }>();
   const events: NewEvent[] = [];
+  const installs = new Map<string, unknown>();
   const vault = {
     list: () => [...secrets.values()].map((v) => v.secret),
     get: (name: string) => secrets.get(name)?.secret,
@@ -61,6 +62,8 @@ export function memoryAccountStore(record?: ConnectedAccount, extra: Record<stri
       lock: () => true, unlock: () => undefined,
       delete: (p: string) => rows.delete(p),
     },
+    // Where the app is installed, as last read (issue #1250).
+    appInstallations: { get: (p: string) => installs.get(p), put: (r: { provider: string }) => { installs.set(r.provider, r); }, remove: (p: string) => { installs.delete(p); } },
     vault, events: { append: (e: NewEvent) => { events.push(e); return e; } },
     tx: <T>(fn: () => T): T => fn(),
     ...extra,
