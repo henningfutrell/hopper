@@ -4,7 +4,8 @@
 // and the item shows it (`IntakeOutcome.writeBehind`) while it runs and once it failed. The next discover waits for every
 // write-behind under way, so it lists what they wrote. One that failed stays shown, and in the source's
 // `detail.writeBehindErrors`, until the same act sent again goes through. The same act sent again (a second click, another
-// tab) before a discover listed the item again writes nothing more, unless it failed.
+// tab) before a discover listed the item again writes nothing more, unless it failed. Take into Intake's shows on its
+// untracked pull request's row too (`census.detail`), the issue it takes in being in no Intake list yet.
 import type { IntakeActionKind, IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
 
 export type WriteBehind = ReturnType<typeof createWriteBehind>;
@@ -40,6 +41,8 @@ export function createWriteBehind() {
     async begin(): Promise<number> { await Promise.allSettled([...under]); return ++round; },
     /** At a discover's end: what it listed holds the acts sent before it began. */
     listed(r: number): void { for (const [key, x] of recent) if (x.round < r) recent.delete(key); },
+    /** The item's write-behind, while it runs or once it failed. */
+    of(key: string): IntakeWriteBehind | undefined { const f = state.get(key); return f ? { ...f } : undefined; },
     /** The item with its write-behind, when it has one. */
     on(x: IntakeOutcome): IntakeOutcome { const f = state.get(x.key); return f ? { ...x, writeBehind: { ...f } } : { ...x }; },
     detail(): Record<string, unknown> {

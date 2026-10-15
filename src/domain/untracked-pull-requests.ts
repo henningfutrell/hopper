@@ -4,6 +4,7 @@
 // branch, its item's job follows another pull request, or no job made it. One whose issue is not in Intake offers that
 // issue to Intake (`take_in`, Take into Intake). Pure: the source reads the open pull requests, the store says what is tracked.
 import { closingReferences } from './cross-references.ts';
+import type { IntakeWriteBehind } from './intake.ts';
 
 export const UNTRACKED_REASONS = ['no_issue', 'issue_not_in_intake', 'wrong_base', 'second_pull_request', 'not_by_a_job'] as const;
 /**
@@ -36,6 +37,8 @@ export interface UntrackedPullRequest {
   source?: string;
   /** The hopper moved it to the landing branch (issue #1176): a job's branch, on a base from before. */
   retargeted?: { from: string; to: string };
+  /** Take into Intake's GitHub write on its issue, after the answer (issue #1194): running, or failed with why. Set when the list is answered. */
+  writeBehind?: IntakeWriteBehind;
 }
 
 /** What the store says of the open pull requests. */

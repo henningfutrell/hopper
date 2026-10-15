@@ -5,6 +5,7 @@
 // its issue (a job's), is moved to the landing branch, said on it with the follow's note. A repository GitHub does not
 // answer for keeps what was last read of it; a move GitHub refuses is logged and tried at the next round.
 import { untrackedPullRequests, type CensusFacts, type UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
+import type { IntakeWriteBehind } from '../../domain/intake.ts';
 import type { GitHubApi } from './api.ts';
 import { namesIssue } from './completion.ts';
 import { retargetNote } from './pr-notes.ts';
@@ -54,9 +55,15 @@ export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'r
     /** The issues the last census offers to Intake (`take_in`), each with the untracked pull request that closes it, by URL. */
     takeIn: (): Map<string, UntrackedPullRequest> =>
       new Map([...byRepo.values()].flat().flatMap((u) => (u.offer === 'take_in' && u.issue ? [[u.issue.url, u] as const] : []))),
-    /** What `describe` shows: the untracked pull requests, by repository and number, and the repositories not read. */
-    detail: () => {
-      const all = [...byRepo.values()].flat();
+    /**
+     * What `describe` shows: the untracked pull requests, by repository and number, each with its issue's write-behind
+     * (`writeBehindOf`, issue #1194), and the repositories not read.
+     */
+    detail: (writeBehindOf: (issueUrl: string) => IntakeWriteBehind | undefined = () => undefined) => {
+      const all = [...byRepo.values()].flat().map((u) => {
+        const w = u.issue ? writeBehindOf(u.issue.url) : undefined;
+        return w ? { ...u, writeBehind: w } : u;
+      });
       return { ...(all.length ? { untrackedPullRequests: all } : {}), ...(Object.keys(errors).length ? { untrackedErrors: errors } : {}) };
     },
   };
