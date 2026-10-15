@@ -13,7 +13,7 @@ export type { NoteDelivery } from './job-notes.ts';
 import type { HasSetup, RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts';
+import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs } from './github-outbox.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -555,9 +555,10 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, H
    * The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError.
    * Its GitHub writes are outbox rows (issue #1238): `flushOutbox` sends the rows due, one batch, coalesced, and answers how
    * many were due and the repositories it wrote to, so the sync loop lists them again. It never throws: a failed row waits
-   * its backoff, or is failed.
+   * its backoff, or is failed. `pullRequestAct`: a person's Merge now or Close PR (part 3), a row sent through
+   * `acts.pullRequest`; it answers the act on its way.
    */
-  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>; flushOutbox?(): Promise<{ due: number; wrote: string[] }>;
+  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>; flushOutbox?(acts?: OutboxActs): Promise<{ due: number; wrote: string[] }>; pullRequestAct?(job: Job, act: PullRequestAct, acting: ActingPerson): PullRequestAct | undefined;
 }
 
 /**

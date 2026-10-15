@@ -11673,8 +11673,19 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   failed rows again from their first attempt, then the source sends after the batch window. A resolution's hand-off
   failed meanwhile goes back to `pending`, then `written`, at the syncs after. `writeBehindErrors` stays for the item
   markers.
-- **Not in the outbox yet** (the issue's later parts): Merge now and Close PR and the give-backs (reopen, assign, labels
-  before a new job) keep their own paths on the job's report chain, with their state in memory.
+- **Merge now and Close PR** (part 3). A person's act on a job's open pull request is one row, act `merge` or `close`,
+  tagged with the job's id, change `pull_request` (the act, the job, who acted): `JobSource.pullRequestAct` keeps it, and
+  answers the act already on its way for the job, so a second click, another tab or the CLI sends nothing more. It must
+  be seen now, so its source sends at once (`outboxFlushes.now`), with no batch window. The source's send hands the row
+  to the sync loop (`OutboxActs`, `src/sources/pull-request-acts.ts`), which follows the pull request with the act on the
+  job's report chain and records the merge or the close with who pressed it, as before. A refusal for now waits the
+  backoff; a permanent refusal, or the last attempt, fails the row and records `job.pull_request_act_failed` once. A
+  restart sends a row not sent. The act sent again sends its failed row again; Sources lists the failed row with a Retry.
+  The row is no intake marker: the Pull requests card shows the act. Tests: `test/sources/github-outbox-pull-requests.test.ts`,
+  `test/integration/github-outbox-pull-requests.test.ts` (sent after a restart), `test/integration/action-latency-pull-requests.test.ts`.
+- **Not in the outbox yet** (the issue's later parts): the give-backs (reopen, assign, labels before a new job) keep
+  their own path on the job's report chain, with their state in memory: a give-back makes its new job from what GitHub
+  answers, so its row needs a durable new-job step too.
 ### Stuck work (issue #1010, 2026-10-13)
 
 Failures, Parked and Pull requests each showed their own part of what waits on a person, one card at a time. With 169
