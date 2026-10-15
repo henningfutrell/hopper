@@ -5345,6 +5345,60 @@ nothing and says why. `test/adapters/podman-sandbox.test.ts` against real rootle
 `HOPPER_TEST_PODMAN_SOCKET` names its socket: the flags, the labels, no capability left, removal with the volume.
 `test/scripts/compose.test.ts`: the socket `HOPPER_PODMAN_SOCKET_HOST` names, else `/dev/null` (issue #1157).
 
+### The Kubernetes runtime (issue #1286, part of #1281, 2026-10-15)
+
+A hopper in a cluster starts sandbox boxes with no container socket: a fourth `ContainerRuntime` adapter, `kubernetes`
+(`src/sandbox/kubernetes.ts`), chosen only by `HOPPER_SANDBOX_RUNTIME=kubernetes`, never found by itself. It drives
+the Kubernetes API through the official client, `@kubernetes/client-node` (`kubernetes-api.ts`: in-cluster config from
+the service account, else the kubeconfig; exec over the API's WebSocket). It is loaded only when chosen, so a hopper on
+a socket never loads it. The runtime's API calls are one narrow seam, `KubeApi`; the tests drive the runtime through
+an in-memory double of it (`test/support/fake-kube-api.ts`). The job pods' adapter (`src/kubernetes/api.ts`, "Job pods on
+Kubernetes" below) is written over node:https for five calls on pods; this runtime also needs exec with stdin and an exit
+code over the API's WebSocket protocol, which that adapter does not do, so it takes the client.
+
+| Port call | On Kubernetes |
+|---|---|
+| `create` | applies the egress policy, then makes the pod (`flags.ts` `kubernetesPodBody`): it runs at once |
+| `start` | waits until the pod leaves `Pending` (15 minutes at most, the image pull included); a container that waits for an image it cannot pull fails it at once, with the reason |
+| `wait`, `logs` | the pod's phase and its container's exit code; the pod's log |
+| `startCheck` | the same check command, run in the box through exec when the pod runs, as Podman runs it when the hopper asks |
+| `exec`, `copyIn` | exec; the environment through `env`; a copy is `tar -x` in the box, as the box's user, reading the tar on stdin |
+| `stop`, `remove` | delete the pod, with the stop grace period |
+| `createVolume`, `removeVolume` | a PersistentVolumeClaim of 5 GiB, `ReadWriteOnce`; one that exists is kept |
+| `pull` | nothing to pull: the node pulls. Answers the box image's agent user, `1000:1000` |
+| `build`, `listImages`, `removeImage` | absent: the hopper builds nothing here |
+
+- **The sandbox flags are the pod's security context**, built in `flags.ts` with the others: every capability
+  dropped, `allowPrivilegeEscalation: false`, a read-only root, `/tmp` an empty dir, the home claim at `/home/agent`,
+  `runAsNonRoot` with the user by number (the kubelet can check only a number), `fsGroup` so the claim is writable,
+  the `RuntimeDefault` seccomp profile, no service account token, no service links, CPU and memory limits. A one-shot
+  container runs its script with restart `Never`; a box restarts `Always`, as `unless-stopped`.
+- **Egress is a NetworkPolicy**, `hopper-sandbox`, applied before each pod so no box runs without it, over every pod
+  the runtime makes (label `io.hopper.sandbox-pod`): no ingress; egress to DNS, the hopper's pods
+  (`HOPPER_KUBERNETES_HOPPER_LABELS`, in the hopper's namespace) on its port, and public addresses only. A box reaches
+  no other pod and no private range, which a box on Podman can. It is not yet the template's allowlist: a
+  NetworkPolicy matches addresses, not host names, so an allowlist of hosts needs the allowlisting proxy of #849.
+- **Tools images are published, not built** (decision: one image per box image and kind, with every tool). CI
+  (`.github/workflows/image.yml` `box-tools`) writes the Containerfile with the hopper's own `toolsImage`
+  (`scripts/box-tools-containerfile.ts`) and publishes `box-<agent>…-tools` and `…-tools-read-only` beside each box
+  tag. `boxImage` runs that image on a runtime with no `build` (`publishedToolsImage`); a template's own image with tools
+  is refused there (409). A box may so hold more tools than it asked for: a tool is a binary, and what a box may do is
+  what its credentials allow, not which binaries it has. Fifteen sets of tools, each read-only or not, would be 23
+  images per agent.
+- **Names.** A pod name is a DNS label: a box name that is not one (a template name with `_` or `.`, one too long) is
+  made DNS-safe with a hash of it, and the hopper's name kept as an annotation, which `list` and `inspect` answer. A
+  label value Kubernetes does not take is selected by its hash and answered as given. The runtime sees only its own
+  pods: `inspect` of the hopper's own pod is no container, so the hopper's address for a box is its first LAN name
+  (`address.ts`), its Service's, proven by the start check.
+- **Not built yet** (carried on #1286): an allowlist of hosts per template (with #849's proxy); a live run on a
+  cluster with no socket (a sandbox step, a denied egress, the read-only probes) once the Helm chart (#1281's first part)
+  exists.
+
+Tests: `test/sandbox/kubernetes.test.ts` (the pod and its flags, the egress policy before it, one-shot, names, only its
+own pods, start, wait, the start check, exec, copy, claims, problem), `test/sandbox/kubernetes-images.test.ts`
+(published tools images, and the Containerfile CI writes), `test/sandbox/kubernetes-api.test.ts` (exec's exit code),
+`test/sandbox/runtime-select.test.ts` (chosen, and its settings).
+
 ## Job pods on Kubernetes (issue #1283, 2026-10-15)
 
 Part of #1281 (hopper and every machine on Kubernetes, no Podman or compose there). Blocked by #1248, which is merged:

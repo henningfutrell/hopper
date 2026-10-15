@@ -74,7 +74,7 @@ describe('runtime selection', () => {
   });
 
   it('the Kubernetes settings are read from the environment (issue #1286)', () => {
-    const base = { HOPPER_SANDBOX_RUNTIME: 'kubernetes' };
+    const base = { HOPPER_DATABASE_URL: 'postgres://hopper:pw@localhost:5432/hopper', HOPPER_SANDBOX_RUNTIME: 'kubernetes' };
     expect(loadConfig(base)).toMatchObject({ sandboxRuntime: 'kubernetes', kubernetes: { hopperLabels: { 'app.kubernetes.io/name': 'hopper' } } });
     expect(loadConfig({ ...base, HOPPER_KUBERNETES_NAMESPACE: 'boxes', HOPPER_KUBERNETES_HOPPER_LABELS: 'app=hopper, tier=web' }).kubernetes)
       .toEqual({ namespace: 'boxes', hopperLabels: { app: 'hopper', tier: 'web' } });

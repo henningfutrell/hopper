@@ -1,7 +1,7 @@
 // The Docker container runtime (issue #708): the Docker Engine API over its socket, never the docker CLI (the hopper's
 // image has none). Rootless Docker only, as Podman: a rootful daemon is root on the computer. The create body is
 // src/sandbox/flags.ts's.
-import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import type { BuildingRuntime, ContainerInfo } from '../domain/sandboxes.ts';
 import { execCalls } from './exec.ts';
 import { imageCalls } from './images.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
@@ -20,7 +20,7 @@ const enc = encodeURIComponent;
 /** Docker names a container `/name`. */
 const bare = (name: string | undefined): string => (name ?? '').replace(/^\//, '');
 
-export function createDockerRuntime(socket: string, via: SocketCall = socketCall): ContainerRuntime {
+export function createDockerRuntime(socket: string, via: SocketCall = socketCall): BuildingRuntime {
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('docker', what, a);
   const readImage = (image: string): Promise<Answer> => call('GET', `/images/${enc(image)}/json`);

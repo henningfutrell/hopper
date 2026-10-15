@@ -1,13 +1,15 @@
 // Which container runtime a sandbox box starts through (issue #708): decided here and nowhere else.
 // - Beside the hopper (`local`): the runtime selected once at start. A runtime configured (HOPPER_SANDBOX_RUNTIME)
 //   wins. Else Podman whenever it is reachable — the primary runtime —, then Docker when it is; neither reached, the
-//   one given first, so Add machine says why it cannot start one.
+//   one given first, so Add machine says why it cannot start one. Kubernetes (issue #1286) only when it is configured:
+//   pods in a namespace, through the Kubernetes API, with no socket.
 // - On a client target: the remote runtime (remote.ts), that machine's own Podman (else Docker) through its client.
 //   The box is on that machine's network and dials the hopper where the machine's client did: an address the client
 //   proved by dialling in on it (issue #695).
 import { statSync } from 'node:fs';
 import type { ContainerRuntime, RuntimeKind, RuntimeRelay } from '../domain/sandboxes.ts';
 import { createDockerRuntime } from './docker.ts';
+import { createKubernetesRuntime } from './kubernetes.ts';
 import { LaunchRefused } from './launch.ts';
 import { createPodmanRuntime } from './podman.ts';
 import { createRemoteRuntime } from './remote.ts';
@@ -17,6 +19,8 @@ export interface RuntimeChoice {
   dockerSocket?: string;
   /** HOPPER_SANDBOX_RUNTIME. */
   runtime?: Exclude<RuntimeKind, 'remote'>;
+  /** For `kubernetes`: the namespace of the boxes (unset: the hopper's own), the hopper's pods' labels, and its port. */
+  kubernetes?: { namespace?: string; hopperLabels: Record<string, string>; port: number };
 }
 
 /**
@@ -35,6 +39,13 @@ export function givenSocket(path: string | undefined): string | undefined {
 
 /** Undefined: no runtime socket is given, so the hopper starts no box. Throws when a configured runtime has no socket. */
 export async function selectRuntime(o: RuntimeChoice): Promise<ContainerRuntime | undefined> {
+  if (o.runtime === 'kubernetes') {
+    if (!o.kubernetes) throw new Error('HOPPER_SANDBOX_RUNTIME=kubernetes needs the hopper\'s labels and port');
+    // Loaded only here: a hopper on a socket never loads the Kubernetes client.
+    const { createKubeApi } = await import('./kubernetes-api.ts');
+    const { api, ownNamespace } = createKubeApi(o.kubernetes.namespace);
+    return createKubernetesRuntime({ api, hopper: { namespace: ownNamespace, labels: o.kubernetes.hopperLabels, port: o.kubernetes.port } });
+  }
   const podmanSocket = givenSocket(o.podmanSocket), dockerSocket = givenSocket(o.dockerSocket);
   const podman = podmanSocket ? createPodmanRuntime(podmanSocket) : undefined;
   const docker = dockerSocket ? createDockerRuntime(dockerSocket) : undefined;

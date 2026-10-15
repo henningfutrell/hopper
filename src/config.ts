@@ -88,7 +88,12 @@ export interface Config {
   /** The rootless Docker Engine API socket (issue #708): used when Podman is not given or not reached, or chosen. */
   dockerSocket?: string;
   /** The container runtime chosen (issue #708); unset: Podman whenever it is reachable (src/sandbox/runtime.ts). */
-  sandboxRuntime?: 'podman' | 'docker';
+  sandboxRuntime?: 'podman' | 'docker' | 'kubernetes';
+  /**
+   * With the Kubernetes runtime (issue #1286): the namespace boxes start in (unset: the hopper's own), and the labels of
+   * the hopper's pods, which a box's egress policy lets it reach.
+   */
+  kubernetes?: { namespace?: string; hopperLabels: Record<string, string> };
   /** The network the boxes it starts join; unset: `hopper_default` in the container, `host` on the host. */
   sandboxNetwork?: string;
 }
@@ -156,7 +161,11 @@ const schema = z.object({
   HOPPER_PODMAN_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Podman API socket').optional(),
   HOPPER_SANDBOX_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be a Podman network name, or host').optional(),
   HOPPER_DOCKER_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Docker Engine API socket').optional(),
-  HOPPER_SANDBOX_RUNTIME: z.enum(['podman', 'docker']).optional(),
+  HOPPER_SANDBOX_RUNTIME: z.enum(['podman', 'docker', 'kubernetes']).optional(),
+  HOPPER_KUBERNETES_NAMESPACE: z.string().regex(/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/, 'must be a Kubernetes namespace name').optional(),
+  HOPPER_KUBERNETES_HOPPER_LABELS: z.string()
+    .regex(/^\s*[A-Za-z0-9][-A-Za-z0-9_./]*=[-A-Za-z0-9_.]*(\s*,\s*[A-Za-z0-9][-A-Za-z0-9_./]*=[-A-Za-z0-9_.]*)*\s*$/, 'must be labels key=value, comma-separated')
+    .transform((v) => Object.fromEntries(v.split(',').map((t) => t.trim().split('=') as [string, string]))).default({ 'app.kubernetes.io/name': 'hopper' }),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
@@ -215,7 +224,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
   HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
   HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
-  HOPPER_SANDBOX_RUNTIME: 'podman or docker: the container runtime the hopper starts sandbox boxes through. Unset: Podman whenever it is reachable, else Docker',
+  HOPPER_SANDBOX_RUNTIME: 'podman, docker or kubernetes: the container runtime the hopper starts sandbox boxes through (kubernetes: as pods in a cluster, with no socket: docs/deploy.md "Sandbox boxes on Kubernetes"). Unset: Podman whenever it is reachable, else Docker',
+  HOPPER_KUBERNETES_NAMESPACE: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the namespace sandbox boxes start in. Unset: the hopper\'s own',
+  HOPPER_KUBERNETES_HOPPER_LABELS: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the labels of the hopper\'s pods, key=value, comma-separated, which a box\'s egress policy lets it reach on the hopper\'s port',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -366,6 +377,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
     ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),
     ...(e.HOPPER_SANDBOX_RUNTIME ? { sandboxRuntime: e.HOPPER_SANDBOX_RUNTIME } : {}),
+    ...(e.HOPPER_SANDBOX_RUNTIME === 'kubernetes' ? { kubernetes: { ...(e.HOPPER_KUBERNETES_NAMESPACE ? { namespace: e.HOPPER_KUBERNETES_NAMESPACE } : {}), hopperLabels: e.HOPPER_KUBERNETES_HOPPER_LABELS } } : {}),
     leftoverEnv,
     hopperApps: hopperApps({
       github: {

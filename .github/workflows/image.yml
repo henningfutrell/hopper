@@ -95,3 +95,51 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=box-${{ matrix.agent }}
           cache-to: type=gha,mode=max,scope=box-${{ matrix.agent }}
+
+  # The tools images of the sandbox boxes (issue #1286): each box image with every box tool added, as the hopper adds
+  # them to a box's image (src/sandbox/tools.ts), for a container runtime that builds nothing (Kubernetes,
+  # src/sandbox/launch.ts `publishedToolsImage`). Tags: the box image's, with `-tools`, and with `-tools-read-only` for a
+  # read-only template's boxes (terraform behind the read-only wrapper). Built on the box image of this commit.
+  box-tools:
+    needs: box
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: [claude]
+        variant: [tools, tools-read-only]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/henningfutrell/hopper
+          flavor: latest=false
+          tags: |
+            type=raw,value=box-${{ matrix.agent }}-${{ matrix.variant }},enable=${{ github.ref_name == 'stable' }}
+            type=ref,event=branch,prefix=box-${{ matrix.agent }}-,suffix=-${{ matrix.variant }}
+            type=sha,format=short,prefix=box-${{ matrix.agent }}-sha-,suffix=-${{ matrix.variant }}
+      - name: Write the Containerfile
+        env:
+          READ_ONLY: ${{ matrix.variant == 'tools-read-only' && '--read-only' || '' }}
+        run: node scripts/box-tools-containerfile.ts "ghcr.io/henningfutrell/hopper:box-${{ matrix.agent }}-sha-${GITHUB_SHA::7}" $READ_ONLY > box-tools.Containerfile
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: box-tools.Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=box-${{ matrix.agent }}-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=box-${{ matrix.agent }}-${{ matrix.variant }}
