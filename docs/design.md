@@ -2324,7 +2324,8 @@ only of an issue it has: another user's job (untrusted) does not change the hopp
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper closes one only after its
 own merge of a pull request with no closing keyword that is no part (issue #677, "Closing finishes the loop").
-A pull request the report could not name is followed only to its merge. A throw is a report retry, asked again next
+A pull request the report could not name is followed only to its merge; with none open, the job's own part merged since
+it began is named, so its merge ends as a part's ("A merged part moves its item on", issue #1231). A throw is a report retry, asked again next
 sync. **A job that failed only for want of a merge** — its error `not complete: …`, from before a pull request was
 done — and still waiting on a person in Needs a person is judged again at each sync of its source: done or partly done
 now, it is finished (`SourceHost.finishComplete`), its hand-off closes on `job.finished`, and its end is reported again,
@@ -11449,7 +11450,8 @@ one press per cause where the hopper can move each item.
   failure that Run again takes and no open hand-off counts (`retry`); work not pushed, `push` when Push it is taken (its
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
-  tend its source refused (`tend_refused`); a parked job (`parked`); a job stuck on its own command wait (`own_wait`).
+  tend its source refused (`tend_refused`); a parked job (`parked`); a job stuck on its own command wait (`own_wait`); an
+  item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend` (else 400).
@@ -19726,3 +19728,32 @@ Accounts, and a CLI for the terminals.
 
 Tests: `test/ui/needs-you.test.ts`, `test/ui/needs-you-view.test.ts`, `test/ui/accounts-view.test.ts`,
 `test/ui/question-machine.test.ts`, `test/integration/machine-terminal.test.ts` (`hopper terminal`).
+
+## A merged part moves its item on (issue #1231, 2026-10-15)
+
+The problem: a job's part pull request (`Part of #N`) merged while the job still ran. The job's end was then judged
+done, not partly done: a merged pull request that only refers to the issue counts as done ("Done is a pull request").
+So the report put `hopper:pr-ready` on the issue and kept `follow: open` with no pull request named, as none open was
+left. The follow looks only for an open pull request: it found none each sync and returned nothing. The work item stayed
+in PR open ("waiting on its pull request: checks and the merge") with no job, and no next part ran. No view counted it.
+
+- **The follow names the merged part** (`src/sources/github/follow.ts` `mergedPartOf`). A followed job with no pull
+  request named, and none open, is given its own part merged since the job began: a pull request of its repository whose
+  body says `Part of #N`, merged at or after the job's `createdAt`. Its merge is then followed as any part's:
+  `job.pull_request_merged` with `part: true`, the item moves to partly done, `hopper:pr-ready` comes off, and the next
+  sync offers the issue again, so a new job takes the next part. An item already stuck this way moves on the next follow
+  round after the update: the follow is the reconcile pass, and nothing is migrated.
+- **The next part reads the earlier part.** The done line says: a merged pull request with `Part of #N` is an earlier
+  part; read its body first, and do the work it lists as left.
+- **What the follow cannot move is stuck work** (`src/domain/work-items.ts` `prOpenStuck`, `PR_OPEN_STUCK_MS`, an hour).
+  An item in PR open for an hour that names no open pull request, or whose job follows none (`following`), is in Stuck
+  work as `pr_open_stale`, by its job's id: "Items in PR open with no pull request to wait on". It has no bulk action: a
+  person looks at the issue, presses Run again when work is left, or closes the issue. The Failures view reads the
+  ledger's PR open items for it (`viewOf`).
+- Not changed: the done check still counts a merged pull request that refers to the issue as done. A part whose job ends
+  done is caught by the follow above, so the item never waits on nothing.
+
+**Verification:** `test/sources/github-follow.test.ts` (a merged own part named and followed as a part; one merged before
+the job began is not), `test/integration/pull-request-follow.test.ts` (the item leaves PR open for partly done, and the
+next part is queued), `test/domain/work-items.test.ts` (`prOpenStuck`), `test/domain/stuck.test.ts` (the cause),
+`test/sources/github-context.test.ts` (the done line).

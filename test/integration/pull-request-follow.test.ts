@@ -116,6 +116,33 @@ describe('the pull request after done', () => {
     expect((await app.events('types=job.pull_request_merged')).map((e) => e.data)).toEqual([{ pullRequest: job.partlyDone, part: true }]);
   });
 
+  it('a part merged before the job ended, the job judged done (issue #1231): its item leaves PR open, and the next part runs', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    let part = '';
+    // The job's part merged while it ran, and a merged pull request that only refers to the issue made the job done: the
+    // report names no pull request to follow.
+    const ships = (g: FakeGitHub) => (job: Job): void => {
+      if (part) return; // The next part ships nothing.
+      const { repo, number } = job.source as { repo: string; number: number };
+      const now = new Date().toISOString();
+      part = g.openPartPullRequest(repo, number, { createdAt: now }).url;
+      g.mergePullRequest(part, now);
+      g.mergePullRequest(g.openReferencingPullRequest(repo, number, { createdAt: now }).url, now);
+    };
+    const { issue, job } = await doneWithPullRequest(gh, app, ships);
+    expect(job.partlyDone).toBeUndefined();
+    await labelled(gh, issue.number, 'hopper:pr-ready');
+    await app.sync();
+    const item = () => app.user().store.workItems.get(issue.url);
+    await waitFor(() => item()?.state === 'partly_done', { what: 'the item partly done' });
+    expect(item()).toMatchObject({ pullRequest: part, pullRequestState: 'merged' });
+    expect((await app.events('types=job.pull_request_merged')).map((e) => e.data)).toEqual([{ pullRequest: part, part: true }]);
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
+    await app.sync();
+    await waitFor(async () => (await jobsFor(app, issue.url)).length === 2, { what: 'the next part queued' });
+  });
+
   it('a part on a branch named for the issue (issue #721): partly done, never hopper:pr-ready; merged, never hopper:done, and the next part runs', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
