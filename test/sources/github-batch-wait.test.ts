@@ -121,7 +121,7 @@ describe('the job graph shows an issue that waits on its batch (issue #1337)', (
     const pr = mergedIntoMain(gh, 1, at(90 * MIN), at(80 * MIN));
     openBatch(gh, at(20 * MIN), [pr.number], [1]);
     await source.discover();
-    const status = { name: 'github', kind: 'github-account', state: 'ok' as const, detail: { intake: source.intake!() } };
+    const status = { name: 'github', kind: 'github-account', state: 'ok' as const, itemsSeen: 1, jobsCreated: 0, activeJobs: 0, detail: { intake: source.intake!() } };
     const g = jobGraph({ jobs: [{ ...jobForIssue(1), status: 'failed' }], awaitingBatch: awaitingBatchKeys([status]) });
     expect(g.nodes.find((n) => n.id === issueNodeId(REPO, 1))).toMatchObject({ stage: 'done', awaitsBatch: true });
   });

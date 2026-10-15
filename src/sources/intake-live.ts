@@ -3,6 +3,7 @@
 // its size.
 import type { IntakeOutcome } from '../domain/intake.ts';
 import type { Job, SourceStatus } from '../domain/types.ts';
+import { AWAITS_BATCH } from './github/origin.ts';
 
 export function liveIntake(st: SourceStatus, jobOf: (key: string) => Job | undefined): SourceStatus {
   const intake = st.detail?.intake;
@@ -18,6 +19,18 @@ export function intakeOutcomeOf(statuses: readonly SourceStatus[], key: string):
     if (outcome) return { source: st.name, outcome };
   }
   return undefined;
+}
+
+/**
+ * The issues the last sync of each source found waiting on their batch (issue #1337): Intake's reason, read from GitHub
+ * (`waitingOnBatch`) or from the ledger (`awaitingBatch`). The job graph shows them done.
+ */
+export function awaitingBatchKeys(statuses: readonly SourceStatus[]): Set<string> {
+  const keys = new Set<string>();
+  for (const st of statuses) {
+    for (const x of Array.isArray(st.detail?.intake) ? st.detail.intake as IntakeOutcome[] : []) if (x.reason === AWAITS_BATCH) keys.add(x.key);
+  }
+  return keys;
 }
 
 /** A refusal because the item is taken names its job's status (issue #1045). */

@@ -19,7 +19,7 @@ import { phaseOf } from './phase.ts';
 import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import { countStages, treesOf } from './job-trees.ts';
-import { ITEM_STAGE, rollUp, stageInItem } from './job-rollup.ts';
+import { awaitBatch, ITEM_STAGE, rollUp, stageInItem, stageSinceOf } from './job-rollup.ts';
 import { isInFlight, type WorkItem } from './work-items.ts';
 import type { Job, JobStatus } from './types.ts';
 import type { WaitOn } from './wait-on.ts';
@@ -106,6 +106,11 @@ export interface JobGraphNode {
   handedOff?: true;
   /** A job whose work item is in flight (issue #1113, `isInFlight`), and it is that item's own job: the Jobs view's in-flight filter. */
   inFlight?: true;
+  /**
+   * An issue that waits on its batch (issue #1337): its work merged into the landing branch, and its batch run's merge closes
+   * it. Done, whatever its job's end or the ledger says.
+   */
+  awaitsBatch?: true;
 }
 
 /** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
@@ -153,6 +158,8 @@ export interface JobGraphInput {
   maxAttempts?: number;
   /** The work-item ledger's items of the jobs' source keys (issue #1067): where each issue stands, and each failure. */
   items?: ReadonlyMap<string, WorkItem>;
+  /** The URLs of the issues that wait on their batch (issue #1337): Intake's read of GitHub and the ledger's (`awaitsBatch`). */
+  awaitingBatch?: ReadonlySet<string>;
 }
 
 interface Followed {
@@ -223,16 +230,6 @@ export function stageAt(job: Job, follow: string | undefined): JobStage {
     case 'finished':
       if (waitsOnMerge(job, follow)) return 'partly_done';
       return follow === 'open' ? 'pr_open' : 'done';
-  }
-}
-
-/** When a job entered its stage, as near as its record tells: the moment its fields say, else its last change. */
-export function stageSinceOf(job: Job): string {
-  switch (stageOf(job)) {
-    case 'queued': return job.createdAt;
-    case 'running': return job.status === 'waiting_on' ? job.wait?.since ?? job.updatedAt : job.startedAt ?? job.updatedAt;
-    case 'waiting': return job.wait?.since ?? job.parked?.at ?? job.updatedAt;
-    default: return job.finishedAt ?? job.updatedAt;
   }
 }
 
@@ -373,6 +370,9 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       ...(before.stage === 'no_job' && closed ? { stage: 'done' } : {}),
     });
   }
+
+  // An issue that waits on its batch (issue #1337) is done: its batch run's merge closes it. Only the issues here.
+  awaitBatch(nodes, input.awaitingBatch ?? []);
 
   // The edges.
   for (const l of input.links ?? []) edge(issueNodeId(l.parent.repo, l.parent.number), l.required ? 'parent' : 'follow_up', issueNodeId(l.child.repo, l.child.number));
