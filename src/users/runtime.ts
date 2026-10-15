@@ -32,7 +32,7 @@ import { checksRedOf, createFailures, type Failures } from '../failures/index.ts
 import { createLastAccounts, createLogins, createSignIns, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
-import { userTypesafeKey } from './typesafe-key.ts'; import { userGitHubAppKey } from './github-app-key.ts';
+import { userTypesafeKey } from './typesafe-key.ts'; import { userGitHubAppKey } from './github-app-key.ts'; import { userInstalledApps, type InstalledApps } from './installed-apps.ts';
 import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
 import { withSystemScope } from '../vault/system-view.ts';
@@ -149,6 +149,8 @@ export interface UserRuntime {
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): kept in the vault's system scope, set on the Jev page. */
   typesafeKey: TypesafeKey; githubAppKey: GitHubAppKey;
+  /** The GitHub Apps installed on the organizations the user's GitHub connection knows (issue #1243): the app source's pick. */
+  installedApps: InstalledApps;
   /** The TL;DR of every long card (issue #569): its sweep. */
   tldrs: Tldrs;
   dispatcher: WebhookDispatcher; executors: ExecutorRegistry; outbound: Outbound; // the user's outbound sends (issue #1014)
@@ -399,7 +401,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, githubAppKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, githubAppKey, installedApps: userInstalledApps(connectedAccounts), tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

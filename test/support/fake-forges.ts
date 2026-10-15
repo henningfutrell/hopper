@@ -24,7 +24,7 @@ import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsFor
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
-import { peopleRoute, type PeopleForge } from './fake-people.ts';
+import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
 import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
@@ -53,7 +53,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, JobLogsForge {
+export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, OrgAppsForge, JobLogsForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -250,7 +250,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
       // A repository listing (issue #985: first, it asks check rollups too); a repository's checks (issue #677); the accounts GitHub knows (issue #930).
-      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query);
+      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query) ?? orgAppsRoute(forge, base, r.method, path, r.query);
       if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };

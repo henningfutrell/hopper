@@ -27,6 +27,26 @@ export interface GitHubAppKeyView {
   problem?: string;
 }
 
+/** A GitHub App installed on an organization (issue #1243): what Use this app sets on the app source. */
+export interface InstalledApp {
+  /** The organization it is installed on. */
+  account: string;
+  appId: number;
+  slug: string;
+  /** The installation's settings page on GitHub. */
+  settingsUrl?: string;
+}
+
+/**
+ * GET /api/github-apps (issue #1243): the GitHub Apps installed on each organization the person's GitHub connection knows.
+ * `refused`: an organization GitHub would not list, and why. `notConnected`: no connection to ask with; nothing was asked.
+ */
+export interface InstalledAppsView {
+  apps: InstalledApp[];
+  refused: { account: string; error: string }[];
+  notConnected?: string;
+}
+
 export interface SourceStatus {
   name: string;
   kind: string;

@@ -16,12 +16,15 @@ When you do not want the GitHub App source, switch it off in **Plugins → Job s
 
 Do one of these:
 
-- **Use an app you already have.** It must be installed on the account or organization that owns your job repositories. On GitHub, open the app's settings page. Its **App ID** and its slug (the last part of the app's URL, `https://github.com/apps/<slug>`) are on that page.
+- **Pick an app that is already installed on your organization.** On **Sources**, the source's setup card has **List installed apps**. The hopper asks GitHub, with your GitHub connection, which apps are installed on each organization it knows: the organizations the hopper's app is installed on, and the owners of your job repositories. Select **Use this app** beside the app. The hopper sets the app's id and slug on the source, so you can skip step 2. GitHub shows this list only to an owner of the organization, and only when the hopper's app may read the organization's administration settings. When GitHub refuses, the card names the organization and why. Then use the next way.
+- **Use an app you already have, by hand.** It must be installed on the account or organization that owns your job repositories. On GitHub, open the app's settings page. Its **App ID** and its slug (the last part of the app's URL, `https://github.com/apps/<slug>`) are on that page.
 - **Make a new app.** On the machine that runs the hopper, run `bash scripts/create-github-app.sh` from the hopper's checkout. It opens GitHub's create-app page with the right permissions. When you confirm, the script prints the new app's id and slug, and writes its private key to a secrets file (by default `~/.config/hopper/daemon.env`, the line `GITHUB_APP_PRIVATE_KEY=`). Copy the key from that file for step 3, then remove the line. Then install the app on the account or organization that owns your job repositories.
 
 Each hopper needs its own app. Do not share one app's private key between two hoppers.
 
 ## Step 2: set the app's id and slug
+
+When you used **Use this app** in step 1, this is done. Else:
 
 1. Open **Plugins → Job sources**.
 2. Open the `github-app` source.
