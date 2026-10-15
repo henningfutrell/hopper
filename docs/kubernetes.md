@@ -202,5 +202,8 @@ compose stack it made.
 node scripts/kind-migrate-check.ts --tag dev      # --keep keeps both
 ```
 
+A pull request that changes the chart, this check or `scripts/hopper-cluster.sh` runs it after the kind check
+(`.github/workflows/kind.yml`), with the `dev` channel's image.
+
 It needs `kind`, `helm`, `kubectl` and Docker (or Podman with `KIND_EXPERIMENTAL_PROVIDER=podman`). A job run needs a
 GitHub sign-in, which no check has: with `--keep`, sign in to the cluster hopper and queue a job on a test repository.
