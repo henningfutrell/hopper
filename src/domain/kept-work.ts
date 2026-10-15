@@ -5,12 +5,33 @@
 // work tree, told to push) and Discard. Pure. Re-exported from types.ts.
 import type { DomainEvent, Job, JobStatus } from './types.ts';
 import type { Allowed } from './failures.ts';
+import { jobScratchOf, scratchParts, worktreeParts } from './job-layout.ts';
 
 /** The ends whose kept work Push it takes: the job goes on in its own session and work tree. Not a rejected job: it never ran. */
 export const PUSHABLE_ENDS: readonly JobStatus[] = ['failed', 'finished', 'cancelled'];
 
 /** The work trail: the events that keep and remove an ended job's scratch dir. */
 export const WORK_EVENTS = ['job.work_kept', 'job.work_removed'] as const;
+
+/**
+ * Why the sweep discarded kept work with no person (issue #1187): its item is done (`merged`, issue #1105); a newer job of
+ * its item finished, its cleanup done, with nothing kept (`superseded`); or it finished a proposal or a research report, never work to push
+ * (`proposal`, `research`).
+ */
+export const WORK_DISCARD_REASONS = ['merged', 'superseded', 'proposal', 'research'] as const;
+export type WorkDiscardReason = typeof WORK_DISCARD_REASONS[number];
+
+/**
+ * Pure: why nobody waits on an ended job's kept work any more, or undefined. `itemDone`: its item is done, as the ledger
+ * has it. `newest`: the newest job of its item. `kept`: the jobs whose work is kept.
+ */
+export function discardReasonOf(job: Job, itemDone: boolean, newest: Job | undefined, kept: ReadonlySet<string>): WorkDiscardReason | undefined {
+  if (itemDone) return 'merged';
+  if (newest && newest.id !== job.id && newest.status === 'finished' && !newest.cleanupDeferred && !kept.has(newest.id)) return 'superseded';
+  if (job.status === 'finished' && job.spec.proposal) return 'proposal';
+  if (job.status === 'finished' && job.spec.research) return 'research';
+  return undefined;
+}
 
 /** One ended job's kept work: the repositories holding it, and when it was kept. */
 export interface KeptWork { jobId: string; paths: string[]; at: string }
@@ -40,16 +61,18 @@ export function keptWorkOf(newestFirst: readonly DomainEvent[]): KeptWork[] {
 }
 
 /**
- * The job's own scratch dir (`…/.hopper-scratch/<job id>`) its kept repositories are in, or beside: a job worktree
- * `<work tree>/workspace/worktrees/<name>-<job id>` (issue #1103) has it in that work tree. Undefined when none is.
+ * The job's own scratch dir (`…/.worktrees/@scratch/<job id>`, job-layout.ts) its kept repositories are in, or beside: a
+ * job worktree `<work tree>/.worktrees/<name>/<job id>` (issue #1188) has it in that work tree. A path of the layout before
+ * answers that layout's scratch dir, which the reap takes all the same. Undefined when none is.
  */
 export function scratchOf(paths: readonly string[], jobId: string): string | undefined {
-  const marker = `/.hopper-scratch/${jobId}`;
   for (const p of paths) {
-    const at = p.indexOf(marker);
-    if (at > 0 && (p.length === at + marker.length || p[at + marker.length] === '/')) return p.slice(0, at + marker.length);
-    const tree = /^(\/.*)\/workspace\/worktrees\/[^/]+$/.exec(p);
-    if (tree && p.endsWith(`-${jobId}`)) return `${tree[1]}${marker}`;
+    for (let at = p.length; at > 0; at = p.lastIndexOf('/', at - 1)) {
+      const parts = scratchParts(p.slice(0, at));
+      if (parts?.jobId === jobId) return p.slice(0, at);
+    }
+    const tree = worktreeParts(p);
+    if (tree && (tree.old ? tree.name.endsWith(`-${jobId}`) : tree.name === jobId)) return jobScratchOf(tree.workTree, jobId);
   }
   return undefined;
 }
@@ -57,7 +80,7 @@ export function scratchOf(paths: readonly string[], jobId: string): string | und
 /** Its scratch dir: by its kept repositories, else by its work tree. */
 export function keptScratchOf(kept: KeptWork, job: Job): string | undefined {
   const cwd = (job.executorState as { cwd?: unknown } | undefined)?.cwd;
-  return scratchOf(kept.paths, job.id) ?? (typeof cwd === 'string' && cwd.startsWith('/') ? `${cwd.replace(/\/+$/, '')}/.hopper-scratch/${job.id}` : undefined);
+  return scratchOf(kept.paths, job.id) ?? (typeof cwd === 'string' && cwd.startsWith('/') ? jobScratchOf(cwd, job.id) : undefined);
 }
 
 /** The machine a job ran on: its pane's lane's, else where it resumes or is pinned (issue #551). */

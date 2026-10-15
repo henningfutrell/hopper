@@ -9,7 +9,7 @@ import { SCRATCH_READY, SCRATCH_UNUSABLE, scratchCommand } from '../../src/execu
 
 const JOB = 'abcdef12-3456-7890-abcd-ef1234567890';
 const TREE = '/home/dev/work';
-const WORKTREE = `${TREE}/.hopper-scratch/${JOB}/hopper`;
+const WORKTREE = `${TREE}/.worktrees/@scratch/${JOB}/hopper`;
 
 const cases: [string, string, string[]][] = [
   ['the scratch dir command', scratchCommand(TREE, JOB, true), [SCRATCH_READY, SCRATCH_UNUSABLE]],

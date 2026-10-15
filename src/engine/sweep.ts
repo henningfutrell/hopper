@@ -6,13 +6,15 @@
 //   answer, or led by an operator): stopped;
 // - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24), or at once while its
 //   work was kept (job.work_kept): removed unless it still holds work not pushed. Its job worktree in the work tree's
-//   workspace (issue #1103) goes or stays with it, and one whose scratch dir is gone is reaped by that dir all the same. Work kept that the sweep
+//   `.worktrees` (issue #1188) goes or stays with it, and one whose scratch dir is gone is reaped by that dir all the same. Work kept that the sweep
 //   then removes is recorded as job.work_removed; work it keeps for the first time, as job.work_kept.
 // A job id the hopper does not know is never touched: it may be another hopper's, or a test's.
 // Work kept is logged once, when first kept; the next passes keep it quietly (issue #1010). A person may discard it
 // (issue #1010, design.md "Work not pushed"): its scratch dir is reaped on its machine whatever it holds. Kept work of a
 // job whose work item is done, as the work-item ledger has it, waits on nobody: the sweep discards it so (issue #1105),
-// recorded as job.work_removed, discarded, with no person. Kept work whose scratch dir and job worktree are gone from a
+// recorded as job.work_removed, discarded, with no person and the reason `merged`. So does kept work a newer job of its
+// item took over, once that job finished with nothing kept (`superseded`), and kept work of a job that finished a proposal
+// or a research report (`proposal`, `research`): it never had work to push (issue #1187). Kept work whose scratch dir and job worktree are gone from a
 // work tree the survey found on the job's machine (removed by hand, or by a cleanup outside the hopper) is resolved so
 // (issue #1120): job.work_removed with gone, nothing removed. Should it come back, the sweep finds it and keeps it again.
 // The survey also measures the hopper's own disk use in each work tree (issue #1120, design.md "Hopper's own disk use"): the
@@ -24,7 +26,8 @@
 // whatever its age: the reap removes them. What any reap removed of them is recorded as job.containers_removed.
 import type { ActingPerson, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS } from '../domain/types.ts';
+import { discardReasonOf, hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -43,11 +46,15 @@ const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'wa
 /** One reap the sweep asks of a machine. */
 export interface SweepReap { jobId: string; scratch?: string }
 
-const TREES = '/workspace/worktrees/';
-
-/** The known job a job worktree `<name>-<job id>` is of (issue #1103): its name may hold `-` too, so each split is tried. */
+/**
+ * The known job a job worktree is of: `<job id>` its name (issue #1188), or `<name>-<job id>` in the layout before, whose
+ * name may hold `-` too, so each split is tried.
+ */
 function treeJob(path: string, jobOf: (id: string) => Job | undefined): Job | undefined {
-  const name = path.slice(path.lastIndexOf('/') + 1);
+  const tree = worktreeParts(path);
+  if (!tree) return undefined;
+  const name = tree.name;
+  if (!tree.old) return jobOf(name);
   for (let at = name.indexOf('-'); at >= 0; at = name.indexOf('-', at + 1)) {
     const job = jobOf(name.slice(at + 1));
     if (job) return job;
@@ -74,8 +81,8 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   for (const tree of found.trees ?? []) {
     const job = treeJob(tree.path, jobOf);
     if (!job || !TERMINAL_STATUSES.includes(job.status) || plan.get(job.id)?.scratch) continue;
-    const root = tree.path.slice(0, tree.path.lastIndexOf(TREES));
-    if (tree.ageMs >= maxAgeMs || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: `${root}/.hopper-scratch/${job.id}` });
+    const root = worktreeParts(tree.path)!.workTree;
+    if (tree.ageMs >= maxAgeMs || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: jobScratchOf(root, job.id) });
   }
   return [...plan.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
@@ -98,7 +105,8 @@ export function goneKept(found: Survey, kept: readonly KeptWork[], jobOf: (id: s
     const job = jobOf(k.jobId);
     if (!job || there.has(job.id) || !TERMINAL_STATUSES.includes(job.status) || machineRanOn(job) !== machineId) continue;
     const scratch = keptScratchOf(k, job);
-    if (scratch && roots.has(scratch.slice(0, scratch.lastIndexOf('/.hopper-scratch/')))) out.push({ jobId: job.id, scratch });
+    const root = scratch ? scratchParts(scratch)?.workTree : undefined;
+    if (scratch && root && roots.has(root)) out.push({ jobId: job.id, scratch });
   }
   return out.sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
@@ -118,6 +126,10 @@ export interface Sweep {
   /** The hopper's own disk use on the machine as the sweep last measured it, against the disk budget now (issue #1120); undefined: never measured. */
   disk(machineId: string): HopperDisk | undefined;
 }
+
+const WHY: Record<WorkDiscardReason, string> = {
+  merged: 'its item is done', superseded: 'a newer job of its item finished', proposal: 'it finished a proposal', research: 'it finished a research report',
+};
 
 const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`;
 const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' : 's'}`;
@@ -142,10 +154,11 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** Work kept and not removed since: the newest work event of each job. */
   const keptNow = (): KeptWork[] => keptWorkOf(c.store.events.recent(KEPT_EVENTS, [...WORK_EVENTS]));
 
-  /** Whether the job's work item is done, as the ledger has it: its kept work waits on nobody. */
-  const itemDone = (job: Job | undefined): boolean => {
-    const key = job?.source?.key;
-    return key !== undefined && c.store.workItems.get(key)?.state === 'done';
+  /** Why the job's kept work waits on nobody (issue #1187): its item done, a newer job of it, or no work to push. */
+  const discardReason = (job: Job | undefined, kept: ReadonlySet<string>): WorkDiscardReason | undefined => {
+    if (!job) return undefined;
+    const key = job.source?.key;
+    return discardReasonOf(job, key !== undefined && c.store.workItems.get(key)?.state === 'done', key === undefined ? undefined : c.store.jobs.getBySourceKey(key), kept);
   };
 
   /** What a reap removed of the job's containers and volumes (issue #1120), recorded. */
@@ -195,7 +208,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     let removed = 0;
     for (const r of plan) {
       if (c.stopping()) return removed;
-      const discard = r.scratch !== undefined && kept.has(r.jobId) && itemDone(jobOf(r.jobId));
+      const reason = r.scratch !== undefined && kept.has(r.jobId) ? discardReason(jobOf(r.jobId), kept) : undefined;
+      const discard = reason !== undefined;
       let said;
       try {
         said = discard ? await shell.reap(r.jobId, r.scratch, false, true) : await shell.reap(r.jobId, r.scratch);
@@ -206,8 +220,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       recordRemoved(r.jobId, m, said);
       if (r.scratch && said.kept.length === 0) removed += 1;
       if (discard && said.kept.length === 0) {
-        log(`hopper: the sweep discarded job ${r.jobId}'s kept work on ${m.id}: its item is done`);
-        c.store.events.append({ type: 'job.work_removed', jobId: r.jobId, data: { paths: [r.scratch!], discarded: true } });
+        log(`hopper: the sweep discarded job ${r.jobId}'s kept work on ${m.id}: ${WHY[reason]}`);
+        c.store.events.append({ type: 'job.work_removed', jobId: r.jobId, data: { paths: [r.scratch!], discarded: true, reason } });
         continue;
       }
       // Kept again is no news: logged only the first time.

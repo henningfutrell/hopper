@@ -16,7 +16,7 @@ export const diskBudgetBody = z.strictObject({
 
 /** The disk budget's part of the API reference (src/http/openapi.ts). */
 export const DISK_BUDGET_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/machines/disk-budget', tag: 'Machines and usage', summary: 'The disk budget', description: 'Issue #1120. The most the hopper\'s own disk use (its scratch areas and job worktrees) may be on each machine; null: none.', returns: '`{ diskBudget: DiskBudget | null }`' },
+  { method: 'get', path: '/api/machines/disk-budget', tag: 'Machines and usage', summary: 'The disk budget', description: 'Issue #1120. The most the hopper\'s own disk use (each work tree\'s `.worktrees`) may be on each machine; null: none.', returns: '`{ diskBudget: DiskBudget | null }`' },
   { method: 'post', path: '/ui/api/machines/disk-budget', tag: 'Machines and usage', summary: 'Set the disk budget', description: 'Issue #1120. The sweep measures the hopper\'s own disk use on each machine (`hopperDisk` on GET /api/machines). Over `budget.bytes`, it reaps every ended job\'s scratch dir at once, whatever its age (work not pushed is still kept); still over, a person is told as `machine.disk_over_budget`, and as `machine.disk_within_budget` once it is back within it; webhooks take them. `budget: null` turns it off.', role: 'admin', body: diskBudgetBody, returns: '`{ diskBudget: DiskBudget | null }`' },
 ];
 

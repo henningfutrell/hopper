@@ -69,7 +69,7 @@ describe('cursor-agent executor', () => {
     expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, HOPPER_REPO: 'o/r' });
     expect(call!.argv.slice(0, -1)).toEqual(['-p', '--output-format', 'json', '--workspace', work, '--force', '--trust', '--model', 'sonnet-4', '--']);
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
-    expect(readFileSync(join(work, '.hopper-scratch', '.gitignore'), 'utf8')).toBe('*\n');
+    expect(readFileSync(join(work, '.worktrees', '.gitignore'), 'utf8')).toBe('*\n');
   });
 
   it('runs with the job\'s way to the hopper, as herdr-claude does (issues #214, #652)', async () => {

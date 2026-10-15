@@ -4,7 +4,7 @@
 import type { BranchPullRequest, GitHubIssue, OpenPullRequestsIn, PullRequestRef, PullRequestStates, ReferencingPullRequest } from './api.ts';
 import { pullKey } from './api.ts';
 
-type Pull = ReferencingPullRequest & { headRef: string; base?: string };
+type Pull = ReferencingPullRequest & { headRef: string; base?: string; title?: string };
 
 export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn', args: unknown[]) => void) {
   return {
@@ -28,7 +28,8 @@ export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter
       const out: OpenPullRequestsIn = { repos: new Map(), repoErrors: new Map() };
       for (const repo of repos) {
         out.repos.set(repo, pulls.filter((p) => p.repo === repo && p.state === 'open').reverse()
-          .map((p): BranchPullRequest => ({ url: p.url, createdAt: p.createdAt, isDraft: p.isDraft, conflicting: p.conflicting, headRef: p.headRef, body: p.body })));
+          .map((p): BranchPullRequest => ({ url: p.url, createdAt: p.createdAt, isDraft: p.isDraft, conflicting: p.conflicting, headRef: p.headRef, body: p.body,
+            ...(p.base ? { base: p.base } : {}), ...(p.title ? { title: p.title } : {}) })));
       }
       return out;
     },

@@ -54,16 +54,14 @@ const posts: { path: string; body: unknown }[] = [];
 let sources: unknown[] = SOURCES;
 let vault: unknown = VAULT;
 let pullRequests: unknown = PULL_REQUESTS;
-let plans: unknown = { plans: [PLAN], applies: [] };
+let plans: unknown = { plans: [PLAN], applies: [], settings: { autoApprove: false }, watchers: {} };
 let minor: unknown = MINOR;
-/** The ledger's items waiting for approval. */
-let waitingForApproval = 1;
 
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    // The work-item ledger's counts (issue #1067): Intake's badge and row read them.
-    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [], items: { ...countStates([]), waiting_for_approval: waitingForApproval } },
+    // The work-item ledger's counts (issue #1067) lag the source's card here: Intake's badge and row count the cards the page shows (issue #1193).
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [], items: { ...countStates([]), waiting_for_approval: 0 } },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/questions': { questions: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
@@ -79,6 +77,11 @@ function fakeDaemon() {
     if (init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as unknown;
       posts.push({ path, body });
+      if (path === '/ui/api/infra-plans') {
+        const plan = { ...PLAN, approval: { plan: PLAN.id, by: 'admin', at: '2026-10-12T00:00:00.000Z' } };
+        plans = { plans: [plan], applies: [], settings: { autoApprove: false }, watchers: {} };
+        return json(200, { plan });
+      }
       return json(200, path === '/ui/api/vault' ? { ...VAULT, templates: [{ ...TEMPLATE, approval: { by: 'admin', at: '2026-10-12T00:00:00.000Z', image: TEMPLATE.image, secrets: TEMPLATE.secrets } }] } : { done: [], failed: {} });
     }
     if (path === '/api/sources') return json(200, { sources });
@@ -109,10 +112,9 @@ async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pul
   localStorage.setItem('jh_session', 'a'.repeat(64));
   posts.length = 0;
   sources = o.sources ?? SOURCES;
-  waitingForApproval = o.sources?.length === 0 ? 0 : 1;
   vault = 'vault' in o ? o.vault : VAULT;
   pullRequests = o.pullRequests ?? PULL_REQUESTS;
-  plans = o.plans ?? { plans: [PLAN], applies: [] };
+  plans = o.plans ?? { plans: [PLAN], applies: [], settings: { autoApprove: false }, watchers: {} };
   minor = o.minor ?? MINOR;
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -150,6 +152,17 @@ describe('the nav: Dashboard, then Needs you, Intake and Access requests top-lev
     await vi.waitFor(() => expect(badge('#pull-requests')).toBe('1'));
     await vi.waitFor(() => expect(badge('#infra')).toBe('1'));
     expect(navLink('#pull-requests')!.querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('the hopper gave up on 1 pull request');
+  });
+
+  it('an approve on Infra takes the plan off the badge at once, not at the next read (issue #1193)', async () => {
+    await boot('#infra');
+    await vi.waitFor(() => expect(badge('#infra')).toBe('1'));
+    const approve = await vi.waitFor(() => { const b = [...main().querySelectorAll('button')].find((x) => x.textContent?.trim() === 'Approve'); expect(b).toBeDefined(); return b!; });
+    const reads = () => (fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls.filter(([u, i]) => String(u).startsWith('/api/infra-plans') && i?.method !== 'POST').length;
+    const before = reads();
+    await act(async () => { approve.click(); });
+    await vi.waitFor(() => expect(badge('#infra')).toBeUndefined());
+    expect(reads()).toBe(before);
   });
 
   it('no view in the link opens the Dashboard (issue #951)', async () => {

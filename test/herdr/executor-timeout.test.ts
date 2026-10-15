@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { CWD, JOB_ID, contextFor, jobWith, setup } from './support.ts';
 
-const SCRATCH = `${CWD}/.hopper-scratch/${JOB_ID}`;
+const SCRATCH = `${CWD}/.worktrees/@scratch/${JOB_ID}`;
 
 describe('herdr-claude executor: a timeout', () => {
   it('a timeout records its liveness (issue #630): when its pane output last changed, whether it pushed work; its scratch dir is kept, as a park keeps it', async () => {

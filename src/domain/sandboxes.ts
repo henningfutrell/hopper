@@ -53,6 +53,9 @@ export interface ContainerSpec {
 /** What the hopper reads of an image: the user it runs as (`''`: none set, which is root), and its id when the runtime says. */
 export interface ImageInfo { user: string; id?: string }
 
+/** One image on a machine, as a runtime lists it (issue #1120): no tag is `tags: []`; `createdAt` in ms since the epoch. */
+export interface ListedImage { id: string; tags: string[]; createdAt: number; labels: Record<string, string> }
+
 /**
  * The tools the hopper adds to a box's image (issue #716, item 2): each from its own release, pinned, checked by its
  * SHA-256 (src/sandbox/tools.ts). A template names the ones its boxes get; a launch gets them, or names fewer.
@@ -110,6 +113,13 @@ export interface ContainerRuntime {
   exec?(id: string, run: ExecRun): Promise<number>;
   /** Extract the tar file `tar` (on this machine) into the directory `dir` of the running container, owned by its user. */
   copyIn?(id: string, dir: string, tar: string): Promise<void>;
+  /** Every image on the machine, intermediate ones too (issue #1120). Absent: this runtime lists none (one on another machine). */
+  listImages?(): Promise<ListedImage[]>;
+  /**
+   * Remove the image, never forced (issue #1120): true, it is removed; false, it is gone already, or the runtime keeps it
+   * (a container uses it, or it is the parent of another). Throws on any other refusal.
+   */
+  removeImage?(id: string): Promise<boolean>;
 }
 
 /** A command run in a box (issue #1004): its argv (no shell but the one it names), and its environment beside the box's. */

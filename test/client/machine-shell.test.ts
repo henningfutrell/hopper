@@ -28,7 +28,7 @@ const alive = (p: ChildProcess): boolean => p.exitCode === null && p.signalCode 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'jh-shell-'));
   work = join(root, 'work');
-  scratch = join(work, '.hopper-scratch', JOB);
+  scratch = join(work, '.worktrees', '@scratch', JOB);
   mkdirSync(scratch, { recursive: true });
   writeFileSync(join(scratch, 'tmp.txt'), 'x');
 });
@@ -90,7 +90,7 @@ describe.each([
 
   it('makes no work tree that is not there, unless it may be made (issue #441)', async () => {
     const shell = await shellOf();
-    const absent = join(root, 'absent', '.hopper-scratch', JOB, 'credentials');
+    const absent = join(root, 'absent', '.worktrees', '@scratch', JOB, 'credentials');
     await expect(shell.keepCredential(JOB, absent, 'f', 'x')).rejects.toThrow(/not there/);
     expect(existsSync(join(root, 'absent'))).toBe(false);
     await shell.keepCredential(JOB, absent, 'f', 'x', true);

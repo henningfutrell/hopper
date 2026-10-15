@@ -141,7 +141,8 @@ landing tip by GitHub's own merge, and a pull request of it into the landing bra
 a conflict GitHub cannot merge files one issue the same way as a fix issue, its text fixed, and no second while it stands
 (`landing_batch.back_merge_issue_filed`). **Pull request housekeeping** (issue #1143, `docs/design.md` "Pull request housekeeping") is the hopper's
 care of a job's open pull request it follows, or a **stray** one (a job named it, no job follows it, no job of its item
-works on it; part 4): it moves one based off the landing branch to it, closes one with nothing
+works on it; part 4), or an **untracked** one of an item the ledger holds, on a branch named for its issue (issue #1176,
+`docs/design.md` "Untracked pull requests"; only the move): it moves one based off the landing branch to it, closes one with nothing
 left to land, and posts on the pull request one fixed comment for each such act and for each tend job it starts,
 naming no person; the batch runner's move of a job's pull request from the tested branch, followed or not, posts the same
 comment. A job's own request through the GitHub proxy (issue #563) is
@@ -189,8 +190,8 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "Update channels and promotion").
 - **Changes reach people main → dev → beta → canary → stable** (issue #1073, `docs/design.md` "Landing batches").
   Pull requests merge to `main`, the landing branch and the default branch, after the fast checks (the
-  gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it; a red
-  batch's culprit is reverted from `main`, and the rest of the batch moves on;
+  gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it, and that merge closes the issues of the batch's job pull requests (its text
+  names them with closing keywords, issue #1175); a red batch's culprit is reverted from `main`, and the rest of the batch moves on;
   `beta` and `canary` move only by `scripts/promote.sh`, one step at a time; `stable` moves to the canary's candidate
   when its canary window passes with no bug report that names it (the batch runner, part 5), or by `scripts/promote.sh stable`.
 - **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served

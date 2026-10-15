@@ -97,6 +97,8 @@ describe('open pull requests of many repositories in one batched read (issue #98
     expect(got.repos.get('owner/a')!.map((p) => [p.url, p.headRef, p.body])).toEqual([
       ['https://github.com/owner/a/pull/2', 'x', 'Part of #9'], ['https://github.com/owner/a/pull/1', 'issue-9', 'Closes #9'],
     ]);
+    // Its base and title too (issue #1176: the untracked pull requests list).
+    expect(got.repos.get('owner/a')![0]).toMatchObject({ base: 'main', title: 'Issue 2' });
     expect(got.repos.get('owner/b')).toEqual([]);
     expect(graphqlRequests(h)).toHaveLength(1);
     expect(restReads(h)).toEqual([]);

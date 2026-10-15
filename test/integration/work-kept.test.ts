@@ -30,10 +30,10 @@ async function cancelled(kept?: string[], removed?: { containers: string[]; volu
 
 describe('work the reap kept (issue #401)', () => {
   it('flags each kept repository on the job: job.work_kept with its paths', async () => {
-    const { a, job } = await cancelled(['/w/.hopper-scratch/j/repo']);
+    const { a, job } = await cancelled(['/w/.worktrees/@scratch/j/repo']);
     await waitFor(async () => (await a.events('types=job.work_kept')).length === 1);
     const [e] = await a.events('types=job.work_kept');
-    expect(e).toMatchObject({ jobId: job.id, data: { paths: ['/w/.hopper-scratch/j/repo'] } });
+    expect(e).toMatchObject({ jobId: job.id, data: { paths: ['/w/.worktrees/@scratch/j/repo'] } });
   });
 
   it('records nothing when the reap kept nothing', async () => {

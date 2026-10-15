@@ -13,7 +13,7 @@
 // not gone on, its wait is flagged stuck (`job.own_command_stuck`) and it waits on a person.
 // Then the runner reattaches it: the executor watches the new turn until the next outcome.
 // The job already runs physically, so it never waits for a lane: with none idle it opens one
-// more, over the lane cap until it ends (the decider drains the extra lane).
+// more, marked past the cap (`pastCap`), over the lane cap until it ends: the decider drains that lane first (issue #1181).
 import type { PaneAnswer } from '../domain/ports.ts';
 import type { Job, JobWait } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -40,12 +40,12 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
   const { store } = c;
   let busy = false;
 
-  /** In the tx: an idle lane on the job's machine, else a new one (over the cap). */
+  /** In the tx: an idle lane on the job's machine, else a new one, marked past the cap (issue #1181). */
   function laneFor(job: Job): string {
     const machineId = job.resumeOn ?? job.spec.machineId ?? 'local';
     const idle = store.lanes.list().find((l) => l.machineId === machineId && l.state === 'idle');
     if (idle) return idle.id;
-    const lane = store.lanes.open(machineId);
+    const lane = store.lanes.update(store.lanes.open(machineId).id, { pastCap: true });
     store.events.append({ type: 'lane.opened', laneId: lane.id, machineId, data: {} });
     return lane.id;
   }

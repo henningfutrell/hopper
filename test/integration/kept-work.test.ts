@@ -22,7 +22,7 @@ const DONE = { output: ['● Pushed the work and opened the pull request.', '  H
 const WORKING = { steps: ['● Sanding'], output: [], end: 'working' as const };
 const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const herdrItem = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
-const KEPT = '/tmp/.hopper-scratch/kept/repo';
+const KEPT = '/tmp/.worktrees/@scratch/kept/repo';
 
 async function boot(herdr: FakeHerdrClient): Promise<TestApp> {
   const db = tempDbPath();
