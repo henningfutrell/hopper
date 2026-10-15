@@ -23,6 +23,7 @@ import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
 import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
 import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES, landingBranch } from '../domain/landing-batches.ts';
+import { batchClosingIssues } from '../domain/work-item-landing.ts';
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
@@ -219,6 +220,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
           const url = (j.sourceState?.source as { pullRequest?: unknown } | undefined)?.pullRequest;
           return typeof url === 'string' ? [url] : [];
         }),
+        // The ledger's done items of the batch's pull requests (issue #1175): the batch run's merge closes their issues.
+        closingIssues: (repo, merges) => batchClosingIssues(o.store.workItems.list({ state: ['done'] }), repo, merges),
         now: () => o.clock.now(),
         log: (l) => o.logger.warn(l),
       }),

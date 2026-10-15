@@ -5,7 +5,7 @@
 // event (src/store/work-items.ts), and a rebuild replays every event through it.
 import type { GraphNode } from './issue-graph.ts';
 import type { DomainEvent, EventType } from './types.ts';
-import { LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
+import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
 
 /**
@@ -127,9 +127,15 @@ const DONE_RESULTS: readonly string[] = ['operator-led work complete', 'issue cl
 /** Why an issue closed when it is not done by its close. */
 const NOT_COMPLETED: readonly string[] = ['not_planned', 'duplicate'];
 
-/** Where the item stands: what the events say, unless they say no job or person acts on it and GitHub says it ended. */
-export function stateOf(i: Pick<WorkItem, 'eventState' | 'pullRequestState' | 'issueState' | 'issueReason'>): WorkItemState {
-  if (isActive(i.eventState) || i.eventState === 'done') return i.eventState;
+/**
+ * Where the item stands: what the events say, unless they say no job or person acts on it and GitHub says it ended. A
+ * culprit of a red batch, and its change reverted from the landing branch, is failed (issue #1175): its merge shipped
+ * nothing that stays, whatever its issue says, until a new job takes the item over.
+ */
+export function stateOf(i: Pick<WorkItem, 'eventState' | 'pullRequestState' | 'issueState' | 'issueReason' | 'landing'>): WorkItemState {
+  if (isActive(i.eventState)) return i.eventState;
+  if (isLandingUndone(i.landing)) return 'failed';
+  if (i.eventState === 'done') return i.eventState;
   if (i.pullRequestState === 'merged' && i.eventState !== 'partly_done') return 'done';
   if (i.issueState?.toLowerCase() === 'closed') return NOT_COMPLETED.includes((i.issueReason ?? '').toLowerCase()) ? 'dropped' : 'done';
   return i.eventState;
@@ -266,6 +272,14 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     default:
       return undefined;
   }
+}
+
+/** The item after a `landing_batch.*` event (`applyLanding`), its state settled with its stage; undefined: it does not move it. */
+export function applyLandingEvent(item: WorkItem, event: Pick<DomainEvent, 'type' | 'at' | 'data'>): WorkItem | undefined {
+  const next = applyLanding(item, event);
+  if (!next) return undefined;
+  const { state: _s, stateSince: _ss, version: _v, ...base } = next;
+  return settled(item, base, event.at);
 }
 
 /** The item after a read of GitHub; undefined: it says nothing new. A read of the issue older than the item's newest event is old news. */

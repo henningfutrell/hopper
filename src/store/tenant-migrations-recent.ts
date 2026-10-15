@@ -45,4 +45,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 58: The work-item ledger, rebuilt (issue #1174): a proposal or a research report at a person needs you, so an item whose
   // job waits on one now reads `needs_you`, not `working`. Rows only, states the build before already knows.
   (db) => { rebuildWorkItems(db); },
+  // 59: The work-item ledger, rebuilt (issue #1175): a culprit of a red batch, and its revert, is failed, not done. Rows
+  // only: the build before reads them as they are, and keeps each in the state it is in.
+  (db) => { rebuildWorkItems(db); },
 ];

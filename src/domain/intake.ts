@@ -120,6 +120,11 @@ export interface IntakeContext {
   history?(key: string): ItemHistory | undefined;
   /** What the source keeps of its **tagged items** between reads (issue #1141), in the user's settings. Absent: kept in memory. */
   tagged?: { get(): TaggedRecord | undefined; set(record: TaggedRecord): void };
+  /**
+   * Whether the item waits on its batch (issue #1175, `awaitsBatch`): its pull request merged into the landing branch, and
+   * its issue stays open until the batch run reaches the tested branch. It is no reopened card.
+   */
+  awaitsBatch?(key: string): boolean;
 }
 
 /**
