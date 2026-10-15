@@ -13,6 +13,7 @@
 //   Scenario: a lane pod that does not come up fails the check
 //   Scenario: with --keep the cluster stays
 //   Scenario: a pull request that changes the chart runs the check, with no secret
+//   Scenario: then the sandbox check of the checkout runs on the cluster it kept, and the cluster is deleted (issue #1371)
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -202,8 +203,20 @@ describe('.github/workflows/kind.yml, the kind check on a pull request', () => {
     expect(Object.keys(workflow.on)).toEqual(['pull_request']);
   });
 
-  it('runs the kind check with the dev channel\'s image', () => {
-    const runs = Object.values(workflow.jobs).flatMap((j) => j.steps.map((s) => s.run ?? ''));
-    expect(runs).toContain('node scripts/kind-check.ts --tag dev');
+  const steps = Object.values(workflow.jobs).flatMap((j) => j.steps) as { run?: string; if?: string }[];
+  const runs = steps.map((s) => s.run ?? '');
+
+  it('runs the kind check with the dev channel\'s image, and keeps the cluster for the sandbox check', () => {
+    expect(runs).toContain('node scripts/kind-check.ts --tag dev --keep');
+  });
+
+  it('then runs the sandbox check of this checkout on that cluster, and deletes the cluster whatever the result (issue #1371)', () => {
+    const at = (run: string): number => runs.indexOf(run);
+    expect(at('npm ci')).toBeGreaterThan(-1);
+    expect(at('npm ci')).toBeLessThan(at('node scripts/kind-sandbox-check.ts --context kind-hopper-check'));
+    expect(at('node scripts/kind-check.ts --tag dev --keep')).toBeLessThan(at('node scripts/kind-sandbox-check.ts --context kind-hopper-check'));
+    const remove = steps.find((s) => s.run === 'kind delete cluster --name hopper-check');
+    expect(remove?.if).toBe('always()');
+    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['scripts/kind-sandbox-check.ts', 'src/sandbox/kubernetes.ts', 'src/sandbox/need-box.ts']));
   });
 });
