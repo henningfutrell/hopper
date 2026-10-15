@@ -1,7 +1,7 @@
 // The survey a sweep asks of a machine, run for real (issue #1120): it names each work tree whose `.worktrees` is there,
 // so the sweep knows a kept job's scratch dir missing from it is gone, and not only out of sight.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -45,6 +45,24 @@ describe('the hopper\'s own disk use a survey measured (issue #1120)', () => {
     expect(usage.map((u) => u.path)).toEqual([join(work, '.worktrees')]);
     expect(usage[0]!.bytes).toBeGreaterThanOrEqual(768 * 1024);
     expect(usage[0]!.bytes % 1024).toBe(0);
+  });
+
+  it('measures each repository checkout in the workspace too, one by one; not a plain folder, nor a link (part 5)', () => {
+    const work = join(root, 'work');
+    mkdirSync(join(work, '.worktrees', '@scratch'), { recursive: true });
+    for (const name of ['app', 'other app']) {
+      mkdirSync(join(work, 'workspace', name, '.git'), { recursive: true });
+      writeFileSync(join(work, 'workspace', name, '.git', 'pack'), Buffer.alloc(384 * 1024, 1));
+    }
+    mkdirSync(join(work, 'workspace', 'notes'));
+    writeFileSync(join(work, 'workspace', 'notes', 'big'), Buffer.alloc(384 * 1024, 1));
+    symlinkSync(join(work, 'workspace', 'app'), join(work, 'workspace', 'linked'));
+    const usage = readSurvey(survey(work))?.usage ?? [];
+    expect(usage.map((u) => u.path)).toEqual([
+      join(work, '.worktrees'), join(work, 'workspace', 'app'), join(work, 'workspace', 'other app'),
+    ]);
+    expect(usage[1]!.bytes).toBeGreaterThanOrEqual(384 * 1024);
+    expect(usage[2]!.bytes).toBeGreaterThanOrEqual(384 * 1024);
   });
 
   it('measures what the layout before issue #1188 left, while it is there', () => {

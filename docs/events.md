@@ -2650,7 +2650,7 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 
 ## `machine.disk_over_budget`
 
-Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, or more than the budget allows. Once while it stays over.
+Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, and the repository checkouts in its workspace, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, the repository checkouts (the sweep never removes one), or more than the budget allows. Once while it stays over.
 
 | field | type | required |
 |---|---|---|

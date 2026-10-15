@@ -14,7 +14,7 @@ export const MACHINE_DISK_EVENT_SCHEMAS = {
 
 /** Their part of the event reference (docs.ts). */
 export const MACHINE_DISK_EVENT_DOCS = {
-  'machine.disk_over_budget': 'The hopper\'s own disk use on a machine (`usedBytes`: each work tree\'s `.worktrees`, its job worktrees and scratch dirs, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job\'s scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs\' work, or more than the budget allows. Once while it stays over.',
+  'machine.disk_over_budget': 'The hopper\'s own disk use on a machine (`usedBytes`: each work tree\'s `.worktrees`, its job worktrees and scratch dirs, and the repository checkouts in its workspace, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job\'s scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs\' work, the repository checkouts (the sweep never removes one), or more than the budget allows. Once while it stays over.',
   'machine.disk_within_budget': 'A machine told over by `machine.disk_over_budget` has the hopper\'s own disk use back within the disk budget (issue #1120): `usedBytes` of `budgetBytes` now.',
   'job.containers_removed': 'The job\'s reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job\'s reap removes none: it may go on there.',
 } as const;
