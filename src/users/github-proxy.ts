@@ -31,7 +31,7 @@ import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skill
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
-  createProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
+  createProxyApi, type ProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
 } from '../github-proxy/index.ts';
 
@@ -42,6 +42,8 @@ export interface UserGitHubProxy {
   git: GitUser;
   /** Report a bug (issue #694): this user's own GitHub connection, so a report is filed as this user; or why there is none. */
   reports(): ReportGitHub | { problem: string };
+  /** A person's reads of a job repository's pull request (issue #1169: its diff): this user's own connection, or why there is none. */
+  reads(): ProxyApi | { problem: string };
   /** Repositories with no checks (issue #677): this user's own GitHub connection and its login, or why there is none. */
   repoChecks(): { api: RepoChecksGitHub; login: string } | { problem: string };
   /** The trusted actor picker (issue #930): this user's own GitHub connection and its login, or why there is none. */
@@ -179,6 +181,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         login: () => o.accounts.account('github'),
       },
       reports,
+      reads: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createProxyApi({ ...mine(), kind: 'per_job_read' })),
       infraPlans: createInfraPlans({
         store: o.store, clock: o.clock,
         head: async (repo, ref) => {

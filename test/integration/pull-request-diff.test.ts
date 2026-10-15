@@ -53,8 +53,8 @@ describe('A pull request\'s diff', () => {
       diff: 'diff --git a/src/queue.ts b/src/queue.ts\n--- a/src/queue.ts\n+++ b/src/queue.ts\n@@ -1 +1 @@\n-slow()\n+fast()\n'
         + 'diff --git a/logo.png b/logo.png\n--- /dev/null\n+++ b/logo.png\n(no patch: binary, or too large for GitHub to show)\n',
     });
-    const read = github.requests.find((q) => q.method === 'GET' && q.path.endsWith('/repos/Octo/Tools/pulls/8/files'))
-      ?? github.requests.find((q) => q.method === 'GET' && q.path.endsWith('/repos/octo/tools/pulls/8/files'));
+    // Read as the job repository is spelled in the settings.
+    const read = github.requests.find((q) => q.method === 'GET' && q.path.endsWith('/repos/octo/tools/pulls/8/files'));
     expect(read?.auth).toContain('test-account-token');
     expect(app.user(ADMIN_ID).store.events.recent(1000).length).toBe(before);
   });

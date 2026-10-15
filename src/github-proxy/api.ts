@@ -6,6 +6,7 @@
 // The repo queries (issue #1074): a pull request's diff (from its files' patches), its commits and the check runs and
 // statuses of its head commit, and an issue's comments — every page, each answer with the item's own URL.
 import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
+import type { GitHubCallKind } from '../domain/github-rate-limit.ts';
 import { webOriginOf } from '../sources/github/api.ts';
 import { jobLog } from '../sources/github/app/rest.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
@@ -307,9 +308,9 @@ export function tokenCaller(o: TokenSource): <T>(fn: (token: string) => Promise<
   };
 }
 
-export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
-  // A running job's requests count as its own kind (issue #985).
-  const req = makeRequest(o.apiUrl, undefined, { kind: 'job' });
+export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & TokenSource): ProxyApi {
+  // A running job's requests count as its own kind (issue #985); a person's read of a job's pull request (issue #1169) as a job's other read.
+  const req = makeRequest(o.apiUrl, undefined, { kind: o.kind ?? 'job' });
   const withToken = tokenCaller(o);
   return {
     perform: (r, subIssueOf) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), subIssueOf), (err) => errorOf(err, r)),

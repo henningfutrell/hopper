@@ -10,11 +10,13 @@
 // Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
 // moves it to the tested branch. Not tracked (issue #1176): each open pull request of a job repository the hopper does not
 // track, with why; one whose issue is not in Intake has Take into Intake.
-// Each card shows its change kind (issue #1076), why in its title.
+// Each card shows its change kind (issue #1076), why in its title. A card with a pull request, and a landing card — a batch's
+// culprit among them —, opens its diff in a code block (issue #1169).
 import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
+import { PullRequestDiff } from '@/components/pull-request-diff';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, YoloBadge, type Tone } from '@/components/status';
@@ -130,6 +132,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
       <CardActions c={c} onChanged={onChanged} />
       <TendAgain c={c} onChanged={onChanged} />
+      {c.pullRequest && <PullRequestDiff repo={c.repo} number={c.pullRequest.number} />}
     </li>
   );
 }
@@ -206,6 +209,7 @@ function Landing({ cards }: { cards: LandingCard[] }) {
               <span data-slot="landing-stage" className={`text-xs ${LANDING_TONE[c.stage]}`}>{landingText(c)}</span>
               {c.fixIssue && <GhLink url={c.fixIssue} className="text-xs">fix issue</GhLink>}
               <span className="text-xs text-muted-foreground" title={c.since}>{ago(c.since, now)}</span>
+              <PullRequestDiff repo={c.repo} number={c.pullRequest.number} />
             </li>
           ))}
         </ul>
