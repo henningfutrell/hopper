@@ -19431,3 +19431,31 @@ other accounts, not hold it there.
 
 Tests: `test/decider/signed-out.test.ts`, `test/integration/usage-accounts.test.ts` (a job held on a signed-out machine
 starts once it is signed in from the hopper).
+
+## Signed-out tools in Needs you, the sign-in link, and the terminals from the CLI (issue #1128, 2026-10-14, part 8)
+
+Owner request, part 2 of the issue (a Needs-you item when a login expires) and what part 7 left: a link from the question to
+Accounts, and a CLI for the terminals.
+
+- **Needs you: Accounts.** A row of its own (`NEEDS_YOU_KINDS` `accounts`, after Logins, linked to `#accounts`): one line per
+  machine whose agent tool reads signed out (`signedOutLines`, `ui/src/model/tool-accounts.ts`), from the tool accounts the
+  Accounts badge already reads (`GET /api/tool-accounts`, polled every 30 s). It shows as soon as the usage source reads the
+  sign-out (its `intervalSeconds`), and goes when a read says signed in. An `unknown` read is not counted: a failed read is not
+  a sign-out, as for failover.
+- **No warning before the expiry.** `claude auth status` gives no expiry, and Claude renews its own access token with its refresh
+  token, so an expiry of the access token is no sign-out to come. The hopper has no time to warn at; the sign-out is the signal.
+  When a tool gives one, its usage source can carry it on `Account` and the row can name it.
+- **The question links to Accounts.** A not-signed-in question's card says "Sign Claude in on <machine> from Accounts", a link
+  to `#accounts`, and what the sign-in does: at Claude's prompt it answers the question; at Claude's login screen
+  (`LOGIN_SCREEN_MARK`) a person answers after it. The UI imports nothing of `src/` at runtime, so `ui/src/model/questions.ts`
+  says the start of `NOT_SIGNED_IN` and the login mark again; `test/ui/question-machine.test.ts` builds its questions from the
+  `src/domain/questions.ts` constants, so the two cannot drift apart unnoticed.
+- **`hopper terminal`** (`src/cli-operator-terminal.ts`): the routes of the job's terminal (`job <job>`, operator) and the machine's
+  terminal (`machine <machine> [<pane>]`, admin), as every operator action — a UI session minted for one call, or a grant's API
+  token. With no verb it reads the screen (`--lines`) or, for a machine with no pane, lists the panes; `type` writes the text on
+  **stdin**, never an argument, so what a person types stays out of the shell's history and the process list; one end of line is
+  dropped (press Enter with `keys enter`); `keys <key>...` presses keys. The daemon checks the keys, the limits, the role and
+  Access. Its terminal sessions say `via: cli`.
+
+Tests: `test/ui/needs-you.test.ts`, `test/ui/needs-you-view.test.ts`, `test/ui/accounts-view.test.ts`,
+`test/ui/question-machine.test.ts`, `test/integration/machine-terminal.test.ts` (`hopper terminal`).

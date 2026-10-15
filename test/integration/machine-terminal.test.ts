@@ -11,10 +11,15 @@
 //     When they read the free pane and type into it
 //     Then they see its screen, the text and the keys reach it, and the events say how much was typed, never what
 //   Scenario: no terminal for an unknown machine or pane, an operator, or a use Access denies
+//   Scenario: a person does the same from the command line (hopper terminal), for a machine's pane and a job's
+//     When they list, read, type the text on stdin and press keys with hopper terminal
+//     Then the panes, the screens and the input are those of the routes, and the events say via cli, never the text
 import { afterEach, describe, expect, it } from 'vitest';
+import { runCli, type CliIo } from '../../src/cli.ts';
 import type { DomainEvent, MachineSnapshot } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { rawRequest } from '../support/http.ts';
 import { createManualSource } from '../support/manual-source.ts';
@@ -121,5 +126,53 @@ describe('the machine terminal', () => {
     expect(JSON.stringify(denied.body)).toContain('OpenFGA');
     expect((await a.ui(`${base}/input`, { paneId: free, text: 'hi' }, { token })).status).toBe(403);
     expect(herdr.texts.map((t) => t.text)).not.toContain('hi');
+  });
+
+  it('hopper terminal: list a machine\'s panes, read one and a job\'s, type stdin into them and press keys; via cli, never the text', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
+    const free = herdr.openPane({ title: 'my shell', lines: ['$ ls', 'notes.txt'] });
+    const { a, machineId } = await boot(herdr);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'running', 8000);
+    await waitFor(() => herdr.prompts.length === 1);
+    const hopper = async (argv: string[], stdin = '') => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => stdin, out: (x) => out.push(x), err: (x) => err.push(x) };
+      const code = await runCli([...argv, '--url', a.url], io);
+      return { code, out: out.join(''), err: err.join('') };
+    };
+
+    const listed = await hopper(['terminal', 'machine', machineId]);
+    expect(listed.code, listed.err).toBe(0);
+    const panes = (JSON.parse(listed.out) as { panes: Pane[] }).panes;
+    expect(panes).toContainEqual(expect.objectContaining({ paneId: free, title: 'my shell' }));
+    expect(panes).toContainEqual(expect.objectContaining({ jobId: job.id }));
+
+    const read = await hopper(['terminal', 'machine', machineId, free, '--lines', '50']);
+    expect(read.code, read.err).toBe(0);
+    expect((JSON.parse(read.out) as Screen).screen).toContain('notes.txt');
+    expect((await hopper(['terminal', 'machine', machineId, free, 'type'], `${SECRET_TEXT}\n`)).code).toBe(0);
+    expect(herdr.texts).toContainEqual({ paneId: free, text: SECRET_TEXT });
+    expect((await hopper(['terminal', 'machine', machineId, free, 'keys', 'enter'])).code).toBe(0);
+    expect(herdr.keys.at(-1)).toEqual({ paneId: free, keys: ['enter'] });
+
+    const jobScreen = await hopper(['terminal', 'job', job.id]);
+    expect(jobScreen.code, jobScreen.err).toBe(0);
+    expect(JSON.parse(jobScreen.out)).toMatchObject({ jobId: job.id, screen: expect.any(String) });
+    expect((await hopper(['terminal', 'job', job.id, 'keys', 'esc'])).code).toBe(0);
+    expect(herdr.keys.at(-1)!.keys).toEqual(['esc']);
+
+    // A refusal is exit 2: no text on stdin (the text is never an argument, so it stays out of the shell's history), a bad key.
+    expect((await hopper(['terminal', 'machine', machineId, free, 'type'])).code).toBe(2);
+    expect((await hopper(['terminal', 'machine', machineId, free, 'type', SECRET_TEXT])).code).toBe(2);
+    expect((await hopper(['terminal', 'job', job.id, 'keys'])).code).toBe(2);
+    expect((await hopper(['terminal', 'machine', machineId, free, 'keys', 'rm -rf'])).code).toBe(2);
+    expect((await hopper(['terminal'])).code).toBe(2);
+
+    const events = (await a.events('limit=2000')).filter((e: DomainEvent) => e.type.startsWith('terminal.'));
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => (e.data as { via: string }).via === 'cli')).toBe(true);
+    expect(JSON.stringify(events)).not.toContain(SECRET_TEXT);
   });
 });
