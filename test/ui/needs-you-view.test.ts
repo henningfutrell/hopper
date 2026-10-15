@@ -56,6 +56,9 @@ let vault: unknown = VAULT;
 let pullRequests: unknown = PULL_REQUESTS;
 let plans: unknown = { plans: [PLAN], applies: [], settings: { autoApprove: false }, watchers: {} };
 let minor: unknown = MINOR;
+// Issue #1128: a machine whose tool is signed in as nobody waits on a sign-in.
+const SIGNED_OUT = { accounts: [{ service: 'claude', detail: {}, login: 'signed-out', spend: [], machines: [{ machineId: 'm3', label: 'Server', source: 'claude-server', login: 'signed-out', signIn: true }] }] };
+let toolAccounts: unknown = SIGNED_OUT;
 
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
@@ -65,8 +68,6 @@ function fakeDaemon() {
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/questions': { questions: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
-    // Issue #1128: a machine whose tool is signed in as nobody waits on a sign-in.
-    '/api/tool-accounts': { accounts: [{ service: 'claude', detail: {}, login: 'signed-out', spend: [], machines: [{ machineId: 'm3', label: 'Server', source: 'claude-server', login: 'signed-out', signIn: true }] }] },
     '/api/connected-accounts': { accounts: [{
       provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
       installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'] }],
@@ -91,6 +92,7 @@ function fakeDaemon() {
     if (path === '/api/infra-plans') return json(200, plans);
     if (path === '/api/yolo-mode') return json(200, YOLO);
     if (path === '/api/minor-decisions') return json(200, minor);
+    if (path === '/api/tool-accounts') return json(200, toolAccounts);
     if (path === '/api/bug-reports') return json(200, { reports: [] });
     if (path === '/api/vault') return vault === undefined ? json(404, { error: 'not found' }) : json(200, vault);
     return path in routes ? json(200, routes[path]) : json(404, { error: 'not found' });
@@ -106,7 +108,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pullRequests?: unknown; plans?: unknown; minor?: unknown } = {}) {
+async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pullRequests?: unknown; plans?: unknown; minor?: unknown; toolAccounts?: unknown } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = hash;
@@ -118,6 +120,7 @@ async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pul
   pullRequests = o.pullRequests ?? PULL_REQUESTS;
   plans = o.plans ?? { plans: [PLAN], applies: [], settings: { autoApprove: false }, watchers: {} };
   minor = o.minor ?? MINOR;
+  toolAccounts = o.toolAccounts ?? SIGNED_OUT;
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
@@ -221,7 +224,7 @@ describe('the header shows yolo mode on every screen, and links to its one switc
 
 describe('empty states: every page renders when nothing waits (issue #897)', () => {
   it('Needs you says nothing waits, and still lists what would show', async () => {
-    await boot('#needs-you', { sources: [], vault: EMPTY_VAULT, pullRequests: { yolo: { on: 0, total: 0 }, waiting: [], repos: [] }, plans: { plans: [], applies: [] } });
+    await boot('#needs-you', { sources: [], vault: EMPTY_VAULT, pullRequests: { yolo: { on: 0, total: 0 }, waiting: [], repos: [] }, plans: { plans: [], applies: [] }, toolAccounts: { accounts: [] } });
     await vi.waitFor(() => expect(main().textContent).toContain('Nothing waits on you'));
     expect(document.querySelectorAll('[data-needs-you]').length).toBe(NEEDS_YOU_KINDS.length);
   });

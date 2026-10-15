@@ -1,5 +1,5 @@
 // Needs you (issue #897): the first nav entry, the one inbox of every decision that waits on a person. A row per kind —
-// Intake, Access requests, Questions, Proposals, Research, Logins, Failures, the pre-sort — with its count, a high-priority
+// Intake, Access requests, Questions, Proposals, Research, Logins, Accounts, Failures, the pre-sort — with its count, a high-priority
 // mark (#535), and a link to the page that is its one home; nothing is acted on here. A row may list what it counts, one line
 // each (issue #927: why the hopper gave up on a pull request). Always rendered: every row shows,
 // with what it counts, also when nothing waits.
