@@ -1,5 +1,5 @@
 // Decider calls in plain words (issue #550): the agreement rate, a Jev pick — the option, how sure, what became of
-// it —, what was decided after it, the mode names, and a pick event's line; the TypeSafe API key's state and the note
+// it —, whether Jev agreed with what was decided after it, the mode names, and a pick event's line; the TypeSafe API key's state and the note
 // on a variable it was imported from (issue #657). Pure.
 import type { MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, TypesafeKeyView } from './wire.ts';
 
@@ -36,11 +36,10 @@ export function pickSummary(p: Pick): string {
   return `${optionText(p.options, p.pick)}${kinds} at ${pct(p.confidence ?? 0)} — ${fate(p)}`;
 }
 
-/** What was decided after the pick; empty while it is not known. */
-export function pickDecided(p: Pick): string {
-  if (p.actual === undefined) return '';
-  if (p.overridden) return `overridden: ${optionText(p.options, p.actual)}`;
-  return `${p.decidedBy ?? 'later'} decided ${optionText(p.options, p.actual)}: ${p.agreed ? 'agreed' : 'differed'}`;
+/** Whether Jev agreed with what was decided after the pick; empty while it is not known, or a person overrode it. */
+export function pickAgreement(p: Pick): string {
+  if (p.actual === undefined || p.overridden || p.agreed === undefined) return '';
+  return p.agreed ? 'Jev agreed' : 'Jev differed';
 }
 
 /** A `minor_decision.picked` event's data as one line. */

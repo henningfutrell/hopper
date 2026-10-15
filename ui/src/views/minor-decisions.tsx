@@ -3,7 +3,8 @@
 // to the daemon, applied from the next decision) and its record over the window — asked, applied, the agreement rate a
 // person flips it to active on. On Decisions, the one home of the picks (issue #897): the newest, each with its options,
 // what Jev picked and how sure, what became of it and what was decided, and Override (an operator's): what it should have
-// been, which counts in the agreement rate.
+// been, which counts in the agreement rate. A pick is the one question form (issue #1169): its options are the choices, and
+// who decided is a marker.
 // The TypeSafe API key Jev asks with (issue #657), right under whether Jev is on: write-only — set or not, its last 4
 // characters, when —, with Replace and Remove (an operator's: the user's own, or an admin's); a new key is checked once
 // against TypeSafe before it is kept. Saving it needs Access (OpenFGA): while OpenFGA is not running, Save and Remove are
@@ -12,6 +13,7 @@ import { KeyRound, Scale } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { Empty, Panel } from '@/components/panel';
+import { AnsweredBy, QuestionForm } from '@/components/question-form';
 import { FIELD } from '@/components/plugin-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +22,8 @@ import { AccessFix, useAccessStatus } from '@/app/access';
 import { get, post } from '@/lib/api';
 import { ACCESS_SAVE_FAILED, accessDown, saveError } from '@/model/access-status';
 import { clock } from '@/model/format';
-import { environmentNote, keyStatus, MODE_TEXT, pickDecided, pickSummary, rate } from '@/model/minor-decisions';
+import { pickSource } from '@/model/answer-source';
+import { environmentNote, keyStatus, MODE_TEXT, pickAgreement, pickSummary, rate } from '@/model/minor-decisions';
 import type { DecisionPointView, MinorDecisionMode, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView } from '@/model/wire';
 import { useCanAdmin, useCanOperate, useJobName } from '@/store/selectors';
 
@@ -136,7 +139,7 @@ function PickRow({ p, label, onSaved }: { p: MinorDecisionPickView; label: strin
     } catch (e) { toast.error((e as Error).message); }
     setBusy(false);
   };
-  const decided = pickDecided(p);
+  const agreement = pickAgreement(p);
   return (
     <li data-pick={p.pickId} className="space-y-1 border-b py-2 text-xs last:border-b-0">
       <div className="flex flex-wrap items-baseline gap-x-2">
@@ -146,14 +149,11 @@ function PickRow({ p, label, onSaved }: { p: MinorDecisionPickView; label: strin
         {p.machineId && <span className="min-w-0 truncate text-muted-foreground">machine {p.machineId}</span>}
       </div>
       <div>{pickSummary(p)}</div>
-      {decided && <div className="text-muted-foreground">{decided}</div>}
+      <AnsweredBy source={pickSource(p)} />
+      {agreement && <div className="text-muted-foreground">{agreement}</div>}
       {canAct && p.options.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <select className={`${FIELD} h-7 w-72 text-xs`} aria-label="What it should have been" value={actual} disabled={busy} onChange={(e) => setActual(e.target.value)}>
-            {p.options.map((o) => <option key={o.id} value={o.id}>{o.label} ({o.id})</option>)}
-          </select>
-          <Button size="xs" variant="outline" disabled={busy} onClick={() => void override()}>Override</Button>
-        </div>
+        <QuestionForm name="override" title="What it should have been" busy={busy} picked={actual} onPick={setActual}
+          choices={p.options.map((o) => ({ value: o.id, label: o.label }))} submit="Override" canSubmit onSubmit={() => void override()} />
       )}
     </li>
   );

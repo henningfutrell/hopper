@@ -19163,5 +19163,15 @@ The registry's files import `cn` from a package named `cn`; the vendored copies 
   plain line per event.
 - **Diffs**: a changed item's body (`BodyDiff`, `ui/src/components/text-change.tsx`, also on a request card)
   is a `CodeBlock` in diff mode, one line each, `added` or `removed`.
-- **Not yet** (later parts of issue #1169): questions on `Questionnaire` with a `Marker` for who answered;
-  transcripts on `Message Scroller` and `Message`; nested steps; pull request and bisect diffs.
+- **Questions** (part 2): every place a person answers a question or a decision is the one **question form**
+  (`ui/src/components/question-form.tsx`), a shadcn `Questionnaire` (`ui/src/components/ui/questionnaire.tsx`, on the
+  headless `@shadcn/react`). Its title names what is asked; a decision's options are its choices (arrow keys move,
+  Space picks); a free answer is a text box that is the Questionnaire's own answer (drawn by `render`), so a filled box
+  answers the item; Enter is a new line and Ctrl/Cmd+Enter submits. Users: an open question's answer box
+  (Questions), a parked job's Answer and pick up (Parked; a fresh start confirms first, and only the confirm sends), a
+  correction of an auto-answer (Question history) and a decider pick's Override (Decisions: the options as choices,
+  Jev's pick checked). Who answered is a `Marker` (`AnsweredBy`, from `ui/src/model/answer-source.ts`): a person, or a
+  level or Jev with no person; a question's place on its issue thread is a `Marker` too. A question's recent output is
+  a `LogBlock`.
+- **Not yet** (later parts of issue #1169): transcripts on `Message Scroller` and `Message`; nested steps; pull
+  request and bisect diffs. A request card (Intake) is no job question: it keeps its Approve and Reject.
