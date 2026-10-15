@@ -1,7 +1,7 @@
 // Below a review section's cards (issues #537, #543): the earlier ones — decided or cancelled, a compact list, with who
 // signed each off and when; a proposal the hopper continued with by itself says so, with why (issue #1059) — and, for an
 // admin, the section's settings: which escalation levels review (only the ones the server names), who may sign off, how
-// often the levels may send one back, and for proposals whether the hopper continues with one recommended path. Keyed by
+// often the levels may send one back, and for proposals whether the hopper continues with the recommended paths. Keyed by
 // the saved values, so a save starts the form from them again.
 import { History, Settings2 } from 'lucide-react';
 import { useState } from 'react';
@@ -76,7 +76,7 @@ function SettingsForm({ kind, settings }: { kind: ReviewKind; settings: ReviewSe
       {kind === 'proposal' && (
         <label className="flex items-center gap-2">
           <input type="checkbox" name="autoContinue" checked={autoContinue} disabled={busy} onChange={() => setAutoContinue((v) => !v)} />
-          <span>Continue with one recommended path, with no person, unless the job says a person must decide, a risk rule matches it, or a level escalated it</span>
+          <span>Continue with the recommended path, or the recommended paths together, with no person, unless the job says a person must decide, a risk rule matches one, or a level escalated it</span>
         </label>
       )}
       <div className="flex flex-wrap items-end gap-2">

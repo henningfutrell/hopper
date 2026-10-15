@@ -987,7 +987,7 @@ If your work overlaps another job's, sort it out yourself. Either state the assu
 [hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
-When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, inside the standing rules, and need no person, the hopper continues with that path at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.
+When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, or a combination of paths that go together, inside the standing rules, and need no person, the hopper continues with them at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue.
 Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
 When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends.
@@ -11780,7 +11780,11 @@ go to a person — no reviewer levels, or the levels passed it up without signin
 (`src/review/service.ts`) signs it off itself, at the stage `hopper` (`AUTO_CONTINUE`), with that one path selected, and
 the path continues as a follow-on job as a person's selection would ("Proposals: a set of paths"):
 `proposal.accepted { stage: "hopper", selected }`, notes "the hopper continued with the recommended path N: no rule needs a
-person to decide". It goes to a person instead (`proposal.escalated_to_human`), the reason naming the first that holds:
+person to decide". A combination it continues with the same way (issue #1174): each recommended path selected, each a
+follow-on, notes "the hopper continued with the recommended paths 2, 4: …". The protocol's `Recommended:` names a path or
+the paths of a combination, so several paths named there are paths that combine; the job's `Needs a person:` line is how it
+says they do not. It goes to a person instead (`proposal.escalated_to_human`; its work item then `needs_you`, waiting on
+`a proposal`), the reason naming the first that holds:
 
 | hold | reason |
 |---|---|
@@ -11788,9 +11792,9 @@ person to decide". It goes to a person instead (`proposal.escalated_to_human`), 
 | a reviewer level escalated this version | `a reviewer level escalated it: <level>: <notes>` |
 | the structural pre-check finds a gap (it runs here even with no reviewer levels) | `the proposal has gaps: …` |
 | no viable path | `the proposal has no path to continue with: a person decides` |
+| a recommended path a reviewer level found not viable (issue #1174) | `a recommended path is not viable: <id> (<why>)` |
 | none recommended | `no viable path is recommended: a person selects` |
-| a combination recommended | `the proposal recommends a combination of paths (1, 3): a person selects` |
-| a risk rule (`src/questions/risk.ts`) matches the recommended path's title or summary | `a risk rule matches the recommended path: <rules>` |
+| a risk rule (`src/questions/risk.ts`) matches a recommended path's title or summary | `a risk rule matches the recommended path: <rules>`; of a combination, `… path <id>: <rules>` |
 
 Off (`POST /ui/api/proposals/settings` `{ autoContinue: false }`, admin; Proposals → settings), every such proposal goes
 to a person as before. Research has no such setting (400). A saved setting row without the field reads as on; no stored
@@ -17902,7 +17906,8 @@ clears what GitHub said before. An older job's end moves nothing; an older job's
 request to a newer job). A job's own run status stays on the job: the item's lifecycle is only the ledger's.
 
 **The states.** `waiting_for_approval` (a request card), `queued`, `working` (its own background command too),
-`needs_you` (a question escalated to a person, a hand-off, a parked job), `waiting_outside` (a named outside wait),
+`needs_you` (a question, a proposal or a research report escalated to a person — issue #1174: `waitingOn` `a proposal`,
+`a research report` —, a hand-off, a parked job), `waiting_outside` (a named outside wait),
 `pr_open` (a finished job's pull request, on its way to the merge: there is no "ready for review"), `partly_done`
 (a part merged, the next part runs), `done`, `failed` (the newest attempt failed, nothing replaced it, nobody dismissed
 it: the only failure any count may count) and `dropped` (dismissed, declined, cancelled, rejected, a pull request
