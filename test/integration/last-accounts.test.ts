@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { LoginView, ToolAccount } from '../../src/domain/types.ts';
+import { NOT_SIGNED_IN, type LoginView, type QuestionView, type ToolAccount } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -89,5 +89,35 @@ describe('the last account (issue #1269)', () => {
     const a = await boot({ usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] });
     await waitFor(async () => ((await toolAccounts(a))[0]?.login === 'signed-out' ? true : undefined), { what: 'the signed-out machine' });
     expect((await pendingSignIn(a, await a.login())).lastAccount).toBeNull();
+  });
+
+  it('every Claude sign-in request names the last account: the signed-out machine on Accounts and a job\'s not-signed-in question (issue #1269)', async () => {
+    writeFileSync(join(control, 'email'), 'first@example.com');
+    const a = await boot({ usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] });
+    await waitFor(() => a.user().store.lastAccounts.get('local', 'claude'), { what: 'the last account kept' });
+    writeFileSync(join(control, 'mode'), 'logged-out');
+    const machine = await waitFor(async () => { const m = (await toolAccounts(a)).find((x) => x.login === 'signed-out')?.machines[0]; return m; }, { what: 'the signed-out machine' });
+    expect(machine.lastAccount).toMatchObject({ machineId: 'local', service: 'claude', identity: 'first@example.com', organization: 'Example Org' });
+
+    const held = await a.pull({ op: 'ask', message: `${NOT_SIGNED_IN}.\n\nA hard screen` });
+    const other = await a.pull({ op: 'ask', message: 'Is this risky?' });
+    const q = await a.waitForQuestion(held.id, (x) => x.tier === 'human');
+    const asked = (await a.api<QuestionView>('GET', `/api/questions/${q.id}`)).body;
+    expect(asked.lastAccount).toMatchObject({ identity: 'first@example.com', organization: 'Example Org' });
+    const plain = await a.waitForQuestion(other.id, (x) => x.tier === 'human');
+    expect((await a.api<QuestionView>('GET', `/api/questions/${plain.id}`)).body).not.toHaveProperty('lastAccount');
+    const listed = JSON.stringify((await a.api('GET', '/api/questions')).body) + JSON.stringify(await toolAccounts(a));
+    expect(listed).toContain('first@example.com');
+    expect(listed).not.toContain('SECRET');
+  });
+
+  it('a machine never read signed in: its Accounts entry and its not-signed-in question say no account is known (issue #1269)', async () => {
+    writeFileSync(join(control, 'mode'), 'logged-out');
+    const a = await boot({ usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] });
+    const machine = await waitFor(async () => (await toolAccounts(a)).find((x) => x.login === 'signed-out')?.machines[0], { what: 'the signed-out machine' });
+    expect(machine.lastAccount).toBeNull();
+    const held = await a.pull({ op: 'ask', message: `${NOT_SIGNED_IN}.\n\nA hard screen` });
+    const q = await a.waitForQuestion(held.id, (x) => x.tier === 'human');
+    expect((await a.api<QuestionView>('GET', `/api/questions/${q.id}`)).body.lastAccount).toBeNull();
   });
 });

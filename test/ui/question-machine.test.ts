@@ -18,8 +18,9 @@ const base = {
 const fromDesk = { ...base, id: 'q1', text: 'Which branch?', status: 'open', raisedBy: DESK };
 const unknown = { ...base, id: 'q2', text: 'Rebase or merge?', status: 'open' };
 // Issue #1128: a question of a Claude with no credential links to Accounts, where a person signs it in from the hopper.
-const signedOut = { ...base, id: 'q4', jobId: 'j4', text: `${NOT_SIGNED_IN}.\n\nPress Esc to go on.`, status: 'open', raisedBy: DESK };
-const loginScreen = { ...base, id: 'q5', jobId: 'j5', text: `${NOT_SIGNED_IN}.\n\n${LOGIN_SCREEN_MARK}\n1. Claude account`, status: 'open', raisedBy: DESK };
+const signedOut = { ...base, id: 'q4', jobId: 'j4', text: `${NOT_SIGNED_IN}.\n\nPress Esc to go on.`, status: 'open', raisedBy: DESK,
+  lastAccount: { machineId: 'desk', service: 'claude', identity: 'dev@example.com', organization: 'Example Org', capturedAt: '2026-10-08T09:00:00.000Z' } };
+const loginScreen = { ...base, id: 'q5', jobId: 'j5', text: `${NOT_SIGNED_IN}.\n\n${LOGIN_SCREEN_MARK}\n1. Claude account`, status: 'open', raisedBy: DESK, lastAccount: null };
 const handled = { ...base, id: 'q3', text: 'Ship it?', status: 'answered', answer: 'yes', answeredBy: 'human', raisedBy: DESK };
 const askedEvent = { seq: 1, schemaVersion: 1, id: 'e1', type: 'question.asked', at: '2026-10-08T10:00:00.000Z', jobId: 'j1', laneId: 'desk/lane-2', machineId: 'desk', questionId: 'q1', data: { questionId: 'q1', text: 'Which branch?', detectedBy: 'marker', raisedBy: DESK } };
 const oldEvent = { ...askedEvent, seq: 2, id: 'e2', questionId: 'q2', laneId: undefined, machineId: undefined, data: { questionId: 'q2', text: 'Rebase or merge?', detectedBy: 'marker' } };
@@ -131,6 +132,14 @@ describe('a not-signed-in question links to Accounts (issue #1128)', () => {
     const screen = cardOf(LOGIN_SCREEN_MARK)!;
     expect(screen.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('then answer this question');
     expect(cardOf('Which branch?')!.querySelector('[data-slot="sign-in-link"]')).toBeNull();
+  });
+
+  it('the card names who its machine was last signed in as, or that none is known there (issue #1269)', async () => {
+    await boot('#questions');
+    const card = await vi.waitFor(() => { const c = cardOf('Press Esc to go on.'); expect(c).not.toBeNull(); return c!; });
+    expect(card.querySelector('[data-slot="last-account"]')!.textContent).toBe('Last signed in as dev@example.com (Example Org) on Desk tower');
+    expect(cardOf(LOGIN_SCREEN_MARK)!.querySelector('[data-slot="last-account"]')!.textContent).toBe('No previous account known for this machine (Desk tower)');
+    expect(cardOf('Which branch?')!.querySelector('[data-slot="last-account"]')).toBeNull();
   });
 
   it('the UI knows the question by the text the executor writes', () => {
