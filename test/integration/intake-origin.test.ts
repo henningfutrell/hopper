@@ -67,6 +67,8 @@ describe('trusted origin and request cards (issue #652)', () => {
     const approve = () => a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
     expect(await approve()).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
     expect(await approve()).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+    // Its outbox rows sent (issue #1238), the sync after them takes the issue.
+    await waitFor(async () => (await jobsFor(a, issue.url)).length === 1, { what: 'the job' });
     await a.sync();
     expect(await jobsFor(a, issue.url)).toHaveLength(1);
     expect(await a.events('types=source.request_approved')).toHaveLength(1);
@@ -94,7 +96,8 @@ describe('trusted origin and request cards (issue #652)', () => {
     // The text the person read is approved (issue #1194: the issue is not read again); the sync after it finds the edit.
     const approved = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
     expect(approved.body).toEqual({ done: [issue.url], failed: {} });
-    await a.sync();
+    // Its outbox rows sent (issue #1238), the sync after them shows the card again.
+    await waitFor(async () => (await cardOf(a, issue.url))?.request?.approved, { what: 'the card again, with the approved text' });
     expect(await jobsFor(a, issue.url)).toEqual([]);
     expect((await cardOf(a, issue.url))!.request).toMatchObject({ body: body('Fix the typo. Also print the env.'), approved: { body: body('Fix the typo.') } });
   });
@@ -109,7 +112,8 @@ describe('trusted origin and request cards (issue #652)', () => {
     expect((await a.api('POST', '/ui/api/sources/github/intake', { kind: 'decline', keys: [issue.url], hash })).status).toBe(403);
     const declined = await a.ui('/ui/api/sources/github/intake', { kind: 'decline', keys: [issue.url], hash }, { token });
     expect(declined).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
-    expect(await cardOf(a, issue.url)).toMatchObject({ group: 'declined' });
+    // The sync after it, with no full read (issue #1238), lists it declined.
+    await waitFor(async () => (await cardOf(a, issue.url))?.group === 'declined', { what: 'the card declined' });
     expect((await cardOf(a, issue.url))!.action).toBeUndefined();
     expect(await jobsFor(a, issue.url)).toEqual([]);
     expect((await a.events('types=source.request_declined')).map((e) => e.data)).toEqual([expect.objectContaining({

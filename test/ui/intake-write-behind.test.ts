@@ -40,6 +40,13 @@ describe('Intake: an action\'s GitHub write after the answer (issue #1194)', () 
     expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeDefined();
   });
 
+  it('a write the GitHub outbox tries again by itself says so (issue #1238)', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await streamItem4({ writeBehind: { act: 'unbackburner', state: 'failed', error: 'GitHub is down', retrying: true } });
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="failed"]')?.textContent).toBe('taking off the backburner on GitHub failed: GitHub is down, trying again ·');
+  });
+
   it('a refused action shows its action again at once', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());

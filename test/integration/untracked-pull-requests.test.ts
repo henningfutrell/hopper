@@ -70,12 +70,15 @@ describe('untracked pull requests (issue #1176)', () => {
     const token = await app.login();
     const r = await app.ui('/ui/api/sources/github/intake', { kind: 'take_in', keys: [listed.issue!.url] }, { token });
     expect(r).toEqual({ status: 200, body: { done: [listed.issue!.url], failed: {} } });
+    // The outbox sends the label and the assignment after the answer (issue #1238), and the sync after it lists the issue
+    // as a request card in Intake (the hopper's app added the label), so the pull request's issue is in Intake now, and no
+    // job of it made it yet.
+    await waitFor(async () => {
+      const src = (await app.api<{ sources: { name: string; detail?: { intake?: { key: string; group?: string }[] } }[] }>('GET', '/api/sources')).body.sources[0]!;
+      return src.detail?.intake?.find((x) => x.key === listed.issue!.url)?.group === 'request';
+    }, { what: 'the issue a request card' });
     expect(gh.issue(REPO, unlabelled.number).labels).toContain('hopper');
     expect(gh.issue(REPO, unlabelled.number).assignees).toEqual(['owner']);
-    // The intake action synced at once: the issue is a request card in Intake (the hopper's app added the label), so the
-    // pull request's issue is in Intake now, and no job of it made it yet.
-    const src = (await app.api<{ sources: { name: string; detail?: { intake?: { key: string; group?: string }[] } }[] }>('GET', '/api/sources')).body.sources[0]!;
-    expect(src.detail?.intake?.find((x) => x.key === listed.issue!.url)?.group).toBe('request');
     expect((await untracked(app))?.find((u) => u.url === listed.url)?.reason).toBe('not_by_a_job');
   });
 

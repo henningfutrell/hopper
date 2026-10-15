@@ -98,6 +98,7 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash, acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
     expect(trust.approvals.get(url(1))).toMatchObject({ source: 'github', text: { title: 'Do it', body: 'Change the README.' } });
     // The comments are read after the answer (issue #1194); the next discover waits for them.
     const items = await source.discover();
@@ -111,6 +112,7 @@ describe('GitHub source: request cards (issue #652)', () => {
     gh.createIssue({ repo: REPO, author: 'stranger', body: 'Change the README.', labels: ['hopper'] });
     await source.discover();
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'f'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: TEXT_CHANGED_SINCE_SHOWN } });
+    await source.flushOutbox?.();
     expect(trust.approvals.size).toBe(0);
   });
 
@@ -123,6 +125,7 @@ describe('GitHub source: request cards (issue #652)', () => {
     gh.editIssue(REPO, 1, { body: 'Change the CI.' }, 'stranger');
     const reads = gh.calls.filter((x) => x.method === 'getIssue').length;
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
     expect(gh.calls.filter((x) => x.method === 'getIssue')).toHaveLength(reads);
     expect(trust.approvals.get(url(1))).toMatchObject({ text: { body: 'Change the README.' } });
     expect(await source.discover()).toEqual([]);
@@ -135,6 +138,7 @@ describe('GitHub source: request cards (issue #652)', () => {
     gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper'] });
     await source.discover();
     await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: source.intake!()[0]!.request!.hash });
+    await source.flushOutbox?.();
     gh.editIssue(REPO, 1, { body: 'Change the CI.' }, 'stranger');
     expect(await source.discover()).toEqual([]);
     expect(source.intake!()[0]).toMatchObject({ action: 'approve', request: { body: 'Change the CI.', approved: { title: 'Do it', body: 'Change the README.' } } });
@@ -153,13 +157,16 @@ describe('GitHub source: request cards (issue #652)', () => {
     const hashOf = (n: number) => source.intake!().find((x) => x.key === url(n))!.request!.hash;
     const [h1, h2, h3] = [hashOf(1), hashOf(2), hashOf(3)];
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: h1 })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
     hold = new Promise((r) => { held = r; });
     const sync = source.discover();
     await atHold;
     // The sync is half way: the cards it lists are still the cards of the last sync, and Approve on them takes.
     expect(source.intake!().filter((x) => x.action === 'approve').map((x) => x.key)).toEqual([url(1), url(2), url(3)]);
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(2)], hash: h2 })).toEqual({ done: [url(2)], failed: {} });
+    await source.flushOutbox?.();
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(3)], hash: h3 })).toEqual({ done: [url(3)], failed: {} });
+    await source.flushOutbox?.();
     held();
     await sync;
     hold = undefined;
@@ -171,6 +178,7 @@ describe('GitHub source: request cards (issue #652)', () => {
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.discover();
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'a'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: ALREADY_TAKEN } });
+    await source.flushOutbox?.();
   });
 
   it('Approve again of a text already approved is done, after the sync took it too (issue #1045)', async () => {
@@ -180,8 +188,10 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
     expect((await source.discover()).map((i) => i.origin)).toEqual(['approved']);
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
   });
 
   it('Approve of an older text, on an issue taken with a newer approved text, says it is already approved (issue #1045)', async () => {
@@ -191,8 +201,10 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash });
+    await source.flushOutbox?.();
     await source.discover();
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'a'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: ALREADY_APPROVED } });
+    await source.flushOutbox?.();
   });
 
   it('Decline keeps the text as read declined: the next sync lists it declined, with no action, and writes nothing to GitHub (issue #1035)', async () => {

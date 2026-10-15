@@ -92,6 +92,7 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash, acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
     expect(trust.approvals.get(url(1))).toMatchObject({ text: { title: 'Fix it', body: 'It is still broken.' } });
     // The label goes after the answer (issue #1194); the next discover waits for it.
     const items = await source.discover();
@@ -104,6 +105,7 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
     gh.createIssue({ repo: REPO, body: 'It is still broken.', labels: ['hopper', 'hopper:done'] });
     await source.discover();
     expect((await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'f'.repeat(64) })).done).toEqual([]);
+    await source.flushOutbox?.();
     await source.discover();
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
     expect(trust.approvals.size).toBe(0);

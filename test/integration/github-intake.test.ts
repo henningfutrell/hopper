@@ -110,12 +110,13 @@ describe('intake outcomes and the intake migration (issue #440)', () => {
 
     const assigned = await a.ui('/ui/api/sources/github/intake', { kind: 'assign', keys: [i.unassigned.url, i.backburner.url] }, { token });
     expect(assigned).toEqual({ status: 200, body: { done: [i.unassigned.url], failed: { [i.backburner.url]: 'not offered: on the backburner' } } });
+    // The outbox sends the assignment after the answer (issue #1238), and the sync after it takes the issue.
+    await waitFor(async () => (await jobsFor(a, i.unassigned.url)).length === 1, { what: 'the assigned issue taken' });
     expect(gh.issue(REPO, i.unassigned.number).assignees).toEqual(['owner']);
-    expect(await jobsFor(a, i.unassigned.url)).toHaveLength(1);
 
     const released = await a.ui('/ui/api/sources/github/intake', { kind: 'release', keys: [i.theirs.url] }, { token });
     expect(released).toEqual({ status: 200, body: { done: [i.theirs.url], failed: {} } });
-    expect(await jobsFor(a, i.theirs.url)).toHaveLength(1);
+    await waitFor(async () => (await jobsFor(a, i.theirs.url)).length === 1, { what: 'the released issue taken' });
     await waitFor(() => !gh.issue(REPO, i.theirs.number).labels.includes(THEIRS), { what: 'the other holder label gone' });
 
     const events = await a.events();
