@@ -1,5 +1,6 @@
 // Issue #1002: the event loop watchdog. A handler that holds the event loop is a stall: logged with its route, and
 // shown as the last stall; a hopper with no stall shows none.
+import { execFileSync } from 'node:child_process';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { storeCallsBetween, watchEventLoop, type EventLoopStall } from '../../src/http/event-loop.ts';
@@ -17,7 +18,7 @@ function setup(o: { raise?: boolean; held?: HeldWatch; rss?: () => number; memor
   const slow = createSlowCalls();
   const watch = watchEventLoop(app, {
     clock: { now: () => new Date('2026-10-13T10:00:00Z') }, warn: (l) => lines.push(l), stallMs: 200, tickMs: 20,
-    memory: () => ({ rss: o.rss?.() ?? 300 * 1024 ** 2, heapUsed: 120 * 1024 ** 2 }), ...(o.memoryEveryMs ? { memoryEveryMs: o.memoryEveryMs } : {}),
+    memory: () => ({ rss: o.rss?.() ?? 300 * 1024 ** 2, heapUsed: 120 * 1024 ** 2, heapTotal: 200 * 1024 ** 2, external: 10 * 1024 ** 2, arrayBuffers: 1024 ** 2 }), ...(o.memoryEveryMs ? { memoryEveryMs: o.memoryEveryMs } : {}),
     ...(o.held ? { held: o.held } : {}),
     ...(o.raise ? { storeCalls: slow.totals, raise: (s: EventLoopStall & { skipped: number }) => { raised.push(s); }, raiseEveryMs: 60_000 } : {}),
   });
@@ -186,6 +187,78 @@ describe('the event loop read while it is held (issue #1383)', () => {
     rss = 2.7 * 1024 ** 3;
     await tick(120);
     expect(s.lines).toEqual(["hopper: the process's resident memory grew past 2 GiB (2560 MiB)"]);
+  });
+});
+
+// Issue #1383: the health port answers from the held-loop thread, so a held loop still answers its health, and says so.
+describe('the health port (issue #1383)', () => {
+  const helds: HeldWatch[] = [];
+  afterEach(async () => { for (const h of helds.splice(0)) await h.end(); });
+
+  /**
+   * Asks the health port from another process, `afterMs` after it starts. The test waits on it synchronously, so the event
+   * loop of this process is held all the while, as a held hopper's is.
+   */
+  const ask = (port: number, o: { afterMs?: number; host?: string; path?: string } = {}): { status: number; body: string } => {
+    const script = `setTimeout(() => fetch('http://127.0.0.1:${port}${o.path ?? '/api/health'}', { headers: { host: ${JSON.stringify(o.host ?? `127.0.0.1:${port}`)} } })
+      .then(async (r) => { process.stdout.write(JSON.stringify({ status: r.status, body: await r.text() })); }, (e) => { process.stdout.write(JSON.stringify({ status: 0, body: String(e) })); }), ${o.afterMs ?? 0});`;
+    return JSON.parse(execFileSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 10_000 })) as { status: number; body: string };
+  };
+
+  it('answers the instance\'s health while the loop runs, and says how long it is held while it is', async () => {
+    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false, health: { port: 0, version: '9.9.9' } })!;
+    helds.push(held);
+    const port = (await held.healthPort())!;
+    expect(port).toBeGreaterThan(0);
+    held.beat();
+    const fresh = ask(port);
+    expect(fresh.status).toBe(200);
+    expect(JSON.parse(fresh.body)).toMatchObject({ ok: true, version: '9.9.9' });
+    expect(JSON.parse(fresh.body).eventLoopHeldMs).toBeUndefined();
+    held.beat();
+    const stuck = ask(port, { afterMs: 700 });
+    expect(stuck.status).toBe(503);
+    const body = JSON.parse(stuck.body) as { ok: boolean; version: string; uptimeS: number; eventLoopHeldMs: number };
+    expect(body).toMatchObject({ ok: false, version: '9.9.9' });
+    expect(body.eventLoopHeldMs).toBeGreaterThanOrEqual(300);
+  });
+
+  it('answers only its health, and only on a loopback host', async () => {
+    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false, health: { port: 0, version: '9.9.9' } })!;
+    helds.push(held);
+    const port = (await held.healthPort())!;
+    held.beat();
+    expect(ask(port, { host: `localhost:${port}` }).status).toBe(200);
+    expect(ask(port, { host: `evil.example:${port}` }).status).toBe(421);
+    expect(ask(port, { path: '/api/jobs' }).status).toBe(404);
+  });
+
+  it('starts no listener unless a port is given', async () => {
+    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false })!;
+    helds.push(held);
+    expect(await held.healthPort()).toBeUndefined();
+  });
+});
+
+describe('the process reading (issue #1383)', () => {
+  it('says the process\'s memory and the event loop\'s delay', async () => {
+    const s = setup();
+    await tick(100);
+    const r = s.watch.reading();
+    expect(r.memory).toEqual({ rssMb: 300, heapUsedMb: 120, heapTotalMb: expect.any(Number), externalMb: expect.any(Number), arrayBuffersMb: expect.any(Number) });
+    expect(r.uptimeS).toBeGreaterThanOrEqual(0);
+    expect(r.eventLoop.delayMs).toEqual({ mean: expect.any(Number), p50: expect.any(Number), p99: expect.any(Number), max: expect.any(Number) });
+    expect(r.eventLoop.utilization).toBeGreaterThanOrEqual(0);
+    expect(r.eventLoop.utilization).toBeLessThanOrEqual(1);
+    expect(r.eventLoop.windowS).toBeGreaterThanOrEqual(0);
+  });
+
+  it('the delay shows a held loop', async () => {
+    const s = setup();
+    await tick(50);
+    await s.app.inject({ url: '/held/1' });
+    await tick(50);
+    expect(s.watch.reading().eventLoop.delayMs.max).toBeGreaterThanOrEqual(300);
   });
 });
 
