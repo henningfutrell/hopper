@@ -10,7 +10,8 @@ import { LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts'
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
  * waits for a free lane. `working`: a job is at work, its own background command included. `needs_you`: a question, a
- * hand-off or a parked job waits on a person. `waiting_outside`: a job waits on something outside (`waitingOn` names it).
+ * proposal or research report at a person (issue #1174), a hand-off or a parked job waits on a person.
+ * `waiting_outside`: a job waits on something outside (`waitingOn` names it).
  * `pr_open`: its pull request is open, on its way to the merge. `partly_done`: one part merged, the rest runs next.
  * `done`: its pull request merged, or its issue closed as completed. `failed`: its last job failed, nothing took its place
  * and no person dismissed it — the only failure any view counts. `dropped`: dismissed, declined, cancelled, rejected, its
@@ -99,7 +100,8 @@ export type LedgerRead =
 export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'source.request_opened', 'source.request_approved', 'source.request_declined', 'source.request_withdrawn',
   'job.queued', 'job.claimed', 'job.started', 'job.continued', 'job.wait_ended', 'job.reattached', 'job.requeued',
-  'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'handoff.opened', 'handoff.closed',
+  'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
+  'handoff.opened', 'handoff.closed',
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned',
   'job.work_kept', 'job.work_removed',
@@ -229,6 +231,11 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     }
     case 'question.escalated_to_human':
       return move('needs_you', { waitingOn: 'a question' });
+    // A review item at a person (issue #1174): its job waits on the decision; the job's requeue or end moves it on.
+    case 'proposal.escalated_to_human':
+      return move('needs_you', { waitingOn: 'a proposal' });
+    case 'research.escalated_to_human':
+      return move('needs_you', { waitingOn: 'a research report' });
     case 'handoff.opened':
       return move('needs_you', { waitingOn: HANDOFF_WAIT, failedJobId: job.id });
     case 'handoff.closed':

@@ -42,4 +42,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 57: The work-item ledger, rebuilt (issue #1067, part 4): a request card names its source (`requestSource`), so a sync
   // withdraws only its own. Rows only: the build before reads them as they were, with one more field it does not read.
   (db) => { rebuildWorkItems(db); },
+  // 58: The work-item ledger, rebuilt (issue #1174): a proposal or a research report at a person needs you, so an item whose
+  // job waits on one now reads `needs_you`, not `working`. Rows only, states the build before already knows.
+  (db) => { rebuildWorkItems(db); },
 ];

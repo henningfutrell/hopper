@@ -1,5 +1,8 @@
 // Proposal documents for the tests of issue #651: three paths, zero paths with the reason, and one from before paths.
+// THREE_PATHS is for a person to select from: its job says so (issue #1174: else the hopper continues with 1 and 3). The
+// line comes first, before any part, so no part reads it.
 export const THREE_PATHS = [
+  'Needs a person: paint and no paint differ in cost, and no rule settles it.',
   'TL;DR: Paint the shed with a brush. It is cheap and safe.',
   'Problem: The shed is bare wood, and it rots in the rain.',
   '',
