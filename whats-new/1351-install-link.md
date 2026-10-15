@@ -1,0 +1,1 @@
+- When GitHub refuses the hopper because its GitHub App is not installed or lacks a permission, the message now gives the link where you install the app.

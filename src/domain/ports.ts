@@ -810,8 +810,8 @@ export interface ConnectedAccountTokens {
   token(provider: ConnectedAccountProvider): Promise<string>;
   /** A token GitHub refused (a 401): renewed, unless it was already; throws once the sign-in expired. */
   renew(provider: ConnectedAccountProvider, refused: string): Promise<string>;
-  /** The provider's web origin and REST API base. */
-  endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string };
+  /** The provider's web origin and REST API base, and the hopper's app's install link when its slug is known (issue #1351). */
+  endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string; installUrl?: string };
   /** The repositories the account's jobs may use, as chosen now (issue #321); empty: none. */
   jobRepositories(provider: ConnectedAccountProvider): string[];
 }
