@@ -1,0 +1,1 @@
+- On a job's page, each job that the hopper started to bring its pull request up to date or fix its checks, and each job sent back for rework, now shows as one line with how that job stands; open it to see that job's own steps.
