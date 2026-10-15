@@ -25,7 +25,7 @@ The `compose.yaml` has required services and optional services.
 | `cloudflared` | yes | Remote access through Cloudflare Tunnel. It runs no tunnel until you turn remote access on with Cloudflare Tunnel. See [Remote access](remote-access.md). |
 | `vault` | no (profile `vault`) | HashiCorp Vault, a vault backend. See [Vault](vault.md). |
 
-A plain `podman compose up -d` starts only the required services. Without an optional service, the hopper starts and works. The vault then runs in the hopper, under the master key.
+With no profile set, the stack starts only the required services. Without an optional service, the hopper starts and works. The vault then runs in the hopper, under the master key.
 
 Without OpenFGA, the hopper denies every credential. A banner on every page says "Access checks are off".
 
@@ -87,16 +87,17 @@ Docker works the same: use `docker compose` in place of `podman compose`.
 
 Do not edit `compose.yaml`. Each update replaces it. Do not make a `.env` file: the hopper uses none. The hopper keeps its own settings and secrets, and you set them in the UI. Remote access, sign-in, webhooks and vault secrets are all in Settings.
 
-A setting that compose itself needs is given at launch, in the environment of the compose command:
+A setting that compose itself needs is given to the user service, which starts compose with it:
 
 1. Export the setting. Examples: `export HOPPER_PORT=4800` moves the UI port, and `export HOPPER_BIND=0.0.0.0` publishes the UI on every interface for a LAN install.
-2. Give the master key too (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`): the hopper is recreated.
-3. Recreate the stack: `podman compose up -d`.
-4. The next update writes the setting into `compose.yaml` as the default of its variable, so you do not give it again.
+2. Run the install again in the same shell: `bash hopper-service.sh install`. The service keeps the settings set in that shell, and only those: export your earlier settings too. It starts the stack again with the master key sealed to this host. Do not give the key, and do not run `podman compose up` yourself.
+3. The next update writes the setting into `compose.yaml` as the default of its variable.
+
+With Docker, give the master key too (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`), then run `docker compose up -d`.
 
 Put what `compose.yaml` does not name (a service of your own, a host folder mounted into a service) in `compose.override.yaml`. Compose reads it beside `compose.yaml`. Never put a secret in it: name the variable only (`ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}`), and give its value at launch.
 
-To turn on an optional service, give these settings at launch, then run `podman compose up -d`:
+To turn on an optional service, export these settings, then run `bash hopper-service.sh install` again:
 
 | You want | Settings |
 |---|---|
@@ -104,7 +105,7 @@ To turn on an optional service, give these settings at launch, then run `podman 
 | That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
 | A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
 
-To turn a service off, give the settings without it and run `podman compose up -d --remove-orphans`. When an update already wrote them into `compose.yaml`, give the new value (for example `COMPOSE_PROFILES=`) and run the update again.
+To turn a service off, export the settings without it (for example `export COMPOSE_PROFILES=`), then run `bash hopper-service.sh install` again. The service start removes the service's container. When an update already wrote the settings into `compose.yaml`, run the update again too.
 
 ## The master key
 
@@ -268,7 +269,7 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 | `the master key does not match this database` | Give the key this database was set up with. After a rotation, give the new key. |
 | `the master key is missing` | Seal the key to this host (`bash master-key.sh seal`), then restart the service: `systemctl --user restart hopper-compose.service`. |
 | The containers show `Up`, but the UI does not open | The process that served the port is gone: the stack was started from a terminal or by an agent that exited. Install the user service: `bash hopper-service.sh install`. With the service, its timer restarts the stack within two minutes. |
-| "Access checks are off" | OpenFGA does not run. Run the update (see "Update a container install"), or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
+| "Access checks are off" | OpenFGA does not run. Run the update (see "Update a container install"), or restart the service: `systemctl --user restart hopper-compose.service`. Read `podman compose logs openfga openfga-migrate`. |
 | "This hopper's stack differs from the compose file of its version" | Run the update with the image the hopper runs: the banner gives the command. |
 | The hopper stops at start and names two schema versions | The database is from a newer version. Run that newer version again, or restore a backup from before it. |
 | `does not see the hopper stack that runs` | Another compose tool started the stack, and the update cannot use it. Start the stack once with the tool that made it (`podman-compose -p hopper up -d`, or `docker compose -p hopper up -d`), then run the update again. |

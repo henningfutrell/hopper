@@ -297,7 +297,8 @@ is only in the hopper's environment, given at launch.
   itself: set them in the UI; it keeps them in the database and the vault. What compose itself needs — a variable
   `compose.yaml` names, `${NAME:-default}` (`HOPPER_PORT`, `HOPPER_BIND`, `HOPPER_IMAGE`, `HOPPER_LAN_NAMES`,
   `HOPPER_LAN_PEERS`, `HOPPER_PUBLIC_URL`, `COMPOSE_PROFILES`, …) — is given at launch (`export HOPPER_BIND=0.0.0.0`,
-  then `podman compose up -d`), at each `up` that recreates the hopper. A default an earlier update wrote into
+  then `bash hopper-service.sh install`, which keeps it in the user service; with Docker, `docker compose up -d`), at
+  each start that recreates the hopper. A default an earlier update wrote into
   `compose.yaml` stays: the update keeps it. A setting `compose.yaml` does not name goes in `compose.override.yaml` (`services.hopper.environment`); a
   secret there only by reference, `NAME: ${NAME:-}`, given at launch.
 - **The UI** is published on this computer's loopback, `127.0.0.1:${HOPPER_PORT:-4790}`, the same port
@@ -1003,13 +1004,13 @@ events.
 
 - **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once), and `tunnel` and
   `cloudflared`, which run no tunnel agent until remote access is turned on in the UI with their provider ("Remote
-  access" below). A plain `podman compose up -d` starts only
+  access" below). With no profile set, the stack starts only
   these, and the vault works: it runs in the hopper, under the master key.
 - **Optional**: `hopper-vault`, `kms` and `vault`, each behind a compose profile of the same name. The hopper
   starts and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
   Vault, a vault backend ("Vault backends" below); the others are here.
 
-Turn them on with these settings at launch (`export …`), then run `podman compose up -d`. The next update writes them
+Turn them on with these settings at launch (`export …`), then run `bash hopper-service.sh install` again (with Docker, `docker compose up -d`). The next update writes them
 into `compose.yaml` (issue #894):
 
 | You want | settings at launch |

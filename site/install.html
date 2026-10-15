@@ -251,7 +251,7 @@ must not say <code>System has not been booted with systemd</code>.</p></li>
 <li><p>Install Podman in Ubuntu:</p>
 <div class="cmd"><pre>sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose">Copy</button></div></li>
 <li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu. After you get the compose file, and
-before the first <code>podman compose up -d</code>, run this in the same folder. Windows tries <code>::1</code> first for
+before <code>bash hopper-service.sh install</code>, run this in the same folder. Windows tries <code>::1</code> first for
 <code>localhost</code>, so it publishes the hopper on <code>::1</code> too, when Ubuntu has it. It writes
 <code>compose.override.yaml</code>. Nothing listens on your network:</p>
 <div class="cmd"><pre>grep -q '^0\{31\}1 ' /proc/net/if_inet6 &amp;&amp; printf 'services:\n  hopper:\n    ports:\n      - "[::1]:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"\n' &gt; compose.override.yaml</pre><button type="button" data-copy="grep -q &#x27;^0\{31\}1 &#x27; /proc/net/if_inet6 &amp;&amp; printf &#x27;services:\n  hopper:\n    ports:\n      - &quot;[::1]:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}&quot;\n&#x27; &gt; compose.override.yaml">Copy</button></div>
@@ -418,7 +418,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><th>It says</th><th>Do this</th></tr>
 <tr><td><code>unrecognized command "podman compose"</code></td><td>Your Podman is older than 4.7. Run <code>podman-compose</code> (with a hyphen) in place of <code>podman compose</code>, or install a newer Podman.</td></tr>
 <tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
-<tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
+<tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>export PODMAN_COMPOSE_PROVIDER=podman-compose</code>, then <code>bash hopper-service.sh install</code> again: the service keeps it.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
 <tr><td><code>Windows isn't supported natively. Run the client inside WSL.</code></td><td>The line ran on Windows itself. Run it inside WSL: <a href="#windows-machine">A Windows computer as a machine</a>.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
