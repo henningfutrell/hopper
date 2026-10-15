@@ -1,0 +1,1 @@
+- Merge now and Close PR are now kept until GitHub has them: a restart no longer loses them, and when GitHub is out of reach they are tried again by themselves.

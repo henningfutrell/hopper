@@ -253,7 +253,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     name: o.name,
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: () => outbox.flush(outboxSend(api, approvals.readComments, (repo) => ensureLabels(reportContext(), repo))),
+    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo) => ensureLabels(reportContext(), repo), acts?.pullRequest), (r, error) => { if (r.change.op === 'pull_request') acts?.gaveUp(r.change, error); }),
+    pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {

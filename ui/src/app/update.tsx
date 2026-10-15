@@ -7,6 +7,7 @@
 // required at launch; since issue #1104 one command, the update the image carries, which checks its result.
 // The notice is one line until asked (issue #521): What's new and How to update open below it, one at a time; the command is one container tool's, the one this browser chose last.
 // An install whose compose.yaml has no OpenFGA (issue #696): How to update says to add it, with the fix.
+// A cluster install (issue #1285): How to update gives helm upgrade of its release, with no container tool and no compose step.
 // The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
 import { LogBlock } from '@/components/log-block';
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
@@ -87,6 +88,7 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
   const access = accessDown(useAccessStatus());
   const u = imageUpdate(s);
   if (!u) return null;
+  if (u.helm) return <ClusterUpdateSteps s={s} helm={u.helm} blockers={u.blockers} mismatch={u.mismatch} />;
   const c = u.commands.find((x) => x.tool === tool) ?? u.commands[0]!;
   return (
     <div data-slot="image-update" className="space-y-2 text-xs">
@@ -110,6 +112,19 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
           <AccessFix />
         </div>
       )}
+    </div>
+  );
+}
+
+/** How to update a cluster install (issue #1285): helm upgrade of its release to the target's own build. */
+function ClusterUpdateSteps({ s, helm, blockers, mismatch }: { s: UpdateStatus; helm: string; blockers: string; mismatch: string | undefined }) {
+  return (
+    <div data-slot="cluster-update" className="space-y-2 text-xs">
+      {mismatch && <p className={TEXT.warn}>{mismatch}.</p>}
+      <p>This hopper runs on Kubernetes, as a Helm release. Upgrade the release to the {s.channel} channel's build:</p>
+      <Command text={helm} />
+      <p className="text-muted-foreground">It keeps the release's other values and pins the image to this one build, so Kubernetes rolls it out. To go back: <code>helm rollback</code> of the release.</p>
+      <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{blockers}</p>
     </div>
   );
 }

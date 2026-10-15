@@ -1,21 +1,37 @@
 // The GitHub outbox (issue #1238, design.md "GitHub outbox"): one row per GitHub change a person's action asked for, kept in
 // the user's store with the action's own local change, and sent after the answer, in batches. Its rows, its port, and the
 // coalescing of the rows due for one issue into the fewest calls (pure).
+import type { ActingPerson } from './failures.ts';
 import type { IntakeActionKind } from './intake.ts';
+import type { PullRequestAct } from './pull-requests.ts';
 
 /**
  * One change on one issue. `read_comments` is Approve's read of the assignee's comments, kept in the approved snapshot.
- * `comment` posts one comment: a hand-off's resolution (issue #551).
+ * `comment` posts one comment: a hand-off's resolution (issue #551). `pull_request` is a person's Merge now or Close PR on
+ * job `jobId`'s open pull request (issue #677, part 3): the source follows it with the act, and records it by `acting`.
  */
 export type OutboxChange =
   | { op: 'add_labels'; labels: string[] }
   | { op: 'remove_labels'; labels: string[] }
   | { op: 'add_assignees'; assignees: string[] }
   | { op: 'read_comments' }
-  | { op: 'comment'; body: string };
+  | { op: 'comment'; body: string }
+  | { op: 'pull_request'; act: PullRequestAct; jobId: string; acting: ActingPerson };
 
-/** The act that asked for a row: a person's intake action, or `resolve`, a person's resolution of a hand-off told to its item. */
-export type OutboxAct = IntakeActionKind | 'resolve';
+/**
+ * The act that asked for a row: a person's intake action, `resolve`, a person's resolution of a hand-off told to its item,
+ * or a person's Merge now or Close PR (part 3).
+ */
+export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct;
+
+/** An act whose rows are not an intake item's write: the item shows no marker for them. */
+export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct => act === 'resolve' || act === 'merge' || act === 'close';
+
+/** The sync loop's part of a flush (part 3): it sends a Merge now or Close PR row, and says one failed for good. */
+export interface OutboxActs {
+  pullRequest(change: Extract<OutboxChange, { op: 'pull_request' }>): Promise<void>;
+  gaveUp(change: Extract<OutboxChange, { op: 'pull_request' }>, error: string): void;
+}
 
 export type OutboxState = 'pending' | 'sending' | 'sent' | 'failed';
 
@@ -83,8 +99,9 @@ export interface OutboxPlan {
 
 /**
  * The rows due for one issue, coalesced: an add and a remove of the same label cancel out; the labels left go in one
- * add call and one remove call; the assignees in one call; Approve's comment reads in one; the same comment once. The
- * newest row of a label says what it ends as. Removes go first, then adds, assignments, the read and the comments.
+ * add call and one remove call; the assignees in one call; Approve's comment reads in one; the same comment once; a job's
+ * same Merge now or Close PR once. The newest row of a label says what it ends as. Removes go first, then adds,
+ * assignments, the read, the comments and the pull request acts.
  */
 export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
   const byIssue = new Map<string, OutboxRow[]>();
@@ -96,12 +113,14 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     const assignees = new Map<string, number[]>();
     const reads: number[] = [];
     const comments = new Map<string, number[]>();
+    const acts = new Map<string, { change: OutboxChange; rows: number[] }>();
     const cancelled: number[] = [];
     for (const r of issueRows) {
       const c = r.change;
       if (c.op === 'add_assignees') for (const a of c.assignees) assignees.set(a, [...(assignees.get(a) ?? []), r.id]);
       else if (c.op === 'read_comments') reads.push(r.id);
       else if (c.op === 'comment') comments.set(c.body, [...(comments.get(c.body) ?? []), r.id]);
+      else if (c.op === 'pull_request') { const k = `${c.jobId}\n${c.act}`; acts.set(k, { change: acts.get(k)?.change ?? c, rows: [...(acts.get(k)?.rows ?? []), r.id] }); }
       else {
         const op = c.op === 'add_labels' ? 'add' : 'remove';
         for (const l of c.labels) {
@@ -122,6 +141,7 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     if (assignees.size) calls.push({ change: { op: 'add_assignees', assignees: [...assignees.keys()] }, rows: [...new Set([...assignees.values()].flat())] });
     if (reads.length) calls.push({ change: { op: 'read_comments' }, rows: reads });
     for (const [body, ids] of comments) calls.push({ change: { op: 'comment', body }, rows: ids });
+    calls.push(...acts.values());
     // A row whose every label cancelled sends nothing; one with a label left is sent with that call.
     const inCalls = new Set(calls.flatMap((c) => c.rows));
     return { repo, key, calls, cancelled: [...new Set(cancelled)].filter((id) => !inCalls.has(id)) };
