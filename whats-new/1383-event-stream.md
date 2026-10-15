@@ -1,0 +1,1 @@
+- A browser tab left open in the background no longer makes the hopper hold more and more memory.
