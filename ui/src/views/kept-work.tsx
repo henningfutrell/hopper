@@ -15,6 +15,7 @@ import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
 import type { KeptWorkView } from '@/model/wire';
 import { failureAct } from '@/store';
+import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
 import { ReportBugButton } from '@/app/bug-report';
 
@@ -29,12 +30,17 @@ function KeptWorkRow({ k }: { k: KeptWorkView }) {
   const [discardSent, setDiscardSent] = useState(false);
   const id = encodeURIComponent(k.jobId);
   const removing = discardSent || k.discarding?.state === 'removing';
+  const pushing = useGivingBack((s) => s[k.jobId] !== undefined);
   const run = async (path: string, body: unknown, done: string): Promise<boolean> => {
     setBusy(true);
     const ok = await failureAct(`/ui/api/failures/kept-work/${id}/${path}`, body, done);
     if (ok) setNote('');
     setBusy(false);
     return ok;
+  };
+  // Answered at once (issue #1194): its source takes the item back after, and the stream says how it ended.
+  const push = async () => {
+    if (await giveBack(k.jobId, 'push', { path: `/ui/api/failures/kept-work/${id}/push`, body: note.trim() ? { note: note.trim() } : {} })) setNote('');
   };
   return (
     <li data-kept-work={k.jobId} className="space-y-2 px-4 py-3">
@@ -56,9 +62,9 @@ function KeptWorkRow({ k }: { k: KeptWorkView }) {
           {k.actions.push.ok && <Textarea aria-label="Note for the job" placeholder="Note for the job (optional)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="text-sm" />}
           <div className="flex flex-wrap items-center gap-2">
             {k.actions.push.ok
-              ? <Button size="sm" disabled={busy} onClick={() => void run('push', note.trim() ? { note: note.trim() } : {}, 'The job goes on to push its work')}><Upload />Push it</Button>
+              ? <Button size="sm" disabled={busy || pushing} onClick={() => void push()}><Upload />{pushing ? PENDING.push : 'Push it'}</Button>
               : <span data-slot="push-why" className="text-xs text-muted-foreground">Push it: not now — {k.actions.push.why}.</span>}
-            {k.actions.discard.ok && (
+            {k.actions.discard.ok && !pushing && (
               <Confirm title="Discard the work?" action="Discard" onConfirm={() => { setDiscardSent(true); void run('discard', {}, 'Discard sent: the work tree is removed on its machine').then(() => setDiscardSent(false)); }}
                 description="The job's work tree is removed on its machine with all its work that is not pushed. You cannot undo this.">
                 <Button size="sm" variant="outline" disabled={busy}><Trash2 />Discard</Button>

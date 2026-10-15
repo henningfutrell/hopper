@@ -148,6 +148,8 @@ describe('Pull requests view', () => {
     expect(text('[data-slot="pr-tend-again"]', cardOf('j5'))).toContain('Tend again');
     await act(async () => { (cardOf('j5').querySelector('[data-slot="pr-tend-again"] button') as HTMLButtonElement).click(); });
     await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/pull-requests/tend', body: { jobId: 'j5' } }]));
+    // Answered before the tend (issue #1194): the button waits until the stream says how it ended.
+    await vi.waitFor(() => expect(text('[data-slot="pr-tend-again"]', cardOf('j5'))).toContain('Tending again'));
     await unmount();
     await boot(view, 'viewer');
     expect([...cardOf('j5').querySelectorAll('button')]).toEqual([]);

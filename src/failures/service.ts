@@ -26,7 +26,7 @@ import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
 import { attemptOf, recentOf, timeoutInputOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts';
-import { rerunRecordOf } from './rerun.ts';
+import { rerunRecordOf, retryable } from './rerun.ts';
 import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
 import { createDoneAtSource, DONE_NOTE, lookedAgain } from './done-at-source.ts';
@@ -351,7 +351,9 @@ export function createFailures(o: FailuresOptions): Failures {
       return done;
     },
     retry: (recordId, by) => doneCheck.unlessDone(recordId, () => rerunRecordOf({ store, rerun: o.rerun, takesBack: o.takesBack, now }, recordId, 'user', 'run again by a person', by)),
+    retryable: (recordId) => retryable({ store, takesBack: o.takesBack }, recordId),
     resolveHandoff: (handoffId, input, by) => handoffs.resolve(handoffId, input, by),
+    handoffResolvable: (handoffId, action) => handoffs.resolvable(handoffId, action),
     nameCause(cause) {
       store.settings.setNamedCauses([...store.settings.getNamedCauses().filter((c) => c.signature !== cause.signature), cause]);
       return namedCause(cause);

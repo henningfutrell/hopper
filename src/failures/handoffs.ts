@@ -22,7 +22,7 @@ import type { DismissedBy } from '../domain/locked.ts';
 import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
-import { handoffView, newerOf, newestOfItem, RESOLUTION_TEXT, type TakesBack } from './view.ts';
+import { handoffView, newerOf, newestOfItem, resolvableOf, type TakesBack } from './view.ts';
 
 export type HandoffAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
@@ -81,6 +81,8 @@ export interface Handoffs {
   onEvent(e: DomainEvent): void;
   /** A person resolves an open hand-off (issue #551), `by` the person the UI session signed in, and the way (issue #623). */
   resolve(id: string, input: HandoffResolve, by: ActingPerson): Promise<HandoffAction<{ handoff: HandoffView; job?: Job }>>;
+  /** Whether a person may resolve the hand-off so now (issue #1194: checked before the answer): its job, or why not. */
+  resolvable(id: string, action: HandoffResolve['action']): HandoffAction<{ jobId: string }>;
   /** The hand-off as the Failures view shows it. */
   view(h: Handoff): HandoffView;
   prune(before: string): void;
@@ -179,6 +181,8 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       o.logger.warn(`hopper: a resolved hand-off left job ${job.id} in the queue: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  const resolvable = (id: string, action: HandoffResolve['action']) => resolvableOf(id, store.handoffs.get(id), action, view);
 
   /** Run its item again, told `brief`: the new job follows the hand-off. */
   async function runAgainWith(h: Handoff, brief: string, resolution: HandoffResolution, note: string): Promise<HandoffAction<{ handoff: Handoff; job?: Job }>> {
@@ -331,13 +335,12 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       // After the hand-off a run again closes (onQueued, scheduled first): what the new job, or the item's close, left stale.
       if (e.type === 'job.queued' || e.type === 'work_item.issue_closed') setImmediate(() => { if (o.live()) dismissStale(); });
     },
+    resolvable,
     async resolve(id, input, by) {
-      const h = store.handoffs.get(id);
-      if (!h) return { ok: false, reason: 'not_found', message: `hand-off ${id} not found` };
+      const allowed = resolvable(id, input.action);
+      if (!allowed.ok) return allowed;
+      const h = store.handoffs.get(id)!;
       const shown = view(h);
-      const key = { continue: 'continue', fixed: 'fixed', done_by_hand: 'doneByHand', wont_do: 'wontDo' } as const;
-      const allowed = shown.actions[key[input.action]];
-      if (!allowed.ok) return { ok: false, reason: 'conflict', message: `hand-off ${id} cannot be ${RESOLUTION_TEXT[input.action]}: ${allowed.why}` };
       const job = store.jobs.get(h.jobId);
       const resolution: HandoffResolution = {
         action: input.action, by: by.person, via: by.via, at: nowIso(), ...(input.note ? { note: input.note } : {}), ...(input.link ? { link: input.link } : {}),

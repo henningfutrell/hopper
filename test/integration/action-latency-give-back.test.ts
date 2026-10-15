@@ -108,7 +108,7 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     expect(closed).toMatchObject({ end: 'run_again', nextJobId: next.id, resolution: { action: 'fixed', note: 'Fixed the fixture.' } });
   });
 
-  it('Push it: answered at once; the job goes on in its own session once its issue is given back', { timeout: 30_000 }, async () => {
+  it('Push it: answered at once; the job goes on in its own session, told the note, once its issue is given back', { timeout: 30_000 }, async () => {
     const herdr = createFakeHerdrClient({
       session: 'jh-test', turns: [{ output: ['● The paint ran out halfway.', '  HOPPER_FAILED the paint ran out'] }, { output: ['● Pushed.', '  HOPPER_DONE'] }],
       reapKeeps: ['/tmp/.worktrees/@scratch/kept/repo'],
@@ -122,7 +122,7 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     expect(ms).toBeLessThan(BUDGET_MS);
     slow.delay.ms = 0;
     await waitFor(async () => (await a.events('types=job.continued')).find((e) => e.jobId === job.id), { what: 'the job continued', timeoutMs: 10_000 });
-    await a.waitForStatus(job.id, 'finished', 8000);
+    await waitFor(() => herdr.prompts.length === 2, { what: 'the push brief sent' });
     expect(herdr.prompts[1]!.text).toContain('The branch is shed-blue.');
   });
 
