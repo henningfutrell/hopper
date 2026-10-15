@@ -86,14 +86,6 @@ export const parkedOrder = (jobs: readonly Job[], threshold: number | null): Job
 /** Whether Pick up is offered (issues #501, #565): a parked job. */
 export const canPickUp = (job: Job): boolean => job.status === 'parked';
 
-/** What Run again made, as its toast says it (issue #354): the new job queued — waiting for acceptance, or held and why — or failed at once. */
-export function rerunOutcome(job: Job): { ok: boolean; message: string } {
-  if (job.status === 'failed') return { ok: false, message: `Run again: the new job failed at once: ${job.error ?? 'no reason given'}` };
-  if (job.accepted === false) return { ok: true, message: 'Queued again: waiting for acceptance in Queue' };
-  if (job.holdReason) return { ok: true, message: `Queued again, held: ${job.holdReason}` };
-  return { ok: true, message: 'Queued again' };
-}
-
 /** A machine as people read it: its label, and its id too where they differ, since two machines can share a label (issue #166). */
 export function machineName(id: string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
   const label = machines.find((m) => m.id === id)?.label;

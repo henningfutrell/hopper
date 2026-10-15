@@ -65,6 +65,7 @@
         "job.work_kept",
         "job.work_removed",
         "job.work_discard_failed",
+        "job.give_back_failed",
         "job.containers_removed",
         "job.cleanup_deferred",
         "job.cleaned_up",

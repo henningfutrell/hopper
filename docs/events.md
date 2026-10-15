@@ -905,6 +905,26 @@ Version 1 (`docs/schemas/job.work_discard_failed.v1.json`). A person discarded t
 }
 ```
 
+## `job.give_back_failed`
+
+Version 1 (`docs/schemas/job.give_back_failed.v1.json`). A person's Run again (`act` `rerun`) or Rework (`rework`) of this ended job was answered at once, and its source's give-back, which runs after the answer (issue #1194) — on GitHub the issue reopened, assigned and its end labels gone, for Rework the pull request made a draft first —, failed: `error` says why (GitHub out of reach or refusing, the issue no longer assigned to the connected account, a newer job of its item made meanwhile). No new job was made, and the act is offered again. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `act` | `rerun` \| `rework` | yes |
+| `error` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "act": "rerun",
+  "error": "its source could not give the item back: GitHub answered 502",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `job.containers_removed`
 
 Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.

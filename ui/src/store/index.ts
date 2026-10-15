@@ -7,7 +7,6 @@ import { create } from 'zustand';
 import { get, onSessionEnded, post, SessionRejected, clearToken, readSession } from '@/lib/api';
 import { beginSignIn, signInThroughGateway, signInWithoutCredential, wantsGatewaySignIn, wantsNoSignIn } from '@/lib/login';
 import { reauthFor, rememberReturn, takeReturn } from '@/lib/reauth';
-import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
@@ -298,18 +297,6 @@ export async function actFor(path: string, body: unknown = {}, done?: string, re
     if (e instanceof SessionRejected) set({ authed: false, user: null });
     toast.error((e as Error).message);
     return { ok: false, error: (e as Error).message };
-  }
-}
-
-/** Run again (issue #354): the answer is the new job, already queued; its toast says where it is. Failures toast their reason. */
-export async function rerun(jobId: string): Promise<void> {
-  try {
-    const out = rerunOutcome(await post<Job>(`/ui/api/jobs/${jobId}/rerun`, {}));
-    if (out.ok) toast.success(out.message); else toast.error(out.message);
-    refreshLiveSoon();
-  } catch (e) {
-    if (e instanceof SessionRejected) set({ authed: false, user: null });
-    toast.error((e as Error).message);
   }
 }
 

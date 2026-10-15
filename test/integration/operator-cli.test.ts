@@ -95,7 +95,9 @@ describe('operator actions from the CLI (issue #374)', () => {
     await waitFor(async () => (await a.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the rejection reported' });
     const again = await hopper(a, ['job', 'rerun', job.id]);
     expect(again.code).toBe(0);
-    expect(JSON.parse(again.out)).toMatchObject({ rerunOf: job.id });
+    // The answer comes before the give-back (issue #1194); the new job follows.
+    expect(JSON.parse(again.out)).toEqual({ jobId: job.id, giveBack: 'rerun' });
+    await waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.rerunOf === job.id), { what: 'the new job' });
   });
 
   it('job dismiss (issue #1123): the failed jobs named, or --superseded every one nothing waits on; usage else', async () => {

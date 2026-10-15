@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { Job, PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -74,7 +75,7 @@ describe('Rework: send a done job\'s pull request back (issue #724)', () => {
     const token = await app.login();
     const { issue, job, url } = await waiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.markReady(pr); });
 
-    const r = await app.ui<Job>(`/ui/api/jobs/${job.id}/rework`, { notes: NOTES }, { token });
+    const r = await runAgain(app, job.id, token, 'rework', { notes: NOTES });
     expect(r.status).toBe(200);
     // The answer is the new job, queued at once, linked to the job it reworks, told the notes and the pull request.
     expect(r.body).toMatchObject({ rerunOf: job.id, source: { key: issue.url }, rework: { pullRequest: url, notes: NOTES, via: 'ui' } });
@@ -109,7 +110,7 @@ describe('Rework: send a done job\'s pull request back (issue #724)', () => {
     const token = await app.login();
     const { job, url } = await waiting(gh, app, (pr) => { gh.markReady(pr); });
 
-    const r = await app.ui<Job>(`/ui/api/jobs/${job.id}/rework`, { notes: NOTES }, { token });
+    const r = await runAgain(app, job.id, token, 'rework', { notes: NOTES });
     expect(r.status).toBe(200);
     const second = await app.waitForStatus(r.body.id, 'failed');
     expect(second.error).toMatch(/sent back for rework/);
@@ -124,7 +125,7 @@ describe('Rework: send a done job\'s pull request back (issue #724)', () => {
     let runs = 0;
     const { job, url } = await waiting(gh, app, (pr) => { runs += 1; if (runs === 1) gh.pushToPullRequest(pr, new Date().toISOString()); else gh.markReady(pr); });
 
-    const r = await app.ui<Job>(`/ui/api/jobs/${job.id}/rework`, { notes: NOTES }, { token });
+    const r = await runAgain(app, job.id, token, 'rework', { notes: NOTES });
     expect(r.status).toBe(200);
     await app.waitForStatus(r.body.id, 'finished');
     const briefed = (await app.events('types=job.finish_briefed')).filter((e) => e.jobId === r.body.id);
@@ -135,28 +136,30 @@ describe('Rework: send a done job\'s pull request back (issue #724)', () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const token = await app.login();
-    const { job, url } = await waiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.markReady(pr); });
+    const { issue, job, url } = await waiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.markReady(pr); });
 
-    expect((await app.ui(`/ui/api/jobs/${job.id}/rework`, {}, { token })).status).toBe(400);
-    expect((await app.ui(`/ui/api/jobs/${job.id}/rework`, { notes: '  ' }, { token })).status).toBe(400);
+    expect((await runAgain(app, job.id, token, 'rework', {})).status).toBe(400);
+    expect((await runAgain(app, job.id, token, 'rework', { notes: '  ' })).status).toBe(400);
     const missing = await hopper(app, ['job', 'rework', job.id]);
     expect(missing.code).not.toBe(0);
 
     const done = await hopper(app, ['job', 'rework', job.id, '--notes', NOTES]);
     expect(done.code).toBe(0);
-    const next = JSON.parse(done.out) as Job;
+    // The answer comes before the give-back (issue #1194); the new job follows.
+    expect(JSON.parse(done.out)).toEqual({ jobId: job.id, giveBack: 'rework' });
+    const next = await waitFor(async () => (await jobsFor(app, issue.url)).find((j) => j.rerunOf === job.id), { what: 'the new job' });
     expect(next).toMatchObject({ rerunOf: job.id, rework: { pullRequest: url, notes: NOTES, via: 'cli' } });
     // Made a draft (the new job may have marked it ready again already).
     expect(gh.calls).toContainEqual({ method: 'toDraft', args: [REPO, Number(url.split('/').at(-1))] });
 
     // Only the newest job of an item, finished, with an open pull request it follows, is sent back.
-    const again = await app.ui<{ error: string }>(`/ui/api/jobs/${job.id}/rework`, { notes: NOTES }, { token });
+    const again = await runAgain(app, job.id, token, 'rework', { notes: NOTES });
     expect(again.status).toBe(409);
     await app.waitForStatus(next.id, 'finished');
     gh.mergePullRequest(url);
     await app.sync();
     await waitFor(async () => (await app.events('types=job.pull_request_merged')).some((e) => e.jobId === next.id), { what: 'merged' });
-    const merged = await app.ui<{ error: string }>(`/ui/api/jobs/${next.id}/rework`, { notes: NOTES }, { token });
+    const merged = await runAgain(app, next.id, token, 'rework', { notes: NOTES });
     expect(merged.status).toBe(409);
     expect(merged.body.error).toMatch(/no open pull request/);
   });

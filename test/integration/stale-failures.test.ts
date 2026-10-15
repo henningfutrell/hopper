@@ -4,6 +4,7 @@
 // what the automatic path missed. Real daemon, the manual source.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, Job } from '../../src/domain/types.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -37,7 +38,7 @@ describe('a failed job nothing waits on is dismissed by itself (issue #1123)', (
     const a = await boot();
     const token = await a.login();
     const old = await failedJob(a);
-    const again = await a.ui<Job>(`/ui/api/jobs/${old.id}/rerun`, {}, { token });
+    const again = await runAgain(a, old.id, token);
     expect(again.status).toBe(200);
     await waitFor(async () => (await a.job(old.id)).dismissedAt !== undefined, { what: 'the superseded failure dismissed' });
     expect(await a.job(old.id)).toMatchObject({ status: 'failed' });
@@ -90,7 +91,7 @@ describe('dismiss many failed jobs at once (issue #1123)', () => {
     const a = await boot();
     const token = await a.login();
     const old = await failedJob(a);
-    expect((await a.ui(`/ui/api/jobs/${old.id}/rerun`, {}, { token })).status).toBe(200);
+    expect((await runAgain(a, old.id, token)).status).toBe(200);
     await waitFor(async () => (await a.job(old.id)).dismissedAt !== undefined, { what: 'the superseded failure dismissed' });
     // A store from the build before: the superseded failure was never dismissed.
     a.user().store.jobs.update(old.id, { dismissedAt: undefined });
