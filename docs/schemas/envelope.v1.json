@@ -209,6 +209,7 @@
         "job.pull_request_closed",
         "job.pull_request_abandoned",
         "job.finish_briefed",
+        "job.checks_rerun",
         "job.pull_request_tended",
         "job.pull_request_base_merged",
         "job.pull_request_retargeted",

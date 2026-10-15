@@ -35,7 +35,7 @@ import { createAfterDone } from './after-done.ts';
 import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
-import { finishIfClosedAsComplete } from './closed-as-complete.ts';
+import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -73,7 +73,8 @@ interface Hint { cancelReason?: string }
 
 const NOT_REPORTED = 'its end is not reported to the source yet';
 
-const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled', 'job.rejected']);
+// `job.assessed`: a failure whose report waits on its assessment (issue #1230, `fixing`).
+const TRIGGERS = new Set(['job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.assessed']);
 const isTerminal = (j: Job) => TERMINAL_STATUSES.includes(j.status);
 const flagsOf = (j: Job): SyncFlags => (j.sourceState?.sync ?? {}) as SyncFlags;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -139,16 +140,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  /** A failed job whose work landed is finished instead (`finishIfClosedAsComplete`). false: asking failed; the next sync asks again. */
-  async function finishedIfClosedAsComplete(slot: Slot, job: Job): Promise<boolean> {
-    try {
-      await finishIfClosedAsComplete(host, slot.source, job);
-      return true;
-    } catch (e) {
-      slot.retrying.set(job.id, message(e));
-      return false;
-    }
-  }
 
   async function reportJob(slot: Slot, jobId: string, hint: Hint): Promise<void> {
     let job = store.jobs.get(jobId);
@@ -158,17 +149,23 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     job = store.jobs.get(jobId)!;
     if (!isTerminal(job) || flagsOf(job).finalReported) return;
-    if (job.status === 'failed' && !await finishedIfClosedAsComplete(slot, job)) return;
+    if (job.status === 'failed' && !await finishedIfClosedAsComplete(host, slot, job)) return;
     job = store.jobs.get(jobId)!;
     const flags = flagsOf(job);
     if (job.status === 'cancelled' && !flags.cancelReason && hint.cancelReason) write(jobId, { ...flags, cancelReason: hint.cancelReason });
-    const kind = job.status === 'finished' || job.status === 'failed' || job.status === 'rejected' ? job.status : 'cancelled';
-    await send(slot, jobId, kind, (j) => ({ kind, job: j }), (f) => ({ ...f, finalReported: true }));
+    // Its own pull request's checks red (issue #1230): told once assessed, as one the hopper fixes itself while its Continue is pending.
+    if (fixingReports.waits(job)) return;
+    const kind = job.status === 'finished' || job.status === 'failed' || job.status === 'rejected' ? job.status : 'cancelled', fixing = fixingReports.fixing(job);
+    await send(slot, jobId, kind, (j) => (kind === 'failed' && fixing ? { kind, job: j, fixing } : { kind, job: j }), (f) => ({ ...f, finalReported: true, fixingReported: fixing }));
   }
 
   function queueReport(slot: Slot, jobId: string, hint: Hint = {}): Promise<void> {
     return enqueue(jobId, () => reportJob(slot, jobId, hint));
   }
+
+  /** Tell the job's end to its source again. */
+  const reportAgain = (jobId: string): void => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); };
+  const fixingReports = createFixingReports({ store, flagsOf, reportAgain });
 
   /** A pull request ended: the base of the others moved, so its source syncs again at once and follows every one. */
   function pullRequestEnded(slot: Slot | undefined): void {
@@ -181,7 +178,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   function onEvent(e: DomainEvent) {
     if (running && PR_ENDED.has(e.type)) pullRequestEnded(slots.get(store.jobs.get(e.jobId ?? '')?.source?.source ?? ''));
-    if (running && (writeBacks.follows(e) || threadAsks.follows(e))) return;
+    if (running && (writeBacks.follows(e) || threadAsks.follows(e) || fixingReports.follows(e))) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
     const hint: Hint = e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {};
@@ -334,7 +331,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const afterDone = createAfterDone({
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
-    reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
+    reportAgain,
     failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(),
   });
 

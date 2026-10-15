@@ -2026,7 +2026,9 @@ them is rebased); with failing checks, `fix_checks`; a draft free of both, `mark
 on in its own session (`Executor.resume`, in the same pane and work tree) told that step's **finish brief**
 (`finishBrief`, `src/domain/pull-requests.ts`): fixed text, no model call, recorded as `job.finish_briefed`. Its next end
 is judged again. At most `MAX_FINISH_BRIEFS` (3) per run; after them, or with no such pull request, an executor that
-cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before.
+cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before — except a job whose
+own pull request is there with red checks (issue #1230): its miss names that pull request and its failed checks
+(`PR #N: checks failed: <names>`), and the hopper finishes it ("Own PR checks red").
 
 **Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
 can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
@@ -3629,6 +3631,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LINK_GRACE_MS` | `600000` — issue #752: how long a running job is held once its machine's link drops, before it fails ("Link-lost hold") |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
+| `HOPPER_CHECKS_WAIT_MS` | `60000` — issue #1230: a job whose own pull request's checks were red: how long between looks at those checks while they run again, before the job is sent back to fix them ("Own PR checks red") |
 | `HOPPER_OWN_COMMAND_GRACE_MS` | `300000` — issue #1037: a job waiting on its own background command whose pane shows no background work this long, its agent not gone on, is nudged once; this long after the nudge it is flagged stuck ("A wait on its own command") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
@@ -10962,6 +10965,8 @@ a cause a person named for that signature first, then the built-in ones by their
 
 0. A job that **timed out** (the built-in cause `timed-out`) is decided by its **liveness** alone (issue #630,
    "A timed-out job" below): never grouped into a problem, nor joined to one.
+   A job whose own pull request's checks are red (the built-in cause `own-pr-checks-red`, issue #1230, "Own PR checks
+   red" below) goes on to fix them while under `maxAttempts`, then a person: never grouped, nor joined to a problem.
 1. The open **problem** of the signature whose scope covers the job's machine takes it: held, or redirected. Not a
    `job` cause's failure (issue #637): a done-check miss is its own job's, even when an older build grouped its
    signature into a problem.
@@ -11120,6 +11125,55 @@ A fact absent is not known. The rules (`timed-out.ts`, pure: liveness and the ch
 The chain (`chain.ts`) is read from the failure records: a continued run is the same job, so its earlier records
 count as well as its earlier jobs'. Only timed-out runs the assessor ran again count, newest first, back to the first
 that was not one. A person names no cause with `continue`: it needs a timeout's liveness.
+
+## Own PR checks red (issue #1230, 2026-10-15)
+
+A job opened its pull request (`Part of #1194`); one check went red on a timing assertion; the job ended done. The done
+check hid the pull request — a part whose checks failed was not counted — and said `no pull request … closes or references
+it`. The built-in cause **Not complete** matched, its decision `person`: a hand-off and `hopper:failed` on the first
+attempt, though the fix was the hopper's own work, and the queue sat idle for hours.
+
+**The miss says it.** `notComplete` (`src/sources/github/completion.ts`) asks for the job's own open pull request — opened
+by it, updated by it, or the one it reworks; closing its issue or shipping part of it; ready but for its checks (not a
+draft, no merge conflicts) — and its checks (`ownPullRequestChecks`, the failed ones read by its number). Red, the miss
+names it: `not complete: the issue <url> is open, and PR #1226: checks failed: test (node 24)`, never `no pull request`
+(`redChecksLine`). A pull request that closes the issue is still listed as found, `#N (open, checks failing)`.
+
+**Its own cause.** The built-in cause **Own PR checks red** (`own-pr-checks-red`, class `transient`, decision
+`continue`), matched before **Not complete** by that text (`OWN_PR_CHECKS_RED_TEXT`). The issue asked for decision `retry`;
+the act it describes — the same job goes on in its own session — is `continue`, so that is the decision. The rules
+(`assess.ts`): never grouped and never joined to a problem; while its chain was sent back for red checks fewer than
+`maxAttempts` times (`checksFixesOf`, `chain.ts`: the records of the cause whose Continue was made, across the job and the
+jobs a retry ran again before it), **Continue**; then a person, `retry limit reached: sent back N times for red checks`.
+
+**Its Continue** is pending on the record, and each sweep takes one step (`src/failures/checks-red.ts`), before the done
+check, from the pull request as the job's source reads it then:
+
+1. Checks running: wait `HOPPER_CHECKS_WAIT_MS` (default 60 s), at most `MAX_CHECKS_WAIT_MS` (60 min) from the assessment.
+   The done check does not run meanwhile: checks still running count as ready to it, and would end the job done.
+2. Red, and its failed checks not run again for this head commit: the hopper runs each failed check that is a GitHub
+   Actions job again (`JobSource.rerunChecks`; GitHub: `POST /repos/{owner}/{repo}/actions/jobs/{job}/rerun`, the port's
+   `rerunJob`), once per head commit — the flake guard —, records `job.checks_rerun` (the checks run again, and why any
+   were not: no Actions job, no permission), and waits as in 1.
+3. Passing, or no such pull request: the done check decides — done, the record `resolved` and the job finished.
+4. Red again, or not run again: the job goes on, its own agent session in its kept work tree when it can (`job.continued`
+   with `recordId`), else its item runs again (`job.rerun`, `by: "assessor"`). It is told the **checks-red brief**
+   (`checksRedBrief`, `src/domain/pull-requests.ts`): fixed text, the failed checks with their links, what they reported
+   and their logs' excerpts (`JobSource.checkLogs`), to fix them on the same branch, open no new pull request, and end
+   done; told the hopper ran them again already, or, when it could not, that it may once.
+
+**No `hopper:failed` while the hopper fixes it.** The sync loop reports such a failure only once it is assessed
+(`job.assessed` triggers the report). While its Continue is pending, the report says so (`SourceReport.fixing`): the
+GitHub source leaves the issue as it is, claimed, no label. When a person gets it — its retries spent, or its Continue
+refused, a hand-off opened — the end is told again (`src/sources/fixing-reports.ts`), as failed: `hopper:failed`.
+
+**Permission.** A run again needs the GitHub App's **Actions: write** permission. Without it GitHub refuses (403):
+`job.checks_rerun` says so in `refused`, and the job goes on at once, allowed to run the checks again itself, once, with an
+empty commit.
+
+**Scope.** Only a job's own pull request whose checks were red when it ended. A PR waiting job's pull request that goes
+red later is tended ("Tending a waiting pull request"); a landing batch's red run has its own path (bisect, revert, fix
+issue: "Landing batches"). Within a run, the finish brief `fix_checks` still comes first (`MAX_FINISH_BRIEFS`).
 
 ## Needs a person (issue #516, 2026-10-08)
 

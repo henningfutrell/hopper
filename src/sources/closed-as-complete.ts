@@ -4,6 +4,7 @@
 import type { JobSource, SourceHost } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { issueChangeEvent, issueClosedAsComplete } from '../domain/work-items.ts';
+import type { Slot } from './sync-slots.ts';
 
 /**
  * Finish `job` instead of reporting its failure when the work-item ledger holds its item's issue closed as complete. When
@@ -22,4 +23,15 @@ export async function finishIfClosedAsComplete(host: Pick<SourceHost, 'store' | 
   }
   const now = store.workItems.get(key);
   if (now?.jobId === job.id && issueClosedAsComplete(now)) host.finishShipped(job.id);
+}
+
+/** A failed job whose work landed is finished instead (`finishIfClosedAsComplete`). false: asking failed, kept on its slot; the next sync asks again. */
+export async function finishedIfClosedAsComplete(host: Pick<SourceHost, 'store' | 'finishShipped'>, slot: Pick<Slot, 'source' | 'retrying'>, job: Job): Promise<boolean> {
+  try {
+    await finishIfClosedAsComplete(host, slot.source, job);
+    return true;
+  } catch (e) {
+    slot.retrying.set(job.id, e instanceof Error ? e.message : String(e));
+    return false;
+  }
 }

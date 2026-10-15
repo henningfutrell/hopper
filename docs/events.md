@@ -4161,6 +4161,29 @@ Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done lef
 }
 ```
 
+## `job.checks_rerun`
+
+Version 1 (`docs/schemas/job.checks_rerun.v1.json`). A job ended done while the checks of its own pull request were red (issue #1230, the cause Own PR checks red): before it is sent back to fix them, the hopper ran its failed checks again once, the flake guard, once for each head commit. `recordId`: its failure record. `pullRequest`, `head`: the pull request and its head commit. `checks`: the checks run again, by name; none when none could be. `refused`: why a check was not run again (no GitHub Actions job, no Actions write permission). Red again, the job goes on to fix them (`job.continued`).
+
+| field | type | required |
+|---|---|---|
+| `recordId` | string | yes |
+| `pullRequest` | string | yes |
+| `head` | string | yes |
+| `checks` | string[] | yes |
+| `refused` | string | no |
+
+```json
+{
+  "recordId": "f-1",
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "head": "4e4e68e4",
+  "checks": [
+    "test (node 24)"
+  ]
+}
+```
+
 ## `job.pull_request_tended`
 
 Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. A rebase is never capped (issue #786); at most three `fix_checks` tends in a row of one pull request, then it waits on a person. `person`, `via`: a person pressed Tend again (issue #1010) after the hopper gave up on it, in the UI or over the API.

@@ -267,6 +267,11 @@ export interface GitHubApi {
    * shared rate limiter as every call. GitHub refuses it (403) without the Actions read permission. Absent: not read.
    */
   jobLog?(repo: string, jobId: number): Promise<string>;
+  /**
+   * Run GitHub Actions job `jobId` of `repo` again (issue #1230: a failed check of a job's own pull request, once, before the
+   * job is sent back to fix it). GitHub refuses it (403) without the Actions write permission; a refusal throws. Absent: not run.
+   */
+  rerunJob?(repo: string, jobId: number): Promise<void>;
   /** Make open pull request `number` of `repo` a draft (issue #724: a person sent it back for rework). A draft stays one. GitHub's refusal throws. */
   toDraft(repo: string, number: number): Promise<void>;
 

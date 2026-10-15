@@ -223,6 +223,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     },
     ...acts.api,
     jobLog: jobLogs.jobLog,
+    rerunJob: jobLogs.rerunJob,
   };
 
   // A connected account's listing across repos; the app's installation token has none.
@@ -283,7 +284,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setJobLog: jobLogs.setJobLog,
+    setJobLog: jobLogs.setJobLog, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods, ...fakeChangedLines((m, a) => enter(m, a), (url) => diffs.get(url)),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {

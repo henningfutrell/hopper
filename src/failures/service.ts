@@ -15,6 +15,7 @@
 // resumes its own agent session in its kept work tree, else runs its item again, told to go on. A done-check miss (issue
 // #637) is looked at once more first: done by now, its record is `resolved` and its job finished; else Jev picks, too. A
 // failure of a job that reported a hopper bug about itself waits on that report's problem, never a person (issue #1147).
+// A job whose own pull request's checks are red goes on to fix them, its failed checks run again first (issue #1230).
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type Discarding, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
@@ -24,8 +25,8 @@ import { assess, STALE_AFTER_MS } from './assess.ts';
 import { BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
-import { attemptOf, recentOf, timeoutInputOf } from './chain.ts';
-import { createTimeouts } from './timeouts.ts';
+import { attemptOf, causeInputOf, recentOf } from './chain.ts';
+import { createTimeouts } from './timeouts.ts'; import { createChecksRed, type ChecksRedOptions } from './checks-red.ts';
 import { rerunRecordOf, retryable } from './rerun.ts';
 import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
@@ -37,7 +38,7 @@ import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, 
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
 /** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. */
-export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'> {
+export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'>, ChecksRedOptions {
   store: UserStore;
   clock: Clock;
   /** The machines now: a problem's check reads them. */
@@ -81,7 +82,8 @@ export function createFailures(o: FailuresOptions): Failures {
   // Settings saved before a field existed take its default; `auto` too, field by field (issue #630: `auto.continue`).
   const settings = (): FailureSettings => failureSettingsOf(store.settings.getFailureSettings());
   const handoffs = createHandoffs({ ...o, settings, live: () => !stopped });
-  const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun });
+  // Own PR checks red (issue #1230): its pending Continue runs the failed checks again first, and waits while they run.
+  const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun }), checksRed = createChecksRed({ ...o, store, now, live: () => !stopped });
   const doneCheck = createDoneAtSource({ store, doneAtSource: o.doneAtSource, finishShipped: o.finishShipped, now, live: () => !stopped });
   const backfill = createBackfill({ store, now, doneAtSource: o.doneAtSource, workState: o.workState, finishShipped: o.finishShipped, live: () => !stopped, logger: o.logger });
   const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
@@ -126,7 +128,7 @@ export function createFailures(o: FailuresOptions): Failures {
         job: { executor: job.spec.executor, pinned: job.spec.machineId !== undefined, ...(machineId ? { machineId } : {}) },
         ...(ranMs !== undefined ? { ranMs } : {}), ...(job.errorTail ? { tail: job.errorTail } : {}),
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
-        ...(cause?.id === 'timed-out' ? timeoutInputOf(store, job) : {}),
+        ...causeInputOf(store, job, cause?.id),
         ...(report ? { hopperBug: { title: reportTitle(report), reason: reportReason(report), ...(reportOpen ? { open: reportOpen.id } : {}) } } : {}),
       });
       let problem: Problem | undefined;
@@ -202,8 +204,8 @@ export function createFailures(o: FailuresOptions): Failures {
 
   /** Make one due run again; a refusal that may pass (its end not reported yet, its source down) is tried again later. */
   async function runPending(r: FailureRecord): Promise<void> {
-    if (await doneCheck.beforeRun(r, SOURCE_DOWN_MS) || stopped) return;
-    const result = r.pending === 'continue' ? await timeouts.continueOf(r) : await o.rerun(r.jobId, 'assessor');
+    if (await checksRed.waits(r, SOURCE_DOWN_MS) || await doneCheck.beforeRun(r, SOURCE_DOWN_MS) || stopped) return;
+    const result = r.pending === 'continue' ? await (checksRed.continueOf(r) ?? timeouts.continueOf(r)) : await o.rerun(r.jobId, 'assessor');
     if (stopped) return;
     store.tx(() => {
       const cur = store.failures.get(r.id);

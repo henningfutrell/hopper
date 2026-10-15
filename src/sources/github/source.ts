@@ -25,7 +25,8 @@ import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, t
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
+import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
+import { rerunChecks } from './rerun-checks.ts';
 import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
@@ -382,5 +383,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     issueState: (job) => issueState(api, job),
     workState: (job) => workState(api, job),
     pullRequestOpen: (job) => ownPullRequestOpen(api, job),
+    ownPullRequestChecks: (job) => ownPullRequestChecks(api, job), rerunChecks: (failed) => rerunChecks(api, failed),
   };
 }

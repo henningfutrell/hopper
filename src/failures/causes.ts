@@ -1,10 +1,13 @@
 // Known causes (issue #509): the built-in ones, matched by the error text, and the ones a person named for a
 // signature (`NamedCause`), which win. Shared causes first: a machine that cannot be reached is not a hiccup. Pure.
-import type { CauseCheck, FailureClass, FailureDecision, KnownCause, MachineSnapshot, NamedCause } from '../domain/types.ts';
+import { OWN_PR_CHECKS_RED_TEXT, type CauseCheck, type FailureClass, type FailureDecision, type KnownCause, type MachineSnapshot, type NamedCause } from '../domain/types.ts';
 
 interface BuiltinCause extends KnownCause { pattern: RegExp }
 
 const cause = (c: Omit<BuiltinCause, 'builtin'>): BuiltinCause => ({ ...c, builtin: true });
+
+/** The cause of a job whose own pull request's checks are red (issue #1230): the hopper finishes it (`checks-red.ts`). */
+export const OWN_PR_CHECKS_RED = 'own-pr-checks-red';
 
 export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   cause({
@@ -66,6 +69,12 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     id: 'invalid-spec', name: 'Invalid job', cls: 'job', decision: 'person', scope: 'machine',
     description: 'The job\'s item cannot run as written: its payload, its executor or its text is wrong.',
     pattern: /invalid payload|unknown executor|invalid spec|must be a string|must be one of/i,
+  }),
+  // Before Not complete, whose text it shares (issue #1230): the job's own pull request is there, only its checks are red.
+  cause({
+    id: OWN_PR_CHECKS_RED, name: 'Own PR checks red', cls: 'transient', decision: 'continue', scope: 'machine',
+    description: 'The job said it was done, but the checks of its own pull request failed. The hopper finishes it, not a person: it runs the failed checks again once (a flaky check), then sends the job back in its own session with the failed checks and their logs, to fix them on the same branch. Each send-back counts against the retry limit; only then a person. Its own job\'s: it never groups or holds other jobs.',
+    pattern: OWN_PR_CHECKS_RED_TEXT,
   }),
   cause({
     id: 'not-complete', name: 'Not complete', cls: 'job', decision: 'person', scope: 'machine',
