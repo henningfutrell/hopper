@@ -2,7 +2,7 @@
 // and I fixed it, Push it and Tend again answer within the budget with GitHub slow; the source gives the item back after
 // the answer, and the job follows. Real daemon, real database; the fake GitHub (slowed at its seam) and the fake herdr.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { FailuresView, Job, PullRequestsView } from '../../src/domain/types.ts';
+import type { FailuresView, Job, PullRequestsView, StuckActResult } from '../../src/domain/types.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -153,5 +153,31 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     slow.delay.ms = 0;
     await waitFor(async () => (await a.events('types=job.pull_request_tended')).find((e) => e.jobId === job!.id && e.data.person !== undefined), { what: 'tended again', timeoutMs: 10_000 });
     expect((await jobsOf(a, issue.url)).filter((j) => j.spec.tend)).toHaveLength(2);
+  });
+});
+
+describe('a stuck cause\'s bulk action answers within the budget, GitHub slow (issue #1194)', () => {
+  it('answers once each item is checked; each give-back runs after, and the new jobs follow', { timeout: 40_000 }, async () => {
+    const { a, gh, slow, token } = await boot();
+    const one = await failed(a, gh, '{"op":"fail","message":"HOPPER_FAILED the tests do not pass"}');
+    const two = await failed(a, gh, '{"op":"fail","message":"HOPPER_FAILED the tests do not pass"}');
+    const opened = async (jobId: string) =>
+      waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.jobId === jobId && x.status === 'open'), { what: `job ${jobId} handed off` });
+    const h1 = await opened(one.job.id);
+    const h2 = await opened(two.job.id);
+    const cause = (await failuresOf(a)).stuck.find((c) => c.ids.includes(h1.id))!;
+    expect(cause.ids).toContain(h2.id);
+    expect(['continue', 'run_again']).toContain(cause.cause);
+    slow.delay.ms = SLOW_MS;
+    const { r, ms } = await timed(() => a.ui<StuckActResult>(`/ui/api/failures/stuck/${cause.cause}`, {}, { token }));
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ cause: cause.cause, refused: [] });
+    expect([...r.body.done].sort()).toEqual([h1.id, h2.id].sort());
+    expect(ms).toBeLessThan(BUDGET_MS);
+    slow.delay.ms = 0;
+    for (const { job } of [one, two]) {
+      await waitFor(async () => (await jobsOf(a, job.source!.key)).find((j) => j.rerunOf === job.id), { what: `the new job of ${job.id}`, timeoutMs: 10_000 });
+    }
+    await waitFor(async () => (await failuresOf(a)).handoffs.filter((x) => (x.id === h1.id || x.id === h2.id) && x.status === 'closed').length === 2, { what: 'both hand-offs closed' });
   });
 });
