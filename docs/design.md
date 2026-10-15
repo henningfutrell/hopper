@@ -7894,6 +7894,9 @@ build before, the operator CLI), and a rolled back write leaves the old one, so 
 row. Before, every list sent and parsed the body of every job it named — about 20 KB each, some lists the whole
 table, about one a second — and the call blocks the event loop: a stall, and a terabyte a day out of Postgres. A
 job the store hands out may be a kept one: never change it in place (the store's own writes make a new one).
+A get, by id or by source key, is read the same way: it sends the version it keeps and is answered the body only when
+the row is at another one. Each get is still one store call, so code that looks at many jobs reads them in one list
+(`fresh` in `src/sources/after-done.ts`), not one get each.
 **A filter parses no body** (issue #1154, `src/store/job-filter-columns.ts`). The fields a job list filters on
 (`follow`, `pull_request`, `assessed`, `dismissed`) and a failure list filters on (`problem_id`, `outcome`) are generated
 columns: Postgres computes them from the body at each write of the row, whoever writes it, so the build before keeps
@@ -20645,6 +20648,15 @@ nothing else") said only which routes were in flight; most stalls had none, so i
 - **A job or failure filter parses no body** (part 4, "Database": a filter parses no body). The `followed`,
   `namesPullRequest`, `unassessed` and `undismissed` job filters and the `problemId` and `outcome` failure filters cast
   every row's body to JSON in Postgres, on every list, while the loop waited. They read generated columns now.
+- **A sync reads its jobs a few times, not each job again and again** (part 5, `src/sources/after-done.ts`). Each sync of
+  a source went through every job of that source, ended ones too, and read each one about eight times, a get each: when
+  it caught up, to choose whom to follow, whether it was its item's newest job (a read by source key), whether it watched
+  its base, and twice each to keep or drop a hold on its pull request. With about 740 jobs that was some 6,000 store
+  calls a sync, each a round trip and a 20 KB body parsed, and the loop of holds made about 2,000 of them in a row with
+  no `await`. Now a sync reads the jobs table in a few whole lists (ids and versions, bodies only of the rows that
+  changed); the newest job of each item comes from that list; only a tended job watches its base; and only a job held
+  now or held before has its hold kept or dropped. A get of a job that did not change sends no body ("Database").
+  Every store call is counted by its statement (`slowStoreCalls.count`), so a test says how many a piece of work sends.
 - **Not done here.** What the new log line names as holding the loop is the next thing to move: no hopper has yet run
   the attribution through a stall.
 
@@ -20652,8 +20664,10 @@ nothing else") said only which routes were in flight; most stalls had none, so i
 one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers what the scrub in place does),
 `test/client/stale-dial.test.ts` (the first backoff after a stale refusal, once), `test/adapters/ssh-machine.test.ts`
 (a session with no HOME), `test/sources/github-label-writes.test.ts` (part 2: no label write that changes nothing),
-`test/store/jobs-read.test.ts` (part 3: a list reads only the bodies that changed), `test/store/job-filter-columns.test.ts`
-(part 4: a filter sends no JSON cast, and answers as before on rows from before the migration and from the build before).
+`test/store/jobs-read.test.ts` (part 3: a list reads only the bodies that changed; part 5: nor does a get), `test/store/job-filter-columns.test.ts`
+(part 4: a filter sends no JSON cast, and answers as before on rows from before the migration and from the build before),
+`test/integration/sync-job-reads.test.ts` (part 5: a sync of a source with 40 ended jobs reads `jobs` fewer than 40
+times; it read it 332 times before).
 
 ## A job source not configured says so (issue #1243, 2026-10-15)
 

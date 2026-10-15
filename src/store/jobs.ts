@@ -12,7 +12,8 @@ const BODIES_PER_READ = 500;
  * this store has not read at that version. The version is Postgres's `xmin`: every write of the row changes it,
  * whoever writes (the build before, a migration, the operator CLI), and a rolled back write takes it back. So a body
  * kept here is never older than its row. Before, every list sent and parsed the body of every job it named, about
- * once a second, and the call blocks the event loop.
+ * once a second, and the call blocks the event loop. A get sends the kept version and is answered the body only when
+ * the row is at another one.
  */
 export function createJobRepository(c: StoreContext): JobRepository {
   const kept = new Map<string, { v: string; job: Job }>();
@@ -26,7 +27,13 @@ export function createJobRepository(c: StoreContext): JobRepository {
     if (id !== undefined) kept.delete(id);
     return undefined;
   };
-  const get = (id: string): Job | undefined => one(c.db.get('SELECT id, xmin::text AS v, body FROM jobs WHERE id = ?', id), id);
+  /** A get sends the body only when the row is not at the version kept: most gets of a job find it unchanged. */
+  const get = (id: string): Job | undefined => {
+    const k = kept.get(id);
+    const r = c.db.get('SELECT id, xmin::text AS v, CASE WHEN xmin::text = ? THEN NULL ELSE body END AS body FROM jobs WHERE id = ?', k?.v ?? '', id);
+    if (k && r && r.body == null) return k.job;
+    return one(r, id);
+  };
   /** The jobs of `rows` (id and version, in order): the kept ones as kept, the others read now. */
   const bodies = (rows: Row[]): Job[] => {
     const stale = rows.map((r) => String(r.id)).filter((id, i) => kept.get(id)?.v !== String(rows[i]!.v));
@@ -61,7 +68,8 @@ export function createJobRepository(c: StoreContext): JobRepository {
     },
     get,
     getBySourceKey(key) {
-      return one(c.db.get('SELECT id, xmin::text AS v, body FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC LIMIT 1', key));
+      const r = c.db.get('SELECT id, xmin::text AS v FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC LIMIT 1', key);
+      return r ? bodies([r])[0] : undefined;
     },
     list(filter?: JobFilter) {
       const conds = [

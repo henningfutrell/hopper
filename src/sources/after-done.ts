@@ -108,8 +108,28 @@ export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
   const strays = strayHousekeeping(c), census = pullRequestCensus(c);
 
-  /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
-  const newestOfItem = (j: Job) => !j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id;
+  /**
+   * The newest of `listed`, from one read of the jobs table (issue #1154): a sync of a source with about 740 ended jobs
+   * read each one again and again, a get each, one store call each, while the event loop waited. A job deleted since
+   * stays as listed.
+   */
+  const fresh = (listed: readonly Job[], all = store.jobs.list()): Job[] => {
+    const byId = new Map(all.map((j) => [j.id, j]));
+    return listed.map((j) => byId.get(j.id) ?? j);
+  };
+  /** The newest job of each item, by source key, of `all` (newest first, as the store lists them). */
+  const newestOfItems = (all: readonly Job[]): Map<string, string> => {
+    const newest = new Map<string, string>();
+    for (const j of all) if (j.source && !newest.has(j.source.key)) newest.set(j.source.key, j.id);
+    return newest;
+  };
+
+  /**
+   * Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`.
+   * `newest`: the newest of each item as just read (`newestOfItems`), for a check of many jobs; else a read of its own.
+   */
+  const newestOfItem = (j: Job, newest?: ReadonlyMap<string, string>) =>
+    !j.source || (newest ? newest.get(j.source.key) : store.jobs.getBySourceKey(j.source.key)?.id) === j.id;
   const rechecks = (j: Job) => rechecksMerge(j) && newestOfItem(j);
 
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
@@ -324,8 +344,9 @@ export function createAfterDone(c: AfterDoneContext) {
    */
   async function tendNext(source: JobSource, listed: Job[]): Promise<void> {
     const get = (id: string) => store.jobs.get(id);
-    for (const j of listed) await watchBase(source, j.id);
-    const jobs = listed.map((j) => get(j.id) ?? j);
+    // Only a tended job watches its base: the others need no read of their own.
+    for (const j of fresh(listed)) if ((j.sourceState?.source as { follow?: string } | undefined)?.follow === 'tended') await watchBase(source, j.id);
+    const jobs = fresh(listed);
     const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
     const merges = (repo: string, kind?: ChangeKind) => source.mergesOnReady?.(repo, kind) ?? false;
     const held = new Map<string, QueueHead>();
@@ -353,8 +374,11 @@ export function createAfterDone(c: AfterDoneContext) {
         started.push({ pullRequest: d.pullRequest, why: 'tending', ...(r?.ok ? { jobId: r.job.id } : {}) });
       }
     }
+    // Only tendNext keeps a hold: a job held now, or held when `jobs` was read, is the only one with a hold to keep or drop.
+    const hadHold = (j: Job) => { const s = j.sourceState?.source as Holds | undefined; return s?.heldBehind !== undefined || s?.heldSince !== undefined; };
     for (const j of jobs) {
       const h = held.get(j.id);
+      if (!h && !hadHold(j)) continue;
       keepHold(j.id, 'heldBehind', h);
       const since = (store.jobs.get(j.id)?.sourceState?.source as Holds | undefined)?.heldSince;
       keepHold(j.id, 'heldSince', h ? since ?? new Date(c.now()).toISOString() : undefined);
@@ -362,7 +386,7 @@ export function createAfterDone(c: AfterDoneContext) {
   }
 
   /** May follow its item's open pull request (issues #763, #786): no failed tend, and the newest job of its item. */
-  const adoptable = (j: Job) => reconcilable(j) && newestOfItem(j) && !failedTend(j, (id) => store.jobs.get(id));
+  const adoptable = (j: Job, newest?: ReadonlyMap<string, string>) => reconcilable(j) && newestOfItem(j, newest) && !failedTend(j, (id) => store.jobs.get(id));
 
   /** Follow the open pull request found for an ended job that follows none (issue #763), if it still follows none. */
   function adopt(f: FoundPullRequest): void {
@@ -375,7 +399,8 @@ export function createAfterDone(c: AfterDoneContext) {
 
   /** Reconcile the source's done jobs that follow no pull request with it (issue #763); not while it is paused. */
   async function reconcile(source: JobSource, jobs: Job[]): Promise<void> {
-    const candidates = jobs.filter((j) => adoptable(j) && c.finalReported(j));
+    const newest = newestOfItems(store.jobs.list());
+    const candidates = jobs.filter((j) => adoptable(j, newest) && c.finalReported(j));
     if (!source.unfollowedPullRequests || candidates.length === 0 || source.paused?.() !== undefined) return;
     try {
       const found = await source.unfollowedPullRequests(candidates);
@@ -397,11 +422,11 @@ export function createAfterDone(c: AfterDoneContext) {
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all', asked = false): Promise<void> {
       const all = round === 'all';
       if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked));
-      const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
+      const stored = store.jobs.list(), jobs = fresh(listed, stored), newest = newestOfItems(stored);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
       const merges = (repo: string, kind?: ChangeKind) => source.mergesOnReady?.(repo, kind) ?? false;
-      const inRound = (j: Job) => all ? following(j) || rechecks(j) : round === 'in_motion' && inMotion(j, merges, c.now());
+      const inRound = (j: Job) => all ? following(j) || (rechecksMerge(j) && newestOfItem(j, newest)) : round === 'in_motion' && inMotion(j, merges, c.now());
       const due = jobs.filter((j) => c.finalReported(j) && followsWhenEnded(j) && inRound(j));
       let read = due.length > 0 && source.follow !== undefined;
       if (read) {
@@ -413,8 +438,9 @@ export function createAfterDone(c: AfterDoneContext) {
         }
       }
       const followOf = async (id: string): Promise<void> => {
+        if (!read || !due.some((d) => d.id === id)) return;
         const j = store.jobs.get(id);
-        if (read && j && followsWhenEnded(j) && (following(j) || rechecks(j)) && due.some((d) => d.id === id)) await run(j, (s, x) => follow(s, x, all));
+        if (j && followsWhenEnded(j) && (following(j) || rechecks(j))) await run(j, (s, x) => follow(s, x, all));
       };
       // A failed job that waits on a person is judged again first (issue #786: it may follow its pull request too); only in
       // a round of every one.
