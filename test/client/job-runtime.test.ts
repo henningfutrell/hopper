@@ -44,6 +44,8 @@ beforeEach(async () => {
   for (const d of [fake, join(host, 'systemd'), scratch]) mkdirSync(d, { recursive: true });
   for (const n of ['podman', 'docker']) writeFileSync(join(fake, n), FAKE_RUNTIME, { mode: 0o755 });
   writeFileSync(join(fake, 'calls'), '');
+  // The user's systemd stays out of reach: the test's bus never answers, and a real systemctl waits on it.
+  writeFileSync(join(fake, 'systemctl'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   // What stands for the hopper stack's runtime state in the user's runtime dir.
   mkdirSync(join(host, 'containers'));
   writeFileSync(join(host, 'containers', 'hopper-stack'), 'running');
