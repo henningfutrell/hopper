@@ -55,5 +55,7 @@ describe('the wait on the queue apart from the run, per act (issue #1194)', () =
     // It waited for the running sync, which made several slowed calls after the Approve.
     expect(timing.waitMs.max).toBeGreaterThanOrEqual(CALL_MS);
     expect(timing.runMs.max).toBeGreaterThanOrEqual(0);
+    // The Approve's own GitHub work after the answer (its write-behind) is timed too, as the source's (part 8).
+    expect((await sources()).afterAnswer).toContainEqual(expect.objectContaining({ act: 'approve', source: 'github', count: 1 }));
   });
 });

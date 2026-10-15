@@ -64,6 +64,8 @@ describe('an intake action answers before its GitHub write (issue #1194)', () =>
     expect(gh.issue(REPO, 1).assignees).toEqual(['owner']);
     expect(events).toEqual([{ type: 'source.issues_assigned', data: { source: 'github', keys: [url(1)], assignee: 'owner' } }]);
     expect(item(url(1))?.writeBehind).toBeUndefined();
+    // Its write is timed for `afterAnswer` (part 8).
+    expect(source.afterAnswerTimings?.()).toMatchObject([{ act: 'assign', count: 1 }]);
   });
 
   it('Release claim and Take off the backburner: the labels go after the answer, their events with them', async () => {
@@ -82,11 +84,11 @@ describe('an intake action answers before its GitHub write (issue #1194)', () =>
     expect(events.map((e) => e.type).sort()).toEqual(['source.backburner_lifted', 'source.claim_released']);
   });
 
-  it('a write that fails is shown on the item and in the detail, offered again, and goes through when sent again', async () => {
+  it('a write GitHub refuses for good is shown on the item and in the detail, offered again, and goes through when sent again', async () => {
     const { gh, gated, source, item } = setup();
     gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
     await source.discover();
-    gh.failNext('addAssignees', new GitHubApiError('GitHub is down', false, 502));
+    gh.failNext('addAssignees', new GitHubApiError('GitHub is down', true, 422));
     gated.open();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     await source.discover();
