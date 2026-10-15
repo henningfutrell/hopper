@@ -134,7 +134,7 @@ export function ReportBugButton({ jobId }: { jobId: string }) {
   if (!canOperate) return null;
   return (
     <>
-      <Button size="xs" variant="ghost" title="Report a bug in the hopper, with this job's context" onClick={() => report.open(jobId)}><Bug />Report a bug</Button>
+      <Button type="button" size="xs" variant="ghost" title="Report a bug in the hopper, with this job's context" onClick={() => report.open(jobId)}><Bug />Report a bug</Button>
       {report.dialog}
     </>
   );

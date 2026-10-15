@@ -1,0 +1,1 @@
+- Every place you answer a job's question or correct a decision now uses the same form, with the options to pick from where there are some, and shows whether a person or the hopper answered.

@@ -8,8 +8,8 @@
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997).
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { EventLine } from '@/components/event-line';
 import { JobTitle, LinkLostFlag } from '@/components/job';
+import { JobTimeline } from '@/components/job-timeline';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get } from '@/lib/api';
@@ -102,10 +102,8 @@ export function JobView() {
       {read.state === 'found' && <JobTerminal job={read.job} />}
       {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
-      <Panel title="Timeline" count={events.length} bodyClassName="space-y-1 font-mono">
-        <div data-slot="job-timeline" className="space-y-1">
-          {events.length ? events.map((e) => <EventLine key={e.seq} e={e} nameOf={nameOf} machines={machines} />) : <Empty>no events of this job yet</Empty>}
-        </div>
+      <Panel title="Timeline" count={events.length}>
+        <JobTimeline job={read.state === 'found' ? read.job : undefined} events={events} nameOf={nameOf} machines={machines} />
       </Panel>
       {bom && <Panel title="Parts list" bodyClassName="p-3"><BomTable bom={bom} /></Panel>}
     </div>

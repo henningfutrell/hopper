@@ -92,6 +92,8 @@ describe('dismiss many failed jobs at once (issue #1123)', () => {
     const old = await failedJob(a);
     expect((await a.ui(`/ui/api/jobs/${old.id}/rerun`, {}, { token })).status).toBe(200);
     await waitFor(async () => (await a.job(old.id)).dismissedAt !== undefined, { what: 'the superseded failure dismissed' });
+    // The failure sweep dismisses by itself on its tick: stopped, it cannot dismiss the job again before the request.
+    await a.user().failures.stop();
     // A store from the build before: the superseded failure was never dismissed.
     a.user().store.jobs.update(old.id, { dismissedAt: undefined });
     const r = await a.ui<{ dismissed: string[] }>('/ui/api/jobs/dismiss', { superseded: true }, { token });

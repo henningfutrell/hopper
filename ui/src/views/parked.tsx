@@ -5,14 +5,14 @@
 // in one step. A question asked on its issue thread (issue #435) says so, with Post on the issue while it is held for review. A job auto-park parked (issue #650) says why, and its answer alone picks it up: its box only answers. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
 // up with its question still open waits on it again, and the question is back in Questions. A job with a checkpoint
 // (issue #921) says when it was taken, and Resume elsewhere, confirmed, picks it up on any machine from it; with its
-// question open, the answer comes first.
+// question open, the answer comes first. The answer box is the one question form (issue #1169).
 import { ChevronRight, CirclePause, MoveRight, Play } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
+import { QuestionForm } from '@/components/question-form';
 import { StatusBadge } from '@/components/status';
 import { canResumeElsewhere, machineName, parkedOrder, startsFresh } from '@/model/board';
 import { answerPicksUp } from '@/model/auto-park';
@@ -45,18 +45,19 @@ function AnswerAndPickUp({ job, q }: { job: Job; q: QuestionView }) {
     setBusy(false);
     refreshQuestions().catch(() => {});
   };
-  const button = <Button size="sm" disabled={busy || !draft.trim()} onClick={fresh ? undefined : () => void submit()}><Play />{busy ? 'Sending…' : answerOnly ? 'Answer' : 'Answer and pick up'}</Button>;
+  const label = busy ? 'Sending…' : answerOnly ? 'Answer' : 'Answer and pick up';
   return (
-    <div className="space-y-2">
-      <Textarea rows={3} value={draft} disabled={busy} placeholder={answerOnly ? 'Answer: the job goes back in the queue (Ctrl/Cmd+Enter)' : 'Answer, then pick the job up (Ctrl/Cmd+Enter)'}
-        onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (!fresh && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void submit(); } }} />
-      {fresh
-        ? <Confirm title="Answer and pick up with a fresh session?" action="Answer and start fresh" onConfirm={() => void submit()}
+    <QuestionForm name="answer" title="Your answer" text={draft} onText={setDraft} busy={busy}
+      placeholder={answerOnly ? 'Answer: the job goes back in the queue (Ctrl/Cmd+Enter)' : fresh ? 'Answer, then pick the job up with a fresh session' : 'Answer, then pick the job up (Ctrl/Cmd+Enter)'}
+      submit={<><Play />{label}</>} canSubmit={!!draft.trim()} onSubmit={() => void submit()}
+      {...(fresh ? {
+        confirm: (button: ReactNode) => (
+          <Confirm title="Answer and pick up with a fresh session?" action="Answer and start fresh" onConfirm={() => void submit()}
             description={<>No agent session was recorded for “{goalOf(job)}”, so it cannot resume where it stopped. It starts a fresh session in its kept work tree, told its task, its question and your answer. It has none of the earlier session&apos;s history.</>}>
             {button}
           </Confirm>
-        : button}
-    </div>
+        ),
+      } : {})} />
   );
 }
 
