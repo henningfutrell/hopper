@@ -13,11 +13,14 @@
 //   Scenario: a pull request GitHub refuses to move is skipped, logged once; the others move and the batch run goes on (issue #1311)
 //   Scenario: the landing branch is the one the settings name, whatever the repository's default branch (issue #1142)
 //   Scenario: a landing branch that is the tested branch runs nothing and says why
+//   Scenario: a step that throws stops no other step: a green batch run is merged when every move or the list of pull requests fails (issue #1333)
+//   Scenario: a pass that fails the same way on several passes in a row is recorded stuck once, with the error, and shown (issue #1333)
+//   Scenario: a person restarts the batch: its pull request closed, its branch removed, a new batch run at the landing tip (issue #1333)
 //   Scenario: a batch run's pull request closes the issues of the job pull requests in it (issue #1175)
 import { describe, expect, it } from 'vitest';
 import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
-import { createLandingBatches, type LandingBatchGitHub } from '../../src/landing-batches/runner.ts';
+import { createLandingBatches, LANDING_BATCH_STUCK_PASSES, type LandingBatchGitHub } from '../../src/landing-batches/runner.ts';
 import { retargetNote } from '../../src/sources/github/pr-notes.ts';
 
 const REPO = 'owner/app';
@@ -31,8 +34,14 @@ interface World {
   pulls: Map<number, { head: string; base: string; state: 'open' | 'closed'; merged: boolean; mergeable: boolean | null; url: string; headSha: string; body?: string }>;
   checks: { name: string; status: string; conclusion?: string }[];
   calls: string[];
-  /** The pull requests whose base change GitHub refuses. */
-  refuseRetarget?: Set<number>;
+  /** The pull requests whose base change GitHub refuses; `all`: every one. */
+  refuseRetarget?: Set<number> | 'all';
+  /** The error the list of open pull requests throws. */
+  listFails?: string;
+  /** The error a close throws. */
+  closeFails?: string;
+  /** The error the compare throws. */
+  compareFails?: string;
 }
 
 function world(): World {
@@ -48,6 +57,7 @@ function fake(w: World): LandingBatchGitHub {
   return {
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
+      if (w.compareFails) throw new Error(w.compareFails);
       return { aheadBy: w.aheadBy, tip: w.tip, commits: w.messages.map((message, i) => ({ sha: i === w.messages.length - 1 ? w.tip : `c${i}`, parents: i === 0 ? ['base'] : [`c${i - 1}`], message })) };
     },
     createBranch: async (_repo, name, sha) => { w.calls.push(`branch ${name} ${sha}`); },
@@ -64,12 +74,15 @@ function fake(w: World): LandingBatchGitHub {
     },
     checkRuns: async () => w.checks,
     merge: async (_repo, n, sha) => { const p = w.pulls.get(n)!; p.merged = true; p.state = 'closed'; w.calls.push(`merge #${n} ${sha}`); return { sha: 'merge-sha' }; },
-    close: async (_repo, n) => { w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
+    close: async (_repo, n) => { if (w.closeFails) throw new Error(w.closeFails); w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
     mergeInto: async () => ({ kind: 'nothing' }),
-    openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url, head: p.head })),
+    openPullRequests: async (_repo, base) => {
+      if (w.listFails) throw new Error(w.listFails);
+      return [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url, head: p.head }));
+    },
     retarget: async (_repo, n, base) => {
       w.calls.push(`retarget #${n} ${base}`);
-      if (w.refuseRetarget?.has(n)) throw new Error(`GitHub answered 422 to the base of ${REPO}#${n}: Validation Failed`);
+      if (w.refuseRetarget === 'all' || w.refuseRetarget?.has(n)) throw new Error(`GitHub answered 422 to the base of ${REPO}#${n}: Validation Failed`);
       w.pulls.get(n)!.base = base;
     },
     comment: async (_repo, n, body) => { w.calls.push(`comment #${n} ${body}`); },
@@ -251,5 +264,81 @@ describe('the batch runner (issue #1073)', () => {
     expect(w.calls).toEqual([]);
     expect(events).toEqual([]);
     expect(r.view().repos[0]!.problem).toBe('the landing branch of owner/app is dev, its tested branch: name another landing branch in Settings → Landing batches');
+  });
+
+  it('merges a green batch run when the move of every job pull request fails (issue #1333)', async () => {
+    const w = world();
+    const jobs = [6, 7, 100].map((n) => `https://github.test/${REPO}/pull/${n}`);
+    const { r, events } = runner(w, { jobPullRequests: jobs });
+    await r.pass();
+    w.checks = [{ name: 'test', status: 'completed', conclusion: 'success' }];
+    w.pulls.set(6, { head: 'issue-6', base: 'dev', state: 'open', merged: false, mergeable: true, url: jobs[0]!, headSha: 'x' });
+    w.pulls.set(7, { head: 'issue-7', base: 'dev', state: 'open', merged: false, mergeable: true, url: jobs[1]!, headSha: 'y' });
+    w.refuseRetarget = 'all';
+    await r.pass();
+    expect(w.pulls.get(100)!.merged).toBe(true);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted']);
+  });
+
+  it('merges a green batch run when the list of pull requests to move fails, and says the problem (issue #1333)', async () => {
+    const w = world();
+    const log: string[] = [];
+    const { r, events } = runner(w, { log });
+    await r.pass();
+    w.checks = [{ name: 'test', status: 'completed', conclusion: 'success' }];
+    w.listFails = 'GitHub answered 502';
+    await r.pass();
+    expect(w.pulls.get(100)!.merged).toBe(true);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted']);
+    expect(r.view().repos[0]!.problem).toBe('the move of job pull requests to main: GitHub answered 502');
+    expect(log.filter((l) => l.includes('502'))).toHaveLength(1);
+  });
+
+  it('a pass that fails the same way on several passes in a row is recorded stuck once, with the error, and shown (issue #1333)', async () => {
+    const w = world();
+    const log: string[] = [];
+    const { r, events } = runner(w, { log });
+    w.compareFails = 'GitHub answered 422: Validation Failed';
+    for (let i = 1; i < LANDING_BATCH_STUCK_PASSES; i++) await r.pass();
+    expect(events).toEqual([]);
+    expect(r.view().repos[0]!.stuck).toBeUndefined();
+    await r.pass();
+    await r.pass();
+    expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.stuck', expect.objectContaining({ repo: REPO, error: 'the start of a batch run: GitHub answered 422: Validation Failed', passes: LANDING_BATCH_STUCK_PASSES })]]);
+    expect(r.view().repos[0]!.stuck).toMatchObject({ error: 'the start of a batch run: GitHub answered 422: Validation Failed', passes: LANDING_BATCH_STUCK_PASSES + 1 });
+    // Logged when it changes, not on every pass.
+    expect(log).toHaveLength(1);
+    // A pass with no problem ends it; a new run of failures is recorded again.
+    delete w.compareFails;
+    await r.pass();
+    expect(r.view().repos[0]!.stuck).toBeUndefined();
+  });
+
+  it('a person restarts the batch: its pull request closed, its branch removed, a new batch run at the landing tip (issue #1333)', async () => {
+    const w = world();
+    const { r, events } = runner(w);
+    await r.pass();
+    w.calls.length = 0;
+    await r.restart(REPO, 'admin');
+    expect(w.calls).toEqual(['close #100', 'delete hopper-batch/abcdef012345', 'compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.restarted', 'landing_batch.started']);
+    expect(events[1]!.data).toEqual({ repo: REPO, tip: TIP, by: 'admin', closed: [100] });
+    expect(events[2]!.data).toMatchObject({ tip: TIP, pullRequest: 101, why: 'a person restarted the landing batch' });
+  });
+
+  it('restarts the batch when GitHub refuses the close: logged, and the removed branch ends it (issue #1333)', async () => {
+    const w = world();
+    const log: string[] = [];
+    const { r, events } = runner(w, { log });
+    await r.pass();
+    w.closeFails = 'GitHub answered 422';
+    await r.restart(REPO, 'admin');
+    expect(log).toEqual(['hopper: landing batches: #100 of owner/app not closed: GitHub answered 422']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.restarted', 'landing_batch.started']);
+  });
+
+  it('refuses to restart a repository with no landing batches', async () => {
+    const { r } = runner(world());
+    await expect(r.restart('owner/other', 'admin')).rejects.toThrow('owner/other has no landing batches');
   });
 });
