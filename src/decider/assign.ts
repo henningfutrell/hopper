@@ -105,6 +105,12 @@ const offNetwork = (m: MachineSnapshot): string => `is off-network: ${m.addressP
  */
 export const templateHolds = (m: MachineSnapshot, job: Job): boolean => m.template?.waiting !== undefined && job.pendingAnswer === undefined;
 
+/**
+ * A machine that is leaving takes no new job (issue #1284): a lane pod told to stop lets the jobs on it end. A job
+ * resuming there returns to the pane it holds.
+ */
+export const leavingHolds = (m: MachineSnapshot, job: Job): boolean => m.leaving === true && job.pendingAnswer === undefined;
+
 const GIB = 1024 ** 3;
 const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
 export const NO_NEW_JOB = 'no new job is claimed there';
@@ -121,9 +127,11 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   const running = machines.filter((m) => m.online && m.executors.includes(executor));
   if (running.length === 0) return `no online machine runs executor ${executor}`;
   if (pin === undefined) {
-    const known = running.filter((m) => !homeless(m));
+    const staying = running.filter((m) => !leavingHolds(m, job));
+    if (staying.length === 0) return `${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'are' : 'is'} leaving: ${NO_NEW_JOB}`;
+    const known = staying.filter((m) => !homeless(m));
     if (known.length === 0) {
-      return `no machine that runs executor ${executor} has its home known yet: ${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'have' : 'has'} not answered a probe`;
+      return `no machine that runs executor ${executor} has its home known yet: ${staying.map((m) => m.id).join(', ')} ${staying.length > 1 ? 'have' : 'has'} not answered a probe`;
     }
     if (known.every((m) => workTreeHolds(m, job))) {
       return `no machine running executor ${executor} has a usable work tree: ${known.map((m) => `${m.id}: ${m.workTreeProblem}`).join('; ')}`;
@@ -155,6 +163,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned) return `pinned machine ${pin} unknown`;
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
+  if (leavingHolds(pinned, job)) return `pinned machine ${pin} is leaving: ${NO_NEW_JOB}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
   if (addressHolds(pinned, job)) return `pinned machine ${pin} ${offNetwork(pinned)}`;
@@ -268,14 +277,14 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
+    && !homeless(m) && !leavingHolds(m, job) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
     && signedOutFor(m.id, job, signedOut) === undefined);
   return gateHold(job, usable, gate);
 }
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && signedOutFor(s.machine.id, job, s.signedOut) === undefined && (pin === undefined || pin === s.machine.id);
 }

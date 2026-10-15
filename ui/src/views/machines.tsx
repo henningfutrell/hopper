@@ -114,7 +114,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{infraCredentialsText(m) && <StatusBadge status="not ready" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.leaving && <StatusBadge status="leaving" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{infraCredentialsText(m) && <StatusBadge status="not ready" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>

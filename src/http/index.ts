@@ -134,7 +134,7 @@ export interface ServerOptions {
   /** The built UI bundle (ui/dist). */
   uiDir: string;
   /** Machines joining and dialling in (issue #308): their links, the client release, the install script. */
-  client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript'>;
+  client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript' | 'poolKey'>;
   /** Fastify logger; off by default. */
   logger?: boolean;
 }

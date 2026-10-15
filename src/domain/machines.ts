@@ -32,6 +32,12 @@ export interface HerdrVersions {
  */
 export interface MachineInfraCredentials { infraCredentials?: string[] }
 
+/**
+ * A client target that said it leaves (issue #1284, `POST /client/leave`), until it dials in again: no new job is placed
+ * on it; the jobs on it run to their end. A lane pod leaves when it is told to stop.
+ */
+export interface MachineLeaving { leaving?: true }
+
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {
   /**
@@ -96,9 +102,10 @@ export interface ClientMachine extends AttachedBase {
   /** `key`: its machine key, the public half of its link key — who it is when it dials in. */
   /**
    * Its machine key; the template its join line named (issue #558), when it is a sandbox box of one; the box the
-   * hopper started for it (issue #603), when it did.
+   * hopper started for it (issue #603), when it did; `pool` when it is a lane pod (issue #1284), joined with the lane
+   * pool key.
    */
-  client: { key: string; template?: string; container?: string };
+  client: { key: string; template?: string; container?: string; pool?: true };
 }
 
 /**

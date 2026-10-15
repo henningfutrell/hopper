@@ -1104,6 +1104,77 @@ client, once per base image and set of tools; the client builds only a tools ima
 Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
 runs on it.
 
+## Lane pods on Kubernetes
+
+Lane pods are machines that run as a StatefulSet and dial out to the hopper (design.md "Lane pods", issue #1284). Each
+pod is one machine under its pod's name. No sshd, no inbound port, no Service for the pods. The Helm chart (#1282) is
+to carry this; until it does, this is the pod spec it carries.
+
+1. Make the lane pool key, and keep it in a Secret: `kubectl create secret generic hopper-lane-pool --from-literal=key="$(openssl rand -hex 32)"`.
+2. Give the hopper the same key: mount the Secret into the hopper's pod and set `HOPPER_LANE_POOL_KEY_FILE` to its
+   file. The hopper reads it at each join.
+3. Let the pods reach the hopper by its Service name: `HOPPER_LAN_NAMES` holds that name (here `hopper`), and
+   `HOPPER_LAN_PEERS` the cluster's pod network.
+4. Sign in to the hopper once. The pods are the machines of the first person who signed in; until then, a pod's join
+   is refused, and its init container tries again.
+5. Apply the StatefulSet:
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: hopper-lanes }
+spec:
+  serviceName: hopper-lanes
+  replicas: 3                       # one machine per pod
+  podManagementPolicy: Parallel
+  # A pod scaled away gives up its volume: it was retired, and a new one starts as a new machine.
+  persistentVolumeClaimRetentionPolicy: { whenScaled: Delete, whenDeleted: Retain }
+  selector: { matchLabels: { app: hopper-lanes } }
+  template:
+    metadata: { labels: { app: hopper-lanes } }
+    spec:
+      # Told to stop, a pod takes no new job and waits this long for the jobs on it to end.
+      terminationGracePeriodSeconds: 3600
+      securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, runAsNonRoot: true }
+      initContainers:
+        # At each start: the image's home into the volume once, then the join. Only this container sees the key.
+        - name: join
+          image: ghcr.io/henningfutrell/hopper:box-claude
+          command: [sh, -c, 'cp -an /home/agent/. /var/lib/lane-home/ && HOPPER_CLIENT_DIR=/var/lib/lane-home/.config/hopper-client node /usr/local/lib/hopper-client/main.ts join "$HOPPER_URL#$(cat /run/lane-pool/key)" "$POD_NAME"']
+          env:
+            - { name: HOPPER_URL, value: "http://hopper:4790" }
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+          volumeMounts:
+            - { name: home, mountPath: /var/lib/lane-home }
+            - { name: lane-pool, mountPath: /run/lane-pool, readOnly: true }
+      containers:
+        - name: lane
+          image: ghcr.io/henningfutrell/hopper:box-claude
+          env:
+            - { name: HOPPER_CLIENT_DRAIN, value: "1" }
+          securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: home, mountPath: /home/agent }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: lane-pool, secret: { secretName: hopper-lane-pool, items: [{ key: key, path: key }] } }
+        - { name: tmp, emptyDir: {} }
+  volumeClaimTemplates:
+    - metadata: { name: home }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 20Gi } } }
+```
+
+6. Sign each pod's agent in once: `kubectl exec -it hopper-lanes-0 -c lane -- claude`. The sign-in stays in the pod's
+   volume.
+
+What to expect:
+
+- Scale 1 → 3 (`kubectl scale statefulset hopper-lanes --replicas=3`): Machines shows `hopper-lanes-0`, `-1` and `-2`,
+  online, each taking jobs.
+- Scale down: each pod that goes is *leaving* on Machines — no new job, its jobs run to their end — then retired, gone
+  from Machines. A job still on it at the end of the grace period is a job on a machine that went away.
+- A pod restarted (a rollout, a node drained) leaves the same way, then joins again as the same machine.
+
 ## Vault backends (optional)
 
 The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,

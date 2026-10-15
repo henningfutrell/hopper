@@ -6,6 +6,8 @@
 # The join line leaves the environment first (issue #606): it goes to a file only this user can read, and the
 # entrypoint runs itself again without HOPPER_JOIN, so this process, herdr and the jobs in its panes never hold
 # it. The client reads the file (HOPPER_JOIN_FILE) once and removes it.
+# Told to stop, it stops the client and waits for it before herdr, whose panes the jobs run in: a lane pod's client
+# (HOPPER_CLIENT_DRAIN, issue #1284) first leaves the hopper and lets the jobs on it end.
 set -eu
 join_file="${TMPDIR:-/tmp}/hopper-join"
 if [ -n "${HOPPER_JOIN:-}" ]; then
@@ -20,7 +22,11 @@ fi
 herdr --session hopper-client server &
 herdr=$!
 client=
-stop() { [ -n "$client" ] && kill "$client" 2>/dev/null; kill "$herdr" 2>/dev/null; exit 0; }
+stop() {
+  if [ -n "$client" ]; then kill "$client" 2>/dev/null; wait "$client" 2>/dev/null || :; fi
+  kill "$herdr" 2>/dev/null
+  exit 0
+}
 trap stop TERM INT
 while :; do
   if [ -f "$join_file" ]; then HOPPER_JOIN_FILE="$join_file" node "$lib/main.ts" & else node "$lib/main.ts" & fi

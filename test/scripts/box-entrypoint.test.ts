@@ -2,8 +2,10 @@
 // leaves the environment before anything starts. The entrypoint writes it to a file only its user can read,
 // runs itself again without HOPPER_JOIN — the box's main process keeps no copy in /proc/<pid>/environ — and
 // gives the client the file's path in HOPPER_JOIN_FILE (the client reads and removes it, src/client/main.ts).
-// herdr, whose panes the jobs run in, never gets either. Run against stand-ins for herdr and node on PATH.
-import { spawnSync } from 'node:child_process';
+// herdr, whose panes the jobs run in, never gets either. Told to stop, it stops the client first and waits for it —
+// a lane pod's client leaves the hopper and lets its jobs end (issue #1284) — and only then stops herdr, whose panes
+// the jobs run in. Run against stand-ins for herdr and node on PATH.
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,5 +68,20 @@ describe('a box\'s entrypoint and its join line', () => {
     expect(r.status).toBe(0);
     expect(read('node.env')).not.toMatch(/^HOPPER_JOIN/m);
     expect(existsSync(join(dir, 'join'))).toBe(false);
+  });
+});
+
+describe('a box\'s entrypoint told to stop (issue #1284)', () => {
+  it('stops the client and waits for it to end before it stops herdr', async () => {
+    // The client takes a while to end when told to stop (a lane pod waits for its jobs); herdr records whether it had.
+    writeFileSync(join(bin, 'herdr'), `#!/bin/sh\ntrap 'if [ -f "${dir}/client.done" ]; then echo after > "${dir}/herdr.stop"; else echo before > "${dir}/herdr.stop"; fi; exit 0' TERM\ntouch "${dir}/herdr.up"\nwhile :; do sleep 0.05; done\n`);
+    writeFileSync(join(bin, 'node'), `#!/bin/sh\ntrap 'sleep 0.5; touch "${dir}/client.done"; exit 0' TERM\ntouch "${dir}/client.up"\nwhile :; do sleep 0.05; done\n`);
+    const child = spawn('sh', [SCRIPT], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, TMPDIR: tmp } });
+    const ended = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+    for (let i = 0; i < 100 && !(existsSync(join(dir, 'client.up')) && existsSync(join(dir, 'herdr.up'))); i++) await new Promise((r) => setTimeout(r, 50));
+    child.kill('SIGTERM');
+    expect(await ended).toBe(0);
+    for (let i = 0; i < 40 && !existsSync(join(dir, 'herdr.stop')); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(read('herdr.stop').trim()).toBe('after');
   });
 });
