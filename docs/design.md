@@ -80,7 +80,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`), the sandbox requests jobs make (`requests.ts`, issue #991), one box step run in a box (`box-step.ts`, issue #1004); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the exec and archive calls both share (`exec.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`), the sandbox requests jobs make (`requests.ts`, issue #991), one box step run in a box (`box-step.ts`, issue #1004); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the exec and archive calls both share (`exec.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
@@ -5344,6 +5344,60 @@ shown with its reason until it goes; a box that does not start leaves nothing; n
 nothing and says why. `test/adapters/podman-sandbox.test.ts` against real rootless Podman when
 `HOPPER_TEST_PODMAN_SOCKET` names its socket: the flags, the labels, no capability left, removal with the volume.
 `test/scripts/compose.test.ts`: the socket `HOPPER_PODMAN_SOCKET_HOST` names, else `/dev/null` (issue #1157).
+
+### The Kubernetes runtime (issue #1286, part of #1281, 2026-10-15)
+
+A hopper in a cluster starts sandbox boxes with no container socket: a fourth `ContainerRuntime` adapter, `kubernetes`
+(`src/sandbox/kubernetes.ts`), chosen only by `HOPPER_SANDBOX_RUNTIME=kubernetes`, never found by itself. It drives
+the Kubernetes API through the official client, `@kubernetes/client-node` (`kubernetes-api.ts`: in-cluster config from
+the service account, else the kubeconfig; exec over the API's WebSocket). It is loaded only when chosen, so a hopper on
+a socket never loads it. The runtime's API calls are one narrow seam, `KubeApi`; the tests drive the runtime through
+an in-memory double of it (`test/support/fake-kube-api.ts`). The job pods' adapter (`src/kubernetes/api.ts`, "Job pods on
+Kubernetes" below) is written over node:https for five calls on pods; this runtime also needs exec with stdin and an exit
+code over the API's WebSocket protocol, which that adapter does not do, so it takes the client.
+
+| Port call | On Kubernetes |
+|---|---|
+| `create` | applies the egress policy, then makes the pod (`flags.ts` `kubernetesPodBody`): it runs at once |
+| `start` | waits until the pod leaves `Pending` (15 minutes at most, the image pull included); a container that waits for an image it cannot pull fails it at once, with the reason |
+| `wait`, `logs` | the pod's phase and its container's exit code; the pod's log |
+| `startCheck` | the same check command, run in the box through exec when the pod runs, as Podman runs it when the hopper asks |
+| `exec`, `copyIn` | exec; the environment through `env`; a copy is `tar -x` in the box, as the box's user, reading the tar on stdin |
+| `stop`, `remove` | delete the pod, with the stop grace period |
+| `createVolume`, `removeVolume` | a PersistentVolumeClaim of 5 GiB, `ReadWriteOnce`; one that exists is kept |
+| `pull` | nothing to pull: the node pulls. Answers the box image's agent user, `1000:1000` |
+| `build`, `listImages`, `removeImage` | absent: the hopper builds nothing here |
+
+- **The sandbox flags are the pod's security context**, built in `flags.ts` with the others: every capability
+  dropped, `allowPrivilegeEscalation: false`, a read-only root, `/tmp` an empty dir, the home claim at `/home/agent`,
+  `runAsNonRoot` with the user by number (the kubelet can check only a number), `fsGroup` so the claim is writable,
+  the `RuntimeDefault` seccomp profile, no service account token, no service links, CPU and memory limits. A one-shot
+  container runs its script with restart `Never`; a box restarts `Always`, as `unless-stopped`.
+- **Egress is a NetworkPolicy**, `hopper-sandbox`, applied before each pod so no box runs without it, over every pod
+  the runtime makes (label `io.hopper.sandbox-pod`): no ingress; egress to DNS, the hopper's pods
+  (`HOPPER_KUBERNETES_HOPPER_LABELS`, in the hopper's namespace) on its port, and public addresses only. A box reaches
+  no other pod and no private range, which a box on Podman can. It is not yet the template's allowlist: a
+  NetworkPolicy matches addresses, not host names, so an allowlist of hosts needs the allowlisting proxy of #849.
+- **Tools images are published, not built** (decision: one image per box image and kind, with every tool). CI
+  (`.github/workflows/image.yml` `box-tools`) writes the Containerfile with the hopper's own `toolsImage`
+  (`scripts/box-tools-containerfile.ts`) and publishes `box-<agent>…-tools` and `…-tools-read-only` beside each box
+  tag. `boxImage` runs that image on a runtime with no `build` (`publishedToolsImage`); a template's own image with tools
+  is refused there (409). A box may so hold more tools than it asked for: a tool is a binary, and what a box may do is
+  what its credentials allow, not which binaries it has. Fifteen sets of tools, each read-only or not, would be 23
+  images per agent.
+- **Names.** A pod name is a DNS label: a box name that is not one (a template name with `_` or `.`, one too long) is
+  made DNS-safe with a hash of it, and the hopper's name kept as an annotation, which `list` and `inspect` answer. A
+  label value Kubernetes does not take is selected by its hash and answered as given. The runtime sees only its own
+  pods: `inspect` of the hopper's own pod is no container, so the hopper's address for a box is its first LAN name
+  (`address.ts`), its Service's, proven by the start check.
+- **Not built yet** (carried on #1286): an allowlist of hosts per template (with #849's proxy); a live run on a
+  cluster with no socket (a sandbox step, a denied egress, the read-only probes) once the Helm chart (#1281's first part)
+  exists.
+
+Tests: `test/sandbox/kubernetes.test.ts` (the pod and its flags, the egress policy before it, one-shot, names, only its
+own pods, start, wait, the start check, exec, copy, claims, problem), `test/sandbox/kubernetes-images.test.ts`
+(published tools images, and the Containerfile CI writes), `test/sandbox/kubernetes-api.test.ts` (exec's exit code),
+`test/sandbox/runtime-select.test.ts` (chosen, and its settings).
 
 ## Job pods on Kubernetes (issue #1283, 2026-10-15)
 

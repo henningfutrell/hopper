@@ -282,9 +282,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   // The sandbox boxes the hopper starts (issues #603, #708): through the container runtime selected once here (Podman
   // whenever it is reachable), beside the hopper — on the compose network, reaching it by its LAN name, or on the host
-  // network, reaching it on loopback.
+  // network, reaching it on loopback; or, with the Kubernetes runtime (issue #1286), as pods that reach it by its LAN
+  // name, its Service's.
   const sandboxes = createSandboxes({
-    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
+    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }),
     repo: sandboxRecords, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config), cluster: inPod,
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),

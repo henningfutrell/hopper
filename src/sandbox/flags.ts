@@ -1,5 +1,5 @@
 // The sandbox flags (issue #708): built here, once, for every way a box is made — the libpod create body, the Docker
-// Engine create body, and the `run` line Add machine shows (GET /api/sandboxes `line`). Nothing a request carries
+// Engine create body, the Kubernetes pod (issue #1286), and the `run` line Add machine shows (GET /api/sandboxes `line`). Nothing a request carries
 // reaches them but the resource limits, which the launch checked against its template first.
 import type { ContainerSpec, ResourceLimits } from '../domain/sandboxes.ts';
 
@@ -71,6 +71,50 @@ export function dockerCreateBody(spec: ContainerSpec): Record<string, unknown> {
       NanoCpus: Math.round(spec.limits.cpus * 1e9), Memory: spec.limits.memoryMb * MIB,
       RestartPolicy: { Name: spec.script !== undefined ? 'no' : 'unless-stopped' },
       NetworkMode: spec.network,
+    },
+  };
+}
+
+/** On Kubernetes (issue #1286) a box runs as this user: the box image's own agent user (scripts/box/Dockerfile), by number. */
+export const KUBERNETES_USER = '1000:1000';
+/** The one container of a box's pod. */
+export const KUBERNETES_CONTAINER = 'box';
+
+/** The uid and gid of a user given by number; the kubelet can refuse root only by number. Throws for a name, or root. */
+function numericUser(user: string): { uid: number; gid: number } {
+  const m = /^(\d+)(?::(\d+))?$/.exec(user.trim());
+  if (!m) throw new Error(`on Kubernetes a box runs as a user given by number, not ${user || 'none'}`);
+  const uid = Number(m[1]), gid = m[2] === undefined ? uid : Number(m[2]);
+  if (uid === 0 || gid === 0) throw new Error('a sandbox box runs as a non-root user: uid and gid 0 are root');
+  return { uid, gid };
+}
+
+/**
+ * The Kubernetes pod of a box (issue #1286): the sandbox flags as its security context — every capability dropped, no
+ * privilege escalation, a read-only root, `/tmp` an empty dir, the home its claim, a non-root user by number — with no
+ * service account token, no service links, nothing of the node. A one-shot container runs its script and is never
+ * restarted; a box is restarted, as `unless-stopped`.
+ */
+export function kubernetesPodBody(spec: ContainerSpec, o: { name: string; claim: string; labels: Record<string, string>; annotations: Record<string, string> }): Record<string, unknown> {
+  const { uid, gid } = numericUser(spec.user);
+  const limits = { ...(spec.limits.cpus > 0 ? { cpu: String(spec.limits.cpus) } : {}), ...(spec.limits.memoryMb > 0 ? { memory: `${spec.limits.memoryMb}Mi` } : {}) };
+  return {
+    apiVersion: 'v1', kind: 'Pod',
+    metadata: { name: o.name, labels: o.labels, annotations: o.annotations },
+    spec: {
+      automountServiceAccountToken: false, enableServiceLinks: false,
+      restartPolicy: spec.script !== undefined ? 'Never' : 'Always',
+      terminationGracePeriodSeconds: STOP_S,
+      securityContext: { runAsNonRoot: true, runAsUser: uid, runAsGroup: gid, fsGroup: gid, seccompProfile: { type: 'RuntimeDefault' } },
+      containers: [{
+        name: KUBERNETES_CONTAINER, image: spec.image, imagePullPolicy: 'IfNotPresent',
+        env: Object.entries(spec.env).map(([name, value]) => ({ name, value })),
+        ...(spec.script !== undefined ? { command: ['/bin/sh', '-c', spec.script] } : {}),
+        securityContext: { allowPrivilegeEscalation: false, privileged: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
+        ...(Object.keys(limits).length ? { resources: { limits } } : {}),
+        volumeMounts: [{ name: 'home', mountPath: HOME }, { name: 'tmp', mountPath: '/tmp' }],
+      }],
+      volumes: [{ name: 'home', persistentVolumeClaim: { claimName: o.claim } }, { name: 'tmp', emptyDir: {} }],
     },
   };
 }

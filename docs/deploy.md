@@ -1182,6 +1182,51 @@ client, once per base image and set of tools; the client builds only a tools ima
 Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
 runs on it.
 
+### Sandbox boxes on Kubernetes
+
+A hopper in a cluster starts sandbox boxes as pods, with no container socket anywhere (issue #1286). Set
+`HOPPER_SANDBOX_RUNTIME=kubernetes`. The hopper uses the Kubernetes API with its pod's service account (outside a
+cluster: the kubeconfig).
+
+| Setting | What it does |
+|---|---|
+| `HOPPER_KUBERNETES_NAMESPACE` | The namespace the boxes start in. Unset: the hopper's own namespace. |
+| `HOPPER_KUBERNETES_HOPPER_LABELS` | The labels of the hopper's pods, `key=value`, comma-separated. Default `app.kubernetes.io/name=hopper`. A box may reach only pods with these labels in the hopper's namespace, on the hopper's port. |
+| `HOPPER_LAN_NAMES` | Its first name is the address a box dials: the name of the hopper's Service in that namespace (for example `hopper`). The box's start check proves it from inside the box. |
+
+The service account needs this Role in the boxes' namespace (and nothing in any other):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: hopper-sandbox }
+rules:
+  - { apiGroups: [""], resources: [pods], verbs: [get, list, create, delete] }
+  - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+  - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+  - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [create, delete] }
+  - { apiGroups: [networking.k8s.io], resources: [networkpolicies], verbs: [create, update] }
+```
+
+What is different from Podman:
+
+- **A box is a pod** with the sandbox flags as its security context: every capability dropped, no privilege
+  escalation, a read-only root, `/tmp` an empty dir, no service account token, no service links, nothing of the node.
+  It runs as uid and gid 1000 (the box image's `agent` user), whatever user its image names, and the kubelet refuses
+  root. Its home is a PersistentVolumeClaim `<name>-home` of 5 GiB, of the cluster's default storage class.
+- **Egress.** Before each pod, the hopper applies one NetworkPolicy, `hopper-sandbox`, to every pod it starts: no
+  ingress, and egress only to DNS (port 53), the hopper's pods on its port, and public addresses. A box cannot reach
+  any other pod, Service or private address of the cluster or your network (`10.0.0.0/8`, `172.16.0.0/12`,
+  `192.168.0.0/16`, `100.64.0.0/10`, link-local and loopback). Your cluster's network plugin must enforce
+  NetworkPolicy, or the policy does nothing. A box still reaches any public host: an allowlist of hosts per template
+  is not built yet.
+- **No image is built.** A box with tools runs the tools image CI publishes for its box image, with every tool:
+  `ghcr.io/henningfutrell/hopper:box-<agent>-tools`, or `…-tools-read-only` for a read-only template's boxes. A
+  template with its own image and tools cannot start a box here; one with no tools can. The node pulls each image.
+- **Steps and copies** go through the API's exec: the box image needs `tar` for a copy (the published one has it).
+
+Leftover box builds are not removed here: the hopper builds none.
+
 ## Lane pods on Kubernetes
 
 Lane pods are machines that run as a StatefulSet and dial out to the hopper (design.md "Lane pods", issue #1284). Each
