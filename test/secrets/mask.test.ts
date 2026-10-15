@@ -74,3 +74,11 @@ describe('maskLogLine', () => {
     expect(maskLogLine(line, [held])).toBe(`a [secret, masked] b ${stars('ghp_', 36)} c [key, masked]`);
   });
 });
+
+describe('maskLogLine and Claude tokens (issue #1287)', () => {
+  it('masks a Claude setup token and a Claude sign-in\'s tokens, never says them', () => {
+    const line = 'herdr tab create --env CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-AbC_d-0123456789xyz --env R=sk-ant-ort01-Zz_9-0123456789';
+    const out = maskLogLine(line, []);
+    expect(out).toBe('herdr tab create --env CLAUDE_CODE_OAUTH_TOKEN=[Claude token, masked] --env R=[Claude token, masked]');
+  });
+});

@@ -7,11 +7,19 @@
 //   Scenario: a queued job produces a pod, runs there, finishes, and the pod is removed after
 //   Scenario: cancelling a running job deletes its pod
 //   Scenario: a pod that never joins fails its job, and is deleted
+//
+// Feature: the agent's sign-in survives new pods (issue #1287)
+//   Scenario: after one sign-in kept in the vault, each new job pod runs Claude signed in
+//     Given the user's vault secret CLAUDE_TOKEN, what `claude setup-token` printed
+//     When two jobs run, each in a new pod
+//     Then each job's pane starts with the token as CLAUDE_CODE_OAUTH_TOKEN
+//     And no pod's spec, event or log line holds the token
+//   Scenario: a vault secret that is no setup token fails the job, and starts no pod
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { joinHopper } from '../../src/client/join.ts';
 import { startLinkedClient } from '../../src/client/main.ts';
 import type { Client } from '../../src/client/server.ts';
@@ -20,6 +28,7 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { testInstallDir } from '../support/client.ts';
 import { createFakeKubernetes, podEnv, type FakeKubernetes } from '../support/fake-kubernetes.ts';
 import { waitFor } from '../support/wait.ts';
+import { KEY } from '../support/webhooks.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
@@ -32,6 +41,14 @@ let t: TestApp | undefined;
 const clients = new Map<string, Client>();
 const cleanups: (() => void)[] = [];
 const saved = { ...process.env };
+let logged: string[] = [];
+
+beforeEach(() => {
+  logged = [];
+  for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => { logged.push(args.map(String).join(' ')); });
+  }
+});
 
 afterEach(async () => {
   for (const c of clients.values()) await c.stop();
@@ -40,6 +57,7 @@ afterEach(async () => {
   t = undefined;
   for (const c of cleanups.splice(0)) c();
   process.env = { ...saved };
+  vi.restoreAllMocks();
 });
 
 /**
@@ -71,7 +89,7 @@ async function boot(k8s: FakeKubernetes, herdr: FakeHerdrClient, startTimeoutSec
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   t = await startTestApp({
-    dbPath: db.dbPath,
+    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
     plugins: {
       executors: [{ name: 'kubernetes', plugin: 'kubernetes', options: { hopperUrl: SERVICE_URL, pollMs: 50, startTimeoutSec } }],
       machines: [{ name: 'cluster', plugin: 'kubernetes-cluster', options: { lanes: 2 } }],
@@ -127,6 +145,47 @@ describe('a pod per job on the kubernetes executor', () => {
     const failed = await a.waitForStatus(job.id, 'failed', 30_000);
     expect(failed.error).toMatch(/did not join the hopper within 10 s/);
     expect(k8s.pods.size).toBe(0);
+    expect(herdr.prompts).toEqual([]);
+  });
+});
+
+const TOKEN = 'sk-ant-oat01-pod-sign-in-0123456789abcdef_never-in-a-log';
+const tabEnvs = (herdr: FakeHerdrClient): Record<string, string>[] =>
+  herdr.calls.filter((c) => c.method === 'createTab').map((c) => (c.args[0] as { env: Record<string, string> }).env);
+
+describe('the agent\'s sign-in survives new pods (issue #1287)', () => {
+  it('after one sign-in kept in the vault, each new job pod runs Claude signed in', { timeout: 90_000 }, async () => {
+    const k8s = cluster();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE, DONE] });
+    const { a, token } = await boot(k8s, herdr);
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'CLAUDE_TOKEN', value: `${TOKEN}\n` }, { token })).status).toBe(200);
+    for (const prompt of ['Paint the shed', 'Paint the fence']) {
+      const job = await a.pull({}, { ...item, prompt });
+      await a.waitForStatus(job.id, 'finished', 30_000);
+    }
+    expect(k8s.created).toHaveLength(2);
+    expect(tabEnvs(herdr).map((e) => e.CLAUDE_CODE_OAUTH_TOKEN)).toEqual([TOKEN, TOKEN]);
+    const given = (await a.events()).filter((e) => e.type === 'vault.pod_credential_given');
+    expect(given.map((e) => e.data)).toEqual(k8s.created.map((p) => {
+      const pod = (p.metadata as { name: string }).name;
+      return { name: 'CLAUDE_TOKEN', pod, job: pod.replace('hopper-job-', '') };
+    }));
+    // Never in a pod's spec — what `kubectl get pod -o yaml` shows —, an event or a log line.
+    expect(JSON.stringify(k8s.created)).not.toContain(TOKEN);
+    expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(TOKEN);
+    expect(logged.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('a vault secret that is no setup token fails the job, and starts no pod', { timeout: 60_000 }, async () => {
+    const k8s = cluster();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE] });
+    const { a, token } = await boot(k8s, herdr);
+    const file = JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-a-0123456789', refreshToken: 'sk-ant-ort01-r-0123456789' } });
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'CLAUDE_TOKEN', value: file }, { token })).status).toBe(200);
+    const job = await a.pull({}, item);
+    const failed = await a.waitForStatus(job.id, 'failed', 30_000);
+    expect(failed.error).toMatch(/CLAUDE_TOKEN is not a Claude token: set it to what `claude setup-token` prints/);
+    expect(k8s.created).toEqual([]);
     expect(herdr.prompts).toEqual([]);
   });
 });
