@@ -60,6 +60,7 @@ case "$*" in
   *"get secret owner-key -o go-template="*) [ -z "\${STUB_OWNER_SECRET:-}" ] || printf yes ;;
   *"get secret hopper-master-key -o go-template="*) printf yes ;;
   *"run hopper-key-check "*) printf '%s' "\${STUB_SECRET_FP:-${FP}}" ;;
+  *"get statefulset,deployment -l app.kubernetes.io/instance=hopper -o name"*) printf 'statefulset.apps/hopper-postgres\\ndeployment.apps/hopper-openfga\\ndeployment.apps/hopper\\n' ;;
   *"get deployment/hopper -o jsonpath={.spec.template.spec.containers[?(@.name==\\"hopper\\")].image}"*) printf ghcr.io/henningfutrell/hopper:beta ;;
   *"get secret hopper-master-key"*) [ -f "$STUB_DIR/secret" ] && printf '%s' "$STUB_KEY" | base64 -w0 ;;
   *"create secret generic hopper-carried-env"*) printf 'carried: %s\\n' "$(printf '%s' "$in" | tr '\\n' ' ')" >> "$STUB_LOG"; echo 'kind: Secret' ;;

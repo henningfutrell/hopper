@@ -120,7 +120,14 @@ describe('hopper-cluster.sh migrate', () => {
 
     // The order: the release with the hopper at 0 while compose runs; then the watchdog off and the compose hopper stopped;
     // the dump; the hopper at 1; the checks; the home; then the whole stack stopped.
-    const install = at(/^helm install hopper .* --namespace hopper -f - --wait --wait-for-jobs/);
+    // The install waits for its parts itself, never with helm's --wait: that waits for the hopper's home volume, which a
+    // WaitForFirstConsumer StorageClass (kind's, k3s's) binds only once a hopper pod takes it, and the hopper is at 0.
+    const install = at(/^helm install hopper .* --namespace hopper -f - --timeout 15m$/);
+    expect(calls[install]).not.toContain('--wait');
+    for (const part of ['statefulset.apps/hopper-postgres', 'deployment.apps/hopper-openfga', 'deployment.apps/hopper']) {
+      expect(at(new RegExp(`^kubectl --namespace hopper rollout status ${part} --timeout=15m$`))).toBeGreaterThan(install);
+    }
+    expect(at(/^kubectl --namespace hopper wait --for=condition=complete job -l app.kubernetes.io\/instance=hopper,app.kubernetes.io\/component=openfga-migrate --timeout=15m$/)).toBeGreaterThan(install);
     const watchdog = at(/^systemctl --user disable hopper-compose.service hopper-compose-check.timer/);
     const stopHopper = at(/^podman stop hopperid$/);
     const restore = at(/^restored-dump$/);
