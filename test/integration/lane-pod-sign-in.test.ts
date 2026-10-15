@@ -11,7 +11,8 @@
 //     And no event or log line holds the token
 //   Scenario: a machine that is no lane pod is given no token
 //   Scenario: a vault secret that is no setup token fails a lane pod's job before its pane starts
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+//   Scenario: a usage source on a lane pod reads it signed in with the user's setup token, and holds none of its jobs
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,7 @@ import { KEY } from '../support/webhooks.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
+const PLAN = fileURLToPath(new URL('../plugins/fake-claude-plan.mjs', import.meta.url));
 const POOL_KEY = 'a1'.repeat(32);
 const TOKEN = 'sk-ant-oat01-lane-sign-in-0123456789abcdef_never-in-a-log';
 const DONE = { output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
@@ -53,14 +55,14 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function boot(herdr: FakeHerdrClient): Promise<{ a: TestApp; token: string }> {
+async function boot(herdr: FakeHerdrClient, usageSources: unknown[] = []): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   t = await startTestApp({
     dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_LANE_POOL_KEY: POOL_KEY },
-    plugins: { executors: [{ name: 'claude', plugin: 'herdr-claude' }], machines: [], machineDefaults: { lanes: 1, executors: ['claude'] } },
+    plugins: { executors: [{ name: 'claude', plugin: 'herdr-claude' }], machines: [], machineDefaults: { lanes: 1, executors: ['claude'] }, usageSources },
     seams: { herdr, levels: [] },
   });
   return { a: t, token: await t.login() };
@@ -74,10 +76,10 @@ function volume(): string {
 }
 
 /** A machine joined with `code` under `name` on a new volume, dialled in; it stops at `stop()`. */
-async function joined(a: TestApp, code: string, name: string): Promise<Client> {
+async function joined(a: TestApp, code: string, name: string, claudeBin?: string): Promise<Client> {
   const dir = volume();
   await joinHopper({ line: `${a.url}#${code}`, name, dir });
-  const c = startLinkedClient({ dir, herdrBin: HERDR, session: 'hopper', installDir: testInstallDir(), backoffMs: [50] });
+  const c = startLinkedClient({ dir, herdrBin: HERDR, ...(claudeBin ? { claudeBin } : {}), session: 'hopper', installDir: testInstallDir(), backoffMs: [50] });
   clients.push(c);
   const machines = async () => (await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[];
   await waitFor(async () => (await machines()).find((m) => m.id === name && m.online), { timeoutMs: 10_000, what: `${name} online` });
@@ -130,5 +132,29 @@ describe('the agent\'s sign-in survives lane pod restarts (issue #1287)', () => 
     const failed = await a.waitForStatus(job.id, 'failed', 30_000);
     expect(failed.error).toMatch(/CLAUDE_TOKEN is not a Claude token: set it to what `claude setup-token` prints/);
     expect(herdr.prompts).toEqual([]);
+  });
+
+  it('a usage source on a lane pod reads it signed in with the user\'s setup token, and holds none of its jobs', { timeout: 60_000 }, async () => {
+    const plan = volume();
+    process.env.FAKE_PLAN_DIR = plan;
+    writeFileSync(join(plan, 'mode'), 'token-only');
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE] });
+    const { a, token } = await boot(herdr, [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'hopper-lanes-0', executors: ['claude'] } }]);
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'CLAUDE_TOKEN', value: TOKEN }, { token })).status).toBe(200);
+    await joined(a, POOL_KEY, 'hopper-lanes-0', PLAN);
+    type Usage = { sources: { name: string; account?: { detail: Record<string, string> }; problem?: string }[] };
+    const read = await waitFor(async () => {
+      const u = (await a.api<Usage>('GET', '/api/usage')).body.sources.find((x) => x.name === 'claude');
+      return u?.account?.detail.authMethod ? u : undefined;
+    }, { timeoutMs: 30_000, what: 'the claude account of the lane pod' });
+    expect(read.account!.detail).toEqual({ authMethod: 'oauth_token', machine: 'hopper-lanes-0' });
+    expect(read.problem).toBeUndefined();
+    const ran = readFileSync(join(plan, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { token?: boolean });
+    expect(ran.length).toBeGreaterThan(0);
+    expect(ran.every((c) => c.token)).toBe(true);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'finished', 30_000);
+    expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(TOKEN);
+    expect(logged.join('\n')).not.toContain(TOKEN);
   });
 });

@@ -6,7 +6,7 @@
 // The pods are the machines of the hopper's first user, `admin`: the person who signed in first.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { AGENT_CREDENTIAL_VARIABLE, POD_AGENT_CREDENTIAL } from '../domain/agent-credential.ts';
-import type { AttachedMachine, Job, MachineSnapshot } from '../domain/types.ts';
+import type { AttachedMachine } from '../domain/types.ts';
 import type { AgentCredentialAnswer, PodCredentialAsk } from '../vault/agent-credential.ts';
 
 export const LANE_POOL_KEY_VARIABLE = 'HOPPER_LANE_POOL_KEY';
@@ -22,19 +22,23 @@ export function isLanePoolKey(poolKey: string | undefined, code: string): boolea
   return poolKey !== undefined && KEY.test(poolKey) && timingSafeEqual(digest(poolKey), digest(code));
 }
 
+/** The agent's sign-in a lane pod gives: its variable and value, none, or why not. */
+export type LaneSignIn = { variable: string; value: string } | { none: true } | { refused: string };
+
 /**
  * The agent's sign-in on a lane pod (issue #1287, design.md "The agent's sign-in in a lane pod"): a job on a lane pod
  * starts with its user's setup token from the vault, as a job pod's does, so a pod started again — its volume kept or
- * not — asks for no sign-in, and none need be kept on its volume. Any other machine: none, its own sign-in as before.
+ * not — asks for no sign-in, and none need be kept on its volume. A usage read of the pod (no job) takes the same token,
+ * else it reads the pod signed out. Any other machine: none, its own sign-in as before.
  */
-export function laneAgentSignIn(
+export function laneSignIn(
   targets: () => readonly AttachedMachine[],
   podCredential: (ask: PodCredentialAsk) => Promise<AgentCredentialAnswer>,
-): (job: Job, machine: MachineSnapshot) => Promise<{ variable: string; value: string } | { none: true } | { refused: string }> {
-  return async (job, machine) => {
-    const lanePod = targets().some((t) => t.name === machine.id && 'client' in t && t.client.pool);
+): (machine: string, job?: string) => Promise<LaneSignIn> {
+  return async (machine, job) => {
+    const lanePod = targets().some((t) => t.name === machine && 'client' in t && t.client.pool);
     if (!lanePod) return { none: true };
-    const r = await podCredential({ name: POD_AGENT_CREDENTIAL, pod: machine.id, job: job.id });
+    const r = await podCredential({ name: POD_AGENT_CREDENTIAL, pod: machine, ...(job ? { job } : {}) });
     return 'value' in r ? { variable: AGENT_CREDENTIAL_VARIABLE, value: r.value } : r;
   };
 }

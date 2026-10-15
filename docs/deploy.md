@@ -1282,7 +1282,8 @@ to the pods' join step only.
 2. Set how many: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set lanes.replicas=3`.
 3. Keep the agent's sign-in in your vault once: run `claude setup-token` on any machine, sign in, and set what it prints
    (`sk-ant-oat…`) as the vault secret `CLAUDE_TOKEN` in Settings → Vault. Each job on a lane pod starts signed in with
-   it, also after a pod starts again with a new volume. The token is not kept in a pod's volume, its spec or a ConfigMap.
+   it, also after a pod starts again with a new volume. A `claude-plan` usage source that names a lane pod reads it with
+   the token too. The token is not kept in a pod's volume, its spec or a ConfigMap.
    Without it, sign each pod in once (`kubectl --namespace hopper exec -it hopper-lanes-0 -c lane -- claude`): that
    sign-in stays in the pod's volume only.
 

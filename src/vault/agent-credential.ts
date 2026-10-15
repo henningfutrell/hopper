@@ -15,8 +15,11 @@ export interface AgentCredentialAsk { template: string; secrets: readonly string
 /** The value and the secret's name; `none`: the template names none, or the launch leaves it out; or why not. */
 export type AgentCredentialAnswer = { name: string; value: string } | { none: true } | { refused: string };
 
-/** A job pod's start asks (issue #1287): the secret the kubernetes executor names, the pod and its job. */
-export interface PodCredentialAsk { name: string; pod: string; job: string }
+/**
+ * A job pod's start asks (issue #1287): the secret the kubernetes executor names, the pod and its job. No job: a usage
+ * read on a lane pod asks, every few minutes, and nothing is recorded; a refusal is its read's problem.
+ */
+export interface PodCredentialAsk { name: string; pod: string; job?: string }
 
 export interface AgentCredentials {
   /** The agent credential a launch of `ask.template` starts its box with (issue #708, part 10). */
@@ -54,7 +57,7 @@ export function agentCredentials(store: Pick<UserStore, 'vault' | 'events'>, val
 
     async podCredential({ name, pod, job }) {
       const refuse = (reason: string, backend?: string): { refused: string } => {
-        events.append({ type: 'vault.refused', jobId: job, machineId: pod, data: { name, machine: pod, job, ...(backend ? { backend } : {}), reason } });
+        if (job) events.append({ type: 'vault.refused', jobId: job, machineId: pod, data: { name, machine: pod, job, ...(backend ? { backend } : {}), reason } });
         return { refused: reason };
       };
       // A shared secret's read is Access's decision per user; a system secret never leaves the hopper.
@@ -66,7 +69,7 @@ export function agentCredentials(store: Pick<UserStore, 'vault' | 'events'>, val
       if ('refused' in r) return refuse(r.refused, secret.backend?.name);
       const bad = agentCredentialValueProblem(name, r.value);
       if (bad) return refuse(bad, secret.backend?.name);
-      events.append({ type: 'vault.pod_credential_given', jobId: job, machineId: pod, data: { name, pod, job, ...(secret.backend ? { backend: secret.backend.name } : {}) } });
+      if (job) events.append({ type: 'vault.pod_credential_given', jobId: job, machineId: pod, data: { name, pod, job, ...(secret.backend ? { backend: secret.backend.name } : {}) } });
       return { name, value: r.value.trim() };
     },
   };

@@ -88,7 +88,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
     machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),
     machines: () => liveMachines.list(), escalationMachine: () => configured?.escalationMachine,
-    client: o.executorContext?.client ?? (() => undefined), ...(o.executorContext?.pods ? { pods: o.executorContext.pods } : {}),
+    client: o.executorContext?.client ?? (() => undefined), ...(o.executorContext?.pods ? { pods: o.executorContext.pods } : {}), ...(o.usageSourceContext?.agentSignIn ? { agentSignIn: o.usageSourceContext.agentSignIn } : {}),
   };
 
   const sign = (): string => o.config.version(PLUGINS);

@@ -67,9 +67,12 @@ export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: numbe
   return clientCall<ClientAnswer>(t, '/herdr', { args, timeoutMs }, timeoutMs);
 }
 
-/** One claude call of a usage read on the client target (issue #366): the client runs its own claude, and only those calls. */
-export function clientClaude(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
-  return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs }, timeoutMs);
+/**
+ * One claude call of a usage read on the client target (issue #366): the client runs its own claude, and only those calls.
+ * `token`: a lane pod's setup token (issue #1287), which that one call runs with as `CLAUDE_CODE_OAUTH_TOKEN`.
+ */
+export function clientClaude(t: ClientTransport, args: string[], timeoutMs: number, token?: string): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs, ...(token ? { token } : {}) }, timeoutMs);
 }
 
 /**

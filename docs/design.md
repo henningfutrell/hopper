@@ -5527,7 +5527,7 @@ job pod's does ("The agent's sign-in in a job pod" above).
 - **Each job on a lane pod is given the setup token.** The engine asks `agentSignIn` (`EngineOptions`) for each job's
   credentials, at each start of its pane (a run, a resume): on a machine that is a lane pod (a client target with
   `pool: true`) it is the user's vault secret `CLAUDE_TOKEN`, through the same `podCredential` and with the same refusals
-  (`laneAgentSignIn`, `src/machines/lane-pool.ts`); on any other machine, none — its own sign-in as before. The pane gets it
+  (`laneSignIn`, `src/machines/lane-pool.ts`); on any other machine, none — its own sign-in as before. The pane gets it
   as `CLAUDE_CODE_OAUTH_TOKEN` with the job's other variables, over the pod's link. `vault.pod_credential_given` names the
   lane pod as its `pod`.
 - **So a restart asks for no sign-in.** The token is in the vault, not in the pod: a pod started again, with its volume or a
@@ -5540,13 +5540,20 @@ job pod's does ("The agent's sign-in in a job pod" above).
   lines mask a Claude token as before (`maskLogLine`).
 - **Residual risk.** As for a job pod: every process of the job reads the token in its environment. A lane pod runs many
   jobs, all of its one user (`admin`), so the token reaches no other user's job.
-- **Not done here.** A `claude-plan` usage source on a lane pod reads `claude auth status` in the pod, without the token: with
-  no `/login` there it reads the pod signed out, and the decider holds its jobs ("Failover to signed-in machines"). Name no
-  usage source on a lane pod, or sign it in there, until the usage source takes the token too.
+- **A usage read on a lane pod takes the token too** (part 3). A `claude-plan` usage source that reads a lane pod asks
+  `agentSignIn` (`UsageSourceContext`, the same `laneSignIn`) before each claude call, and sends the token with the call
+  (`POST /claude {args, token}`). The client checks it is a setup token (else 400) and runs that one call with it as
+  `CLAUDE_CODE_OAUTH_TOKEN`; it keeps nothing. So a pod with no `/login` reads signed in (`authMethod: oauth_token`, no
+  email: a setup token names no account), and the decider does not hold its jobs ("Failover to signed-in machines"). A read
+  asks with no job: the vault records neither the give nor a refusal, since a read runs every few minutes; a refusal is the
+  read's problem, and no claude runs. Any other machine reads with its own sign-in, as before.
 
 **Verification.** `test/integration/lane-pod-sign-in.test.ts`: through the real daemon and the real client, a lane pod's job
 starts with the token, and so does the next after the pod starts again with a new volume; no event or log line holds it; a
-machine joined with a join code gets no token; a value that is no setup token fails the job before its pane starts.
+machine joined with a join code gets no token; a value that is no setup token fails the job before its pane starts; a
+`claude-plan` usage source on a lane pod with no sign-in of its own reads it signed in, every call with the token, and its
+job is not held. `test/plugins/claude-plan-client.test.ts` (a refusal runs no claude), `test/adapters/client-transport.test.ts`
+(the client refuses a value that is no setup token), `test/vault/agent-credential.test.ts` (a read records nothing).
 
 ## Client releases (issue #70, 2026-10-05)
 
