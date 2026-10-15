@@ -53,7 +53,7 @@ case "$*" in
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=postgres") [ -n "$STUB_STACK" ] && echo 0123456789abcdef ;;
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") echo ${HOPPER_ID} ;;
   "image inspect --format {{.Id}} "*) echo ${NEW_ID} ;;
-  "inspect --format {{.Image}} "*) if grep -q 'up -d' "$STUB_LOG"; then echo "\${STUB_RUNNING_IMAGE:-${NEW_ID}}"; else echo "\${STUB_BEFORE_IMAGE:-}"; fi ;;
+  "inspect --format {{.Image}} "*) if grep -qE 'up -d|restart hopper-compose' "$STUB_LOG"; then echo "\${STUB_RUNNING_IMAGE:-${NEW_ID}}"; else echo "\${STUB_BEFORE_IMAGE:-}"; fi ;;
   "images -q --no-trunc --filter label=org.opencontainers.image.title=hopper") printf '%s\\n' \${STUB_IMAGES:-} ;;
   "rmi "*) [ "$2" != "\${STUB_IN_USE:-}" ]; exit $? ;;
   "ps -aq --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=openfga-migrate") [ -f .migrate ] && echo ${MIGRATE_ID} ;;
@@ -63,6 +63,7 @@ case "$*" in
   "inspect --format {{.State.Running}} "*) echo "\${STUB_STATE:-true}" ;;
   "logs "*) echo 'the last log line' ;;
   "exec ${HOPPER_ID} node "*) exit "\${STUB_HEALTH:-0}" ;;
+  "port ${HOPPER_ID}") [ -n "\${STUB_PORT:-}" ] && echo "4790/tcp -> \${STUB_PORT}" ;;
   "exec ${HOPPER_ID} hopper master-key status") printf '{\\n  "source": "%s",\\n  "fingerprint": "%s",\\n  "previous": false\\n}\\n' "given" "${'f'.repeat(64)}" ;;
   "exec ${HOPPER_ID} hopper update drift") echo '{"state":"checked","gaps":[]}'; exit "\${STUB_DRIFT:-0}" ;;
   run\\ *) while [ "$1" != hopper ]; do shift; done; shift; exec '${process.execPath}' '${join(ROOT, 'src', 'cli.ts')}' "$@" ;;
@@ -82,7 +83,17 @@ esac
 exit 0
 `;
 
-interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string; tools?: string[] }
+// hopper-compose.service (issue #1320) owns the stack: enabled, and its restart exits STUB_SERVICE_START.
+const SYSTEMCTL = `#!/bin/sh
+printf 'systemctl %s\\n' "$*" >> "$STUB_LOG"
+case "$*" in
+  "--user is-enabled --quiet hopper-compose.service") exit 0 ;;
+  "--user restart hopper-compose.service") exit "\${STUB_SERVICE_START:-0}" ;;
+esac
+exit 0
+`;
+
+interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string; tools?: string[]; service?: boolean }
 
 /** One update run; `o.dir` runs it again in the folder of an earlier run, with what that run left there. */
 export function update(o: Run = {}) {
@@ -101,6 +112,7 @@ export function update(o: Run = {}) {
   // No docker here.
   writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(bin, 'docker'), 0o755);
+  if (o.service) { writeFileSync(join(bin, 'systemctl'), SYSTEMCTL); chmodSync(join(bin, 'systemctl'), 0o755); }
   if (!o.noPodmanCompose) { writeFileSync(join(bin, 'podman-compose'), PODMAN_COMPOSE); chmodSync(join(bin, 'podman-compose'), 0o755); }
   const log = join(dir, '.calls');
   writeFileSync(log, '');

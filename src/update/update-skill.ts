@@ -33,6 +33,10 @@ Do not do the update another way.
   from a secret manager, for example \`export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"\`. Then no step waits
   for a person. The update reads the key from nowhere else: never from the running container, and never from a file.
 - **Never show the master key.** Do not print it or write it to a file.
+- **On Podman, restart the stack through its user service** (issue #1320). When \`hopper-compose.service\` owns the
+  stack (\`hopper-service.sh\` beside compose.yaml), the update restarts it through the service. To restart the stack
+  without an update, run \`systemctl --user restart hopper-compose.service\`, never \`compose up\` by hand: the published
+  port belongs to whoever started the containers, and goes away when that caller exits.
 - **Never start the stack with another compose tool** (issue #1063). podman-compose and docker-compose each see only
   the stack they started; the other starts a second stack on the same volumes. The update uses the tool that started
   the stack, and stops when that tool does not see it. Never go around that stop.

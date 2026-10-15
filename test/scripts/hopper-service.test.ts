@@ -1,0 +1,216 @@
+// scripts/hopper-service.sh (issue #1320): the compose stack under a user service of its own, so the published port
+// belongs to the service and not to the shell or agent that started the stack. podman, systemctl and loginctl are stubs on
+// PATH that record each call; no unit of this machine is written or started. The image prints the script: `hopper service
+// script`. Nothing leaves this process tree.
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type AddressInfo, type Server } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const ROOT = join(import.meta.dirname, '..', '..');
+const SCRIPT = join(ROOT, 'scripts', 'hopper-service.sh');
+const KEY = '0123456789abcdef'.repeat(4);
+const dirs: string[] = [];
+const servers: Server[] = [];
+
+afterEach(async () => {
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  await Promise.all(servers.splice(0).map((s) => new Promise((done) => s.close(done))));
+});
+
+const PODMAN = `#!/bin/sh
+printf 'podman %s | key=%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
+case "$*" in
+  "ps -aq --filter label=io.podman.compose.project=hopper") [ "\${STUB_STACK:-}" = podman-compose ] && echo 0123456789ab ;;
+  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") [ -n "\${STUB_RUNNING:-}" ] && echo cid ;;
+  "port cid") [ -n "\${STUB_PORT:-}" ] && echo "4790/tcp -> \${STUB_PORT}" ;;
+esac
+exit 0
+`;
+const PODMAN_COMPOSE = `#!/bin/sh
+printf 'podman-compose %s | key=%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
+`;
+const SYSTEMCTL = `#!/bin/sh
+printf 'systemctl %s\\n' "$*" >> "$STUB_LOG"
+[ "$*" = '--user is-active --quiet hopper-compose.service' ] && exit "\${STUB_ACTIVE:-0}"
+exit 0
+`;
+const LOGINCTL = `#!/bin/sh
+printf 'loginctl %s\\n' "$*" >> "$STUB_LOG"
+case "$1" in show-user) echo "\${STUB_LINGER:-no}" ;; enable-linger) exit "\${STUB_LINGER_FAIL:-0}" ;; esac
+`;
+// master-key.sh as the service calls it: \`run <command>…\` runs the command with the unsealed key in its environment.
+const MASTER_KEY = `printf 'master-key.sh %s\\n' "$*" >> "$STUB_LOG"
+[ "$1" = run ] || exit 1
+shift
+HOPPER_MASTER_KEY=${KEY} exec "$@"
+`;
+
+function folder(o: { podmanCompose?: boolean } = {}) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jh-hopper-service-')));
+  dirs.push(dir);
+  writeFileSync(join(dir, 'hopper-service.sh'), readFileSync(SCRIPT));
+  writeFileSync(join(dir, 'compose.yaml'), readFileSync(join(ROOT, 'compose.yaml')));
+  const bin = join(dir, '.bin');
+  mkdirSync(bin);
+  const tools: Record<string, string> = { podman: PODMAN, systemctl: SYSTEMCTL, loginctl: LOGINCTL, ...(o.podmanCompose ? { 'podman-compose': PODMAN_COMPOSE } : {}) };
+  for (const [name, body] of Object.entries(tools)) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
+  const home = join(dir, '.home');
+  // Short, for a socket path.
+  const runtime = mkdtempSync(join(tmpdir(), 'jh-xdg-'));
+  dirs.push(runtime);
+  mkdirSync(home);
+  const log = join(dir, '.calls');
+  writeFileSync(log, '');
+  const run = (args: string[], env: Record<string, string> = {}) => {
+    const r = spawnSync('/bin/bash', ['hopper-service.sh', ...args], {
+      cwd: dir, encoding: 'utf8',
+      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), XDG_RUNTIME_DIR: runtime, USER: 'someone', STUB_LOG: log, HOPPER_SERVICE_RETRY: '0', ...env },
+    });
+    return { status: r.status, err: r.stderr };
+  };
+  const calls = () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean);
+  const unit = (name: string) => readFileSync(join(home, '.config', 'systemd', 'user', name), 'utf8');
+  return { dir, bin, home, runtime, run, calls, unit };
+}
+
+async function listening(): Promise<number> {
+  const server = createServer((socket) => socket.end());
+  servers.push(server);
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  return (server.address() as AddressInfo).port;
+}
+
+async function closedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((done) => server.close(done));
+  return port;
+}
+
+describe('scripts/hopper-service.sh (issue #1320)', () => {
+  it('install writes the units, turns on linger, and starts the stack through the service: settings kept, no secret, no image', () => {
+    const f = folder();
+    const r = f.run(['install'], { HOPPER_BIND: '0.0.0.0', HOPPER_PORT: '4791', HOPPER_MASTER_KEY: KEY, HOPPER_KMS_KEY: 'kms', HOPPER_IMAGE: 'ghcr.io/henningfutrell/hopper:dev' });
+    expect(r.status, r.err).toBe(0);
+    const service = f.unit('hopper-compose.service');
+    expect(service).toContain(`WorkingDirectory="${f.dir}"`);
+    expect(service).toMatch(/^Type=oneshot$/m);
+    expect(service).toMatch(/^RemainAfterExit=yes$/m);
+    expect(service).toContain(`ExecStart="${spawnSync('/bin/bash', ['-c', 'command -v bash'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } }).stdout.trim()}" "${f.dir}/hopper-service.sh" start`);
+    expect(service).toMatch(/^ExecStop=.* stop$/m);
+    expect(service).toContain(`Environment="HOPPER_SERVICE_COMPOSE=${f.bin}/podman compose"`);
+    expect(service).toContain('Environment="HOPPER_BIND=0.0.0.0"');
+    expect(service).toContain('Environment="HOPPER_PORT=4791"');
+    expect(service).toMatch(/^WantedBy=default\.target$/m);
+    for (const secret of [KEY, 'HOPPER_MASTER_KEY', 'HOPPER_KMS_KEY', 'HOPPER_IMAGE']) expect(service).not.toContain(secret);
+    expect(f.unit('hopper-compose-check.service')).toContain(`"${f.dir}/hopper-service.sh" check`);
+    expect(f.unit('hopper-compose-check.timer')).toMatch(/^OnUnitActiveSec=1min$/m);
+    expect(f.calls()).toEqual([
+      'systemctl --user show-environment',
+      expect.stringMatching(/^podman ps -aq --filter label=io\.podman\.compose\.project=hopper/),
+      'loginctl show-user someone -p Linger --value',
+      'loginctl enable-linger someone',
+      'systemctl --user daemon-reload',
+      'systemctl --user enable hopper-compose.service hopper-compose-check.timer',
+      'systemctl --user restart hopper-compose.service',
+      'systemctl --user restart hopper-compose-check.timer',
+    ]);
+    expect(r.err).toMatch(/turned on linger for someone/);
+  });
+
+  it('install takes podman-compose when it started the stack, and gives the rootless Podman socket when podman.socket is on', async () => {
+    const f = folder({ podmanCompose: true });
+    mkdirSync(join(f.runtime, 'podman'));
+    const socket = createServer();
+    servers.push(socket);
+    await new Promise<void>((done) => socket.listen(join(f.runtime, 'podman', 'podman.sock'), done));
+    const r = f.run(['install'], { STUB_STACK: 'podman-compose', STUB_LINGER: 'yes' });
+    expect(r.status, r.err).toBe(0);
+    const service = f.unit('hopper-compose.service');
+    expect(service).toContain(`Environment="HOPPER_SERVICE_COMPOSE=${f.bin}/podman-compose"`);
+    expect(service).toContain('Environment="HOPPER_PODMAN_SOCKET_HOST=%t/podman/podman.sock"');
+    expect(f.calls()).not.toContain('loginctl enable-linger someone');
+  });
+
+  it('install goes on when this user cannot turn on linger, and says the line that does', () => {
+    const f = folder();
+    const r = f.run(['install'], { STUB_LINGER_FAIL: '1' });
+    expect(r.status, r.err).toBe(0);
+    expect(r.err).toMatch(/sudo loginctl enable-linger someone/);
+    expect(f.calls()).toContain('systemctl --user restart hopper-compose.service');
+  });
+
+  it('install refuses without podman, or with no compose.yaml here, and writes no unit', () => {
+    const f = folder();
+    rmSync(join(f.bin, 'podman'));
+    // Only the stubs: no podman of this machine answers.
+    const r = f.run(['install'], { PATH: f.bin });
+    expect(r.status).toBe(1);
+    expect(r.err).toMatch(/With Docker, its daemon serves the port/);
+    const g = folder();
+    rmSync(join(g.dir, 'compose.yaml'));
+    expect(g.run(['install']).status).toBe(1);
+    expect(existsSync(join(f.home, '.config', 'systemd'))).toBe(false);
+    expect(existsSync(join(g.home, '.config', 'systemd'))).toBe(false);
+  });
+
+  it('start takes the stack down, then starts it with the key sealed to this host, for compose only: never an argument', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    writeFileSync(join(f.dir, 'hopper-master-key.enc'), 'sealed');
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' });
+    expect(r.status, r.err).toBe(0);
+    const compose = f.calls().filter((c) => c.startsWith('podman compose') || c.startsWith('master-key.sh'));
+    expect(compose).toEqual([
+      'podman compose -p hopper down | key=',
+      expect.stringMatching(/^master-key\.sh run bash .*hopper-service\.sh up$/),
+      `podman compose -p hopper up -d | key=${KEY}`,
+    ]);
+    for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
+  });
+
+  it('start with no key sealed here starts the stack with no key, and stop takes it down', () => {
+    const f = folder();
+    expect(f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
+    expect(f.run(['stop'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
+    expect(f.calls().filter((c) => c.startsWith('podman compose'))).toEqual([
+      'podman compose -p hopper down | key=',
+      'podman compose -p hopper up -d | key=',
+      'podman compose -p hopper down | key=',
+    ]);
+  });
+
+  it('check restarts the service when the hopper container runs and its published port does not answer from this host', async () => {
+    const f = folder();
+    const r = f.run(['check'], { STUB_RUNNING: '1', STUB_PORT: `0.0.0.0:${await closedPort()}` });
+    expect(r.status, r.err).toBe(0);
+    expect(r.err).toMatch(/does not answer while the hopper container runs/);
+    expect(f.calls()).toContain('systemctl --user restart --no-block hopper-compose.service');
+  });
+
+  it('check leaves the service alone when the port answers, the container does not run, or the service is stopped', async () => {
+    const f = folder();
+    expect(f.run(['check'], { STUB_RUNNING: '1', STUB_PORT: `127.0.0.1:${await listening()}` }).status).toBe(0);
+    expect(f.run(['check'], { STUB_PORT: `127.0.0.1:${await closedPort()}` }).status).toBe(0);
+    expect(f.run(['check'], { STUB_ACTIVE: '3', STUB_RUNNING: '1', STUB_PORT: `127.0.0.1:${await closedPort()}` }).status).toBe(0);
+    expect(f.calls().filter((c) => c.includes('restart'))).toEqual([]);
+  });
+
+  it('uninstall stops the service and removes its units', () => {
+    const f = folder();
+    expect(f.run(['install']).status).toBe(0);
+    expect(f.run(['uninstall']).status).toBe(0);
+    expect(f.calls()).toContain('systemctl --user disable --now hopper-compose-check.timer hopper-compose.service');
+    expect(existsSync(join(f.home, '.config', 'systemd', 'user', 'hopper-compose.service'))).toBe(false);
+  });
+
+  it('hopper service script prints this build\'s script, with no database', () => {
+    const r = spawnSync(process.execPath, [join(ROOT, 'src', 'cli.ts'), 'service', 'script'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tmpdir() } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toBe(readFileSync(SCRIPT, 'utf8'));
+  });
+});

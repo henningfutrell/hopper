@@ -6,7 +6,8 @@
 #   podman run --rm <image> hopper master-key script > master-key.sh
 #   bash master-key.sh seal              seal the key to this host: from HOPPER_MASTER_KEY, else asked on the terminal
 #   bash master-key.sh run <command>...  unseal it, and run the command with it as HOPPER_MASTER_KEY, for that process
-#                                        only: bash master-key.sh run podman compose up -d --force-recreate. With
+#                                        only (hopper-compose.service starts the stack so, hopper-service.sh): bash
+#                                        master-key.sh run podman compose up -d --force-recreate. With
 #                                        HOPPER_MASTER_KEY given and none sealed here yet, it seals that key first
 #   bash master-key.sh rotate            rotate the key of the running hopper, and seal the new key in the same step
 #   bash master-key.sh status            how the key is sealed here, and whether it unseals; never the key
@@ -115,7 +116,7 @@ seal() {
   [ "$back" = "$key" ] || { rm -f "$out.next"; fail "the key sealed with $how unseals to another value: nothing changed"; }
   mv "$out.next" "$out"
   rm -f "$other"
-  say "sealed the master key to this host with $how: $out. Start the stack with it: bash master-key.sh run podman compose up -d --force-recreate"
+  say "sealed the master key to this host with $how: $out. Start the stack with it: systemctl --user restart hopper-compose.service (the user service: bash hopper-service.sh install), or bash master-key.sh run podman compose up -d --force-recreate"
 }
 
 unseal_from() {
@@ -172,7 +173,7 @@ hopper_container() {
     id="$("$r" ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper 2>/dev/null | head -n 1 || true)"
     [ -z "$id" ] || { printf '%s %s' "$r" "$id"; return; }
   done
-  fail 'no hopper container runs: start the stack first (bash master-key.sh run podman compose up -d)'
+  fail 'no hopper container runs: start the stack first (systemctl --user start hopper-compose.service)'
 }
 
 # The rotation and the seal of the new key, in one step. The hopper seals every secret again under the new key, then this
@@ -202,7 +203,7 @@ rotate() {
     fi
     fail 'the new key did not seal; the hopper runs on it. Without a terminal it is not shown: see docs/deploy.md "The master key sealed to the host"'
   fi
-  say "rotated: the hopper and this host now hold the new key (fingerprint $fingerprint). Recreate the hopper with it now, so a restart of its container does not start on the old key: bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper"
+  say "rotated: the hopper and this host now hold the new key (fingerprint $fingerprint). Restart the stack with it now, so a restart of its container does not start on the old key: systemctl --user restart hopper-compose.service (without the user service: bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper)"
 }
 
 say() { printf 'master-key: %s\n' "$*" >&2; }

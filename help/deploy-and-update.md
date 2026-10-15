@@ -32,32 +32,54 @@ Without OpenFGA, the hopper denies every credential. A banner on every page says
 ## First start (container install)
 
 1. Make a folder for the hopper, and go into it.
-2. Download the compose file and start the stack:
+2. Download the compose file. Then start the stack under its user service:
 
    ```sh
    curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
-   podman compose up -d
+   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+   bash hopper-service.sh install
    ```
+
+   The install makes the user service `hopper-compose.service`, and starts the stack through it. See "The user service" below. With Docker, run `docker compose up -d` in place of the last two lines.
 
 3. Open `http://localhost:4790/`. Sign in with GitHub. The first person to sign in is the admin. There is no starting account or password.
 4. Save the master key now. The banner shows it once, to the admin only: click **Show the key (once)**. The key is never in the log.
 5. Put the key in your password manager. Then click **I saved it**.
-6. Give the key at launch, and recreate the hopper. Do not put it in a file:
+6. Seal the key to this host, and restart the stack through the service. Do not put the key in a file:
 
    ```sh
-   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY
-   podman compose up -d --force-recreate --no-deps hopper
+   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+   bash master-key.sh seal
+   systemctl --user restart hopper-compose.service
    ```
 
-   `read -rs` shows nothing and keeps the key out of your shell history. Paste the 64 hex digits, then press Enter.
+   `seal` shows nothing. Paste the 64 hex digits, then press Enter. See "Seal the key to this host" below.
 
 7. Sign in to Claude Code in the container one time: `podman compose exec hopper claude`, then `/login`, then `/exit`.
-8. Make the stack start after a reboot. Do this one time:
+8. The service starts the stack after a reboot when linger is on. The install turns linger on. When it says that it cannot, do this one time:
 
    ```sh
-   systemctl --user enable podman-restart.service
    sudo loginctl enable-linger "$USER"
    ```
+
+## The user service
+
+With rootless Podman, the hopper's port (4790) is served by a process that belongs to whoever started the containers. When you start the stack from a terminal, or an agent starts it, the port goes away when that terminal or agent exits. The containers still show `Up`, but the UI does not open.
+
+`bash hopper-service.sh install` makes the user service `hopper-compose.service`, and the service owns the stack:
+
+- It starts the stack with the master key sealed to this host. The key goes to compose only, never to a file or a volume.
+- It starts the stack at boot, when linger is on.
+- Every minute, a timer checks the port from this host. When the hopper's container runs and its port does not answer, the timer restarts the service.
+- The update stops and starts the stack through the service.
+
+To restart the hopper, run `systemctl --user restart hopper-compose.service`. Do not run `podman compose up` yourself. To see what the service did, run `journalctl --user -u hopper-compose.service -u hopper-compose-check.service`.
+
+Give your own launch settings (for example `export HOPPER_BIND=0.0.0.0`) before you run `bash hopper-service.sh install`. The service keeps them. To change them, run the install again. The service keeps no secret and no image: the update writes the image into `compose.yaml`.
+
+To remove the service, run `bash hopper-service.sh uninstall`. It stops the stack. Your data stays.
+
+The service is for Podman only. Docker's daemon keeps the port. On Kubernetes, the cluster keeps it.
 
 Docker works the same: use `docker compose` in place of `podman compose`.
 
@@ -102,13 +124,13 @@ Seal the key to this host once. Then no start, update or recreate asks you for i
 ```sh
 podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
 bash master-key.sh seal
-bash master-key.sh run podman compose up -d --force-recreate
+systemctl --user restart hopper-compose.service
 ```
 
 - `seal` asks for the key. Paste it from your password manager. Nothing is shown. It uses the host's TPM through `systemd-creds` when it can, else a key of this host in `~/.config/hopper`.
-- `run` unseals the key and gives it to the command that follows, and to nothing else. Use it for each start.
+- The user service unseals the key at each start, and gives it to compose only. Without the service, `bash master-key.sh run podman compose up -d --force-recreate` does the same for one start.
 - The update unseals the key by itself.
-- To rotate the key, run `bash master-key.sh rotate`. It seals the new key in the same step. Then run `bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper`.
+- To rotate the key, run `bash master-key.sh rotate`. It seals the new key in the same step. Then run `systemctl --user restart hopper-compose.service`.
 - A new host or a new TPM cannot open the sealed key. Keep the key in your password manager too.
 
 To see the key's status without the key:
@@ -244,7 +266,8 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 |---|---|
 | The UI does not open | Run `podman compose ps`. Check that `postgres`, `openfga` and `hopper` run. Read `podman compose logs hopper`. |
 | `the master key does not match this database` | Give the key this database was set up with. After a rotation, give the new key. |
-| `the master key is missing` | Give `HOPPER_MASTER_KEY` at launch and recreate the hopper (`podman compose up -d --force-recreate --no-deps hopper`), or start with the sealed key (`bash master-key.sh run podman compose up -d --force-recreate`). |
+| `the master key is missing` | Seal the key to this host (`bash master-key.sh seal`), then restart the service: `systemctl --user restart hopper-compose.service`. |
+| The containers show `Up`, but the UI does not open | The process that served the port is gone: the stack was started from a terminal or by an agent that exited. Install the user service: `bash hopper-service.sh install`. With the service, its timer restarts the stack within two minutes. |
 | "Access checks are off" | OpenFGA does not run. Run the update (see "Update a container install"), or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
 | "This hopper's stack differs from the compose file of its version" | Run the update with the image the hopper runs: the banner gives the command. |
 | The hopper stops at start and names two schema versions | The database is from a newer version. Run that newer version again, or restore a backup from before it. |

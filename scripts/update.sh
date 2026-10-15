@@ -20,14 +20,17 @@
 #      compose.yaml gives is removed when you accept it (on the terminal, or HOPPER_UPDATE_FIX_OVERRIDE=1; the old file:
 #      compose.override.yaml.bak);
 #   6. puts in the compose.yaml of the image with the install's own settings (`hopper update carry`; the old one stays as
-#      compose.yaml.bak), pulls the stack, stops it and starts it on the image, so every container is made again. When it
+#      compose.yaml.bak), pulls the stack, stops it and starts it on the image, so every container is made again. When
+#      hopper-compose.service owns the stack (hopper-service.sh, issue #1320), it stops and starts it through that service,
+#      with the key sealed to this host, so the published port belongs to the service and not to this shell. When it
 #      does not start: back to the old compose.yaml, compose.override.yaml and the image the hopper ran before;
-#   7. checks that the hopper runs the image pulled, answers /api/health, has its master key, that the openfga-migrate
+#   7. checks that the hopper runs the image pulled, answers /api/health, that its published port answers on this host
+#      (issue #1320), has its master key, that the openfga-migrate
 #      one-shot exited 0 (then removes its container, issue #1247), and that the stack has no drift (`hopper update
 #      drift`), and says the result. It exits 1 when one of these fails;
 #   8. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
-#      before, to go back to. An image a container still uses is not removed. A master-key.sh beside compose.yaml is
-#      replaced with the new image's.
+#      before, to go back to. An image a container still uses is not removed. A master-key.sh and a hopper-service.sh
+#      beside compose.yaml are replaced with the new image's. With Podman and no service, it says the line that installs it.
 #
 #   HOPPER_UPDATE_WAIT          seconds to wait for the hopper's health (default: 180)
 #   HOPPER_UPDATE_FIX_OVERRIDE  1: remove the compose.override.yaml entries compose.yaml gives itself, with no question
@@ -95,6 +98,19 @@ main() {
     fail "${compose[*]} does not see the hopper stack that runs. It would start a second stack on the same data: the update stops, and nothing changed. The stack runs in $runtime: start it once with the compose tool that made it, then run the update again"
   fi
   say "compose: ${compose[*]}"
+
+  # The user service (issue #1320): when it owns the stack, the stack stops and starts through it, so its published port
+  # belongs to the service and not to this shell. It starts the stack with the key sealed to this host.
+  local service=0
+  if [ "$runtime" = podman ] && [ -f hopper-service.sh ] && systemctl --user is-enabled --quiet hopper-compose.service 2>/dev/null; then
+    service=1
+    { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; } \
+      || fail 'hopper-compose.service starts the stack with the master key sealed to this host, and none is sealed here: seal it (bash master-key.sh seal), then run the update again. Nothing changed'
+    if [ "$sealed" = 0 ] && [ "$(bash master-key.sh unseal 2>/dev/null || true)" != "$HOPPER_MASTER_KEY" ]; then
+      fail 'the master key given is not the one sealed to this host, which hopper-compose.service starts the stack with: seal the right key (bash master-key.sh seal), then run the update again. Nothing changed'
+    fi
+    say 'hopper-compose.service owns the stack: the update stops and starts it through the service'
+  fi
 
   # The image the hopper runs now: after the update, the one before, kept to go back to.
   local previous=''
@@ -172,40 +188,67 @@ main() {
   # under the same tag, and it cannot `--force-recreate` a service with no container yet (issue #894). So the old stack
   # stops (its volumes stay), and the new one starts.
   say 'stop the stack (its volumes and data stay), and start it on the new image'
-  "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
-  clear_one_shot "$runtime"
-  if ! "${compose[@]}" up -d </dev/null >&2; then
+  if ! restart_stack; then
     say 'the stack did not start: back to the old compose.yaml and image'
     unset HOPPER_IMAGE
-    "${compose[@]}" down </dev/null >/dev/null 2>&1 || true
+    [ "$service" = 1 ] || "${compose[@]}" down </dev/null >/dev/null 2>&1 || true
     restore_files
-    clear_one_shot "$runtime"
+    [ "$service" = 1 ] || clear_one_shot "$runtime"
     # The pull moved the tag compose.yaml.bak names when the update kept its channel: the tag goes back to the image the
     # hopper ran before.
     local back=''
     if [ -n "$previous" ] && [ -n "$old_ref" ] && "$runtime" tag "$previous" "$old_ref" >/dev/null 2>&1; then
       back=", back on the image it ran before (${previous:0:12})"
     fi
-    "${compose[@]}" up -d </dev/null >&2 || true
+    if [ "$service" = 1 ]; then systemctl --user restart hopper-compose.service </dev/null >&2 || true; else "${compose[@]}" up -d </dev/null >&2 || true; fi
     fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again${back}; the database backup is hopper-backup.dump"
   fi
 
-  check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}"
+  check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}" "$service"
   prune "$runtime" "$image" "$previous"
-  [ "$sealed" = 0 ] || refresh_key_script "$runtime" "$image"
+  [ "$sealed" = 0 ] || refresh_script "$runtime" "$image" master-key.sh master-key
+  [ "$service" = 0 ] || refresh_script "$runtime" "$image" hopper-service.sh service
+  if [ "$runtime" = podman ] && [ "$service" = 0 ]; then
+    say "the stack runs under this shell: its published port goes away when this shell's session ends. Put it under a user service of its own, once (docs/deploy.md \"The user service\"): $runtime run --rm $image hopper service script > hopper-service.sh && bash hopper-service.sh install"
+  fi
 }
 
-# master-key.sh beside compose.yaml, replaced with the one of the image updated to (issue #1296). One that does not come
-# keeps the old file: it still unseals the key.
-refresh_key_script() {
-  local runtime=$1 image=$2
-  if "$runtime" run --rm "$image" hopper master-key script </dev/null >master-key.sh.next 2>/dev/null && [ -s master-key.sh.next ]; then
-    mv master-key.sh.next master-key.sh
-    say "put in the master-key.sh of $image"
-  else
-    rm -f master-key.sh.next
-    say "the image gives no master-key.sh: the old one stays"
+# The stack stopped and started on the new image: through hopper-compose.service when it owns the stack (issue #1320),
+# else with the compose tool (main's own variables).
+restart_stack() {
+  if [ "$service" = 1 ]; then
+    systemctl --user restart hopper-compose.service </dev/null >&2
+    return
   fi
+  "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
+  clear_one_shot "$runtime"
+  "${compose[@]}" up -d </dev/null >&2
+}
+
+# A script beside compose.yaml — master-key.sh (issue #1296), hopper-service.sh (issue #1320) — replaced with the one of
+# the image updated to. One that does not come keeps the old file: it still works.
+refresh_script() {
+  local runtime=$1 image=$2 file=$3 command=$4
+  if "$runtime" run --rm "$image" hopper "$command" script </dev/null >"$file.next" 2>/dev/null && [ -s "$file.next" ]; then
+    mv "$file.next" "$file"
+    say "put in the $file of $image"
+  else
+    rm -f "$file.next"
+    say "the image gives no $file: the old one stays"
+  fi
+}
+
+# Whether the hopper's published port answers on this host (issue #1320): on rootless Podman a process of the caller that
+# started the container serves it, and the container shows Up after that process is gone. Unpublished: yes.
+port_answers() {
+  local runtime=$1 id=$2 line addr host port
+  line="$("$runtime" port "$id" 2>/dev/null | head -n 1 || true)"
+  addr="${line##*-> }"
+  [ -n "$line" ] && [ "$addr" != "$line" ] || return 0
+  port="${addr##*:}"; host="${addr%:*}"; host="${host#[}"; host="${host%]}"
+  case "$host" in '' | 0.0.0.0 | ::) host=127.0.0.1 ;; esac
+  published="$host:$port"
+  (: >"/dev/tcp/$host/$port") 2>/dev/null
 }
 
 # compose.yaml, the mark, then compose.override.yaml (none when it is the old compose.sandboxes.yaml, moved aside):
@@ -252,7 +295,7 @@ prune() {
 
 # The hopper after the recreate: the image pulled, healthy, with its master key, the stack as its compose file says.
 check() {
-  local runtime=$1 image=$2 wait=$3
+  local runtime=$1 image=$2 wait=$3 service=$4
   local want id running
   want="$("$runtime" image inspect --format '{{.Id}}' "$image")"; want="${want#sha256:}"
   id="$("$runtime" ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper | head -n 1)"
@@ -271,6 +314,14 @@ check() {
     [ "$SECONDS" -lt "$deadline" ] || fail "the hopper did not answer /api/health in ${wait} s: see $runtime logs $id"
     sleep 2
   done
+
+  local published=''
+  if ! port_answers "$runtime" "$id"; then
+    if [ "$service" = 1 ]; then
+      fail "the hopper answers in its container, but its published port $published does not answer on this host. Restart it: systemctl --user restart hopper-compose.service"
+    fi
+    fail "the hopper answers in its container, but its published port $published does not answer on this host. Start the stack under the user service: bash hopper-service.sh install (docs/deploy.md \"The user service\")"
+  fi
 
   local status
   status="$("$runtime" exec "$id" hopper master-key status </dev/null)" || fail 'hopper master-key status failed'

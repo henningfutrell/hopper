@@ -62,18 +62,23 @@ and the containers run as your user, not as root. Jobs run on the machines you a
 <p class="note">That is Debian and Ubuntu. Fedora: <code>sudo dnf install podman podman-compose</code>. Arch:
 <code>sudo pacman -S podman podman-compose</code>. Others: <a href="https://podman.io/docs/installation">podman.io/docs/installation</a>.
 Check with <code>podman --version</code>.</p></li>
-<li><p><strong>Get the compose file and start it</strong>, in a folder of its own. The first start downloads
-the image, which takes a minute or two:</p>
+<li><p><strong>Get the compose file and start it under a user service</strong>, in a folder of its own. The first
+start downloads the image, which takes a minute or two:</p>
 <div class="cmd"><pre>mkdir hopper &amp;&amp; cd hopper</pre><button type="button" data-copy="mkdir hopper &amp;&amp; cd hopper">Copy</button></div>
 <div class="cmd main-cmd"><pre>curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml</pre><button type="button" data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml">Copy</button></div>
-<div class="cmd"><pre>systemctl --user enable --now podman.socket
-export HOPPER_PODMAN_SOCKET_HOST="$XDG_RUNTIME_DIR/podman/podman.sock"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; export HOPPER_PODMAN_SOCKET_HOST=&quot;$XDG_RUNTIME_DIR/podman/podman.sock&quot;">Copy</button></div>
+<div class="cmd"><pre>systemctl --user enable --now podman.socket</pre><button type="button" data-copy="systemctl --user enable --now podman.socket">Copy</button></div>
 <p class="note">That gives the hopper your Podman socket: it then shows its containers under Resources and starts sandbox
-boxes. The first update writes the socket into <code>compose.yaml</code>, so you give it only this once. With Docker,
-skip it.</p>
-<div class="cmd main-cmd"><pre>podman compose up -d</pre><button type="button" data-copy="podman compose up -d">Copy</button></div>
+boxes. The service below finds it.</p>
+<div class="cmd"><pre>podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script &gt; hopper-service.sh</pre><button type="button" data-copy="podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script &gt; hopper-service.sh">Copy</button></div>
+<div class="cmd main-cmd"><pre>bash hopper-service.sh install</pre><button type="button" data-copy="bash hopper-service.sh install">Copy</button></div>
+<p class="note">The install makes the user service <code>hopper-compose.service</code>, which starts the stack and keeps
+it. With Podman, the UI's port belongs to whoever started the containers: started from a terminal, it goes away when
+that terminal closes, though the containers still run. Under the service it stays, the service starts the stack at
+boot, and a check every minute restarts it when the port stops answering. To restart the hopper, use
+<code>systemctl --user restart hopper-compose.service</code>, not <code>podman compose up</code>.</p>
 <p>Run the later commands in this folder too. You can read the file first: <a href="compose.yaml">compose.yaml</a>.
-Docker works the same: <code>docker compose</code> in place of <code>podman compose</code>.</p></li>
+Docker works the same, with no service: <code>docker compose up -d</code> in place of the two lines above, and
+<code>docker compose</code> in place of <code>podman compose</code>.</p></li>
 <li><p><strong>Open the UI and sign in with GitHub.</strong> Open <code>http://localhost:4790/</code> and press
 <strong>Sign in with GitHub</strong>. The first person to sign in with GitHub is the admin, so sign in yourself
 before anyone else can reach the UI. There is no starting account or password to look up. The UI listens on
@@ -88,9 +93,8 @@ reads your issues through that connection.</p>
 <p>In Claude Code, type <code>/login</code>, follow it, then <code>/exit</code>. Then say who jobs commit as:</p>
 <div class="cmd"><pre>podman compose exec hopper git config --global user.name "Your Name"</pre><button type="button" data-copy="podman compose exec hopper git config --global user.name &quot;Your Name&quot;">Copy</button></div>
 <div class="cmd"><pre>podman compose exec hopper git config --global user.email you@example.com</pre><button type="button" data-copy="podman compose exec hopper git config --global user.email you@example.com">Copy</button></div></li>
-<li><p><strong>Keep it running after a reboot.</strong> The containers restart by themselves while Podman runs;
-these two make your user's containers start when the machine does. Once:</p>
-<div class="cmd"><pre>systemctl --user enable podman-restart.service</pre><button type="button" data-copy="systemctl --user enable podman-restart.service">Copy</button></div>
+<li><p><strong>Keep it running after a reboot.</strong> The service starts the stack when the machine does, when
+linger is on for your user. The install turns linger on. When it says it cannot, run this once:</p>
 <div class="cmd"><pre>sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>
 </ol>
 <p>Then <a href="#first-job">give it its first job</a>. Upgrade, stop and remove: <a href="#upgrade">Upgrade</a>,
@@ -379,8 +383,9 @@ copy, and how to check it works:
 run this one command. It asks for the master key (paste it from your password manager; nothing is shown), unless
 <code>HOPPER_MASTER_KEY</code> is given at launch. It uses the compose tool that started the stack, so it never starts a
 second stack on the same data; it backs up the database, puts in the new image's <code>compose.yaml</code> with your own
-settings in it (the old one stays as <code>compose.yaml.bak</code>), pulls, and recreates the whole stack on the new image.
-Then it checks that the hopper runs the new image, is healthy and has its master key, and says the result. Without the
+settings in it (the old one stays as <code>compose.yaml.bak</code>), pulls, and recreates the whole stack on the new image,
+through <code>hopper-compose.service</code> when the service runs it. Then it checks that the hopper runs the new image, is
+healthy, answers on its port and has its master key, and says the result. Without the
 master key it stops before anything changes. It keeps your settings, database and sign-ins. When an update is out, the
 hopper's update notice shows this command and how many running jobs the restart would end: wait until none. Then remove
 the image it replaced. With Docker, <code>docker</code> in place of the first <code>podman</code>.</p>
@@ -389,15 +394,16 @@ the image it replaced. With Docker, <code>docker</code> in place of the first <c
 <p class="note">The image tag is the update channel: <code>ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
 <code>:stable</code>). The update writes it into <code>compose.yaml</code> as the default of <code>HOPPER_IMAGE</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
 Pick the same channel in the hopper's Settings → Version. Give your own settings at launch (for a LAN install,
-<code>export HOPPER_BIND=0.0.0.0</code>) or put them in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
+<code>export HOPPER_BIND=0.0.0.0</code>, then <code>bash hopper-service.sh install</code> again: the service keeps them) or put
+them in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
 <p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
 settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
 apply it for you.</p>
 
 <h2 id="remove">Uninstall</h2>
-<p><strong>With Podman:</strong> in the hopper's folder, stop and remove the containers. Your database and
-sign-ins are kept:</p>
-<div class="cmd"><pre>podman compose down</pre><button type="button" data-copy="podman compose down">Copy</button></div>
+<p><strong>With Podman:</strong> in the hopper's folder, remove the service, which stops and removes the containers. Your
+database and sign-ins are kept:</p>
+<div class="cmd"><pre>bash hopper-service.sh uninstall</pre><button type="button" data-copy="bash hopper-service.sh uninstall">Copy</button></div>
 <p>To delete them too: <code>podman compose down -v</code>.</p>
 <p><strong>On the machine itself:</strong></p>
 <div class="cmd"><pre>bash ~/.local/share/hopper/source/scripts/uninstall.sh</pre><button type="button" data-copy="bash ~/.local/share/hopper/source/scripts/uninstall.sh">Copy</button></div>

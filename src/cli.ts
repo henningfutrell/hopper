@@ -50,7 +50,7 @@ import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { OPERATOR_COMMANDS, OPERATOR_USAGE, REFRESH_TOKEN_FILE, runOperatorAction, runOperatorActionWithGrant } from './cli-operator.ts';
 import { OperatorRefusal } from './cli-operator-call.ts';
-import { printMasterKeyScript, runUpdate, UPDATE_USAGE } from './cli-update.ts';
+import { printHostScript, runUpdate, UPDATE_USAGE } from './cli-update.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -78,6 +78,8 @@ usage:
                                                      in place of the rows there are; prints how many items it holds
 ${OPERATOR_USAGE}
 ${UPDATE_USAGE}
+  hopper service script                              print the host's user-service script (scripts/hopper-service.sh): it
+                                                     puts a Podman compose stack under a user service. No daemon needed
   hopper help                                        this text
 
 With ${REFRESH_TOKEN_FILE} set, the operator actions (job … search) open no database: they act with the grant whose
@@ -268,8 +270,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
   // `update drift` reads the running daemon (issue #1017); every other `update` command needs no database.
   if (command === 'update' && rest[0] !== 'drift') return runUpdate(rest, io);
-  // The host's master-key script (issue #1296) is a file of the build: no database.
-  if (command === 'master-key' && rest[0] === 'script') return printMasterKeyScript(rest.slice(1), io);
+  // The host's master-key script (issue #1296) and user-service script (issue #1320) are files of the build: no database.
+  if ((command === 'master-key' || command === 'service') && rest[0] === 'script') return printHostScript(command, rest.slice(1), io);
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;
