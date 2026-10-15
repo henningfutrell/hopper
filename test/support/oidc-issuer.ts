@@ -33,14 +33,13 @@ export async function newIssuerKey(): Promise<IssuerKey> {
 export async function startTestIssuer(clientId: string): Promise<TestIssuer> {
   const nonces = new Map<string, string>();
   const first = await newIssuerKey();
-  let server: Server | undefined;
   const t: TestIssuer = {
     issuer: '', signWith: first, published: [first], claims: {}, jwksReads: 0,
     newKey: newIssuerKey,
-    stop: () => new Promise((done) => { server?.close(() => done()); }),
+    stop: () => new Promise((done) => { server.close(() => done()); }),
   };
   const json = (res: import('node:http').ServerResponse, body: unknown) => { res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body)); };
-  server = createServer((req, res) => {
+  const server: Server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', t.issuer);
     if (url.pathname === '/.well-known/openid-configuration') {
       json(res, {

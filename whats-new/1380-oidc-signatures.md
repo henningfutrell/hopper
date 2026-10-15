@@ -1,0 +1,1 @@
+- Sign-in through OpenID Connect now checks that the identity provider signed each sign-in with one of its published keys, and follows the provider when it changes its keys.
