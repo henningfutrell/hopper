@@ -527,7 +527,7 @@ export * from './stuck.ts'; export * from './wait-on.ts';
 export * from './yolo-mode.ts'; export * from './landing-batches.ts'; export * from './change-kinds.ts';
 export * from './contribution.ts'; export * from './shrink-guard.ts';
 export * from './pull-requests.ts';
-export * from './pull-request-list.ts'; export * from './untracked-pull-requests.ts';
+export * from './pull-request-list.ts'; export * from './untracked-pull-requests.ts'; export type { JobActMarker } from './github-outbox.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';

@@ -10,6 +10,7 @@
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { JobTitle, LinkLostFlag, Since } from '@/components/job';
+import { JobAct } from '@/components/job-act';
 import { JobTimeline } from '@/components/job-timeline';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -92,6 +93,7 @@ export function JobView() {
               <StatusBadge status={read.job.status} />
             </div>
             <LinkLostFlag job={read.job} />
+            <JobAct jobId={read.job.id} />
             <Fact label="job">{read.job.id}</Fact>
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
             <Fact label="created">{read.job.createdAt}</Fact>

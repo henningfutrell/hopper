@@ -1,0 +1,1 @@
+- A pull request card and a job page now say when your Merge now, Close PR, Run again or other button is still on its way to GitHub, or that GitHub refused it and why.

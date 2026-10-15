@@ -23,7 +23,7 @@ import type { ResolutionWrite } from '../../domain/types.ts';
 import type { AfterAnswerTiming } from '../../domain/types.ts';
 import { createAfterAnswerTimings } from '../after-answer-timings.ts';
 import {
-  OUTBOX_ATTEMPTS, coalesce, notIntake, outboxBackoffMs,
+  OUTBOX_ATTEMPTS, coalesce, jobActMarkers, notIntake, outboxBackoffMs,
   type GitHubOutboxRepository, type OutboxAct, type OutboxActs, type OutboxChange, type OutboxGiveBack, type OutboxGiveBackMore, type OutboxInput, type OutboxRow,
 } from '../../domain/github-outbox.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
@@ -236,10 +236,12 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
         if (r.state === 'failed' && !failedRows.has(`${r.key}\n${r.act}`)) failedRows.set(`${r.key}\n${r.act}`, { key: r.key, repo: r.repo, act: r.act, error: r.lastError ?? 'failed', attempts: r.attempts });
       }
       const errors = [...failedRows.values()].map((f) => [f.key, `${f.act}: ${f.error}`] as const);
+      const jobActs = jobActMarkers(open);
       return {
         ...(pending ? { writeBehindPending: pending } : {}),
         ...(lastSentAt ? { lastWriteBehindAt: lastSentAt } : {}),
         ...(errors.length ? { writeBehindErrors: Object.fromEntries(errors), outboxFailed: [...failedRows.values()] } : {}),
+        ...(Object.keys(jobActs).length ? { jobActs } : {}),
       };
     },
     /** Each act's rows, timed: their wait in the outbox apart from their call. */

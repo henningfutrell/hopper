@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job, JobActMarker, SourceStatus } from '../../src/domain/types.ts';
 import { boot as bootPullRequests, cardOf, fixture, text } from './pull-requests-view-harness.ts';
 
-const source = (jobActs: Record<string, JobActMarker>): SourceStatus => ({ name: 'github', kind: 'github-account', state: 'ok', detail: { jobActs } });
+const source = (jobActs: Record<string, JobActMarker>): SourceStatus => ({ name: 'github', kind: 'github-account', state: 'ok', itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: { jobActs } });
 
 describe('the marker of a job act on the Pull requests card (issue #1238)', () => {
   it('a failed Merge now shows on its card with why; another card shows nothing', async () => {

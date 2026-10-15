@@ -16,6 +16,7 @@ import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, Loader2, Rota
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
+import { JobAct } from '@/components/job-act';
 import { PullRequestDiff } from '@/components/pull-request-diff';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
@@ -130,6 +131,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
       </div>
       {doingText(c, now) && <div data-slot="pr-doing" className={c.gaveUp ? 'text-xs text-bad' : 'text-xs text-muted-foreground'}>{doingText(c, now)}</div>}
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
+      <JobAct jobId={c.jobId} />
       <CardActions c={c} onChanged={onChanged} />
       <TendAgain c={c} onChanged={onChanged} />
       {c.pullRequest && <PullRequestDiff repo={c.repo} number={c.pullRequest.number} />}

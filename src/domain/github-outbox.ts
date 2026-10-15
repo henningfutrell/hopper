@@ -172,3 +172,25 @@ export const OUTBOX_ATTEMPTS = 5;
 
 /** The wait after the `attempts`th failed attempt: 5 s, doubled each time, at most 5 minutes. */
 export const outboxBackoffMs = (attempts: number): number => Math.min(5_000 * 2 ** Math.max(0, attempts - 1), 5 * 60_000);
+
+/**
+ * A person's act on one job — Merge now, Close PR, a give-back — while its row is not sent (issue #1238): what its pull
+ * request's card and the ended job show, as an intake item shows its write-behind. `running`, with the next `attempt` and
+ * the `error` of the try before while it waits its backoff; `failed` with why, until the same act is sent again.
+ */
+export type JobActMarker =
+  | { act: PullRequestAct | OutboxGiveBack; state: 'running'; attempt?: number; error?: string }
+  | { act: PullRequestAct | OutboxGiveBack; state: 'failed'; error: string };
+
+/** Each job's marker from its act rows not sent (pure): a failed row wins, else the oldest row on its way. */
+export function jobActMarkers(rows: OutboxRow[]): Record<string, JobActMarker> {
+  const out: Record<string, JobActMarker> = {};
+  for (const r of rows) {
+    const c = r.change;
+    if ((c.op !== 'pull_request' && c.op !== 'give_back') || r.state === 'sent') continue;
+    if (out[c.jobId]?.state === 'failed') continue;
+    if (r.state === 'failed') out[c.jobId] = { act: c.act, state: 'failed', error: r.lastError ?? 'failed' };
+    else if (!out[c.jobId]) out[c.jobId] = r.lastError !== undefined ? { act: c.act, state: 'running', attempt: r.attempts + 1, error: r.lastError } : { act: c.act, state: 'running' };
+  }
+  return out;
+}
