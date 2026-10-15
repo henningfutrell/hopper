@@ -44,6 +44,16 @@ export const elbowInsOption = (z: typeof Z) => z.number().int().min(0, 'elbowIns
   .meta({ description: 'lanes a job labelled hopper:specialty, or a job that tends a pull request, may start past this machine\'s lane cap at once (default 1); 0: none' });
 
 /**
+ * A Windows machine (issue #1350): the jobs labelled `hopper:win` or `hopper:windows` go only to one, and wait while none
+ * can take them. Absent or false: not one.
+ */
+export const windowsOption = (z: typeof Z) => z.boolean().optional()
+  .meta({ description: 'it runs Windows: a job labelled hopper:win or hopper:windows goes only to a Windows machine' });
+
+/** The `windows` field of a machine that is a Windows machine; nothing for one that is not. */
+export const windowsOf = (o: { windows?: boolean }): { windows?: true } => (o.windows === true ? { windows: true } : {});
+
+/**
  * When a machine's disk is low (issue #410): below either threshold it takes no new job. Plain options,
  * read at every list, so a change applies at the next Decision. Not on a container target, whose disk is not read.
  */
@@ -88,12 +98,13 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
     lanes: z.number().int().min(0, 'lanes must not be negative').default(1).meta({ description: 'jobs it runs at once; 0 rests it' }),
     reservedLanes: reservedLanesOption(z),
     elbowIns: elbowInsOption(z),
+    windows: windowsOption(z),
     executors: z.array(z.string().min(1)).default([...executors]).meta({ description: 'executor instances that run there' }),
   };
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number;
 }
 
@@ -103,7 +114,7 @@ export const attachedBase = (name: string, o: AttachedOptions) => {
   const sweep = sweepOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
-    ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), executors: [...o.executors],
+    ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), executors: [...o.executors],
     ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
   };
 };

@@ -60,20 +60,12 @@ describe('attached machine source', () => {
     expect((await src.list())[0]!.disk).toEqual({ freeBytes: 30 * GIB, totalBytes: 100 * GIB, low: true });
   });
 
-  it('its snapshot carries the machine\'s reserved lanes (issue #372)', async () => {
+  it('its snapshot carries the machine\'s reserved lanes (issue #372) and that it is a Windows machine (issue #1350)', async () => {
     const src = createAttachedMachineSource({
-      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 4, reservedLanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 4, reservedLanes: 1, windows: true, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),
       probe: async () => ({ online: true }),
     });
-    expect((await src.list())[0]).toMatchObject({ maxLanes: 4, reservedLanes: 1 });
-  });
-
-  it('its snapshot says it is a Windows machine (issue #1350)', async () => {
-    const src = createAttachedMachineSource({
-      machine: () => ({ name: 'win', ssh: 'win', lanes: 1, windows: true, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),
-      probe: async () => ({ online: true }),
-    });
-    expect((await src.list())[0]).toMatchObject({ windows: true });
+    expect((await src.list())[0]).toMatchObject({ maxLanes: 4, reservedLanes: 1, windows: true });
   });
 
   it('is offline until the first probe answers, then online with its lanes, executors and ssh target', async () => {
