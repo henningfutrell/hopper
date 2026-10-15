@@ -31,6 +31,19 @@ describe('Sources view: GitHub', () => {
     expect(document.body.textContent).not.toContain('Log in to GitHub');
   });
 
+  it('a GitHub App source not configured: a setup card names what is missing, says how to set it up, links its help, and shows no zeros (#1243)', async () => {
+    const setupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
+    await boot({ '/api/sources': { sources: [{ ...source('github-app', 'github-app', 'needs-setup', { mode: 'app', paused: 'no GitHub App configured' }), setupProblem }] } });
+    const card = () => document.querySelector('[data-setup-problem="github-app"]');
+    await vi.waitFor(() => expect(card()).not.toBeNull());
+    expect([...card()!.querySelectorAll('[data-setup-missing]')].map((e) => e.textContent)).toEqual(['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY']);
+    expect(card()!.textContent).toContain('scripts/create-github-app.sh');
+    expect(card()!.querySelector('a[href="/help/github-app-setup"]')).not.toBeNull();
+    const stats = [...document.querySelectorAll('[data-source-sync="github-app"] [data-stat]')].map((e) => e.textContent);
+    expect(stats).toEqual(['not configured', 'not configured', 'not configured']);
+    expect(document.querySelector('[data-source-use="needs-setup"]')).not.toBeNull();
+  });
+
   it('a sign-in that expired says so, names the account, and asks to sign in again (#359)', async () => {
     const paused = "GitHub's sign-in expired: Sources → Connect GitHub again";
     await boot({

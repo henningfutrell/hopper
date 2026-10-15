@@ -16,7 +16,7 @@ describe('loadGitHubApp', () => {
   });
 
   it('nothing set is reason "missing"', () => {
-    expect(loadGitHubApp({ privateKeyEnv: KEY_ENV, privateKey: undefined })).toEqual({ ok: false, reason: 'missing' });
+    expect(loadGitHubApp({ privateKeyEnv: KEY_ENV, privateKey: undefined })).toEqual({ ok: false, reason: 'missing', missing: ['appId', 'slug', KEY_ENV] });
   });
 
   it.each([
@@ -26,12 +26,12 @@ describe('loadGitHubApp', () => {
     [KEY_ENV, { privateKey: '  ' }],
   ])('a missing %s is named in the reason', (name, change) => {
     const r = loadGitHubApp({ ...complete, ...change });
-    expect(r).toEqual({ ok: false, reason: `incomplete GitHub App: ${name} not set` });
+    expect(r).toEqual({ ok: false, reason: `incomplete GitHub App: ${name} not set`, missing: [name] });
   });
 
   it('several missing pieces are all named', () => {
     const r = loadGitHubApp({ ...complete, appId: undefined, privateKey: undefined });
-    expect(r).toEqual({ ok: false, reason: `incomplete GitHub App: appId, ${KEY_ENV} not set` });
+    expect(r).toEqual({ ok: false, reason: `incomplete GitHub App: appId, ${KEY_ENV} not set`, missing: ['appId', KEY_ENV] });
   });
 
   it('a key with literal \\n escapes reads as a PEM', () => {
@@ -59,7 +59,7 @@ describe('createGitHubAppApi: lazy, identity from the app getter', () => {
   const api = (app: () => GitHubAppLoad) => createGitHubAppApi({ app, keyEnv: KEY_ENV, baseUrl: 'http://127.0.0.1:9', clock });
 
   it('constructing with no app does not throw; first use is a permanent "no app configured"', async () => {
-    const a = api(() => ({ ok: false, reason: 'missing' }));
+    const a = api(() => ({ ok: false, reason: 'missing', missing: ['appId', 'slug', KEY_ENV] }));
     expect(a.appStatus()).toEqual({ ok: false, reason: 'missing' });
     const err = await a.getIssue('h/a', 1).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GitHubApiError);
@@ -74,7 +74,7 @@ describe('createGitHubAppApi: lazy, identity from the app getter', () => {
   });
 
   it('asks the getter every time: an identity appearing or changing later is picked up', async () => {
-    let now: GitHubAppLoad = { ok: false, reason: 'missing' };
+    let now: GitHubAppLoad = { ok: false, reason: 'missing', missing: ['appId', 'slug', KEY_ENV] };
     const a = api(() => now);
     expect(a.appStatus().ok).toBe(false);
     now = loadGitHubApp(complete);

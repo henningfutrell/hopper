@@ -37,7 +37,7 @@ const status = async (a: TestApp, name: string): Promise<SourceStatus> =>
   (await a.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body.sources.find((s) => s.name === name)!;
 
 describe('GitHub App source (in-memory fake at the seam)', () => {
-  it('the connected account reads issues while no App is configured; github-app is disabled and says how to create the app', async () => {
+  it('the connected account reads issues while no App is configured; github-app needs setup and says what is missing (issue #1243)', async () => {
     const gh = createFakeGitHub();
     const { a } = await boot({ seams: { github: gh }, doc: jobSourcesDoc({ githubApp: { appId: undefined, slug: undefined } }) });
     connectGitHub(a, [REPO]);
@@ -46,10 +46,31 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
     expect(await jobFor(a, issue.url)).toBeDefined();
     expect(await status(a, 'github')).toMatchObject({ state: 'ok', detail: expect.objectContaining({ mode: 'account', login: 'owner' }) });
     expect((await status(a, 'github')).detail.paused).toBeUndefined();
-    expect(await status(a, 'github-app')).toMatchObject({
-      kind: 'github-app', state: 'disabled',
+    const app = await status(a, 'github-app');
+    expect(app).toMatchObject({
+      kind: 'github-app', state: 'needs-setup',
+      setupProblem: { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], help: 'github-app-setup' },
       detail: expect.objectContaining({ mode: 'app', paused: 'no GitHub App configured', setup: CREATE_APP_HINT }),
     });
+    expect(app.lastOkAt).toBeUndefined();
+  });
+
+  it('an enabled app source with no key needs setup on its first pass; the key given, it clears without a restart (issue #1243)', async () => {
+    const gh = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
+    const { a, secrets } = await boot({ seams: { githubApp: gh }, doc: jobSourcesDoc({ github: false }) });
+    connectGitHub(a, [REPO]);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
+    await a.sync();
+    const before = await status(a, 'github-app');
+    expect(before).toMatchObject({ state: 'needs-setup', itemsSeen: 0, setupProblem: { missing: ['GITHUB_APP_PRIVATE_KEY'] } });
+    expect(before.lastOkAt).toBeUndefined();
+    expect(await jobFor(a, issue.url)).toBeUndefined();
+    Object.assign(secrets, appSecrets());
+    await a.sync();
+    const after = await status(a, 'github-app');
+    expect(after.state).toBe('ok');
+    expect(after.setupProblem).toBeUndefined();
+    expect(await jobFor(a, issue.url)).toBeDefined();
   });
 
   it('the app source takes issues assigned to the user\'s connected account; with none connected it is paused and says so (issue #387)', async () => {
