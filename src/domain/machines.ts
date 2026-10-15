@@ -204,6 +204,8 @@ export type SandboxBox = Omit<SandboxRecord, 'userId'>;
 export interface SandboxesView {
   launch: { available: boolean; problem?: string; runtime?: RuntimeKind };
   boxes: SandboxBox[];
+  /** The user's latest sandbox runs, newest first (issue #1349): each sandbox made for one step, and when it was burned. */
+  runs: Omit<import('./sandbox-runs.ts').SandboxRun, 'userId'>[];
   problems: CleanupProblem[];
 }
 

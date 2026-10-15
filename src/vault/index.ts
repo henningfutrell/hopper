@@ -31,8 +31,6 @@ export async function openUserVault(o: {
   /** Mints short-lived credentials (issue #580): here, or, with a vault container, in it, which holds the minting credential. */
   minter?: CredentialMinter; logger: { info(line: string): void; warn(line: string): void };
   targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
-  /** Whether a box step of the job runs on the machine now (issue #1004): its box asks the vault for that job. */
-  stepsOn?: (jobId: string, machine: string) => boolean;
   /** The vault backends the plugins config names now (issue #585): read in the hopper, which runs them. */
   backends: () => ConfiguredBackend[];
   /** The shared secrets (issue #718), the whole hopper's: in the hopper under the master key, wherever this vault runs. Absent: none. */
@@ -41,17 +39,16 @@ export async function openUserVault(o: {
   plans?: MintingOptions['plans'];
 }): Promise<Vault> {
   const vault = await open(o);
-  const steps = o.stepsOn ? { stepsOn: o.stepsOn } : {};
-  const shared = o.shared ? withSharedSecrets(vault, { shared: o.shared, userId: o.user, store: o.store, targets: o.targets, holds: o.holds, ...steps }) : vault;
+  const shared = o.shared ? withSharedSecrets(vault, { shared: o.shared, userId: o.user, store: o.store, targets: o.targets, holds: o.holds }) : vault;
   // Outermost (issue #652): no box job gets a vault secret, a shared secret or a minted credential without a vault grant.
-  return withVaultGrants(shared, { store: o.store, clock: o.clock, targets: o.targets, holds: o.holds, ...steps });
+  return withVaultGrants(shared, { store: o.store, clock: o.clock, targets: o.targets, holds: o.holds });
 }
 
 async function open(o: Parameters<typeof openUserVault>[0]): Promise<Vault> {
   const secret = runtimeSecrets(o.env);
   const { shared: sharedSecrets } = o;
   const shared = {
-    store: o.store, userId: o.user, ...(o.access ? { access: o.access } : {}), ...(o.minter ? { minter: o.minter } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds, ...(o.stepsOn ? { stepsOn: o.stepsOn } : {}), backends: o.backends,
+    store: o.store, userId: o.user, ...(o.access ? { access: o.access } : {}), ...(o.minter ? { minter: o.minter } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds, backends: o.backends,
     ...(o.plans ? { plans: o.plans } : {}),
     ...(sharedSecrets ? { shared: (row: string) => sharedSecrets.get(row) } : {}),
   };

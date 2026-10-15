@@ -17,6 +17,7 @@ import { LEFTOVER_BUILD_MS, LEFTOVER_PASS_MS, leftoverBuilds, removeLeftoverBuil
 import { createSandboxes } from '../../src/sandbox/service.ts';
 import { TOOLS_IMAGE, TOOLS_STAGE_LABEL } from '../../src/sandbox/tools.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
 const NOW = new Date('2026-10-14T12:00:00.000Z');
 const OLD = NOW.getTime() - LEFTOVER_BUILD_MS - 60_000;
@@ -81,7 +82,7 @@ describe('leftover box builds (issue #1120)', () => {
     const seen = withImages(rt, [tools('aaaa')]);
     let now = NOW;
     const sandboxes = createSandboxes({
-      runtime: rt, repo: memoryRepo(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
+      runtime: rt, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
       mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(), clock: { now: () => now }, logger: { info() {}, warn() {} },
     });
     await sandboxes.reconcile();

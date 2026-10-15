@@ -4,8 +4,8 @@
 // own wait with it, whether the job asked with --wait or not, and the job goes on.
 //
 // Feature: an answer the hopper gives ends the job's own wait
-//   Scenario: a job on its own wait asked for a sandbox without --wait; a person approves the template; the box starts
-//     and the hopper ends the job's wait with the box's name
+//   Scenario: a job on its own wait asked for a sandbox without --wait; a person approves the template; its sandbox runs
+//     are approved, and the hopper ends the job's wait with how to run its steps
 //   Scenario: asked again without --wait, the job's request keeps the one watch it has
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -29,7 +29,7 @@ const WAIT = {
   output: ['● The template waits for a person.', '  HOPPER_WAITING', '  for: approval of the sandbox template'],
   background: { work: '1 shell', polls: 1_000_000 },
 };
-const DONE = { output: ['● The box runs. Done.', '  HOPPER_DONE'] };
+const DONE = { output: ['● The sandbox runs are approved. Done.', '  HOPPER_DONE'] };
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 300, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Read the AWS account', cwd: '/tmp', env: {} };
 
@@ -78,7 +78,7 @@ async function waitingJob(a: TestApp): Promise<Job> {
 }
 
 describe('an answer the hopper gives ends the job\'s own wait (issue #998)', () => {
-  it('a person approves the template the job waits on: the box starts, and the hopper ends the job\'s wait with its name', async () => {
+  it('a person approves the template the job waits on: its runs are approved, no box starts, and the hopper ends the job\'s wait with the answer', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WAIT, DONE] });
     const { a, token, runtime } = await boot(herdr);
     expect((await a.ui('/ui/api/sandbox-approvals', { skipSandboxApproval: true }, { token })).status).toBe(200);
@@ -95,11 +95,11 @@ describe('an answer the hopper gives ends the job\'s own wait (issue #998)', () 
 
     await a.waitForStatus(job.id, 'finished', 8000);
     const events = await ofJob(a, job.id);
-    const { container } = events.find((e) => e.type === 'vault.sandbox_started')!.data as { container: string };
-    expect(runtime.boxes.has(container)).toBe(true);
+    expect(events.find((e) => e.type === 'vault.sandbox_approved')).toBeDefined();
+    expect(runtime.boxes.size).toBe(0);
     expect(herdr.prompts).toHaveLength(2);
     expect(herdr.prompts[1]!.text).toContain('The hopper ended your wait (approval of the sandbox template)');
-    expect(herdr.prompts[1]!.text).toContain(`sandbox: box ${container} of template ${t!.name} runs`);
+    expect(herdr.prompts[1]!.text).toContain(`sandbox: the sandbox runs of template ${t!.name} are approved for this job`);
     const ended = events.filter((e) => e.type === 'job.wait_ended');
     expect(ended.map((e) => (e.data as { by: string }).by)).toEqual(['hopper']);
   });

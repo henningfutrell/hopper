@@ -25,7 +25,7 @@ import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugi
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
 import { masterKeyRotation } from './users/master-key-rotation.ts';
 import { createRateLimiterControl } from './github-limiter/settings.ts';
-import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts'; import { BOX_AGENTS } from './http/ui/machine-join.ts'; import type { SandboxLauncher } from './users/sandbox-requests.ts';
+import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts'; import type { SandboxLauncher } from './users/sandbox-requests.ts';
 import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
@@ -91,7 +91,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
   /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  startCheckMs?: number; searchIndex?: SearchIndex | null; /** How long a sandbox request's box may take to start (issue #1002); default START_MS. */ sandboxStartMs?: number; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string;
+  startCheckMs?: number; searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -113,7 +113,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, sandboxStartMs: _start, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -210,7 +210,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Search (issue #945): one Solr core for the hopper, each user's documents apart by the instance id and the user id.
   // One outbound guard for the process (issue #1014): every user's sends to one destination share its limits. The shared
   // secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
-  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { launch: (userId, template) => sandboxes.launch(userId, { agent: BOX_AGENTS[0], template, params: {} }), alive: (userId, name) => sandboxRecords.list().some((r) => r.userId === userId && r.name === name), step: (userId, name, step, io) => sandboxes.step(userId, name, step, io), needStep: (userId, box, io) => sandboxes.needStep(userId, box, io), ...(seams.sandboxStartMs !== undefined ? { startMs: seams.sandboxStartMs } : {}) }; // a job's sandbox request's box (issue #991), through the sandbox module made below
+  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run) }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
@@ -287,7 +287,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // name, its Service's.
   const sandboxes = createSandboxes({
     runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }),
-    repo: sandboxRecords, instanceId: instance.settings.instanceId(),
+    repo: sandboxRecords, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config), cluster: inPod,
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
     address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),

@@ -68,3 +68,58 @@ describe('a need step\'s files (issue #1007)', () => {
     expect(boxes[0]!.env.HOPPER_PLAN).toBeUndefined();
   });
 });
+
+// Issue #1349: a box step is a need step in a sandbox of its own, of the template the job's sandbox request was approved
+// for. It is minted the template's reads, and with an approved plan its changes too; nothing the vault does not mint.
+describe('a box step (issue #1349)', () => {
+  const READ: OperationProfile = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
+  const ACCOUNT: OperationProfile = { operation: 'read', asset: { kind: 'aws-account', name: '123456789012' } };
+  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE, ACCOUNT], approval: { by: 'Ada' }, pending: { image: false, profiles: [] } } as unknown as TemplateView;
+
+  function boxSteps(templates: TemplateView[]) {
+    const dir = mkdtempSync(join(tmpdir(), 'box-steps-'));
+    dirs.push(dir);
+    const minted: OperationProfile[] = [];
+    const runs: { box: string; run: unknown }[] = [];
+    const events: NewEvent[] = [];
+    const s = createNeedSteps({
+      templates: () => templates, dir, record: (e) => { events.push(e); }, log: () => {},
+      mint: async (ask) => { minted.push(ask.profile); return { minted: { kind: 'aws', AccessKeyId: 'ASIA', SecretAccessKey: 'secret', SessionToken: 'session', Expiration: '2030-01-01T00:15:00Z' }, reach: { kind: 'aws', region: 'eu-west-1' } }; },
+      planFile: () => undefined,
+      run: async (box, _io, run) => { runs.push({ box: box.name, run }); return { exit: 0 }; },
+    });
+    return { s, minted, runs, events };
+  }
+  const go = async (started: Awaited<ReturnType<ReturnType<typeof createNeedSteps>['box']>>) => {
+    if ('no' in started) throw new Error(started.no);
+    return started.run({ inputsBytes: 0, log: () => {}, signal: new AbortController().signal });
+  };
+
+  it('runs in a new sandbox of the approved template, minted its reads only; the ledger is told the job and the step', async () => {
+    const { s, minted, runs } = boxSteps([READY]);
+    const started = await s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'aws sts get-caller-identity', outputs: [], secrets: [] });
+    expect(await go(started)).toEqual({ exit: 0 });
+    expect(minted).toEqual([READ]);
+    expect(runs).toEqual([{ box: expect.stringMatching(/^hopper-need-asked-1-/), run: { jobId: JOB.id, step: (started as { id: string }).id, template: 'asked-1' } }]);
+    await go(await s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'true', outputs: [], secrets: [] }));
+    expect(runs[1]!.box).not.toBe(runs[0]!.box);
+  });
+
+  it('with an approved plan, its changes are minted too', async () => {
+    const { s, minted } = boxSteps([READY]);
+    await go(await s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'terraform apply', outputs: [], secrets: [], plan: PLAN }));
+    expect(minted).toEqual([READ, WRITE]);
+  });
+
+  it('a template the job has no approved sandbox of, a --secret, or a template not ready now is refused', async () => {
+    const { s, runs, events } = boxSteps([READY, { ...READY, name: 'asked-2', pending: { image: false, profiles: [WRITE] } } as unknown as TemplateView]);
+    expect(await s.box(JOB, { box: 'asked-1', approved: [], command: 'true', outputs: [], secrets: [] }))
+      .toEqual({ status: 404, no: expect.stringContaining('this job has no approved sandbox of template asked-1. It has none') });
+    expect(await s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'true', outputs: [], secrets: ['AWS_KEY'] }))
+      .toEqual({ status: 400, no: expect.stringContaining('a box step takes no --secret') });
+    expect(await s.box(JOB, { box: 'asked-2', approved: ['asked-2'], command: 'true', outputs: [], secrets: [] }))
+      .toEqual({ status: 409, no: expect.stringContaining('template asked-2 is not ready now') });
+    expect(runs).toEqual([]);
+    expect(events.map((e) => e.type)).toEqual(['step.refused', 'step.refused', 'step.refused']);
+  });
+});

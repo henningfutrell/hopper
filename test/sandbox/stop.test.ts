@@ -13,6 +13,7 @@ import type { SandboxRecord } from '../../src/domain/sandboxes.ts';
 import type { SandboxRepository } from '../../src/domain/store.ts';
 import { createSandboxes } from '../../src/sandbox/service.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
 function memoryRepo(): SandboxRepository {
   const rows = new Map<string, SandboxRecord>();
@@ -34,7 +35,7 @@ describe('the sandbox module stops', () => {
     let listed = 0;
     runtime.list = async (labels) => { listed++; await answered; return list(labels); };
     const sandboxes = createSandboxes({
-      runtime, repo: memoryRepo(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
+      runtime, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
       mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(),
       clock: { now: () => new Date('2026-10-11T00:00:00.000Z') }, logger: { info() {}, warn() {} },
     });

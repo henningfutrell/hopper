@@ -2,15 +2,16 @@
 // sandbox boxes the hopper starts. Everything that creates, inspects, stops or removes one goes through it: the launch
 // (Add machine → A sandbox box, POST /ui/api/machines/sandbox), the reconcile pass (every 10 s and at start), and the
 // view (GET /api/sandboxes). Once an hour the reconcile pass also removes the leftover box builds beside the hopper
-// (leftover-builds.ts, issue #1120). It drives the container runtime beside the hopper, and a client target's own through its
+// (leftover-builds.ts, issue #1120). A job's step runs in a sandbox of its own, a need box (need-box.ts), that the module
+// burns after the step and keeps in the sandbox runs ledger (issue #1349): no machine, no lane, no record of a box that
+// stays. The check pass's sweep burns any need box that outlives its step, and notes each burn in the ledger. It drives the container runtime beside the hopper, and a client target's own through its
 // client (src/sandbox/runtime.ts places each box), and keeps a sandbox record per box (the instance's `sandboxes` table). A box it cannot remove is a cleanup problem, shown on Machines.
 import { randomUUID } from 'node:crypto';
 import type { SandboxesView } from '../domain/machines.ts';
 import type { ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
-import type { StepResult } from '../domain/windows-steps.ts';
-import { runBoxStep, type BoxStepCall } from './box-step.ts';
+import { outcomeOf, type SandboxRun, type SandboxRunRepository } from '../domain/sandbox-runs.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
 import { launchBox, type LaunchRequest } from './launch.ts';
 import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
@@ -23,7 +24,6 @@ import { sweepHomes } from './owned.ts';
 import type { AgentCredentialOf } from './agent-credential.ts';
 import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
 
-export type { BoxStepCall } from './box-step.ts';
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
 export { usersAgentCredentials } from './agent-credential.ts';
@@ -48,11 +48,18 @@ export const hopperNetwork = (c: { sandboxNetwork?: string | undefined; localMac
 export const RECONCILE_MS = 10_000;
 /** How long a launch waits for the box's start check to pass: the box reaches the hopper, or the launch fails. */
 export const START_CHECK_MS = 30_000;
+/** How many of a user's latest sandbox runs the view shows. */
+export const RUNS_IN_VIEW = 50;
+
+/** The run a need step's sandbox is (issue #1349): the job and the step it serves, and the template it is made of. */
+export interface NeedRun { jobId: string; step: string; template: string }
 
 export interface SandboxesOptions {
   /** Undefined: no runtime socket is given to the hopper (HOPPER_PODMAN_SOCKET, HOPPER_DOCKER_SOCKET unset). */
   runtime: ContainerRuntime | undefined;
   repo: SandboxRepository;
+  /** The sandbox runs (issue #1349): each sandbox made for one step, from its start to its burn. */
+  runs: SandboxRunRepository;
   /** This hopper's instance id: the value of the box label, so two hoppers on one runtime leave each other's boxes. */
   instanceId: string;
   /** The network a box joins (`hopper_default` beside the compose hopper, `host` beside one on the host). */
@@ -92,16 +99,12 @@ export interface Sandboxes {
    */
   launch(userId: string, l: LaunchRequest): Promise<{ container: string }>;
   /**
-   * Run one box step (issue #1004) in the user's box `name`: a box beside the hopper, through its runtime's exec. Never
-   * rejects: a box that is not there, or not beside the hopper, is the result's `problem`.
-   */
-  step(userId: string, name: string, step: BoxStepCall, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
-  /**
    * Run one need step (issue #1007, need-box.ts): a one-shot box of the template, its credentials in its
    * environment, beside the hopper, else on a client target of the user's dialled in with a runtime there (as a read-only
-   * check runs). Never rejects: no place to run it, or a failure of its own, is `problem`.
+   * check runs). The box is burned after the step, and the run kept in the ledger, `run` naming its job and step (issue
+   * #1349). Never rejects: no place to run it, or a failure of its own, is `problem`.
    */
-  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }): Promise<NeedBoxResult>;
+  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }, run: NeedRun): Promise<NeedBoxResult>;
   /** One reconcile pass, at `now` (default the clock's). */
   reconcile(now?: Date): Promise<void>;
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
@@ -164,15 +167,47 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const checkPass = o.checks
     ? createCheckPass({ ...(o.runtime ? { local: o.runtime } : {}), place: places.forCheck, credentials: o.checks, instanceId: o.instanceId, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
     : undefined;
-  // The need boxes running now (issue #1007): a sweep removes the hopper's other need boxes, left by a hopper that stopped mid-step.
+  // The need boxes running now (issue #1007): a sweep burns the hopper's other need boxes, left by a step whose remove
+  // failed or by a hopper that stopped mid-step (issue #1349), and notes each burn in the ledger.
   const stepping = new Set<string>();
+  /** Removes the need box and its home volume; whether neither is there after. */
+  const burn = async (runtime: ContainerRuntime, box: { id: string; name: string }): Promise<boolean> => {
+    await runtime.stop(box.id).catch(() => undefined);
+    const removed = await runtime.remove(box.id).then(() => true, () => false);
+    await runtime.removeVolume(`${box.name}-home`).catch(() => {});
+    return removed;
+  };
   const sweepSteps = async (): Promise<void> => {
     if (!o.runtime) return;
-    for (const box of await o.runtime.list({ [NEED_LABEL]: o.instanceId }).catch(() => [])) {
+    const listed = await o.runtime.list({ [NEED_LABEL]: o.instanceId }).catch(() => undefined);
+    if (!listed) return;
+    const now = o.clock.now().toISOString();
+    const open = o.runs.open().filter((r) => r.machine === LOCAL);
+    const burned = new Set<string>();
+    for (const box of listed) {
       if (stepping.has(box.name)) continue;
-      await o.runtime.remove(box.id).catch(() => {});
-      await o.runtime.removeVolume(`${box.name}-home`).catch(() => {});
+      if (await burn(o.runtime, box)) {
+        burned.add(box.name);
+        o.logger.info(`hopper: sandbox ${box.name} outlived its step: burned`);
+      }
     }
+    const there = new Set(listed.map((b) => b.name).filter((n) => !burned.has(n)));
+    for (const r of open) {
+      if (stepping.has(r.box) || there.has(r.box)) continue;
+      if (r.endedAt === undefined) o.runs.end(r.id, { at: now, outcome: 'swept', problem: 'the step did not end: its sandbox was burned by the sweep' });
+      o.runs.destroyed(r.id, now);
+    }
+  };
+  /** After a step: its need box burned again if it is still there, and its burn noted when the runtime says it is gone. */
+  const burnAfter = async (runtime: ContainerRuntime, run: SandboxRun): Promise<void> => {
+    const listed = await runtime.list({ [NEED_LABEL]: o.instanceId }).catch(() => undefined);
+    if (!listed) return;
+    const left = listed.find((b) => b.name === run.box);
+    if (left && !(await burn(runtime, left))) {
+      o.logger.warn(`hopper: cannot burn the sandbox ${run.box} after its step: the sweep tries again`);
+      return;
+    }
+    o.runs.destroyed(run.id, o.clock.now().toISOString());
   };
   let checking: Promise<void> | undefined;
   const check = (): Promise<void> => (checking ??= Promise.all([sweepSteps().then(sweepStepHomes), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
@@ -185,6 +220,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       return {
         launch: { available: problem === undefined, ...(problem !== undefined ? { problem } : {}), ...(o.runtime ? { runtime: o.runtime.kind } : {}) },
         boxes: o.repo.list().filter((r) => r.userId === userId).map(({ userId: _u, ...box }) => box),
+        runs: o.runs.latest(userId, RUNS_IN_VIEW).map(({ userId: _u, ...run }) => run),
         problems: [...problems.values()].filter((p) => p.userId === userId).map(({ userId: _u, machine: _m, ...p }) => p),
       };
     },
@@ -200,23 +236,20 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       return { container: record.name };
     },
 
-    async step(userId, name, step, io) {
-      const r = o.repo.list().find((x) => x.userId === userId && x.name === name);
-      if (!r || !r.containerId) return { exit: 255, problem: `no box ${name}: it went` };
-      if (r.machine !== LOCAL) return { exit: 255, problem: `box ${name} runs on ${r.machine}: a box step runs only in a box beside the hopper` };
-      if (!o.runtime) return { exit: 255, problem: noRuntime };
-      return runBoxStep(o.runtime, r.containerId, step, io);
-    },
-
-    async needStep(userId, box, io) {
+    async needStep(userId, box, io, run) {
       const at = await places.forCheck(userId);
       if (!at) return { exit: 125, problem: `${noRuntime}; and no machine of the user's with a container runtime is dialled in` };
+      const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
+      o.runs.start(ledger);
       stepping.add(box.name);
+      let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
       try {
-        const r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, network: at.network }, io);
+        r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, network: at.network }, io);
         o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${r.problem ? `: ${r.problem}` : ''}`);
         return r;
       } finally {
+        o.runs.end(ledger.id, { at: o.clock.now().toISOString(), exit: r.exit, outcome: outcomeOf(r), ...(r.problem ? { problem: r.problem } : {}) });
+        await burnAfter(at.runtime, ledger);
         stepping.delete(box.name);
       }
     },

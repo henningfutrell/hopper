@@ -11,7 +11,7 @@ const box = (name: string, over: Partial<SandboxBox> = {}): SandboxBox => ({
   containerId: 'c1', volume: `${name}-home`, keepHome: true, state: 'ready', createdAt: '2026-10-11T10:00:00.000Z', address: 'http://hopper:4790',
   check: { passed: true, at: '2026-10-11T10:00:01.000Z' }, ...over,
 });
-const view = (boxes: SandboxBox[]): SandboxesView => ({ launch: { available: true, runtime: 'podman' }, boxes, problems: [] });
+const view = (boxes: SandboxBox[]): SandboxesView => ({ launch: { available: true, runtime: 'podman' }, boxes, runs: [], problems: [] });
 
 let root: Root | undefined;
 afterEach(() => { act(() => root?.unmount()); root = undefined; });
