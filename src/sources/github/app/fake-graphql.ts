@@ -194,7 +194,7 @@ function pulls(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
     if (!repo || !tokenReaches(req.token!, repo)) { data[alias] = null; errors.push(notResolved(alias, vars, o, n)); continue; }
     if (alias.startsWith('u')) {
       const open = [...repo.issues.values()].filter((i) => i.pullRequest && i.state === 'open').sort((x, y) => y.number - x.number);
-      data[alias] = { pullRequests: { nodes: open.map((i) => ({ url: `https://github.com/${repo.owner}/${repo.name}/pull/${i.number}`, ...pullState(i) })) } };
+      data[alias] = { pullRequests: { nodes: open.map((i) => ({ url: `https://github.com/${repo.owner}/${repo.name}/pull/${i.number}`, title: i.title, ...pullState(i) })) } };
       continue;
     }
     const selection = blockAt(query, m.index + m[0].length - 1);

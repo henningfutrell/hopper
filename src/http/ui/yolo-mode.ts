@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { CHANGE_KINDS, DEFAULT_YOLO_MODE, MERGE_GATES, patchYoloMode, pullRequestList, yoloChoices, type PullRequestsView, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
 import type { UserStore } from '../../domain/store.ts';
 import { landingCards } from '../../domain/work-item-landing.ts';
+import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
@@ -42,14 +43,16 @@ export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
 
 /**
  * The Pull requests list (issue #637): every waiting pull request of the user's jobs, per job repository, with its yolo mode;
- * and the Landing list (issue #1073): the merged ones on their way from the landing branch to the tested branch, from the ledger.
+ * the Landing list (issue #1073): the merged ones on their way from the landing branch to the tested branch, from the ledger;
+ * and the untracked pull requests (issue #1176): what each source's last census found, each with why.
  */
-export function pullRequestsView(t: Pick<TenantParts, 'store'>): PullRequestsView {
+export function pullRequestsView(t: Pick<TenantParts, 'store' | 'registry'>): PullRequestsView {
   const { store } = t;
   const now = Date.now();
   const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'), now, (id) => store.jobs.get(id));
   const landing = landingCards(store.workItems.list({ landing: true }), now);
-  return landing.length > 0 ? { ...view, landing } : view;
+  const untracked = t.registry.statuses().flatMap((s) => (s.detail?.untrackedPullRequests ?? []) as UntrackedPullRequest[]);
+  return { ...view, ...(landing.length > 0 ? { landing } : {}), ...(untracked.length > 0 ? { untracked } : {}) };
 }
 
 export function registerYoloModeRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
