@@ -3,9 +3,10 @@
 // the pull request) and Discard (its scratch dir removed on its machine, whatever it holds). Real daemon, real database;
 // the fake herdr and its machine at their seams.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { FailuresView, Job } from '../../src/domain/types.ts';
+import type { FailuresView } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { pushIt } from '../support/give-back.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -50,10 +51,11 @@ describe('Work not pushed (issue #1010)', () => {
     const sections = (await a.api<{ sections: { kind: string; waiting: number }[] }>('GET', '/api/sections')).body.sections;
     expect(sections.find((s) => s.kind === 'failures')!.waiting).toBeGreaterThanOrEqual(1);
 
-    const r = await a.ui<{ job: Job; error?: string }>(`/ui/api/failures/kept-work/${job.id}/push`, { note: 'The branch is shed-blue.' }, { token });
+    // Answered before its source takes the item back (issue #1194): the job, once it goes on.
+    const r = await pushIt(a, job.id, { note: 'The branch is shed-blue.' }, token);
     expect(r.status).toBe(200);
-    expect(r.body.job).toMatchObject({ id: job.id, status: 'queued', resumeOn: 'local' });
-    // Out of the list at once: the job goes on.
+    expect(r.body.job).toMatchObject({ id: job.id, resumeOn: 'local' });
+    // Out of the list once it goes on.
     expect((await failuresOf(a)).keptWork.find((k) => k.jobId === job.id)).toBeUndefined();
 
     await a.waitForStatus(job.id, 'finished', 8000);
@@ -98,9 +100,9 @@ describe('Work not pushed (issue #1010)', () => {
     const session = (await a.job(job.id)).agentSession!;
     expect(await keptOf(a, job.id)).toMatchObject({ status: 'finished', actions: { push: { ok: true } } });
 
-    const r = await a.ui<{ job: Job }>(`/ui/api/failures/kept-work/${job.id}/push`, {}, { token });
+    const r = await pushIt(a, job.id, {}, token);
     expect(r.status).toBe(200);
-    expect(r.body.job).toMatchObject({ id: job.id, status: 'queued', resumeOn: 'local' });
+    expect(r.body.job).toMatchObject({ id: job.id, resumeOn: 'local' });
     await waitFor(() => herdr.prompts.length === 2, { what: 'the push brief sent' });
     expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--resume', session]));
     expect(herdr.prompts[1]!.text).toContain('was not pushed');
@@ -120,9 +122,9 @@ describe('Work not pushed (issue #1010)', () => {
     const session = (await a.job(job.id)).agentSession!;
     expect(await keptOf(a, job.id)).toMatchObject({ status: 'cancelled', actions: { push: { ok: true } } });
 
-    const r = await a.ui<{ job: Job }>(`/ui/api/failures/kept-work/${job.id}/push`, {}, { token });
+    const r = await pushIt(a, job.id, {}, token);
     expect(r.status).toBe(200);
-    expect(r.body.job).toMatchObject({ id: job.id, status: 'queued' });
+    expect(r.body.job).toMatchObject({ id: job.id });
     await a.waitForStatus(job.id, 'finished', 8000);
     expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--resume', session]));
     expect(herdr.prompts[1]!.text).toContain('was not pushed');

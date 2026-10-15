@@ -1,0 +1,1 @@
+- On a job's page, an operator can now open the job's transcript: the agent's prompts, replies and steps as its last checkpoint kept them, with each step's input and result one click away.

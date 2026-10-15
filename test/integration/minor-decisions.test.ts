@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, JevChoices, JevChoicesAsk, JevChooser, JevPick, MinorDecisionAsk, MinorDecisionsView, RiskCategory, RiskLevel } from '../../src/domain/types.ts';
 import { createFakeLevel } from '../../src/questions/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { resolveHandoff } from '../support/give-back.ts';
 import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
@@ -142,7 +143,7 @@ describe('a failed job no rule explains', () => {
     // Rules decided, and the hand-off stands: a person runs it again from Needs a person.
     const token = await a.login();
     const handoff = await waitFor(async () => (await a.api<{ handoffs: { id: string; jobId: string }[] }>('GET', '/api/failures')).body.handoffs.find((h) => h.jobId === job.id));
-    expect((await a.ui(`/ui/api/failures/handoffs/${handoff.id}/resolve`, { action: 'fixed' }, { token })).status).toBe(200);
+    expect((await resolveHandoff(a, handoff.id, { action: 'fixed' }, token)).status).toBe(200);
     const compared = await waitFor(async () => (await ofType(a, 'minor_decision.compared', job.id))[0]);
     expect(compared.data).toMatchObject({ pick: 'retry', actual: 'retry', agreed: true, decidedBy: 'person' });
   });

@@ -11,6 +11,7 @@ import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
+import { tendAgain } from '../support/give-back.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
@@ -252,7 +253,8 @@ describe('Tend again on a pull request the hopper gave up on (issue #1010)', () 
     await waitFor(async () => (await app.job(failedTend!.id)).sourceState?.sync?.finalReported === true, { what: 'its end reported' });
 
     fixes = true;
-    const r = await app.ui<{ job: Job }>('/ui/api/pull-requests/tend', { jobId: job.id }, { token });
+    // Answered before the tend (issue #1194): the tend job, once it is made.
+    const r = await tendAgain(app, job.id, token);
     expect(r.status).toBe(200);
     const again = await nextJob(app, issue.url, 3);
     expect(r.body.job.id).toBe(again!.id);
@@ -292,8 +294,8 @@ describe('Tend again on a pull request the hopper gave up on (issue #1010)', () 
     const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(app.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
     const code = await runCli(['pr', 'tend', url!.split('/').at(-1)!, '--json', '--url', app.url], io);
     expect(code).toBe(0);
+    expect(JSON.parse(out.join(''))).toEqual({ jobId: job!.id, giveBack: 'tend' });
     const again = await nextJob(app, issue.url, 3);
-    expect(JSON.parse(out.join(''))).toMatchObject({ job: { id: again!.id } });
     const tended = (await app.events('types=job.pull_request_tended')).filter((e) => e.jobId === job!.id);
     expect(tended.at(-1)!.data).toMatchObject({ nextJobId: again!.id, via: 'cli', person: 'operator CLI' });
   });

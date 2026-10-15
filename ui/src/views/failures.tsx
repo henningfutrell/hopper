@@ -13,6 +13,7 @@
 // updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
 // sanitized (issue #569); the raw error stays as it was written. Each hand-off card and failure row has Report a bug on its
 // job (issue #694), for an operator or admin. Work not pushed (issue #1010, kept-work.tsx) after Needs a person.
+import { LogBlock } from '@/components/log-block';
 import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import {
 } from '@/model/failures';
 import type { FailureRecordView, HandoffResolutionAction, HandoffView, ProblemView } from '@/model/wire';
 import { failureAct, useHopper } from '@/store';
+import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 import { ReportBugButton } from '@/app/bug-report';
@@ -133,10 +135,14 @@ function Resolve({ h }: { h: HandoffView }) {
   const [note, setNote] = useState('');
   const [link, setLink] = useState(h.card.link ?? '');
   const [busy, setBusy] = useState(false);
+  const sent = useGivingBack((s) => s[h.jobId]);
   const run = async (action: HandoffResolutionAction, label: string) => {
     setBusy(true);
     const body = { action, ...(note.trim() ? { note: note.trim() } : {}), ...(action === 'done_by_hand' && link.trim() ? { link: link.trim() } : {}) };
-    if (await failureAct(`/ui/api/failures/handoffs/${encodeURIComponent(h.id)}/resolve`, body, label)) { setNote(''); setLink(''); }
+    const path = `/ui/api/failures/handoffs/${encodeURIComponent(h.id)}/resolve`;
+    // Continue and I fixed it answer at once (issue #1194): the item is given back after, and the stream says how it ended.
+    const ok = action === 'continue' || action === 'fixed' ? await giveBack(h.jobId, action, { path, body }) : await failureAct(path, body, label);
+    if (ok) { setNote(''); setLink(''); }
     setBusy(false);
   };
   return (
@@ -154,8 +160,8 @@ function Resolve({ h }: { h: HandoffView }) {
           return (
             <li key={action} data-resolution={action} data-recommended={main ? '' : undefined} className={cn('flex flex-wrap items-center gap-2', main ? 'text-sm' : 'text-xs')}>
               {allowed.ok
-                ? <Button size={main ? 'sm' : 'xs'} variant={main ? 'default' : 'outline'} disabled={busy || needsNote} title={needsNote ? 'Say why in the note first' : undefined}
-                  onClick={() => void run(action, label)}>{label}</Button>
+                ? <Button size={main ? 'sm' : 'xs'} variant={main ? 'default' : 'outline'} disabled={busy || needsNote || sent !== undefined} title={needsNote ? 'Say why in the note first' : undefined}
+                  onClick={() => void run(action, label)}>{sent === action ? PENDING[action] : label}</Button>
                 : <span className="font-medium text-muted-foreground">{label}:</span>}
               <span className={main && allowed.ok ? 'text-foreground' : 'text-muted-foreground'}>
                 {allowed.ok ? (main ? h.card.why : resolutionLeadsTo(action, h)) : `not now — ${allowed.why}`}
@@ -194,7 +200,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
           <Markdown text={h.summary} />
           {h.causeName && <div>Known cause: {h.causeName}</div>}
           <ul className="list-disc space-y-0.5 pl-4">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono">{h.error}</pre>
+          <LogBlock title="Error" copy={h.error} wrap contentClassName="max-h-40 text-xs">{h.error}</LogBlock>
         </div>
       </details>
       <Resolution h={h} />
@@ -247,19 +253,16 @@ function Ended({ handoffs, failures }: { handoffs: HandoffView[]; failures: Fail
 function FailureRow({ r }: { r: FailureRecordView }) {
   const canAct = useCanOperate();
   const now = useNow();
-  const [busy, setBusy] = useState(false);
-  const retry = async () => {
-    setBusy(true);
-    await failureAct(`/ui/api/failures/${encodeURIComponent(r.id)}/retry`, {}, 'Running it again');
-    setBusy(false);
-  };
+  // Answered at once (issue #1194): the item is given back after, and the button waits until the stream says how it ended.
+  const sent = useGivingBack((s) => s[r.jobId] !== undefined);
+  const retry = () => giveBack(r.jobId, 'retry', { path: `/ui/api/failures/${encodeURIComponent(r.id)}/retry` });
   return (
     <li data-failure={r.id} className="space-y-1.5 px-4 py-3">
       <div className="flex items-start gap-2">
         <JobLine id={r.jobId} tag={r} />
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={r.decision} tone={DECISION_TONE[r.decision]} label={DECISION_LABEL[r.decision]} title={r.reasons.join('\n')} />
-          {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void retry()}><RotateCcw />Retry</Button>}
+          {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={sent} onClick={() => void retry()}><RotateCcw />{sent ? PENDING.retry : 'Retry'}</Button>}
           <ReportBugButton jobId={r.jobId} />
         </span>
       </div>

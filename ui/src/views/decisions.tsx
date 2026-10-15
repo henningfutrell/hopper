@@ -1,5 +1,6 @@
 // Decisions, newest first: each one's starts, holds, lane plans, divergences and reasons. Below them, the decider's picks
 // (issue #897): their one home, with Override.
+import { JsonBlock } from '@/components/json-block';
 import { ChevronRight, Scale } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, Panel } from '@/components/panel';
@@ -38,7 +39,7 @@ function DecisionRow({ d }: { d: Decision }) {
         <Section title="Reasons">{d.reasons.map((r, i) => <div key={i} className={`${row} text-muted-foreground`}>· {r}</div>)}</Section>
         <Collapsible>
           <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground">raw inputs</CollapsibleTrigger>
-          <CollapsibleContent><pre className="mt-2 max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px]">{JSON.stringify(d.inputs, null, 2)}</pre></CollapsibleContent>
+          <CollapsibleContent className="mt-2"><JsonBlock value={d.inputs} label="raw inputs" className="max-h-96" /></CollapsibleContent>
         </Collapsible>
       </CollapsibleContent>
     </Collapsible>

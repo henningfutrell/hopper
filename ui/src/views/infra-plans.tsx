@@ -6,6 +6,7 @@
 // plan's commit. An admin turns auto-approve on: the hopper then approves a low-risk uat plan when it is kept, and it is
 // still shown here. A job never approves one, and nothing here changes a plan. The page loads the plans (infra.tsx).
 // An admin names the environment watchers (part 4): the notifiers name them with each plan, approval and apply.
+import { LogBlock } from '@/components/log-block';
 import { Check } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -37,7 +38,9 @@ function RawPlan({ id }: { id: string }) {
   return (
     <details className="text-xs" onToggle={(e) => load(e.currentTarget.open)}>
       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Show the plan</summary>
-      <pre className="mt-1 max-h-96 overflow-auto rounded bg-muted p-2 whitespace-pre-wrap break-words">{text ?? 'Loading…'}</pre>
+      {text === null
+        ? <p className="mt-1 text-muted-foreground">Loading…</p>
+        : <LogBlock title="Plan" copy={text} lineNumbers wrap className="mt-1" contentClassName="max-h-96 text-xs">{text}</LogBlock>}
     </details>
   );
 }

@@ -1,7 +1,7 @@
 // Seams. Everything the engine talks to that is not pure domain logic sits behind one of
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
-import type { GiveBackAnswer } from './give-back.ts'; import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
+import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
@@ -636,7 +636,7 @@ export interface SourceHost extends AnswersFromThread {
  * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
  */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */
-export interface SourceRegistry {
+export interface SourceRegistry extends GiveBackRegistry {
   statuses(): SourceStatus[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
   /**
@@ -656,15 +656,6 @@ export interface SourceRegistry {
    * source runs, can run an item again, and was told the job's end. The views offer those only when it does.
    */
   takesBack(jobId: JobId): Allowed;
-  /**
-   * A person's Run again (`rerun`), or Rework (`rework`, issue #724: a done job's open pull request sent back, made a draft
-   * by its source, the new job told `notes`), answered at once (issue #1194): the checks the hopper can make now — the job
-   * the newest of its item, its end reported to its source, for Rework finished and following an open pull request —,
-   * then the answer. Its source gives the item back after, on the job's report chain, and the new job follows
-   * (`job.rerun`, `job.rework_requested`); a give-back that fails records `job.give_back_failed` and makes no job. The same
-   * act sent again while one runs answers that one.
-   */
-  giveBack(jobId: JobId, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }, acting?: ActingPerson): GiveBackAnswer;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), answered once the act is recorded;
    * a sync of that source runs after, not awaited (issue #1194), and its status shows the result. not_found: no running source of that name; conflict: it takes no such act.

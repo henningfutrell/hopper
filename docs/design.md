@@ -11387,8 +11387,17 @@ the next read, never from a poll.
   fails — GitHub out of reach or refusing, the issue no longer assigned and not to be assigned, a newer job made meanwhile —
   records `job.give_back_failed` with why and makes no job; the act is offered again. The same act sent again while one
   runs answers that one. The state is kept in memory, as the write-behind's is: after a restart the job is as it ended,
-  and Run again is offered. Failures' Retry, a hand-off's Continue and I fixed it, Push it and Tend again still await
-  their give-back.
+  and Run again is offered.
+- **Retry, a hand-off's Continue and I fixed it, Push it, Tend again** (`SourceRegistry.afterAnswer`, part 4). Each
+  awaited the same give-back, and Retry also its source's done-check. Now each is checked by its own service —
+  `Failures.retryable`, `Failures.handoffResolvable`, `pushable` (`src/failures/kept-work.ts`), `checkTendAgain`
+  (`src/sources/tend-again.ts`): the record, hand-off or kept work as the view offers it, and for Tend again its tend
+  job's end reported —, then the answer, `202 { jobId, giveBack }`, `jobId` the ended job. The act's own path runs after,
+  unchanged: the failure `retried`, the hand-off closed, the job continued (`job.continued`) or tended
+  (`job.pull_request_tended`). One that fails records `job.give_back_failed`, its `act` `retry`, `continue`, `fixed`,
+  `push` or `tend`; a Retry whose work is done at its source finishes its job, and says so there. The same job's act sent
+  again while one runs answers that one, whatever act it was. Done by hand and Won't do write nothing first and answer
+  as before. A stuck cause's bulk action still awaits each item, one after another.
 - **Queue order and the landing batches** record and answer without GitHub: the budget test holds them to it.
 - **The UI.** Approve and Decline wait on the card only for the answer. Discard shows removing from the click on, and
   `failureAct` reads the failures again before the action ends, so the entry shows the result, never what was before.
@@ -11398,14 +11407,17 @@ the next read, never from a poll.
   Run again (Dashboard) and Send back for rework (Pull requests; `ui/src/store/give-back.ts`): from the click on, the
   button says Running again or Sending back and sends nothing more, until the stream's `job.rerun`,
   `job.rework_requested` or `job.give_back_failed` for that job says how it ended — a toast says which, a failure with why.
+  Retry and a hand-off's Continue and I fixed it (Failures), Push it (Work not pushed, which offers no Discard
+  meanwhile) and Tend again (Pull requests) do the same, until `job.rerun`, `job.continued`, `job.pull_request_tended` or
+  `job.give_back_failed`; the Pull requests page reads its cards again then.
 - **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
   Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
-  answer in under 200 ms, their decision recorded, and the slow work ends after.
+  answer in under 200 ms, their decision recorded, and the slow work ends after;
+  `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same.
 
-Not yet so (issue #1194, later parts): Failures' Retry, a hand-off's resolution, Push it, Tend again, and Merge now and
-Close PR still await GitHub; answer, end wait and pick up are local but not measured against the budget; Take into
-Intake's write-behind shows in the source's detail only, not on its Pull requests row; and no end-to-end check measures
-the card in a browser.
+Not yet so (issue #1194, later parts): Merge now and Close PR, and a stuck cause's bulk action, still await GitHub;
+answer, end wait and pick up are local but not measured against the budget; Take into Intake's write-behind shows in the
+source's detail only, not on its Pull requests row; and no end-to-end check measures the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 
@@ -16396,6 +16408,51 @@ with a page a link to it —; the timeline, the parts list's events with the one
 parts table, filtered by group, status and text. The page reads the parts list again, debounced, each time an event of
 the job arrives on the stream, so a running part changes with no reload. A daemon with no such route (a parts list that
 cannot be read) leaves the page as it was: facts and timeline.
+
+**The timeline as a Trace** (issue #1169, `ui/src/components/job-timeline.tsx`, `ui/src/model/timeline-steps.ts`). Each
+event is a Trace line that opens to its data in a small code block (`JsonBlock`). What belongs together nests under one
+line at the place of its newest event: a sandbox step's `step.started` and `step.finished` (one `step` id) — an error when
+it ended with a non-zero exit or a problem, running while it has not ended and the job is at work —; a fork's `job.forked`
+and `job.fork_resolved` (one `forkId`) — running while it is not decided and the fork job is at work, pending while that
+job waits, an error when the fork job failed, with a link to the fork job; a **tend job**'s `job.pull_request_tended` and
+a **rework** job's `job.rework_requested` (one `nextJobId` each) — one line that names the step and the pull request, or the
+pull request and the notes, and that job's status: running while it is at work, pending while it waits, an error when it
+failed. Opened, it links that job and reads that job's own events (`GET /api/jobs/:id/bom`, read again when that job's
+status changes), each a line nested under it. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
+decider decision's raw inputs, the built-in change rule) is the same `JsonBlock`; commands to copy, a direct job's result,
+a failure's error, an out-of-band change's detail and an infra plan's text are `LogBlock`s (title, wrap toggle, copy).
+
+**The job's transcript** (issue #1169 part 4, `src/domain/transcript.ts`, `src/http/ui/job-transcript.ts`,
+`ui/src/views/job-transcript.tsx`). The agent session a job's latest checkpoint keeps ("Checkpoints and resume
+elsewhere"; scrubbed when it was kept) is the transcript's one source: the hopper keeps no other copy of what the agent
+said. `parseTranscript` (pure) reads Claude's session file, one JSON object a line: each prompt (a user line with text,
+not `isMeta`) starts a **turn**; the agent's lines after it are the turn's parts, in order — `text`, `reasoning`
+(thinking), `tool` (a tool call, its `title` from its description or the field that names its target, its `input`, the
+command or the input as JSON, and its result and error from the tool result with its id), `plan` (`TodoWrite`) and
+`subagent` (`Task`, `Agent`: what for, its kind, its prompt and what it gave back). A subagent's own lines (`isSidechain`),
+a line that is no JSON and the session's bookkeeping lines are left out. A prompt, text or reasoning is cut at 20,000
+characters, a tool call's input or result at 8,000, and says `truncated`. `POST /ui/api/jobs/:id/transcript` `{ before?,
+limit? }` answers the newest `limit` turns (20 unless it says, at most 100) before turn `before`, with `start` and `total`.
+Operator; Access decides as for the job's terminal (`terminal#can_attach`), because the transcript is what the job's pane
+showed. A POST, as the terminal's screen, so it is behind the role guard; it changes and records nothing. 409: the
+checkpoint keeps no session. The job view shows **Open transcript** to an operator when the job's checkpoint holds its
+session: each turn is a prompt `Message` (end) and the agent's reply `Message` (start) in a `Message Scroller`, which
+starts at the newest turn, keeps its place when **Load earlier turns** puts the turns before in front
+(`preserveScrollOnPrepend`), and shows a button to the end. A reply's text is Markdown; each run of steps between texts is
+a `Trace`, a line per step that opens to its input and result in small code blocks: a failed tool call is an error, and
+the last tool call of the newest turn with no result runs while the job is at work. A new checkpoint (its `at` changes)
+reads the newest turns again. Not live between checkpoints: the terminal shows the pane now.
+
+**Pull request diffs** (issue #1169 part 6, `src/http/ui/pull-request-acts.ts`, `ui/src/components/pull-request-diff.tsx`).
+A card on the Pull requests page with a pull request, and each Landing card — a batch's **culprit** among them —, has
+**Show diff** for an operator. `POST /ui/api/pull-requests/diff` `{ repo, number }` reads it on GitHub with the person's
+own connection, as a job's `pr diff` (issue #1074) reads it: `files` and `diff`, each file's patch as `git diff` writes
+it, cut at 200,000 characters (`truncated`). Only a job repository's (404 else); with no GitHub connection, 503. The read
+counts as a job's other read (`per_job_read`) at the rate limiter. A POST, so it is behind the role guard; it changes and
+records nothing, and nothing keeps it. The view shows it in a `CodeBlock` in diff mode (`LogBlock`: title, wrap toggle,
+copy): a file's header lines and each hunk's `@@` line highlighted, added and removed lines as such
+(`ui/src/model/pull-request-diff.ts`). Operator, not viewer: the person's connection may read a private repository the
+viewer cannot.
 
 **Part 2** (2026-10-12) adds the parts part 1 left, each from a record that exists, plus one fact the follow now keeps:
 
