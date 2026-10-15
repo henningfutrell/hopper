@@ -102,6 +102,26 @@ describe('the event loop watchdog (issue #1002)', () => {
     expect(s.lines[0]).toMatch(/; store calls in it: 0\.\d s \(SELECT jobs 0\.\d s ×40\); memory: /);
   });
 
+  // Issue #1383: an event stream the reader closed never finishes its response, so it stayed "in flight" for good: every
+  // stall named it, and each one was kept in memory.
+  it('a stream the reader closed is no longer in flight', async () => {
+    const s = setup();
+    s.app.get('/stream', async (_req, reply) => {
+      reply.hijack();
+      reply.raw.writeHead(200, { 'content-type': 'text/event-stream' });
+      reply.raw.write(': open\n\n');
+    });
+    const url = await s.app.listen({ port: 0, host: '127.0.0.1' });
+    const reader = new AbortController();
+    const res = await fetch(`${url}/stream`, { signal: reader.signal });
+    expect(res.status).toBe(200);
+    reader.abort();
+    await tick(100);
+    await fetch(`${url}/held/1`);
+    await tick(100);
+    expect(s.watch.last()?.during).toEqual(['GET /held/:id']);
+  });
+
   it('raises a stall at most once each interval, and counts the ones between', async () => {
     const s = setup({ raise: true });
     await tick(50);
