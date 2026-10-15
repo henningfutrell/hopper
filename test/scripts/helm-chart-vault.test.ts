@@ -37,7 +37,7 @@ describe('the Helm chart\'s vault pod', () => {
 
   it('runs the vault of the hopper\'s own image, alone: one holder of its key', () => {
     expect(v.image).toBe(daemon.image);
-    expect(v.command).toEqual(['node', 'src/vault/main.ts']);
+    expect(v.args).toEqual(['node', 'src/vault/main.ts']);
     expect(vault.spec?.replicas).toBe(1);
     expect(vault.spec?.strategy?.type).toBe('Recreate');
     expect(find(rs, 'Service', 'hopper-vault').spec?.ports?.[0]?.port).toBe(4791);
@@ -83,7 +83,7 @@ describe('the Helm chart\'s vault pod', () => {
 
   it('lets only the hopper reach the vault, and the vault reach Postgres', () => {
     expect(from(rs, 'hopper-vault')).toEqual(['hopper']);
-    expect(from(rs, 'hopper-postgres')).toEqual(['hopper', 'hopper-vault', 'openfga']);
+    expect(from(rs, 'hopper-postgres')).toEqual(['hopper', 'openfga', 'vault']);
   });
 
   it('starts the vault once Postgres takes connections', () => {
@@ -109,7 +109,7 @@ describe('the Helm chart\'s local KMS', () => {
     const rs = render('kms.local.enabled=true', 'hopperVault.enabled=true');
     expect(kmsOf(container(find(rs, 'Deployment', 'hopper'), 'hopper'))).toEqual({});
     expect(kmsOf(container(find(rs, 'Deployment', 'hopper-vault'), 'hopper-vault'))).toEqual({ HOPPER_KMS_URL: 'http://hopper-kms:8080' });
-    expect(from(rs, 'hopper-kms')).toEqual(['hopper-vault']);
+    expect(from(rs, 'hopper-kms')).toEqual(['vault']);
   });
 
   it('refuses a local KMS and AWS KMS at once: one KMS wraps the vault\'s data key', () => {

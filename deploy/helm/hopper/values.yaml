@@ -44,6 +44,15 @@ masterKey:
 # A key management service wraps the vault's data key (docs/deploy.md "On Kubernetes, with Helm"). Then the master key is not needed to
 # open the vault's secrets. Empty region: no KMS, and the vault seals under the master key.
 kms:
+  # A local KMS (local-kms, the compose profile `kms`, issue #586) in a pod of its own, which speaks AWS KMS's API. It
+  # checks no credentials: only the pod the vault runs in reaches it. Its keys are on its volume: lose that volume and
+  # every value sealed under a data key is lost. Set one KMS: this one, or AWS KMS below.
+  local:
+    enabled: false
+    image: docker.io/nsmithuk/local-kms:3.12.0
+    size: 1Gi
+    storageClass: ""
+    resources: {}
   aws:
     # AWS KMS in this region (HOPPER_KMS_REGION). The pod uses the AWS credentials of its service account's role (IRSA
     # or EKS Pod Identity): see serviceAccount. The role needs kms:GenerateDataKey and kms:Decrypt on the key.
@@ -52,6 +61,14 @@ kms:
     key: ""
     # An endpoint other than the region's own (a VPC endpoint); empty: the region's own.
     endpoint: ""
+
+# The hopper's vault in a pod of its own (the compose profile `hopper-vault`, issue #586), from the hopper's image. It
+# holds the vault's key — the master key, or the data key the KMS opens — and the secret values, in the hopper's Postgres;
+# the hopper asks it with a preshared key. Only the hopper reaches it. With a KMS, the vault pod asks the KMS, not the
+# hopper. Off: the vault runs in the hopper.
+hopperVault:
+  enabled: false
+  resources: {}
 
 # The hopper's service account. Unset: the namespace's default, or, with sandbox.enabled, one the chart makes. For AWS
 # KMS, make one with the role's annotation, as eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>.
