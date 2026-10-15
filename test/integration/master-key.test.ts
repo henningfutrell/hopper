@@ -3,7 +3,7 @@
 //
 // Feature: the master key does not depend on a persistent volume
 //   Scenario: HOPPER_MASTER_KEY given: secrets seal and open, and a restart with the same key keeps them
-//   Scenario: a first start with no key makes one and shows it once in the UI, never in the log; a second start without it is limited, and makes no new secret
+//   Scenario: a first start with no key makes one and shows it once in the UI, never in the log; a second start without it is refused, naming the expected fingerprint, and changes nothing (issue #1296: never limited)
 //   Scenario: a wrong key stops the start, saying the key does not match; nothing in the database changes
 //   Scenario: the old token key is moved: every secret stays readable, and once HOPPER_MASTER_KEY is set the old key can go
 //   Scenario: the key from a mounted Secret file (issue #1288): a start with no file there is refused; a new key in the file with the old one as previous seals everything again on restart, and the old data still opens
@@ -92,7 +92,7 @@ describe('the master key (issue #659)', () => {
     expect(logged.join('\n')).not.toContain(KEY);
   });
 
-  it('a first start with no key makes one, shows it once in the UI and never in the log; a second start without it is limited', async () => {
+  it('a first start with no key makes one, shows it once in the UI and never in the log; a second start without it is refused (issue #1296)', async () => {
     const dbPath = freshDb();
     const { a, session } = await boot(dbPath, {});
     const fingerprint = instanceSettings(dbPath).masterKeyFingerprint!;
@@ -116,23 +116,16 @@ describe('the master key (issue #659)', () => {
     expect((await setSecret(a, session)).status).toBe(200);
     const before = vaultRows(dbPath);
 
-    // A new container without the key: limited. It names the key, deletes nothing, makes no new key and stores no secret.
+    // A new container without the key: refused, never limited. The error names the key it needs by its fingerprint; the
+    // database is as it was: no new key, no new secret.
+    await a.stop();
+    t = undefined;
     logged = [];
-    const { a: limited, session: s2 } = await boot(dbPath, {});
-    expect(logged.some((l) => l.includes('SAVE THIS NOW'))).toBe(false);
-    expect(logged.some((l) => l.includes('LIMITED') && l.includes('HOPPER_MASTER_KEY'))).toBe(true);
-    const view = await keyView(limited);
-    expect(view).toMatchObject({ source: 'missing', fingerprint: fingerprintOf(key).slice(0, 16), revealable: false });
-    expect(view.problem).toContain('HOPPER_MASTER_KEY');
-    expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(key));
-    const refused = await setSecret(limited, s2, 'another-value-0123456789');
-    expect(refused.status).toBe(503);
-    expect(refused.body.error).toContain('HOPPER_MASTER_KEY');
+    const settings = instanceSettings(dbPath);
+    await expect(startTestApp({ dbPath, secrets: { HOPPER_MASTER_KEY: undefined } })).rejects.toThrow(`the master key is missing: this database was set up with the key of fingerprint ${fingerprintOf(key).slice(0, 16)}`);
+    expect(logged.some((l) => l.includes('LIMITED'))).toBe(false);
+    expect(instanceSettings(dbPath)).toEqual(settings);
     expect(vaultRows(dbPath)).toEqual(before);
-    expect((await vault(limited)).problem).toContain('HOPPER_MASTER_KEY');
-    // Connecting GitHub asks for no new sign-in: it says the key is missing.
-    const connect = await limited.ui<{ error?: string; state?: string }[]>('/ui/api/connected-accounts', { action: 'connect', provider: 'github' }, { token: s2 });
-    expect(JSON.stringify(connect.body)).toContain('the master key is missing');
 
     // Given the key again: everything opens.
     const { a: back } = await boot(dbPath, { HOPPER_MASTER_KEY: key });

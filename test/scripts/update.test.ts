@@ -5,7 +5,7 @@
 // and checks the hopper runs the new image, is healthy, has its master key and shows no drift. The container tools are
 // stubs on PATH that record each call; `run … hopper …` runs this checkout's CLI. Nothing leaves this process tree.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -80,6 +80,29 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.out).toMatch(/the master key is not given: the update stops/);
     expect(composeCalls(r.calls)).toEqual([]);
     expect(r.calls.filter((c) => /pull|carry/.test(c))).toEqual([]);
+  });
+
+  it('unseals the master key sealed to this host when none is given, and puts in the new image\'s master-key.sh (issue #1296)', () => {
+    const first = update({ masterKey: KEY, stack: 'podman-compose' });
+    expect(first.status, first.out).toBe(0);
+    const { dir } = first;
+    const tools = ['bash', 'openssl', 'id', 'dirname', 'mkdir'];
+    const env = { HOPPER_KEY_SEAL: 'kek', XDG_CONFIG_HOME: join(dir, '.config') };
+    writeFileSync(join(dir, 'master-key.sh'), '# an older master-key.sh\n' + readFileSync(join(import.meta.dirname, '..', '..', 'scripts', 'master-key.sh'), 'utf8'));
+    const sealed = spawnSync('/bin/bash', ['master-key.sh', 'seal'], { cwd: dir, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: dir, ...env, HOPPER_MASTER_KEY: KEY } });
+    expect(sealed.status, sealed.stderr).toBe(0);
+    const r = update({ dir, stack: 'podman-compose', tools, env });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toMatch(/the master key: unsealed from this host \(kek\)/);
+    expect(r.out).not.toMatch(/paste the master key/);
+    expect(r.out).not.toContain(KEY);
+    expect(r.read('master-key.sh')).toBe(readFileSync(join(import.meta.dirname, '..', '..', 'scripts', 'master-key.sh'), 'utf8'));
+    // The sealed key no longer unseals (the key-encryption key is gone): the update stops before it changes anything.
+    rmSync(join(dir, '.config', 'hopper', 'master-key.kek'));
+    const lost = update({ dir, stack: 'podman-compose', tools, env });
+    expect(lost.status).not.toBe(0);
+    expect(lost.out).toMatch(/the master key sealed to this host does not unseal/);
+    expect(composeCalls(lost.calls)).toEqual([]);
   });
 
   it('asks a person for the master key on the terminal, and refuses a value that is no master key', () => {

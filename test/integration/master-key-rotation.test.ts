@@ -5,7 +5,7 @@
 // Feature: rotate the master key
 //   Scenario: rotate from the UI: every secret is sealed again under a new key, shown once; the running hopper keeps working
 //   Scenario: after a rotation, a start with the old key is refused and says the key was rotated; the new key opens everything
-//   Scenario: only the hopper's admin may rotate, and a limited hopper cannot
+//   Scenario: only the hopper's admin may rotate
 //   Scenario: `hopper master-key rotate` prints the new key once, and no log line carries it
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../../src/cli.ts';
@@ -144,7 +144,7 @@ describe('rotating the master key (issue #659)', () => {
     expect(openRow(key, row)).toBe(VALUE);
   });
 
-  it('only the hopper\'s admin may rotate, and a limited hopper cannot; nothing changes', async () => {
+  it('only the hopper\'s admin may rotate; nothing changes', async () => {
     const dbPath = freshDb();
     const { a, session } = await boot(dbPath, { HOPPER_MASTER_KEY: KEY });
     await setSecret(a, session, 'DEPLOY_KEY', VALUE);
@@ -153,13 +153,6 @@ describe('rotating the master key (issue #659)', () => {
     const refused = await rotate(a, theirs);
     expect(refused.status).toBe(403);
     expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(KEY));
-
-    const rows = sealedRows(dbPath);
-    const { a: limited, session: s2 } = await boot(dbPath, {});
-    const no = await rotate(limited, s2);
-    expect(no.status).toBe(409);
-    expect(no.body.error).toContain('HOPPER_MASTER_KEY');
-    expect(sealedRows(dbPath)).toEqual(rows);
   });
 
   it('hopper master-key rotate: prints the new key once, as JSON; no log line carries it', async () => {

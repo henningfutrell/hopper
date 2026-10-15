@@ -1,6 +1,5 @@
-// Issue #451: the key webhook signing secrets are sealed under is the master key HOPPER_MASTER_KEY. With none (the
-// hopper limited, issue #659), no secret is stored and a stored one is said to be unreadable — never read as "no secret";
-// with another one the hopper does not start. A new key with
+// Issue #451: the key webhook signing secrets are sealed under is the master key HOPPER_MASTER_KEY. With none, or another
+// one, the hopper does not start (issue #1296). A new key with
 // the old one as HOPPER_MASTER_KEY_PREVIOUS seals every secret again at start. A subscription from before
 // keeps reading the runtime variable it names (also as NAME_FILE) until a secret is stored for it.
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -8,37 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSealer } from '../../src/secrets/sealer.ts';
-import { edit, ENTERED, KEY, list, NEW_KEY, nextDelivery, REPLACED, rowOf, secretRowOf, signatureOf, storedRows, subOf, TWO, useWebhookApp } from '../support/webhooks.ts';
+import { edit, ENTERED, KEY, list, NEW_KEY, nextDelivery, REPLACED, rowOf, secretRowOf, signatureOf, subOf, TWO, useWebhookApp } from '../support/webhooks.ts';
 
 const { start, restart, receiver, nowhere } = useWebhookApp();
 
 describe('the encryption key (HOPPER_MASTER_KEY)', () => {
-  it('none (limited, issue #659): a secret is not stored, and the answer says why; nothing written', async () => {
-    const { a: first } = await start();
-    const { a, token } = await restart(first, { HOPPER_MASTER_KEY: undefined, WEBHOOK_SECRET_X: 'x' });
-    for (const body of [
-      { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED },
-      { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'] },
-    ]) {
-      const r = await edit(a, token, body);
-      expect(r.status).toBe(503);
-      expect(r.body.error).toContain('the master key is missing');
-      expect(r.body.error).toContain('HOPPER_MASTER_KEY');
-    }
-    expect(storedRows(a)).toEqual([]);
-  });
-
-  it('gone after a secret was stored: unreadable, said plainly — never "no secret"; nothing sent', async () => {
-    const { a: first, token: t1 } = await start();
-    await edit(first, t1, { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED });
-    const { a, token } = await restart(first, { HOPPER_MASTER_KEY: undefined });
-    const problem = subOf(await list(a), 'hook').secretProblem as string;
-    expect(problem).toContain('the master key is missing');
-    expect(problem).toContain('cannot be opened');
-    const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token });
-    expect(res.body).toMatchObject({ ok: false, detail: problem });
-  });
-
   it('another key (issue #659): the start is refused, saying the key does not match; the secret stays as it was', async () => {
     const rx = await receiver();
     const { a: first, token: t1 } = await start();

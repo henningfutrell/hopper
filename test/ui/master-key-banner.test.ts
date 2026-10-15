@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #659: the banner about the master key. A key the hopper made, or read from the old token key, is shown once to
-// the hopper's admin, and the banner stays until they say they saved it; then it says to give the key at launch. A
-// limited hopper says which key is missing and how to give it. A key given at launch shows nothing.
+// the hopper's admin, and the banner stays until they say they saved it; then it says to give the key at launch. A key
+// given at launch shows nothing. A key the host sealed (issue #1296) is rotated on the host: the card says how.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -65,15 +65,6 @@ describe('the master key banner (#659)', () => {
     expect(button(el, 'I saved it')).toBeUndefined();
   });
 
-  it('limited: which key is missing and how to give it; nothing deleted', async () => {
-    const problem = 'the master key is missing: this database was set up with the key of fingerprint 0123456789abcdef; give it as HOPPER_MASTER_KEY at launch and restart';
-    const { el } = await render({ view: { source: 'missing', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: false, problem } });
-    const banner = el.querySelector('[data-master-key]')!;
-    expect(banner.textContent).toContain('Limited');
-    expect(banner.textContent).toContain(problem);
-    expect(banner.textContent).toContain('Nothing is deleted');
-  });
-
   it('a rotated key (issue #659 requirement 6): save the new key now, shown once in the banner; a start with the old key is refused', async () => {
     const { el } = await render({ view: { source: 'rotated', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: false }, revealed: KEY });
     const banner = el.querySelector('[data-master-key]')!;
@@ -124,9 +115,9 @@ describe('rotating the master key on Settings → Vault (#659)', () => {
     expect(el.textContent).toContain('the hopper\'s admin');
   });
 
-  it('limited: the problem, no button', async () => {
-    const { el } = await renderCard({ view: { source: 'missing', previous: false, saved: false, revealable: false, problem: 'the master key is missing' } });
+  it('a key the host sealed (issue #1296): rotate it on the host, no button', async () => {
+    const { el } = await renderCard({ view: { source: 'given', previous: false, fingerprint: '0123456789abcdef', saved: true, revealable: false, sealed: 'systemd-creds' } });
     expect(button(el, 'Rotate the master key')).toBeUndefined();
-    expect(el.textContent).toContain('the master key is missing');
+    expect(el.querySelector('[data-master-key-sealed]')?.textContent).toContain('bash master-key.sh rotate');
   });
 });

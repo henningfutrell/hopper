@@ -82,7 +82,7 @@ esac
 exit 0
 `;
 
-interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string }
+interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string; tools?: string[] }
 
 /** One update run; `o.dir` runs it again in the folder of an earlier run, with what that run left there. */
 export function update(o: Run = {}) {
@@ -97,7 +97,7 @@ export function update(o: Run = {}) {
   writeFileSync(join(bin, 'podman'), PODMAN);
   chmodSync(join(bin, 'podman'), 0o755);
   // Only the tools the script needs, so no container tool of this machine ever answers.
-  for (const tool of ['sed', 'grep', 'head', 'diff', 'cp', 'mv', 'rm', 'sleep']) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
+  for (const tool of ['sed', 'grep', 'head', 'diff', 'cp', 'mv', 'rm', 'sleep', ...(o.tools ?? [])]) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
   // No docker here.
   writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(bin, 'docker'), 0o755);
