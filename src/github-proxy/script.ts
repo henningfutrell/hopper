@@ -34,8 +34,9 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr checks N     --repo OWNER/NAME      (the check runs and statuses of its head commit)
   sh "$HOPPER_GH" pr reviews N    --repo OWNER/NAME      (its reviews, and what they decide: approved, changes_requested)
   sh "$HOPPER_GH" pr status N     --repo OWNER/NAME      (state, mergeable, checks, failed checks, the work item)
-  sh "$HOPPER_GH" pr wait N       --repo OWNER/NAME [--timeout SECONDS]
-                                                         (wait until its checks end; then as pr status)
+  sh "$HOPPER_GH" pr wait N       --repo OWNER/NAME [--for checks|mergeable] [--timeout SECONDS]
+                                                         (wait until its checks end, or with --for mergeable until
+                                                         its merge conflicts change; then as pr status)
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
@@ -61,6 +62,9 @@ again. On a pull request the hopper follows, it returns when the hopper sees the
 or closed), with its status (exit 0); --timeout is the most it waits (an hour unless said; exit 4 when it ends first).
 On one the hopper does not follow, it answers at once as pr status, wait none (exit 3): ask pr status again later, once
 a minute at most. A job that ends its turn with HOPPER_WAITING while a pr wait is open is woken with the answer.
+To wait on its merge conflicts (a tend job of the hopper rebases it, or another merge makes conflicts), run pr wait
+--for mergeable, once: it returns when the hopper sees its mergeable other than it was, or it merged or closed. The same
+read asked again and again is a poll: the answer says so (poll). Never wait on the hopper in a loop with sleep.
 A failed check's log: check log reads the log of a GitHub Actions job through the hopper. Never ask a person to paste a
 log. Ask a person only when check log says that the hopper cannot read it, and say why.
 Contributing to a repository your user cannot push to (repo view says canPush false; a push there is refused so):
@@ -96,7 +100,7 @@ while [ "$i" -lt "$n" ]; do
   case "$a" in
     --force) set -- "$@" --data-urlencode "force=true" ;;
     --required) set -- "$@" --data-urlencode "required=true" ;;
-    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout)
+    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout|--for)
       [ "$i" -lt "$n" ] || { echo "hopper-gh: $a needs a value" >&2; exit 2; }
       v=$1; shift; i=$((i + 1))
       if [ "$a" = --body-file ]; then

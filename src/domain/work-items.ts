@@ -7,6 +7,7 @@ import type { GraphNode } from './issue-graph.ts';
 import type { DomainEvent, EventType } from './types.ts';
 import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, landingOf, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
+import { waitOnLabel, type WaitOn } from './wait-on.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -105,7 +106,7 @@ export type LedgerRead =
 export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'source.request_opened', 'source.request_approved', 'source.request_auto_approved', 'source.request_declined', 'source.request_withdrawn',
   'job.queued', 'job.claimed', 'job.started', 'job.continued', 'job.wait_ended', 'job.reattached', 'job.requeued',
-  'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
+  'job.parked', 'job.unparked', 'job.waiting', 'job.wait_polled', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
   'handoff.opened', 'handoff.closed',
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
@@ -245,6 +246,9 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
       const what = typeof d.for === 'string' ? d.for : 'something outside';
       return d.ownCommand === true ? move('working', { waitingOn: what }) : move('waiting_outside', { waitingOn: what });
     }
+    // Its own command only polls hopper state (issue #1210): what it waits on, not "its own command".
+    case 'job.wait_polled':
+      return move('working', { waitingOn: `${waitOnLabel(d.on as WaitOn)} (it polls the hopper)` });
     case 'question.escalated_to_human':
       return move('needs_you', { waitingOn: 'a question' });
     // A review item at a person (issue #1174): its job waits on the decision; the job's requeue or end moves it on.

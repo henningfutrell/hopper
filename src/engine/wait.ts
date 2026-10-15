@@ -3,8 +3,10 @@
 // pane-answers.ts. Issue #998: the hopper ends it here too, when an answer the job asked it for is ready (src/skills/waits.ts).
 // Issue #1245: and when the event that settles what it waits on comes (`wakeOn`: a pull request merged or closed, a job
 // ended, an item's issue closed, a question answered, a grant or an approval given or not), on that event, never a poll.
+// Issue #1210: and a wait on its own command that only polls hopper state, an hour after it began (`recordPollSeen`).
+import { polledWait } from '../domain/own-command.ts';
 import type { Job, JobWait } from '../domain/types.ts';
-import { waitOnLabel, waitsFor, type Settled } from '../domain/wait-on.ts';
+import { waitOnLabel, waitsFor, type Settled, type WaitOn } from '../domain/wait-on.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -46,4 +48,24 @@ export function wakeOn(c: EngineContext, s: Settled): string[] {
     recordEndWait(c, j.id, s.note, 'hopper', (w) => `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'what you waited on'}): ${s.note}. Check it, then go on with the job.`);
   }
   return woken.map((j) => j.id);
+}
+
+/** What a job whose own command polled for an hour is told when the hopper ends its wait (issue #1210). */
+export const polledWaitNote = (on: WaitOn, answer: string): string =>
+  `[hopper] The hopper ended your wait (${waitOnLabel(on)}): your background command only polls the hopper, and you waited an hour. What the hopper knows now: ${answer}. Stop the poll. To wait on a pull request, run sh "$HOPPER_GH" pr wait once, or end your turn with HOPPER_WAITING and on: what you wait on. The hopper tends, rebases and merges pull requests by itself. Go on with the job.`;
+
+/**
+ * In the tx (issue #1210): the proxy saw the job's own command poll `on`, and answered `answer`. A job on a wait for its own
+ * command has its wait typed as what it polls (`job.wait_polled`, once); an hour after the wait began, the hopper ends it with
+ * the answer. Nothing for any other job. The job as it is now.
+ */
+export function recordPollSeen(c: EngineContext, id: string, on: WaitOn, answer: string): Job | undefined {
+  const job = c.store.jobs.get(id);
+  if (!job) return undefined;
+  const next = polledWait(job, on, c.clock.now().getTime());
+  if (!next) return job;
+  if (next.kind === 'end') return recordEndWait(c, id, `${waitOnLabel(job.wait?.on ?? on)} polled for an hour`, 'hopper', (w) => polledWaitNote(w?.on ?? on, answer));
+  const typed = c.store.jobs.update(id, { wait: next.wait });
+  c.store.events.append({ type: 'job.wait_polled', jobId: id, data: { on } });
+  return typed;
 }

@@ -3,10 +3,10 @@
 // again from its own records — never GitHub — when what it saw of a pull request changed (`job.pull_request_seen`, a merge,
 // a close) and when the job subscribes; once the checks end, or the pull request is merged or closed, the watch ends with
 // its status, and a job on its own wait (HOPPER_WAITING) is woken with it. Never on a timer: the stream's sweep ends a
-// watch at its deadline.
+// watch at its deadline. Issue #1210: `pr wait --for mergeable` waits instead for the next mergeability the hopper sees.
 import { randomUUID } from 'node:crypto';
 import type { DomainEvent, EventType } from '../domain/types.ts';
-import { prSettled, type KnownPullRequest, type PullRequestStatus } from './pr-status.ts';
+import { prWaitOver, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 
 /** The stream types `pr wait` emits, each with its phase; the payload is the pull request's status as JSON text. */
 export const GITHUB_STREAM_TYPES = {
@@ -41,13 +41,18 @@ export interface PrWaitUser {
 }
 
 export interface PrWaits {
-  /** A watch on the job's wait for pull request `number` of `repo`: the one open already, else a new one. */
-  open(userId: string, jobId: string, pr: { repo: string; number: number; status: PullRequestStatus }, seconds?: number): OpenWatch | undefined;
+  /** A watch on the job's wait for pull request `number` of `repo` (on its checks unless `over` says): the one open already, else a new one. */
+  open(userId: string, jobId: string, pr: { repo: string; number: number; status: PullRequestStatus; over?: PrWaitOver }, seconds?: number): OpenWatch | undefined;
   /** Answers again each `pr wait` watch open on the user's job (every job of theirs when none is named): settled ends it. */
   redrive(userId: string, jobId?: string): void;
 }
 
 const answerOf = (s: PullRequestStatus): string => `${JSON.stringify(s)}\n`;
+
+/** What a watch waits for, kept in its body: `for` and `from` only on a wait on its mergeability. */
+const overBody = (over: PrWaitOver | undefined): Record<string, string> => (over?.for === 'mergeable' ? { for: over.for, from: over.from } : {});
+const overOf = (body: Record<string, string>): PrWaitOver =>
+  body.for === 'mergeable' ? { for: 'mergeable', from: body.from as PullRequestStatus['mergeable'] } : { for: 'checks' };
 
 export function createPrWaits(o: { user(id: string): PrWaitUser | undefined; newId?: () => string; log(line: string): void }): PrWaits {
   const newId = o.newId ?? (() => randomUUID());
@@ -66,8 +71,9 @@ export function createPrWaits(o: { user(id: string): PrWaitUser | undefined; new
       const u = o.user(userId);
       if (!u) return undefined;
       hear(userId, u);
-      const body = { owner: PR_WAIT_OWNER, repo: pr.repo.toLowerCase(), number: String(pr.number) };
-      const had = u.stream.repo.openWatches(jobId).find((w) => w.body.owner === PR_WAIT_OWNER && w.body.repo === body.repo && w.body.number === body.number);
+      const body: Record<string, string> = { owner: PR_WAIT_OWNER, repo: pr.repo.toLowerCase(), number: String(pr.number), ...overBody(pr.over) };
+      const had = u.stream.repo.openWatches(jobId).find((w) => w.body.owner === PR_WAIT_OWNER && w.body.repo === body.repo && w.body.number === body.number
+        && w.body.for === body.for && w.body.from === body.from);
       if (had) return had;
       const w = u.stream.open({ id: newId(), jobId, body, ...(seconds !== undefined ? { seconds } : {}) });
       u.stream.emit(jobId, 'github.pr_waiting', answerOf(pr.status), w.id);
@@ -82,7 +88,7 @@ export function createPrWaits(o: { user(id: string): PrWaitUser | undefined; new
         if (w.body.owner !== PR_WAIT_OWNER || w.body.repo === undefined) continue;
         try {
           const { known } = u.pullRequest(w.body.repo, Number(w.body.number));
-          if (!known || !prSettled(known)) continue;
+          if (!known || !prWaitOver(known, overOf(w.body))) continue;
           const answer = answerOf(known);
           if (u.stream.finish(w.jobId, w.id, 'github.pr_settled', answer)) u.endWait?.(w.jobId, answer);
         } catch (e) {

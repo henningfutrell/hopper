@@ -159,6 +159,10 @@ function EndWaitButton({ job }: { job: Job }) {
 /** A job's own wait, in a badge: on the outside world, on its own command (running), or stuck (issue #1037). */
 function WaitBadge({ job }: { job: Job }) {
   const own = ownWaitOf(job);
+  // Its command only polls hopper state (issue #1210): "waits on" below says what it polls.
+  if (own === 'command' && job.wait?.polledAt) {
+    return <span data-slot="own-wait"><StatusBadge status="running" label="running: polls the hopper" title="Its background command reads the hopper again and again. It waits on what it reads, named below. The hopper ends this wait an hour after it began." /></span>;
+  }
   if (own === 'command') {
     return <span data-slot="own-wait"><StatusBadge status="running" label="running: waiting on its own command" title="It waits only on a command of its own that runs in the background (a build, a test run). Nothing outside the job is involved: it goes on by itself when the command ends." /></span>;
   }
