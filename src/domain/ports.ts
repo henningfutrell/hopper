@@ -474,8 +474,11 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, H
   /**
    * A GitHub delivery said `repo` (`owner/name`) changed (issue #1079): the next discover, a timed one too, reads it again.
    * true when it is one of the source's job repositories, as its last discover scanned them. Absent: the source takes none.
+   * `adopts` (issue #1352): a job of a source that no longer runs (a removed instance) — whether this source takes its
+   * item, as Run again and Retry need. An item belongs to its repository and issue, not to the source that first saw it:
+   * true when the job's repository is one of this source's job repositories, as its last discover scanned them.
    */
-  repoChanged?(repo: string): boolean;
+  repoChanged?(repo: string): boolean; adopts?(job: Job): boolean;
   /** Signals for this source's non-terminal jobs: cancellations and assignment drift. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**

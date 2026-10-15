@@ -21,7 +21,10 @@ import { following, PUSHABLE_ENDS, TERMINAL_STATUSES, tendRetryAt, type ActingPe
 
 export interface RerunContext {
   host: SourceHost;
-  /** The job's source while the sync loop runs it, else undefined. */
+  /**
+   * The source that takes the job's item back: its own while the sync loop runs it, else one that adopts it (issue #1352:
+   * its source was removed, and another takes its repository), else undefined.
+   */
   sourceOf(job: Job): JobSource | undefined;
   flagsOf(job: Job): { finalReported?: boolean };
   /** Run fn on the job's report chain, so it never overlaps the job's own reports. */
@@ -38,8 +41,10 @@ export interface RerunContext {
 type Wrap = <T>(p: Promise<T>) => Promise<T>;
 const as = <T>(p: Promise<T>) => p;
 
-/** The ends Run again takes. */
-const RERUN_ENDS: readonly JobStatus[] = ['failed', 'finished', 'rejected'];
+/** The ends Run again takes: a cancelled job's too (issue #1352), so a cancelled item has a way back in. */
+const RERUN_ENDS: readonly JobStatus[] = ['failed', 'finished', 'rejected', 'cancelled'];
+/** The ends Continue takes, as before issue #1352: the host continues only a failed job. */
+const CONTINUE_ENDS: readonly JobStatus[] = ['failed', 'finished', 'rejected'];
 
 type Reworked = Awaited<ReturnType<NonNullable<JobSource['rework']>>>;
 
@@ -72,12 +77,25 @@ export function createRerun(c: RerunContext) {
     return source;
   }
 
-  /** Whether the job's source takes its item back now: it runs, it can run an item again, and the job's end is reported to it. */
+  /**
+   * Whether the job's source takes its item back now: it runs, it can run an item again, and the job's end is reported to
+   * it. A source that adopts the job (issue #1352) needs no report: the job's own source is gone and is told nothing more.
+   */
   function takesBackOf(job: Job, source: JobSource | undefined): Allowed {
-    if (!source) return { ok: false, why: 'its source is not running: turn it on in Sources' };
+    if (!source) return { ok: false, why: 'its source is not running, and no running source takes its repository: turn one on in Sources' };
     if (!source.rerun) return { ok: false, why: `its source ${source.name} cannot run an item again` };
-    if (!c.flagsOf(job).finalReported) return { ok: false, why: 'its end is not reported to its source yet', soon: true };
+    if (source.name === job.source?.source && !c.flagsOf(job).finalReported) return { ok: false, why: 'its end is not reported to its source yet', soon: true };
     return { ok: true };
+  }
+
+  /**
+   * A job its source's adopter gave back (issue #1352): its removed source is told nothing more, so its end counts as told,
+   * and the host takes the new job.
+   */
+  function adopted(jobId: string, source: JobSource): void {
+    const job = store.jobs.get(jobId);
+    if (!job || job.source?.source === source.name || c.flagsOf(job).finalReported) return;
+    c.host.setSourceState(jobId, { ...job.sourceState, sync: { ...job.sourceState?.sync, finalReported: true } });
   }
 
   /**
@@ -101,6 +119,7 @@ export function createRerun(c: RerunContext) {
       } catch (e) {
         return e instanceof RerunRefused ? conflict(jobId, e.message) : { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
       }
+      adopted(jobId, source);
       // Who edited it since its snapshot, read before the new job is made: the job runs the snapshot's text (issue #662).
       return then(await withEdits(c.host, source, given.item), source, given);
     };
@@ -250,7 +269,7 @@ export function createRerun(c: RerunContext) {
     },
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult> {
-      return takeBack(jobId, () => c.host.continueJob(jobId, brief, by), undefined, false, false, 'keptWork' in by ? PUSHABLE_ENDS : RERUN_ENDS);
+      return takeBack(jobId, () => c.host.continueJob(jobId, brief, by), undefined, false, false, 'keptWork' in by ? PUSHABLE_ENDS : CONTINUE_ENDS);
     },
   };
 }
