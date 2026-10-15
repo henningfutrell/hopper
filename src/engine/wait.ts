@@ -1,9 +1,10 @@
 // A job's own wait (issue #483, design.md "A job's own wait"): the job ended its turn with HOPPER_WAITING and is
 // `waiting_on` what it named (outcome.ts). A person ends the wait here; its agent going on by itself ends it in
 // pane-answers.ts. Issue #998: the hopper ends it here too, when an answer the job asked it for is ready (src/skills/waits.ts).
-// Issue #1245: and when the pull request it waits on is merged or closed (`wakeOnPullRequest`), on that event, never a poll.
+// Issue #1245: and when the event that settles what it waits on comes (`wakeOn`: a pull request merged or closed, a job
+// ended, an item's issue closed, a question answered, a grant or an approval given or not), on that event, never a poll.
 import type { Job, JobWait } from '../domain/types.ts';
-import { mergedWaiter, waitOnLabel } from '../domain/wait-on.ts';
+import { waitOnLabel, waitsFor, type Settled } from '../domain/wait-on.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -36,14 +37,13 @@ export function recordEndWait(c: EngineContext, id: string, note?: string, by: W
 }
 
 /**
- * In the tx (issue #1245): the pull request at `url` was merged or closed. Each job on its own wait on it is woken by the
- * hopper, told what happened; whatever it waited for about it (its checks, its review, its merge) is over. The woken jobs.
+ * In the tx (issue #1245): `s` settled what some jobs wait on. Each job on its own wait on it is woken by the hopper,
+ * told what happened. The woken jobs.
  */
-export function wakeOnPullRequest(c: EngineContext, url: string, what: 'merged' | 'closed'): string[] {
-  const woken = c.store.jobs.list({ status: ['waiting_on'] }).filter((j) => mergedWaiter(j, url));
+export function wakeOn(c: EngineContext, s: Settled): string[] {
+  const woken = c.store.jobs.list({ status: ['waiting_on'] }).filter((j) => waitsFor(j, s));
   for (const j of woken) {
-    const note = `${url} was ${what}`;
-    recordEndWait(c, j.id, note, 'hopper', (w) => `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'a pull request'}): ${note}. Check it, then go on with the job.`);
+    recordEndWait(c, j.id, s.note, 'hopper', (w) => `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'what you waited on'}): ${s.note}. Check it, then go on with the job.`);
   }
   return woken.map((j) => j.id);
 }

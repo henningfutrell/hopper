@@ -37,9 +37,13 @@ const PR_ABOUT = { merge: 'to merge', checks: 'checks to end', review: 'review' 
 /** What a job's own wait waits on, in a few words, as the daemon's `waitOnLabel` (issue #1245); and where it is, if it is a page. */
 export function waitOnLink(job: Job): { label: string; href?: string } | undefined {
   if (job.status !== 'waiting_on' || !job.wait) return undefined;
-  const on: WaitOn | undefined = job.wait.on;
+  return waitOnLinkOf(job.wait.on, job.source?.repo);
+}
+
+/** A wait's dependency as words and a link, for the job, the Queue view and the job graph alike; `repo`: the job's own repository. */
+export function waitOnLinkOf(on: WaitOn | undefined, ownRepo: string | undefined): { label: string; href?: string } {
   if (!on) return { label: 'nothing recorded' };
-  const repo = 'repo' in on ? on.repo ?? job.source?.repo : job.source?.repo;
+  const repo = 'repo' in on ? on.repo ?? ownRepo : ownRepo;
   const gh = (kind: 'pull' | 'issues', n: number) => (repo ? `https://github.com/${repo}/${kind}/${n}` : undefined);
   const with_ = (label: string, href: string | undefined) => (href ? { label, href } : { label });
   switch (on.kind) {

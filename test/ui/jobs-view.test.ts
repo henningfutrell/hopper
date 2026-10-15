@@ -224,6 +224,19 @@ describe('the Jobs view (issue #434)', () => {
     expect(details.textContent).toContain('is waiting on your answer to this');
   });
 
+  it('a job on its own wait says what it waits on, and its details link it with how long it waited (issue #1245)', async () => {
+    jobs = [{ ...pointed(1, 'waiting_on'), wait: { for: 'the base change', since: '2026-10-01T02:00:00Z', on: { kind: 'pull_request', number: 12, about: 'merge' } } } as Job];
+    await boot('graph');
+    const at = '[data-slot="graph-node"][data-node-id="job:job-1"]';
+    await vi.waitFor(() => expect(document.querySelector(at)).not.toBeNull());
+    const node = document.querySelector<SVGElement>(at)!;
+    expect(node.querySelector('[data-slot="graph-node-stage"]')?.textContent).toBe('Waiting on PR #12 to merge');
+    await click(node);
+    const details = document.querySelector<HTMLElement>('[data-slot="graph-node-details"]')!;
+    expect(details.querySelector<HTMLAnchorElement>('[data-slot="graph-node-waits-on"] a')?.href).toBe('https://github.com/acme/site/pull/12');
+    expect(details.textContent).toContain('in stage');
+  });
+
   it('a pull request\'s details list its tend attempts, each linked to its job (issue #927)', async () => {
     const pr = 'https://github.com/acme/site/pull/70';
     const first = { ...pointed(1, 'finished'), sourceState: { source: { pullRequest: pr, follow: 'tended', tended: { pullRequest: pr, step: 'rebase', nextJobId: 'job-tend' } } } } as Job;

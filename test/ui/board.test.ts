@@ -1,7 +1,7 @@
 // The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, ownWaitOf, waitOnLink, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, ownWaitOf, waitOnLink, waitOnLinkOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineLaneEffect, MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -242,5 +242,13 @@ describe('waitOnLink (issue #1245)', () => {
   it('a wait from before says nothing recorded; a job not on a wait has none', () => {
     expect(waitOnLink(waiting())).toEqual({ label: 'nothing recorded' });
     expect(waitOnLink(job('r'))).toBeUndefined();
+  });
+});
+
+describe('waitOnLinkOf (issue #1245): the job graph\'s node and the job view say the same', () => {
+  it('links what the wait is on in the repository it names, else the node\'s', () => {
+    expect(waitOnLinkOf({ kind: 'pull_request', number: 12, about: 'checks' }, 'o/r')).toEqual({ label: 'PR #12 checks to end', href: 'https://github.com/o/r/pull/12' });
+    expect(waitOnLinkOf({ kind: 'question', questionId: 'q1' }, undefined)).toEqual({ label: 'a person\'s answer to question q1', href: '#question-q1' });
+    expect(waitOnLinkOf(undefined, 'o/r')).toEqual({ label: 'nothing recorded' });
   });
 });

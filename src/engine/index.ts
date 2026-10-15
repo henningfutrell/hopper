@@ -1,6 +1,7 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
+import { settledBy } from '../domain/wait-on.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
@@ -27,7 +28,7 @@ import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
-import { wakeOnPullRequest } from './wait.ts';
+import { wakeOn } from './wait.ts';
 export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
@@ -190,20 +191,17 @@ export function createEngine(o: EngineOptions): Engine {
         }
         if ((event.type === 'job.claimed' || event.type === 'job.cancelled') && event.jobId) placementPicks.forget(event.jobId);
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
-        // A job waiting on a pull request goes on when it is merged or closed (issue #1245): on the event, never a poll.
-        if (event.type === 'job.pull_request_merged' || event.type === 'job.pull_request_closed') {
-          const url = (event.data as { pullRequest?: string } | undefined)?.pullRequest;
-          const what = event.type === 'job.pull_request_merged' ? 'merged' : 'closed';
-          if (url) {
-            setImmediate(() => {
-              if (stopping) return;
-              try {
-                if (store.tx(() => wakeOnPullRequest(c, url, what)).length > 0) c.trigger('job.wait_ended');
-              } catch (e) {
-                console.error(`hopper: waking the jobs waiting on ${url} failed`, e);
-              }
-            });
-          }
+        // A job waiting on something goes on when the event that settles it comes (issue #1245): on the event, never a poll.
+        const settled = settledBy(event);
+        if (settled) {
+          setImmediate(() => {
+            if (stopping) return;
+            try {
+              if (store.tx(() => wakeOn(c, settled)).length > 0) c.trigger('job.wait_ended');
+            } catch (e) {
+              console.error(`hopper: waking the jobs waiting on what ${event.type} settled failed`, e);
+            }
+          });
         }
       });
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.

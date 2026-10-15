@@ -1,0 +1,1 @@
+- A job's page and the jobs graph now show what a waiting job waits on, as a link, with how long it has waited. A job that waits on another job, an issue, a question or a vault grant goes on by itself when that job ends, the issue closes, the question gets an answer or the grant is given.

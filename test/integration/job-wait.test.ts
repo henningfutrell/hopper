@@ -120,6 +120,24 @@ describe('a job that waits on what it named', () => {
     expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: `${PR} was merged` });
   });
 
+  it('a job waiting on another job goes on when that job ends (issue #1245): on the event, never a poll', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test' });
+    const a = await start(herdr);
+    const { store } = a.user();
+    const other = store.jobs.create({ executor: 'test', payload: {} }, 50);
+    herdr.addTurns({ output: ['● The fix needs the other job first.', '  HOPPER_WAITING', '  for: the other job to end', `  on: job ${other.id}`] }, DONE);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'waiting_on', 8000);
+    expect((await a.job(job.id)).wait!.on).toEqual({ kind: 'job', jobId: other.id });
+
+    store.events.append({ type: 'job.finished', jobId: other.id, data: { result: {} } });
+
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.prompts[1]!.text).toContain(`job ${other.id} finished`);
+    const events = await ofJob(a, job.id);
+    expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: `job ${other.id} finished` });
+  });
+
   it('ending the wait of a job that does not wait is refused', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE] });
     const a = await start(herdr);
