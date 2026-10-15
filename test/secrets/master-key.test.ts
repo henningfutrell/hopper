@@ -1,14 +1,15 @@
 // Issue #659: the master key comes from the launch, never from a volume. HOPPER_MASTER_KEY gives it, or the file
 // HOPPER_MASTER_KEY_FILE names, a mounted Secret (issue #1288); a fingerprint of
 // it (an HMAC of a fixed label, never the key) is kept in the database and checked at each start. A fresh hopper with
-// no key makes one, to be shown once; a hopper that keeps secrets and gets no key starts limited, and makes none. The
+// no key makes one, to be shown once; a hopper that keeps secrets and gets no key does not start (issue #1296), and its
+// error names the fingerprint of the key it needs. The
 // old token key (HOPPER_TOKEN_KEY, or the file HOPPER_TOKEN_KEY_FILE names) is read only to move it to HOPPER_MASTER_KEY.
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fingerprintOf, launchKey, MasterKeyMismatch, resolveMasterKey, withMasterKey, type KeptSecrets } from '../../src/secrets/master-key.ts';
+import { fingerprintOf, launchKey, MasterKeyMismatch, MasterKeyMissing, resolveMasterKey, withMasterKey, type KeptSecrets } from '../../src/secrets/master-key.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import { createTokenBox } from '../../src/secrets/token-box.ts';
 
@@ -119,19 +120,17 @@ describe('the master key (issue #659)', () => {
     expect(record.fingerprint).toBe(fingerprintOf(key));
   });
 
-  it('none, with a fingerprint recorded: limited, naming the key it needs; no key made', () => {
+  it('none, with a fingerprint recorded: the start is refused, and the error names the expected fingerprint; no key made (issue #1296)', () => {
     const record = recordOf(fingerprintOf(KEY));
-    const r = resolve({}, record);
-    expect(r).toMatchObject({ source: 'missing' });
-    expect((r as { problem: string }).problem).toContain('HOPPER_MASTER_KEY');
-    expect((r as { problem: string }).problem).toContain(fingerprintOf(KEY).slice(0, 16));
+    expect(() => resolve({}, record)).toThrow(MasterKeyMissing);
+    expect(() => resolve({}, record)).toThrow(new RegExp(`the master key is missing: this database was set up with the key of fingerprint ${fingerprintOf(KEY).slice(0, 16)}\\. The hopper does not start without it: give it as HOPPER_MASTER_KEY`));
     expect(record.fingerprint).toBe(fingerprintOf(KEY));
   });
 
-  it('none, with sealed secrets and no fingerprint: limited; no key made, nothing recorded', () => {
+  it('none, with sealed secrets and no fingerprint: the start is refused; no key made, nothing recorded', () => {
     const record = recordOf();
-    expect(resolve({}, record, { keyIds: ['0123456789abcdef'], tokens: [] })).toMatchObject({ source: 'missing' });
-    expect(resolve({}, record, { keyIds: [], tokens: [createTokenBox(KEY).seal('t')] })).toMatchObject({ source: 'missing' });
+    expect(() => resolve({}, record, { keyIds: ['0123456789abcdef'], tokens: [] })).toThrow(MasterKeyMissing);
+    expect(() => resolve({}, record, { keyIds: [], tokens: [createTokenBox(KEY).seal('t')] })).toThrow(MasterKeyMissing);
     expect(record.fingerprint).toBeUndefined();
   });
 
@@ -158,13 +157,17 @@ describe('the master key (issue #659)', () => {
       expect(resolve({ HOPPER_TOKEN_KEY_FILE: join(tmpdir(), 'no-such-dir-659', 'token_key') }).source).toBe('generated');
     });
 
-    it('one that seals none of the kept secrets: limited, saying so; nothing recorded', () => {
+    it('one that seals none of the kept secrets: the start is refused, saying so; nothing recorded', () => {
       const record = recordOf();
       const sealed = createSealer(KEY).seal('v', 'webhook:1/signing-secret');
-      const r = resolve({ HOPPER_TOKEN_KEY_FILE: fileOf(OTHER) }, record, { keyIds: [sealed.split('.')[1]!], tokens: [] });
-      expect(r).toMatchObject({ source: 'missing' });
-      expect((r as { problem: string }).problem).toContain('the old token key does not match this database');
+      const start = () => resolve({ HOPPER_TOKEN_KEY_FILE: fileOf(OTHER) }, record, { keyIds: [sealed.split('.')[1]!], tokens: [] });
+      expect(start).toThrow(MasterKeyMismatch);
+      expect(start).toThrow(/the old token key does not match this database/);
       expect(record.fingerprint).toBeUndefined();
+    });
+
+    it('one that does not match the recorded fingerprint: refused, naming the expected fingerprint', () => {
+      expect(() => resolve({ HOPPER_TOKEN_KEY: OTHER }, recordOf(fingerprintOf(KEY)))).toThrow(new RegExp(`set up with the key of fingerprint ${fingerprintOf(KEY).slice(0, 16)}`));
     });
 
     it('not read once HOPPER_MASTER_KEY is set: the answer says it can go', () => {

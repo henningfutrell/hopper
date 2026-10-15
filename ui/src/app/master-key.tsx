@@ -1,9 +1,10 @@
 // The master key (issue #659): the banner over every view while the key is not given at launch. A key the hopper made at
 // its first start, or read from the old token key, is shown once to the hopper's admin, and the banner stays until they
 // say they saved it; then it says to give it as HOPPER_MASTER_KEY at the next launch. A key a rotation made is shown in it
-// the same way, once, from the rotation's answer. A limited hopper — secrets kept, no key given — says which key is
-// missing and how to give it. Not dismissable: each state ends only by what it asks. The rotation itself is the hopper's
-// admin's, on Settings → Vault (MasterKeyRotation); banner and panel share one state.
+// the same way, once, from the rotation's answer. A hopper without its key does not start (issue #1296), so no banner
+// says one is missing. Not dismissable: each state ends only by what it asks. The rotation itself is the hopper's
+// admin's, on Settings → Vault (MasterKeyRotation); a key sealed to the host is rotated on the host. Banner and panel
+// share one state.
 import { KeyRound, RefreshCw } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
@@ -26,23 +27,14 @@ export function MasterKeyBanner({ view, admin, revealed, onReveal, onSaved }: {
 }) {
   if (view.source === 'given') return null;
   const copy = () => navigator.clipboard?.writeText(revealed ?? '').then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
-  if (view.source === 'missing') {
-    return (
-      <div data-master-key="missing" className="rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
-        <p className="flex items-center gap-2 font-medium"><KeyRound className="size-4" />Limited: the master key is missing</p>
-        <p className="mt-1 break-words">{view.problem}</p>
-        <p className="mt-1 text-xs text-muted-foreground">Nothing is deleted. What needs a secret stays off until the key is given. Do not connect GitHub again: give the key.</p>
-      </div>
-    );
-  }
-  const fingerprint = view.fingerprint ? ` (fingerprint ${view.fingerprint})` : '';
+  const fingerprint = ` (fingerprint ${view.fingerprint})`;
   if (view.saved) {
     return (
       <div data-master-key="give" className="rounded-lg border border-warn/40 bg-warn/5 px-3 py-1.5 text-sm">
         <KeyRound className="mr-2 inline size-4" />
         Give the master key{fingerprint} as {VARIABLE} at the next launch.{' '}
         <span className="text-muted-foreground">{view.source === 'generated'
-          ? 'Without it, the next start is limited.'
+          ? 'Without it, the next start is refused.'
           : view.source === 'rotated'
             ? 'A start with the key it replaced is refused.'
             : 'Until then the hopper reads it from the old token key.'}</span>
@@ -54,7 +46,7 @@ export function MasterKeyBanner({ view, admin, revealed, onReveal, onSaved }: {
       <p className="flex items-center gap-2 font-medium"><KeyRound className="size-4" />Save the {view.source === 'rotated' ? 'new ' : ''}master key now{fingerprint}</p>
       <p className="text-xs text-muted-foreground">
         Every secret the hopper keeps is sealed under this key. {ORIGIN[view.source] ?? ''}
-        {' '}Keep it in a password manager, then give it as {VARIABLE} at each launch. Without it, a new container opens none of the secrets.
+        {' '}Keep it in a password manager, then seal it to this host (bash master-key.sh seal) or give it as {VARIABLE} at each launch. Without it, a new container does not start.
         {' '}It is shown once, here, and never in the log.
       </p>
       {revealed !== undefined && (
@@ -106,7 +98,8 @@ export function MasterKeyNotice() {
 
 /**
  * Rotate the master key (Settings → Vault), the hopper's admin's: after a confirm, a new key, every secret sealed again
- * under it in one transaction; the banner shows the new key once. Limited (no key): it says so, and offers nothing.
+ * under it in one transaction; the banner shows the new key once. A key the host sealed (issue #1296) is rotated on the
+ * host, which seals the new key in the same step: the card says how, and offers no button.
  */
 export function MasterKeyRotationCard({ view, admin, busy, onRotate }: { view: MasterKeyView | null; admin: boolean; busy: boolean; onRotate(): void }) {
   const confirmRotate = () => {
@@ -115,10 +108,10 @@ export function MasterKeyRotationCard({ view, admin, busy, onRotate }: { view: M
   return (
     <Panel title="Master key" icon={KeyRound} bodyClassName="space-y-2">
       <p data-master-key-rotation className="text-sm text-muted-foreground">
-        Every secret the hopper keeps is sealed under the master key{view?.fingerprint ? ` (fingerprint ${view.fingerprint})` : ''}. Rotate it when it may have been seen, or on a schedule: every secret is sealed again under a new key in one step, with no restart, and the old key opens none of them.
+        Every secret the hopper keeps is sealed under the master key{view ? ` (fingerprint ${view.fingerprint})` : ''}. Rotate it when it may have been seen, or on a schedule: every secret is sealed again under a new key in one step, with no restart, and the old key opens none of them.
       </p>
-      {view?.source === 'missing'
-        ? <p className="text-sm text-bad break-words">{view.problem}</p>
+      {view?.sealed
+        ? <p data-master-key-sealed className="text-sm text-muted-foreground">The key is sealed to this host ({view.sealed}). Rotate it on the host, so the new key is sealed in the same step: <code className="font-mono text-xs">bash master-key.sh rotate</code>, in the folder of compose.yaml.</p>
         : admin
           ? <Button size="sm" variant="outline" disabled={busy || !view} onClick={confirmRotate}><RefreshCw className="size-4" />Rotate the master key</Button>
           : <p className="text-xs text-muted-foreground">Only the hopper's admin can rotate it.</p>}

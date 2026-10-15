@@ -89,11 +89,27 @@ To turn a service off, give the settings without it and run `podman compose up -
 Every secret the hopper keeps is sealed under the master key `HOPPER_MASTER_KEY`. The database keeps only the key fingerprint, never the key. You give the key at launch, as a variable. The hopper never reads it from a file or a volume, and a KMS does not give it.
 
 - **A new hopper with no key** makes a key and shows it once in the UI. Save it and give it, as in "First start".
-- **No key, but the database keeps secrets**: the hopper starts limited. Nothing is deleted. Nothing that needs a secret works. A banner and the log (`LIMITED`) name the missing key by its fingerprint. Do not connect GitHub again. Give the key and restart.
+- **No key, but the database keeps secrets**: the hopper does not start. The error names the key it needs by its fingerprint. Nothing changes. Do not connect GitHub again. Give the key, or unseal it (below), and start again.
 - **A wrong key**: the hopper does not start. The log says `the master key does not match this database`. Nothing changes. Give the right key.
 - **`HOPPER_MASTER_KEY_FILE` is set**: the hopper does not start. Remove it and give the key as `HOPPER_MASTER_KEY`.
 
 Keep the key in a password manager. Keep it apart from the database backups: a backup with its key holds every secret.
+
+### Seal the key to this host
+
+Seal the key to this host once. Then no start, update or recreate asks you for it. No file holds the key in plain text. Run these in the folder of `compose.yaml`:
+
+```sh
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+bash master-key.sh seal
+bash master-key.sh run podman compose up -d --force-recreate
+```
+
+- `seal` asks for the key. Paste it from your password manager. Nothing is shown. It uses the host's TPM through `systemd-creds` when it can, else a key of this host in `~/.config/hopper`.
+- `run` unseals the key and gives it to the command that follows, and to nothing else. Use it for each start.
+- The update unseals the key by itself.
+- To rotate the key, run `bash master-key.sh rotate`. It seals the new key in the same step. Then run `bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper`.
+- A new host or a new TPM cannot open the sealed key. Keep the key in your password manager too.
 
 To see the key's status without the key:
 
@@ -140,7 +156,7 @@ You update a container install. The hopper never updates its own container, and 
    podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>
    ```
 
-3. Paste the master key from your password manager when it asks. Nothing is shown, and it goes in no file. If you do not have the key, open the UI and save the key it shows first. Without the key, the update stops before it changes anything: a hopper started without it is limited.
+3. Paste the master key from your password manager when it asks. Nothing is shown, and it goes in no file. If you do not have the key, open the UI and save the key it shows first. When the key is sealed to this host (`master-key.sh`), the update unseals it and does not ask. Without the key, the update stops before it changes anything: a hopper started without it does not start.
 
    To update with no person at the keyboard (an agent or a scheduled task), put the key in the environment of the command from your secret manager, for example `export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`. Then it does not ask. The update does not read the key from the running container or from a file.
 4. Read what it says. It:
@@ -228,7 +244,7 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 |---|---|
 | The UI does not open | Run `podman compose ps`. Check that `postgres`, `openfga` and `hopper` run. Read `podman compose logs hopper`. |
 | `the master key does not match this database` | Give the key this database was set up with. After a rotation, give the new key. |
-| A "Limited" banner | Give `HOPPER_MASTER_KEY` at launch and recreate the hopper (`podman compose up -d --force-recreate --no-deps hopper`). |
+| `the master key is missing` | Give `HOPPER_MASTER_KEY` at launch and recreate the hopper (`podman compose up -d --force-recreate --no-deps hopper`), or start with the sealed key (`bash master-key.sh run podman compose up -d --force-recreate`). |
 | "Access checks are off" | OpenFGA does not run. Run the update (see "Update a container install"), or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
 | "This hopper's stack differs from the compose file of its version" | Run the update with the image the hopper runs: the banner gives the command. |
 | The hopper stops at start and names two schema versions | The database is from a newer version. Run that newer version again, or restore a backup from before it. |

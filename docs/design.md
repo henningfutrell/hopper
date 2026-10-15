@@ -7353,11 +7353,11 @@ one podman-compose started (#1063); the person had to give the master key and ch
   tail; one restart is no failure, since it retries until postgres has made the schema. Not `--rm` or `up
   --force-recreate`: compose has no `--rm` for a service of `up`, and podman-compose cannot force-recreate (#894).
 - **The result is checked.** The hopper container's image id equals the pulled image's; `/api/health` answers inside the
-  container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` is not `missing` (limited); `hopper update drift`
+  container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` gives the fingerprint (a hopper with no key does not start, issue #1296); `hopper update drift`
   exits 0. Each failure is said and exits 1; a stopped container shows its last log lines (a wrong key stops it).
 - **Residual risk, stated.** The update does not check the key against the database before it stops the stack: a wrong
   key is found when the new hopper refuses to start, and the stack is down until the update runs again with the right
-  key. A `compose up` run by hand without the key still recreates the hopper limited. Running jobs are not counted by
+  key. A `compose up` run by hand without the key, and none sealed (issue #1296), stops the hopper. Running jobs are not counted by
   the script: the notice shows the count, and the person waits until none.
 
 ### The update is plain compose commands; the master key is required (issue #970, 2026-10-12)
@@ -8026,9 +8026,9 @@ and the renewer's next look seals it under the new one (issue #514) — a rotati
 sign-in.
 
 **No key, a wrong key.** A master key that is no key stops the daemon (fails closed). A wrong one stops it
-too ("The master key" below). None while the database keeps secrets: the daemon starts limited; adding a
-subscription or storing a secret answers 503 naming `HOPPER_MASTER_KEY`; a subscription with a stored secret
-sends nothing, and its card, its test event and its deliveries say the stored secret cannot be opened.
+too ("The master key" below). None while the database keeps secrets stops it as well (issue #1296), naming the
+fingerprint of the key it needs. A part that runs with no key all the same (a test, the vault container before its
+first request) answers 503 naming `HOPPER_MASTER_KEY` to a new secret, and says a stored one cannot be opened.
 
 #### The master key
 
@@ -8056,16 +8056,19 @@ process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HO
   shows the key once in the UI (`POST /ui/api/master-key` `reveal`, the hopper's admin alone, then 409). Never in the
   log (issue #685): a container's log goes to the host's journal and stays there. The start log says only where the key
   came from and its fingerprint (`master key: <how> (<source>), fingerprint <16 hex digits>`). The banner stays until the admin says it is saved (`saved`: `masterKeySaved`
-  records the fingerprint saved). The key lives only in the process: the next start without it is limited.
-- **Limited.** No key while a fingerprint or a kept secret exists: the daemon starts, says so loudly at start and
-  in a banner (`GET /api/master-key` `source: missing`, its `problem` naming the key by its fingerprint), and keeps
-  everything: no sealer, so nothing is sealed or opened; no token box, so no new GitHub grant is kept — a sign-in
-  goes on without keeping its grant, Connect GitHub says the key is missing, and the renewer does not trade a
-  refresh token it could not keep. Nothing is deleted, and no new secret is made in place of one it cannot open.
+  records the fingerprint saved). The key lives only in the process: the next start without it is refused.
+- **No key: the start is refused** (issue #1296; issue #659 started *limited* instead). No key while a fingerprint
+  or a kept secret exists throws `MasterKeyMissing`, and the daemon does not start: `the master key is missing: this
+  database was set up with the key of fingerprint <16 hex digits>. The hopper does not start without it: …`. Nothing
+  in the database changes. A limited hopper came up quietly after every restart that lost the key (an update, a
+  recovery), and the admin learned of it only from a banner; a refused start is seen at once by whatever started it
+  (the update's check, `podman compose ps`, a restart loop), and no part runs half-keyed. There is no `missing` source
+  and no banner for it any more.
 - **The old token key.** While `HOPPER_MASTER_KEY` is unset, `HOPPER_TOKEN_KEY` (or the file
   `HOPPER_TOKEN_KEY_FILE` names; a file that is not there is no key) is read to move an install: checked as a
   given key is, shown once in the UI to be saved, and the log says to give it as `HOPPER_MASTER_KEY`. Once that is set,
-  the old key is not read, and the log says it can be removed. One that matches nothing kept: limited, saying so.
+  the old key is not read, and the log says it can be removed. One that matches nothing kept: refused
+  (`MasterKeyMismatch`), saying so.
 - **The vault container** (issue #586) reads the same `HOPPER_MASTER_KEY` (or the old token key) and checks it
   against the recorded fingerprint at each user's first request: a wrong key seals and opens nothing.
 - **The log mask** (issue #685). The master key, or any part of it beyond its fingerprint, never goes to a log, an
@@ -8077,6 +8080,41 @@ process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HO
 
 - **Rotation** ("Rotating the master key" below): one command seals every secret again under a new key and shows
   it once; the running hopper goes on under it.
+- **Sealed to the host** ("The master key sealed to the host" below, issue #1296): the launch unseals the key, so no
+  restart needs it from a person.
+
+#### The master key sealed to the host
+
+Issue #1296. Every restart (an update, a recreate, a recovery) needed a person to give `HOPPER_MASTER_KEY`. Now the
+host keeps it sealed, and the launch unseals it. `scripts/master-key.sh` — in every image, `hopper master-key script`
+prints it; saved beside `compose.yaml` — does it, on the host, in the compose folder:
+
+- **`seal`** takes the key from `HOPPER_MASTER_KEY` or the terminal and seals it to the host: with
+  `systemd-creds --user encrypt` (as root without `--user`) when it seals here — under the host's TPM2 when it has one,
+  else under the host's own credential key — into `hopper-master-key.cred`; else with a **key-encryption key** of the
+  host (`${XDG_CONFIG_HOME:-~/.config}/hopper/master-key.kek`, 32 random bytes, mode 600, made once, never in the
+  compose folder or a volume) and openssl (AES-256-CBC, PBKDF2) into `hopper-master-key.enc`. `HOPPER_KEY_SEAL` picks
+  one. The key goes to the tool on stdin, never as an argument; the sealed file is written beside its place, unsealed
+  once to check it, then moved: a failed seal leaves the old one.
+- **`run <command>…`** unseals it and runs the command with it as `HOPPER_MASTER_KEY`, and the method as
+  `HOPPER_MASTER_KEY_SEALED`, in that process's environment only: `bash master-key.sh run podman compose up -d
+  --force-recreate`. A sealed key that does not unseal stops it before the command runs.
+- **`rotate`** asks the running hopper to rotate (`hopper master-key rotate --host-seals`, through the container
+  runtime's `exec`) and seals the new key at once, before it says anything. Should the seal fail, the new key goes to
+  the terminal once, the only way left to keep it.
+- **`unseal`** writes the key to a pipe, never a terminal: `scripts/update.sh` reads it so when no key is given and a
+  sealed key is beside `compose.yaml`, and then replaces `master-key.sh` with the new image's.
+
+The daemon does not unseal: a container has no TPM and no host key, and the key never reaches its volumes. It only
+reads `HOPPER_MASTER_KEY_SEALED`: `GET /api/master-key` says `sealed`, and a rotation is refused (409) unless the
+caller says it seals the new key in the same step (`hostSeals`) — else the host would unseal the replaced key at the
+next start, which is refused. On Kubernetes the cluster seals it: the master key Secret, filled by the External Secrets
+Operator from an outside store (issue #1288); a Helm upgrade mounts it again, and a missing Secret stops the pod.
+
+What it does not protect against: whoever runs as the host's user (or root) can unseal it, as the launch does, and a
+running container's environment holds the key (`podman inspect`). It keeps the key out of every file and volume, and
+off the person's terminal at each restart. A new host, a new TPM or a lost key-encryption key opens nothing sealed:
+the key in the password manager is still the way back.
 
 The compose file keeps no secret in a persistent volume. The files Postgres makes at each start — the database
 password and URL, OpenFGA's and the vault container's preshared keys — are in `runtime-secrets`, a tmpfs volume:
@@ -8106,7 +8144,8 @@ answer that does, once —; the banner (`source: rotated`) asks the admin to sav
 `HOPPER_MASTER_KEY` before the next start. A start with the replaced key is refused, naming the rotation. One log line
 and one `vault.master_key_rotated` event in every user's log: the two short fingerprints, who, the counts; never a key.
 
-Refused (409): while limited (no key to rotate from), and while the vault runs in a container of its own
+Refused (409): while the host sealed the key and the caller does not seal the new one (`hostSeals`, issue #1296;
+`bash master-key.sh rotate` does), and while the vault runs in a container of its own
 (`HOPPER_VAULT_URL`): that process keeps the key it was started with, so it is rotated at launch instead
 (`HOPPER_MASTER_KEY` new, `HOPPER_MASTER_KEY_PREVIOUS` old, docs/deploy.md).
 
@@ -8136,7 +8175,7 @@ job on the hopper host runs as the daemon's user (it can read `daemon.env` or a 
 daemon's environment through `/proc` as the same user).
 The database and its backups hold no usable secret but the realms' own (issue #216): the sealed ones need
 the master key, which is given at launch, never in the database or a volume. Keep it in a password manager,
-apart from the database's backups: a database restored without it starts limited until the key is given. The
+apart from the database's backups: a database restored without it does not start until the key is given. The
 first start writes the key it made to the start log once: a log kept where others read it holds it. A secret is
 in the daemon's memory while it signs or is sealed.
 

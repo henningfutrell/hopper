@@ -63,7 +63,7 @@ case "$*" in
   "inspect --format {{.State.Running}} "*) echo "\${STUB_STATE:-true}" ;;
   "logs "*) echo 'the last log line' ;;
   "exec ${HOPPER_ID} node "*) exit "\${STUB_HEALTH:-0}" ;;
-  "exec ${HOPPER_ID} hopper master-key status") printf '{\\n  "source": "%s",\\n  "fingerprint": "%s",\\n  "previous": false\\n}\\n' "\${STUB_KEY_SOURCE:-given}" "${'f'.repeat(64)}" ;;
+  "exec ${HOPPER_ID} hopper master-key status") printf '{\\n  "source": "%s",\\n  "fingerprint": "%s",\\n  "previous": false\\n}\\n' "given" "${'f'.repeat(64)}" ;;
   "exec ${HOPPER_ID} hopper update drift") echo '{"state":"checked","gaps":[]}'; exit "\${STUB_DRIFT:-0}" ;;
   run\\ *) while [ "$1" != hopper ]; do shift; done; shift; exec '${process.execPath}' '${join(ROOT, 'src', 'cli.ts')}' "$@" ;;
 esac
@@ -82,7 +82,7 @@ esac
 exit 0
 `;
 
-interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string }
+interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string; tools?: string[] }
 
 /** One update run; `o.dir` runs it again in the folder of an earlier run, with what that run left there. */
 export function update(o: Run = {}) {
@@ -97,7 +97,7 @@ export function update(o: Run = {}) {
   writeFileSync(join(bin, 'podman'), PODMAN);
   chmodSync(join(bin, 'podman'), 0o755);
   // Only the tools the script needs, so no container tool of this machine ever answers.
-  for (const tool of ['sed', 'grep', 'head', 'diff', 'cp', 'mv', 'rm', 'sleep']) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
+  for (const tool of ['sed', 'grep', 'head', 'diff', 'cp', 'mv', 'rm', 'sleep', ...(o.tools ?? [])]) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
   // No docker here.
   writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(bin, 'docker'), 0o755);

@@ -8,12 +8,15 @@
 #
 # The master key (issue #659, docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it, and
 # it is kept in no volume. The first start makes one and shows it once, in the UI only: never in the log (issue #685).
-# Save it in a password manager, then give it at launch — in the environment compose starts with, never in a file
-# (issue #894) — and recreate the hopper:
+# Save it in a password manager, then seal it to this host (issue #1296), so no start needs it from you again:
+#   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+#   bash master-key.sh seal                                           (paste the key; nothing is shown)
+#   bash master-key.sh run podman compose up -d --force-recreate      (each start: it unseals the key for compose only)
+# Or give it at launch yourself — in the environment compose starts with, never in a file (issue #894):
 #   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY      (paste the 64 hex digits; nothing is shown)
 #   podman compose up -d --force-recreate --no-deps hopper
-# A start without it, once secrets are kept, is limited: nothing is deleted, and what needs a secret stays off. A container
-# keeps the key it was started with: give it again at each `up` that recreates the hopper.
+# A start without it, once secrets are kept, is refused, and says the fingerprint of the key it needs: nothing is deleted.
+# A container keeps the key it was started with: give it again at each `up` that recreates the hopper.
 #
 # `docker compose` works the same. No settings file (issues #894, #970): the hopper keeps its settings and secrets itself,
 # set in the UI. What compose itself needs — HOPPER_PORT moves the UI port, HOPPER_BIND its address, HOPPER_IMAGE runs
@@ -26,7 +29,8 @@
 # carries the compose.yaml of its commit and the update itself (issues #697, #1104, docs/deploy.md "Update"). Run it here:
 #   podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>
 #   podman image prune -f --filter label=org.opencontainers.image.title=hopper    (optional: the image it replaced)
-# It asks for the master key unless HOPPER_MASTER_KEY is given, and stops before it changes anything without it. It uses
+# It unseals the master key sealed here (master-key.sh), else asks for it unless HOPPER_MASTER_KEY is given, and stops
+# before it changes anything without it. It uses
 # the compose tool and project that started the stack (issue #1063: another tool would start a second stack on the same
 # volumes), backs up the database, puts in the image's compose.yaml with your own settings as the defaults of its variables
 # (the old one: compose.yaml.bak), pulls, recreates every container, and checks the image, the health, the master key and
@@ -127,6 +131,8 @@ services:
       # The master key (issue #659), given at launch, never in a file (issue #894): see the top of this file.
       HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}
       HOPPER_MASTER_KEY_PREVIOUS: ${HOPPER_MASTER_KEY_PREVIOUS:-}
+      # How this host sealed the key (master-key.sh run sets it, issue #1296): the hopper then rotates only with the host.
+      HOPPER_MASTER_KEY_SEALED: ${HOPPER_MASTER_KEY_SEALED:-}
       # The image and the profiles this stack runs: the drift check compares the stack with them (issue #697).
       HOPPER_IMAGE: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}

@@ -126,7 +126,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   if (!store.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
   // The master key (issue #659): from the launch (its variable or a mounted Secret file, issue #1288), checked against the database's fingerprint before anything opens a
-  // secret; a wrong key stops the start. The parts read it through `keyed`, never from the file or the old token key.
+  // secret; a wrong key, or none while the database keeps secrets, stops the start (issue #1296: never limited).
+  // The parts read it through `keyed`, never from the file or the old token key.
   let masterKey: MasterKey;
   try {
     const { settings } = store;
@@ -135,9 +136,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     store.close();
     throw e;
   }
-  const { env: keyed, use: useKey } = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
+  const { env: keyed, use: useKey } = withMasterKey(env, masterKey);
   // A rotation (issue #659): every secret sealed again, then the running hopper on the new key (src/users/master-key-rotation.ts).
-  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings, masterKeyRotation({ store, keyed: { use: useKey }, mask: logMask, vaultUrl: config.vaultUrl, logger, append: (e) => runtimes.events.append(e) }));
+  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings, masterKeyRotation({ store, keyed: { use: useKey }, mask: logMask, vaultUrl: config.vaultUrl, logger, append: (e) => runtimes.events.append(e) }), env.HOPPER_MASTER_KEY_SEALED || undefined);
   logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
   // The sign-in realms' secrets are in the instance's vault (issue #658): moved there now, before the sign-in config is read.
   const secrets = openInstanceSecrets(store, { env: keyed, clock, logger, migrate: true });

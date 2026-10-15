@@ -28,9 +28,10 @@ export const updateBody = z.discriminatedUnion('action', [
 ]);
 /**
  * The master key (issue #659): `reveal` answers the key, once; `saved` records that a person saved it; `rotate` seals every
- * secret again under a new key, in one transaction, and answers the new key, once.
+ * secret again under a new key, in one transaction, and answers the new key, once. `hostSeals` (rotate, issue #1296): the
+ * caller seals the new key to the host in the same step; a key the host sealed rotates only so.
  */
-export const masterKeyBody = z.strictObject({ action: z.enum(['reveal', 'saved', 'rotate']) });
+export const masterKeyBody = z.strictObject({ action: z.enum(['reveal', 'saved', 'rotate']), hostSeals: z.boolean().optional() });
 
 export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; githubDeliveries: GitHubDeliveries; allowedHosts: AllowedHosts; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; wsl: boolean; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
   registerRateLimiterRoutes(app, o);
@@ -55,9 +56,9 @@ export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guar
   // design.md "The master key": answers the new GET /api/master-key view, with the key on the one `reveal`, and the new
   // key on a `rotate` ("Rotating the master key").
   app.post('/ui/api/master-key', o.instance, async (req): Promise<MasterKeyView & { key?: string } | MasterKeyRotated> => {
-    const { action } = parseWith(masterKeyBody, req.body);
+    const { action, hostSeals } = parseWith(masterKeyBody, req.body);
     if (action === 'saved') return o.masterKey.saved();
-    if (action === 'rotate') return o.masterKey.rotate(o.by(req));
+    if (action === 'rotate') return o.masterKey.rotate(o.by(req), { hostSeals: hostSeals === true });
     const key = o.masterKey.reveal();
     if (key === undefined) throw new HttpError(409, 'the master key is not shown: it was shown once already, it was saved, or it was given at launch');
     console.warn('hopper: the master key was shown in the UI, once');

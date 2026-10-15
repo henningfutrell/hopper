@@ -177,7 +177,7 @@ The panel **Hopper's own secrets** lists the vault's system scope: the GitHub co
 
 ## Limits and troubleshooting
 
-- **The master key.** Every value kept in the hopper is sealed under the master key. With no master key, the hopper is limited: the vault keeps and opens nothing. The hopper's admin rotates the key in the panel **Master key** (**Rotate the master key**), or with `hopper master-key rotate`.
+- **The master key.** Every value kept in the hopper is sealed under the master key. With no master key, the hopper does not start: its error names the key it needs by its fingerprint. The hopper's admin rotates the key in the panel **Master key** (**Rotate the master key**), or with `hopper master-key rotate`.
 - **A job's ask is refused.** The job is told why. Common reasons: no vault grant; the box is no box of a template; the template is not approved; the secret is not in its scope; the box was launched without it; the job is not at work.
 - **A mint is refused.** The reason says whether the profile waits for approval, the template does not declare it, or there is no minting credential for that account or cluster.
 - **Not built.** Minting for an `aws-account` with no role, an Argo CD app or a Terraform workspace. Revoking a credential that is already minted. A vault backend that writes.

@@ -72,7 +72,8 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   once in the UI, to the hopper's admin (**Show the key (once)**). The key never goes to the log: the start log
   says only where the key came from and its fingerprint (`master key: made for this new hopper (generated),
   fingerprint <16 hex digits>`). The banner stays until the admin clicks **I saved it**. Then give the key at each launch:
-  - compose: give it in the environment compose starts with, never in a file (issue #894):
+  - compose: seal it to the host, so no start needs it from you again ("The master key sealed to the host" below);
+    or give it in the environment compose starts with, never in a file (issue #894):
     `read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY` (paste the key; nothing is shown), then
     `podman compose up -d --force-recreate --no-deps hopper`. A container keeps the key it was started with: give it
     again at each `up` that recreates the hopper;
@@ -81,21 +82,57 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   - any other runtime: set the variable `HOPPER_MASTER_KEY` in the container's or service's environment.
 - **A wrong key.** The hopper does not start: `the master key does not match this database`. Nothing in the
   database changes. Give the right key.
-- **No key, while the database keeps secrets.** The hopper starts **limited**. The log (`LIMITED`) and a
-  banner name the missing key by its fingerprint. Nothing is deleted. Nothing that needs a secret works: no
-  secret is stored or opened, and no new GitHub token is kept. Do not connect GitHub again: give the key and
-  restart.
+- **No key, while the database keeps secrets.** The hopper does not start (issue #1296; it never starts limited).
+  The error names the key it needs by its fingerprint: `the master key is missing: this database was set up with
+  the key of fingerprint <16 hex digits>`. Nothing in the database changes. Do not connect GitHub again: give the
+  key, or unseal it (`bash master-key.sh run …`), and start again.
 - **Moving from the old token key.** An install from before kept its key in the compose `secrets` volume
   (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, a host install reads
   `HOPPER_TOKEN_KEY`, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
   `HOPPER_MASTER_KEY`, and restart. The log then says the old key is not read and can be removed: delete the
   `HOPPER_TOKEN_KEY` line. The compose file no longer mounts the `secrets` volume or reads its `token_key`: save the key
   from the UI and give it at launch as `HOPPER_MASTER_KEY` **before** you update (the update refuses until then).
-  A compose install that updated without it starts limited, and nothing is lost: the key is still in the old volume.
+  A compose install that updated without it does not start, and nothing is lost: the key is still in the old volume.
   Read it once, give it at launch as `HOPPER_MASTER_KEY`, and recreate the hopper:
   `podman run --rm -v hopper_secrets:/s:ro docker.io/library/alpine:3 cat /s/token_key`. Once the hopper starts with
   the key, remove the old volume: `podman volume rm hopper_secrets` (with the stack stopped, or after
   `podman compose up -d --remove-orphans`).
+
+### The master key sealed to the host
+
+Issue #1296. The host keeps the key sealed, and each launch unseals it: a restart, an update or a recreate needs no
+key from you. No file holds the key in plaintext, and no log line holds it (the fingerprint only).
+`master-key.sh` is in every image. Save it beside `compose.yaml`, and run it in that folder:
+
+```sh
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+bash master-key.sh seal                    # paste the key from your password manager; nothing is shown
+bash master-key.sh status                  # sealed with systemd-creds (or kek), and it unseals on this host
+bash master-key.sh run podman compose up -d --force-recreate    # each start: the key goes to compose only
+```
+
+- **How it seals.** With `systemd-creds --user` (systemd 256 and later; as root, `systemd-creds`): under the host's
+  TPM2 when it has one, else under the host's own credential key, in `hopper-master-key.cred`. Else with a
+  key-encryption key of this host, made once, mode 600, at `~/.config/hopper/master-key.kek` (never in the compose
+  folder or a volume), and openssl, in `hopper-master-key.enc`. `HOPPER_KEY_SEAL=systemd-creds` or `kek` picks one.
+  Neither file opens on another host.
+- **At launch.** `bash master-key.sh run <command>` unseals the key and gives it to the command as
+  `HOPPER_MASTER_KEY`, for that process only. A sealed key that does not unseal stops it before the command runs. With
+  `HOPPER_MASTER_KEY` given and no key sealed here yet, it seals that key first: the first start with the key seals it.
+- **Update.** The update unseals it by itself when you give no key (`hopper update script | bash -s -- <image>`, in the
+  same folder), and puts in the new image's `master-key.sh`.
+- **A wrong or missing key.** The hopper does not start, and names the key it needs by its fingerprint. Seal the right
+  key again from your password manager: `bash master-key.sh seal`.
+- **Rotation.** `bash master-key.sh rotate` rotates the key of the running hopper and seals the new one in the same
+  step. Then recreate the hopper with it: `bash master-key.sh run podman compose up -d --force-recreate --no-deps
+  hopper`. While the key is sealed to the host, the UI's **Rotate the master key** is refused: it cannot seal the new key.
+- **Keep the key in a password manager too.** A new host, a new TPM or a lost key-encryption key opens nothing
+  sealed. Whoever runs as your user on this host can unseal the key, as the launch does.
+- **Host install** (systemd --user): seal it with `systemd-creds --user encrypt --name=hopper-master-key - <file>`, and
+  give it to the unit in a drop-in: `LoadCredentialEncrypted=hopper-master-key:<file>` and
+  `Environment=HOPPER_MASTER_KEY_FILE=%d/hopper-master-key`. Remove `HOPPER_MASTER_KEY` from `daemon.env`.
+- **Kubernetes.** The master key Secret, filled by the External Secrets Operator from an outside store ("On Kubernetes,
+  with Helm"). A Helm upgrade needs no key from you; a missing Secret stops the pod.
 
 **The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
 every log line goes through a mask that removes the key in any form. To see the key's status without the key:
@@ -109,6 +146,9 @@ anyone who can read that journal or a copy of it has the key. Search for the lin
 If either count is not 0, rotate the key now (below). Deleting the log lines is not enough: rotate.
 
 ### Rotating the master key
+
+**A key sealed to the host** (issue #1296): `bash master-key.sh rotate` in the compose folder, then
+`bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper` ("The master key sealed to the host").
 
 **With one command** (issue #659): the hopper's admin rotates the key from Settings → Vault → Master key → **Rotate the
 master key**, or from the operator CLI: `hopper master-key rotate` (in compose:
@@ -205,8 +245,10 @@ read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY    # paste the 64 hex dig
 podman compose up -d --force-recreate --no-deps hopper
 ```
 
-Without it, a new container on the same database is limited ("The master key" above). No volume or file holds it. A
-container keeps the key it was started with: give it again at each `up` that recreates the hopper.
+Or seal it to this host once, and start with `bash master-key.sh run podman compose up -d --force-recreate` ("The master
+key sealed to the host" above). Without it, a new container on the same database does not start ("The master key"
+above). No volume or file holds it in plaintext. A container keeps the key it was started with: give it again at each
+`up` that recreates the hopper.
 
 | service | |
 |---|---|
@@ -289,10 +331,11 @@ is only in the hopper's environment, given at launch.
     ```
 
     In order, it:
-    1. **Takes the master key** from `HOPPER_MASTER_KEY` in its environment, else asks for it on the terminal (paste
+    1. **Takes the master key** from `HOPPER_MASTER_KEY` in its environment, else unseals the key sealed to this host
+       (`master-key.sh` and its sealed key beside `compose.yaml`, issue #1296), else asks for it on the terminal (paste
        it; nothing is shown). Without it, or with a value that is no master key, it stops before it changes anything,
-       so the stack never comes back limited. It reads the key from nowhere else: not from a file, and not from the
-       running container (issue #970). An update with no person (an agent, a scheduled task; issue #1013) gives the key
+       so the hopper never fails to start for want of it. It reads the key from nowhere else: not from a plaintext
+       file, and not from the running container (issue #970). An update with no person (an agent, a scheduled task; issue #1013) gives the key
        from a secret manager: `export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`. The KMS (`kms` profile)
        wraps only the vault's data key: the master key is required with it too.
     2. **Finds the compose tool that started the stack** and uses it with the project `hopper` (`-p hopper`): podman-compose
