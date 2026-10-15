@@ -22,7 +22,9 @@
 // `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs an escalation level's claude in print
 // mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
-// is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
+// is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s. A dial refused as
+// stale waited behind a stall of the hopper's event loop (issue #1154): it is dialled again at the first backoff, signed
+// fresh, once; a second stale refusal in a row is a clock that is wrong, and backs off as any failure.
 // Each request the hopper signed and each keepalive PING it answers is the hopper heard; cut off from it longer than its
 // max isolation, the client stops the jobs the hopper last named in `/release`, and the next `/release` answer says so (issue #752, isolation.ts).
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -52,6 +54,8 @@ const MAX_BODY = 1024 * 1024;
 const MAX_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15000;
 const BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
+/** The hopper's refusal of a dial-in whose signature was older than its window when it was read (dial.ts). */
+const STALE_REFUSAL = /refused: stale\b/;
 /** A link that stayed up this long starts the backoff over. */
 const STABLE_MS = 60000;
 
@@ -233,6 +237,8 @@ export function startClient(o: ClientOptions): Client {
   const backoff = o.backoffMs ?? BACKOFF_MS;
   let stopped = false;
   let attempt = 0;
+  /** The last dial was refused as stale: the next stale refusal backs off. */
+  let staleBefore = false;
   let link: Duplex | undefined;
   let timer: NodeJS.Timeout | undefined;
   let exited: Promise<void> = Promise.resolve();
@@ -257,6 +263,7 @@ export function startClient(o: ClientOptions): Client {
     exited = new Promise((r) => { close = r; });
     o.dial().then((socket) => {
       if (stopped) { socket.destroy(); close(); return; }
+      staleBefore = false;
       link = socket;
       const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping, watch.heard);
       session.on('stream', (stream, headers) => {
@@ -274,6 +281,9 @@ export function startClient(o: ClientOptions): Client {
       });
     }, (e: unknown) => {
       close();
+      const stale = STALE_REFUSAL.test((e as Error).message);
+      if (stale && !staleBefore) attempt = 0;
+      staleBefore = stale;
       again(`dialing the hopper failed: ${(e as Error).message}`, started);
     });
   }

@@ -16,7 +16,8 @@
 // request's base, else the repository's landing branch, else its default branch (issue #1147) — and empties or shrinks a file the branch's own change did not is refused with the files named, as git's own refusal,
 // and the refusal (`github_proxy.refused`) carries them (`shrunk`).
 import { Readable } from 'node:stream';
-import { gunzipSync } from 'node:zlib';
+import { gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import type { RepoFacts } from './api.ts';
 import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
@@ -25,6 +26,9 @@ import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
 import type { ShrunkFile } from '../domain/shrink-guard.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
+
+/** A push's body unpacked in zlib's thread pool, not on the event loop (issue #1154). */
+const unpack = promisify(gunzip);
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
@@ -197,7 +201,7 @@ export function createGitProxy(o: GitProxyOptions) {
       let refs: RefUpdate[] = [];
       if (push && !at.advertise) {
         let plain: Buffer;
-        try { plain = r.contentEncoding === 'gzip' ? gunzipSync(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { return refuse('not a git push'); }
+        try { plain = r.contentEncoding === 'gzip' ? await unpack(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { return refuse('not a git push'); }
         if (r.contentEncoding && r.contentEncoding !== 'gzip') return refuse(`a push sent as ${r.contentEncoding} is not taken`);
         const read = receivePackCommands(plain);
         if (!read.ok) return refuse(read.reason);

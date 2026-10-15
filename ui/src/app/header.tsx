@@ -33,9 +33,10 @@ import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
 
-/** What a stall of the event loop was (issue #1002): how long, when, and the routes in flight. */
+/** What a stall of the event loop was (issue #1002): how long, when, the routes in flight, and the database's part (issue #1154). */
 const stallTitle = (s: NonNullable<Health['eventLoopStall']>): string =>
-  `The hopper stopped answering for ${(s.ms / 1000).toFixed(1)} s at ${new Date(s.at).toLocaleTimeString()}${s.during.length ? `, during ${s.during.join(', ')}` : ''}. Its log says more.`;
+  `The hopper stopped answering for ${(s.ms / 1000).toFixed(1)} s at ${new Date(s.at).toLocaleTimeString()}${s.during.length ? `, during ${s.during.join(', ')}` : ''}.`
+  + `${s.store ? ` The database held it for ${(s.store.ms / 1000).toFixed(1)} s (${s.store.calls.map((c) => c.what).join(', ')}).` : ''} Its log says more.`;
 
 const BADGE_ICONS: Record<HeaderBadge, typeof Activity> = {
   inFlight: Activity, lanes: Layers, waiting: Timer, waitingAnswer: MessageCircleQuestion, finished: CircleCheck, failed: CircleX,

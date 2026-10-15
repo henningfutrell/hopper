@@ -47,6 +47,7 @@ export const EVENT_TYPES = [
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit', 'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed',
   'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed', 'landing_batch.canary_promoted',
+  'hopper.event_loop_stalled',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -102,4 +103,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'landing_batch.bisect_started': 1, 'landing_batch.bisect_run': 1, 'landing_batch.bisect_tested': 1, 'landing_batch.culprit': 1, 'landing_batch.revert_opened': 1, 'landing_batch.reverted': 1, 'landing_batch.revert_failed': 1, 'landing_batch.fix_filed': 1, 'landing_batch.pending': 1,
   'landing_batch.back_merge_opened': 1, 'landing_batch.back_merged': 1, 'landing_batch.back_merge_failed': 1, 'landing_batch.back_merge_issue_filed': 1,
   'landing_batch.canary_started': 1, 'landing_batch.canary_held': 1, 'landing_batch.canary_issue_filed': 1, 'landing_batch.canary_promoted': 1,
+  'hopper.event_loop_stalled': 1,
 };
