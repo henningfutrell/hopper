@@ -344,9 +344,9 @@ its name (<code>wsl --list</code> shows the names). If you changed the compose p
 terminal the CLI can use interactively, run <code>hopper.ps1</code> instead: it does the same in PowerShell.</p>
 
 <h3 id="windows-machine">A Windows computer as a machine</h3>
-<p>hopper is not supported natively on Windows. A client that runs on Windows itself (Node.js for Windows, Git Bash)
-cannot join: hopper refuses it with <code>Windows isn't supported natively. Run the client inside WSL.</code> Run the
-machine inside WSL instead, with Podman for its sandbox boxes:</p>
+<p>The usual way is to run the machine inside WSL, with Podman for its sandbox boxes. A client on Windows itself
+(Node.js for Windows, with Git Bash's <code>sh</code> on its <code>PATH</code>) joins too, for work that needs Windows.
+The WSL steps:</p>
 <ol class="steps">
 <li><p>On the Windows computer, turn systemd on, and install Podman in it: <a href="#windows">On Windows</a>, steps 1 to 3.
 To keep the machine online, also do <a href="#windows-keep-running">Keep Ubuntu running</a>.</p></li>
@@ -357,8 +357,8 @@ sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="system
 Ubuntu, not in PowerShell. For a computer, Ubuntu needs Node.js 24, herdr and a signed-in <code>claude</code> first,
 as for any Linux computer. The WSL distro then shows in Machines as one machine.</p></li>
 </ol>
-<p class="note">Not supported, and not planned: the client on Windows itself, Git Bash or MSYS, and Podman machine,
-Docker Desktop or Hyper-V virtual machines.</p>
+<p class="note">A client on Windows itself serves no vault socket, so give it no box jobs. Not supported, and not
+planned: Podman machine, Docker Desktop or Hyper-V virtual machines.</p>
 
 <h2 id="sign-in">Sign-in for a team</h2>
 <p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
@@ -420,7 +420,6 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
 <tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
-<tr><td><code>Windows isn't supported natively. Run the client inside WSL.</code></td><td>The line ran on Windows itself. Run it inside WSL: <a href="#windows-machine">A Windows computer as a machine</a>.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of
