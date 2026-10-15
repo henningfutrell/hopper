@@ -17,6 +17,15 @@
       "type": "boolean",
       "const": true
     },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "merged",
+        "superseded",
+        "proposal",
+        "research"
+      ]
+    },
     "person": {
       "type": "string"
     },

@@ -62,11 +62,28 @@ const REAP_SCRIPT = [
   'w=${s%/.hopper-scratch/*};',
   'trees() { for t in "$w"/workspace/worktrees/*-"$id"; do [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };',
   'repos() { { find "$s" -name node_modules -prune -o -name .git -print -prune; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
+  // Whether the work of commit $2 in repository $1 is on a remote though its commits are not (issue #1187: a rebase, a
+  // re-run that made the commits again, a squash or rebase merge): the default branch or one of the newest remote
+  // branches has each of its patches (`git cherry`, when it holds no merge of its own), or has every file it changed from
+  // the default branch as it has it. No change from the default branch at all is on it too.
+  'landed() { ld=$1; lt=$2; la=; lm=; lo=$(git -C "$ld" rev-parse -q --verify refs/remotes/origin/HEAD 2>/dev/null);',
+  '  if [ -n "$lo" ] && lm=$(git -C "$ld" merge-base "$lo" "$lt" 2>/dev/null); then',
+  '    git -C "$ld" diff --quiet "$lm" "$lt" -- 2>/dev/null && return 0;',
+  '    la=$(git -C "$ld" diff --no-renames --name-only "$lm" "$lt" -- 2>/dev/null) || la=;',
+  '  fi;',
+  '  for lr in $lo $(git -C "$ld" for-each-ref --sort=-committerdate --count=30 --format="%(objectname)" refs/remotes 2>/dev/null); do',
+  '    if [ -n "$la" ] && lb=$(git -C "$ld" diff --no-renames --name-only "$lr" "$lt" -- 2>/dev/null) && [ -z "$(printf "%s\\n%s\\n" "$la" "$lb" | sort | uniq -d)" ]; then return 0; fi;',
+  '    [ -z "$(git -C "$ld" rev-list --merges -n 1 "$lt" --not "$lr" 2>/dev/null)" ] && lc=$(git -C "$ld" cherry "$lr" "$lt" 2>/dev/null) && ! printf "%s\\n" "$lc" | grep -q "^+" && return 0;',
+  '  done; return 1; };',
+  // Whether one of the commits $2 names in repository $1 holds work no remote has, by its commits and then by landed.
+  'unpushed() { ut=$(git -C "$1" rev-parse $2 2>/dev/null) || return 0; for u in $ut; do',
+  '  [ -n "$(git -C "$1" log --oneline -1 "$u" --not --remotes 2>/dev/null)" ] && ! landed "$1" "$u" && return 0;',
+  'done; return 1; };',
   // A worktree (.git a file) answers for its own HEAD; a clone for HEAD and every branch it has. A
   // node_modules link to the shared dependencies (issue #410) is no work of the job's.
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
   '  d=${g%/.git}; r="HEAD --branches"; [ -f "$g" ] && r=HEAD;',
-  '  if ! st=$(git -C "$d" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$st" | grep -vx "?? node_modules")" ] || ! un=$(git -C "$d" log --oneline -1 $r --not --remotes 2>/dev/null) || [ -n "$un" ]; then',
+  '  if ! st=$(git -C "$d" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$st" | grep -vx "?? node_modules")" ] || ! un=$(git -C "$d" log --oneline -1 $r --not --remotes 2>/dev/null) || { [ -n "$un" ] && unpushed "$d" "$r"; }; then',
   '    printf "hopper-kept %s\\n" "$d";',
   '  fi;',
   'done);',
