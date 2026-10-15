@@ -141,7 +141,10 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
       expect(call!.sandbox).toMatchObject({ sandboxed: '1', containerHost: expect.stringMatching(new RegExp(`^unix:///.*/hopper-runtime-${ID}/podman/podman\\.sock$`)) });
       // Its own PID namespace: the agent is one of the first processes in it.
       expect(call!.sandbox.pid).toBeLessThan(10);
-    } else expect(call!.sandbox).toMatchObject({ sandboxed: undefined, containerHost: undefined });
+    } else {
+      expect(call!.sandbox.sandboxed).toBeUndefined();
+      expect(call!.sandbox.containerHost).toBeUndefined();
+    }
     expect(socketRuns()).toBe(false);
   });
 
