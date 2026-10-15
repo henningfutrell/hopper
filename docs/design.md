@@ -418,6 +418,9 @@ issue #502) and new machine samples (`machine.recorded`, issue #560), `data: { a
 `event: delivery.updated`, `data: <WebhookDelivery JSON>`, no `id`. Comment heartbeat
 `: ping` every 15 s. Before all of it, the hopper's **instance tag** (`event: hopper.instance`, `data: "<tag>"`, issue #1295,
 "Which hopper answers"). A running job's own stream is another, `GET /job/stream` ("The job stream", issue #613).
+A replay reads one page of 1000 events a turn of the event loop, the next once the reader took it; live events wait
+until it ends. A reader 8 MiB behind (`BEHIND_BYTES`: written, not yet taken by its socket) has its stream ended, and its
+EventSource comes back with Last-Event-ID (issue #1383, "Reading the held event loop").
 
 ## Webhooks
 
@@ -21566,14 +21569,24 @@ said what did not hold the loop, never what did.
   future gets no credit. Its nonce is kept for the window and the credit (`createNonceCache(WINDOW_MS + HELD_CREDIT_MS)`),
   so an ask is still accepted once. The credit is only time the hopper itself could not read: it is never given for a
   loop that was free.
+- **The event stream holds neither the loop nor the memory for a reader** (`src/http/sse.ts`, "SSE"). Each open UI tab
+  holds a stream, and every event, delivery and sample is written to each. A write to a reader that does not read (a
+  tab asleep, a link gone quiet before its socket closes) was kept in the hopper's memory, with no bound, as long as the
+  stream stayed open: resident size that grows, and a heap the garbage collector takes longer and longer to go through.
+  A reader 8 MiB behind (`BEHIND_BYTES`) now has its stream ended, logged (`hopper: ended an event stream whose reader
+  fell … KiB behind`); its EventSource comes back with Last-Event-ID and is replayed from there. A replay read every page
+  of the event log in one turn of the loop; it now reads one page a turn, the next once the reader took it, and live
+  events wait until it ends, so none comes before an older one. A replay page is not held to the 8 MiB: it waits for the
+  reader, so a slow one still gets the whole replay.
 - **Not done here.** `/api/health` still cannot answer while the loop is held: it is served on the loop. A second
-  listener in the worker would be a second network surface. Nothing is moved off the loop yet: the reads say what to
-  move, and no hopper has run them through a stall.
+  listener in the worker would be a second network surface, which a person decides. No other code is moved off the
+  loop yet: the reads say what to move, and no hopper has run them through a stall.
 
 **Verification:** `test/http/event-loop.test.ts` (a stall names the code the loop ran while held, from the real worker;
 `heldSince`, a stall going on included; the memory line once per GiB; `frameOf` never an absolute path),
 `test/client/signature.test.ts` (a dial-in, a vault ask and a leave credited the held time, at most 5 minutes; none from
-the future; still once).
+the future; still once), `test/http/sse-held.test.ts` (a replay frees the loop between pages; a slow reader gets it whole,
+a live event after it; a reader far behind is ended; one that reads is kept).
 
 ## Local accounts (issue #1380, part 1, 2026-10-15)
 

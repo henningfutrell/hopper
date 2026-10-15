@@ -21,7 +21,7 @@ afterEach(async () => {
 const event = (seq: number, size = 10): DomainEvent => ({ seq, type: 'job.progress', at: '2026-10-15T10:00:00.000Z', data: { note: 'x'.repeat(size) } } as unknown as DomainEvent);
 
 /** The tenant parts the stream uses: an event log of `count` events, live events through `emit`. */
-function tenant(count: number) {
+function tenant(count: number, size = 10) {
   const listeners = new Set<(e: DomainEvent) => void>();
   const log = { pages: 0, unsubscribed: 0, between: [] as boolean[] };
   let freed = false;
@@ -36,7 +36,7 @@ function tenant(count: number) {
           setImmediate(() => { freed = true; });
           log.pages++;
           const out: DomainEvent[] = [];
-          for (let s = after + 1; s <= Math.min(count, after + limit); s++) out.push(event(s));
+          for (let s = after + 1; s <= Math.min(count, after + limit); s++) out.push(event(s, size));
           return out;
         },
       },
@@ -75,6 +75,22 @@ describe('the event stream holds neither the loop nor the memory for a reader (i
     res.resume();
     await waitFor(() => t.log.pages >= 4, { what: 'the replay to read every page' });
     expect(t.log.between).toEqual([true, true, true]);
+  });
+
+  it('gives a slow reader a long replay whole, a page at a time, and a live event after it', async () => {
+    const t = tenant(3000, 1024);
+    const port = await serve(t.parts, 64 * 1024);
+    const res = await open(port, '/api/events/stream?after=0');
+    let text = '';
+    res.setEncoding('utf8');
+    res.on('data', (b: string) => { text += b; });
+    t.emit(event(3001));
+    await new Promise((r) => setTimeout(r, 100));
+    res.resume();
+    await waitFor(() => text.includes('id: 3001\n'), { what: 'the live event' });
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(ids).toEqual(Array.from({ length: 3001 }, (_, i) => i + 1));
+    expect(t.log.unsubscribed).toBe(0);
   });
 
   it('ends a stream whose reader is far behind, and keeps no more of it', async () => {
