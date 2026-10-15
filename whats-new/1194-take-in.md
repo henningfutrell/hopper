@@ -1,2 +1,0 @@
-- Taking a pull request's issue into Intake from the Pull requests page now shows its progress on the row at once, and why it failed if it did.
-- A bulk action on stuck work now answers at once, and each item moves on by itself after.

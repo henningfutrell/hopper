@@ -11488,16 +11488,19 @@ the next read, never from a poll.
   request's `writeBehind` (`census.detail`, from the source's write-behind of its issue), since the issue is in no Intake
   list yet. From the click on, the row says the issue is taken into Intake on GitHub and offers it no more, until a list
   read after the click says how it ended: failed, with why, and offered again; or the issue in Intake.
-- **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
+- **Budget.** `test/integration/action-latency.test.ts`: with GitHub held and the machine slowed to 2 s, Approve, Decline,
   Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
   answer in under 200 ms, their decision recorded, and the slow work ends after;
   `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same;
   `test/integration/action-latency-give-back.test.ts` holds a stuck cause's bulk action to it too;
   `test/integration/action-latency-pull-requests.test.ts` Merge now and Close PR; and
-  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. The bound is `test/support/latency.ts`:
-  200 ms on a developer machine; 1000 ms on CI (`CI` set), where a shared runner took 210 ms for an answer that takes
-  18 ms here. 1000 ms is still half of the 2 s seam delay, so an action that waits for GitHub or the machine fails on CI
-  too. `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one run, never above 1000 ms.
+  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. **CI asserts the order, not the time**
+  (`test/support/latency.ts`): a clock on a shared runner is not reliable — one took 210 ms for an answer that takes
+  18 ms on a developer machine. So GitHub is **held** (`test/support/slow-github.ts`): each of its calls waits until the
+  test releases it. An action that waited for GitHub would never answer, and the test fails by its timeout; one that
+  answers first answers, and its GitHub work is recorded only after the release. The time of an answer is asserted
+  against the 200 ms target only off CI, or with `HOPPER_PERF=1`; `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one
+  run.
 
 - **Approve of a sandbox request** answers before the box starts, since issue #1002 ("Sandboxes jobs start"): the
   approval is recorded, and the start runs after, in the background. `test/integration/sandbox-start-hangs.test.ts` holds
@@ -11513,7 +11516,7 @@ the next read, never from a poll.
   memory, the last 100 runs of each act; `GET /api/sources` answers `afterAnswer`: per act, `count`, `waitMs` and `runMs`
   (each `{ p50, p95, max }`) and `lastAt`. `test/integration/action-latency-after-answer.test.ts`: an Approve sent while
   a sync runs answers within the budget, and its `sync:approve` shows the wait for the running sync apart from its own
-  run; `test/integration/action-latency-pull-requests.test.ts`: Merge now's `merge` run shows the slowed GitHub.
+  run; `test/integration/action-latency-pull-requests.test.ts`: Merge now's `merge` wait and run together cover the time GitHub held it.
 
 - **Fixed waits on the action paths** (part 6, checked). `PR_LOOKUP_MS` (10 s, `src/failures/timeouts.ts`) bounds a
   done-check's look at its source: on Retry it runs after the answer (part 4), never before it. `RECONCILE_MS` (10 s,

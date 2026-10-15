@@ -1,13 +1,14 @@
 // The latency budget of the acts that give an item back (issue #1194, part 4): Failures' Retry, a hand-off's Continue
-// and I fixed it, Push it and Tend again answer within the budget with GitHub slow; the source gives the item back after
-// the answer, and the job follows. Real daemon, real database; the fake GitHub (slowed at its seam) and the fake herdr.
+// and I fixed it, Push it and Tend again answer while GitHub holds every call; the source gives the item back after
+// the answer, and the job follows. The answer's time is asserted off CI only (`test/support/latency.ts`). Real daemon, real database;
+// the fake GitHub (held at its seam) and the fake herdr.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, Job, PullRequestsView, StuckActResult } from '../../src/domain/types.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
-import { BUDGET_MS, SLOW_MS } from '../support/latency.ts';
+import { withinBudget } from '../support/latency.ts';
 import { slowGitHub } from '../support/slow-github.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -64,14 +65,14 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     const { a, gh, slow, token } = await boot();
     const { job } = await failed(a, gh, '{"op":"echo"}');
     const record = await waitFor(async () => (await failuresOf(a)).recent.find((r) => r.jobId === job.id && r.actions.retry.ok), { what: 'the failure' });
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/failures/${record.id}/retry`, {}, { token }));
     expect(r).toMatchObject({ status: 202, body: { jobId: job.id, giveBack: 'retry' } });
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     const again = await timed(() => a.ui(`/ui/api/failures/${record.id}/retry`, {}, { token }));
     expect(again.r).toMatchObject({ status: 202, body: { jobId: job.id, giveBack: 'retry' } });
-    expect(again.ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(again.ms);
+    slow.release();
     const next = await waitFor(async () => (await jobsOf(a, job.source!.key)).find((j) => j.rerunOf === job.id), { what: 'the new job', timeoutMs: 10_000 });
     await waitFor(async () => (await failuresOf(a)).ended.find((x) => x.id === record.id && x.outcome === 'retried' && x.nextJobId === next.id), { what: 'the record retried' });
     expect((await jobsOf(a, job.source!.key)).filter((j) => j.rerunOf === job.id)).toHaveLength(1);
@@ -83,11 +84,11 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     const record = await waitFor(async () => (await failuresOf(a)).recent.find((r) => r.jobId === job.id && r.actions.retry.ok), { what: 'the failure' });
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
     gh.failNext('reopenIssue', new Error('issue locked'));
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/failures/${record.id}/retry`, {}, { token }));
     expect(r.status).toBe(202);
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     const failure = await waitFor(async () => (await a.events('types=job.give_back_failed'))[0], { what: 'the give-back failed', timeoutMs: 10_000 });
     expect(failure).toMatchObject({ jobId: job.id, data: { act: 'retry', error: expect.stringContaining('issue locked'), person: expect.any(String), via: 'ui' } });
     expect((await jobsOf(a, issue.url)).filter((j) => j.rerunOf === job.id)).toEqual([]);
@@ -97,11 +98,11 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     const { a, gh, slow, token } = await boot();
     const { job } = await failed(a, gh, '{"op":"fail","message":"HOPPER_FAILED the tests do not pass"}');
     const h = await waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.jobId === job.id && x.status === 'open'), { what: 'handed off' });
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/failures/handoffs/${h.id}/resolve`, { action: 'fixed', note: 'Fixed the fixture.' }, { token }));
     expect(r).toMatchObject({ status: 202, body: { jobId: job.id, giveBack: 'fixed' } });
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     const next = await waitFor(async () => (await jobsOf(a, job.source!.key)).find((j) => j.rerunOf === job.id), { what: 'the new job', timeoutMs: 10_000 });
     const closed = await waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.id === h.id && x.status === 'closed'), { what: 'the hand-off closed' });
     expect(closed).toMatchObject({ end: 'run_again', nextJobId: next.id, resolution: { action: 'fixed', note: 'Fixed the fixture.' } });
@@ -115,11 +116,11 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     const { a, gh, slow, token } = await boot({ herdr });
     const { job } = await failed(a, gh, 'Paint the shed.');
     await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id && k.actions.push.ok), { what: 'its work kept' });
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/failures/kept-work/${job.id}/push`, { note: 'The branch is shed-blue.' }, { token }));
     expect(r).toMatchObject({ status: 202, body: { jobId: job.id, giveBack: 'push' } });
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     await waitFor(async () => (await a.events('types=job.continued')).find((e) => e.jobId === job.id), { what: 'the job continued', timeoutMs: 10_000 });
     await waitFor(() => herdr.prompts.length === 2, { what: 'the push brief sent' });
     expect(herdr.prompts[1]!.text).toContain('The branch is shed-blue.');
@@ -146,11 +147,11 @@ describe('the acts that give an item back answer within the budget, GitHub slow 
     const card = async () => (await a.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.flatMap((x) => x.pullRequests).find((p) => p.jobId === job!.id);
     await waitFor(async () => (await card())?.waits === 'tend failed', { what: 'the hopper gave up' });
     fixes = true;
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui('/ui/api/pull-requests/tend', { jobId: job!.id }, { token }));
     expect(r).toMatchObject({ status: 202, body: { jobId: job!.id, giveBack: 'tend' } });
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     await waitFor(async () => (await a.events('types=job.pull_request_tended')).find((e) => e.jobId === job!.id && e.data.person !== undefined), { what: 'tended again', timeoutMs: 10_000 });
     expect((await jobsOf(a, issue.url)).filter((j) => j.spec.tend)).toHaveLength(2);
   });
@@ -168,13 +169,13 @@ describe('a stuck cause\'s bulk action answers within the budget, GitHub slow (i
     const cause = (await failuresOf(a)).stuck.find((c) => c.ids.includes(h1.id))!;
     expect(cause.ids).toContain(h2.id);
     expect(['continue', 'run_again']).toContain(cause.cause);
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui<StuckActResult>(`/ui/api/failures/stuck/${cause.cause}`, {}, { token }));
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ cause: cause.cause, refused: [] });
     expect([...r.body.done].sort()).toEqual([h1.id, h2.id].sort());
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     for (const { job } of [one, two]) {
       await waitFor(async () => (await jobsOf(a, job.source!.key)).find((j) => j.rerunOf === job.id), { what: `the new job of ${job.id}`, timeoutMs: 10_000 });
     }

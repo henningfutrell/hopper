@@ -1,5 +1,5 @@
 // How the work after a person's act spent its time (issue #1194): GET /api/sources answers `afterAnswer`, per act the
-// wait on its queue apart from its run. An Approve sent while a sync runs answers within the budget; the sync it asks for
+// wait on its queue apart from its run. An Approve sent while a sync runs answers; the sync it asks for
 // waits for the running one, and that wait shows apart from the sync's own run. Real daemon, real database; the fake
 // GitHub, slowed at its seam.
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import type { AfterAnswerTiming, Job } from '../../src/domain/types.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
-import { BUDGET_MS } from '../support/latency.ts';
+import { withinBudget } from '../support/latency.ts';
 import { slowGitHub } from '../support/slow-github.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -45,10 +45,10 @@ describe('the wait on the queue apart from the run, per act (issue #1194)', () =
     await new Promise((r) => setTimeout(r, 50));
     const t0 = performance.now();
     const r = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
-    expect(performance.now() - t0).toBeLessThan(BUDGET_MS);
+    withinBudget(performance.now() - t0);
     expect(r).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
     await running;
-    slow.delay.ms = 0;
+    slow.release();
     await waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === issue.url), { what: 'the approved job', timeoutMs: 20_000 });
     const timing = await waitFor(async () => (await sources()).afterAnswer.find((t) => t.act === 'sync:approve'), { what: 'the sync\'s timing' });
     expect(timing).toMatchObject({ count: 1, lastAt: expect.any(String) });
