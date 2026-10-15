@@ -51,9 +51,14 @@ storageClassName: {{ . | quote }}
 {{- if or .Values.masterKey.existingSecret .Values.masterKey.externalSecret.enabled }}true{{ end -}}
 {{- end -}}
 
+{{/* Whether the chart makes the hopper's service account: asked, or the sandbox Role needs one and none is named. */}}
+{{- define "hopper.makesServiceAccount" -}}
+{{- if or .Values.serviceAccount.create (and .Values.sandbox.enabled (not .Values.serviceAccount.name)) }}true{{ end -}}
+{{- end -}}
+
 {{/* The hopper's service account, or nothing: the namespace's default. */}}
 {{- define "hopper.serviceAccount" -}}
-{{- if .Values.serviceAccount.create -}}
+{{- if include "hopper.makesServiceAccount" . -}}
 {{- .Values.serviceAccount.name | default (include "hopper.fullname" .) -}}
 {{- else -}}
 {{- .Values.serviceAccount.name -}}

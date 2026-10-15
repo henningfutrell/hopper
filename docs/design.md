@@ -5390,14 +5390,20 @@ code over the API's WebSocket protocol, which that adapter does not do, so it ta
   label value Kubernetes does not take is selected by its hash and answered as given. The runtime sees only its own
   pods: `inspect` of the hopper's own pod is no container, so the hopper's address for a box is its first LAN name
   (`address.ts`), its Service's, proven by the start check.
+- **In the Helm chart** (`sandbox.enabled`, `deploy/helm/hopper/templates/sandbox.yaml`): the chart sets
+  `HOPPER_SANDBOX_RUNTIME=kubernetes` and `HOPPER_KUBERNETES_HOPPER_LABELS` to the hopper pod's three selector labels,
+  so a box reaches the hopper's pod alone, not the chart's Postgres, OpenFGA or Solr, which share its `name` label. It
+  makes the hopper's service account (unless one is named), a Role in the release's namespace with only the calls the
+  runtime makes, and its RoleBinding; no ClusterRole. Only the hopper's pod mounts the token. The boxes start in the
+  release's namespace: there the hopper's first LAN name, its Service's short name, resolves from a box.
 - **Not built yet** (carried on #1286): an allowlist of hosts per template (with #849's proxy); a live run on a
-  cluster with no socket (a sandbox step, a denied egress, the read-only probes) once the Helm chart (#1281's first part)
-  exists.
+  cluster with no socket (a sandbox step, a denied egress, the read-only probes).
 
 Tests: `test/sandbox/kubernetes.test.ts` (the pod and its flags, the egress policy before it, one-shot, names, only its
 own pods, start, wait, the start check, exec, copy, claims, problem), `test/sandbox/kubernetes-images.test.ts`
 (published tools images, and the Containerfile CI writes), `test/sandbox/kubernetes-api.test.ts` (exec's exit code),
-`test/sandbox/runtime-select.test.ts` (chosen, and its settings).
+`test/sandbox/runtime-select.test.ts` (chosen, and its settings), `test/scripts/helm-chart-sandbox.test.ts` (the chart's
+settings, service account, Role and RoleBinding).
 
 ## Job pods on Kubernetes (issue #1283, 2026-10-15)
 

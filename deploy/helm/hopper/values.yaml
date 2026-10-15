@@ -53,11 +53,11 @@ kms:
     # An endpoint other than the region's own (a VPC endpoint); empty: the region's own.
     endpoint: ""
 
-# The hopper's service account. Unset: the namespace's default. For AWS KMS, make one with the role's annotation, as
-# eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>.
+# The hopper's service account. Unset: the namespace's default, or, with sandbox.enabled, one the chart makes. For AWS
+# KMS, make one with the role's annotation, as eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>.
 serviceAccount:
   create: false
-  # The name; empty: <release> when create is true, else the default.
+  # The name; empty: <release> when the chart makes it, else the default.
   name: ""
   annotations: {}
 
@@ -113,6 +113,13 @@ solr:
   size: 5Gi
   storageClass: ""
   resources: {}
+
+# Sandbox boxes as pods (docs/deploy.md "Sandbox boxes on Kubernetes"): the hopper starts them in the release's
+# namespace through the Kubernetes API, with its service account and the Role the chart makes for it there. No
+# container socket. Each box is held by the NetworkPolicy the hopper applies: it reaches DNS, the hopper's pod and
+# public addresses only. The network plugin must enforce NetworkPolicy. Off: the hopper starts no sandbox boxes.
+sandbox:
+  enabled: false
 
 # NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. They take effect
 # only where the cluster's network plugin enforces them.

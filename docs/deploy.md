@@ -719,6 +719,7 @@ own secrets (webhook secrets, the GitHub connection, sign-in realms' secrets) st
 | `kms.aws.region`, `kms.aws.key`, `kms.aws.endpoint` | AWS KMS wraps the vault's data key (above) |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
+| `sandbox.enabled` | sandbox boxes the hopper starts as pods in the release's namespace ("Sandbox boxes on Kubernetes"). Default off |
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
@@ -729,7 +730,7 @@ the StatefulSets' volumes stay too: the database keeps the password it was made 
 Update: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values` with the chart of the new version.
 The hopper stops before the new one starts (one writer of its database).
 
-Not in the chart yet (issue #1281 has the parts): sandbox boxes the hopper starts, remote access (`tunnel`, `cloudflared`: use the Ingress), the
+Not in the chart yet (issue #1281 has the parts): remote access (`tunnel`, `cloudflared`: use the Ingress), the
 optional services, and an update and drift check that know Kubernetes — the hopper's drift check reads a compose stack,
 and in the cluster it says compose services are not running.
 
@@ -1236,6 +1237,16 @@ cluster: the kubeconfig).
 | `HOPPER_KUBERNETES_NAMESPACE` | The namespace the boxes start in. Unset: the hopper's own namespace. |
 | `HOPPER_KUBERNETES_HOPPER_LABELS` | The labels of the hopper's pods, `key=value`, comma-separated. Default `app.kubernetes.io/name=hopper`. A box may reach only pods with these labels in the hopper's namespace, on the hopper's port. |
 | `HOPPER_LAN_NAMES` | Its first name is the address a box dials: the name of the hopper's Service in that namespace (for example `hopper`). The box's start check proves it from inside the box. |
+
+**With the Helm chart**, set `sandbox.enabled=true`. The chart sets these settings, makes the Role below in the
+release's namespace and binds it to the hopper's service account (one it makes, `hopper`, unless `serviceAccount.name`
+names one). Only the hopper's pod gets the account's token. The boxes start in the release's namespace, and a box may
+reach the hopper's pod alone, by its three labels (`app.kubernetes.io/name`, `instance` and `component`), not Postgres,
+OpenFGA or Solr:
+
+```sh
+helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set sandbox.enabled=true
+```
 
 The service account needs this Role in the boxes' namespace (and nothing in any other):
 
