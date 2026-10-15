@@ -1,0 +1,1 @@
+- A job can now read the reviews of a pull request through the hopper, and a job's page shows how many calls the hopper made on GitHub for it.

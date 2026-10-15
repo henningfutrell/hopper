@@ -13123,7 +13123,7 @@ every start of the job, so a restart or a renewal changes nothing on the machine
 hashed" — this one is not even kept.)
 
 **`hopper-gh`** (`src/github-proxy/script.ts`): POSIX sh and curl, nothing else, so it runs on any machine a job runs
-on. `issue create|comment|view|close`, `pr create|view|status|wait|ready` (`pr status`, `pr wait`, issue #1072, "Jobs ask the hopper, not GitHub"), `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
+on. `issue create|comment|view|close`, `pr create|view|diff|commits|checks|reviews|status|wait|ready` (`pr status`, `pr wait`, issue #1072, "Jobs ask the hopper, not GitHub"), `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
 place (no `eval`); `--body-file` is read by curl. It prints the hopper's JSON answer and exits 1 on a refusal or a
 GitHub failure, 2 on a bad call. Its `help` is the whole manual: the job is told one protocol line
 (`GITHUB_PROXY_LINE`, `src/job-rules/`) and reads the rest only when it needs it.
@@ -18185,6 +18185,7 @@ the hopper's own job only, rate-limited as `pr.view` (120 an hour per job, 600 p
 | `pr commits N` | `pr.commits` | `GET …/pulls/N/commits`, every page | `commits` (sha, message, author, date) |
 | `pr checks N` | `pr.checks` | the pull request, `GET …/commits/<head>/check-runs` (every page) and `…/status` | `state`, `merged`, `head`, `headSha`, `checks` (id — the `check log` job —, name, status, conclusion, url), `statuses` |
 | `issue comments N` | `issue.comments` | `GET …/issues/N/comments`, every page | `comments` (id, author, createdAt, body, url): an issue's, or a pull request's conversation |
+| `pr reviews N` | `pr.reviews` | `GET …/pulls/N/reviews`, every page (issue #1072 part 3) | `reviews` (id, author, state, body, submittedAt, url), `decision` (`approved`, `changes_requested`, `none`) |
 
 The diff is built from the files' patches, not asked as `application/vnd.github.diff`: one JSON route, the file list
 with it, and the same cap GitHub puts on patches (a file with none says so).
@@ -19456,10 +19457,29 @@ restart loses none: the job's next subscribe answers it again. The skill waits l
 with `stream_wait` — the loop `hopper-skill --wait` had, moved to `src/job-stream/script.ts` so both scripts use one —,
 then prints the status. Exit 0 the status (settled), 1 a refusal, 3 `wait: none`, 4 the deadline passed.
 
-**Not yet (the next parts).** The other reads the issue names that no repo query answers yet — reviews, a file at a
-ref — as hopper reads. A pull request's diff, commits and checks are repo queries (issue #1074); a job reads a file and
-the history with git too, which already goes through the hopper (issue #652, "Git through the hopper"). A count of GitHub
-calls per job in the UI.
+**Reviews: `pr reviews`** (part 3, 2026-10-15). `sh "$HOPPER_GH" pr reviews N --repo OWNER/NAME`, op `pr.reviews`: a
+repo query (the table in "Repo queries"), so the cache answers it again while it is fresh, and on a merged pull request.
+On a miss, `GET …/pulls/N/reviews`, every page (`api.ts` `pullReviews`): `reviews`, oldest first (id, author, `state` in
+lower case — `approved`, `changes_requested`, `commented`, `dismissed` —, body, submittedAt, url; a pending review, not
+yet sent, is left out), and `decision` (`reviewDecision`, pure): the latest review of each reviewer that approves, asks
+for changes or was dismissed decides — `changes_requested` when one asks for changes, else `approved` when one approves,
+else `none`. A comment alone decides nothing. Rate-limited as `pr.view`.
+
+**The count, in the UI** (part 3). A job's parts list ("A job's parts list", `src/domain/job-bom.ts` `githubCalls`) has a
+part `github` under work, once the job asked the hopper anything on GitHub: `N GitHub calls` (or `No GitHub calls`), with
+the reads the hopper did on GitHub for the job (`github_proxy.done` with `source: github`), its writes and pushes (one with
+no `source`: `pr.create`, `issue.comment`, `git.push` and the like), and the reads it answered with no call (`source`
+`hopper` or `cache`). Refused and failed requests are not counted: the first made no call, the second is on the timeline.
+The count of a job's reads of GitHub is so the number the issue asks to see drop.
+
+**What stays with git.** A file at a ref and the commit history: a job reads them with git, whose fetch already goes
+through the hopper (issue #652, "Git through the hopper") and spends no REST call. Issue state: `issue view`, a repo
+query with the ledger's word beside it. No `hopper repo …` command is added for them: it would read GitHub where git
+already read it once.
+
+Part 3: `test/integration/github-proxy.test.ts` (`pr reviews` read on GitHub once, then from the cache, with its
+decision), `test/github-proxy/repo-query.test.ts` (who may ask it), `test/domain/job-bom.test.ts` (the `github` part:
+calls, writes and reads answered with no call; none when the job asked nothing).
 
 Tests: `test/github-proxy/pr-status.test.ts` (the status from a card and from the ledger, nothing known, the policy;
 the broker: from the hopper with GitHub not asked, from GitHub once, then from the repo-query cache while fresh),
