@@ -1,0 +1,1 @@
+- Each job's agent now runs in a sandbox that hides the containers, sockets and programs that keep the hopper running, so a job cannot reach them even by name.

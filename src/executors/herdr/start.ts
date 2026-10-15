@@ -15,7 +15,7 @@ import {
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
-import { RUNTIME_MARK, runtimeCommand, runtimeOutcome } from '../../client/job-runtime.ts';
+import { enterRuntime, enterSandbox } from './start-isolation.ts';
 import { RESTORE_MARK, restoreOutcome } from '../../client/checkpoint.ts';
 import { windowsShellOf } from './screen.ts';
 import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
@@ -36,8 +36,6 @@ const JOB_WORKTREE_WAIT_MS = 10 * 60000;
 /** How long the shell has to start the job worktree command, and how often it is typed, before the start is tried again (issue #518). */
 const JOB_WORKTREE_RUNNING_WAIT_MS = 10000;
 const JOB_WORKTREE_TYPINGS = 3;
-/** How long setting up the job's own container runtime may take (issue #1295): it writes a few files and starts its socket. */
-const RUNTIME_WAIT_MS = 60000;
 /** How long restoring a checkpoint may take (issue #921): it gets the parts from the hopper and may fetch the base. */
 const RESTORE_WAIT_MS = 10 * 60000;
 /** How long sharing dependencies may take: the first job with a lockfile installs them (issue #410). */
@@ -277,24 +275,6 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
 }
 
 /**
- * Give the job its own container runtime (issue #1295, src/client/job-runtime.ts), in the pane's shell, after it entered
- * the job's scope, so the runtime's socket runs in the scope: its runtime dir, its storage in the scratch dir, its socket,
- * put in the shell's environment, with podman and docker on its PATH guarded. A machine with no podman (or no runtime dir
- * of the user's) gives the job none, the host's socket closed all the same. A setup that failed fails the job: it would
- * run next to the host's runtime. Null when done, else the failure.
- */
-async function enterRuntime(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | StartTimedOut | null> {
-  await d.herdr.runInPane(s.paneId, runtimeCommand(ctx.job.id, jobScratchOf(s.cwd, ctx.job.id), true));
-  const { found, screen } = await awaitOnScreen(d, ctx, s.paneId, RUNTIME_MARK, runtimeOutcome, RUNTIME_WAIT_MS);
-  if (ctx.signal.aborted) return null;
-  if (found === 'own') ctx.progress('container runtime: the job\'s own (podman), apart from the host\'s');
-  else if (found === 'none') ctx.progress('container runtime: none for the job here (no podman, or no runtime dir of the user\'s); the host\'s is closed to it');
-  else if (found === 'failed') return { kind: 'failed', error: `the job's own container runtime could not be set up on ${ctx.machine.id}: ${tail(screen, 10)}` };
-  else return { startTimedOut: `pane ${s.paneId} never set up the job's container runtime within ${RUNTIME_WAIT_MS} ms: ${tail(screen, 10)}` };
-  return null;
-}
-
-/**
  * Make the job its own git worktree and move the pane's shell into it (issues #379, #361, #431, #1103): of the work
  * tree when that is the top of the job's git repository; else of the checkout of the job's repository in the work
  * tree's workspace, fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
@@ -404,6 +384,8 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   if (unscoped || ctx.signal.aborted) return unscoped;
   const unruntimed = await enterRuntime(d, ctx, s);
   if (unruntimed || ctx.signal.aborted) return unruntimed;
+  const unsandboxed = await enterSandbox(d, ctx, s);
+  if (unsandboxed || ctx.signal.aborted) return unsandboxed;
   if (d.jobWorktrees || p.repo) {
     const unentered = await enterJobWorktree(d, ctx, s, p.repo);
     if (unentered || ctx.signal.aborted) return unentered;

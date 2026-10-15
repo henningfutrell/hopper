@@ -106,9 +106,9 @@ describe.skipIf(!bwrapRuns)('the job\'s sandbox (issue #1295)', () => {
     expect(readFileSync(join(root, '.local', 'share', 'containers', 'storage', 'db.sql'), 'utf8')).toBe('the stack');
   });
 
-  it('the user\'s container storage and herdr\'s sockets are empty in it', () => {
-    const r = inSandbox(`ls -A "${root}/.local/share/containers" "${root}/.config/herdr/sessions"; echo end`);
-    expect(r.stdout.replace(/\s+/g, ' ').trim()).toBe(`${root}/.config/herdr/sessions: ${root}/.local/share/containers: end`);
+  it('the user\'s container storage and herdr\'s sockets are not in it', () => {
+    const r = inSandbox(`ls -A "${root}/.local/share/containers"; [ -e "${root}/.config/herdr/sessions/hopper/herdr.sock" ] && echo herdr-seen; echo end`);
+    expect(r.stdout.trim()).toBe('end');
   });
 
   it('no process of the host shows in it', () => {
@@ -138,14 +138,11 @@ describe.skipIf(!bwrapRuns)('the job\'s sandbox (issue #1295)', () => {
     expect(r.stdout.trim().split('\n')).toEqual(['1', `hopper-runtime-${JOB}`]);
   });
 
-  it('a machine with no runtime of the job\'s: the user\'s runtime dir is empty in it', () => {
-    const r = spawnSync('sh', ['-c', `${runtimeCommand(JOB, scratch, false)} >/dev/null; ${sandboxCommand(scratch)} >/dev/null; "${scratch}/sandbox/run" sh -c 'ls -A "${host}"; echo end'`],
-      { encoding: 'utf8', env: env({ XDG_RUNTIME_DIR: join(root, 'missing') }) });
-    expect(r.stdout.trim()).toBe('end');
-    // The user's real runtime dir, /run/user/<uid>, is empty in it too.
+  it('a machine with no runtime of the job\'s: the user\'s runtime dir is empty in it, and so is /run/user/<uid>', () => {
     const uid = execFileSync('id', ['-u'], { encoding: 'utf8' }).trim();
-    const u = spawnSync('sh', ['-c', `"${scratch}/sandbox/run" sh -c 'ls -A /run/user/${uid} | wc -l'`], { encoding: 'utf8', env: env() });
-    expect(u.stdout.trim()).toBe('0');
+    const r = spawnSync('sh', ['-c', `${sandboxCommand(scratch)} >/dev/null; "${scratch}/sandbox/run" sh -c 'ls -A "${host}"; ls -A /run/user/${uid}; echo end'`],
+      { encoding: 'utf8', env: env() });
+    expect(r.stdout.trim()).toBe('end');
   });
 });
 
