@@ -171,4 +171,41 @@ describe('the outbox coalesces the rows due for one issue (issue #1238)', () => 
       [REPO, url(2), { op: 'add_assignees', assignees: ['owner'] }],
     ]);
   });
+
+  it('the same comment twice on one issue sends one comment, after the labels; another comment is its own call', async () => {
+    const { calls, outbox, flush } = counting();
+    const comment = (body: string) => ({ change: { op: 'comment', body } as OutboxChange });
+    outbox.queue('resolve', url(1), REPO, [comment('Resolved.'), label('add_labels', 'hopper:done')], { tag: 'j1@1' });
+    outbox.queue('resolve', url(1), REPO, [comment('Resolved.')], { tag: 'j1@2' });
+    outbox.queue('resolve', url(1), REPO, [comment('Other.')], { tag: 'j1@3' });
+    expect(await flush()).toEqual({ due: 4, wrote: [REPO] });
+    expect(calls).toEqual([
+      [REPO, url(1), { op: 'add_labels', labels: ['hopper:done'] }],
+      [REPO, url(1), { op: 'comment', body: 'Resolved.' }],
+      [REPO, url(1), { op: 'comment', body: 'Other.' }],
+    ]);
+  });
+});
+
+describe('a failed row is sent again by a person\'s Retry (issue #1238)', () => {
+  it('Retry on Sources sends the failed rows of the item again, from their first attempt', async () => {
+    const { gh, gated, source, item } = setup();
+    gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+    await source.discover();
+    gh.failNext('addAssignees', new GitHubApiError('not allowed', true, 403));
+    gated.open();
+    await source.intakeAction?.({ kind: 'assign', keys: [url(1)] });
+    await source.flushOutbox!();
+    expect(source.describe().outboxFailed).toEqual([{ key: url(1), repo: REPO, act: 'assign', error: 'not allowed', attempts: 1 }]);
+    expect(await source.intakeAction?.({ kind: 'retry_outbox', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
+    expect(item(url(1))?.writeBehind).toEqual({ act: 'assign', state: 'running' });
+    expect(await source.flushOutbox!()).toEqual({ due: 1, wrote: [REPO] });
+    expect(gh.issue(REPO, 1).assignees).toEqual(['owner']);
+    expect(source.describe().outboxFailed).toBeUndefined();
+  });
+
+  it('Retry of an item with no failed row is refused with why', async () => {
+    const { source } = setup();
+    expect(await source.intakeAction?.({ kind: 'retry_outbox', keys: [url(9)] })).toEqual({ done: [], failed: { [url(9)]: 'no GitHub write of this item failed' } });
+  });
 });

@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, HandoffView, Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
-import { GitHubApiError } from '../../src/sources/github/api.ts';
+import { GitHubApiError, type GitHubApi } from '../../src/sources/github/api.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -20,11 +20,14 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function boot(gh: FakeGitHub) {
-  const db = tempDbPath();
-  cleanup = db.cleanup;
+async function boot(gh: GitHubApi, dbPath?: string) {
+  if (!dbPath) {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    dbPath = db.dbPath;
+  }
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'scripted' } }] };
-  const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
+  const a = await startTestApp({ dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);
   connectGitHub(a, [REPO]);
   return a;
@@ -105,8 +108,46 @@ describe('a resolution is written back to its GitHub issue', () => {
       return x?.resolution?.writeBack === 'pending' && x.resolution.writeBackError ? x : undefined;
     }, { what: 'pending with the error' });
     expect(pending.resolution!.writeBackError).toContain('502');
-    await a.sync();
-    await waitFor(() => gh.commentsOn(REPO, issue.number).length === 1, { what: 'written on a later sync' });
+    // The GitHub outbox sends it again after its backoff (issue #1238).
+    await waitFor(() => gh.commentsOn(REPO, issue.number).length === 1, { what: 'written on a later try', timeoutMs: 15_000 });
     await waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.id === h.id)?.resolution?.writeBack === 'written', { what: 'written' });
+  });
+
+  it('a resolution is kept in the GitHub outbox: with GitHub\'s writes held it answers, and a restart sends its comment once (issue #1238)', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const gh = createFakeGitHub();
+    let hold = false;
+    const sent: string[] = [];
+    const held = new Proxy(gh, {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver) as unknown;
+        if (typeof v !== 'function' || !['postComment', 'addLabels', 'removeLabels'].includes(String(prop))) return v;
+        return (...args: unknown[]) => {
+          if (!hold) return (v as (...x: unknown[]) => unknown).apply(target, args);
+          sent.push(String(prop));
+          return new Promise<never>(() => {});
+        };
+      },
+    });
+    const a = await boot(held, db.dbPath);
+    const token = await a.login();
+    const { issue, h } = await failedIssue(a, gh);
+    hold = true;
+    expect((await resolve(a, token, h, { action: 'wont_do', note: 'Not wanted any more.' })).status).toBe(200);
+    await waitFor(() => sent.length > 0, { what: 'a write sent' });
+    await a.sync();
+    expect((await failuresOf(a)).handoffs.find((x) => x.id === h.id)?.resolution?.writeBack).toBe('pending');
+    await a.stop();
+    apps.splice(0);
+    expect(gh.commentsOn(REPO, issue.number)).toEqual([]);
+
+    const again = await boot(gh, db.dbPath);
+    await waitFor(() => gh.commentsOn(REPO, issue.number).length === 1, { what: 'the comment after the restart', timeoutMs: 15_000 });
+    expect(gh.issue(REPO, issue.number).labels).toContain('hopper:rejected');
+    await again.sync();
+    await waitFor(async () => (await failuresOf(again)).handoffs.find((x) => x.id === h.id)?.resolution?.writeBack === 'written', { what: 'written' });
+    await again.sync();
+    expect(gh.commentsOn(REPO, issue.number)).toHaveLength(1);
   });
 });
