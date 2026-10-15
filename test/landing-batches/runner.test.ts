@@ -9,6 +9,8 @@
 //   Scenario: a merge that waits for its batch run is recorded pending once
 //   Scenario: a red batch run is closed and recorded failed; failing checks start a bisect; with none, the same tip does not run again
 //   Scenario: a job's open pull request on the tested branch moves to the landing branch, and says so on it; another's does not
+//   Scenario: the hopper's own batch pull request stays on the tested branch, even when its text closes a job's issue (issue #1311)
+//   Scenario: a pull request GitHub refuses to move is skipped, logged once; the others move and the batch run goes on (issue #1311)
 //   Scenario: the landing branch is the one the settings name, whatever the repository's default branch (issue #1142)
 //   Scenario: a landing branch that is the tested branch runs nothing and says why
 //   Scenario: a batch run's pull request closes the issues of the job pull requests in it (issue #1175)
@@ -29,6 +31,8 @@ interface World {
   pulls: Map<number, { head: string; base: string; state: 'open' | 'closed'; merged: boolean; mergeable: boolean | null; url: string; headSha: string; body?: string }>;
   checks: { name: string; status: string; conclusion?: string }[];
   calls: string[];
+  /** The pull requests whose base change GitHub refuses. */
+  refuseRetarget?: Set<number>;
 }
 
 function world(): World {
@@ -62,8 +66,12 @@ function fake(w: World): LandingBatchGitHub {
     merge: async (_repo, n, sha) => { const p = w.pulls.get(n)!; p.merged = true; p.state = 'closed'; w.calls.push(`merge #${n} ${sha}`); return { sha: 'merge-sha' }; },
     close: async (_repo, n) => { w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
     mergeInto: async () => ({ kind: 'nothing' }),
-    openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url })),
-    retarget: async (_repo, n, base) => { w.pulls.get(n)!.base = base; w.calls.push(`retarget #${n} ${base}`); },
+    openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url, head: p.head })),
+    retarget: async (_repo, n, base) => {
+      w.calls.push(`retarget #${n} ${base}`);
+      if (w.refuseRetarget?.has(n)) throw new Error(`GitHub answered 422 to the base of ${REPO}#${n}: Validation Failed`);
+      w.pulls.get(n)!.base = base;
+    },
     comment: async (_repo, n, body) => { w.calls.push(`comment #${n} ${body}`); },
     pullRequestOf: async () => undefined,
     revert: async () => { throw new Error('no revert here'); },
@@ -74,7 +82,7 @@ function fake(w: World): LandingBatchGitHub {
   };
 }
 
-function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?: LandingBatchSettings; closingIssues?: (repo: string, merges: readonly number[]) => string[] } = {}) {
+function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?: LandingBatchSettings; closingIssues?: (repo: string, merges: readonly number[]) => string[]; log?: string[] } = {}) {
   const events: DomainEvent[] = [];
   let seq = 0;
   const r = createLandingBatches({
@@ -86,7 +94,7 @@ function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?
     jobPullRequests: () => o.jobPullRequests ?? [],
     ...(o.closingIssues ? { closingIssues: o.closingIssues } : {}),
     now: () => o.now ?? new Date(),
-    log: () => {},
+    log: (l) => { o.log?.push(l); },
   });
   return { r, events };
 }
@@ -189,6 +197,43 @@ describe('the batch runner (issue #1073)', () => {
     expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.retargeted', { repo: REPO, pullRequest: 7, url: `https://github.test/${REPO}/pull/7`, from: 'dev', to: 'main' }]]);
     // The pull request shows it (issue #1143): the same fixed note as the follow's move.
     expect(w.calls.filter((c) => c.startsWith('comment'))).toEqual([`comment #7 ${retargetNote('dev', 'main')}`]);
+  });
+
+  it('leaves the hopper\'s own batch pull request on dev, even when its text closes a job\'s issue (issue #1311)', async () => {
+    const w = world();
+    w.aheadBy = 0;
+    // A batch run, a bisect and a back-merge, each named by a job: its text closes or names the job's issue.
+    for (const [n, head] of [[100, 'hopper-batch/abcdef012345'], [9, 'hopper-batch/bisect-abcdef012345'], [10, 'hopper-batch/back-merge-abcdef012345']] as const) {
+      w.pulls.set(n, { head, base: 'dev', state: 'open', merged: false, mergeable: true, url: `https://github.test/${REPO}/pull/${n}`, headSha: TIP, body: 'Closes #1' });
+    }
+    const { r } = runner(w, { jobPullRequests: [100, 9, 10].map((n) => `https://github.test/${REPO}/pull/${n}`) });
+    await r.pass();
+    expect(w.pulls.get(100)!.base).toBe('dev');
+    expect(w.pulls.get(9)!.base).toBe('dev');
+    expect(w.pulls.get(10)!.base).toBe('dev');
+    expect(w.calls.filter((c) => c.startsWith('retarget') || c.startsWith('comment'))).toEqual([]);
+  });
+
+  it('skips a pull request GitHub refuses to move, logged once; the others move and the batch run is merged (issue #1311)', async () => {
+    const w = world();
+    const log: string[] = [];
+    const jobs = [6, 7].map((n) => `https://github.test/${REPO}/pull/${n}`);
+    const { r, events } = runner(w, { jobPullRequests: jobs, log });
+    await r.pass();
+    w.checks = [{ name: 'test', status: 'completed', conclusion: 'success' }];
+    w.pulls.set(6, { head: 'issue-6', base: 'dev', state: 'open', merged: false, mergeable: true, url: jobs[0]!, headSha: 'x' });
+    w.pulls.set(7, { head: 'issue-7', base: 'dev', state: 'open', merged: false, mergeable: true, url: jobs[1]!, headSha: 'y' });
+    w.refuseRetarget = new Set([6]);
+    await r.pass();
+    expect(w.pulls.get(6)!.base).toBe('dev');
+    expect(w.pulls.get(7)!.base).toBe('main');
+    expect(w.pulls.get(100)!.merged).toBe(true);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.retargeted', 'landing_batch.promoted']);
+    expect(w.calls.filter((c) => c.startsWith('comment'))).toEqual([`comment #7 ${retargetNote('dev', 'main')}`]);
+    // Refused again on the next pass: not logged again.
+    await r.pass();
+    expect(log.filter((l) => l.includes('#6'))).toHaveLength(1);
+    expect(log.filter((l) => l.includes('#6'))[0]).toMatch(/422/);
   });
 
   it('batches the landing branch the settings name, and reads no default branch (issue #1142)', async () => {
