@@ -2,7 +2,7 @@
 // the source merges or closes the pull request after the answer, and a GitHub refusal is recorded with why. Real daemon,
 // real database; the fake GitHub, slowed at its seam.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Job, PullRequestsView } from '../../src/domain/types.ts';
+import type { AfterAnswerTiming, Job, PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -67,6 +67,10 @@ describe('Merge now and Close PR answer within the budget, GitHub slow (issue #1
     expect(mergesOf(gh)).toHaveLength(1);
     expect(gh.issue(REPO, issue.number).state).toBe('closed');
     expect(await cardOf(a, job.id)).toBeUndefined();
+    // The merge's wait on the job's report chain apart from its run, which waited for the slowed GitHub.
+    const timing = (await a.api<{ afterAnswer: AfterAnswerTiming[] }>('GET', '/api/sources')).body.afterAnswer.find((t) => t.act === 'merge');
+    expect(timing).toMatchObject({ count: 1 });
+    expect(timing!.runMs.max).toBeGreaterThanOrEqual(SLOW_MS / 2);
   });
 
   it('Merge now that GitHub refuses after the answer: recorded with why, and the card stays', { timeout: 30_000 }, async () => {
