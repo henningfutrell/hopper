@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Clock, InstanceEvents, InstanceSettingsRepository, ReleaseCheck, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
 import { CANARY_BRANCH } from '../domain/landing-canary.ts';
-import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type UpdateTarget, type VersionHistory } from '../domain/types.ts';
+import { isUpdateChannel, type ClusterInstall, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type UpdateTarget, type VersionHistory } from '../domain/types.ts';
 import { createGitMirror, type GitMirror, notesAt } from './git.ts';
 import { allBullets, newSince, readNotes, WHATS_NEW_DIR, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
@@ -52,6 +52,8 @@ export interface UpdaterOptions {
   release: ReleaseCheck;
   /** Default: a bare mirror under `<dataDir>/update/repo.git`. */
   mirror?: GitMirror;
+  /** Set for a cluster install (issue #1285): the status says so, and the update notice gives helm upgrade, never compose. */
+  cluster?: ClusterInstall | undefined;
 }
 
 interface Checked {
@@ -133,7 +135,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
 
   function status(): UpdateStatus {
     const { commits: _commits, ...rest } = checked;
-    const base = { ...settings(), ...rest, installedWhatsNew: installedNews, restartBlockers: o.restartBlockers() };
+    const base = { ...settings(), ...rest, installedWhatsNew: installedNews, restartBlockers: o.restartBlockers(), ...(o.cluster ? { cluster: o.cluster } : {}) };
     if (applying) return { ...base, state: 'applying', apply: applying };
     if (applyError) return { ...base, state: 'error', reason: applyError };
     return base;

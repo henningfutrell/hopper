@@ -8,3 +8,4 @@ export { renameBoot } from './rename.ts';
 export { createStackDrift, driftLine, startStackDrift } from './drift.ts';
 export { createStackProbe, databaseHostOf } from './stack-probe.ts';
 export { createReleaseCheck, releaseAccount } from './release-check.ts';
+export { clusterChannelTag, clusterInstall } from './cluster.ts';

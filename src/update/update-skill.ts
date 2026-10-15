@@ -1,6 +1,9 @@
 // The agent update skill (issues #697, #970, #1104): what an agent asked to update a container hopper follows, served at
 // GET /api/update/skill and printed by `hopper update skill`. Agents tended to pull and recreate the hopper service alone,
 // on the old compose file; this says plainly not to, and gives the one update command the update notice gives.
+// A cluster install (issue #1285) has its own skill: `helm upgrade` of its release, with no compose step.
+import type { ClusterInstall } from '../domain/types.ts';
+import { DEFAULT_RELEASE, HELM_CHART, helmUpgradeCommand } from './cluster.ts';
 import { PUBLISHED_IMAGE, pruneCommand, updateCommand } from './update-commands.ts';
 
 const image = `${PUBLISHED_IMAGE}:<channel>`;
@@ -58,3 +61,44 @@ that image's compose.yaml.
 A store migration that ran keeps the database usable by the build before it. To restore the database itself:
 \`podman compose -p hopper exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-backup.dump\`.
 `;
+
+const cluster = { release: DEFAULT_RELEASE, namespace: '<namespace>', chart: HELM_CHART };
+
+/** The agent update skill of a cluster install (issue #1285): `helm upgrade` of the release, nothing else. */
+export const CLUSTER_UPDATE_SKILL = `# Update a hopper on Kubernetes
+
+Follow these steps when you update a hopper that runs on Kubernetes, as a Helm release (a cluster install).
+Do not do the update another way.
+
+## Rules
+
+- **Use \`helm upgrade\` of the release.** It sets the image tag of the release and keeps every other value
+  (\`--reuse-values\`). Kubernetes then rolls out the new image.
+- **Set a pinned tag**: \`sha-<commit>\`, the build of the update. A channel tag (\`dev\`, \`beta\`, \`stable\`) does not
+  change between two builds, so the release does not roll out.
+- **Never edit the hopper's Deployment, Pods or Secrets by hand** (\`kubectl edit\`, \`kubectl set image\`). Helm then no
+  longer knows what runs, and the next upgrade undoes the change.
+- **Put no setting and no secret in a values file.** The hopper keeps its settings and secrets itself, set in the UI.
+  The master key comes from the Secret the release names, never from a value.
+- **Never show the master key.** Do not print it or write it to a file.
+
+## Steps
+
+1. Find the release and its namespace: \`helm list --all-namespaces\`. The release is \`${DEFAULT_RELEASE}\` unless
+   \`HOPPER_HELM_RELEASE\` names another.
+2. Find the commit to update to. The update notice names it, and it gives the whole command. Ask the person when you do
+   not know.
+3. Check for running jobs. The update notice says how many a restart would lose. Wait until none.
+4. Run the update:
+   \`${helmUpgradeCommand(cluster, 'sha-<commit>')}\`
+5. Wait for the rollout: \`kubectl rollout status deployment/${DEFAULT_RELEASE} --namespace <namespace>\`.
+6. Check the result: the update notice says "Up to date", and no drift banner shows.
+
+## Go back
+
+Run \`helm rollback ${DEFAULT_RELEASE} --namespace <namespace>\`. A store migration that ran keeps the database usable by
+the build before it.
+`;
+
+/** The agent update skill of this hopper: the cluster one for a cluster install, else the compose one. */
+export const updateSkill = (c: ClusterInstall | undefined): string => (c ? CLUSTER_UPDATE_SKILL : UPDATE_SKILL);

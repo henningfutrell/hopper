@@ -18,6 +18,20 @@ export const isUpdateChannel = (name: string): name is UpdateChannel => (UPDATE_
  */
 export type InstallKind = 'install' | 'image';
 
+/**
+ * A cluster install (issue #1285): an image that runs as a Kubernetes workload, a Helm release, found by
+ * `KUBERNETES_SERVICE_HOST` in its environment. Its update is `helm upgrade` of the release to a new image tag, never a
+ * compose command; its stack drift compares the image it runs with the update channel, never a compose file.
+ */
+export interface ClusterInstall {
+  /** The Helm release the hopper runs as: `HOPPER_HELM_RELEASE`, else `hopper`. */
+  release: string;
+  /** The namespace of the release: the pod's own, when it is known. */
+  namespace?: string;
+  /** The chart the update upgrades the release with. */
+  chart: string;
+}
+
 /** `install.json` beside `src/`: what this build was made from. Written by scripts/install.sh, by an update, and by the image build. */
 export interface InstallInfo {
   kind: InstallKind;
@@ -95,6 +109,8 @@ export interface UpdateStatus extends UpdateSettings {
   apply?: UpdateApply;
   /** How many running jobs, of every user, a restart would lose now: what an apply waits on, and what recreating an image's container would end (issue #494). */
   restartBlockers: number;
+  /** Set for a cluster install (issue #1285): the update is `helm upgrade` of this release, never a compose command. */
+  cluster?: ClusterInstall;
 }
 
 /** The compose file a build ships with (issue #697): GET /api/update/compose. `compose` starts with the version stamp (`# hopper version: <branch> <commit>`). */
@@ -106,8 +122,12 @@ export interface ShippedCompose {
 
 /** One way the stack a container hopper runs in differs from the compose file of its version (issue #697). */
 export interface StackGap {
-  /** `service`: a service that must run does not; `setting`: the hopper's container lacks settings the file gives it; `version`: a service runs another version. */
-  kind: 'service' | 'setting' | 'version';
+  /**
+   * `service`: a service that must run does not; `setting`: the hopper's container lacks settings the file gives it;
+   * `version`: a service runs another version; `image` (a cluster install, issue #1285): the hopper runs another image than
+   * the update channel's.
+   */
+  kind: 'service' | 'setting' | 'version' | 'image';
   /** The service, or the settings, by name. */
   name: string;
   /** The gap, in words for a person. */
@@ -122,6 +142,8 @@ export interface StackDrift {
   state: 'checked' | 'unchecked';
   reason?: string;
   gaps: StackGap[];
-  /** The image the hopper runs, the update commands name. */
+  /** The image the hopper runs, the update commands name; for a cluster install, the update channel's image. */
   image?: string;
+  /** Set for a cluster install (issue #1285): the fix is `helm upgrade` of this release to `image`, never a compose command. */
+  cluster?: ClusterInstall;
 }

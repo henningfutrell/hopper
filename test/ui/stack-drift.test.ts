@@ -65,4 +65,15 @@ describe('a stack drifted from the compose file of this version (#697)', () => {
     // Issue #1169: the fix is a code block with copy.
     expect(banner.querySelector('[data-slot="code-block"] [data-slot="code-block-copy-button"]')).not.toBeNull();
   });
+
+  // Issue #1285: a cluster install drifts from its update channel; its fix is helm upgrade, never a compose or Podman command.
+  it('a cluster install: the image gap and helm upgrade of its release, with no container tool', async () => {
+    const cluster = { release: 'hopper', namespace: 'hopper', chart: 'oci://ghcr.io/henningfutrell/charts/hopper' };
+    const drift: StackDrift = { state: 'checked', cluster, image: 'ghcr.io/henningfutrell/hopper:stable', gaps: [{ kind: 'image', name: 'hopper', what: 'the hopper runs the beta image; the update channel is stable' }] };
+    const banner = (await render(drift)).querySelector('[data-stack-drift]')!;
+    const text = banner.textContent!;
+    expect(text).toContain('the hopper runs the beta image; the update channel is stable');
+    expect(text).toContain('helm upgrade hopper oci://ghcr.io/henningfutrell/charts/hopper --namespace hopper --reuse-values --set image.tag=stable');
+    expect(text).not.toMatch(/podman|docker|compose/i);
+  });
 });

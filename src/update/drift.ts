@@ -3,11 +3,14 @@
 // COMPOSE_PROFILES turns on; not a one-shot), the settings the file gives the hopper's container, and the version of the
 // vault in its own container. An update that recreated the hopper service alone on an old compose.yaml leaves exactly
 // these gaps. Each is named with what it turns off; the one fix is the update's compose commands (issue #970).
+// A cluster install (issue #1285) has no compose file: its drift is the image it runs against the update channel, and the
+// fix is `helm upgrade` of its release (src/update/cluster.ts).
 import { parse } from 'yaml';
 import type { StackProbe } from '../domain/ports.ts';
 
 export type { StackProbe };
-import type { InstallKind, StackDrift, StackGap } from '../domain/types.ts';
+import type { ClusterInstall, InstallKind, StackDrift, StackGap } from '../domain/types.ts';
+import { checkCluster, helmUpgradeCommand } from './cluster.ts';
 import { readInstallInfo } from './install.ts';
 import { readShippedCompose } from './shipped-compose.ts';
 import { PUBLISHED_IMAGE, updateCommand } from './update-commands.ts';
@@ -83,11 +86,17 @@ export async function checkStack(o: { kind: InstallKind | undefined; compose: st
 
 /**
  * The drift check of this hopper (the composition root's): the compose file `appDir` ships with against the stack, and the
- * image the fix names — HOPPER_IMAGE the hopper was started with, else the published image of install.json's branch.
+ * image the fix names — HOPPER_IMAGE the hopper was started with, else the published image of install.json's branch. A
+ * cluster install (`cluster`) compares the image it runs with `channel`, the selected channel's image tag, instead.
  */
-export function createStackDrift(o: { appDir: string; env: Record<string, string | undefined>; probe: StackProbe }): () => Promise<StackDrift> {
+export function createStackDrift(o: { appDir: string; env: Record<string, string | undefined>; probe: StackProbe; cluster?: ClusterInstall | undefined; channel?: () => string }): () => Promise<StackDrift> {
   return async () => {
     const { known } = readInstallInfo(o.appDir);
+    if (o.cluster && o.channel) {
+      const channelTag = o.channel();
+      const drift = checkCluster({ branch: known.branch, channelTag });
+      return { ...drift, cluster: o.cluster, ...(drift.gaps.length ? { image: `${PUBLISHED_IMAGE}:${channelTag}` } : {}) };
+    }
     const shipped = readShippedCompose(o.appDir);
     const drift = await checkStack({ kind: known.kind, compose: shipped.ok ? shipped.shipped.compose : undefined, commit: known.commit, env: o.env, probe: o.probe });
     const image = o.env.HOPPER_IMAGE || (known.branch ? `${PUBLISHED_IMAGE}:${known.branch}` : undefined);
@@ -104,4 +113,5 @@ export function startStackDrift(o: Parameters<typeof createStackDrift>[0] & { lo
 
 /** The log line of a drifted stack; undefined when nothing differs. */
 export const driftLine = (d: StackDrift): string | undefined => (d.gaps.length === 0 ? undefined
+  : d.cluster ? `hopper: the release differs from its update channel: ${d.gaps.map((g) => g.what).join('; ')}. Fix: upgrade the Helm release${d.image ? `: ${helmUpgradeCommand(d.cluster, d.image.slice(d.image.lastIndexOf(':') + 1))}` : ''}`
   : `hopper: the stack differs from the compose file of this version: ${d.gaps.map((g) => g.what).join('; ')}. Fix: update the whole stack (docs/deploy.md "Update")${d.image ? `: in the folder that holds compose.yaml, run ${updateCommand('podman', d.image)}` : ''}`);
