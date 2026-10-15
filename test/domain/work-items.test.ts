@@ -64,6 +64,9 @@ describe('the work-item reducer', () => {
     expect(fold([['job.queued'], ['job.failed', { error: 'x' }], ['handoff.opened', {}], ['handoff.closed', { handoffId: 'h', end: 'wont_do' }]])?.state).toBe('dropped');
     expect(fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'write access' }]])).toMatchObject({ state: 'waiting_outside', waitingOn: 'write access' });
     expect(fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'the build', ownCommand: true }]])).toMatchObject({ state: 'working', waitingOn: 'the build' });
+    // Issue #1210: its command only polls hopper state: the ledger says what it waits on.
+    expect(fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'the build', ownCommand: true }], ['job.wait_polled', { on: { kind: 'pull_request', number: 8, about: 'merge' } }]]))
+      .toMatchObject({ state: 'working', waitingOn: 'PR #8 to merge (it polls the hopper)' });
   });
 
   it('a proposal or a research report at a person needs you, never working (issue #1174); the decision moves it on', () => {

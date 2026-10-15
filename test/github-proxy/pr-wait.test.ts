@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
 import type { DomainEvent, Job, NewEvent } from '../../src/domain/types.ts';
 import {
-  createGitHubProxy, createPrWaits, holdsProxyToken, PR_WAIT_OWNER, prSettled, proxyToken, waitRequest, type KnownPullRequest, type ProxyApi, type ProxyUser,
+  createGitHubProxy, createPrWaits, holdsProxyToken, PR_WAIT_OWNER, prSettled, prWaitOver, proxyToken, waitRequest, type KnownPullRequest, type ProxyApi, type ProxyUser,
   type PrWaitUser, type PullRequestStatus,
 } from '../../src/github-proxy/index.ts';
 import { createSkillWaits, type SkillBroker } from '../../src/skills/index.ts';
@@ -26,7 +26,21 @@ describe('when a wait on a pull request\'s checks is over (issue #1072)', () => 
 
   it('the request: a pull request, and the most seconds to wait', () => {
     expect(waitRequest.parse({ op: 'pr.wait', repo: 'octo/tools', number: '8', timeout: '600' })).toEqual({ op: 'pr.wait', repo: 'octo/tools', number: 8, timeout: 600 });
+    expect(waitRequest.parse({ op: 'pr.wait', repo: 'octo/tools', number: '8', for: 'mergeable' })).toEqual({ op: 'pr.wait', repo: 'octo/tools', number: 8, for: 'mergeable' });
+    expect(waitRequest.safeParse({ op: 'pr.wait', repo: 'octo/tools', number: '8', for: 'lunch' }).success).toBe(false);
     expect(waitRequest.safeParse({ op: 'pr.wait', repo: 'octo/tools', number: '8', body: 'x' }).success).toBe(false);
+  });
+});
+
+describe('a wait on a pull request\'s mergeability is over on its next seen state (issue #1210)', () => {
+  it('over once the hopper sees its mergeability other than it was, or it is merged or closed', () => {
+    expect(prWaitOver(status({ checks: 'passing', mergeable: 'conflicts' }), { for: 'mergeable', from: 'conflicts' })).toBe(false);
+    expect(prWaitOver(status({ checks: 'pending', mergeable: 'mergeable' }), { for: 'mergeable', from: 'conflicts' })).toBe(true);
+    expect(prWaitOver(status({ mergeable: 'unknown' }), { for: 'mergeable', from: 'conflicts' })).toBe(false);
+    expect(prWaitOver(status({ mergeable: 'conflicts' }), { for: 'mergeable', from: 'unknown' })).toBe(true);
+    expect(prWaitOver(status({ state: 'merged', mergeable: 'conflicts' }), { for: 'mergeable', from: 'conflicts' })).toBe(true);
+    expect(prWaitOver(status({ checks: 'pending' }), { for: 'checks' })).toBe(false);
+    expect(prWaitOver(status({ checks: 'passing' }), { for: 'checks' })).toBe(true);
   });
 });
 
@@ -39,7 +53,7 @@ describe('the broker answers pr wait (issue #1072)', () => {
   function setup(known: KnownPullRequest) {
     const events: NewEvent[] = [];
     const asked: unknown[] = [];
-    const opened: { jobId: string; repo: string; number: number; seconds?: number }[] = [];
+    const opened: { jobId: string; repo: string; number: number; seconds?: number; for?: string; from?: string }[] = [];
     const user: ProxyUser = {
       id: 'u1', holds: (p) => holdsProxyToken(key, p), job: (id) => (id === job.id ? job : undefined), machineOf: () => 'm', record: (e) => { events.push(e); },
       pullRequest: () => known,
@@ -53,12 +67,25 @@ describe('the broker answers pr wait (issue #1072)', () => {
       user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => Date.parse('2026-10-14T10:00:00Z'),
       hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api } }),
       wait: (_u, jobId, pr, seconds) => {
-        opened.push({ jobId, repo: pr.repo, number: pr.number, ...(seconds !== undefined ? { seconds } : {}) });
+        opened.push({ jobId, repo: pr.repo, number: pr.number, ...(seconds !== undefined ? { seconds } : {}), ...(pr.over?.for === 'mergeable' ? { for: 'mergeable', from: pr.over.from } : {}) });
         return { id: 'w-1', deadline: '2026-10-14T10:10:00.000Z' };
       },
     });
     return { proxy, events, asked, opened };
   }
+
+  it('--for mergeable on a pull request with conflicts: a watch, though its checks ended (issue #1210)', async () => {
+    const t = setup({ known: status({ checks: 'passing', mergeable: 'conflicts' }) });
+    expect(await t.proxy.handle(bearer, { ...ask, for: 'mergeable' })).toMatchObject({ status: 202, body: { ok: true, mergeable: 'conflicts', wait: 'open', waitId: 'w-1' } });
+    expect(t.opened).toEqual([{ jobId: 'job-1', repo: 'octo/tools', number: 8, seconds: 600, for: 'mergeable', from: 'conflicts' }]);
+    expect(t.asked).toEqual([]);
+  });
+
+  it('--for mergeable on a merged pull request: answered now, `wait: settled`', async () => {
+    const t = setup({ known: status({ state: 'merged', mergeable: 'unknown' }) });
+    expect(await t.proxy.handle(bearer, { ...ask, for: 'mergeable' })).toMatchObject({ status: 200, body: { wait: 'settled' } });
+    expect(t.opened).toEqual([]);
+  });
 
   it('checks that ended: answered at once from the hopper\'s records, `wait: settled`, GitHub not asked', async () => {
     const t = setup({ known: status({ checks: 'passing' }) });
@@ -137,6 +164,21 @@ describe('the waits on pull requests (issue #1072)', () => {
     const answer = `${JSON.stringify(status({ checks: 'failing', failedChecks: [{ name: 'pr / test', url: 'https://github.com/octo/tools/runs/1' }] }))}\n`;
     expect(t.stream.at(-1)).toEqual({ jobId: 'job-1', type: 'github.pr_settled', payload: answer, request: 'w-1' });
     expect(t.ended).toEqual([{ jobId: 'job-1', answer }]);
+  });
+
+  it('a wait on its mergeability ends on the next state the hopper sees, and the job goes on with it (issue #1210)', () => {
+    const t = setup();
+    t.set({ known: status({ checks: 'passing', mergeable: 'conflicts' }) });
+    const w = t.waits.open('u1', 'job-1', { repo: 'octo/tools', number: 8, status: status({ checks: 'passing', mergeable: 'conflicts' }), over: { for: 'mergeable', from: 'conflicts' } });
+    expect(w?.body).toEqual({ owner: PR_WAIT_OWNER, repo: 'octo/tools', number: '8', for: 'mergeable', from: 'conflicts' });
+    t.hear('job.pull_request_seen');
+    expect(t.watches[0]!.ended).toBeUndefined();
+    // A wait on its checks is another watch.
+    expect(t.waits.open('u1', 'job-1', { repo: 'octo/tools', number: 8, status: status() })?.id).toBe('w-2');
+    t.set({ known: status({ checks: 'pending', mergeable: 'mergeable' }) });
+    t.hear('job.pull_request_seen');
+    expect(t.watches.map((x) => [x.id, x.ended])).toEqual([['w-1', 'github.pr_settled'], ['w-2', undefined]]);
+    expect(t.ended).toEqual([{ jobId: 'job-1', answer: `${JSON.stringify(status({ checks: 'pending', mergeable: 'mergeable' }))}\n` }]);
   });
 
   it('a merge ends it too; a watch that is not a pull request\'s is left to its owner', () => {
