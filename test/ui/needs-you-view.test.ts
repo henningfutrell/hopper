@@ -278,6 +278,20 @@ describe('one home each: the decider\'s picks, the question history and Your rep
     expect(main().querySelector('a[href="#settings/decider"]')).not.toBeNull();
   });
 
+  // Issue #1169: a pick is a question form too — its options are the questionnaire's choices, Jev's pick checked.
+  it('a pick\'s options are the choices of its question form; Override posts the one checked', async () => {
+    await boot('#decisions');
+    const pick = () => document.querySelector<HTMLElement>('[data-pick="k1"]');
+    const form = await vi.waitFor(() => { const f = pick()?.querySelector('[data-slot="questionnaire"][data-question-form="override"]'); expect(f).toBeTruthy(); return f!; });
+    const choices = [...form.querySelectorAll<HTMLElement>('[data-slot="questionnaire-choice"]')];
+    expect(choices.map((c) => c.textContent?.trim())).toEqual(['First', 'Second']);
+    const radios = [...form.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    expect(radios.map((r) => r.checked)).toEqual([true, false]);
+    await act(async () => { radios[1]!.click(); });
+    await act(async () => { [...pick()!.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Override')!.click(); });
+    await vi.waitFor(() => expect(posts).toContainEqual({ path: '/ui/api/minor-decisions/picks/k1/override', body: { actual: 'b' } }));
+  });
+
   it('Decisions with no pick says what will show there', async () => {
     await boot('#decisions', { minor: { ...MINOR, recent: [] } });
     await vi.waitFor(() => expect(document.querySelector('[data-decider-picks]')).not.toBeNull());

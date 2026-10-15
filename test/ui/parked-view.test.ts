@@ -147,6 +147,7 @@ describe('the Parked section', () => {
   it('Answer and pick up sends the answer, then re-queues the job', async () => {
     await boot('admin', '#parked');
     await act(async () => { (row('later').querySelector('[aria-label="Show the question"]') as HTMLButtonElement).click(); });
+    expect(row('later').querySelector('[data-slot="questionnaire"][data-question-form="answer"] textarea')).not.toBeNull();
     await act(async () => { type(row('later').querySelector('textarea')!, 'Patch forward.'); });
     await act(async () => { buttonIn(row('later'), 'Answer and pick up')!.click(); });
     await settle();
