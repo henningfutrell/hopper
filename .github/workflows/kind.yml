@@ -1,8 +1,10 @@
 # The kind check (issue #1281, scripts/kind-check.ts, docs/deploy.md "Check the chart on kind"): on a fresh kind
 # cluster, `helm install` alone brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket,
-# or runs Podman, Docker or compose. Only on a pull request that changes the chart or the check: it takes about ten
-# minutes. The hopper's image is the dev channel's: a pull request's own code is not built into an image. Read-only and
-# with no secrets: `pull_request`, never `pull_request_target`. kind, helm and kubectl are the runner image's own.
+# or runs Podman, Docker or compose. Then the sandbox check (issue #1371, scripts/kind-sandbox-check.ts) runs need boxes
+# through this checkout's Kubernetes runtime on the cluster the kind check kept, and nothing with their labels may stay.
+# Only on a pull request that changes the chart, the checks or the Kubernetes runtime: it takes about fifteen minutes.
+# The hopper's image is the dev channel's: a pull request's own code is not built into an image. Read-only and with no
+# secrets: `pull_request`, never `pull_request_target`. kind, helm and kubectl are the runner image's own.
 name: kind
 
 on:
@@ -11,6 +13,11 @@ on:
     paths:
       - deploy/helm/**
       - scripts/kind-check.ts
+      - scripts/kind-sandbox-check.ts
+      - src/sandbox/kubernetes.ts
+      - src/sandbox/kubernetes-api.ts
+      - src/sandbox/need-box.ts
+      - src/sandbox/owned.ts
       - .github/workflows/kind.yml
 
 permissions:
@@ -23,11 +30,15 @@ concurrency:
 jobs:
   kind:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
       - run: kind version && helm version --short && kubectl version --client
-      - run: node scripts/kind-check.ts --tag dev
+      - run: npm ci
+      - run: node scripts/kind-check.ts --tag dev --keep
+      - run: node scripts/kind-sandbox-check.ts --context kind-hopper-check
+      - if: always()
+        run: kind delete cluster --name hopper-check
