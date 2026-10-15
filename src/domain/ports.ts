@@ -13,7 +13,7 @@ export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests, FollowUp, PullRequestAct } from './pull-requests.ts';
+import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -667,12 +667,14 @@ export interface SourceRegistry extends GiveBackRegistry {
    */
   repoChanged(repo: string): string[];
   /**
-   * A person's Merge now or Close PR on a finished job's open pull request (issue #677): its source merges it — whatever
-   * yolo mode and its checks say — or closes it without a merge, on the job's report chain, and it is recorded as a
-   * follow-up is, with who pressed it. Refused (not_found, conflict) when the job is gone or has no open pull request,
-   * or GitHub refuses; source: GitHub could not be reached.
+   * A person's Merge now or Close PR on a finished job's open pull request (issue #677), answered at once (issue #1194):
+   * refused (not_found, conflict) when the job is gone, its source is not running or follows no pull request, or the job
+   * has no open pull request. After the answer, on the job's report chain, its source merges it — whatever yolo mode and
+   * its checks say — or closes it without a merge, and it is recorded as a follow-up is, with who pressed it; one GitHub
+   * refuses, or that cannot reach GitHub, records `job.pull_request_act_failed` with why. The same job's act sent again
+   * while one runs answers that one.
    */
-  pullRequestAct(jobId: JobId, act: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult>;
+  pullRequestAct(jobId: JobId, act: PullRequestAct, acting: ActingPerson): PullRequestActAnswer;
   /**
    * A person's Tend again (issue #1010) on a pull request the hopper gave up on (its tend job ended failed, cancelled or
    * rejected): the same step is tended at once, recorded with who pressed it. Refused (not_found, conflict) with why.
@@ -680,9 +682,10 @@ export interface SourceRegistry extends GiveBackRegistry {
   tendAgain(jobId: JobId, acting: ActingPerson): Promise<RerunResult>;
 }
 
-export type PullRequestActResult =
-  | { ok: true; outcome: FollowUp['outcome']; pullRequest: string; part: boolean }
-  | { ok: false; reason: 'not_found' | 'conflict' | 'source'; message: string };
+/** Merge now or Close PR answered (issue #1194): it runs after the answer, or why it is refused now. */
+export type PullRequestActAnswer =
+  | { ok: true; jobId: string; act: PullRequestAct }
+  | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
 export type IntakeActionOutcome =
   | { ok: true; result: IntakeActionResult }

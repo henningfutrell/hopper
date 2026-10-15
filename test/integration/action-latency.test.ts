@@ -8,12 +8,10 @@ import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
+import { BUDGET_MS, SLOW_MS } from '../support/latency.ts';
 import { slowGitHub } from '../support/slow-github.ts';
 import { waitFor } from '../support/wait.ts';
 
-/** What an action may take to answer. Anything that waits for the slow side takes `SLOW_MS` at least. */
-const BUDGET_MS = 200;
-const SLOW_MS = 2000;
 const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
 let cleanup: (() => void) | undefined;

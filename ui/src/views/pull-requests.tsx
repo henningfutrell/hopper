@@ -29,6 +29,7 @@ import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion,
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
 import { act } from '@/store';
 import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
+import { ACTING, actOnPullRequest, useActingOnPullRequest, type PullRequestAct } from '@/store/pull-request-acts';
 import { setPolled } from '@/store/polled';
 import { useCanOperate } from '@/store/selectors';
 
@@ -47,14 +48,12 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   const [reworking, setReworking] = useState(false);
   const [notes, setNotes] = useState('');
   const sendingBack = useGivingBack((s) => s[c.jobId] === 'rework');
+  const acting = useActingOnPullRequest((s) => s[c.jobId]);
   // A tend job works on it (issue #763): its job follows it no more, so no act until the tend job ends.
   if (!operator || c.state !== 'open' || !c.pullRequest || c.tendJobId) return null;
-  const run = async (what: 'merge' | 'close') => {
-    setBusy(true);
-    await act(`/ui/api/pull-requests/${what}`, { jobId: c.jobId }, `#${c.pullRequest!.number} ${what === 'merge' ? 'merged' : 'closed'}`);
-    setBusy(false);
-    onChanged();
-  };
+  // Answered at once (issue #1194): GitHub merges or closes it after, and the card waits until the stream says so.
+  const run = (what: PullRequestAct) => void actOnPullRequest(c.jobId, what, onChanged);
+  const waiting = busy || acting !== undefined;
   // Answered at once (issue #1194): the pull request is made a draft after, and the card waits until the stream says so.
   const rework = async () => {
     setBusy(true);
@@ -65,15 +64,15 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   return (
     <div className="space-y-2 pt-1">
       <div data-slot="pr-actions" className="flex flex-wrap gap-2">
-        <Confirm title={mergeQuestion(c)} action="Merge" onConfirm={() => void run('merge')}
+        <Confirm title={mergeQuestion(c)} action="Merge" onConfirm={() => run('merge')}
           description="The hopper merges it now with a merge commit, whatever yolo mode and its checks say. GitHub still refuses a draft, merge conflicts or a required check.">
-          <Button size="sm" variant="outline" disabled={busy}><GitMerge />Merge now</Button>
+          <Button size="sm" variant="outline" disabled={waiting}><GitMerge />{acting === 'merge' ? ACTING.merge : 'Merge now'}</Button>
         </Confirm>
-        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={busy || reworking || sendingBack} title="Make it a draft, and a new job reworks it with your notes"
+        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={waiting || reworking || sendingBack} title="Make it a draft, and a new job reworks it with your notes"
           onClick={() => setReworking(true)}><Undo2 />{sendingBack ? 'Sending back' : 'Send back for rework'}</Button>
-        <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => void run('close')}
+        <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => run('close')}
           description="The pull request closes without a merge. Its issue gets hopper:pr-closed and is not taken again until a person removes the label.">
-          <Button size="sm" variant="ghost" disabled={busy}><X />Close PR</Button>
+          <Button size="sm" variant="ghost" disabled={waiting}><X />{acting === 'close' ? ACTING.close : 'Close PR'}</Button>
         </Confirm>
       </div>
       {reworking && <>

@@ -8,7 +8,7 @@
 // waits on a person is judged again: done or partly done now, it is finished (its hand-off closes on `job.finished`) and
 // its end reported again, so its issue loses `hopper:failed`. A throw is kept as a retry and asked again next sync.
 // A person's Merge now or Close PR (issue #677) is the same follow, with the act, on the same chain: recorded the same
-// way, with who pressed it; a throw goes back to the person. A person's Tend again (issue #1010) on a pull request the hopper
+// way, with who pressed it; answered before it runs (issue #1194, pull-request-acts.ts). A person's Tend again (issue #1010) on a pull request the hopper
 // gave up on tends it at once, the same step, with who pressed it (tend-again.ts).
 // Tending (issue #736): a followed pull request that, as last seen, has merge conflicts or failing checks is not left for a
 // person. After its follow, off the report chain, the job's item runs again (`tend`, Run again by `tending`) with the tend
@@ -62,15 +62,15 @@
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
-import { SourceError, type JobSource, type PullRequestActResult, type RerunResult, type SourceHost, type UserStore } from '../domain/ports.ts';
-import { createTendAgain } from './tend-again.ts';
+import type { JobSource, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
+import { createTendAgain } from './tend-again.ts'; import { createPullRequestActs } from './pull-request-acts.ts';
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
 import { pullRequestCensus } from './census.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
-  type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
+  type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 import { pullRequestWaitOf } from '../domain/work-items.ts';
 
@@ -158,31 +158,8 @@ export function createAfterDone(c: AfterDoneContext) {
     if (following(job) && s?.pullRequest) seen(jobId, s.pullRequest, s.seen);
   }
 
-  /** A person's Merge now or Close PR (issue #677), on the job's report chain. */
-  async function act(jobId: string, what: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult> {
-    const job = store.jobs.get(jobId);
-    if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-    const source = c.sourceOf(job);
-    if (!source?.follow) return { ok: false, reason: 'conflict', message: `job ${jobId}: its source is not running, or follows no pull request` };
-    let result: PullRequestActResult = { ok: false, reason: 'source', message: 'not sent' };
-    await c.enqueue(jobId, async () => { result = await actOn(source, jobId, what, acting); });
-    return result;
-  }
-
-  /** Asked of the source with the act, then recorded as a follow is; a throw goes back to the person. */
-  async function actOn(source: JobSource, jobId: string, what: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult> {
-    const job = store.jobs.get(jobId);
-    if (!job || !following(job)) return { ok: false, reason: 'conflict', message: `job ${jobId} has no open pull request` };
-    try {
-      const r = await source.follow!(job, what);
-      if (!r) return { ok: false, reason: 'conflict', message: `job ${jobId} has no open pull request` };
-      record(jobId, r, acting);
-      return { ok: true, outcome: r.outcome, pullRequest: r.pullRequest, part: r.part };
-    } catch (e) {
-      const refused = e instanceof SourceError && e.permanent;
-      return { ok: false, reason: refused ? 'conflict' : 'source', message: `${what === 'merge' ? 'merge' : 'close'} refused: ${(e as Error).message}` };
-    }
-  }
+  /** A person's Merge now or Close PR (issue #677), answered at once; it runs on the job's report chain after (issue #1194). */
+  const act = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record });
 
   async function judgeAgain(source: JobSource, jobId: string): Promise<void> {
     const job = store.jobs.get(jobId);
