@@ -22,7 +22,7 @@ import { HerdrError, createHerdrCliClient } from '../executors/herdr/index.ts';
 import { herdrMismatch, readHerdrStatus } from './herdr-version.ts';
 import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
-import { isAddressLine, addressCommand, networkFix, readAddress } from './hopper-address.ts';
+import { isAddressLine, addressCommand, networkFix, readAddress, type WslAddress } from './hopper-address.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -190,14 +190,16 @@ export function probeSsh(o: {
   target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string;
   /** The hopper's addresses (issue #698): which one the machine reaches is asked in the same call. Absent: not asked. */
   hopperUrls?: readonly string[];
+  /** The address a WSL machine on the hopper's computer reaches it at (issue #1248 part 4): asked after the others, only there. */
+  wsl?: WslAddress;
 }): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; infraCredentials?: string[]; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
   const workTree = o.workTree ?? DEFAULT_WORK_TREE;
   // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
   const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
-  const command = `${HOME_COMMAND}; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${INFRA_CREDENTIALS_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
+  const command = `${HOME_COMMAND}; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${INFRA_CREDENTIALS_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls, o.wsl)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
     + ` else printf '%s\\n' "$out"; echo ${WORK_TREE_UNUSABLE}; fi`;
   // Each address asked takes at most 3 s more.
-  const timeoutMs = o.timeoutMs ?? 15000 + 3500 * (o.hopperUrls?.length ?? 0);
+  const timeoutMs = o.timeoutMs ?? 15000 + 3500 * ((o.hopperUrls?.length ?? 0) + (o.wsl ? 1 : 0));
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
@@ -215,7 +217,7 @@ export function probeSsh(o: {
         const disk = readDf(stdout);
         const resources = readResources(stdout);
         const infraCredentials = readInfraCredentials(stdout);
-        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls) : {}) };
+        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls, o.wsl?.url) : {}) };
         const refused = resolveWorkTree(workTree, home);
         if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
         if (lines.at(-1) === WORK_TREE_OK) return resolve(found);

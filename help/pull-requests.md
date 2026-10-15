@@ -170,6 +170,7 @@ When the hopper merges a pull request (yolo mode or **Merge now**) that did not 
 | A job failed with `not complete:` | It ended done with no ready pull request. Open the job to read what the hopper looked at. |
 | The issue stays open after a merge | The pull request was a part, or a person merged a pull request with no `Closes #N`. Close the issue, or let the next part run. |
 | A repository shows `no checks` | Select **Queue job** to add checks, or add a workflow yourself. |
+| A card says `checks unknown: …` and a red note on its repository says the hopper cannot read the checks | GitHub refuses the checks to the hopper's connection. The note names the connection, the permission that is missing (**Checks: read**, **Commit statuses: read**) and the fix. Needs you lists it in the **Checks** row. The hopper merges no pull request there meanwhile. Add the permission to the hopper's GitHub App and accept it on the installation; for the connected GitHub account, connect GitHub again after that. The hopper sees the change within ten minutes. |
 | A brief or a job says the hopper may not read Actions logs | The hopper's GitHub App needs the **Actions: read** permission. Add it on the app's settings page on GitHub, then accept the new permission on each installation. |
 
 **Merge now**, **Close PR**, **Send back for rework** and **Tend again** need the operator role. Yolo mode needs an admin.

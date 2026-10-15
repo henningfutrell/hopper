@@ -5,7 +5,7 @@
 // connects GitHub (Sources → Connect GitHub); nothing to set up here. Its instance is named
 // `github-account`: jobs and sync state are keyed by it.
 import type { GitHubApi } from '../../../sources/index.ts';
-import { createAccountSource, githubAccountOptions, type GitHubAccountOptions } from '../../../sources/index.ts';
+import { createAccountSource, githubAccountOptions, sameAccountWork, type GitHubAccountOptions } from '../../../sources/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
 /** The plugin. `seam` (tests) replaces the account adapter. */
@@ -15,6 +15,8 @@ export function githubAccountPlugin(seam?: GitHubApi): PluginDefinition<'job-sou
     role: 'job-source',
     describe: 'GitHub issues labelled hopper, through the GitHub account you connect (Sources → Connect GitHub)',
     options: () => githubAccountOptions,
+    // One source per account (or app) and repositories (issue #1264): a second polls GitHub again for the same issues.
+    sameWork: sameAccountWork,
     detect: async () => ({ status: 'available', detail: 'the GitHub account connected in Sources' }),
     create(ctx, o) {
       if (!o.enabled) return { disabled: { kind: 'github-account', detail: { mode: 'account' } } };

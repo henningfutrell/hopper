@@ -4,7 +4,7 @@
 // options, its private key in the environment (design.md "Secrets"). Without them the source still
 // runs, paused, and starts on its own once they are set.
 import type { GitHubApi } from '../../../sources/index.ts';
-import { appProblem, createAppSource, githubAppOptions, loadGitHubApp, type GitHubAppOptions } from '../../../sources/index.ts';
+import { appProblem, createAppSource, githubAppOptions, loadGitHubApp, sameAppWork, type GitHubAppOptions } from '../../../sources/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
 const CREATE_APP = 'scripts/create-github-app.sh (from the hopper checkout), then set appId and slug on this instance in Plugins and the key in the environment';
@@ -16,6 +16,8 @@ export function githubAppPlugin(seam?: GitHubApi): PluginDefinition<'job-source'
     role: 'job-source',
     describe: "GitHub issues labelled hopper in the repos hopper's GitHub App is installed on, posting as the app",
     options: () => githubAppOptions,
+    // One source per account (or app) and repositories (issue #1264): a second polls GitHub again for the same issues.
+    sameWork: sameAppWork,
     async detect(sys, o) {
       if (seam) return { status: 'available', detail: 'GitHub seam (tests)' };
       const load = loadGitHubApp({

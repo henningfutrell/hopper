@@ -5,6 +5,7 @@
 import type { JobGraphEdge, JobGraphNode, JobGraphPullRequest, JobStage, JobTree } from './job-graph.ts';
 import type { OwnWait } from './own-command.ts';
 import type { Job, JobStatus } from './types.ts';
+import { waitOnLabel, type WaitOn } from './wait-on.ts';
 import { pullRequestWaitOf, type PullRequestWait } from './work-items.ts';
 
 /** What the words of a node are made from: its kind and stage, and for a job, its status, phase, attempt and pull request. */
@@ -16,6 +17,8 @@ export interface Worded {
   phase?: string;
   /** A job on a wait for its own command (issue #1037): `command` while it runs, `stuck` once flagged stuck. */
   ownWait?: OwnWait;
+  /** A job on its own wait: what it waits on (issue #1245); absent on a wait from before. */
+  waitOn?: WaitOn;
   /** Its run in the chain of runs again of its issue (1 the first), and how many the failure settings allow. */
   attempt?: number;
   attempts?: number;
@@ -26,7 +29,7 @@ export interface Worded {
   handedOff?: true;
 }
 
-const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person works on it', parked: 'Parked', waiting_on: 'Waiting on the outside world' };
+const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person works on it', parked: 'Parked' };
 
 /** What a person waits to be asked for: a plan to approve, a report to accept, a question to answer. */
 function waitingOnYou(n: Worded): string | undefined {
@@ -71,7 +74,9 @@ export function stageWords(n: Worded): string {
       if (n.phase === 'research') return 'Research';
       return n.attempt && n.attempt > 1 ? `Building it (attempt ${n.attempt}${n.attempts ? ` of ${n.attempts}` : ''})` : 'Building it';
     }
-    case 'waiting': return (n.status && WAITING[n.status]) ?? 'Waiting';
+    case 'waiting':
+      if (n.status === 'waiting_on') return `Waiting on ${n.waitOn ? waitOnLabel(n.waitOn) : 'nothing recorded'}`;
+      return (n.status && WAITING[n.status]) ?? 'Waiting';
     case 'pr_open': return n.pullRequest ? pullRequestWords(n.pullRequest) : PR_OPEN_WAIT;
     case 'partly_done': return 'Part shipped: the rest runs after the merge';
     case 'done': return n.pullRequest?.state === 'merged' ? 'Merged' : 'Done';

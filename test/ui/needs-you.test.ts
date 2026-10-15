@@ -4,14 +4,14 @@
 import { describe, expect, it } from 'vitest';
 import { NEEDS_YOU_KINDS, needsYouRows, needsYouTotal, type NeedsYouCounts } from '../../ui/src/model/needs-you.ts';
 import { plansWaiting } from '../../ui/src/model/infra-plans.ts';
-import { conflictedPullRequests, gaveUpLines } from '../../ui/src/model/pull-requests.ts';
+import { checksProblemLines, conflictedPullRequests, gaveUpLines } from '../../ui/src/model/pull-requests.ts';
 import { accessRequestsWaiting, templateWaits } from '../../ui/src/model/vault.ts';
 import { yoloIndicator } from '../../ui/src/model/yolo-mode.ts';
 import type { PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultView, YoloModeView } from '../../ui/src/model/wire.ts';
 
 const none = { n: 0, high: 0 };
 const counts = (o: Partial<NeedsYouCounts> = {}): NeedsYouCounts => ({
-  intake: 0, access: 0, plans: 0, signedOut: [], notReady: [], notConfigured: [], gaveUp: [], tagged: 0, sorting: 0,
+  intake: 0, access: 0, plans: 0, signedOut: [], notReady: [], notConfigured: [], gaveUp: [], checksUnread: [], tagged: 0, sorting: 0,
   sections: { questions: none, proposals: none, research: none, logins: none, failures: none, parked: none },
   ...o,
 });
@@ -20,15 +20,15 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#sources', '#failures', '#pull-requests', '#tagged', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#sources', '#failures', '#pull-requests', '#pull-requests', '#tagged', '#queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], notConfigured: ['github-app: slug not set'], gaveUp: ['o/a#7: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], notConfigured: ['github-app: slug not set'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, setup: 1, failures: 4, 'pull-requests': 1, tagged: 2, sorting: 3 });
-    expect(needsYouTotal(rows)).toEqual({ n: 19, high: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, setup: 1, failures: 4, 'pull-requests': 1, checks: 1, tagged: 2, sorting: 3 });
+    expect(needsYouTotal(rows)).toEqual({ n: 20, high: 3 });
   });
 
   it('a machine whose tool is signed in as nobody waits on a sign-in (issue #1128): the Accounts row names each', () => {
@@ -48,6 +48,17 @@ describe('Needs you rows (issue #897)', () => {
     const row = needsYouRows(counts({ notConfigured: [line] })).find((r) => r.kind === 'setup')!;
     expect(row).toMatchObject({ n: 1, href: '#sources', details: [line] });
     expect(needsYouRows(counts()).find((r) => r.kind === 'setup')!.details).toBeUndefined();
+  });
+
+  it('a repository whose checks no read gets (issue #1244): one Checks row line per repository, with the fix', () => {
+    const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
+    const view = { yolo: { on: 1, total: 1 }, waiting: [], repos: [], checksProblems: [{ repo: 'o/a', why, pullRequests: [7, 8] }] } as PullRequestsView;
+    const lines = checksProblemLines(view);
+    expect(lines).toEqual([`o/a: the hopper cannot read the checks of #7 and #8, so it does not merge them: ${why}`]);
+    const row = needsYouRows(counts({ checksUnread: lines })).find((r) => r.kind === 'checks')!;
+    expect(row).toMatchObject({ n: 1, href: '#pull-requests', details: lines });
+    expect(checksProblemLines({ yolo: { on: 0, total: 0 }, waiting: [], repos: [] })).toEqual([]);
+    expect(checksProblemLines(undefined)).toEqual([]);
   });
 
   it('a parked job waits to be picked up, not on a decision: it has no row', () => {

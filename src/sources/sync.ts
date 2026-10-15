@@ -24,9 +24,11 @@
 // A source not configured (issue #1243, `JobSource.setupProblem`) runs no sync pass while no job of its own needs one: its
 // status is `needs-setup` with the problem, never ok, and the log says it once, and once when it clears.
 
+// Poll backoff (issue #1264, `poll-backoff.ts`): a configured source's timed syncs that find nothing changed come further
+// apart; each pass's calls go to the call log, and its status shows its poll interval and its calls in the last hour and day.
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
-import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
@@ -39,7 +41,7 @@ import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
-import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts';
+import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -54,6 +56,10 @@ export interface SourceSyncOptions {
   jevFirst?: JevFirst;
   /** How often a round follows the pull requests in motion, and every one (issue #985), read at each sync. Absent: every sync follows every one. */
   followEvery?: () => FollowEvery;
+  /** Poll backoff (issue #1264): whether the source's timed syncs come further apart while they find nothing changed. Absent: never. */
+  backoff?: (sourceName: string) => boolean;
+  /** The call log (issue #1264): each pass's calls are kept there, and each status shows the last hour and day from it. */
+  calls?: SourceCallLog;
 }
 
 /** How long after a GitHub delivery its sources sync (issue #1079): GitHub sends opened, labeled and assigned at once. */
@@ -221,7 +227,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   async function pull(slot: Slot, asked: boolean): Promise<{ seen: number; created: number }> {
-    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(asked ? undefined : { due: true }), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
+    const discovered = await slot.source.discover(asked ? undefined : { due: true }); slot.answer = answerPrint(discovered);
+    const items = await intakeOrder(o.jevFirst, slot.source.name, discovered, (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
@@ -242,10 +249,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const st = slot.status;
     // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
     // source fires, at the next sync time shown; and the old next time goes while it runs.
-    clearTimeout(slot.timer);
-    delete st.nextSyncAt;
-    delete slot.again;
-    const round = followRound(slot, clock.now().getTime(), o.followEvery?.(), asked || slot.followAll === true);
+    clearTimeout(slot.timer); delete st.nextSyncAt; delete slot.again;
+    const all = asked || slot.followAll === true, made = st.jobsCreated;
+    const round = followRound(slot, clock.now().getTime(), o.followEvery?.(), all);
     delete slot.followAll;
     st.syncing = true;
     emit(slot);
@@ -284,12 +290,12 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
-    delete st.syncing;
-    st.lastSyncAt = clock.now().toISOString();
+    delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
     if (setup) st.setupProblem = setup; else delete st.setupProblem;
     st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
+    afterSync(slot, { changed: all || st.state !== 'ok' || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
@@ -303,7 +309,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   function schedule(slot: Slot) {
     if (!running) { delete slot.status.nextSyncAt; return; }
-    const ms = slot.again ? 0 : o.pollMs(slot.source.name);
+    const ms = slot.again ? 0 : nextPollMs(slot, o.pollMs(slot.source.name), o.backoff?.(slot.source.name) === true);
     slot.status.nextSyncAt = new Date(clock.now().getTime() + ms).toISOString();
     slot.timer = setTimeout(() => { void runSync(slot); }, ms);
   }
@@ -378,7 +384,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     },
     repoChanged(repo) {
       const named = running ? [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true) : [];
-      for (const slot of named) slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS);
+      // A delivery is a change (issue #1264): the backoff ends.
+      for (const slot of named) { slot.unchanged = 0; slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS); }
       return named.map((s) => s.source.name);
     },
     async stop() {

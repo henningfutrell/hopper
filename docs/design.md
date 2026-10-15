@@ -1029,7 +1029,7 @@ marker still on screen, a marker in backticks or bold. Then:
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | last marker `HOPPER_AUTH_PENDING`, nothing after it but its field lines (`tool:`, `url:`, `code:`, `expires_in:`; also `kind:`, `expires_at:`, `interval:`, and, issue #698, `account:`, `scopes:`) | a **login** ("Logins", issue #476): no question, no nudge. Reported to the logins; the job stays running and waits, as on background work, until Claude goes on by itself (the login then `completed`), the user acts on it, it expires, or `timeoutMs`. A login the logins cannot take (no code, no URL) is said back to the job, three times at most, then the job fails. Field lines are never progress; output after them means the job went on, and the marker no longer counts |
-| last marker `HOPPER_WAITING`, then a `for:` line (and an `until:` line) | the job's **own wait** ("A job's own wait", issue #483): outcome `wait`, no question, no nudge. The job is `waiting_on`, its lane free, its pane kept. The turn's output lines then are saved as `turn.markersAfter`: when Claude goes on by itself in the same turn, that marker no longer counts. Without a `for:` line the marker is no wait (a status note) |
+| last marker `HOPPER_WAITING`, then a `for:` line (and `on:` and `until:` lines, issue #1245) | the job's **own wait** ("A job's own wait", issue #483): outcome `wait`, no question, no nudge. The job is `waiting_on`, its lane free, its pane kept. The turn's output lines then are saved as `turn.markersAfter`: when Claude goes on by itself in the same turn, that marker no longer counts. Without a `for:` line the marker is no wait (a status note) |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000), and no background work in the footer | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again. Further status notes in a row wait 1, 5, 15 and 30 minutes idle before their nudge (`NUDGE_GAPS_MS`, `nudge.ts`, issue #491); the one after that gets none: progress `waiting: N status notes in a row without a marker; no more nudges until claude works again`, and the watch goes on until Claude works again by itself (a background notification, a person in its pane), which begins a new row, or `timeoutMs`. Before each nudge, the check before a nudge (issue #627): work over at the source ends the job done; a person awaited means no nudge |
 | idle/done with no marker, and the footer under the input box names background work (`backgroundWork`, `screen.ts`: `· 1 shell ·`, `background task`, `monitor`, `agent`) | no status note, no nudge (issue #491): Claude Code wakes the job when that work ends. Progress once: `waiting on background work (1 shell): no nudge while it runs`. When the footer no longer names it and Claude stays idle, the status note timer starts |
@@ -2028,7 +2028,9 @@ on in its own session (`Executor.resume`, in the same pane and work tree) told t
 is judged again. At most `MAX_FINISH_BRIEFS` (3) per run; after them, or with no such pull request, an executor that
 cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before — except a job whose
 own pull request is there with red checks (issue #1230): its miss names that pull request and its failed checks
-(`PR #N: checks failed: <names>`), and the hopper finishes it ("Own PR checks red").
+(`PR #N: checks failed: <names>`), and the hopper finishes it ("Own PR checks red"), and a job whose own pull request is
+there with merge conflicts or as a draft (issue #1265): its miss names that pull request and its step, and the hopper
+finishes it ("Own PR unfinished").
 
 **Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
 can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
@@ -11212,6 +11214,35 @@ empty commit.
 red later is tended ("Tending a waiting pull request"); a landing batch's red run has its own path (bisect, revert, fix
 issue: "Landing batches"). Within a run, the finish brief `fix_checks` still comes first (`MAX_FINISH_BRIEFS`).
 
+## Own PR unfinished (issue #1265, 2026-10-15)
+
+A job opened its pull request; a merge on the base branch left it with merge conflicts; the job ended done. The cause
+**Not complete** matched, its decision `person`: a hand-off whose card recommended Continue, "the job can fix the
+conflicts". Merge conflicts on the hopper's own pull requests are expected, and the fix is the hopper's own work.
+
+**The miss says it.** `notComplete` (`src/sources/github/completion.ts`) asks for the job's own open pull request that one
+fixed step finishes (`unfinishedPullRequest`: opened by the job, updated by it, or the one it reworks). With merge
+conflicts or as a draft, the miss names it and its step (`unfinishedLine`): `PR #1260: merge conflicts with its base`, or
+`PR #1260: a draft`. A pull request with red checks only is said as in "Own PR checks red".
+
+**Its own cause.** The built-in cause **Own PR unfinished** (`own-pr-unfinished`, class `transient`, decision `continue`),
+matched before **Not complete** by that text (`OWN_PR_UNFINISHED_TEXT`). The rules (`assess.ts`) are those of Own PR checks
+red: never grouped, never joined to a problem; while its chain was sent back for it fewer than `maxAttempts` times
+(`checksFixesOf` of this cause, `chain.ts`), **Continue**; then a person, `retry limit reached: sent back N times to finish
+its pull request`. Automatic Continue off (`auto.continue`): it waits for a person, as before. Any other Not complete is
+unchanged.
+
+**Its Continue** (`src/failures/unfinished.ts`), after the done check: the job's source names the step now
+(`JobSource.unfinishedPullRequest`; it cannot tell: asked again later). The job goes on in its own agent session in its
+kept work tree when it can (`job.continued` with `recordId`), else its item runs again (`job.rerun`, `by: "assessor"`),
+told the **unfinished brief** (`unfinishedBrief`, `src/domain/pull-requests.ts`): fixed text, the step — rebase onto the
+base branch, resolve every conflict keeping the intent of both sides, run the checks and push, or mark it ready —, make
+the checks pass, open no new pull request, end done. No `hopper:failed` while it is pending, as for Own PR checks red
+(`src/sources/fixing-reports.ts`).
+
+**Scope.** Within a run, the finish briefs still come first (`MAX_FINISH_BRIEFS`); this cause is the job's end after them.
+A PR waiting job's pull request that has conflicts later is tended ("Tending a waiting pull request").
+
 ## Needs a person (issue #516, 2026-10-08)
 
 A failed job the assessor handed to a person showed among the recent failures, which a window of 50 hides, and as a
@@ -11598,11 +11629,13 @@ one press per cause where the hopper can move each item.
   failure that Run again takes and no open hand-off counts (`retry`); work not pushed, `push` when Push it is taken (its
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
-  tend its source refused (`tend_refused`); a parked job (`parked`); a job stuck on its own command wait (`own_wait`); an
+  tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
+  "waiting on nothing recorded", issue #1245); a job stuck on its own command wait (`own_wait`); an
   item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
-  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend` (else 400).
+  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed` (else 400;
+  `wait_unnamed`, Resume all, ends each such wait with a note that tells the job to go on or name what it waits on, issue #1245).
   It reads the view at the press and runs the cause's action on each item, through the same path as its own button, with
   who pressed it, answered once each is checked, its give-back running after (issue #1194, "Actions answer at once"): the hand-off's resolution (Won't do with its card's why as the note, so the
   source is told why), the failure's Run again, Push it, Tend again. An item refused meanwhile is skipped and said with
@@ -14776,8 +14809,19 @@ sees and on the card): the connection (the GitHub App, or the connected GitHub a
 the fix. The card says `checks unknown: <why>`. Which read works is kept per repository in memory: a refused repository is
 not asked again for ten minutes (`UNREADABLE_KEEP_MS`), so a sync over many of its pull requests asks GitHub once, and a
 permission added is seen within ten minutes. A REST read that fails otherwise (a timeout, 5xx) keeps the checks `unknown`
-with GitHub's error, and is asked again at the next read. Not done yet (part 2): one problem per repository, and a Needs
-you row, when no read of its checks works.
+with GitHub's error, and is asked again at the next read.
+
+**Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
+`PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
+(`src/domain/pull-request-list.ts`) makes one **checks read problem** per repository of its open cards that wait on
+`checks unknown` with that mark — `checksProblems: { repo, why, pullRequests }[]` on `GET /api/pull-requests`, never one
+per pull request. Its `why` is the newest refusal's: the connection, the permissions it lacks, and the fix. The Pull
+requests view says it once at the top of the repository's group (`repo-checks-unread`, `checksProblemText`); each card
+still says `checks unknown: <why>`. Needs you has a **Checks** row (`checksProblemLines`), one line per repository with the
+fix, linked to Pull requests; the Pull requests nav badge adds it. Pure, from what the follow last saw: no new route, table
+or event. It is gone at the first sync after a permission is added (the fallback's cache keeps a refusal ten minutes). It
+is not a failure **problem** (`src/failures/`): those group failed jobs and hold new ones, and here no job failed and no
+job need wait — only the merge does.
 
 **A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
 newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
@@ -19437,11 +19481,28 @@ one removed; an ssh target gets the hopper's public key in that user's `authoriz
 vault, through a grant. Needs you: the row Machines, one line per online machine not ready, with why. Accounts: the machine's
 row says it is not ready.
 
-**Not built yet.** The hopper does not run the guided fix itself (it needs root there; the admin runs it). It does not
-check that the job user is used only for jobs: the read is what it can see. A WSL machine is not yet given the address it
-should reach the hopper at (the Windows host and WSL link of #712).
+**A WSL machine's address** (part 4). The seat of the case was a WSL distro on the computer whose WSL runs the hopper's
+container. Its probe asked the public URL and the LAN names, and the first LAN name is the container's bare name, which only
+the compose network resolves: an address problem, and no address named that it reaches. WSL distros on one computer share
+one network, and the compose file publishes the hopper's port on loopback there, so such a machine reaches the hopper at
+the **host link base** (#712), default `http://localhost:<port>`, the address Windows opens it at. So when the hopper runs
+in WSL (`/proc/version` names Microsoft, read once at start), an ssh target's probe asks that address too
+(`wslHopperUrl`, `addressCommand`, `src/machines/hopper-address.ts`): last, only when no other address answered, and only
+when the machine's own `/proc/version` names Microsoft, so a machine on another computer never asks its own loopback. It is
+verified as every address is: `GET /job/address` answers 204, else not reached. Reached, it is the machine's
+`hopperUrl`, and the machine is ready. Not reached, the address problem names it: `a WSL machine on the computer that runs
+the hopper reaches it at <url>, and this one did not (<why>)`, before what to set. A WSL machine on another computer
+than the hopper's needs an address it reaches on the LAN (`HOPPER_PUBLIC_URL`, `HOPPER_LAN_NAMES`), as any machine
+does. A client target needs none of this: it reaches the hopper at the URL it dialled in at.
 
-Tests: `test/client/infra-credentials.test.ts` (the list, a home's and an environment's read, the ssh command never printing
+Residual risk: a WSL machine on the hopper's computer that runs a second hopper on the same port reaches that one at
+`localhost`, and `/job/address` does not say which hopper answered. The reach check (#695) takes any answer, so the jobs
+there fail at their first ask of the hopper, with a 401: the proxy token is this hopper's.
+
+**Not built yet.** The hopper does not run the guided fix itself (it needs root there; the admin runs it). It does not
+check that the job user is used only for jobs: the read is what it can see.
+
+Tests: `test/machines/hopper-address.test.ts` (a WSL machine asked the host link base, a machine not in WSL not asked it, the address named when not reached), `test/client/infra-credentials.test.ts` (the list, a home's and an environment's read, the ssh command never printing
 a value, a client's answer), `test/decider/infra-credentials.test.ts` (held, pinned, resuming, ready again),
 `test/adapters/infra-credentials.test.ts` (a machine not ready until its next probe finds none, then it takes the job),
 `test/ui/machine-infra-credentials.test.ts` (the text, the guided fix, Needs you's lines), `test/ui/needs-you.test.ts`,
@@ -19975,6 +20036,37 @@ the job began is not), `test/integration/pull-request-follow.test.ts` (the item 
 next part is queued), `test/domain/work-items.test.ts` (`prOpenStuck`), `test/domain/stuck.test.ts` (the cause),
 `test/sources/github-context.test.ts` (the done line).
 
+## A job source not configured says so (issue #1243, 2026-10-15)
+
+The problem: a `github-app` job source that was on with empty options (no `appId`, no `slug`, no private key) was paused
+and silent. Each sync still ran a pass: it asked GitHub nothing and logged `REST 0, GraphQL 0`, which reads as a healthy
+quiet source. The Sources view hid it ("an unset GitHub App is not shown", issue #254), so its intake was dead and nothing
+said why.
+
+- **A setup problem** (`JobSource.setupProblem`, `SetupProblem` in `src/domain/sources.ts`). The app source's names what of
+  its identity is not set (`loadGitHubApp` now returns `missing`), or that the key is no key, and its help page
+  (`github-app-setup`). It is read at each sync, as `paused` is.
+- **No empty pass** (`src/sources/sync.ts`). While a source has a setup problem and no job of its own needs a check or a
+  report, the sync loop runs no pass: no traffic line, no `lastOkAt`. Its status is `needs-setup` with `setupProblem`;
+  `itemsSeen` 0, and the UI shows *not configured* in place of each count. With jobs of its own to report, the pass runs
+  for them, as for a paused source, and the status still carries the setup problem.
+- **Said once.** The log says `hopper: source <name> not configured: <reason>` when the problem starts or changes, and
+  `hopper: source <name> configured` once when it clears. No event: the status and Needs you carry it.
+- **Asked for in place.** Sources shows the source as *needs setup*, with a setup card: what is missing, the steps (an
+  app already installed, or `scripts/create-github-app.sh`; its id and slug in Plugins; its key in the runtime), and a
+  link to the help page `help/github-app-setup.md`. Needs you has a **Setup** row (`#sources`), one line per source.
+- **Clears by itself.** Config completed later (the key given to the runtime, the id and slug saved) clears it at the
+  next sync, with no restart.
+- Why not a failure-assessor **problem**: a problem groups failed jobs and holds new ones of its scope. A source with
+  no config has no failed job, and must hold nothing else.
+- Not done here (later parts of issue #1243): pick an app already installed from the list of apps the connected account
+  can see, and keep the app's private key in the vault through a write-only field, not in the runtime.
+
+**Verification:** `test/sources/sync-setup.test.ts` (no pass, `needs-setup`, said once; cleared at the next sync; a pass
+still runs for its own jobs), `test/integration/github-app.test.ts` (an enabled app source with empty options, and with no
+key; the key given clears it without a restart), `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts` (the setup
+card), `test/ui/needs-you.test.ts` (the Setup row), `test/sources/app-config.test.ts` (`missing`).
+
 ## What holds the event loop (issue #1154, 2026-10-15)
 
 Seen on a hopper in a container on WSL with about six jobs at work: the event loop stalled again and again, at first up
@@ -20047,3 +20139,53 @@ said why.
 still runs for its own jobs), `test/integration/github-app.test.ts` (an enabled app source with empty options, and with no
 key; the key given clears it without a restart), `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts` (the setup
 card), `test/ui/needs-you.test.ts` (the Setup row), `test/sources/app-config.test.ts` (`missing`).
+
+## What a wait waits on (issue #1245, 2026-10-15)
+
+Fourteen jobs were seen in `waiting_on` with no record of what they waited for. Neither the UI nor an operator could tell
+whether to act, and nothing could wake them when the thing came. A job's own wait now always names what it waits on, typed.
+
+- **The dependency** (`WaitOn`, `src/domain/wait-on.ts`): a pull request (`number`, `repo` when not the job's own, and
+  `about`: `checks`, `merge` or `review`), another job, an item (an issue), a person (a question id), a `sandbox` or
+  `template` approval, a vault grant, its own command, or an outside event (`what`). It is `wait.on` on the job and `on` on
+  `job.waiting`.
+- **Named by the job.** `WAIT_LINE` asks for an `on:` line after `HOPPER_WAITING`: `pr 12 merge`, `o/r#12 checks`,
+  `job <id>`, `issue 45`, `question <id>`, `sandbox approval`, `template approval`, `vault grant`, `own command`,
+  `outside: <what>`. `waitFields` reads it beside `for:` and `until:`. With no `on:` line, `waitOnOf` reads it from `for:` and
+  `until:` (own command as `namesOwnCommand`; a pull request; an approval; a grant); what reads as none of them is an outside
+  event with the `for:` text. So a wait is never recorded without one.
+- **Never without one.** The job repository refuses to write a job that enters `waiting_on` with no `wait.on`
+  (`waitEntryProblem`, `src/store/jobs.ts`): the one place every write goes through. A job already on a wait keeps it.
+- **Woken on the event, never a poll.** The engine hears each event and asks `settledBy` (`src/domain/wait-on.ts`) what it
+  settles; each job on its own wait on that (`waitsFor`) is woken by the hopper (`wakeOn`, `src/engine/wait.ts`),
+  `job.wait_ended { by: hopper, note }`, and told so in its pane:
+
+  | Waits on | Woken by | Note |
+  |---|---|---|
+  | a pull request | `job.pull_request_merged`, `job.pull_request_closed`: its number, in `repo` or the job's own repository; whatever it waited for about it is over | `<url> was merged` |
+  | a job | `job.finished`, `job.failed`, `job.cancelled` of that job | `job <id> finished` |
+  | an item | `work_item.issue_closed`: its issue, in `repo` or the job's own repository | `<url> was closed` |
+  | a question | `question.answered`, `question.closed`, `question.dismissed`, `question.expired` | `question <id> was answered` |
+  | a vault grant | `vault.granted`, `vault.grant_denied` for this job | `a vault grant was given` |
+
+  An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
+  it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
+  event would end the wait before that answer, and the answer would then find no wait to end. Checks keep `pr wait`
+  (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person. Issue #1210
+  carries the waits on hopper state a job polls for.
+- **Legacy waits.** A `waiting_on` job from before, with no `wait.on` and not on its own command, is **stuck work** of cause
+  `wait_unnamed`, "Jobs waiting on nothing recorded". Its bulk action **Resume all** ends each wait, as a person does, with a
+  note: go on, or end the turn with `HOPPER_WAITING` again and an `on:` line. That is its one tend pass.
+- **UI.** Each says "waits on" the dependency, from one helper (`waitOnLinkOf`, `ui/src/model/board.ts`; `WaitsOnLink`,
+  `ui/src/components/waits-on.tsx`): a link to the pull request or issue on GitHub, the job, or the question; "nothing
+  recorded" for a legacy wait. The Queue view's own-wait rows, with the row's "for <since>". The job view: a "waits on" fact
+  with how long it has waited, and its header ("Where it stands") says `Waiting on PR #12 to merge`. The job graph: a job
+  node on its own wait carries `waitOn` and its words say it (`Waiting on …`, `Waiting on nothing recorded`); its details
+  link it, beside "in stage", the time since the wait began.
+- **Persisted state.** No migration: `wait.on` is optional in the job's JSON, and a wait without it is read as a legacy
+  wait. A build before this one ignores `wait.on`.
+- **Verification (part 2).** `test/domain/wait-on.test.ts` (each event wakes only the jobs waiting on what it settles; an
+  approval wakes nothing), `test/integration/job-wait.test.ts` (a job waiting on another job goes on when that job ends),
+  `test/domain/job-graph.test.ts` (the node's `waitOn` and words), `test/ui/jobs-view.test.ts` (the node's words and its
+  details' link), `test/ui/board.test.ts` (`waitOnLinkOf`), `test/integration/skill-wait-wakes-job.test.ts` (an approval
+  still ends the wait with the skill's answer).

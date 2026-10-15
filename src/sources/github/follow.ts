@@ -105,7 +105,7 @@ function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): 
   if (before.files && before.change?.rule !== ruleKey(ruleOf(ctx, repo))) return undefined;
   const seen: PullRequestSeen = {
     draft: b.isDraft, conflicting, checks: failing ? 'failing' : b.checks ?? 'none', openedAt: b.createdAt, pushedAt, ...(b.base ? { base: b.base } : {}),
-    ...(!failing && b.checksWhy ? { checksWhy: b.checksWhy } : {}),
+    ...(!failing && b.checksWhy ? { checksWhy: b.checksWhy } : {}), ...(!failing && b.checksRefused ? { checksRefused: true } : {}),
     ...(b.headRef ? { headRef: b.headRef } : {}), ...(failing && before.failedChecks ? { failedChecks: before.failedChecks } : {}),
     ...(before.commits ? { commits: before.commits } : {}), ...(before.files ? { files: before.files } : {}), ...(before.change ? { change: before.change } : {}),
   };
@@ -222,7 +222,7 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   const pushedAt = pushedAtOf(pr);
   const seen: PullRequestSeen = {
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
-    ...(pr.checksWhy ? { checksWhy: pr.checksWhy } : {}),
+    ...(pr.checksWhy ? { checksWhy: pr.checksWhy } : {}), ...(pr.checksRefused ? { checksRefused: true } : {}),
     ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks } : {}),
     ...(pr.commits ? { commits: pr.commits } : before?.commits ? { commits: before.commits } : {}),
     ...(pr.files ? { files: pr.files } : before?.files ? { files: before.files } : {}),

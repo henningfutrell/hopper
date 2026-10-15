@@ -335,7 +335,8 @@ export function jobBom(input: JobBomInput): JobBom {
   const phase = phaseOf(job);
   const pr = pullRequestOf(job);
   const ownWait = ownWaitOf(job);
-  const worded: Worded = { kind: 'job', stage, status: job.status, ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}), ...(pr ? { pullRequest: pr } : {}) };
+  const worded: Worded = { kind: 'job', stage, status: job.status, ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}), ...(pr ? { pullRequest: pr } : {}),
+    ...(job.status === 'waiting_on' && job.wait?.on ? { waitOn: job.wait.on } : {}) };
   const s = job.source;
   const title = s?.title || job.spec.goal || job.id;
   return {

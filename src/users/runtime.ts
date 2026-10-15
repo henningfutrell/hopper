@@ -110,7 +110,7 @@ export interface UserRuntimeOptions {
    */
   proxyUrl?(machine: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined;
   /** The hopper's addresses (issue #698): an ssh target's probe asks which one it reaches. Absent: not asked. */
-  hopperUrls?(): string[];
+  hopperUrls?(): string[]; wslHopperUrl?(): string | undefined; // and the address a WSL machine on the hopper's computer reaches it at (issue #1248 part 4); undefined: the hopper is not in WSL
   /** The hopper's network (issue #711): a machine off it is shown the command that joins it. Absent: none. */
   network?: string;
   /**
@@ -214,7 +214,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
   // The addresses an ssh target's probe asks (issues #695, #698): the user's link base (Settings → Artifacts) first, when
   // set, then the hopper's own; a job there gets only the one the probe found it reaches, the link base too.
-  const sshCandidates = (urls: string[]): string[] => { const b = store.artifacts.settings().linkBase.replace(/\/+$/, ''); return b ? [b, ...urls.filter((u) => u !== b)] : urls; };
+  const wslAsked = (u = o.wslHopperUrl?.()): { wsl?: { url: string } } => (u ? { wsl: { url: u } } : {}); const sshCandidates = (urls: string[]): string[] => { const b = store.artifacts.settings().linkBase.replace(/\/+$/, ''); return b ? [b, ...urls.filter((u) => u !== b)] : urls; };
   // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
@@ -238,7 +238,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
           // and its work tree is made there (issue #361); which of the hopper's addresses it reaches (issue #698). One
           // after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: sshCandidates(o.hopperUrls()) } : {}) }).then(async (found) => ({
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: sshCandidates(o.hopperUrls()) } : {}), ...wslAsked() }).then(async (found) => ({
             ...found,
             // Its herdr session running, its herdr client and server versions, and first the herdr the hopper owns there (issue #741): installed, linked, the session server moved to it when nothing is lost.
             ...(m.herdr ? await probeOwnedHerdr(keepHerdr, { target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }, () => jobsOnMachine(m.name).length > 0) : { online: true }),
@@ -369,7 +369,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const sync = createSourceSync({
     // The in-motion cycle (issue #985): the pull requests in motion every cycle, every followed one each intake sync interval.
     sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions, followEvery,
-    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? (name === directJobs.source.name ? DIRECT_POLL_MS : SEAM_SOURCE_POLL_MS),
+    // Poll backoff and the call log (issue #1264): the configured job sources poll less while nothing changes, and each pass's calls are kept.
+    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? (name === directJobs.source.name ? DIRECT_POLL_MS : SEAM_SOURCE_POLL_MS), backoff: (name) => running.some((r) => r.source.name === name), calls: store.sourceCalls,
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
   const failures = createFailures({
@@ -377,8 +378,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
     resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
-    // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source.
-    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs,
+    // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source; Own PR unfinished (issue #1265): the step that finishes it.
+    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs, unfinishedPullRequest: async (job) => sourceOf(job)?.unfinishedPullRequest?.(job),
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
@@ -396,7 +397,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

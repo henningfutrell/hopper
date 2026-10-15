@@ -17,6 +17,8 @@ export interface SourcesView {
   github: GitHubConnection[];
   summary: string;
   others: SourceStatus[];
+  /** The sources that take the same work as an earlier one (issue #1264), each to remove. */
+  duplicates: SourceStatus[];
 }
 
 const ACCOUNT = 'github-account';
@@ -47,15 +49,17 @@ function summary(account: SourceStatus | undefined, connected: boolean, github: 
 }
 
 export function sourcesView(sources: SourceStatus[]): SourcesView {
-  const account = sources.find((s) => s.kind === ACCOUNT);
+  // A second connected-account source (issue #1264) is a card of its own beside the app's, marked as the duplicate it is.
+  const account = sources.find((s) => s.kind === ACCOUNT && !s.duplicateOf) ?? sources.find((s) => s.kind === ACCOUNT);
   const connected = isConnected(account);
   const github = sources
-    .filter((s) => s.kind === APP)
+    .filter((s) => s.kind === APP || (s.kind === ACCOUNT && s !== account))
     .map(connection)
     .sort((a, b) => ORDER[a.use] - ORDER[b.use]);
   return {
     ...(account ? { account } : {}), connected, github, summary: summary(account, connected, github),
     others: sources.filter((s) => s.kind !== ACCOUNT && s.kind !== APP),
+    duplicates: sources.filter((s) => s.duplicateOf !== undefined),
   };
 }
 
