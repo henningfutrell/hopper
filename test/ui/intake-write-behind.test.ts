@@ -21,12 +21,12 @@ describe('Intake: an action\'s GitHub write after the answer (issue #1194)', () 
     await vi.waitFor(() => expect(view()).not.toBeNull());
     daemon.answer = () => new Promise((res) => { answer = () => res({ done: [url(4)], failed: {} }); });
     await click(button(row(view()!, url(4)), 'Take off the backburner'));
-    expect(row(view()!, url(4)).querySelector('[data-follow-up="running"]')?.textContent).toContain('taking off the backburner on GitHub');
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')?.textContent).toContain('taking off the backburner on GitHub');
     expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeUndefined();
     await act(async () => { answer(); });
     await vi.waitFor(() => expect(posts).toHaveLength(1));
-    await streamItem4({ followUp: { act: 'unbackburner', state: 'running' } });
-    expect(row(view()!, url(4)).querySelector('[data-follow-up="running"]')).not.toBeNull();
+    await streamItem4({ writeBehind: { act: 'unbackburner', state: 'running' } });
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')).not.toBeNull();
     expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeUndefined();
   });
 
@@ -34,9 +34,9 @@ describe('Intake: an action\'s GitHub write after the answer (issue #1194)', () 
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     await click(button(row(view()!, url(4)), 'Take off the backburner'));
-    await streamItem4({ followUp: { act: 'unbackburner', state: 'failed', error: 'GitHub is down' } });
-    expect(row(view()!, url(4)).querySelector('[data-follow-up="failed"]')?.textContent).toBe('taking off the backburner on GitHub failed: GitHub is down ·');
-    expect(row(view()!, url(4)).querySelector('[data-follow-up="running"]')).toBeNull();
+    await streamItem4({ writeBehind: { act: 'unbackburner', state: 'failed', error: 'GitHub is down' } });
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="failed"]')?.textContent).toBe('taking off the backburner on GitHub failed: GitHub is down ·');
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')).toBeNull();
     expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeDefined();
   });
 
@@ -46,6 +46,6 @@ describe('Intake: an action\'s GitHub write after the answer (issue #1194)', () 
     daemon.answer = () => ({ done: [], failed: { [url(3)]: 'no GitHub account connected' } });
     await click(button(row(view()!, url(3)), 'Assign to me'));
     await vi.waitFor(() => expect(button(row(view()!, url(3)), 'Assign to me')).toBeDefined());
-    expect(row(view()!, url(3)).querySelector('[data-follow-up]')).toBeNull();
+    expect(row(view()!, url(3)).querySelector('[data-write-behind]')).toBeNull();
   });
 });

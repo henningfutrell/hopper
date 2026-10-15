@@ -1315,7 +1315,7 @@ Version 1 (`docs/schemas/source.intake_migrated.v1.json`). A job source was move
 
 ## `source.issues_assigned`
 
-Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned these labelled items (`keys`) to their connected account from Sources (issue #440): the next sync takes them. `assignee` is the account.
+Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned these labelled items (`keys`) to their connected account from Sources (issue #440): the next sync takes them. `assignee` is the account. Recorded once GitHub took the assignment, after the action answered, one event per item (issue #1194).
 
 | field | type | required |
 |---|---|---|

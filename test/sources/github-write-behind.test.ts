@@ -1,5 +1,5 @@
 // Issue #1194, part 2: Assign to me, Release claim, Take off the backburner and Take into Intake answer before their
-// GitHub writes. The write runs after the answer, as a follow-up the item shows (`followUp`) while it runs and when it
+// GitHub writes. The write runs after the answer, as a write-behind the item shows (`writeBehind`) while it runs and when it
 // failed; its event is recorded once GitHub took it; the next discover waits for it. A second send of the same act
 // before a discover listed the item again writes nothing more. A failed one is offered again and goes through when sent again.
 import { describe, expect, it } from 'vitest';
@@ -54,7 +54,7 @@ describe('an intake action answers before its GitHub write (issue #1194)', () =>
     await source.discover();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     expect(gh.issue(REPO, 1).assignees).toEqual([]);
-    expect(item(url(1))).toMatchObject({ action: 'assign', followUp: { act: 'assign', state: 'running' } });
+    expect(item(url(1))).toMatchObject({ action: 'assign', writeBehind: { act: 'assign', state: 'running' } });
     expect(events).toEqual([]);
     // A second click before the next discover: done, and no second write.
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
@@ -63,7 +63,7 @@ describe('an intake action answers before its GitHub write (issue #1194)', () =>
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
     expect(gh.issue(REPO, 1).assignees).toEqual(['owner']);
     expect(events).toEqual([{ type: 'source.issues_assigned', data: { source: 'github', keys: [url(1)], assignee: 'owner' } }]);
-    expect(item(url(1))?.followUp).toBeUndefined();
+    expect(item(url(1))?.writeBehind).toBeUndefined();
   });
 
   it('Release claim and Take off the backburner: the labels go after the answer, their events with them', async () => {
@@ -74,8 +74,8 @@ describe('an intake action answers before its GitHub write (issue #1194)', () =>
     expect(await source.intakeAction?.({ kind: 'release', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     expect(await source.intakeAction?.({ kind: 'unbackburner', keys: [url(2)] })).toEqual({ done: [url(2)], failed: {} });
     expect(gh.issue(REPO, 1).labels).toContain('hopper:claimed');
-    expect(item(url(1))?.followUp).toEqual({ act: 'release', state: 'running' });
-    expect(item(url(2))?.followUp).toEqual({ act: 'unbackburner', state: 'running' });
+    expect(item(url(1))?.writeBehind).toEqual({ act: 'release', state: 'running' });
+    expect(item(url(2))?.writeBehind).toEqual({ act: 'unbackburner', state: 'running' });
     expect(events).toEqual([]);
     gated.open();
     expect((await source.discover()).map((i) => i.number)).toEqual([1, 2]);
@@ -90,12 +90,12 @@ describe('an intake action answers before its GitHub write (issue #1194)', () =>
     gated.open();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     await source.discover();
-    expect(item(url(1))).toMatchObject({ action: 'assign', followUp: { act: 'assign', state: 'failed', error: 'GitHub is down' } });
-    expect(source.describe().followUpErrors).toEqual({ [url(1)]: 'assign: GitHub is down' });
+    expect(item(url(1))).toMatchObject({ action: 'assign', writeBehind: { act: 'assign', state: 'failed', error: 'GitHub is down' } });
+    expect(source.describe().writeBehindErrors).toEqual({ [url(1)]: 'assign: GitHub is down' });
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
-    expect(item(url(1))?.followUp).toBeUndefined();
-    expect(source.describe().followUpErrors).toBeUndefined();
+    expect(item(url(1))?.writeBehind).toBeUndefined();
+    expect(source.describe().writeBehindErrors).toBeUndefined();
   });
 
 });

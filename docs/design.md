@@ -11363,19 +11363,32 @@ the next read, never from a poll.
   the change, and no job runs a text nobody approved. After the answer, not awaited: on a reopened card `hopper:done`
   goes from the issue, and the assignee's comments the job would see are read and added to the approved snapshot
   (`IntakeTrust.approvedComments`). The next discover waits for both, so the sync takes the issue with them. One that
-  fails is kept in the source's `detail.approvalErrors` until Approve again goes through; an Approve again of the same
+  fails shows on the item, its **write-behind** (below), until Approve again goes through; an Approve again of the same
   text before a discover listed the issue taken is `done` and records nothing more.
 - **Decline** writes nothing to GitHub and answers at once; so does Dismiss.
+- **Assign to me, Release claim, Take off the backburner, Take into Intake** (`src/sources/github/intake-actions.ts`,
+  part 2). The checks the last sync can answer run, then the answer; the GitHub write runs after, and its event
+  (`source.issues_assigned`, one per issue, `source.claim_released`, `source.backburner_lifted`,
+  `source.issue_taken_in`) is recorded once GitHub took it, so no event says a write that never happened. No connected
+  account is refused at once.
+- **Write-behind** (`src/sources/github/write-behind.ts`): the GitHub work an intake action leaves after its answer —
+  Approve's, and the four above. The item shows it (`IntakeOutcome.writeBehind`): `running`, then gone once it went
+  through, or `failed` with why, also in the source's `detail.writeBehindErrors`. The next discover waits for every
+  write-behind under way, so it lists what they wrote. The same act sent again before a discover listed the item again
+  (a second click, another tab) is `done` and writes nothing more, unless it failed; then it tries again.
 - **Discard kept work** ("Work not pushed"): the checks, then the answer; the reap after, followed by `discarding`.
 - **The UI.** Approve and Decline wait on the card only for the answer. Discard shows removing from the click on, and
   `failureAct` reads the failures again before the action ends, so the entry shows the result, never what was before.
-- **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline and
-  Discard answer in under 200 ms, their decision recorded, and the slow work ends after.
+  Assign to me, Release claim and Take off the backburner (`ui/src/components/intake-groups.tsx`): from the click on,
+  the row says GitHub is updated and offers that action no more, until a list the daemon sent after the click says how
+  it ended; a failed write says why, and offers the action again. A refusal shows the action again at once.
+- **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
+  Discard, Assign to me, Release claim and Take off the backburner answer in under 200 ms, their decision recorded, and
+  the slow work ends after.
 
-Not yet so (issue #1194, later parts): Assign to me, Release claim and Take off the backburner still write to GitHub
-before they answer (one call each); the other mutating routes (push, run again, rework, answer, end wait, landing batch,
-queue order) are not measured against the budget; a follow-up's progress is not shown on the item; and no end-to-end
-check measures the card in a browser.
+Not yet so (issue #1194, later parts): the other mutating routes (push, run again, rework, answer, end wait, landing
+batch, queue order) are not measured against the budget; Take into Intake's write-behind shows in the source's detail
+only, not on its Pull requests row; and no end-to-end check measures the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 
