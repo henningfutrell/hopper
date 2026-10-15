@@ -11501,6 +11501,14 @@ the next read, never from a poll.
   answers first answers, and its GitHub work is recorded only after the release. The time of an answer is asserted
   against the 200 ms target only off CI, or with `HOPPER_PERF=1`; `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one
   run.
+- **In a browser** (`test/integration/action-latency-browser.test.ts`, part 9). The built UI in Chromium (Playwright),
+  against the real daemon, with GitHub held: a click on Approve shows the card Approved, and a click on Assign to me shows
+  its row updating GitHub, before GitHub answers anything. After the release, the approved job shows on Jobs. The time is
+  asserted as above: the card within the 200 ms target, the job on Jobs within 1 s of the release. Measured on a developer
+  machine: the card in 37 to 87 ms, the job in 100 to 111 ms. It needs the built UI (`npm run build:ui`) and a Chromium —
+  Playwright's own (`npx playwright install chromium`), or the one `HOPPER_TEST_CHROMIUM` names —; without them it is
+  skipped and says why. The pull request check builds no UI and installs no browser, so there it is skipped. Chromium
+  gets a temp dir one level above the run's (`cr-*`), since its socket path must fit in 108 bytes.
 
 - **Approve of a sandbox request** answers before the box starts, since issue #1002 ("Sandboxes jobs start"): the
   approval is recorded, and the start runs after, in the background. `test/integration/sandbox-start-hangs.test.ts` holds
@@ -11537,9 +11545,8 @@ the next read, never from a poll.
   write that failed (`ui/src/views/source-sync.tsx`); below the sources, **Work after an act** (`ui/src/views/after-answer.tsx`),
   per act its wait and run as p50 / p95, the slowest first, read when Sources opens and on Read again.
 
-Not yet so (issue #1194, later parts): an outbox that batches and merges GitHub writes, and keeps them across a restart
-(the write-behind is in memory: a restart while a write runs loses it, and the item is offered again as GitHub has it);
-and no end-to-end check measures the card in a browser.
+Not yet so: an outbox that batches and merges GitHub writes, and keeps them across a restart (the write-behind is in
+memory: a restart while a write runs loses it, and the item is offered again as GitHub has it). Issue #1238 carries it.
 
 ### Stuck work (issue #1010, 2026-10-13)
 
