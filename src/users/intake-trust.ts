@@ -13,9 +13,10 @@ import type { UserStore } from '../domain/store.ts';
 /** Access's check of one login against the user's trusted actors; absent: OpenFGA is not set up. */
 export type DecideIntakeActor = (login: string, actors: readonly string[]) => Promise<AccessAnswer>;
 
-/** Every key this hopper assigned to the user (Sources, Assign to me), from its own events. */
+/** Every key this hopper assigned to the user (Sources, Assign to me; Take into Intake, issue #1176), from its own events. */
 function assignedKeys(store: UserStore): Set<string> {
-  const keys = store.events.between(['source.issues_assigned'], '1970-01-01T00:00:00.000Z').flatMap((e) => (Array.isArray(e.data.keys) ? e.data.keys as string[] : []));
+  const keys = store.events.between(['source.issues_assigned', 'source.issue_taken_in'], '1970-01-01T00:00:00.000Z')
+    .flatMap((e) => (Array.isArray(e.data.keys) ? e.data.keys as string[] : typeof e.data.key === 'string' ? [e.data.key] : []));
   return new Set(keys);
 }
 

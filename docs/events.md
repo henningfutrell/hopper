@@ -1434,6 +1434,26 @@ Version 1 (`docs/schemas/source.backburner_lifted.v1.json`). A person took an it
 }
 ```
 
+## `source.issue_taken_in`
+
+Version 1 (`docs/schemas/source.issue_taken_in.v1.json`). A person took an issue into Intake from the Pull requests view's Not tracked list (issue #1176): an untracked pull request (`pullRequest`) closes it, and it was no work item. The issue (`key`) got the source's label and was assigned to the connected account (`assignee`), as Assign to me assigns. The source syncs at once, and Intake lists the issue: a request card when the label is not a trusted actor's.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `pullRequest` | string | yes |
+| `assignee` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/11",
+  "pullRequest": "https://github.com/octocat/hello/pull/12",
+  "assignee": "octocat"
+}
+```
+
 ## `source.request_declined`
 
 Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a request card (issue #1035): an issue not of a trusted origin, whose title and body hash as `hash`. It makes no job and leaves the request cards waiting in Intake; an edit to its title or body makes it a request card again. Nothing is written to GitHub. `person` and `via`: who declined it. Never the text.
