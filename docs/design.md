@@ -43,7 +43,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes") | engine, http, store, plugins |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key (`lane-pool.ts`, issue #1284), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
@@ -5406,9 +5406,9 @@ dependency tree for them. The token is read at each call, since the kubelet rota
 the Service's host name goes in the hopper's LAN names (`HOPPER_LAN_NAMES`) and the pod network in its LAN peers
 (`HOPPER_LAN_PEERS`). The Helm chart (#1281, sub-issue 1) sets both.
 
-**Not done here** (other sub-issues of #1281): the Helm chart; lane pods; the agent's sign-in in a pod (#1281 sub-issue 6:
-until then a job pod's Claude asks for a login as any fresh machine does); a sweep of job pods whose job ended while the
-hopper was down (until then the restart's cleanup deletes the pod of each job it fails).
+**Not done here** (other sub-issues of #1281): the Helm chart; lane pods; a sweep of job pods whose job ended while the
+hopper was down (until then the restart's cleanup deletes the pod of each job it fails). The agent's sign-in in a pod is
+the next section (issue #1287).
 
 **Residual risk.** The hopper's service account can create any pod in its namespace: a compromise of the hopper's process
 can run a container there. What the hopper itself creates is fixed in code. A job pod's network reaches the internet (the
@@ -5418,6 +5418,50 @@ agent's API, GitHub) as a sandbox box's does (#315).
 pod runs the real hopper client — a queued job produces a pod that joins, runs and finishes, and its pod and machine are
 removed; a cancel deletes the pod; a pod that never joins fails its job and is deleted. `test/kubernetes/` (the API
 against a loopback server, the manifest, the pod's life, the role), `test/adapters/kubernetes-executor.test.ts`.
+
+### The agent's sign-in in a job pod (issue #1287, 2026-10-15)
+
+Part of #1281. A job pod is new for each job and its home goes with it (an emptyDir), so a sign-in made in one pod is gone
+for the next: before this, each job pod's Claude asked for a login. Now one sign-in, kept in the user's vault, signs in
+every new job pod.
+
+- **The sign-in is a setup token in the vault.** The user runs `claude setup-token` once (it prints `sk-ant-oat…`, good for
+  a year) and keeps it as a vault secret of their own (Settings → Vault), named `CLAUDE_TOKEN` unless the kubernetes executor
+  names another (option `agentCredential`). The same rule as a template's **agent credential**: only a setup token, never a
+  `/login`'s credentials file, whose refresh token rotates — one pod renewing it signs every other pod out, and pods run at
+  the same time. No pod renews a setup token, so any number share it.
+- **Given at each start of a pane, never in the pod's spec.** The kubernetes executor asks the job's user's vault
+  (`podCredential`, `src/vault/agent-credential.ts`) before it starts the pod, and again before a resume opens a new pane.
+  The value goes into the pane's variables as `CLAUDE_CODE_OAUTH_TOKEN`, with the job's other variables, over the pod's
+  signed link (herdr's tab, made by the pod's client). It is never in the pod's manifest, so `kubectl get pod -o yaml`, the
+  API server's store and the audit log never hold it; never in a ConfigMap, a Secret or an image layer; and the hopper's role
+  stays pods only. A reattach opens no pane and asks nothing.
+- **Not per job, so no vault grant.** As a template's agent credential: a vault grant gates what a *job* asks of the vault;
+  this is the user's own sign-in, given by the hopper to their own job's pod, before Claude runs. The user setting the secret
+  is their decision.
+- **Refusals.** A value that is no setup token, a shared secret (`shared/…`, Access decides its read per user), a system
+  secret, or a backend that cannot read it: the job fails before any pod starts, with the reason, and `vault.refused` names
+  the pod and the job. No such secret: no refusal; the pod starts signed out, and Claude asks to sign in as on any fresh
+  machine (the not-signed-in question).
+- **Never in an outcome, an event or a log.** `vault.pod_credential_given` records each give: the name, the pod, the job.
+  The executor masks the value in a failed outcome's error and tail (a tool's error may repeat its argv), and every log line
+  masks a Claude token (`sk-ant-oat…`, `sk-ant-ort…`, `maskLogLine`).
+- **With the vault in a container of its own** (issue #586): checked there, op `pod-credential`; a secret kept in a vault
+  backend is read in the hopper, which runs the backends.
+- **Residual risk.** The token is in the pane's environment, so every process of the job reads it, as every job on a
+  machine reads its Claude sign-in today. It crosses the pod's link as the job's other variables do, and is briefly in the
+  pod's process list as herdr's argument, seen only by the pod's one user. A token a person revokes at Anthropic stops every
+  new pod; set a new value and the next start takes it.
+
+**Not done here** (still in #1287): the hopper running `claude setup-token` itself and keeping what it prints, so the sign-in
+is one paste from the Logins page and names the account (a pty: `setup-token` prints nothing without a terminal); lane pods'
+restarts (#1284, not merged): a lane pod's home on its claim keeps a `/login`, and the same token can be given to it.
+
+**Verification.** `test/integration/kubernetes-executor.test.ts`: through the real daemon, with the vault in the hopper and in
+a container of its own, two jobs each run in a new pod whose pane starts with the token; no pod spec, event or log line holds
+it; a value that is no setup token fails the job and starts no pod. `test/adapters/kubernetes-executor.test.ts`,
+`test/vault/agent-credential.test.ts`, `test/secrets/mask.test.ts`. Not checked here: a real Claude in a real pod signed in by
+a real setup token.
 
 ## Client releases (issue #70, 2026-10-05)
 

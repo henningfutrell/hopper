@@ -193,6 +193,7 @@
         "vault.credential_asked",
         "vault.credential_given",
         "vault.agent_credential_given",
+        "vault.pod_credential_given",
         "vault.credential_declined",
         "vault.read_policy_set",
         "vault.sandbox_approvals_set",

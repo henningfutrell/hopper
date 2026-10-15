@@ -6,7 +6,9 @@ import { createKubernetesExecutor } from '../../../executors/kubernetes.ts';
 import { createKubernetesPods, inClusterOptions } from '../../../kubernetes/api.ts';
 import { createJobPods } from '../../../kubernetes/job-pods.ts';
 import { JOB_POD_IMAGE } from '../../../kubernetes/pod-spec.ts';
+import { POD_AGENT_CREDENTIAL } from '../../../domain/agent-credential.ts';
 import type { KubernetesPods } from '../../../domain/pods.ts';
+import { VAULT_SECRET_NAME } from '../../../domain/vault.ts';
 import { parseOptions } from '../../options.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { herdrClaudePlugin, type HerdrClaudeOptions } from '../herdr-claude/index.ts';
@@ -24,6 +26,7 @@ export interface KubernetesExecutorOptions {
   pollMs: number;
   yolo: boolean;
   args: string[];
+  agentCredential: string;
 }
 
 const abortableSleep = (ms: number, signal: AbortSignal): Promise<boolean> => new Promise((resolve) => {
@@ -60,6 +63,8 @@ export function kubernetesPlugin(seams?: { pods?: (namespace?: string) => Kubern
       pollMs: z.number().int().positive().default(2000),
       yolo: z.boolean().default(true).meta({ commandBearing: true, description: 'yolo: Claude runs with every permission granted (--dangerously-skip-permissions)' }),
       args: z.array(z.string()).default([]).meta({ commandBearing: true, description: "Claude Code's other arguments" }),
+      agentCredential: z.string().regex(VAULT_SECRET_NAME).default(POD_AGENT_CREDENTIAL)
+        .meta({ description: 'the vault secret of the job\'s user that a job pod\'s Claude signs in with: what `claude setup-token` printed. The user holds none: Claude in the pod asks to sign in' }),
     }),
     async detect(sys, o) {
       if (seams?.pods) return { status: 'available', detail: 'Kubernetes API seam (tests)' };
@@ -82,7 +87,9 @@ export function kubernetesPlugin(seams?: { pods?: (namespace?: string) => Kubern
         join: (pod) => host.join(pod), leave: (pod) => host.leave(pod), machine: machineOf,
         startTimeoutMs: o.startTimeoutSec * 1000, pollMs: o.pollMs, sleep: abortableSleep, now: () => ctx.clock.now().getTime(),
       });
-      return Promise.resolve(inner).then((executor) => createKubernetesExecutor(ctx.instanceName, executor, jobPods));
+      // The agent's sign-in (issue #1287): the user's own setup token, from their vault, at each start of a pane in the pod.
+      const credential = host.agentCredential && ((job: string, pod: string) => host.agentCredential!({ name: o.agentCredential, pod, job }));
+      return Promise.resolve(inner).then((executor) => createKubernetesExecutor(ctx.instanceName, executor, jobPods, credential));
     },
   };
 }

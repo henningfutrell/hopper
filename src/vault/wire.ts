@@ -75,6 +75,8 @@ export const vaultOps = {
   }),
   /** A launch's agent credential (issue #708, part 10): the template's checks run here too, then the value crosses back. */
   'agent-credential': z.strictObject({ user, ask: z.strictObject({ template: name, secrets: z.array(name).max(256), box: z.string().max(200) }) }),
+  /** A job pod's agent credential (issue #1287): the user's own secret, checked here, then the value crosses back. */
+  'pod-credential': z.strictObject({ user, ask: z.strictObject({ name, pod: z.string().max(200), job: z.string().max(64) }) }),
 } as const;
 
 export type VaultOp = keyof typeof vaultOps;

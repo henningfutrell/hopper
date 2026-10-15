@@ -3,21 +3,59 @@
 // client target: `inner` is that herdr-claude, given the pod's machine in place of the lane's. Everything after the start
 // — resume, reattach, the pane probes, park — reaches the pod through the pane state herdr-claude saved, which names
 // the pod's machine. The cleanup deletes the pod; a cancel aborts the run, and the engine's cleanup follows.
+//
+// The agent's sign-in (issue #1287, design.md "The agent's sign-in in a job pod"): before each start of a pane in the
+// pod — a run, a resume —, the job's user's vault gives their Claude setup token, and the pane starts with it as
+// CLAUDE_CODE_OAUTH_TOKEN. It goes over the pod's signed link with the pane's other variables, never into the pod's
+// spec, and no outcome carries it.
+import { AGENT_CREDENTIAL_VARIABLE } from '../domain/agent-credential.ts';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
 import type { JobPods } from '../kubernetes/job-pods.ts';
+import { jobPodName } from '../kubernetes/pod-spec.ts';
+import { maskSecret } from '../secrets/mask.ts';
 
-export function createKubernetesExecutor(name: string, inner: Executor, pods: JobPods): Executor {
-  /** The lane's context on the pod's machine: the job's credentials placed there too, never on the lane's machine. */
-  const on = (ctx: ExecutionContext, machine: MachineSnapshot): ExecutionContext => ({
-    ...ctx, machine, ...(ctx.credentials ? { credentials: (scratch: string, make?: boolean) => ctx.credentials!(scratch, make, machine) } : {}),
+/** The job's user's agent credential for its pod: the secret's name and value, none, or why the vault refuses it. */
+export type PodCredential = (jobId: string, pod: string) => Promise<{ name: string; value: string } | { none: true } | { refused: string }>;
+
+type Given = { name: string; value: string } | undefined;
+
+export function createKubernetesExecutor(name: string, inner: Executor, pods: JobPods, credential?: PodCredential): Executor {
+  /** The lane's context on the pod's machine: the job's credentials placed there too, never on the lane's machine; the agent's sign-in with them. */
+  const on = (ctx: ExecutionContext, machine: MachineSnapshot, given: Given): ExecutionContext => ({
+    ...ctx, machine,
+    credentials: async (scratch: string, make?: boolean) => ({
+      ...(await ctx.credentials?.(scratch, make, machine)), ...(given ? { [AGENT_CREDENTIAL_VARIABLE]: given.value } : {}),
+    }),
   });
 
-  /** The lane's context, on the job's pod's machine; or why the job cannot go on there. */
-  async function onPod(ctx: ExecutionContext): Promise<ExecutionContext | ExecutionOutcome> {
+  /** The agent credential for the job's pod: given, none, or the outcome that fails the job. */
+  async function agentCredential(job: Job): Promise<Given | ExecutionOutcome> {
+    if (!credential) return undefined;
+    const r = await credential(job.id, jobPodName(job.id));
+    if ('refused' in r) return { kind: 'failed', error: `the agent credential: ${r.refused}` };
+    return 'none' in r ? undefined : r;
+  }
+
+  /** `outcome` with the token never in it: a tool's error may repeat the pane's variables. */
+  const masked = (outcome: ExecutionOutcome, given: Given): ExecutionOutcome => {
+    if (!given || outcome.kind !== 'failed') return outcome;
+    const mask = (text: string): string => maskSecret(text, given.value, given.name);
+    return { ...outcome, error: mask(outcome.error), ...(outcome.tail !== undefined ? { tail: mask(outcome.tail) } : {}) };
+  };
+
+  const isOutcome = (g: Given | ExecutionOutcome): g is ExecutionOutcome => g !== undefined && 'kind' in g;
+
+  /**
+   * The lane's context, on the job's pod's machine; or why the job cannot go on there. `signIn`: a new pane may start
+   * there (a resume), so the agent's sign-in is asked for; a reattach watches the pane it has.
+   */
+  async function onPod(ctx: ExecutionContext, signIn: boolean): Promise<{ ctx: ExecutionContext; given: Given } | ExecutionOutcome> {
     const machine = await pods.machine(ctx.job.id).catch(() => undefined);
     if (!machine?.online) return { kind: 'failed', error: `the job's pod is gone or not dialled in: it cannot go on there` };
-    return on(ctx, machine);
+    const given = signIn ? await agentCredential(ctx.job) : undefined;
+    if (isOutcome(given)) return given;
+    return { ctx: on(ctx, machine, given), given };
   }
 
   return {
@@ -27,15 +65,18 @@ export function createKubernetesExecutor(name: string, inner: Executor, pods: Jo
     validate: (payload) => inner.validate(payload),
 
     async run(ctx) {
+      // Asked before the pod starts: a refusal starts no pod.
+      const given = await agentCredential(ctx.job);
+      if (isOutcome(given)) return given;
       const started = await pods.start(ctx.job.id, ctx.signal, (m) => ctx.progress(m));
       if ('failed' in started) return { kind: 'failed', error: started.failed };
-      return inner.run(on(ctx, started.machine));
+      return masked(await inner.run(on(ctx, started.machine, given)), given);
     },
 
     ...(inner.resume ? {
       async resume(ctx: ExecutionContext, answer: string) {
-        const there = await onPod(ctx);
-        return 'kind' in there ? there : inner.resume!(there, answer);
+        const there = await onPod(ctx, true);
+        return 'kind' in there ? there : masked(await inner.resume!(there.ctx, answer), there.given);
       },
     } : {}),
 
@@ -43,8 +84,8 @@ export function createKubernetesExecutor(name: string, inner: Executor, pods: Jo
       // A pod that is gone has nothing to reattach to: the job is cleaned up and failed.
       canReattach: async (job: Job) => (await pods.alive(job.id)) && inner.canReattach!(job),
       async reattach(ctx: ExecutionContext) {
-        const there = await onPod(ctx);
-        return 'kind' in there ? there : inner.reattach!(there);
+        const there = await onPod(ctx, false);
+        return 'kind' in there ? there : inner.reattach!(there.ctx);
       },
     } : {}),
 

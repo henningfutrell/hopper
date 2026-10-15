@@ -14,6 +14,7 @@
 //     When two jobs run, each in a new pod
 //     Then each job's pane starts with the token as CLAUDE_CODE_OAUTH_TOKEN
 //     And no pod's spec, event or log line holds the token
+//   Scenario: the same with the vault in a container of its own (issue #586)
 //   Scenario: a vault secret that is no setup token fails the job, and starts no pod
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,7 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { testInstallDir } from '../support/client.ts';
 import { createFakeKubernetes, podEnv, type FakeKubernetes } from '../support/fake-kubernetes.ts';
 import { waitFor } from '../support/wait.ts';
+import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -40,6 +42,7 @@ const SERVICE_URL = 'http://hopper.hopper.svc:4790';
 let t: TestApp | undefined;
 const clients = new Map<string, Client>();
 const cleanups: (() => void)[] = [];
+const stops: (() => Promise<void>)[] = [];
 const saved = { ...process.env };
 let logged: string[] = [];
 
@@ -55,6 +58,7 @@ afterEach(async () => {
   clients.clear();
   await t?.stop();
   t = undefined;
+  for (const s of stops.splice(0)) await s();
   for (const c of cleanups.splice(0)) c();
   process.env = { ...saved };
   vi.restoreAllMocks();
@@ -83,13 +87,17 @@ function cluster(o: { joins?: boolean } = {}): FakeKubernetes {
   return k8s;
 }
 
-async function boot(k8s: FakeKubernetes, herdr: FakeHerdrClient, startTimeoutSec = 60) {
+/** `container`: the vault in a container of its own (issue #586). */
+async function boot(k8s: FakeKubernetes, herdr: FakeHerdrClient, startTimeoutSec = 60, o: { container?: boolean } = {}) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
+  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_MASTER_KEY: KEY }) : undefined;
+  if (vault) stops.push(() => vault.stop());
+  const keys = vault ? { secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_MASTER_KEY: KEY } };
   t = await startTestApp({
-    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
+    dbPath: db.dbPath, ...keys,
     plugins: {
       executors: [{ name: 'kubernetes', plugin: 'kubernetes', options: { hopperUrl: SERVICE_URL, pollMs: 50, startTimeoutSec } }],
       machines: [{ name: 'cluster', plugin: 'kubernetes-cluster', options: { lanes: 2 } }],
@@ -154,10 +162,10 @@ const tabEnvs = (herdr: FakeHerdrClient): Record<string, string>[] =>
   herdr.calls.filter((c) => c.method === 'createTab').map((c) => (c.args[0] as { env: Record<string, string> }).env);
 
 describe('the agent\'s sign-in survives new pods (issue #1287)', () => {
-  it('after one sign-in kept in the vault, each new job pod runs Claude signed in', { timeout: 90_000 }, async () => {
+  for (const container of [false, true]) it(`after one sign-in kept in the vault, each new job pod runs Claude signed in${container ? ', with the vault in a container of its own' : ''}`, { timeout: 90_000 }, async () => {
     const k8s = cluster();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE, DONE] });
-    const { a, token } = await boot(k8s, herdr);
+    const { a, token } = await boot(k8s, herdr, 60, { container });
     expect((await a.ui('/ui/api/vault', { action: 'set', name: 'CLAUDE_TOKEN', value: `${TOKEN}\n` }, { token })).status).toBe(200);
     for (const prompt of ['Paint the shed', 'Paint the fence']) {
       const job = await a.pull({}, { ...item, prompt });

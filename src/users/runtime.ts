@@ -274,7 +274,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     builtins: withSeams(seams, outbound),
     jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
-    executorContext: { client: clientNamed, ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod) } } : {}) }, // job pods (issue #1283)
+    executorContext: { client: clientNamed, ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
     intervalMs: o.pluginsConfigIntervalMs,
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),

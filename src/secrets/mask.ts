@@ -43,6 +43,12 @@ const KEY_PATTERNS = [
   /(?<![A-Za-z0-9+/_=-])(?=[A-Za-z0-9+/_-]{0,42}[A-Z])(?=[A-Za-z0-9+/_-]{0,42}[a-z])(?=[A-Za-z0-9+/_-]{0,42}[0-9])[A-Za-z0-9+/_-]{43}=?(?![A-Za-z0-9+/_=-])/g,
 ];
 
+/**
+ * A Claude token (issue #1287): a setup token or a sign-in's access token (`sk-ant-oat01-…`), its refresh token
+ * (`sk-ant-ort01-…`). The hopper gives a job pod's pane its user's setup token; a tool's error may repeat its argv.
+ */
+const CLAUDE_TOKEN_PATTERN = /\bsk-ant-o[ar]t\d\d-[A-Za-z0-9_-]{8,}/g;
+
 /** `text` with each 32-byte key, as hex, base64 or base64url, replaced by `[key, masked]`. */
 export function maskKeys(text: string): string {
   let result = text;
@@ -57,7 +63,7 @@ export function maskKeys(text: string): string {
 export function maskLogLine(text: string, held: Iterable<string>): string {
   let result = text;
   for (const secret of held) result = maskSecret(result, secret, 'secret');
-  return maskKeys(maskGitHubTokens(result));
+  return maskKeys(maskGitHubTokens(result)).replace(CLAUDE_TOKEN_PATTERN, '[Claude token, masked]');
 }
 
 /**
@@ -96,7 +102,7 @@ const SECRET_PATTERNS: [RegExp, string][] = [
 export function maskSecrets(text: string): string {
   let result = text;
   for (const [pattern, mask] of SECRET_PATTERNS) result = result.replace(pattern, mask);
-  return maskKeys(maskGitHubTokens(result));
+  return maskKeys(maskGitHubTokens(result)).replace(CLAUDE_TOKEN_PATTERN, '[Claude token, masked]');
 }
 
 /** Every string inside a JSON value masked. */

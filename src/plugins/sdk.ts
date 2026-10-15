@@ -159,6 +159,11 @@ export interface JobPodHost {
   leave(pod: string): Promise<void>;
   /** The hopper's instance id: the label that makes a pod this hopper's. */
   instanceId(): string;
+  /**
+   * The job's user's vault secret `name` for the job's pod (issue #1287): a Claude setup token the pod's panes sign in
+   * with; `none` when the user holds no such secret; or why the vault refuses it. Absent: no vault, nothing is given.
+   */
+  agentCredential?(ask: { name: string; pod: string; job: string }): Promise<{ name: string; value: string } | { none: true } | { refused: string }>;
 }
 
 export interface MachineSourceContext {

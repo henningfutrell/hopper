@@ -3873,6 +3873,25 @@ Version 1 (`docs/schemas/vault.agent_credential_given.v1.json`). A box the hoppe
 }
 ```
 
+## `vault.pod_credential_given`
+
+Version 1 (`docs/schemas/vault.pod_credential_given.v1.json`). A job pod was given its user's Claude token at a start of its job (issue #1287): the vault secret the kubernetes executor names (`agentCredential`), a token `claude setup-token` printed, in the job's pane as `CLAUDE_CODE_OAUTH_TOKEN`, so Claude in the pod starts signed in. The secret's name, the pod and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `pod` | string | yes |
+| `job` | string | yes |
+| `backend` | string | no |
+
+```json
+{
+  "name": "CLAUDE_TOKEN",
+  "pod": "hopper-job-0a1b2c3d",
+  "job": "0a1b2c3d"
+}
+```
+
 ## `vault.credential_declined`
 
 Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined a credential request (issue #583): each job that waited on it is told the reason when it asks again, and goes on without it or fails.
