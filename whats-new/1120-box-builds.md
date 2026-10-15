@@ -1,0 +1,1 @@
+- The hopper now removes the images it built for sandbox boxes once they are a week old and no box uses them, so they no longer fill the disk.

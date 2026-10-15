@@ -11,10 +11,11 @@
 //   Scenario: a read-only template's image puts the read-only terraform wrapper first on PATH (issue #715)
 //   Scenario: a read-only template's image holds the AWS provider in a mirror terraform installs only from (issue #715)
 //   Scenario: any other image with terraform puts the apply wrapper first on PATH (issue #870)
+//   Scenario: each image of the fetch stage carries the stage label, so a leftover stage is known as the hopper's (issue #1120)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
-import { TOOLS_IMAGE, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
+import { TOOLS_IMAGE, TOOLS_STAGE_LABEL, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
 
 const BASE = { image: 'ghcr.io/henningfutrell/hopper:box-claude', id: 'sha256:base1' };
 const SHA = /^[0-9a-f]{64}$/;
@@ -108,5 +109,12 @@ describe('the tools image (issue #716)', () => {
     expect(write.containerfile).not.toContain('TF_CLI_CONFIG_FILE');
     // An image with no terraform gets no wrapper.
     expect(toolsImage(BASE, ['aws', 'kubectl']).containerfile).not.toContain('apply-wrapper');
+  });
+
+  it('each image of the fetch stage carries the stage label, so a leftover stage is known as the hopper\'s (issue #1120)', () => {
+    const { containerfile } = toolsImage(BASE, ['kubectl']);
+    // The first instruction after the stage's FROM: every image the build keeps for that stage has it.
+    expect(containerfile).toContain(`AS fetch\nLABEL ${TOOLS_STAGE_LABEL}="fetch"\nRUN `);
+    expect(TOOLS_STAGE_LABEL).toBe('io.hopper.tools-stage');
   });
 });

@@ -3,6 +3,7 @@
 // src/sandbox/flags.ts's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { execCalls } from './exec.ts';
+import { imageCalls } from './images.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
@@ -34,6 +35,8 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
     kind: 'docker',
     // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
     ...(via === socketCall ? execCalls(socket, API, 'docker') : {}),
+    // The images on the machine (issue #1120): only over the socket here, never through a machine's relay.
+    ...(via === socketCall ? imageCalls('docker', (method, path) => call(method, path)) : {}),
 
     async problem() {
       let a: Answer;
