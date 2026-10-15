@@ -1,12 +1,12 @@
 // A paused source (gh while the app exists; the app while none is) discovers nothing new but
 // still checks and reports its own active jobs.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSourceSync } from '../../src/sources/sync.ts';
 import { createFakeSource, createWorld, item, settle } from './sync-support.ts';
 
 let sync: ReturnType<typeof createSourceSync> | undefined;
-afterEach(async () => { await sync?.stop(); sync = undefined; });
+afterEach(async () => { await sync?.stop(); sync = undefined; vi.restoreAllMocks(); });
 
 function setup(initial?: string) {
   const world = createWorld();
@@ -67,5 +67,24 @@ describe('sync loop: paused sources', () => {
     expect(source.discovers).toBe(1);
     expect(sync.statuses()[0]).toMatchObject({ state: 'ok', jobsCreated: 1 });
     expect(sync.statuses()[0]!.detail.paused).toBeUndefined();
+  });
+
+  // Issue #1351: a paused pass asks GitHub nothing, so its traffic line reads "REST 0, GraphQL 0": the log says why, once.
+  it('says in the log why it is paused, once when it starts or changes, and once when it ends', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { sync, pause } = setup('no GitHub account connected');
+    await sync.syncNow();
+    await sync.syncNow();
+    pause('sign in again');
+    await sync.syncNow();
+    pause(undefined);
+    await sync.syncNow();
+    await sync.syncNow();
+    const said = warn.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('hopper: source gh '));
+    expect(said).toEqual([
+      'hopper: source gh paused, nothing new is taken: no GitHub account connected',
+      'hopper: source gh paused, nothing new is taken: sign in again',
+      'hopper: source gh no longer paused',
+    ]);
   });
 });

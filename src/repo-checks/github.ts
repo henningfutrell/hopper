@@ -9,6 +9,7 @@
 // workflow on pull requests was found (else `pullRequests` is `{ read: 0, withChecks: 0 }`).
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, retryAtOf, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { explained, permissionsOfError, permissionsOfPath } from '../sources/github/app/refusal.ts';
 import { runsOnPullRequests, type RepoChecksFound } from '../domain/types.ts';
 import type { ConditionalAnswers, Get } from './conditional.ts';
 import { createSetupReader, type Read, type RepoAnswer } from './setup.ts';
@@ -54,7 +55,7 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
   const failed = (what: string) => (err: unknown): Error => {
     const e = err as { message?: unknown; response?: { data?: { message?: unknown } } };
     const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : String(e.message ?? err);
-    return new RepoChecksGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${message}`, statusOf(err), retryAtOf(err));
+    return new RepoChecksGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${explained(message, permissionsOfError(err))}`, statusOf(err), retryAtOf(err));
   };
   const headers = (token: string) => ({ authorization: `token ${token}` });
   /** A 404 is "there is none" (no workflows folder, no rulesets); anything else throws. */
@@ -80,8 +81,11 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
 
   async function pullRequests(token: string, repo: string): Promise<RepoChecksFound['pullRequests']> {
     const { owner, repo: name } = splitRepo(repo);
-    const d = (await req('POST /graphql', { query: ROLLUPS, variables: { owner, name, n: RECENT_PULL_REQUESTS }, headers: headers(token) })).data as { data?: Rollups; errors?: { message: string }[] };
-    if (d.errors?.length) throw new RepoChecksGitHubError(`GitHub answered the pull requests of ${repo} with: ${d.errors.map((e) => e.message).join('; ')}`);
+    const d = (await req('POST /graphql', { query: ROLLUPS, variables: { owner, name, n: RECENT_PULL_REQUESTS }, headers: headers(token) })).data as { data?: Rollups; errors?: { message: string; path?: (string | number)[] }[] };
+    if (d.errors?.length) {
+      const said = [...new Set(d.errors.map((e) => explained(e.message, permissionsOfPath(e.path))))];
+      throw new RepoChecksGitHubError(`GitHub answered the pull requests of ${repo} with: ${said.join('; ')}`);
+    }
     const nodes = d.data?.repository?.pullRequests?.nodes ?? [];
     return { read: nodes.length, withChecks: nodes.filter((n) => n?.commits?.nodes?.[0]?.commit?.statusCheckRollup).length };
   }
