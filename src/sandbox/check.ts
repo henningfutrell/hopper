@@ -21,7 +21,7 @@ import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
 import { boxImage, USER_LABEL } from './launch.ts';
-import { CHECK_LABEL, staleHome } from './owned.ts';
+import { CHECK_LABEL, staleHome, sweepHomes } from './owned.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 
 export { CHECK_LABEL };
@@ -160,7 +160,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
 }
 
 /**
- * The check pass: removes check boxes no run holds, then checks each template that is due, one after the other. A
+ * The check pass: removes check boxes and their homes no run holds, then checks each template that is due, one after the other. A
  * client target's check boxes no run holds are removed before the first check of a pass there.
  */
 export function createCheckPass(c: CheckPassContext, templates: CheckTemplates): () => Promise<void> {
@@ -172,6 +172,7 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
       await runtime.remove(box.id).catch(() => {});
       await runtime.removeVolume(`${box.name}-home`).catch(() => {});
     }
+    await sweepHomes(runtime, { [CHECK_LABEL]: c.instanceId }, holds);
   };
   return async () => {
     if (c.local) await sweep(c.local);

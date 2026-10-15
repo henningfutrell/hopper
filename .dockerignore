@@ -4,5 +4,6 @@ ui/dist
 .git
 test
 docs
-deploy
+deploy/compose.yaml
+deploy/kubernetes
 *.log

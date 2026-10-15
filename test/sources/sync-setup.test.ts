@@ -17,12 +17,13 @@ function setup(initial: SetupProblem | undefined) {
   const source = createFakeSource('github-app');
   let problem = initial;
   let passes = 0;
+  const idle: (string | undefined)[] = [];
   source.setupProblem = () => problem;
   source.paused = () => problem?.reason;
-  source.pass = async (run) => { passes++; return run(); };
+  source.pass = async (run, why) => { passes++; idle.push(why); return run(); };
   sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 60_000 });
   sync.start();
-  return { world, source, sync, passes: () => passes, configure: (p: SetupProblem | undefined) => { problem = p; } };
+  return { world, source, sync, passes: () => passes, idle, configure: (p: SetupProblem | undefined) => { problem = p; } };
 }
 
 describe('sync loop: a source not configured (issue #1243)', () => {
@@ -57,7 +58,7 @@ describe('sync loop: a source not configured (issue #1243)', () => {
   });
 
   it('with jobs of its own still to report, it runs its pass for them and still names its setup problem', async () => {
-    const { world, source, sync, passes, configure } = setup(undefined);
+    const { world, source, sync, passes, idle, configure } = setup(undefined);
     source.items = [item('k1')];
     await sync.syncNow();
     expect(world.jobs.size).toBe(1);
@@ -65,6 +66,8 @@ describe('sync loop: a source not configured (issue #1243)', () => {
     await sync.syncNow();
     expect(passes()).toBe(2);
     expect(source.discovers).toBe(1);
-    expect(sync.statuses()[0]).toMatchObject({ setupProblem: MISSING });
+    // Issue #1351: never ok while not configured, its active jobs counted; its pass says why it takes nothing new.
+    expect(sync.statuses()[0]).toMatchObject({ state: 'needs-setup', activeJobs: 1, setupProblem: MISSING });
+    expect(idle).toEqual([undefined, MISSING.reason]);
   });
 });

@@ -7,6 +7,9 @@ The GitHub App source reads issues as an admin's own GitHub App, and acts as its
 - **Sources** shows the source as **needs setup**. Its card names each missing part, for example `appId`, `slug` or `private key`. Its counts say *not configured*, not 0: the source did not look at GitHub.
 - **Needs you** counts it in the **Setup** row, with what it lacks.
 - The daemon log says it one time: `hopper: source github-app not configured: …`. It says `hopper: source github-app configured` one time when the setup is complete.
+- When the source still has jobs of its own, it makes sync passes for them only. It stays **needs setup**, and the log line of each pass says why it takes no new issues: `hopper: GitHub traffic of sync pass github-app (nothing new taken: …)`.
+
+Your GitHub sign-in does not set up this source. The hopper's own app, which you sign in through and install on your repositories, is a different app. When you connected GitHub and the source still says **needs setup**, do the steps below, or take the issues through the GitHub account source: on **Sources**, choose its job repositories.
 
 The source does not make sync passes while it is not configured. You do not have to restart the hopper after the setup. At its next sync the source checks its setup again. When the setup is complete, the setup problem goes away and the source reads issues.
 

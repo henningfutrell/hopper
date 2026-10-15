@@ -77,6 +77,7 @@
         "job.wait_ended",
         "job.own_command_nudged",
         "job.own_command_stuck",
+        "job.wait_polled",
         "job.checkpointed",
         "job.note_added",
         "job.note_delivered",

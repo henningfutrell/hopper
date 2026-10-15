@@ -202,6 +202,29 @@ describe('a job that waits on its own background command (issue #1037)', () => {
     expect(herdr.prompts).toHaveLength(1);
   });
 
+  it('its command only polls the hopper (issue #1210): its wait says what it polls, then the hopper ends it after an hour', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 1_000_000 }), DONE] });
+    const a = await start(herdr);
+    const job = await waiting(a, herdr);
+    const { engine, store } = a.user();
+    const on = { kind: 'pull_request' as const, repo: 'octo/tools', number: 8, about: 'merge' as const };
+
+    engine.pollSeen(job.id, on, '{"mergeable":"conflicts"}');
+    engine.pollSeen(job.id, on, '{"mergeable":"conflicts"}');
+    const typed = await a.job(job.id);
+    expect(typed.status).toBe('waiting_on');
+    expect(typed.wait).toMatchObject({ ownCommand: true, on, polledAt: expect.any(String) });
+    expect((await ofJob(a, job.id)).filter((e) => e.type === 'job.wait_polled').map((e) => e.data)).toEqual([{ on }]);
+
+    store.jobs.update(job.id, { wait: { ...typed.wait!, since: new Date(Date.now() - 61 * 60_000).toISOString() } });
+    engine.pollSeen(job.id, on, '{"mergeable":"conflicts"}');
+    const done = await a.waitForStatus(job.id, 'finished', 8000);
+    expect(done.wait).toBeUndefined();
+    expect(herdr.prompts[1]!.text).toContain('octo/tools#8 to merge');
+    expect(herdr.prompts[1]!.text).toContain('{"mergeable":"conflicts"}');
+    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.wait_ended')!.data).toMatchObject({ by: 'hopper' });
+  });
+
   it('a command gone without the agent going on: nudged once, and the job goes on', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 2, wakes: false }), DONE] });
     const a = await start(herdr, GRACE);

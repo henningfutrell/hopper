@@ -59,6 +59,19 @@ export function knownPullRequest(number: number, url: string, o: { card?: PullRe
  */
 export const prSettled = (s: PullRequestStatus): boolean => s.state !== 'open' || s.checks !== 'pending';
 
+/**
+ * What a `pr wait` waits for (issue #1210): its checks to end (the default), or its mergeability to be other than `from`,
+ * what it was when the wait opened — the next state the hopper sees, as the tend job of a pull request with conflicts
+ * pushes.
+ */
+export type PrWaitOver = { for: 'checks' } | { for: 'mergeable'; from: PullRequestStatus['mergeable'] };
+
+/** Whether the wait is over: the pull request merged or closed, or what it waits for came. A mergeability not known yet is no change. */
+export function prWaitOver(s: PullRequestStatus, over: PrWaitOver): boolean {
+  if (over.for === 'checks') return prSettled(s);
+  return s.state !== 'open' || (s.mergeable !== 'unknown' && s.mergeable !== over.from);
+}
+
 /** Whether `url` is pull request `number` of `repo`, whatever the web origin and the case. */
 export const isPullRequest = (url: string, repo: string, number: number): boolean =>
   url.toLowerCase().endsWith(`/${repo.toLowerCase()}/pull/${number}`);

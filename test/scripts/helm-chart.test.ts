@@ -3,8 +3,12 @@
 // no settings to start. Issue #1288: the master key from a mounted Secret (one the admin makes, or an External Secrets
 // Operator ExternalSecret fills), and AWS KMS for the vault's data key. Asserted on what `helm template` renders: `helm`
 // on PATH, else Helm's image through the docker CLI, the chart mounted read-only.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { composeImage, container, env, type ExternalSecret, find, helm, pod, render, type Resource, workloads } from '../support/helm-chart.ts';
+
+const ROOT = join(import.meta.dirname, '..', '..');
 
 describe('the Helm chart, installed with no values', () => {
   const rs = render();
@@ -230,5 +234,39 @@ describe('the Helm chart, with values', () => {
 
   it('makes no NetworkPolicy when they are off', () => {
     expect(render('networkPolicy.enabled=false').filter((r) => r.kind === 'NetworkPolicy')).toEqual([]);
+  });
+
+  // Issue #1373: hopper-cluster.sh migrate installs the release with the hopper at 0 while it moves a compose install's data
+  // in, publishes it on this host's port on a cluster bootstrap made, and names the names machines dialled the compose
+  // hopper by.
+  it('runs no hopper with replicas=0, and never more than one', () => {
+    expect(find(render('replicas=0'), 'Deployment', 'hopper').spec?.replicas).toBe(0);
+    for (const n of ['2', '-1']) {
+      const out = helm(['template', 'hopper', '/chart', '--set', `replicas=${n}`]);
+      expect(out.status, n).not.toBe(0);
+      expect(out.stderr).toMatch(/replicas is 0 or 1/);
+    }
+  });
+
+  it('puts the hopper\'s Service on the cluster\'s load balancer, at its port, with service.type', () => {
+    const type = (rs: Resource[]) => (find(rs, 'Service', 'hopper').spec as { type?: string }).type;
+    expect(type(render())).toBe('ClusterIP');
+    const rs = render('service.type=LoadBalancer', 'port=4801');
+    expect(type(rs)).toBe('LoadBalancer');
+    expect(find(rs, 'Service', 'hopper').spec?.ports?.[0]?.port).toBe(4801);
+    const out = helm(['template', 'hopper', '/chart', '--set', 'service.type=ExternalName']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/service\.type/);
+  });
+
+  it('is in the image, so hopper-cluster.sh migrate installs the chart of the version the compose install runs', () => {
+    expect(readFileSync(join(ROOT, 'Dockerfile'), 'utf8')).toMatch(/^COPY deploy\/helm \.\/deploy\/helm$/m);
+    expect(readFileSync(join(ROOT, '.dockerignore'), 'utf8').split('\n')).not.toContain('deploy');
+  });
+
+  it('answers to the names lanNames gives too, after its Service\'s names', () => {
+    const rs = render('lanNames=box.lan\\, box.tailnet.ts.net\\,');
+    expect(env(container(find(rs, 'Deployment', 'hopper'), 'hopper'), 'HOPPER_LAN_NAMES')?.value)
+      .toBe('hopper,hopper.hopper,hopper.hopper.svc,hopper.hopper.svc.cluster.local,box.lan,box.tailnet.ts.net');
   });
 });

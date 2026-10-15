@@ -75,6 +75,11 @@ export function createFakeKubeApi(namespace = 'hopper'): FakeKubeApi {
       if (api.refuse) throw api.refuse;
       return api.claims.get(name) as { metadata?: { labels?: Record<string, string> } } | undefined;
     },
+    async listClaims(selector) {
+      api.calls.push(`listClaims ${selector}`);
+      if (api.refuse) throw api.refuse;
+      return [...api.claims.values()].filter((c) => matches(selector, (c.metadata as { labels?: Record<string, string> } | undefined)?.labels ?? {})) as { metadata?: { name?: string; labels?: Record<string, string>; annotations?: Record<string, string> } }[];
+    },
     async deleteClaim(name) {
       api.calls.push(`deleteClaim ${name}`);
       if (api.refuse) throw api.refuse;

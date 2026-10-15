@@ -9,7 +9,8 @@ import { EngineError } from './errors.ts';
 import type { Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
-import { recordEndWait, type WaitEnder } from './wait.ts';
+import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
+import type { WaitOn } from '../domain/wait-on.ts';
 import { recordNote } from './notes.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 
@@ -53,6 +54,11 @@ export interface Commands {
    * Conflict unless it is `waiting_on`.
    */
   endWait(id: string, note?: string, by?: WaitEnder): Job;
+  /**
+   * The GitHub proxy saw the job poll `on` (issue #1210), and answered `answer`: a job on a wait for its own command has its
+   * wait typed as what it polls; an hour after the wait began, the hopper ends it with the answer. Nothing for another job.
+   */
+  pollSeen(id: string, on: WaitOn, answer: string): Job | undefined;
   /**
    * A person's note to a job (issue #997): queued on it until its session gets it — at the next turn boundary while it
    * runs, with its task or the answer it resumes with — or a new job of its item carries it. Conflict for an ended job.
@@ -146,6 +152,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     },
 
     endWait: (id, note, by) => store.tx(() => recordEndWait(c, id, note, by)),
+
+    pollSeen: (id, on, answer) => store.tx(() => recordPollSeen(c, id, on, answer)),
 
     addNote: (id, text, acting) => store.tx(() => recordNote(c, id, text, acting)),
 

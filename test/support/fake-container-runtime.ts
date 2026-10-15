@@ -13,6 +13,8 @@ export interface FakeContainerRuntime extends ContainerRuntime {
   /** By name. */
   boxes: Map<string, FakeContainer>;
   volumes: Set<string>;
+  /** Each volume's labels, by name (issue #1371). */
+  volumeLabels: Map<string, Record<string, string>>;
   /** The images it built (issue #716), by tag: the Containerfile of each. */
   images: Map<string, string>;
   /** How many builds it ran: a build of an image that is there already runs none. */
@@ -61,11 +63,12 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
   };
   const info = (c: FakeContainer): ContainerInfo => ({ id: c.id, name: c.spec.name, image: c.spec.image, labels: { ...c.spec.labels }, state: c.state });
   const e: FakeContainerRuntime = {
-    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(), images: new Map(), builds: 0, ran: new Map(), checks: 0, homes: new Map(), execs: [], copies: [],
+    kind, boxes: new Map(), volumes: new Set(), volumeLabels: new Map(), imageUsers: new Map(), images: new Map(), builds: 0, ran: new Map(), checks: 0, homes: new Map(), execs: [], copies: [],
     put(spec) {
       const id = `ctr${++n}`;
       e.boxes.set(spec.name, { id, spec: structuredClone(spec), state: 'running' });
       e.volumes.add(spec.volume);
+      e.volumeLabels.set(spec.volume, { ...spec.labels });
       return id;
     },
     async problem() { return e.down; },
@@ -76,8 +79,16 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
       e.images.set(tag, containerfile);
       e.builds++;
     },
-    async createVolume(name) { const made = !e.volumes.has(name); e.volumes.add(name); return made; },
-    async removeVolume(name) { e.volumes.delete(name); },
+    async createVolume(name, labels) {
+      if (e.volumes.has(name)) return false;
+      e.volumes.add(name);
+      e.volumeLabels.set(name, { ...labels });
+      return true;
+    },
+    async removeVolume(name) { e.volumes.delete(name); e.volumeLabels.delete(name); },
+    async listVolumes(labels = {}) {
+      return [...e.volumes].filter((v) => Object.entries(labels).every(([k, x]) => e.volumeLabels.get(v)?.[k] === x));
+    },
     async create(spec) {
       if (e.createFails) throw new Error(e.createFails);
       if (e.boxes.has(spec.name)) throw new Error(`the name ${spec.name} is in use`);

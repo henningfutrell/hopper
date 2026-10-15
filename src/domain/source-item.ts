@@ -75,8 +75,11 @@ export interface HasSetup {
 
 /** A source that runs each sync in one pass (issue #822, design.md "One read per sync pass"). */
 export interface RunsPasses {
-  /** Run one sync pass: the source may ask its service once for what `run` reads twice. Absent: run as is. */
-  pass?<T>(run: () => Promise<T>): Promise<T>;
+  /**
+   * Run one sync pass: the source may ask its service once for what `run` reads twice. Absent: run as is. `idle`: why the
+   * pass takes nothing new (paused, or not configured), for its traffic line (issue #1351).
+   */
+  pass?<T>(run: () => Promise<T>, idle?: string): Promise<T>;
   /** The calls to its service its last pass made (issue #1264), for the call log. Absent: not counted. */
   passCalls?(): number;
 }

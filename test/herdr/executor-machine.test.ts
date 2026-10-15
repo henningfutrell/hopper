@@ -43,9 +43,10 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(herdr.calls).toEqual([]);
     expect(remotes.get('laptop')!.agentStarts).toHaveLength(1);
     // The scratch dir is made on that machine, where the work tree is, its shell asked into the job's scope there, and
-    // given the job's own container runtime there (issue #1295).
+    // given the job's own container runtime and its sandbox there (issue #1295).
     expect(remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]))).toEqual([
       expect.stringContaining('hopper-scratch'), expect.stringContaining('exec systemd-run --user --scope'), expect.stringContaining(' hopper-runtime '),
+      expect.stringContaining(' hopper-sandbox '),
     ]);
     // The machine's own herdr binary and session, by absolute path: never its PATH.
     expect(reached[0]).toEqual({ ssh: 'laptop', session: 'jh-there' });
