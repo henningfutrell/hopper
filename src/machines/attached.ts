@@ -61,6 +61,8 @@ interface AttachedOptions {
   templateWait?: (template: string) => string | undefined;
   /** The hopper's network (issue #711): a machine off it is given the command that joins it. Absent or `host`: none. */
   network?: string;
+  /** Whether the client target holding this machine key is leaving (issue #1284): it takes no new job. Read at every list(). */
+  leaving?: (key: string) => boolean;
 }
 
 /** One attached machine. `machine()` is read on every list(), so lanes, executors and label apply at once. */
@@ -137,7 +139,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
         const name = m.client.template;
         // Fails closed: with no way to read the template's approval, its box takes no job.
         const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
-        return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
+        return [{ ...base, client: { ...clientRelease }, ...(o.leaving?.(m.client.key) ? { leaving: true as const } : {}), ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
       }
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session, ...herdr } } : {}), ...(m.herdr && herdrProblem ? { herdrProblem } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem, ...withFix(networkFix(m.ssh, o.network)) } : {}) }];
     },

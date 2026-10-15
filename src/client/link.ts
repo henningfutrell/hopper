@@ -43,7 +43,10 @@ export function linkToken(ownPrivateKey: string, otherPublicKey: string): string
   return Buffer.from(hkdfSync('sha256', shared, 'hopper-link/1', 'client token', 32)).toString('base64url');
 }
 
-/** What a machine is given to join: the hopper's URL as the machine reaches it, and the one-time join code. */
+/**
+ * What a machine is given to join: the hopper's URL as the machine reaches it, and the one-time join code — or a lane
+ * pod's lane pool key (issue #1284), the same shape, which many pods join with.
+ */
 export interface JoinLine { url: string; code: string }
 
 const CODE = /^[0-9a-f]{64}$/;
@@ -71,6 +74,8 @@ export const JOIN_PATH = '/client/join';
 export const unsupportedPlatform = (platform: string): string | undefined =>
   platform === 'win32' ? "Windows isn't supported natively. Run the client inside WSL." : undefined;
 export const CONNECT_PATH = '/client/connect';
+/** The route a machine says it leaves at (issue #1284): it takes no new job, and a lane pod with none left is retired. */
+export const LEAVE_PATH = '/client/leave';
 export const LINK_PROTOCOL = 'hopper-client/1';
 /** On the dial-in: which user's machine, and its machine key. */
 export const USER_HEADER = 'x-hopper-user';

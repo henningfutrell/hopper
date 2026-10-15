@@ -1,6 +1,7 @@
 // The links of the machines dialled in to this hopper (design.md "Joining a machine", issue #308): one
 // socket per machine key per user, the one its client dialled in on (src/http/client-link.ts). A client
-// that dials in again replaces its old link; a link that ends is forgotten. What goes down a link is the
+// that dials in again replaces its old link; a link that ends is forgotten. A machine that said it leaves (issue #1284,
+// `POST /client/leave`) is **leaving** until it dials in again: no new job is placed on it. What goes down a link is the
 // hopper's HTTP/2 calls (src/executors/client.ts); this only keeps the sockets.
 import type { Duplex } from 'node:stream';
 
@@ -16,6 +17,10 @@ export interface MachineLinks {
   urlOf(user: string, key: string): string | undefined;
   /** When the machine last dialled in (ms since the epoch); 0: never since this daemon started. */
   dialledAt(user: string, key: string): number;
+  /** The machine said it leaves (issue #1284): leaving until it dials in again. */
+  leave(user: string, key: string): void;
+  /** Whether the machine is leaving: it said so, and has not dialled in since. */
+  leaving(user: string, key: string): boolean;
   /** Closes every link (the daemon stops). */
   closeAll(): void;
 }
@@ -24,6 +29,7 @@ export function createMachineLinks(): MachineLinks {
   const links = new Map<string, Duplex>();
   const at = new Map<string, number>();
   const urls = new Map<string, string>();
+  const left = new Set<string>();
   const id = (user: string, key: string): string => `${user}\0${key}`;
   return {
     accept(user, key, socket, url) {
@@ -31,6 +37,7 @@ export function createMachineLinks(): MachineLinks {
       const old = links.get(k);
       links.set(k, socket);
       at.set(k, Date.now());
+      left.delete(k);
       if (url) urls.set(k, url);
       old?.destroy();
       socket.once('close', () => { if (links.get(k) === socket) links.delete(k); });
@@ -40,6 +47,8 @@ export function createMachineLinks(): MachineLinks {
     link: (user, key) => links.get(id(user, key)),
     dialledAt: (user, key) => at.get(id(user, key)) ?? 0,
     urlOf: (user, key) => urls.get(id(user, key)),
+    leave: (user, key) => { left.add(id(user, key)); },
+    leaving: (user, key) => left.has(id(user, key)),
     closeAll() {
       for (const s of links.values()) s.destroy();
       links.clear();

@@ -261,6 +261,8 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
                                           each call. Unset: the vault container is not asked
   HOPPER_TUNNEL_KEY                       the preshared key the tunnel service asks for its settings with (the compose
                                           stack makes it at each start). Unset: no tunnel service; remote access stays down
+  HOPPER_LANE_POOL_KEY                    the lane pool key (64 hex, openssl rand -hex 32) lane pods join with: each joins
+                                          as a machine of the first user, under its pod's name. Unset: no lane pool
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
@@ -287,6 +289,8 @@ const PART_SETTINGS = [
   'HOPPER_VAULT_KEY', 'HOPPER_VAULT_KEY_FILE',
   // Read at each ask of the tunnel service (src/http/remote-access.ts, issue #880).
   'HOPPER_TUNNEL_KEY', 'HOPPER_TUNNEL_KEY_FILE',
+  // Read at each join of a lane pod (src/machines/lane-pool.ts, issue #1284).
+  'HOPPER_LANE_POOL_KEY', 'HOPPER_LANE_POOL_KEY_FILE',
 ];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 

@@ -16,7 +16,7 @@ import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts';
-import type { MachineJoin } from '../plugins/attached-edit.ts';
+import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, type NeedSteps } from '../sandbox/need-steps.ts';
@@ -67,8 +67,11 @@ export interface UserMachineLink {
   hopperKey: string;
   /** A machine joining with its machine key, under the name it asks for: the client target it is now. */
   join(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
-  /** The client token of the client target holding this machine key; undefined when none does. */
-  tokenFor(key: string): string | undefined;
+  /**
+   * The client token of the client target holding this machine key; undefined when none does. `leave`: that machine
+   * leaves (issue #1284): the jobs still on it, and whether it was retired.
+   */
+  tokenFor(key: string): string | undefined; leave(key: string): Promise<MachineLeaveAnswer>;
   /** The client target named `machine`, reached down its link, where it dialled in, and which are (issue #708: a box on it). */
   client: Pick<UserLink, 'named' | 'dialled' | 'dialledIn'>;
 }
@@ -227,7 +230,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     // A box of a template not approved takes no new job (issue #602): the template's approval, read at every list.
-    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}), probeEveryMs: seams.machineProbeEveryMs,
+    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), leaving: (key) => o.links.leaving(user.id, key), ...(o.network ? { network: o.network } : {}), probeEveryMs: seams.machineProbeEveryMs,
     // A client target that dials in is probed at once, not at the next 30 s.
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
@@ -403,7 +406,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
     machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
-      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined) },
+      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined), leave: machineLeave({ userId: user.id, links: o.links, targets: () => host.targets(), jobsOn: (name) => jobsOnMachine(name), config: store.config, edit: (e) => host.edit(e) }) }, // issue #1284
     async start() {
       if (started) return; started = true;
       search.start(); await engine.start(); // search first: every job event from here on marks its job for the index
