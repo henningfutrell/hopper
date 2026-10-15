@@ -925,6 +925,26 @@ Version 1 (`docs/schemas/job.give_back_failed.v1.json`). A person's act on this 
 }
 ```
 
+## `job.pull_request_act_failed`
+
+Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge now (`act` `merge`) or Close PR (`close`) on this finished job's open pull request was answered at once (issue #1194), and its source's merge or close, which runs after the answer, failed: `error` says why (GitHub refused it — a draft, merge conflicts, a required check — or was out of reach, or the pull request was no longer open). The pull request stays as it was, and the act is offered again. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `act` | `merge` \| `close` | yes |
+| `error` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "act": "merge",
+  "error": "merge refused: Pull Request is not mergeable (HTTP 405)",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `job.containers_removed`
 
 Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.
