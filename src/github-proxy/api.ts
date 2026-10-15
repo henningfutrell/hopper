@@ -10,6 +10,7 @@ import { webOriginOf } from '../sources/github/api.ts';
 import { jobLog } from '../sources/github/app/rest.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
+import type { PullRequestStatus } from './pr-status.ts';
 
 /** What a done request answers the job: always where it is on GitHub; its number when it is an issue or pull request. */
 export type ProxyResult = { number?: number; url: string } & Record<string, unknown>;
@@ -57,10 +58,10 @@ export interface ProxyApi {
 
 interface RestIssue { id?: number; number: number; title: string; state: string; body?: string | null; html_url: string; user?: { login?: string } | null; labels?: ({ name?: string } | string)[]; pull_request?: unknown }
 interface RestRepo { full_name: string; html_url: string; default_branch: string; has_issues?: boolean; fork?: boolean; owner?: { login?: string }; permissions?: { push?: boolean }; parent?: { full_name?: string }; source?: { full_name?: string } }
-interface RestPull { number: number; node_id?: string; title: string; state: string; body?: string | null; html_url: string; draft?: boolean; merged?: boolean; head: { ref: string; sha?: string }; base: { ref: string } }
+interface RestPull { number: number; node_id?: string; title: string; state: string; body?: string | null; html_url: string; draft?: boolean; merged?: boolean; mergeable?: boolean | null; head: { ref: string; sha?: string }; base: { ref: string } }
 interface RestFile { filename: string; status: string; additions: number; deletions: number; patch?: string; previous_filename?: string }
 interface RestCommit { sha: string; html_url?: string; commit: { message: string; author?: { name?: string; date?: string } | null }; author?: { login?: string } | null }
-interface RestCheckRun { id: number; name: string; status: string; conclusion: string | null; html_url?: string | null; started_at?: string | null; completed_at?: string | null }
+interface RestCheckRun { id: number; name: string; status: string; conclusion: string | null; html_url?: string | null; details_url?: string | null; started_at?: string | null; completed_at?: string | null }
 interface RestStatus { context: string; state: string; target_url?: string | null; description?: string | null }
 interface RestComment { id: number; body?: string | null; html_url: string; created_at: string; user?: { login?: string } | null }
 
@@ -155,6 +156,38 @@ async function pullChecks(req: Request, token: string, r: { repo: string; number
   };
 }
 
+/** A check run's conclusion that fails the checks (as the follow's rollup, src/sources/github/closer.ts). */
+const FAILED_RUN = new Set(['failure', 'timed_out', 'startup_failure']);
+
+/**
+ * A commit's checks from its check runs (issue #1072): failing once one failed, pending while one runs, none with no run.
+ * GitHub refusing them (403, 404: the connection may not read checks, issue #855) is `unknown`, never a failure of the read.
+ */
+async function checksOf(req: Request, headers: Record<string, string>, repo: string, sha: string): Promise<Pick<PullRequestStatus, 'checks' | 'failedChecks'>> {
+  let runs: RestCheckRun[];
+  try {
+    runs = ((await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...splitRepo(repo), ref: sha, per_page: 100, headers })).data as { check_runs?: RestCheckRun[] }).check_runs ?? [];
+  } catch (err) {
+    if (statusOf(err) === 403 || statusOf(err) === 404) return { checks: 'unknown', failedChecks: [] };
+    throw err;
+  }
+  const failed = runs.filter((r) => FAILED_RUN.has(r.conclusion ?? ''));
+  const failedChecks = failed.map((r) => ({ name: r.name, ...(r.html_url ?? r.details_url ? { url: (r.html_url ?? r.details_url)! } : {}) }));
+  const checks = runs.length === 0 ? 'none' : failed.length > 0 ? 'failing' : runs.some((r) => r.status !== 'completed') ? 'pending' : 'passing';
+  return { checks, failedChecks };
+}
+
+/** Where a pull request stands, read on GitHub (issue #1072): what `pr status` answers for one the hopper does not know. */
+async function pullStatus(req: Request, headers: Record<string, string>, repo: string, number: number): Promise<PullRequestStatus> {
+  const d = (await req('GET /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, headers })).data as RestPull;
+  const state = d.merged === true ? 'merged' : d.state === 'closed' ? 'closed' : 'open';
+  const checks = d.head.sha ? await checksOf(req, headers, repo, d.head.sha) : { checks: 'unknown' as const, failedChecks: [] };
+  return {
+    number: d.number, url: d.html_url, state, draft: d.draft === true,
+    mergeable: d.mergeable === true ? 'mergeable' : d.mergeable === false ? 'conflicts' : 'unknown', ...checks, base: d.base.ref, head: d.head.ref,
+  };
+}
+
 async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
@@ -194,6 +227,7 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
       const d = (await req('GET /repos/{owner}/{repo}/pulls/{pull_number}', { ...at, pull_number: r.number, headers })).data as RestPull;
       return { number: d.number, url: d.html_url, title: d.title, state: d.state, merged: d.merged === true, draft: d.draft === true, head: d.head.ref, base: d.base.ref, body: d.body ?? '' };
     }
+    case 'pr.status': return { ...(await pullStatus(req, headers, r.repo, r.number)) };
     case 'issue.close': {
       const d = (await req('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { ...at, issue_number: r.number, state: 'closed', state_reason: 'completed', headers })).data as RestIssue;
       return { number: d.number, url: d.html_url, state: d.state };

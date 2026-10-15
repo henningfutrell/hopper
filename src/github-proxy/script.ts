@@ -30,6 +30,7 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr diff N       --repo OWNER/NAME      (its changed files and their diff)
   sh "$HOPPER_GH" pr commits N    --repo OWNER/NAME
   sh "$HOPPER_GH" pr checks N     --repo OWNER/NAME      (the check runs and statuses of its head commit)
+  sh "$HOPPER_GH" pr status N     --repo OWNER/NAME      (state, mergeable, checks, failed checks, the work item)
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
@@ -48,6 +49,9 @@ required child: the hopper links it as a sub-issue of this job's issue, which is
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
 A pull request: push the branch first (git push), on this job's own repository.
+Where a pull request stands: pr status. Ask it, not GitHub: the hopper answers from what it already knows (from:
+hopper), the same as its Pull requests list, and reads GitHub only for a pull request it does not know (from: github),
+then answers that read again for a minute (from: cache). To wait on checks, ask pr status once a minute at most.
 A failed check's log: check log reads the log of a GitHub Actions job through the hopper. Never ask a person to paste a
 log. Ask a person only when check log says that the hopper cannot read it, and say why.
 Contributing to a repository your user cannot push to (repo view says canPush false; a push there is refused so):
@@ -71,7 +75,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr status'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac

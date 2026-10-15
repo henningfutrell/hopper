@@ -406,7 +406,7 @@ export interface WorkItemLedger {
   /** Fold what a read of the issue graph said of issues and pull requests into their items. Called in the read's transaction. */
   applyNodes(nodes: readonly GraphNode[], readAt: string): void;
   get(key: string): WorkItem | undefined;
-  /** The item whose pull request is `url` (issue #1074: a job's repo query of it); undefined: none. */
+  /** The item whose pull request is `url`, whatever its case (issue #1074: a job's repo query of it; issue #1072: its `pr status`); the newest state change first. */
   byPullRequest(url: string): WorkItem | undefined;
   /** The items, the newest state change first; `keptWork`: only those that hold kept work; `landing`: only those with a landing stage. */
   list(filter?: { state?: WorkItemState[]; keptWork?: true; landing?: true; limit?: number }): WorkItem[];
