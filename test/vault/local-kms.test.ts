@@ -4,9 +4,10 @@
 // Feature: the vault's data key, made and opened by a local KMS
 //   Scenario: a KMS with no key for the vault yet: the key is made, and a data key wrapped by it opens again
 //   Scenario: a wrapped data key that was changed does not open
+//   Scenario: AWS KMS (issue #1288), here at the local KMS's endpoint: a data key opens again, and a key that is not there is not made
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { localKms } from '../../src/vault/kms.ts';
+import { awsKms, localKms } from '../../src/vault/kms.ts';
 
 const url = process.env.HOPPER_TEST_KMS_URL;
 
@@ -28,5 +29,16 @@ describe.skipIf(!url)('the vault\'s data key through a local KMS (issue #586)', 
     const bytes = Buffer.from(wrapped, 'base64');
     bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
     await expect(kms.unwrap(bytes.toString('base64'))).rejects.toThrow();
+  });
+
+  it('AWS KMS: a data key wrapped by a key that is there opens again; a key that is not there is not made (issue #1288)', async () => {
+    const credentials = { accessKeyId: 'local', secretAccessKey: 'local' };
+    const alias = `alias/hopper-test-${randomUUID()}`;
+    const aws = awsKms({ region: 'eu-west-1', key: alias, url: url!, credentials });
+    await expect(aws.newDataKey()).rejects.toThrow();
+    // The key made by someone else, as an operator makes it in AWS: then the data key is made under it.
+    await localKms({ url: url!, key: alias }).newDataKey();
+    const { plain, wrapped } = await aws.newDataKey();
+    expect((await aws.unwrap(wrapped)).equals(plain)).toBe(true);
   });
 });

@@ -16,9 +16,50 @@ port: 4790
 # Secret, under `master-key` (and the key before a rotation under `previous`), and restart the hopper:
 #   kubectl create secret generic hopper-master-key --from-literal=master-key=<64 hex digits>
 #   kubectl rollout restart deployment/hopper
-# Unset: the Secret named <release>-master-key. A start without it, once secrets are kept, is limited.
+# Unset: the Secret named <release>-master-key, read as variables, and a start without it, once secrets are kept, is
+# limited.
 masterKey:
+  # Set: that Secret is mounted as files and the hopper reads the key from its `master-key` file. A start without that
+  # file is refused. To rotate, put the new key under `master-key` and the old one under `previous`, then restart:
+  # every secret is sealed again under the new key.
   existingSecret: ""
+  # The External Secrets Operator (https://external-secrets.io) fills the master key Secret (existingSecret, else
+  # <release>-master-key) from an outside store, and it is mounted as files as above. The operator and the store are
+  # yours: the chart makes only the ExternalSecret.
+  externalSecret:
+    enabled: false
+    refreshInterval: 1h
+    secretStoreRef:
+      name: ""
+      kind: ClusterSecretStore
+    # The remote key (and property, if the store keeps a map) of the master key.
+    masterKey:
+      key: ""
+      property: ""
+    # The key before a rotation; empty: none.
+    previous:
+      key: ""
+      property: ""
+
+# A key management service wraps the vault's data key (docs/deploy.md "On Kubernetes, with Helm"). Then the master key is not needed to
+# open the vault's secrets. Empty region: no KMS, and the vault seals under the master key.
+kms:
+  aws:
+    # AWS KMS in this region (HOPPER_KMS_REGION). The pod uses the AWS credentials of its service account's role (IRSA
+    # or EKS Pod Identity): see serviceAccount. The role needs kms:GenerateDataKey and kms:Decrypt on the key.
+    region: ""
+    # The KMS key: its id, ARN or alias. Required with a region: the hopper never makes a key in AWS.
+    key: ""
+    # An endpoint other than the region's own (a VPC endpoint); empty: the region's own.
+    endpoint: ""
+
+# The hopper's service account. Unset: the namespace's default. For AWS KMS, make one with the role's annotation, as
+# eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>.
+serviceAccount:
+  create: false
+  # The name; empty: <release> when create is true, else the default.
+  name: ""
+  annotations: {}
 
 # The pod network the hopper takes LAN requests from: the ingress controller and the kubelet's probes reach it from
 # there (docs/design.md "Reaching the UI across the LAN"). A LAN request reads the API only with a UI session.

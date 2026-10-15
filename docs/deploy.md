@@ -15,7 +15,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
 | Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job holds no GitHub token: its `git` and GitHub steps go through the hopper, which uses the connected account's token (docs/design.md "Git through the hopper"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
-| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, never from a file or a volume: "The master key" below. |
+| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, or as a mounted Secret file (`HOPPER_MASTER_KEY_FILE`), never from a volume of the hopper's own: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
@@ -59,9 +59,11 @@ and give the receiver the new one. From then on the variable is not read: delete
 
 Every secret the hopper keeps is sealed under one key, the **master key**. The database keeps only its
 fingerprint (an HMAC of a fixed label under the key), never the key. The key comes from the launch, as the
-variable `HOPPER_MASTER_KEY`. It is never read from a file or a volume: a container is ephemeral, and a key
-kept beside it is lost with it. No KMS gives the master key: `HOPPER_KMS_URL` changes only the key of the vault's
-own secrets (`docs/design.md` "A KMS as the master key's source: not built").
+variable `HOPPER_MASTER_KEY`, or as the file `HOPPER_MASTER_KEY_FILE` names: a Secret the orchestrator mounts (in
+Kubernetes, "On Kubernetes, with Helm"). A key file named but not there stops the start. Never keep the key in a volume
+beside the container: a container is ephemeral, and a key kept beside it is lost with it. No KMS gives the master key:
+`HOPPER_KMS_URL` and `HOPPER_KMS_REGION` change only the key of the vault's own secrets (`docs/design.md` "A KMS as the
+master key's source: not built").
 
 **Keep the master key in a password manager.** Without it, a new container on the same database opens none
 of the secrets. Keep it apart from the database's backups: a backup with its key beside it holds every secret.
@@ -634,7 +636,34 @@ kubectl --namespace hopper rollout restart deployment/hopper
 ```
 
 To give a key from the first start, make that Secret before `helm install`. A rotation puts the old key under
-`previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`). `masterKey.existingSecret` names another Secret.
+`previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`).
+
+**The master key from a Secret you manage** (issue #1288). Set `masterKey.existingSecret` to a Secret with the key
+under `master-key`. The chart mounts it as files, and the hopper reads `HOPPER_MASTER_KEY_FILE`. A start with no
+`master-key` file there is refused: the pod restarts and its log says the file is missing. Nothing is in an `.env` file.
+
+- **From an outside store**, with the External Secrets Operator (https://external-secrets.io) already in the cluster:
+  set `masterKey.externalSecret.enabled=true`, `masterKey.externalSecret.secretStoreRef.name` (and `.kind`, default
+  `ClusterSecretStore`) and `masterKey.externalSecret.masterKey.key` (and `.property` for a map). The chart makes an
+  `ExternalSecret` that fills the Secret (`masterKey.existingSecret`, else `hopper-master-key`) and mounts it as above.
+- **Rotate** in the Secret, or in the outside store: put the new key under `master-key` and the old one under
+  `previous` (`masterKey.externalSecret.previous.key`), then `kubectl --namespace hopper rollout restart
+  deployment/hopper`. At start every secret the old key sealed is sealed again under the new one, and still opens. Once
+  the log says so, remove `previous`. The hopper reads the files only at start: a Secret change needs the restart.
+
+**AWS KMS for the vault** (issue #1288, "The local KMS"). On EKS, the vault's data key can be wrapped by AWS KMS. Then the
+vault's secrets open with no master key. Make the KMS key and an IAM role with `kms:GenerateDataKey` and `kms:Decrypt`
+on it, and let the hopper's service account take the role (IRSA or EKS Pod Identity):
+
+```sh
+helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values \
+  --set kms.aws.region=eu-west-1 --set kms.aws.key=alias/hopper-vault \
+  --set serviceAccount.create=true \
+  --set 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::<account>:role/<role>'
+```
+
+The hopper never makes a key in AWS: `kms.aws.key` is required. `kms.aws.endpoint` names a VPC endpoint. The hopper's
+own secrets (webhook secrets, the GitHub connection, sign-in realms' secrets) stay under the master key.
 
 | value | |
 |---|---|
@@ -643,6 +672,9 @@ To give a key from the first start, make that Secret before `helm install`. A ro
 | `lanPeers` | the pod network the hopper takes LAN requests from (the ingress controller, the kubelet). Default: the private ranges, as compose |
 | `solr.enabled` | `false`: no Solr, and no search |
 | `networkPolicy.enabled` | NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. Default on; they take effect where the network plugin enforces them |
+| `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above) |
+| `kms.aws.region`, `kms.aws.key`, `kms.aws.endpoint` | AWS KMS wraps the vault's data key (above) |
+| `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
@@ -896,10 +928,10 @@ recreates `postgres` once.
 - The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").
 - When the vault container is not running, the hopper still works. Settings → Vault says the vault is not reachable,
   a change answers 503, and a box's ask is refused.
-- Its key: the master key, or the KMS's data key when `HOPPER_KMS_URL` is set. `HOPPER_MASTER_KEY_PREVIOUS` given at launch
+- Its key: the master key, or the KMS's data key when `HOPPER_KMS_URL` or `HOPPER_KMS_REGION` is set. `HOPPER_MASTER_KEY_PREVIOUS` given at launch
   reaches it too (key rotation, "Rotating the master key").
 - **Elsewhere** (not compose): run `node src/vault/main.ts` with `HOPPER_DATABASE_URL`, `HOPPER_MASTER_KEY` and
-  `HOPPER_VAULT_KEY` (each also `_FILE`), and optionally `HOPPER_KMS_URL`; `HOPPER_VAULT_PORT` moves its port (4791).
+  `HOPPER_VAULT_KEY` (each also `_FILE`), and optionally `HOPPER_KMS_URL` or `HOPPER_KMS_REGION`; `HOPPER_VAULT_PORT` moves its port (4791).
   Give the hopper `HOPPER_VAULT_URL` and the same `HOPPER_VAULT_KEY`. Keep the port off every network but the hopper's.
 
 ### The local KMS (`kms`)
@@ -916,7 +948,8 @@ first ask. Its keys are in the `kms` volume.
   up with the database.
 - When the KMS is down, the vault stores and delivers nothing and Settings → Vault says why. The vault container asks
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
-- local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
+- local-kms checks no credentials. For AWS KMS itself, set `HOPPER_KMS_REGION` (and `HOPPER_KMS_KEY`, a key you made:
+  the hopper makes none in AWS); the vault uses AWS's own credential chain. In a cluster: "On Kubernetes, with Helm".
 
 ### Remote access (the `tunnel` and `cloudflared` services)
 

@@ -3,6 +3,8 @@
 {{- $image := printf "%s:%s" .Values.image.repository (.Values.image.tag | toString) -}}
 {{- $port := .Values.port | int -}}
 {{- $ns := .Release.Namespace -}}
+{{- $keyFile := include "hopper.masterKeyFromFile" . -}}
+{{- $account := include "hopper.serviceAccount" . -}}
 {{- $health := printf "fetch('http://127.0.0.1:%d/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" $port -}}
 apiVersion: v1
 kind: Service
@@ -52,6 +54,10 @@ spec:
       labels:
         {{- include "hopper.labels" $sel | nindent 8 }}
     spec:
+      {{- if $account }}
+      # Its AWS role (IRSA or EKS Pod Identity), for AWS KMS: the webhook mounts its own token.
+      serviceAccountName: {{ $account }}
+      {{- end }}
       automountServiceAccountToken: false
       # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
       enableServiceLinks: false
@@ -74,18 +80,38 @@ spec:
           env:
             - name: HOPPER_DATABASE_URL_FILE
               value: /run/hopper-secrets/database_url
+            {{- if $keyFile }}
+            # The master key from the mounted Secret: a start without its file is refused.
+            - name: HOPPER_MASTER_KEY_FILE
+              value: /run/hopper-master-key/master-key
+            - name: HOPPER_MASTER_KEY_PREVIOUS_FILE
+              value: /run/hopper-master-key/previous
+            {{- else }}
             - name: HOPPER_MASTER_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.masterKey.existingSecret | default (printf "%s-master-key" $name) }}
+                  name: {{ include "hopper.masterKeySecret" . }}
                   key: master-key
                   optional: true
             - name: HOPPER_MASTER_KEY_PREVIOUS
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.masterKey.existingSecret | default (printf "%s-master-key" $name) }}
+                  name: {{ include "hopper.masterKeySecret" . }}
                   key: previous
                   optional: true
+            {{- end }}
+            {{- with .Values.kms.aws }}
+            {{- if .region }}
+            - name: HOPPER_KMS_REGION
+              value: {{ .region | quote }}
+            - name: HOPPER_KMS_KEY
+              value: {{ required "kms.aws.key: the AWS KMS key that wraps the vault's data key (the hopper never makes one in AWS)" .key | quote }}
+            {{- if .endpoint }}
+            - name: HOPPER_KMS_URL
+              value: {{ .endpoint | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: HOPPER_PORT
               value: {{ $port | quote }}
             - name: HOPPER_OPENFGA_URL
@@ -145,6 +171,11 @@ spec:
             # Its home: the claude sign-in.
             - name: home
               mountPath: /home/node
+            {{- if $keyFile }}
+            - name: master-key
+              mountPath: /run/hopper-master-key
+              readOnly: true
+            {{- end }}
       volumes:
         - name: secrets
           secret:
@@ -165,6 +196,14 @@ spec:
         - name: home
           persistentVolumeClaim:
             claimName: {{ $name }}-home
+        {{- if $keyFile }}
+        # Optional: with no Secret the hopper starts and refuses, saying the key file is missing.
+        - name: master-key
+          secret:
+            secretName: {{ include "hopper.masterKeySecret" . }}
+            defaultMode: 0440
+            optional: true
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

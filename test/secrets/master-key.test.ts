@@ -1,4 +1,5 @@
-// Issue #659: the master key comes from the launch, never from a volume. HOPPER_MASTER_KEY gives it; a fingerprint of
+// Issue #659: the master key comes from the launch, never from a volume. HOPPER_MASTER_KEY gives it, or the file
+// HOPPER_MASTER_KEY_FILE names, a mounted Secret (issue #1288); a fingerprint of
 // it (an HMAC of a fixed label, never the key) is kept in the database and checked at each start. A fresh hopper with
 // no key makes one, to be shown once; a hopper that keeps secrets and gets no key starts limited, and makes none. The
 // old token key (HOPPER_TOKEN_KEY, or the file HOPPER_TOKEN_KEY_FILE names) is read only to move it to HOPPER_MASTER_KEY.
@@ -7,7 +8,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fingerprintOf, MasterKeyMismatch, resolveMasterKey, withMasterKey, type KeptSecrets } from '../../src/secrets/master-key.ts';
+import { fingerprintOf, launchKey, MasterKeyMismatch, resolveMasterKey, withMasterKey, type KeptSecrets } from '../../src/secrets/master-key.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import { createTokenBox } from '../../src/secrets/token-box.ts';
 
@@ -73,8 +74,40 @@ describe('the master key (issue #659)', () => {
     expect(() => resolve({ HOPPER_MASTER_KEY: 'short' })).toThrow('HOPPER_MASTER_KEY must be 32 bytes');
   });
 
-  it('never read from a file: HOPPER_MASTER_KEY_FILE is refused, naming the variable to use', () => {
-    expect(() => resolve({ HOPPER_MASTER_KEY_FILE: '/run/secrets/key' })).toThrow('give the key as HOPPER_MASTER_KEY');
+  describe('from a mounted Secret file (issue #1288)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-master-key-'));
+    const fileOf = (name: string, text: string): string => {
+      const f = join(dir, name);
+      writeFileSync(f, text);
+      return f;
+    };
+
+    it('HOPPER_MASTER_KEY_FILE gives the key, and HOPPER_MASTER_KEY_PREVIOUS_FILE the previous keys', () => {
+      const record = recordOf(fingerprintOf(KEY));
+      const r = resolve({ HOPPER_MASTER_KEY_FILE: fileOf('key', `${OTHER}\n`), HOPPER_MASTER_KEY_PREVIOUS_FILE: fileOf('previous', `${KEY}\n`) }, record);
+      expect(r).toMatchObject({ source: 'given', key: OTHER, previous: [KEY] });
+      expect(record.fingerprint).toBe(fingerprintOf(OTHER));
+    });
+
+    it('a key file that is not there, or is empty: the start is refused, nothing recorded', () => {
+      const record = recordOf();
+      expect(() => resolve({ HOPPER_MASTER_KEY_FILE: join(dir, 'no-such-key') }, record)).toThrow('HOPPER_MASTER_KEY_FILE: cannot read');
+      expect(() => resolve({ HOPPER_MASTER_KEY_FILE: fileOf('empty', '\n') }, record)).toThrow('is empty');
+      expect(record.fingerprint).toBeUndefined();
+    });
+
+    it('a previous-keys file that is not there gives no previous key', () => {
+      expect(resolve({ HOPPER_MASTER_KEY_FILE: fileOf('key2', KEY), HOPPER_MASTER_KEY_PREVIOUS_FILE: join(dir, 'no-previous') })).toMatchObject({ source: 'given', previous: [] });
+    });
+
+    it('both the variable and its file: refused', () => {
+      expect(() => resolve({ HOPPER_MASTER_KEY: KEY, HOPPER_MASTER_KEY_FILE: fileOf('key3', KEY) })).toThrow('both set');
+    });
+
+    it('the vault container reads the key file the same way', () => {
+      expect(launchKey({ HOPPER_MASTER_KEY_FILE: fileOf('key4', KEY) })).toEqual({ key: KEY, previous: [] });
+      expect(() => launchKey({ HOPPER_MASTER_KEY_FILE: join(dir, 'no-such-key') })).toThrow('cannot read');
+    });
   });
 
   it('none on a fresh database: a new key is made, and its fingerprint recorded', () => {
