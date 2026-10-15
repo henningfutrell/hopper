@@ -49,6 +49,7 @@ export function createRemoteRuntime(machine: string, relay: RuntimeRelay): Build
     build: async (tag, containerfile) => (await known()).build(tag, containerfile),
     createVolume: async (name, labels) => (await known()).createVolume(name, labels),
     removeVolume: async (name) => (await known()).removeVolume(name),
+    listVolumes: async (labels) => (await known()).listVolumes(labels),
     create: async (spec) => (await known()).create(spec),
     start: async (id) => (await known()).start(id),
     wait: async (id, timeoutMs) => (await known()).wait(id, timeoutMs),

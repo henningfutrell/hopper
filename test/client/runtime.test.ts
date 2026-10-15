@@ -15,6 +15,8 @@
 //   Scenario: a build of anything but a tools image, with other build options, or of another context, is refused
 //   Scenario: a check box is carried: its script, its end awaited, and its output as the bytes the runtime sent
 //   Scenario: a script on a sandbox box, a check box without its one script, and a wait or a read of a sandbox box are refused
+//   Scenario: a need box is carried as a check box is, under its own label and name; the home volumes are listed (issue #1371)
+//   Scenario: a volume with a home's name but no sandbox label is not removed (issue #1371)
 import { afterEach, describe, expect, it } from 'vitest';
 import { runtimeAnswer } from '../../src/client/runtime.ts';
 import { clientRuntimeCall, clientRuntimeWhich } from '../../src/executors/client.ts';
@@ -287,6 +289,43 @@ describe('the read-only check on the machine (issue #708)', () => {
       }
     }
     expect(a.seen.filter((s) => /\/(wait|logs)$/.test(s.path))).toEqual([]);
+  });
+});
+
+describe('a need box on the machine (issue #1371)', () => {
+  it('a need box is carried as a check box is, under its own label and name; the home volumes are listed', async () => {
+    const libpod = createFakeLibpod();
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const need = { ...checkSpec, name: 'hopper-need-infra-1a2b3c4d', volume: 'hopper-need-infra-1a2b3c4d-home', labels: { 'io.hopper.need': 'i-1', 'io.hopper.user': 'admin' } };
+    expect((await clientRuntimeCall(t, { method: 'POST', path: `${API}/volumes/create`, body: { Name: need.volume, Label: need.labels } })).status).toBe(201);
+    const wrong = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: libpodCreateBody({ ...need, name: 'hopper-check-infra-1a2b3c4d' }) });
+    expect(wrong.status).toBe(403);
+    expect(JSON.parse(wrong.text).message).toContain('a need box is named hopper-need-<name>');
+    const made = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: libpodCreateBody(need) });
+    expect(made.status).toBe(201);
+    const id = (JSON.parse(made.text) as { Id: string }).Id;
+    libpod.containers.get(id)!.run = { exit: 0, logs: LOGS };
+    await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${id}/start` });
+    expect(await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${id}/wait?condition=exited&condition=stopped` })).toMatchObject({ status: 200, text: '0' });
+    expect((await clientRuntimeCall(t, { method: 'GET', path: `${API}/containers/${id}/logs?stdout=true&stderr=true` })).status).toBe(200);
+    const listed = await clientRuntimeCall(t, { method: 'GET', path: `${API}/volumes/json?filters=${encodeURIComponent(JSON.stringify({ label: ['io.hopper.need=i-1'] }))}` });
+    expect(listed.status).toBe(200);
+    expect((JSON.parse(listed.text) as { Name: string }[]).map((v) => v.Name)).toEqual([need.volume]);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/containers/${id}?force=true&timeout=10` })).status).toBe(204);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/volumes/${need.volume}?force=true` })).status).toBe(204);
+  });
+
+  it('a volume with a home\'s name but no sandbox label is not removed', async () => {
+    const libpod = createFakeLibpod();
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    await clientRuntimeCall(t, { method: 'POST', path: `${API}/volumes/create`, body: { Name: 'hopper-need-theirs-home', Label: { 'com.example.owner': 'someone' } } });
+    const r = await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/volumes/hopper-need-theirs-home?force=true` });
+    expect(r.status).toBe(403);
+    expect(JSON.parse(r.text).message).toContain('carries no sandbox label');
+    expect(libpod.volumes.has('hopper-need-theirs-home')).toBe(true);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/volumes/hopper-need-gone-home?force=true` })).status).toBe(404);
   });
 });
 

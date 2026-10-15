@@ -8,8 +8,10 @@
 // and checks them: a container it creates carries the sandbox flags and mounts nothing of this machine; it starts,
 // stops, inspects, start-checks and removes only containers the hopper labelled as its boxes, and volumes named as their homes;
 // it builds only a tools image, with the adapters' own build options, from a context of one Containerfile.
-// A check box (the read-only check, issue #716) is made the same way, under its own label and name; it alone runs a
-// script in place of its entrypoint, and it alone is waited on and has its output read.
+// A check box (the read-only check, issue #716) and a need box (a step's, issue #1007) are made the same way, each under
+// its own label and name; they alone run a script in place of the entrypoint, and are waited on and have their output
+// read. The volumes of a label are listed, so the hopper's sweep finds a home whose box is gone, and a volume is removed
+// only when it carries a sandbox label (issue #1371).
 // A box's one-shot stats (`stream=false`, nothing else) are read for the stack resources (issue #947); never a stream.
 // In a Kubernetes pod with no socket (issue #1289) the problem asks for no socket or systemd fix: a pod has neither.
 // A refused call answers 403 in the runtime's own shape, `{message}`. The checks restate src/sandbox/flags.ts's
@@ -32,11 +34,13 @@ export function defaultRuntimeSockets(env: NodeJS.ProcessEnv = process.env, uid 
 const PREFIX: Record<RuntimeKind, string> = { podman: '/v5.0.0/libpod', docker: '/v1.41' };
 /** A build fetches every tool it adds (issue #716): the longest call the adapters make. */
 const MAX_TIMEOUT_MS = 30 * 60_000;
-const NAME = /^hopper-(sandbox|check)-[A-Za-z0-9][A-Za-z0-9_.-]*$/;
-const NAMES = { box: /^hopper-sandbox-[A-Za-z0-9][A-Za-z0-9_.-]*$/, check: /^hopper-check-[A-Za-z0-9][A-Za-z0-9_.-]*$/ };
+const NAME = /^hopper-(sandbox|check|need)-[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const NAMES = { box: /^hopper-sandbox-[A-Za-z0-9][A-Za-z0-9_.-]*$/, check: /^hopper-check-[A-Za-z0-9][A-Za-z0-9_.-]*$/, need: /^hopper-need-[A-Za-z0-9][A-Za-z0-9_.-]*$/ };
 const BOX_LABEL = 'io.hopper.box';
-/** The label of a check box (src/sandbox/check.ts `CHECK_LABEL`): a one-shot box of the read-only check. */
+/** The label of a check box (src/sandbox/owned.ts `CHECK_LABEL`): a one-shot box of the read-only check. */
 const CHECK_LABEL = 'io.hopper.check';
+/** The label of a need box (src/sandbox/owned.ts `NEED_LABEL`): a one-shot box of a job's sandbox step. */
+const NEED_LABEL = 'io.hopper.need';
 const HOME = '/home/agent';
 /** The tag of a tools image (src/sandbox/tools.ts `TOOLS_IMAGE`): the one image a build may make here. */
 const TOOLS_TAG = /^localhost\/hopper-box-tools:[0-9a-f]{16}$/;
@@ -89,16 +93,17 @@ const onlyKeys = (o: Record<string, unknown>, allowed: string[], what: string): 
   return extra.length ? `${what} may not set ${extra.join(', ')}` : undefined;
 };
 const sameList = (v: unknown, want: string[]): boolean => Array.isArray(v) && v.length === want.length && v.every((x, i) => x === want[i]);
-type BoxKind = 'box' | 'check';
+type BoxKind = 'box' | 'check' | 'need';
 const kindOf = (labels: unknown): BoxKind | undefined =>
-  !isObject(labels) ? undefined : typeof labels[BOX_LABEL] === 'string' ? 'box' : typeof labels[CHECK_LABEL] === 'string' ? 'check' : undefined;
-const named = (kind: BoxKind, name: unknown): string | undefined =>
-  typeof name === 'string' && NAMES[kind].test(name) ? undefined : kind === 'box' ? 'a sandbox box is named hopper-sandbox-<name>' : 'a check box is named hopper-check-<name>';
-/** A check box runs its script once, as `sh -c`, on a terminal; a sandbox box runs its image's own entrypoint. */
+  !isObject(labels) ? undefined
+    : typeof labels[BOX_LABEL] === 'string' ? 'box' : typeof labels[CHECK_LABEL] === 'string' ? 'check' : typeof labels[NEED_LABEL] === 'string' ? 'need' : undefined;
+const NAMED: Record<BoxKind, string> = { box: 'a sandbox box is named hopper-sandbox-<name>', check: 'a check box is named hopper-check-<name>', need: 'a need box is named hopper-need-<name>' };
+const named = (kind: BoxKind, name: unknown): string | undefined => (typeof name === 'string' && NAMES[kind].test(name) ? undefined : NAMED[kind]);
+/** A check box and a need box run their script once, as `sh -c`, on a terminal; a sandbox box runs its image's own entrypoint. */
 function scriptProblem(kind: BoxKind, entrypoint: unknown, cmd: unknown, tty: unknown, restart: unknown): string | undefined {
   if (kind === 'box') return entrypoint === undefined && cmd === undefined && tty === undefined ? undefined : "a sandbox box runs its image's own entrypoint";
   const once = sameList(entrypoint, ['/bin/sh']) && Array.isArray(cmd) && cmd.length === 2 && cmd[0] === '-c' && typeof cmd[1] === 'string' && tty === true && restart === 'no';
-  return once ? undefined : 'a check box runs its script once, as sh -c';
+  return once ? undefined : `a ${kind} box runs its script once, as sh -c`;
 }
 
 const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks', 'healthconfig', 'entrypoint', 'command', 'terminal'];
@@ -170,7 +175,7 @@ function buildProblem(kind: RuntimeKind, q: URLSearchParams, c: RuntimeCall): st
 }
 
 /**
- * `container`, with `checkOnly`: a call only a check box takes — its end awaited, its output read; with `stats`: a box's
+ * `container`, with `checkOnly`: a call only a check box or a need box takes — its end awaited, its output read; with `stats`: a box's
  * one-shot stats (issue #947).
  */
 type Check = { container: string; checkOnly?: true; stats?: true } | { volume: string } | { create: true } | { build: true } | 'open';
@@ -187,6 +192,8 @@ function routeOf(kind: RuntimeKind, method: string, route: string): Check | unde
   if (method === 'POST' && route === '/build') return { build: true };
   if (a === 'images' && method === 'GET' && n >= 3 && (seg.at(-1) === 'json' || (kind === 'podman' && seg.at(-1) === 'exists'))) return 'open';
   if (method === 'POST' && route === (kind === 'podman' ? '/images/pull' : '/images/create')) return 'open';
+  // The volumes of a label (issue #1371): Podman's list, and Docker's.
+  if (method === 'GET' && route === (kind === 'podman' ? '/volumes/json' : '/volumes')) return 'open';
   if (a === 'volumes' && n === 2 && (method === 'DELETE' || (kind === 'docker' && method === 'GET'))) return { volume: b! };
   if (a === 'containers' && n === 2 && method === 'DELETE') return { container: b! };
   if (a === 'containers' && n === 3 && ((method === 'GET' && (c === 'json' || (kind === 'podman' && c === 'healthcheck'))) || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
@@ -232,7 +239,17 @@ export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { 
       : here.kind === 'podman' ? podmanCreateProblem(c.body) : dockerCreateProblem(c.body, query.get('name'));
     if (problem) return refused(problem);
   }
-  if (check !== 'open' && 'volume' in check && !NAME.test(check.volume)) return refused(`${check.volume} is not a sandbox box's home volume`);
+  if (check !== 'open' && 'volume' in check) {
+    if (!NAME.test(check.volume)) return refused(`${check.volume} is not a sandbox box's home volume`);
+    // A remove only of a volume the hopper labelled (issue #1371): a home's name alone is no proof it is one.
+    if (c.method === 'DELETE') {
+      const seen = await call(here.socket, 'GET', `${prefix}/volumes/${encodeURIComponent(check.volume)}${here.kind === 'podman' ? '/json' : ''}`, undefined, timeout);
+      if (seen.status < 200 || seen.status >= 300) return seen;
+      let labels: unknown;
+      try { labels = (JSON.parse(seen.text) as { Labels?: unknown }).Labels; } catch { /* no labels */ }
+      if (!kindOf(labels)) return refused(`the volume ${check.volume} carries no sandbox label`);
+    }
+  }
   if (check !== 'open' && 'container' in check) {
     // A stream would hold the link's call open until its time out: only the one-shot read.
     if (check.stats && (query.size !== 1 || query.get('stream') !== 'false')) return refused("a box's stats are read once, with stream=false and nothing else");
@@ -243,7 +260,7 @@ export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { 
     try { labels = (JSON.parse(seen.text) as { Config?: { Labels?: unknown } }).Config?.Labels; } catch { /* no labels */ }
     const kind = kindOf(labels);
     if (!kind) return refused(`${check.container} is not a sandbox box the hopper made`);
-    if (check.checkOnly && kind !== 'check') return refused(`${check.container} is not a check box: only a check box is waited on and has its output read`);
+    if (check.checkOnly && kind === 'box') return refused(`${check.container} is not a check box or a need box: only those are waited on and have their output read`);
     if (check.checkOnly) return call(here.socket, c.method, c.path, c.body, timeout, true);
   }
   return call(here.socket, c.method, c.path, c.body, timeout);
