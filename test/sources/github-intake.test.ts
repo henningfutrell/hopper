@@ -99,6 +99,14 @@ describe('claims name their holder (issue #440)', () => {
     expect(events).toEqual([{ type: 'source.claim_released', data: { source: 'github', key: url(1), by: 'hopper', reason: 'claimed by this user of this hopper, with no job here' } }]);
   });
 
+  it('a release removes only the claim labels the issue carries (issue #1154)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    await source.discover();
+    expect(gh.calls.filter((c) => c.method === 'removeLabels').map((c) => c.args)).toEqual([[REPO, 1, ['hopper:claimed']]]);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
   it('a claim with a job here is the job\'s: kept and taken', async () => {
     const { gh, source, events } = setup({ migration: migrated, knownKeys: (k) => new Set(k) });
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed', MINE] });
