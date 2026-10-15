@@ -117,7 +117,8 @@ bash master-key.sh run podman compose up -d --force-recreate    # each start: th
   folder or a volume), and openssl, in `hopper-master-key.enc`. `HOPPER_KEY_SEAL=systemd-creds` or `kek` picks one.
   Neither file opens on another host.
 - **At launch.** `bash master-key.sh run <command>` unseals the key and gives it to the command as
-  `HOPPER_MASTER_KEY`, for that process only. A sealed key that does not unseal stops it before the command runs.
+  `HOPPER_MASTER_KEY`, for that process only. A sealed key that does not unseal stops it before the command runs. With
+  `HOPPER_MASTER_KEY` given and no key sealed here yet, it seals that key first: the first start with the key seals it.
 - **Update.** The update unseals it by itself when you give no key (`hopper update script | bash -s -- <image>`, in the
   same folder), and puts in the new image's `master-key.sh`.
 - **A wrong or missing key.** The hopper does not start, and names the key it needs by its fingerprint. Seal the right

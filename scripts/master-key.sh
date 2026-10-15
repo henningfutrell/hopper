@@ -6,7 +6,8 @@
 #   podman run --rm <image> hopper master-key script > master-key.sh
 #   bash master-key.sh seal              seal the key to this host: from HOPPER_MASTER_KEY, else asked on the terminal
 #   bash master-key.sh run <command>...  unseal it, and run the command with it as HOPPER_MASTER_KEY, for that process
-#                                        only: bash master-key.sh run podman compose up -d --force-recreate
+#                                        only: bash master-key.sh run podman compose up -d --force-recreate. With
+#                                        HOPPER_MASTER_KEY given and none sealed here yet, it seals that key first
 #   bash master-key.sh rotate            rotate the key of the running hopper, and seal the new key in the same step
 #   bash master-key.sh status            how the key is sealed here, and whether it unseals; never the key
 #   bash master-key.sh unseal            write the key to a pipe, never to a terminal (the update reads it so)
@@ -139,9 +140,14 @@ unseal() {
 }
 
 # The command, with the key as HOPPER_MASTER_KEY in its environment only, and how it was sealed as
-# HOPPER_MASTER_KEY_SEALED (the hopper then rotates only with the host, which seals the new key).
+# HOPPER_MASTER_KEY_SEALED (the hopper then rotates only with the host, which seals the new key). The first launch with
+# the key given and none sealed here seals it first: the next launch needs no key from anyone.
 run() {
   [ $# -gt 0 ] || fail 'usage: bash master-key.sh run <command>... (for example: podman compose up -d --force-recreate)'
+  if [ ! -f "$CRED" ] && [ ! -f "$ENC" ] && [ -n "${HOPPER_MASTER_KEY:-}" ]; then
+    check_key "$HOPPER_MASTER_KEY"
+    seal "$HOPPER_MASTER_KEY"
+  fi
   local key how
   how="$(method)"
   key="$(unseal)"
