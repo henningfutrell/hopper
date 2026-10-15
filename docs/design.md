@@ -18884,8 +18884,27 @@ them where the runtime is real, and changes no code of the hopper.
   after its reap there is no storage, runtime dir or network config of the job's. A runtime set up again for a job of
   the same id lists no volume, network, container or image. Where a real podman does not work, the test is skipped.
 
+**Part 5 (2026-10-15): kill the hopper and start it again, on Kubernetes.** The acceptance asks that a sandbox a hopper
+that stopped left is gone after its next start. The reconcile pass and the sweeps were shown with doubles
+(`test/sandbox/leaked-homes.test.ts`, `test/sandbox/reconcile*.test.ts`); this part shows it in a real cluster, and
+changes no code of the hopper.
+
+- **The sandbox check kills the hopper** (`crashAndRestart`, `scripts/kind-sandbox-check.ts`, its last step). It reads
+  the hopper's instance id from its database (`settings`, `instanceId`), scales the hopper's deployment to 0 and
+  deletes its pod with no grace. While the hopper is down, it makes a need box of that instance and its home claim,
+  through the hopper's service account, as a step the hopper started and never ended leaves them. Then it scales the
+  deployment to 1, waits for its rollout, and no pod, claim or secret with the box's need label may stay.
+- **Only the restarted hopper can have removed it.** The box is made after the hopper's pod is gone, so the running
+  hopper's sweep (every 10 s) never saw it.
+- **No job is marked here.** No check has a job (a job needs a GitHub sign-in). A run that a stopped hopper left ends as
+  `swept` in the sandbox runs ledger of #1368; its own outcome is part of the ledger work below.
+
+Tests: `test/scripts/kind-sandbox-check.test.ts` (with a fake kubectl and the runtime double: the hopper is stopped
+before the box is made; a hopper that leaves the box fails the check; an instance id that cannot be read stops the
+check before the hopper is stopped). The kind workflow runs the step itself.
+
 What is still open is listed in the issue's pull request: the ledger outcomes and the need box sweep on client targets
-(both wait for #1368), and credentials that die with their sandbox (a decision).
+(both wait for #1368), and credentials that die with their sandbox (a decision, #1394).
 
 ## Approve several at once (issue #1018, 2026-10-13)
 

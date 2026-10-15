@@ -3,8 +3,9 @@
 // checkout, as the hopper's own service account, so the chart's sandbox Role is all they get. Each box ends one way —
 // it succeeds, fails, times out, or is cancelled — and after each no pod, claim or secret with its labels stays. A later
 // box of the same template sees nothing of an earlier one, and two boxes at once see nothing of each other. The runtime
-// refuses to remove the hopper's own pod and its Postgres's claim, and the hopper's pods are the same at the end. Needs
-// `kubectl` on PATH and this checkout's dependencies (`npm ci`).
+// refuses to remove the hopper's own pod and its Postgres's claim, and the hopper's pods are the same until then. Last,
+// the hopper is killed, a need box of its instance runs while it is down, and the hopper started again must remove it
+// (`crashAndRestart`). Needs `kubectl` on PATH and this checkout's dependencies (`npm ci`).
 //
 //   node scripts/kind-sandbox-check.ts [--context CONTEXT] [--namespace NAMESPACE] [--image IMAGE]
 //
@@ -30,13 +31,16 @@ const GONE_MS = 180_000;
 /** What each box here asks for. */
 const BOX_LIMITS = { cpus: 0.25, memoryMb: 128 };
 
-function kubectl(context: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+/** kubectl in one context: its exit status and what it wrote. */
+export type Kubectl = (args: string[]) => { status: number | null; stdout: string; stderr: string };
+
+function kubectl(context: string, args: string[]): ReturnType<Kubectl> {
   const r = spawnSync('kubectl', ['--context', context, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: PERSON });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.error ? r.error.message : r.stderr };
 }
 
-function must(context: string, args: string[]): string {
-  const r = kubectl(context, args);
+function must(k: Kubectl, args: string[]): string {
+  const r = k(args);
   if (r.status !== 0) throw new Error(`kubectl ${args.join(' ')}: ${r.stderr.trim() || `exit ${r.status}`}`);
   return r.stdout;
 }
@@ -45,13 +49,13 @@ function must(context: string, args: string[]): string {
  * A kubeconfig of the hopper's service account in the release's namespace: the cluster as the context names it, and a
  * token the API mints for the account for an hour. What the runtime does here, the hopper's Role lets it do.
  */
-function serviceAccountConfig(context: string, namespace: string, account: string, file: string): void {
-  const view = JSON.parse(must(context, ['config', 'view', '--raw', '--minify', '-o', 'json'])) as {
+function serviceAccountConfig(k: Kubectl, context: string, namespace: string, account: string, file: string): void {
+  const view = JSON.parse(must((args) => kubectl(context, args), ['config', 'view', '--raw', '--minify', '-o', 'json'])) as {
     clusters: { name: string; cluster: Record<string, unknown> }[];
   };
   const cluster = view.clusters[0];
   if (!cluster) throw new Error(`the context ${context} names no cluster`);
-  const token = must(context, ['--namespace', namespace, 'create', 'token', account, '--duration', '1h']).trim();
+  const token = must(k, ['create', 'token', account, '--duration', '1h']).trim();
   writeFileSync(file, JSON.stringify({
     apiVersion: 'v1', kind: 'Config', 'current-context': 'hopper',
     clusters: [{ name: 'kind', cluster: cluster.cluster }],
@@ -63,25 +67,25 @@ function serviceAccountConfig(context: string, namespace: string, account: strin
 interface Named { metadata: { name: string; uid: string; labels?: Record<string, string>; deletionTimestamp?: string } }
 
 /** The pods, claims and secrets in the namespace that carry the need label of `instance`: none, once its box is gone. */
-function leftOf(context: string, namespace: string, instance: string): string[] {
-  return must(context, ['--namespace', namespace, 'get', 'pods,persistentvolumeclaims,secrets', '-l', `${NEED_LABEL}=${instance}`, '-o', 'name'])
+function leftOf(k: Kubectl, instance: string): string[] {
+  return must(k, ['get', 'pods,persistentvolumeclaims,secrets', '-l', `${NEED_LABEL}=${instance}`, '-o', 'name'])
     .split('\n').map((l) => l.trim()).filter(Boolean);
 }
 
 /** Waits until nothing with the need label of `instance` is left; answers what is left at the end. */
-async function gone(context: string, namespace: string, instance: string): Promise<string[]> {
-  const end = Date.now() + GONE_MS;
+async function gone(k: Kubectl, instance: string, ms = GONE_MS, pollMs = 2_000): Promise<string[]> {
+  const end = Date.now() + ms;
   for (;;) {
-    const left = leftOf(context, namespace, instance);
+    const left = leftOf(k, instance);
     if (left.length === 0 || Date.now() >= end) return left;
-    await new Promise((r) => setTimeout(r, 2_000));
+    await new Promise((r) => setTimeout(r, pollMs));
   }
 }
 
 interface Run { name: string; script: string; timeoutMs?: number; cancelOn?: string; expect(r: NeedBoxResult): string | null }
 
 /** One need box run to its end, as a step runs it; then nothing with its labels may be left. Answers what failed, or null. */
-async function oneBox(o: { runtime: ContainerRuntime; context: string; namespace: string; image: string; instance: string; dir: string }, run: Run): Promise<string | null> {
+async function oneBox(o: { runtime: ContainerRuntime; k: Kubectl; image: string; instance: string; dir: string }, run: Run): Promise<string | null> {
   const stop = new AbortController();
   let log = '';
   const result = await runNeedBox(o.runtime, {
@@ -97,7 +101,7 @@ async function oneBox(o: { runtime: ContainerRuntime; context: string; namespace
   });
   const wrong = run.expect(result);
   if (wrong) return `${run.name}: ${wrong} (exit ${result.exit}${result.problem ? `, ${result.problem}` : ''}; log: ${log.trim() || 'none'})`;
-  const left = await gone(o.context, o.namespace, o.instance);
+  const left = await gone(o.k, o.instance);
   if (left.length > 0) return `${run.name}: left after the box ended: ${left.join(', ')}`;
   console.log(`${run.name}: exit ${result.exit}${result.problem ? ` (${result.problem})` : ''}; nothing with its labels left`);
   return null;
@@ -108,23 +112,24 @@ const problem = (text: string) => (r: NeedBoxResult): string | null => (r.exit =
 
 /** The check. Answers what failed, or null. */
 export async function check(context: string, namespace: string, image: string): Promise<string | null> {
-  const deployment = JSON.parse(must(context, ['--namespace', namespace, 'get', 'deployment', 'hopper', '-o', 'json'])) as {
+  const k: Kubectl = (args) => kubectl(context, ['--namespace', namespace, ...args]);
+  const deployment = JSON.parse(must(k, ['get', 'deployment', 'hopper', '-o', 'json'])) as {
     spec: { selector: { matchLabels: Record<string, string> }; template: { spec: { serviceAccountName?: string } } };
   };
   const account = deployment.spec.template.spec.serviceAccountName ?? 'default';
-  const own = (): Named[] => (JSON.parse(must(context, ['--namespace', namespace, 'get', 'pods', '-o', 'json'])) as { items: Named[] }).items
+  const own = (): Named[] => (JSON.parse(must(k, ['get', 'pods', '-o', 'json'])) as { items: Named[] }).items
     .filter((p) => p.metadata.labels?.[POD_LABEL] === undefined);
   const before = own();
   const hopperPod = before.find((p) => Object.entries(deployment.spec.selector.matchLabels).every(([k, v]) => p.metadata.labels?.[k] === v));
   if (!hopperPod) return 'no pod of the hopper\'s deployment';
-  const claims = (JSON.parse(must(context, ['--namespace', namespace, 'get', 'persistentvolumeclaims', '-o', 'json'])) as { items: Named[] }).items
+  const claims = (JSON.parse(must(k, ['get', 'persistentvolumeclaims', '-o', 'json'])) as { items: Named[] }).items
     .filter((c) => c.metadata.labels?.[POD_LABEL] === undefined);
 
   const dir = mkdtempSync(join(tmpdir(), 'hopper-kind-sandbox-'));
   try {
     // Written with the person's kubeconfig; only then is it the one the runtime's API client reads.
     const config = join(dir, 'kubeconfig');
-    serviceAccountConfig(context, namespace, account, config);
+    serviceAccountConfig(k, context, namespace, account, config);
     process.env.KUBECONFIG = config;
     const { api } = createKubeApi(namespace);
     const kube = createKubernetesRuntime({ api, hopper: { namespace, labels: deployment.spec.selector.matchLabels, port: PORT } });
@@ -132,7 +137,7 @@ export async function check(context: string, namespace: string, image: string): 
     // here ask for little, as the check is about what is left after them, not about room.
     const runtime: ContainerRuntime = { ...kube, create: (spec) => kube.create({ ...spec, limits: BOX_LIMITS }) };
     const instance = `kind-${randomBytes(4).toString('hex')}`;
-    const box = { runtime, context, namespace, image, instance, dir };
+    const box = { runtime, k, image, instance, dir };
 
     const runs: Run[] = [
       { name: 'succeeds', script: 'echo marker > "$HOME/marker" && echo marker > marker && echo written', expect: exits(0) },
@@ -171,14 +176,59 @@ export async function check(context: string, namespace: string, image: string): 
       if (claim) return claim;
     }
     console.log(`the runtime refused the hopper's pod and ${claims.length} claims of the release`);
+
+    const after = own();
+    const changed = before.filter((p) => !after.some((a) => a.metadata.uid === p.metadata.uid && !a.metadata.deletionTimestamp));
+    if (changed.length > 0) return `pods of the release went: ${changed.map((p) => p.metadata.name).join(', ')}`;
+    console.log(`the release's ${before.length} pods are as they were`);
+
+    // Last, as it replaces the hopper's pod.
+    return await crashAndRestart({ kubectl: k, runtime, image, selector: deployment.spec.selector.matchLabels });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
 
-  const after = own();
-  const changed = before.filter((p) => !after.some((a) => a.metadata.uid === p.metadata.uid && !a.metadata.deletionTimestamp));
-  if (changed.length > 0) return `pods of the release went: ${changed.map((p) => p.metadata.name).join(', ')}`;
-  console.log(`the release's ${before.length} pods are as they were`);
+/**
+ * Kill and start again (issue #1371, part 5): the hopper is stopped at once, with no grace, and while it is down a need
+ * box of its own instance runs, as a step it started and never ended leaves one. Then the hopper starts again, and its
+ * first sweep must remove the box and its home: no pod, claim or secret with the box's labels may stay. The box is made
+ * while the hopper is down, so only the restarted hopper can have removed it. Answers what failed, or null.
+ */
+export async function crashAndRestart(o: {
+  kubectl: Kubectl; runtime: ContainerRuntime; image: string; selector: Record<string, string>; goneMs?: number; pollMs?: number;
+}): Promise<string | null> {
+  const k = o.kubectl;
+  const read = k(['exec', 'statefulset/hopper-postgres', '-c', 'postgres', '--', 'psql', '-U', 'hopper', '-d', 'hopper', '-tAc',
+    "SELECT value FROM settings WHERE key = 'instanceId'"]);
+  const instance = read.stdout.trim();
+  if (read.status !== 0 || !/^[0-9a-f]{16}$/.test(instance)) return `cannot read the hopper's instance id: ${read.stderr.trim() || instance || `exit ${read.status}`}`;
+  const selector = Object.entries(o.selector).map(([key, v]) => `${key}=${v}`).join(',');
+
+  must(k, ['scale', 'deployment/hopper', '--replicas=0']);
+  must(k, ['delete', 'pod', '-l', selector, '--grace-period=0', '--force', '--ignore-not-found']);
+  const down = Date.now() + (o.goneMs ?? GONE_MS);
+  while (must(k, ['get', 'pods', '-l', selector, '-o', 'name']).trim() !== '') {
+    if (Date.now() >= down) return 'the hopper\'s pod did not go';
+    await new Promise((r) => setTimeout(r, o.pollMs ?? 2_000));
+  }
+
+  const name = `hopper-need-kind-orphan-${randomBytes(3).toString('hex')}`;
+  const volume = `${name}-home`;
+  const labels = { [NEED_LABEL]: instance };
+  if (!(await o.runtime.createVolume(volume, labels))) return `the home ${volume} was there already`;
+  const { user } = await o.runtime.pull(o.image);
+  const id = await o.runtime.create({ name, image: o.image, network: 'unused', volume, labels, user, env: { HOME }, limits: BOX_LIMITS, script: 'sleep 3600' });
+  await o.runtime.start(id);
+  const state = (await o.runtime.inspect(id))?.state;
+  if (state !== 'running') return `the box ${name} the hopper leaves is ${state ?? 'gone'}, not running, while the hopper is down`;
+  console.log(`the hopper is down; its need box ${name} runs`);
+
+  must(k, ['scale', 'deployment/hopper', '--replicas=1']);
+  must(k, ['rollout', 'status', 'deployment/hopper', '--timeout=10m']);
+  const left = await gone(k, instance, o.goneMs, o.pollMs);
+  if (left.length > 0) return `left after the hopper started again: ${left.join(', ')}`;
+  console.log(`the hopper started again and removed the box ${name} and its home`);
   return null;
 }
 
