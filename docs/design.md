@@ -18865,6 +18865,25 @@ volumes of a label listed; a volume with a home's name and no sandbox label not 
 (a need box's life through a machine's client, and its leaked home listed and swept there), and the `listVolumes` cases in
 `test/adapters/podman-runtime.test.ts` and `test/adapters/docker-runtime.test.ts`, now through a relay too.
 
+**Part 4 (2026-10-15): the acceptance checks on a real runtime.** Parts 1 to 3 were shown against doubles. This part shows
+them where the runtime is real, and changes no code of the hopper.
+
+- **On Kubernetes, the kind check runs need boxes** (`scripts/kind-sandbox-check.ts`, after `scripts/kind-check.ts
+  --keep`, `.github/workflows/kind.yml`). On the cluster the kind check kept, with sandbox boxes on, need boxes run
+  through this checkout's Kubernetes runtime as the hopper's own service account, so the chart's sandbox Role is all
+  they get. Each box ends one way: it succeeds, fails, times out or is cancelled. After each, no pod, claim or secret
+  with its need label stays. A later box of the same template sees neither the home's marker file nor the work
+  directory's, and two boxes at once see nothing of each other. The runtime refuses to remove the hopper's own pod and
+  each claim of the release, and the release's pods are the same at the end. The workflow runs when the chart, either
+  check or the Kubernetes runtime changes.
+- **On Podman, a job's own runtime leaves nothing** (`test/client/job-runtime-podman.test.ts`). With a real podman, in
+  a stand-in for the user's runtime dir: a volume, a network and a container that a job makes carry its job label, and
+  after its reap there is no storage, runtime dir or network config of the job's. A runtime set up again for a job of
+  the same id lists no volume, network, container or image. Where a real podman does not work, the test is skipped.
+
+What is still open is listed in the issue's pull request: the ledger outcomes and the need box sweep on client targets
+(both wait for #1368), and credentials that die with their sandbox (a decision).
+
 ## Approve several at once (issue #1018, 2026-10-13)
 
 Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at
@@ -21291,7 +21310,8 @@ job's.
   the job id in the user's runtime dir, and the scratch dir as given, else as the runtime dir names it — only ever a
   `…/.worktrees/@scratch/<job id>`. It writes the config again (a job that changed it cannot point the reset at another
   runtime), prints each container and volume as removed (`job.containers_removed`), runs `podman system reset --force`
-  with `--root`, `--runroot` and `--tmpdir` the job's, removes what of the storage is left through `podman unshare`, stops
+  with `--root` and `--tmpdir` the job's (its runroot only in the config it wrote: Podman 4 refuses a `--runroot` longer
+  than 50 characters, and the runtime dir's is), removes what of the storage is left through `podman unshare`, stops
   every process still started from the runtime dir (its environment's `XDG_RUNTIME_DIR`: the pause process, network
   helpers), stops the health check timers of the containers it named and kills their scopes (what a reset that failed
   left in the user's systemd), and removes the runtime dir. The reap may take 180 s (`REAP_TIMEOUT_MS`): a kind cluster is slow to stop.

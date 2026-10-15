@@ -23,13 +23,14 @@ export const HOST_RUNTIME_SH = `h=\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; case 
 /**
  * Writes the runtime's config, `conf <runtime dir> <containers dir>`: storage under the scratch dir, everything that runs
  * under the runtime dir. Read over the user's own (CONTAINERS_CONF_OVERRIDE is read last), and the storage config in
- * place of theirs (CONTAINERS_STORAGE_CONF). The reap writes it again before it resets, so a job that changed it
- * cannot point the reset elsewhere.
+ * place of theirs (CONTAINERS_STORAGE_CONF), its storage named twice: rootless Podman 4 reads no graphroot from a config
+ * that is not the user's own, only rootless_storage_path, and so kept a job's images in the user's storage. The reap
+ * writes it again before it resets, so a job that changed it cannot point the reset elsewhere.
  */
 export const CONF_SH = [
   'conf() {',
   '  printf "[engine]\\ntmp_dir = \\"%s/libpod/tmp\\"\\nvolume_path = \\"%s/storage/volumes\\"\\n[network]\\nnetwork_config_dir = \\"%s/networks\\"\\n" "$1" "$2" "$2" > "$2/containers.conf" &&',
-  '  printf "[storage]\\ngraphroot = \\"%s/storage\\"\\nrunroot = \\"%s/storage\\"\\n" "$2" "$1" > "$2/storage.conf";',
+  '  printf "[storage]\\ngraphroot = \\"%s/storage\\"\\nrunroot = \\"%s/storage\\"\\nrootless_storage_path = \\"%s/storage\\"\\n" "$2" "$1" "$2" > "$2/storage.conf";',
   '};',
 ].join(' ');
 
@@ -176,7 +177,8 @@ export function runtimeOutcome(screen: string): RuntimeOutcome | undefined {
  * The reap's part (reap.ts), with `id` the job id, `s` its scratch dir or empty, `to` the timeout prefix, `k` keep/discard:
  * the job's runtime dir, when there is one, has its containers listed, then removed with everything else in it by a
  * reset — through the config written again here, with the job's storage and runtime dir named on the command line, so
- * nothing the job changed can point it at another runtime —, then every process still started from it stopped, and the
+ * nothing the job changed can point it at another runtime (its run state only in that config: Podman 4 refuses a
+ * `--runroot` longer than 50 characters, and the runtime dir's is) —, then every process still started from it stopped, and the
  * dir removed. The scratch dir is the one given, else the one the runtime dir names, and only ever the job's own. Not a
  * timed-out job's (keep): it may go on there.
  */
@@ -191,7 +193,7 @@ export const REAP_RUNTIME_SH = [
   '    if [ -n "$js" ] && command -v podman >/dev/null 2>&1 && [ -d "$c" ] && [ ! -L "$c" ] && { [ ! -e "$c/storage" ] || { [ -d "$c/storage" ] && [ ! -L "$c/storage" ]; }; }; then',
   `      ${CONF_SH}`,
   '      if conf "$j" "$c"; then',
-  '        pm() { pt=$1; shift; $pt env -u CONTAINER_HOST -u CONTAINER_CONNECTION XDG_RUNTIME_DIR="$j" CONTAINERS_CONF_OVERRIDE="$c/containers.conf" CONTAINERS_STORAGE_CONF="$c/storage.conf" podman --root "$c/storage" --runroot "$j/storage" --tmpdir "$j/libpod/tmp" "$@"; };',
+  '        pm() { pt=$1; shift; $pt env -u CONTAINER_HOST -u CONTAINER_CONNECTION XDG_RUNTIME_DIR="$j" CONTAINERS_CONF_OVERRIDE="$c/containers.conf" CONTAINERS_STORAGE_CONF="$c/storage.conf" podman --root "$c/storage" --tmpdir "$j/libpod/tmp" "$@"; };',
   '        ids=; for x in $(pm "$to" ps -aq 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-container %s\\n" "$x"; ids="$ids $x"; done;',
   '        for x in $(pm "$to" volume ls -q 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-volume %s\\n" "$x"; done;',
   '        tr=; command -v timeout >/dev/null 2>&1 && tr="timeout 120";',
