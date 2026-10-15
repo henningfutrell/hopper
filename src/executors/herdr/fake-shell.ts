@@ -1,5 +1,5 @@
 // What the fake herdr's pane shell prints for each command the executor types into it (fake-client.ts):
-// the scratch command, the job's scope (issue #410), the job worktree (issue #379), shared dependencies
+// the scratch command, the job's scope (issue #410), the job's container runtime (issue #1295), the job worktree (issue #379), shared dependencies
 // (issue #410), and any command ending in a split printf. Pure: the options and whether the shell already
 // runs in the job's scope decide it.
 
@@ -14,6 +14,21 @@ export interface FakeShellOptions {
   worktreeFails?: boolean;
   unusableDirs?: string[];
   restore?: 'restored' | 'kept' | 'failed';
+  /** What the job's container runtime setup says (issue #1295); default none: the fake machine has no podman. */
+  runtime?: 'own' | 'none' | 'failed' | 'silent';
+}
+
+/** A typed command longer than ECHO_MAX echoes only its first ECHO_SHOWN characters, as a terminal's screen scrolls the rest off. */
+const ECHO_MAX = 2000;
+const ECHO_SHOWN = 100;
+
+/**
+ * The shell's echo of a typed command. A long one (the job's container runtime set-up, issue #1295, is over 5 KB) shows
+ * only its start: a real pane's screen is a bounded number of rows, and a full echo kept on the fake screen makes each
+ * poll of a long run scan it again.
+ */
+export function echoOf(command: string): string {
+  return command.length > ECHO_MAX ? `$ ${command.slice(0, ECHO_SHOWN)}…` : `$ ${command}`;
 }
 
 export function shellSays(command: string, o: FakeShellOptions, scoped: boolean): ShellSaid {
@@ -23,6 +38,8 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
   // Restoring a checkpoint (issue #921, checkpoint.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: [`hopper-restore-${o.restore ?? 'restored'}`] };
+  // The job's own container runtime (src/client/job-runtime.ts): its outcome, as two printf words; silent says nothing.
+  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-runtime ')) return { lines: o.runtime === 'silent' ? [] : [`hopper-runtime-${o.runtime ?? 'none'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
   if (command.startsWith("sh -c '") && command.includes('.worktrees/@deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
   // A job worktree command (job-worktree.ts): `cd 'work tree' && { printf … worktree running; o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,

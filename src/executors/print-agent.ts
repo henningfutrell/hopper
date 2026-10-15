@@ -10,6 +10,7 @@ import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
 import { scopeUnitOf } from '../client/reap.ts';
+import { runtimeCommand, runtimeEnvOf } from '../client/job-runtime.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
@@ -117,7 +118,12 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
-    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
+    // The job's own container runtime (issue #1295), in the turn's environment; no socket of its own, as nothing of a turn
+    // outlives it. What its setup prints stays out of the agent's answer. A setup that wrote no environment ends the turn:
+    // it would run next to the host's runtime.
+    const runtime = `{ ${runtimeCommand(ctx.job.id, scratch, false)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] `
+      + `|| { printf '%s\\n' 'hopper: the job container runtime could not be set up' >&2; exit 125; }; `;
+    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${runtime}${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });

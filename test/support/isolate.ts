@@ -8,10 +8,11 @@
 // - `claude` on PATH is a guard that answers `--version` (detection) and refuses everything else,
 //   so a built-in instance left at its default `bin` (claude-plan's background `/usage` read,
 //   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`.
+// - XDG_RUNTIME_DIR is a throwaway dir in the real one (isolateRuntimeDir below, issue #1295).
 // - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL.
 // - KUBERNETES_SERVICE_HOST is unset, so a test run in a pod (a lane pod's job) reads as a host install does; a test
 //   of a cluster install sets it in the environment it passes (issue #1289).
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -31,6 +32,25 @@ if (process.env.HOPPER_REAL_HERDR !== '1') {
   mkdirSync(guards, { mode: 0o700 });
   writeFileSync(join(guards, 'claude'), CLAUDE_GUARD, { mode: 0o755 });
   process.env.PATH = `${guards}${delimiter}${process.env.PATH ?? ''}`;
+  isolateRuntimeDir();
+}
+
+/**
+ * XDG_RUNTIME_DIR a throwaway dir in the user's own (issue #1295), so a job's container runtime a test sets up lands there,
+ * never in the user's runtime dir, and goes when the worker ends. In the same tmpfs, the user's bus and systemd's private
+ * socket are hard links in it, so `systemd-run --user` and `systemctl --user` still answer. No runtime dir: as it is.
+ */
+function isolateRuntimeDir(): void {
+  const run = process.env.XDG_RUNTIME_DIR;
+  if (!run || !existsSync(run)) return;
+  let own: string;
+  try { own = mkdtempSync(join(run, 'jh-test-run-')); } catch { return; }
+  mkdirSync(join(own, 'systemd'));
+  for (const socket of ['bus', join('systemd', 'private')]) {
+    try { linkSync(join(run, socket), join(own, socket)); } catch { /* no such socket here: nothing to reach */ }
+  }
+  process.env.XDG_RUNTIME_DIR = own;
+  process.on('exit', () => rmSync(own, { recursive: true, force: true }));
 }
 
 delete process.env.KUBERNETES_SERVICE_HOST;
