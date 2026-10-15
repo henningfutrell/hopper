@@ -9,6 +9,7 @@
 //   Scenario: a host link base the hopper does not answer at is refused; empty is the default again
 //   Scenario: only the instance admin changes it
 //   Scenario: the view says when the hopper runs in WSL, from the kernel's /proc/version, so Settings shows the Windows hint
+//   Scenario: a hopper in a Kubernetes pod is never in WSL, even on a node whose kernel is WSL's (issue #1289)
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ArtifactView, HostLinkView } from '../../src/domain/types.ts';
 import { artifactHarness } from '../support/artifacts.ts';
@@ -65,5 +66,10 @@ describe('the host link base (issue #712)', () => {
     const { a, session } = await h.boot({ env: CONTAINER, seams: { procVersion: WSL } });
     expect((await a.api('GET', '/api/host-link')).body).toMatchObject({ wsl: true });
     expect((await a.ui<HostLinkView>('/ui/api/host-link', { hostLinkBase: '' }, { token: session })).body).toMatchObject({ wsl: true });
+  });
+
+  it('a hopper in a Kubernetes pod is never in WSL, even on a node whose kernel is WSL\'s (issue #1289)', async () => {
+    const { a } = await h.boot({ env: { ...CONTAINER, KUBERNETES_SERVICE_HOST: '10.96.0.1' }, seams: { procVersion: WSL } });
+    expect((await a.api('GET', '/api/host-link')).body).toMatchObject({ wsl: false });
   });
 });
