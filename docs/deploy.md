@@ -422,6 +422,32 @@ The keep-alive runs as the signed-in Windows user: it needs no administrator rig
 listens. It starts only when that user signs in to Windows. To stop it, run `hopper autostart off`, or delete the
 shortcut and sign out.
 
+### Open it at localhost from Windows
+
+Windows tries `::1` first for `localhost`. WSL passes a Windows `::1` through only to a port the distro publishes on
+`::1` (issue #712). `compose.yaml` publishes the UI on `127.0.0.1` alone, so `http://localhost:<port>` can fail on
+Windows where `http://127.0.0.1:<port>` opens. On Windows, publish the UI on `[::1]` too, with a
+`compose.override.yaml` that adds the port:
+
+```yaml
+services:
+  hopper:
+    ports:
+      - "[::1]:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
+```
+
+Compose adds it to the port in `compose.yaml`; an update keeps `compose.override.yaml`. `site/install.html` "On
+Windows" writes it before the first start, only when the distro has IPv6 loopback
+(`grep -q '^0\{31\}1 ' /proc/net/if_inet6`): a distro with IPv6 off cannot bind `::1`, and the start fails. An install
+that has a `compose.override.yaml` already adds the `ports` lines to it by hand, then recreates the hopper with the master
+key given at launch (`podman compose up -d --force-recreate --no-deps hopper`).
+
+- **Security:** still loopback only. Nothing listens on a LAN interface. A request on `::1` reaches the daemon from the
+  compose network, as one on `127.0.0.1` does, and the Host guard lets `localhost:<port>` in.
+- **Not checked here:** there is no Windows runner. A person checks it once on Windows, in NAT mode with
+  `localhostForwarding` and in mirrored mode: `Invoke-WebRequest http://localhost:4790/job/address` answers 204 after a
+  fresh install and after `wsl --shutdown`, and `hopper doctor` says `ok` for `localhost`.
+
 ### The hopper CLI from Windows
 
 For a hopper in WSL with Podman (issue #712), `scripts/hopper.cmd` and `scripts/hopper.ps1` run the operator CLI from
@@ -489,7 +515,8 @@ so put both in that folder. It runs on Windows, so it needs no interop from the 
 1. **The Windows link.** `Invoke-WebRequest` on the address check (`/job/address`: 204 to anyone the Host guard lets
    in, with no session) at `http://localhost:<port>`, 10 s at most. Any HTTP answer means the hopper answered. When
    `localhost` gets no answer, it tries `http://127.0.0.1:<port>`: Windows tries `::1` first for `localhost`. Only
-   `127.0.0.1` answering is a `warn`, not a `FAIL`: open `http://127.0.0.1:<port>` in place of `localhost`. Neither
+   `127.0.0.1` answering is a `warn`, not a `FAIL`: open `http://127.0.0.1:<port>` in place of `localhost`, or publish
+   the UI on `::1` too ("Open it at localhost from Windows" above). Neither
    answering is a `FAIL`, with the fix for the networking mode. The port is `HOPPER_PORT`; unset, `4790`.
 2. **The networking mode.** `wsl.exe -e wslinfo --networking-mode`, and `localhostForwarding` and `networkingMode` under
    `[wsl2]` in `%UserProfile%\.wslconfig`. It fails in NAT mode with `localhostForwarding=false`, and when `.wslconfig`
