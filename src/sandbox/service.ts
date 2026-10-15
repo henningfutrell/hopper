@@ -19,6 +19,7 @@ import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
 import { runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
+import { sweepHomes } from './owned.ts';
 import type { AgentCredentialOf } from './agent-credential.ts';
 import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
 
@@ -155,6 +156,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     }
   };
   const reconcile = (now?: Date): Promise<void> => (running ??= pass(now ?? o.clock.now()).finally(() => { running = undefined; }));
+  // The need boxes' homes no step holds (issue #1371): one whose remove failed, or one a hopper that stopped left.
+  const sweepStepHomes = async (): Promise<void> => {
+    if (o.runtime) await sweepHomes(o.runtime, { [NEED_LABEL]: o.instanceId }, stepping).catch(() => {});
+  };
   // The read-only check (issue #716): beside the hopper, else on a client target of the template's user (issue #708).
   const checkPass = o.checks
     ? createCheckPass({ ...(o.runtime ? { local: o.runtime } : {}), place: places.forCheck, credentials: o.checks, instanceId: o.instanceId, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
@@ -170,7 +175,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     }
   };
   let checking: Promise<void> | undefined;
-  const check = (): Promise<void> => (checking ??= Promise.all([sweepSteps(), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
+  const check = (): Promise<void> => (checking ??= Promise.all([sweepSteps().then(sweepStepHomes), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
     .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
     .finally(() => { checking = undefined; }));
 

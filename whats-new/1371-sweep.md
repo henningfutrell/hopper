@@ -1,0 +1,1 @@
+- Storage that a sandbox step or check left behind is now cleaned up, and on Kubernetes a sandbox's storage is removed when it ends.
