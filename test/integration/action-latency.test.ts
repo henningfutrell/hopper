@@ -164,7 +164,7 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
     expect(gh.calls.filter((c) => c.method === 'toDraft')).toHaveLength(1);
   });
 
-  it('Queue order and the landing batches: recorded and answered at once, GitHub slow', { timeout: 30_000 }, async () => {
+  it('Queue order, the landing batches and Restart batch: recorded and answered at once, GitHub slow', { timeout: 30_000 }, async () => {
     const { a, slow, token } = await bootIntake();
     slow.hold();
     const order = await timed(() => a.ui('/ui/api/queue/order', { jobIds: [] }, { token }));
@@ -174,6 +174,11 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
     expect(batches.r.status).toBe(200);
     withinBudget(batches.ms);
     expect(await a.events('types=landing_batches.changed')).toHaveLength(1);
+    // Restart batch (issue #1333): recorded at once; its closes and its pass run after the answer.
+    const restart = await timed(() => a.ui('/ui/api/landing-batches/restart', { repo: REPO }, { token }));
+    expect(restart.r.status).toBe(200);
+    withinBudget(restart.ms);
+    expect(await a.events('types=landing_batch.restarted')).toHaveLength(1);
     slow.release();
   });
 

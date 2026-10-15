@@ -53,7 +53,8 @@ function world(): World {
 }
 
 function fake(w: World): LandingBatchGitHub {
-  let next = 100;
+  // The next pull request's number: after the batch pull requests GitHub has, so a fake made for each pass goes on counting.
+  let next = Math.max(99, ...[...w.pulls.keys()].filter((n) => n >= 100)) + 1;
   return {
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
@@ -319,7 +320,7 @@ describe('the batch runner (issue #1073)', () => {
     const { r, events } = runner(w);
     await r.pass();
     w.calls.length = 0;
-    await r.restart(REPO, 'admin');
+    await r.restart(REPO, 'admin').done;
     expect(w.calls).toEqual(['close #100', 'delete hopper-batch/abcdef012345', 'compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
     expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.restarted', 'landing_batch.started']);
     expect(events[1]!.data).toEqual({ repo: REPO, tip: TIP, by: 'admin', closed: [100] });
@@ -332,13 +333,13 @@ describe('the batch runner (issue #1073)', () => {
     const { r, events } = runner(w, { log });
     await r.pass();
     w.closeFails = 'GitHub answered 422';
-    await r.restart(REPO, 'admin');
+    await r.restart(REPO, 'admin').done;
     expect(log).toEqual(['hopper: landing batches: #100 of owner/app not closed: GitHub answered 422']);
     expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.restarted', 'landing_batch.started']);
   });
 
   it('refuses to restart a repository with no landing batches', async () => {
     const { r } = runner(world());
-    await expect(r.restart('owner/other', 'admin')).rejects.toThrow('owner/other has no landing batches');
+    expect(() => r.restart('owner/other', 'admin')).toThrow('owner/other has no landing batches');
   });
 });

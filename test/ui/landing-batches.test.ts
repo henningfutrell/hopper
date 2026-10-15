@@ -1,8 +1,9 @@
 // Landing batches in the UI (issue #1073), pure: one line per configured repository saying where its batch runs stand,
 // and the change a save sends — only what differs. A red batch (part 2): the bisect at work, the culprit, its revert
 // and its fix issue, and the event lines of each step. A back-merge after merge conflicts (part 4). The canary of a stable candidate (part 5).
+// A stuck landing pass, Restart batch, and their event lines (issue #1333).
 import { describe, expect, it } from 'vitest';
-import { canaryLine, landingBatchLine, landingBatchPatch, redBatchDetail } from '../../ui/src/model/landing-batches.ts';
+import { canaryLine, canRestart, landingBatchLine, stuckLine, landingBatchPatch, redBatchDetail } from '../../ui/src/model/landing-batches.ts';
 import type { LandingBatchRepoView } from '../../ui/src/model/wire.ts';
 
 const row = (r: Partial<LandingBatchRepoView>): LandingBatchRepoView => ({ repo: 'owner/a', config: { tested: 'dev', everyMerges: 5, everyMinutes: 60 }, state: { repo: 'owner/a' }, ...r });
@@ -83,5 +84,16 @@ describe('landing batches model', () => {
     const settings = { repos: { 'owner/a': { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } };
     expect(landingBatchPatch(settings, { repos: { 'owner/a': config } })).toEqual({ repos: { 'owner/a': { canaryHours: 24 } } });
     expect(landingBatchPatch({ repos: { 'owner/a': config } }, settings)).toEqual({ repos: { 'owner/a': { canaryHours: null } } });
+  });
+
+  it('a stuck landing pass (issue #1333): its line, Restart batch, and the event lines', () => {
+    const stuck = { error: 'the start of a batch run: GitHub answered 422', since: '2026-10-15T13:44:00.000Z', passes: 3 };
+    expect(stuckLine(row({ stuck }))).toBe('The landing pass is stuck: it failed the same way on 3 passes in a row since 2026-10-15 13:44Z: the start of a batch run: GitHub answered 422');
+    expect(stuckLine(row({}))).toBeUndefined();
+    expect(canRestart(row({ stuck }))).toBe(true);
+    expect(canRestart(row({ state: { repo: 'owner/a', running: { tip: 't', branch: 'b', pullRequest: 9, url: 'u', startedAt: 's', merges: [] } } }))).toBe(true);
+    expect(canRestart(row({}))).toBe(false);
+    expect(redBatchDetail('landing_batch.stuck', { repo: 'owner/a', error: 'GitHub answered 422' })).toBe('owner/a: the landing pass is stuck: GitHub answered 422');
+    expect(redBatchDetail('landing_batch.restarted', { repo: 'owner/a' })).toBe('owner/a: the landing batch was restarted');
   });
 });

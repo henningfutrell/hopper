@@ -2,7 +2,9 @@
 // when a batch run starts (after N merges into the landing branch, or a timer; none while nothing is new). A job's pull
 // request lands on the landing branch, a setting here (`main` when left out), whatever GitHub's default branch (issue #1142); the full
 // test suite runs on its tip as a batch run. Each configured repository says where its batch runs stand. With a canary
-// window (part 5), a stable candidate on `canary` goes to `stable` after it, unless a bug report names it.
+// window (part 5), a stable candidate on `canary` goes to `stable` after it, unless a bug report names it. A landing pass
+// that failed the same way several times in a row says so, and Restart batch ends what is at work and starts a new batch
+// run at the landing branch's tip (issue #1333).
 import { Layers } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -10,9 +12,10 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { canaryLine, landingBatchLine, landingBatchPatch } from '@/model/landing-batches';
+import { canaryLine, canRestart, landingBatchLine, landingBatchPatch, stuckLine } from '@/model/landing-batches';
 import type { LandingBatchesView, LandingBatchSettings } from '@/model/wire';
 import { useHopper } from '@/store';
+import { setPolled } from '@/store/polled';
 
 const DEFAULTS: LandingBatchSettings['repos'][string] = { tested: 'dev', landing: 'main', everyMerges: 5, everyMinutes: 60 };
 
@@ -28,6 +31,17 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
     setDraft({ repos: { ...draft.repos, [repo]: v.trim() === '' ? rest : { ...rest, canaryHours: number(v) } } });
   };
   const number = (v: string) => Math.max(1, Math.floor(Number(v) || 1));
+  const restart = async (repo: string) => {
+    setBusy(true);
+    try {
+      onSaved(await post<LandingBatchesView>('/ui/api/landing-batches/restart', { repo }));
+      toast.success(`The landing batch of ${repo} restarts`);
+    } catch (e) {
+      if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
+      toast.error(e instanceof RoleRefused ? 'Only an admin restarts a landing batch' : (e as Error).message);
+    }
+    setBusy(false);
+  };
   const save = async () => {
     if (!patch) return;
     setBusy(true);
@@ -54,6 +68,13 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
             <legend className="px-1 font-mono text-xs">{repo}</legend>
             {row && <p data-slot="landing-batch-line" className="text-xs">{landingBatchLine(row)}</p>}
             {row && canaryLine(row) && <p data-slot="canary-line" className="text-xs">{canaryLine(row)}</p>}
+            {row && stuckLine(row) && <p data-slot="landing-stuck" className="text-xs text-bad">{stuckLine(row)}</p>}
+            {row && canRestart(row) && (
+              <div className="flex items-center gap-2 text-xs">
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => void restart(repo)}>Restart batch</Button>
+                <span className="text-muted-foreground">Closes the batch run and the bisect at work, and starts a new batch run at the landing branch&apos;s tip.</span>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <label className="flex items-center gap-1">Landing branch
                 <Input className="h-8 w-28" value={c.landing ?? 'main'} disabled={busy} aria-label={`Landing branch of ${repo}`} onChange={(e) => setRepo(repo, { landing: e.target.value.trim() })} />
@@ -98,7 +119,7 @@ export function LandingBatches() {
   useEffect(() => { get<LandingBatchesView>('/api/landing-batches').then((v) => { if (v?.settings?.repos && Array.isArray(v.repos)) setView(v); }, () => {}); }, []);
   return (
     <Panel title="Landing batches" icon={Layers} className="max-w-3xl">
-      {view ? <Form key={JSON.stringify(view.settings)} view={view} onSaved={setView} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
+      {view ? <Form key={JSON.stringify(view.settings)} view={view} onSaved={(v) => { setView(v); setPolled('/api/landing-batches', v); }} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
     </Panel>
   );
 }

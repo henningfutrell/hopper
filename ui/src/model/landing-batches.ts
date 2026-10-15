@@ -31,6 +31,20 @@ export function landingBatchLine(r: LandingBatchRepoView): string {
   return `${r.why ? `Waiting: ${r.why}.` : 'Waiting for the next pass.'}${culprit || ended}${backMerge}`;
 }
 
+/** A stuck landing pass (issue #1333): what failed, and for how long; undefined while it is not stuck. */
+export function stuckLine(r: LandingBatchRepoView): string | undefined {
+  if (!r.stuck) return undefined;
+  return `The landing pass is stuck: it failed the same way on ${r.stuck.passes} passes in a row since ${r.stuck.since.slice(0, 16).replace('T', ' ')}Z: ${r.stuck.error}`;
+}
+
+/** Whether Restart batch has something to end or start: a batch run or a bisect at work, or a stuck pass. */
+export const canRestart = (r: LandingBatchRepoView): boolean => r.state.running !== undefined || r.state.bisect !== undefined || r.stuck !== undefined;
+
+/** Needs you's Landing row (issue #1333): one line per repository whose landing pass is stuck. */
+export function stuckLandingLines(view: { repos: readonly LandingBatchRepoView[] } | undefined): string[] {
+  return (view?.repos ?? []).flatMap((r) => (r.stuck ? [`${r.repo}: ${r.stuck.error} — Restart batch in Settings → Landing batches`] : []));
+}
+
 /** Where a repository's canary stands (part 5): none without a canary window; a problem, or why, and the newest candidate. */
 export function canaryLine(r: LandingBatchRepoView): string | undefined {
   if (r.config.canaryHours === undefined) return undefined;
@@ -61,6 +75,8 @@ export function redBatchDetail(type: string, d: Record<string, unknown>): string
   if (type === 'landing_batch.canary_started') return `${at}canary candidate ${short(String(d.tip))}, ${plural(Number(d.hours), 'hour')}`;
   if (type === 'landing_batch.canary_held') return `${at}canary ${short(String(d.tip))} held: ${String(d.reason)}`;
   if (type === 'landing_batch.canary_issue_filed') return `${at}issue #${String(d.issue)} filed for the held canary`;
+  if (type === 'landing_batch.stuck') return `${at}the landing pass is stuck: ${String(d.error)}`;
+  if (type === 'landing_batch.restarted') return `${at}the landing batch was restarted`;
   if (type === 'landing_batch.canary_promoted') return `${at}stable moved to ${short(String(d.tip))}`;
   return `${at}${type}`;
 }
