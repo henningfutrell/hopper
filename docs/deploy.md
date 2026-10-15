@@ -815,8 +815,11 @@ its update notice gives the command. Not in the chart: HashiCorp Vault (the comp
 alone brings up the hopper; its health answers ok in its pod; and no pod anywhere in the cluster
 has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose; and
 `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the machines
-come up as pods: an upgrade turns on sandbox boxes (`sandbox.enabled=true`, the hopper's health asked again), and one
-more scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins only once a person signed in).
+come up as pods, on a fresh install given a master key: the first install's hopper made its key and shows it only in
+the UI, so a new hopper pod on its database does not start. The check deletes the namespace, makes the
+`hopper-master-key` Secret with a new key, and installs with sandbox boxes on (`sandbox.enabled=true`, the hopper's
+health asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
+only once a person signed in).
 The lane pod must exist, and again no pod may have a container runtime socket. Then it deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
 Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
 
