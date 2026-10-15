@@ -2,7 +2,9 @@
 // checkpoint keeps (POST /ui/api/jobs/:id/transcript), a page of turns at a time. Each turn is a prompt and the agent's
 // reply as Messages in a Message Scroller, which starts at the newest turn and keeps its place when earlier turns load in
 // front. The reply's text is Markdown; its steps — reasoning, tool calls, the plan, subagents — are a Trace, and each
-// step opens to its input and result in a small code block. A new checkpoint reads the newest turns again.
+// step opens to its input and result in a small code block. A new checkpoint reads the newest turns again. While the job
+// is at work the transcript follows it (part 7): each read asks for it fresh, so the daemon takes a checkpoint first, at
+// most once a minute, and the view reads again each minute. A newer read keeps the earlier turns already loaded in front.
 import { Bot, Brain, Circle, CircleCheck, CircleDot, ListTodo, MessagesSquare, Wrench, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Markdown } from '@/components/markdown';
@@ -20,6 +22,8 @@ import { useCanOperate } from '@/store/selectors';
 
 /** How many turns a read asks for. */
 const PAGE = 20;
+/** How often an open transcript of a job at work reads again: the daemon takes a fresh checkpoint at most once a minute. */
+export const FOLLOW_MS = 60000;
 const CUT = ' (cut: the rest is not kept here)';
 
 /** A tool call's input or result, or a subagent's prompt, in a small code block with copy. */
@@ -149,7 +153,17 @@ function Turn({ turn, running }: { turn: TranscriptTurn; running: boolean }) {
   );
 }
 
-type Read = { at: string; start: number; total: number; turns: TranscriptTurn[] };
+type Read = { at: string; start: number; total: number; turns: TranscriptTurn[]; stale?: string };
+
+/**
+ * A read of the newest turns over the one shown. The session only grows, so a turn keeps its index: the earlier turns
+ * already loaded stay in front of the newer read's, and the scroller does not jump.
+ */
+export function newer(shown: Read | undefined, t: Transcript): Read {
+  const next: Read = { at: t.checkpointAt, start: t.start, total: t.total, turns: t.turns, ...(t.stale ? { stale: t.stale } : {}) };
+  if (!shown || shown.start >= t.start || t.total < shown.total) return next;
+  return { ...next, start: shown.start, turns: [...shown.turns.filter((x) => x.index < t.start), ...t.turns] };
+}
 
 function TranscriptBody({ job }: { job: Job }) {
   const [read, setRead] = useState<Read | undefined>();
@@ -157,15 +171,20 @@ function TranscriptBody({ job }: { job: Job }) {
   const [busy, setBusy] = useState(false);
   const path = `/ui/api/jobs/${encodeURIComponent(job.id)}/transcript`;
   const checkpointAt = job.checkpoint?.at;
+  const atWork = AT_WORK.has(job.status);
+  // A job at work is followed each minute: the checkpoint its fresh read took is no reason to read again at once.
+  const again = atWork ? 'follow' : checkpointAt;
 
   useEffect(() => {
     let gone = false;
-    post<Transcript>(path, { limit: PAGE }).then(
-      (t) => { if (!gone) { setRead({ at: t.checkpointAt, start: t.start, total: t.total, turns: t.turns }); setError(undefined); } },
+    const once = () => post<Transcript>(path, atWork ? { limit: PAGE, fresh: true } : { limit: PAGE }).then(
+      (t) => { if (!gone) { setRead((shown) => newer(shown, t)); setError(undefined); } },
       (e: unknown) => { if (!gone) setError((e as Error).message); },
     );
-    return () => { gone = true; };
-  }, [path, checkpointAt]);
+    void once();
+    const follow = atWork ? setInterval(() => void once(), FOLLOW_MS) : undefined;
+    return () => { gone = true; if (follow) clearInterval(follow); };
+  }, [path, again, atWork]);
 
   const earlier = async () => {
     if (!read) return;
@@ -173,7 +192,7 @@ function TranscriptBody({ job }: { job: Job }) {
     try {
       const t = await post<Transcript>(path, { before: read.start, limit: PAGE });
       // Another checkpoint since: its turns are another reading, so start again from its newest.
-      if (t.checkpointAt !== read.at) setRead({ at: t.checkpointAt, start: t.start, total: t.total, turns: t.turns });
+      if (t.checkpointAt !== read.at) setRead(newer(undefined, t));
       else setRead({ ...read, start: t.start, turns: [...t.turns, ...read.turns] });
       setError(undefined);
     } catch (e) {
@@ -184,12 +203,13 @@ function TranscriptBody({ job }: { job: Job }) {
 
   if (error && !read) return <div data-slot="job-transcript-error" className="text-xs text-bad">{error}</div>;
   if (!read) return <Empty>reading the transcript…</Empty>;
-  const atWork = AT_WORK.has(job.status);
   return (
     <>
-      <div className="text-xs text-muted-foreground">
+      <div data-slot="job-transcript-status" className="text-xs text-muted-foreground">
         {read.total} turns, as the checkpoint of {read.at} kept them{read.start > 0 ? `; the newest ${read.total - read.start} shown` : ''}
+        {atWork && !read.stale ? '. It follows the job: read again each minute.' : ''}
       </div>
+      {read.stale && <div data-slot="job-transcript-stale" className="text-xs text-warn">No new checkpoint now: {read.stale}. This is the last one kept.</div>}
       {error && <div data-slot="job-transcript-error" className="text-xs text-bad">{error}</div>}
       <div className="h-[32rem] rounded-md border">
         <MessageScrollerProvider defaultScrollPosition="end">
