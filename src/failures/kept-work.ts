@@ -72,6 +72,14 @@ export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean, ta
 
 export type PushResult = { ok: true; value: { job: Job; handoff?: HandoffView } } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
+/** Whether a person may Push it now (issue #1194: checked before the answer): its kept work, or why not. */
+export function pushable(d: { store: Reads; resumable(job: Job): boolean; takesBack: TakesBack }, jobId: string): { ok: true; value: KeptWorkView } | { ok: false; reason: 'not_found' | 'conflict'; message: string } {
+  const kept = keptWorkViews(d.store, d.resumable, d.takesBack).find((k) => k.jobId === jobId);
+  if (!kept) return d.store.jobs.get(jobId) ? { ok: false, reason: 'conflict', message: `job ${jobId} has no work kept` } : { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
+  if (!kept.actions.push.ok) return { ok: false, reason: 'conflict', message: `job ${jobId}'s work cannot be pushed: ${kept.actions.push.why}` };
+  return { ok: true, value: kept };
+}
+
 /** Push it: through its open hand-off (Continue, with the brief as the note), else a Continue of its own. */
 export async function pushKeptWork(
   d: {
@@ -81,9 +89,9 @@ export async function pushKeptWork(
   },
   jobId: string, note: string | undefined, by: ActingPerson,
 ): Promise<PushResult> {
-  const kept = keptWorkViews(d.store, d.resumable, d.takesBack).find((k) => k.jobId === jobId);
-  if (!kept) return d.store.jobs.get(jobId) ? { ok: false, reason: 'conflict', message: `job ${jobId} has no work kept` } : { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-  if (!kept.actions.push.ok) return { ok: false, reason: 'conflict', message: `job ${jobId}'s work cannot be pushed: ${kept.actions.push.why}` };
+  const allowed = pushable(d, jobId);
+  if (!allowed.ok) return allowed;
+  const kept = allowed.value;
   if (kept.handoffId) {
     const r = await d.resolveHandoff(kept.handoffId, { action: 'continue', note: pushBrief(note) }, by);
     if (!r.ok) return r;

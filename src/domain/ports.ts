@@ -1,7 +1,7 @@
 // Seams. Everything the engine talks to that is not pure domain logic sits behind one of
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
-import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
+import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
@@ -636,7 +636,7 @@ export interface SourceHost extends AnswersFromThread {
  * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
  */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */
-export interface SourceRegistry {
+export interface SourceRegistry extends GiveBackRegistry {
   statuses(): SourceStatus[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
   /**
@@ -656,12 +656,6 @@ export interface SourceRegistry {
    * source runs, can run an item again, and was told the job's end. The views offer those only when it does.
    */
   takesBack(jobId: JobId): Allowed;
-  /**
-   * Send a done job's open pull request back for rework (issue #724): its source makes the pull request a draft and gives
-   * the item back, and a new job is queued at once, told `notes`. Only a finished job that follows an open pull request,
-   * the newest of its item, once its end was reported to the source.
-   */
-  rework(jobId: JobId, notes: string, acting?: ActingPerson): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), answered once the act is recorded;
    * a sync of that source runs after, not awaited (issue #1194), and its status shows the result. not_found: no running source of that name; conflict: it takes no such act.

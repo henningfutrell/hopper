@@ -100,6 +100,17 @@ export const RESOLUTION_TEXT: Record<HandoffResolutionAction, string> = {
   continue: 'continued', fixed: 'fixed and run again', done_by_hand: 'done by hand', wont_do: 'won\'t do',
 };
 
+/** A resolution's key in a hand-off's `actions`. */
+const RESOLUTION_KEY = { continue: 'continue', fixed: 'fixed', done_by_hand: 'doneByHand', wont_do: 'wontDo' } as const;
+
+/** Whether a person may resolve the hand-off `id` (`h`, as `view` shows it) so now (issue #1194: checked before the answer): its job, or why not. */
+export function resolvableOf(id: string, h: Handoff | undefined, action: HandoffResolutionAction, view: (h: Handoff) => HandoffView):
+  { ok: true; value: { jobId: string } } | { ok: false; reason: 'not_found' | 'conflict'; message: string } {
+  if (!h) return { ok: false, reason: 'not_found', message: `hand-off ${id} not found` };
+  const allowed = view(h).actions[RESOLUTION_KEY[action]];
+  return allowed.ok ? { ok: true, value: { jobId: h.jobId } } : { ok: false, reason: 'conflict', message: `hand-off ${id} cannot be ${RESOLUTION_TEXT[action]}: ${allowed.why}` };
+}
+
 /**
  * Whether a person may resolve a hand-off each way now, and why not (issue #551): one that runs its item again
  * (Continue, I fixed it) only while it is the newest job of its item and nothing runs it again already; Done by hand

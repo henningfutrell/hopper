@@ -5,6 +5,7 @@
 // and holds outlive a restart. The settings apply without one. The API refuses what the view does not offer.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, FailureSettings, FailuresView, Job } from '../../src/domain/types.ts';
+import { retry, runAgain } from '../support/give-back.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -93,7 +94,7 @@ describe('a transient failure', () => {
     expect((await assessedOf(a, job.id)).data).toMatchObject({ decision: 'retry', auto: false });
     const record = await waitFor(async () => (await failuresOf(a)).recent.find((r) => r.jobId === job.id && r.actions.retry.ok));
     expect(await chain(a, job.source!.key)).toHaveLength(1);
-    const r = await a.ui<Job>(`/ui/api/failures/${record.id}/retry`, {}, { token });
+    const r = await retry(a, record.id, token);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ rerunOf: job.id });
     // Once done, it is not offered again, and the API says why.
@@ -269,7 +270,7 @@ describe('every failed job is processed', () => {
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass', 3000));
     await a.waitForStatus(job.id, 'failed');
     await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'the failure surfaced' });
-    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
+    const r = await runAgain(a, job.id, token);
     expect(r.status).toBe(200);
     unassess(a, job.id, new Date(Date.now() - 5 * 60_000).toISOString());
     const record = await waitFor(async () => supersededOf(a, job.id), { what: 'assessed as superseded' });
@@ -291,7 +292,7 @@ describe('every failed job is processed', () => {
     await a.waitForStatus(job.id, 'failed');
     await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'the failure surfaced' });
     expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 1 });
-    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
+    const r = await runAgain(a, job.id, token);
     expect(r.status).toBe(200);
     const record = await waitFor(async () => supersededOf(a, job.id), { what: 'superseded' });
     expect(record.nextJobId).toBe(r.body.id);

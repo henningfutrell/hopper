@@ -221,3 +221,31 @@ describe('a job\'s parts list, part 2 (issue #935)', () => {
   });
 });
 
+
+describe('a job\'s GitHub calls (issue #1072)', () => {
+  const done = (data: Record<string, unknown>) => event('github_proxy.done', { requestId: `r${seq}`, own: true, repo: 'acme/app', ...data });
+
+  it('counts the calls the hopper made on GitHub for the job, and the reads it answered with no call', () => {
+    const bom = jobBom(input({ events: [
+      done({ op: 'pr.status', number: 12, source: 'hopper' }),
+      done({ op: 'pr.status', number: 12, source: 'hopper', wait: 'w1' }),
+      done({ op: 'issue.view', number: 7, source: 'github' }),
+      done({ op: 'issue.view', number: 7, source: 'cache' }),
+      done({ op: 'pr.reviews', number: 12, source: 'github' }),
+      done({ op: 'pr.create', number: 12 }),
+      done({ op: 'git.push', refs: ['refs/heads/issue-7'] }),
+      event('github_proxy.refused', { requestId: 'rx', own: true, op: 'pr.view', reason: 'no' }),
+      event('github_proxy.failed', { requestId: 'ry', own: true, op: 'pr.view', repo: 'acme/app', error: 'GitHub answered 502' }),
+    ] }));
+    expect(part(bom, 'github')).toEqual({
+      id: 'github', group: 'work', kind: 'github_calls', label: '4 GitHub calls', status: 'recorded',
+      detail: '2 reads of GitHub, 2 writes; 3 reads answered by the hopper with no GitHub call',
+    });
+  });
+
+  it('says a job that asked only the hopper made no GitHub call; a job that asked nothing has no such part', () => {
+    expect(part(jobBom(input({ events: [done({ op: 'pr.status', number: 12, source: 'hopper' })] })), 'github'))
+      .toMatchObject({ label: 'No GitHub calls', detail: '0 reads of GitHub, 0 writes; 1 read answered by the hopper with no GitHub call' });
+    expect(part(jobBom(input({ events: [] })), 'github')).toBeUndefined();
+  });
+});

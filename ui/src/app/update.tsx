@@ -8,9 +8,9 @@
 // The notice is one line until asked (issue #521): What's new and How to update open below it, one at a time; the command is one container tool's, the one this browser chose last.
 // An install whose compose.yaml has no OpenFGA (issue #696): How to update says to add it, with the fix.
 // The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
+import { LogBlock } from '@/components/log-block';
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
@@ -75,13 +75,7 @@ function ApplyButton({ s }: { s: UpdateStatus }) {
 }
 
 function Command({ text }: { text: string }) {
-  const copy = () => navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
-  return (
-    <div className="flex items-start gap-2">
-      <pre className="min-w-0 flex-1 overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-[11px]">{text}</pre>
-      <Button variant="outline" size="xs" onClick={() => void copy()}>Copy</Button>
-    </div>
-  );
+  return <LogBlock title="Command" copy={text} contentClassName="text-[11px]">{text}</LogBlock>;
 }
 
 /**

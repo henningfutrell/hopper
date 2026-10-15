@@ -196,7 +196,8 @@ describe('a container install is updated by its user (issue #494)', () => {
     expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
     expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
     expect(text).toContain('2 running jobs would be lost');
-    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(2);
+    // Issue #1169: each command is a code block with its own copy button.
+    expect(block.querySelectorAll('[data-slot="code-block"] [data-slot="code-block-copy-button"]').length).toBe(2);
   });
 
 });

@@ -4,6 +4,7 @@
 // A hand-off outlives a restart; the view offers only what the API takes; entering and leaving are events.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, FailureSettings, FailuresView, Handoff, Job } from '../../src/domain/types.ts';
+import { resolveHandoff, runAgain } from '../support/give-back.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -109,11 +110,11 @@ describe('a person acts on a hand-off', () => {
     const token = await a.login();
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
     const h = await handoffOf(a, job.id);
-    const r = await a.ui<{ job: Job }>(`/ui/api/failures/handoffs/${h.id}/resolve`, { action: 'fixed' }, { token });
+    const r = await resolveHandoff(a, h.id, { action: 'fixed' }, token);
     expect(r.status).toBe(200);
     expect(r.body.job).toMatchObject({ rerunOf: job.id });
     const closed = (await failuresOf(a)).handoffs.find((x) => x.id === h.id)!;
-    expect(closed).toMatchObject({ status: 'closed', end: 'run_again', nextJobId: r.body.job.id });
+    expect(closed).toMatchObject({ status: 'closed', end: 'run_again', nextJobId: r.body.job!.id });
     expect(closed.actions.fixed.ok).toBe(false);
     // The new job fails the same way: it is handed off on its own; the first one is not again.
     expect((await failuresOf(a)).handoffs.filter((x) => x.jobId === job.id && x.status === 'open')).toEqual([]);
@@ -124,7 +125,7 @@ describe('a person acts on a hand-off', () => {
     const token = await a.login();
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
     const h = await handoffOf(a, job.id);
-    expect((await a.ui(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).status).toBe(200);
+    expect((await runAgain(a, job.id, token)).status).toBe(200);
     await waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.id === h.id && x.status === 'closed' && x.end === 'run_again'), { what: 'closed by the run again' });
   });
 

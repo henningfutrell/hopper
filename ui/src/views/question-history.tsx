@@ -1,19 +1,21 @@
 // The question history (issue #151): every handled question — answered, closed, dismissed, expired or
 // cancelled — as a compact list, newest first, each row opening to its question, the answer and the
 // job, each naming the machine that raised it (issue #485). A section of Questions (#questions/history, issue #897), beside the open questions.
-// A level's auto-answer (issue #632) says so, and a person may correct it: the job gets the correction.
+// A level's auto-answer (issue #632) says so, and a person may correct it: the job gets the correction. Who answered is
+// a marker, and the correction is the one question form (issue #1169).
 import { ChevronRight, History } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { JobTitle } from '@/components/job';
 import { CardText, InlineMarkdown } from '@/components/markdown';
 import { Empty, Panel } from '@/components/panel';
+import { AnsweredBy, QuestionForm } from '@/components/question-form';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge, type Tone } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
+import { answerSource } from '@/model/answer-source';
 import { autoAnswerOf } from '@/model/auto-answer';
 import { clock } from '@/model/format';
 import { firstLine } from '@/model/questions';
@@ -44,13 +46,9 @@ function CorrectForm({ q }: { q: Question }) {
   };
   if (!open) return <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Correct</Button>;
   return (
-    <div className="space-y-2">
-      <Textarea name="correction" rows={3} className="font-mono text-xs" value={text} disabled={busy} placeholder="The right answer. The job gets it ahead of its next answer." onChange={(e) => setText(e.target.value)} />
-      <div className="flex gap-2">
-        <Button size="sm" disabled={busy || !text.trim()} onClick={() => void send()}>Send correction</Button>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
-      </div>
-    </div>
+    <QuestionForm name="correction" title="The right answer" text={text} onText={setText} busy={busy}
+      placeholder="The right answer. The job gets it ahead of its next answer." submit="Send correction" canSubmit={!!text.trim()} onSubmit={() => void send()}
+      actions={<Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>} />
   );
 }
 
@@ -75,15 +73,16 @@ function HandledRow({ q }: { q: Question }) {
         {job && <JobTitle job={job} />}
         <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-2 text-xs"><CardText text={q.text} tldr={q.tldr?.text} /></div>
         {q.answer && <div className="space-y-1">
-          <div className="text-[11px] text-muted-foreground">{q.status === 'closed' ? 'closed without answering' : 'answer'} · by {q.answeredBy ?? 'unknown'}</div>
+          <div className="text-[11px] text-muted-foreground">{q.status === 'closed' ? 'closed without answering' : 'answer'}</div>
           <div className="rounded-md bg-muted/50 p-2 text-xs"><CardText text={q.answer} /></div>
         </div>}
+        <AnsweredBy source={answerSource(q)} />
         {auto && <div className="space-y-2">
-          <div className="text-xs text-muted-foreground">answered by {auto.level}{auto.confidence ? ` at ${auto.confidence} confidence` : ''}, with no person</div>
+          {auto.confidence && <div className="text-xs text-muted-foreground">{auto.level}&apos;s confidence: {auto.confidence}</div>}
           {canOperate && <CorrectForm q={q} />}
         </div>}
         {q.corrected && <div className="space-y-1">
-          <div className="text-[11px] text-muted-foreground">corrected {clock(q.corrected.at)} by {q.corrected.by}; {q.corrected.level} had answered</div>
+          <div className="text-[11px] text-muted-foreground">corrected {clock(q.corrected.at)} by {q.corrected.by}; the answer it replaced:</div>
           <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap line-through decoration-muted-foreground/60">{q.corrected.was}</pre>
         </div>}
         {q.status === 'dismissed' && <div className="text-xs text-muted-foreground">dismissed: nothing was typed into the job</div>}

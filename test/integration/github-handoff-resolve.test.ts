@@ -9,6 +9,7 @@ import { GitHubApiError } from '../../src/sources/github/api.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { connectGitHub } from '../support/github-account.ts';
+import { resolveHandoff } from '../support/give-back.ts';
 
 const REPO = 'owner/hopper-sandbox';
 const apps: TestApp[] = [];
@@ -40,8 +41,8 @@ async function failedIssue(a: TestApp, gh: FakeGitHub) {
   return { issue, job, h };
 }
 
-const resolve = (a: TestApp, token: string, h: HandoffView, body: Record<string, unknown>) =>
-  a.ui<{ handoff: HandoffView; job?: Job }>(`/ui/api/failures/handoffs/${h.id}/resolve`, body, { token });
+// Continue answers before the give-back (issue #1194): the hand-off and its job once it is closed.
+const resolve = (a: TestApp, token: string, h: HandoffView, body: Record<string, unknown>) => resolveHandoff(a, h.id, body, token);
 
 describe('a resolution is written back to its GitHub issue', () => {
   it('Done by hand: hopper:done replaces hopper:failed, and a comment says so with the note and the link', async () => {

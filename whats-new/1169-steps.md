@@ -1,0 +1,1 @@
+- On a job's page, the start and end of each sandbox step, and of each research or proposal spun off a question, now show as one line you can open; commands, results, errors and plans now show in boxes where you can wrap long lines and copy the text.

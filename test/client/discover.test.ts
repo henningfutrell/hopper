@@ -2,7 +2,7 @@
 // its executables, the known tools' versions, every AWS profile's identity and its simulated reach, every kubectl
 // context and what `auth can-i` says there, and the credential sources present — names only: a secret in a
 // credentials file or a variable never leaves the machine. Every aws and kubectl call it makes is a read.
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -113,9 +113,15 @@ describe('the discovery script', () => {
   it('a machine with none of the tools: the PATH, and nothing reached', () => {
     const root = mkdtempSync(join(tmpdir(), 'discover-'));
     dirs.push(root);
+    // Only what the script itself runs: the real /usr/bin of a CI runner holds aws, az and more, each slow to ask.
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    for (const tool of ['env', 'sh', 'timeout', 'tr', 'sed', 'cut', 'head', 'grep', 'sort']) {
+      symlinkSync(execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(), join(bin, tool));
+    }
     const [file, ...args] = discoverArgv();
-    const out = execFileSync(file!, args, { env: { PATH: '/usr/bin:/bin', HOME: root }, encoding: 'utf8' });
-    expect(readDiscovery(out)).toMatchObject({ aws: [], kube: [], versions: {}, credentials: { env: [], files: [] } });
+    const out = execFileSync(file!, args, { env: { PATH: bin, HOME: root }, encoding: 'utf8', timeout: 60000 });
+    expect(readDiscovery(out)).toMatchObject({ path: [bin], aws: [], kube: [], versions: {}, credentials: { env: [], files: [] } });
   });
 
   it('an output that did not finish reads as nothing', () => {

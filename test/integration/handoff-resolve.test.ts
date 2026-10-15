@@ -4,8 +4,9 @@
 // the reason). Each resolution is kept on the hand-off with who, when, the note and the link, goes back to the item's
 // source, and links the job that follows. Real daemon, real database; the fake herdr and the manual source at their seams.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { FailuresView, Handoff, HandoffView, Job } from '../../src/domain/types.ts';
+import type { FailuresView, Handoff } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
+import { resolveHandoff, runAgain } from '../support/give-back.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -35,12 +36,11 @@ async function boot(herdr?: FakeHerdrClient, source = createManualSource()): Pro
   return a;
 }
 
-type Resolved = { handoff: HandoffView; job?: Job };
 const failuresOf = async (a: TestApp): Promise<FailuresView> => (await a.api<FailuresView>('GET', '/api/failures')).body;
 const handoffOf = async (a: TestApp, jobId: string) =>
   waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.jobId === jobId && h.status === 'open'), { what: `job ${jobId} handed off` });
-const resolve = (a: TestApp, token: string, h: Handoff, body: Record<string, unknown>) =>
-  a.ui<Resolved & { error?: string }>(`/ui/api/failures/handoffs/${h.id}/resolve`, body, { token });
+// Continue and I fixed it answer before the give-back (issue #1194): the hand-off and its job once it is closed.
+const resolve = (a: TestApp, token: string, h: Handoff, body: Record<string, unknown>) => resolveHandoff(a, h.id, body, token);
 const viewOf = async (a: TestApp, id: string) => (await failuresOf(a)).handoffs.find((x) => x.id === id)!;
 
 describe('Continue with a note', () => {
@@ -63,8 +63,8 @@ describe('Continue with a note', () => {
       status: 'closed', end: 'continued', nextJobId: job.id,
       resolution: { action: 'continue', resumed: true, note: 'Buy more paint first; it is in the garage.', by: expect.any(String), at: expect.any(String) },
     });
-    // The same job, not a new one: it waits pinned to its machine, its session to resume.
-    expect(r.body.job).toMatchObject({ id: job.id, status: 'queued', resumeOn: 'local' });
+    // The same job, not a new one: pinned to its machine, its session to resume.
+    expect(r.body.job).toMatchObject({ id: job.id, resumeOn: 'local' });
 
     const done = await a.waitForStatus(job.id, 'finished', 8000);
     expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed blue.') });
@@ -169,7 +169,7 @@ describe('Done by hand and Won\'t do', () => {
     const job = await a.pull({ op: 'fail', message: 'HOPPER_FAILED the tests do not pass', ms: 0 });
     const h = await handoffOf(a, job.id);
     // Its item ran again by another way: Continue and I fixed it are refused, with the reason.
-    expect((await a.ui(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).status).toBe(200);
+    expect((await runAgain(a, job.id, token)).status).toBe(200);
     const closed = await waitFor(async () => { const v = await viewOf(a, h.id); return v.status === 'closed' ? v : undefined; }, { what: 'closed by the run again' });
     expect(closed.actions.continue.ok).toBe(false);
     expect(closed.actions.fixed).toEqual({ ok: false, why: expect.stringMatching(/already closed/) });

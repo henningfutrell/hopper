@@ -32,6 +32,7 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr diff N       --repo OWNER/NAME      (its changed files and their diff)
   sh "$HOPPER_GH" pr commits N    --repo OWNER/NAME
   sh "$HOPPER_GH" pr checks N     --repo OWNER/NAME      (the check runs and statuses of its head commit)
+  sh "$HOPPER_GH" pr reviews N    --repo OWNER/NAME      (its reviews, and what they decide: approved, changes_requested)
   sh "$HOPPER_GH" pr status N     --repo OWNER/NAME      (state, mergeable, checks, failed checks, the work item)
   sh "$HOPPER_GH" pr wait N       --repo OWNER/NAME [--timeout SECONDS]
                                                          (wait until its checks end; then as pr status)
@@ -83,7 +84,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr status'|'pr wait'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac

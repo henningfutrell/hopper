@@ -25,6 +25,7 @@
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { boxes, helper } from '../support/vault-box.ts';
@@ -117,7 +118,7 @@ describe('the vault only by a per-job grant', () => {
     expect((await a.ui(`/ui/api/jobs/${first.id}/grant-vault`, {}, { token: session })).status).toBe(200);
     await a.waitForStatus(first.id, 'finished', 10000);
     await waitFor(async () => (await a.job(first.id)).sourceState?.sync?.finalReported === true, { what: 'the end reported' });
-    const again = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token: session });
+    const again = await runAgain(a, first.id, session);
     expect(again.status).toBe(200);
     expect(again.body.id).not.toBe(first.id);
     await a.waitForStatus(again.body.id, 'running', 10000);

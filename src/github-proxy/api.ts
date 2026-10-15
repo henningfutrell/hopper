@@ -6,6 +6,7 @@
 // The repo queries (issue #1074): a pull request's diff (from its files' patches), its commits and the check runs and
 // statuses of its head commit, and an issue's comments — every page, each answer with the item's own URL.
 import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
+import type { GitHubCallKind } from '../domain/github-rate-limit.ts';
 import { webOriginOf } from '../sources/github/api.ts';
 import { jobLog } from '../sources/github/app/rest.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
@@ -63,6 +64,7 @@ interface RestFile { filename: string; status: string; additions: number; deleti
 interface RestCommit { sha: string; html_url?: string; commit: { message: string; author?: { name?: string; date?: string } | null }; author?: { login?: string } | null }
 interface RestCheckRun { id: number; name: string; status: string; conclusion: string | null; html_url?: string | null; details_url?: string | null; started_at?: string | null; completed_at?: string | null }
 interface RestStatus { context: string; state: string; target_url?: string | null; description?: string | null }
+interface RestReview { id: number; state: string; body?: string | null; html_url?: string; submitted_at?: string | null; user?: { login?: string } | null }
 interface RestComment { id: number; body?: string | null; html_url: string; created_at: string; user?: { login?: string } | null }
 
 /** A pull request's diff a job is answered at most (issue #1074): its start, then `truncated`. Its files are listed whole. */
@@ -156,6 +158,23 @@ async function pullChecks(req: Request, token: string, r: { repo: string; number
   };
 }
 
+/** What a pull request's reviews decide (issue #1072): the latest review of each reviewer that approves, asks for changes or was dismissed. */
+export function reviewDecision(reviews: readonly { author: string; state: string }[]): 'approved' | 'changes_requested' | 'none' {
+  const latest = new Map<string, string>();
+  for (const r of reviews) if (r.state === 'approved' || r.state === 'changes_requested' || r.state === 'dismissed') latest.set(r.author, r.state);
+  const states = [...latest.values()];
+  return states.includes('changes_requested') ? 'changes_requested' : states.includes('approved') ? 'approved' : 'none';
+}
+
+/** A pull request's reviews (issue #1072), oldest first, with what they decide. A review not yet sent (pending) is not one. */
+async function pullReviews(req: Request, token: string, r: { repo: string; number: number }, url: string): Promise<ProxyResult> {
+  const read = await paginate<RestReview>(req, 'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews', { ...splitRepo(r.repo), pull_number: r.number, per_page: 100 }, `token ${token}`, (d) => d as RestReview[]);
+  const reviews = read.filter((x) => x.state !== 'PENDING').map((x) => ({
+    id: x.id, author: x.user?.login ?? '', state: x.state.toLowerCase(), body: x.body ?? '', ...(x.submitted_at ? { submittedAt: x.submitted_at } : {}), ...(x.html_url ? { url: x.html_url } : {}),
+  }));
+  return { number: r.number, url, decision: reviewDecision(reviews), reviews };
+}
+
 /** A check run's conclusion that fails the checks (as the follow's rollup, src/sources/github/closer.ts). */
 const FAILED_RUN = new Set(['failure', 'timed_out', 'startup_failure']);
 
@@ -194,6 +213,7 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
   switch (r.op) {
     case 'pr.diff': return pullDiff(req, token, r, `${webOrigin}/${r.repo}/pull/${r.number}`);
     case 'pr.checks': return pullChecks(req, token, r);
+    case 'pr.reviews': return pullReviews(req, token, r, `${webOrigin}/${r.repo}/pull/${r.number}`);
     case 'pr.commits': {
       const commits = await paginate<RestCommit>(req, 'GET /repos/{owner}/{repo}/pulls/{pull_number}/commits', { ...at, pull_number: r.number, per_page: 100 }, `token ${token}`, (d) => d as RestCommit[]);
       return {
@@ -288,9 +308,9 @@ export function tokenCaller(o: TokenSource): <T>(fn: (token: string) => Promise<
   };
 }
 
-export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
-  // A running job's requests count as its own kind (issue #985).
-  const req = makeRequest(o.apiUrl, undefined, { kind: 'job' });
+export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & TokenSource): ProxyApi {
+  // A running job's requests count as its own kind (issue #985); a person's read of a job's pull request (issue #1169) as a job's other read.
+  const req = makeRequest(o.apiUrl, undefined, { kind: o.kind ?? 'job' });
   const withToken = tokenCaller(o);
   return {
     perform: (r, subIssueOf) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), subIssueOf), (err) => errorOf(err, r)),

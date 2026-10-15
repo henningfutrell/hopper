@@ -238,10 +238,7 @@ describe('empty states: every page renders when nothing waits (issue #897)', () 
   it('Access requests with nothing waiting shows each panel, with what will show there', async () => {
     await boot('#access-requests', { vault: EMPTY_VAULT });
     await vi.waitFor(() => expect(document.querySelectorAll('[data-access-panel]').length).toBe(4));
-    expect(main().textContent).toContain('No job asks for a credential');
-    expect(main().textContent).toContain('No job waits for a vault grant');
-    expect(main().textContent).toContain('No template waits for approval');
-    expect(main().textContent).toContain('No sandbox run waits');
+    for (const empty of ['No job asks for a credential', 'No job waits for a vault grant', 'No template waits for approval', 'No sandbox run waits']) expect(main().textContent).toContain(empty);
   });
 
   it('Access requests when the vault cannot be read says so, and still renders', async () => {
@@ -271,9 +268,7 @@ describe('one home each: no Approve stays in Sources or Settings → Vault (issu
   it('Settings → Vault offers no Approve and no Grant, and links a waiting template to Access requests', async () => {
     await boot('#settings/vault');
     await vi.waitFor(() => expect(main().textContent).toContain('ghcr.io/x/box:1'));
-    expect(buttons(main())).not.toContain('Approve');
-    expect(buttons(main())).not.toContain('Grant');
-    expect(buttons(main())).not.toContain('Give');
+    for (const action of ['Approve', 'Grant', 'Give']) expect(buttons(main())).not.toContain(action);
     expect(main().querySelector('a[href="#access-requests"]')).not.toBeNull();
   });
 
@@ -292,12 +287,19 @@ describe('one home each: no Approve stays in Sources or Settings → Vault (issu
 describe('one home each: the decider\'s picks, the question history and Your reports leave Settings (issue #897)', () => {
   const settingsSections = () => [...document.querySelectorAll('[data-slot="settings-nav"] a')].map((a) => a.getAttribute('href'));
 
-  it('Decisions has the decider\'s picks, each with Override', async () => {
+  // Issue #1169: a pick is a question form too — its options are the questionnaire's choices, Jev's pick checked.
+  it('Decisions has the decider\'s picks, each a question form whose Override posts the choice checked', async () => {
     await boot('#decisions');
     const pick = () => document.querySelector<HTMLElement>('[data-pick="k1"]');
-    await vi.waitFor(() => expect(pick()).not.toBeNull());
-    expect(buttons(pick()!)).toContain('Override');
+    const form = await vi.waitFor(() => { const f = pick()?.querySelector('[data-slot="questionnaire"][data-question-form="override"]'); expect(f).toBeTruthy(); return f!; });
+    const choices = [...form.querySelectorAll<HTMLElement>('[data-slot="questionnaire-choice"]')];
+    expect(choices.map((c) => c.textContent?.trim())).toEqual(['First', 'Second']);
+    const radios = [...form.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    expect(radios.map((r) => r.checked)).toEqual([true, false]);
     expect(main().querySelector('a[href="#settings/decider"]')).not.toBeNull();
+    await act(async () => { radios[1]!.click(); });
+    await act(async () => { [...pick()!.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Override')!.click(); });
+    await vi.waitFor(() => expect(posts).toContainEqual({ path: '/ui/api/minor-decisions/picks/k1/override', body: { actual: 'b' } }));
   });
 
   it('Decisions with no pick says what will show there', async () => {

@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
@@ -112,7 +113,7 @@ describe('intake by label and assignee (issue #387)', () => {
     const [job] = await jobsFor(a, issue.url);
     expect((await a.ui<Job>(`/ui/api/jobs/${job!.id}/reject`, {}, { token })).body).toMatchObject({ status: 'rejected', error: 'rejected by the user' });
     await waitFor(async () => (await jobsFor(a, issue.url))[0]!.sourceState?.sync?.finalReported === true, { what: 'rejection reported' });
-    const again = await a.ui<Job>(`/ui/api/jobs/${job!.id}/rerun`, {}, { token });
+    const again = await runAgain(a, job!.id, token);
     expect(again.status).toBe(200);
     expect(again.body).toMatchObject({ rerunOf: job!.id, source: { key: issue.url } });
   });

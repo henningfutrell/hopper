@@ -181,6 +181,20 @@ describe("the levels' recommendations on an escalated question", () => {
     await vi.waitFor(() => expect(button('Send answer')).toBeDefined());
     expect(card()!.querySelector('textarea')).not.toBeNull();
   });
+
+  // Issue #1169: every question is answered through one Questionnaire form; Send answer is its submit.
+  it('the answer box is the one question form: a questionnaire whose submit is Send answer', async () => {
+    const daemon = await boot({ authed: true, attempts });
+    const form = await vi.waitFor(() => { const f = card()!.querySelector<HTMLFormElement>('[data-slot="questionnaire"][data-question-form="answer"]'); expect(f).not.toBeNull(); return f!; });
+    expect(form.querySelector('[data-slot="questionnaire-title"]')?.textContent).toBe('Your answer');
+    expect(form.querySelector('textarea')?.getAttribute('aria-label')).toBe('Your answer');
+    expect(button('Send answer')!.closest('[data-slot="questionnaire-submit"], [data-slot="questionnaire"]')).not.toBeNull();
+    const box = form.querySelector('textarea')!;
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'my own'); box.dispatchEvent(new Event('input', { bubbles: true })); });
+    await click(button('Send answer'));
+    await vi.waitFor(() => expect(answers(daemon)).toHaveLength(1));
+    expect(answers(daemon)[0]!.body).toEqual({ answer: 'my own' });
+  });
 });
 
 describe('the Questions badge', () => {
@@ -236,7 +250,9 @@ describe('handled questions', () => {
     expect(rows[0]!.textContent).toContain('answered');
     expect(rows[0]!.textContent).not.toContain('merge\n');
     await click(rows[0]!.querySelector('button') as HTMLElement);
-    await vi.waitFor(() => expect(rows[0]!.textContent).toContain('by human'));
+    const marker = await vi.waitFor(() => { const m = rows[0]!.querySelector('[data-slot="marker"][data-answer-source]'); expect(m).not.toBeNull(); return m!; });
+    expect(marker.getAttribute('data-answer-source')).toBe('person');
+    expect(marker.textContent).toBe('Answered by a person');
     expect(rows[0]!.querySelector('[data-slot="question-text"]')?.textContent).toContain('Rebase or merge?');
     expect(list.textContent).not.toContain(question.text);
   });

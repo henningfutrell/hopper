@@ -10,11 +10,13 @@
 // Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
 // moves it to the tested branch. Not tracked (issue #1176): each open pull request of a job repository the hopper does not
 // track, with why; one whose issue is not in Intake has Take into Intake.
-// Each card shows its change kind (issue #1076), why in its title.
+// Each card shows its change kind (issue #1076), why in its title. A card with a pull request, and a landing card — a batch's
+// culprit among them —, opens its diff in a code block (issue #1169).
 import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
+import { PullRequestDiff } from '@/components/pull-request-diff';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, YoloBadge, type Tone } from '@/components/status';
@@ -26,6 +28,7 @@ import { ago } from '@/model/format';
 import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
 import { act } from '@/store';
+import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { setPolled } from '@/store/polled';
 import { useCanOperate } from '@/store/selectors';
 
@@ -43,6 +46,7 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   const [busy, setBusy] = useState(false);
   const [reworking, setReworking] = useState(false);
   const [notes, setNotes] = useState('');
+  const sendingBack = useGivingBack((s) => s[c.jobId] === 'rework');
   // A tend job works on it (issue #763): its job follows it no more, so no act until the tend job ends.
   if (!operator || c.state !== 'open' || !c.pullRequest || c.tendJobId) return null;
   const run = async (what: 'merge' | 'close') => {
@@ -51,9 +55,10 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
     setBusy(false);
     onChanged();
   };
+  // Answered at once (issue #1194): the pull request is made a draft after, and the card waits until the stream says so.
   const rework = async () => {
     setBusy(true);
-    const ok = await act(`/ui/api/jobs/${c.jobId}/rework`, { notes: notes.trim() }, `#${c.pullRequest!.number} sent back for rework`);
+    const ok = await giveBack(c.jobId, 'rework', { body: { notes: notes.trim() }, ended: onChanged });
     setBusy(false);
     if (ok) { setReworking(false); setNotes(''); onChanged(); }
   };
@@ -64,8 +69,8 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
           description="The hopper merges it now with a merge commit, whatever yolo mode and its checks say. GitHub still refuses a draft, merge conflicts or a required check.">
           <Button size="sm" variant="outline" disabled={busy}><GitMerge />Merge now</Button>
         </Confirm>
-        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={busy || reworking} title="Make it a draft, and a new job reworks it with your notes"
-          onClick={() => setReworking(true)}><Undo2 />Send back for rework</Button>
+        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={busy || reworking || sendingBack} title="Make it a draft, and a new job reworks it with your notes"
+          onClick={() => setReworking(true)}><Undo2 />{sendingBack ? 'Sending back' : 'Send back for rework'}</Button>
         <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => void run('close')}
           description="The pull request closes without a merge. Its issue gets hopper:pr-closed and is not taken again until a person removes the label.">
           <Button size="sm" variant="ghost" disabled={busy}><X />Close PR</Button>
@@ -90,17 +95,13 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
  */
 function TendAgain({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
   const operator = useCanOperate();
-  const [busy, setBusy] = useState(false);
+  const tending = useGivingBack((s) => s[c.jobId] === 'tend');
   if (!operator || c.state !== 'open' || c.waits !== 'tend failed' || !c.tendJobId) return null;
-  const run = async () => {
-    setBusy(true);
-    await act('/ui/api/pull-requests/tend', { jobId: c.jobId }, `${c.pullRequest ? `#${c.pullRequest.number}` : 'The pull request'} is tended again`);
-    setBusy(false);
-    onChanged();
-  };
+  // Answered at once (issue #1194): the tend runs after, and the button waits until the stream says how it ended.
+  const run = () => giveBack(c.jobId, 'tend', { path: '/ui/api/pull-requests/tend', body: { jobId: c.jobId }, ended: onChanged });
   return (
     <div data-slot="pr-tend-again" className="flex flex-wrap items-center gap-2 pt-1">
-      <Button size="sm" disabled={busy} onClick={() => void run()}><RotateCw />Tend again</Button>
+      <Button size="sm" disabled={tending} onClick={() => void run()}><RotateCw />{tending ? PENDING.tend : 'Tend again'}</Button>
       <span className="text-xs text-muted-foreground">A new job takes the same step. Read why it failed first.</span>
     </div>
   );
@@ -131,6 +132,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
       <CardActions c={c} onChanged={onChanged} />
       <TendAgain c={c} onChanged={onChanged} />
+      {c.pullRequest && <PullRequestDiff repo={c.repo} number={c.pullRequest.number} />}
     </li>
   );
 }
@@ -207,6 +209,7 @@ function Landing({ cards }: { cards: LandingCard[] }) {
               <span data-slot="landing-stage" className={`text-xs ${LANDING_TONE[c.stage]}`}>{landingText(c)}</span>
               {c.fixIssue && <GhLink url={c.fixIssue} className="text-xs">fix issue</GhLink>}
               <span className="text-xs text-muted-foreground" title={c.since}>{ago(c.since, now)}</span>
+              <PullRequestDiff repo={c.repo} number={c.pullRequest.number} />
             </li>
           ))}
         </ul>

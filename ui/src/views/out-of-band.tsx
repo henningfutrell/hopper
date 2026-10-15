@@ -3,6 +3,7 @@
 // found. An admin marks one adopted, reverted, or accepted with a reason, and sets the controller identities, whose
 // writes are GitOps's. Tracking only: nothing here reverts a change. The page loads the changes (infra.tsx) and shows
 // this panel always: an empty list says how a change gets here.
+import { LogBlock } from '@/components/log-block';
 import { Check, GitPullRequestArrow, Undo2, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -30,7 +31,7 @@ function ChangeItem({ c, can, busy, mark }: { c: OutOfBandView; can: boolean; bu
     <li data-slot="out-of-band-change" className="space-y-1 rounded-md border p-3">
       <p className="text-sm break-words">{changeHeadline(c)}</p>
       <p className="text-xs text-muted-foreground">at {c.at}, {reportedBy(c)}, signal {c.key}</p>
-      {c.detail && <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap">{c.detail}</pre>}
+      {c.detail && <LogBlock title="Detail" copy={c.detail} wrap contentClassName="max-h-40 text-xs">{c.detail}</LogBlock>}
       <p className={`text-xs ${state.kind === 'open' ? 'text-warn' : 'text-muted-foreground'}`}>{state.words}</p>
       {can && state.kind === 'open' && (
         <div className="flex flex-wrap items-center gap-2">

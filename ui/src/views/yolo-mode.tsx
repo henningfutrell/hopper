@@ -4,6 +4,7 @@
 // yolo mode's one switch (issue #897): the header and Pull requests show it and link here.
 // Change kinds (issue #1076): below it, each kind's merge gate under the built-in rule, and the admin's own rules over it
 // as JSON — per repository or for every one —, saved whole; empty is the built-in rule again.
+import { JsonBlock } from '@/components/json-block';
 import { TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -109,7 +110,7 @@ function ChangeKinds({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloM
       {builtIn && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground">The built-in rule</summary>
-          <pre data-slot="change-built-in" className="mt-1 max-h-64 overflow-auto rounded-md border p-2">{JSON.stringify(builtIn, null, 2)}</pre>
+          <div data-slot="change-built-in" className="mt-1"><JsonBlock value={builtIn} label="The built-in rule" className="max-h-64" /></div>
         </details>
       )}
       <Button size="sm" disabled={busy || !parsed.ok || text === changeKindsText(view)} onClick={() => void save()}>Save change rules</Button>

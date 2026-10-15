@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import type { QueueView } from '../../src/engine/queries.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -54,7 +55,7 @@ describe('a failed job is a locked entry in the queue', () => {
     const a = await boot();
     const token = await a.login();
     const failed = await failedJob(a);
-    const r = await a.ui<Job>(`/ui/api/jobs/${failed.id}/rerun`, {}, { token });
+    const r = await runAgain(a, failed.id, token);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ rerunOf: failed.id });
     expect((await queue(a)).locked.map((j) => j.id)).not.toContain(failed.id);
@@ -73,7 +74,7 @@ describe('a failed job is a locked entry in the queue', () => {
     expect((await queue(a)).locked).toEqual([]);
     expect((await a.events('types=job.dismissed')).map((e) => [e.jobId, e.data])).toEqual([[failed.id, { by: 'user' }]]);
     expect((await a.ui(`/ui/api/jobs/${failed.id}/dismiss`, {}, { token })).status).toBe(409);
-    expect((await a.ui(`/ui/api/jobs/${failed.id}/rerun`, {}, { token })).status).toBe(200);
+    expect((await runAgain(a, failed.id, token)).status).toBe(200);
   });
 
   it('only a failed job can be dismissed', async () => {

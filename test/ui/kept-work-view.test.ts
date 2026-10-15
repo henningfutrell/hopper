@@ -46,6 +46,11 @@ describe('Work not pushed (issue #1010)', () => {
     await click(button(row(), 'Push it'));
     expect(daemon.posts).toContain('POST /ui/api/failures/kept-work/j7/push');
     expect(daemon.bodies.at(-1)).toEqual({ note: 'Branch shed-blue' });
+    // Answered before its source takes the item back (issue #1194): the button waits, and Discard is not offered meanwhile.
+    expect(buttonsIn(row())).toContain('Pushing');
+    expect(buttonsIn(row())).not.toContain('Discard');
+    await unmount();
+    await boot('#failures', { failures: view({ problems: [], keptWork: [kept()] }) });
     await click(button(row(), 'Discard'));
     expect(daemon.posts).not.toContain('POST /ui/api/failures/kept-work/j7/discard');
     expect(document.body.textContent).toContain('You cannot undo this.');

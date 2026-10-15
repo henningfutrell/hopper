@@ -65,6 +65,8 @@ describe('the Failures view', () => {
     expect(daemon.posts).toContain('POST /ui/api/failures/problems/p1/resolve');
     await click(document.querySelector('[data-failure="f2"]'), 'Retry');
     expect(daemon.posts).toContain('POST /ui/api/failures/f2/retry');
+    // Answered before the give-back (issue #1194): the button waits until the stream says how it ended.
+    expect(buttonsIn(document.querySelector('[data-failure="f2"]'))).toContain('Running again');
   });
 
   it('the recent failures show decision and summary; the profile its top signatures and breakdowns', async () => {
@@ -184,6 +186,7 @@ describe('the Failures view', () => {
     await settle();
     expect(daemon.posts).toContain('POST /ui/api/failures/handoffs/h1/resolve');
     expect(daemon.bodies.at(-1)).toEqual({ action: 'continue', note: 'Use the blue paint.' });
+    expect(button('Going on').disabled).toBe(true);
     d.failures = view({ problems: [], handoffs: [handoff({
       status: 'closed', end: 'continued', closedAt: at(1), nextJobId: 'j9',
       resolution: { action: 'continue', resumed: true, by: 'Pat', at: at(1), note: 'Use the blue paint.', writeBack: 'written' },

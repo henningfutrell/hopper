@@ -21,6 +21,7 @@ export const PROXY_LIMITS: Readonly<Record<LimitedOp, { job: number; machine: nu
   'pr.diff': { job: 120, machine: 600 },
   'pr.commits': { job: 120, machine: 600 },
   'pr.checks': { job: 120, machine: 600 },
+  'pr.reviews': { job: 120, machine: 600 },
   // An answer from the hopper's records is not counted (issue #1072): it costs GitHub nothing.
   'pr.status': { job: 120, machine: 600 },
   'pr.ready': { job: 5, machine: 20 },

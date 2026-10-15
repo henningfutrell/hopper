@@ -32,7 +32,9 @@ export function withFixedStatuses(running: SourceRegistry, fixed: () => SourceSt
     takesBack: (jobId) => running.takesBack(jobId),
     pullRequestAct: (jobId, act, acting) => running.pullRequestAct(jobId, act, acting),
     tendAgain: (jobId, acting) => running.tendAgain(jobId, acting),
-    rework: (jobId, notes, acting) => running.rework(jobId, notes, acting),
+    giveBack: (jobId, act, acting) => running.giveBack(jobId, act, acting),
+    afterAnswer: (act, checked, acting) => running.afterAnswer(act, checked, acting),
+    checkTendAgain: (jobId, acting) => running.checkTendAgain(jobId, acting),
     intakeAction: (source, action) => running.intakeAction(source, action),
     repoChanged: (repo) => running.repoChanged(repo),
   };

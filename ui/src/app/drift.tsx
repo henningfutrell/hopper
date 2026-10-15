@@ -2,6 +2,7 @@
 // — each gap, what it turns off, and the fix: the update's compose commands with the image the hopper runs (issue #970), for the container tool
 // this browser chose. Not dismissable: it ends when the stack matches. Read once signed in, then each minute. When OpenFGA is
 // one of its gaps, the OpenFGA banner (#696) gives way: one cause, said once.
+import { LogBlock } from '@/components/log-block';
 import { Layers } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,7 @@ export function DriftBanner({ drift }: { drift: StackDrift | null }) {
         </div>
       </div>
       {fix
-        ? <pre className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-[11px]">{fix}</pre>
+        ? <LogBlock title="Command" copy={fix} contentClassName="text-[11px]">{fix}</LogBlock>
         : <p className="text-xs text-muted-foreground">This hopper does not know its image: give <code>HOPPER_IMAGE</code> at launch, then see How to update.</p>}
     </div>
   );

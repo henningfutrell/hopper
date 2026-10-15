@@ -27,8 +27,12 @@ export interface Failures {
   release(problemId: string, by: ActingPerson): FailureAction<Problem>;
   /** A person runs a surfaced failure's job again; one done at its source is finished instead, and refused (issue #637). */
   retry(recordId: string, by: ActingPerson): Promise<FailureAction<Job>>;
+  /** Whether a person's Retry may run the record's job again now (issue #1194: checked before the answer): its job, or why not. */
+  retryable(recordId: string): FailureAction<{ jobId: string }>;
   /** A person resolves a hand-off (issue #551), `by` the person signed in and the way: the hand-off and the job that follows, if any. */
   resolveHandoff(handoffId: string, input: HandoffResolve, by: ActingPerson): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
+  /** Whether a person may resolve the hand-off so now (issue #1194: checked before the answer): its job, or why not. */
+  handoffResolvable(handoffId: string, action: HandoffResolve['action']): FailureAction<{ jobId: string }>;
   nameCause(cause: NamedCause): KnownCause;
   forgetCause(signature: string): boolean;
 }
