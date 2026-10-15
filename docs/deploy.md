@@ -753,6 +753,17 @@ helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values \
 The hopper never makes a key in AWS: `kms.aws.key` is required. `kms.aws.endpoint` names a VPC endpoint. The hopper's
 own secrets (webhook secrets, the GitHub connection, sign-in realms' secrets) stay under the master key.
 
+**The optional services** (compose's profiles `hopper-vault` and `kms`, "Optional services"). Both are off by default: the
+vault then runs in the hopper, under the master key.
+
+- `hopperVault.enabled=true` runs the hopper's vault in a pod of its own (`hopper-vault`), from the hopper's image. It
+  takes the master key the same way the hopper does. The hopper asks it with the preshared key `vault_key` of the Secret
+  `hopper-runtime`; only the hopper reaches it.
+- `kms.local.enabled=true` runs a local KMS (`hopper-kms`, local-kms) that wraps the vault's data key, on a volume of its
+  own (`kms.local.size`, default `1Gi`). Only the pod the vault runs in reaches it, and only that pod is given
+  `HOPPER_KMS_URL`. Lose its volume and every value sealed under a data key is lost. It checks no credentials: on a
+  cluster in the cloud, use AWS KMS instead. The chart refuses both at once.
+
 | value | |
 |---|---|
 | `image.tag` | the update channel: `latest` (the default, the same image as `stable`), `stable`, `beta`, `canary` or `dev` |
@@ -762,22 +773,25 @@ own secrets (webhook secrets, the GitHub connection, sign-in realms' secrets) st
 | `networkPolicy.enabled` | NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. Default on; they take effect where the network plugin enforces them |
 | `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above) |
 | `kms.aws.region`, `kms.aws.key`, `kms.aws.endpoint` | AWS KMS wraps the vault's data key (above) |
+| `hopperVault.enabled`, `kms.local.enabled`, `kms.local.size` | the vault in a pod of its own, and a local KMS (above). Default off |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
 | `sandbox.enabled` | sandbox boxes the hopper starts as pods in the release's namespace ("Sandbox boxes on Kubernetes"). Default off |
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
-The chart makes the database password and OpenFGA's preshared key at the first install, in the Secret `hopper-runtime`,
-and the lane pool key in the Secret `hopper-lane-pool`, and keeps them at each upgrade. An uninstall keeps those Secrets and the home volume (`helm.sh/resource-policy: keep`), and
+The chart makes the database password and the preshared keys of OpenFGA and the vault pod at the first install, in the
+Secret `hopper-runtime`, and the lane pool key in the Secret `hopper-lane-pool`, and keeps them at each upgrade. An
+uninstall keeps those Secrets and the home volume (`helm.sh/resource-policy: keep`), and
 the StatefulSets' volumes stay too: the database keeps the password it was made with. Remove them by hand only together.
 
 Update: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values` with the chart of the new version.
 The hopper stops before the new one starts (one writer of its database).
 
 In the cluster the hopper updates by `helm upgrade` and checks drift on its image, not on a compose stack (issue #1285):
-its update notice gives the command. Not in the chart yet: remote access (`tunnel`, `cloudflared`: use the Ingress) and
-the optional services.
+its update notice gives the command. Not in the chart: remote access (`tunnel`, `cloudflared`: use the Ingress), and
+HashiCorp Vault (the compose profile `vault`): add a `hashicorp-vault` vault backend whose `address` names a Vault you
+run, and give its token in `extraEnv`, from a Secret.
 
 ### Check the chart on kind
 

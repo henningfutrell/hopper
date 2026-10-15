@@ -1,0 +1,1 @@
+- On Kubernetes, the vault can run in a pod of its own, and a local key service can protect the vault's secrets, the same as in a container install.

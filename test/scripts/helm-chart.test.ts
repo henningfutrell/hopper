@@ -66,7 +66,7 @@ describe('the Helm chart, installed with no values', () => {
     const secret = find(rs, 'Secret', 'hopper-runtime');
     expect(secret.metadata.annotations?.['helm.sh/resource-policy']).toBe('keep');
     const values = secret.stringData ?? {};
-    expect(Object.keys(values).sort()).toEqual(['database_url', 'openfga_datastore_uri', 'openfga_key', 'postgres_password']);
+    expect(Object.keys(values).sort()).toEqual(['database_url', 'openfga_datastore_uri', 'openfga_key', 'postgres_password', 'vault_key']);
     expect(values.database_url).toBe(`postgres://hopper:${values.postgres_password}@hopper-postgres:5432/hopper`);
     expect(values.openfga_datastore_uri).toBe(`postgres://hopper:${values.postgres_password}@hopper-postgres:5432/hopper?sslmode=disable&search_path=openfga`);
     expect(values.postgres_password).toMatch(/^[A-Za-z0-9]{32,}$/);

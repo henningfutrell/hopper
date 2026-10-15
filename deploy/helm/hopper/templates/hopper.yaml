@@ -83,37 +83,15 @@ spec:
             {{- include "hopper.podLimits" "hopper" | nindent 12 }}
             - name: HOPPER_DATABASE_URL_FILE
               value: /run/hopper-secrets/database_url
-            {{- if $keyFile }}
-            # The master key from the mounted Secret: a start without its file is refused.
-            - name: HOPPER_MASTER_KEY_FILE
-              value: /run/hopper-master-key/master-key
-            - name: HOPPER_MASTER_KEY_PREVIOUS_FILE
-              value: /run/hopper-master-key/previous
+            {{- include "hopper.masterKeyEnv" . | nindent 12 }}
+            {{- if .Values.hopperVault.enabled }}
+            # The vault in a pod of its own (issue #586), asked with the preshared key.
+            - name: HOPPER_VAULT_URL
+              value: {{ printf "http://%s-vault:4791" $name | quote }}
+            - name: HOPPER_VAULT_KEY_FILE
+              value: /run/hopper-secrets/vault_key
             {{- else }}
-            - name: HOPPER_MASTER_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "hopper.masterKeySecret" . }}
-                  key: master-key
-                  optional: true
-            - name: HOPPER_MASTER_KEY_PREVIOUS
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "hopper.masterKeySecret" . }}
-                  key: previous
-                  optional: true
-            {{- end }}
-            {{- with .Values.kms.aws }}
-            {{- if .region }}
-            - name: HOPPER_KMS_REGION
-              value: {{ .region | quote }}
-            - name: HOPPER_KMS_KEY
-              value: {{ required "kms.aws.key: the AWS KMS key that wraps the vault's data key (the hopper never makes one in AWS)" .key | quote }}
-            {{- if .endpoint }}
-            - name: HOPPER_KMS_URL
-              value: {{ .endpoint | quote }}
-            {{- end }}
-            {{- end }}
+            {{- include "hopper.kmsEnv" . | nindent 12 }}
             {{- end }}
             - name: HOPPER_PORT
               value: {{ $port | quote }}
@@ -196,6 +174,10 @@ spec:
                 path: database_url
               - key: openfga_key
                 path: openfga_key
+              {{- if .Values.hopperVault.enabled }}
+              - key: vault_key
+                path: vault_key
+              {{- end }}
         - name: lane-pool
           secret:
             secretName: {{ include "hopper.lanePoolSecret" . }}
@@ -206,14 +188,7 @@ spec:
         - name: home
           persistentVolumeClaim:
             claimName: {{ $name }}-home
-        {{- if $keyFile }}
-        # Optional: with no Secret the hopper starts and refuses, saying the key file is missing.
-        - name: master-key
-          secret:
-            secretName: {{ include "hopper.masterKeySecret" . }}
-            defaultMode: 0440
-            optional: true
-        {{- end }}
+        {{- include "hopper.masterKeyVolume" . | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

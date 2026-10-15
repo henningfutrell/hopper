@@ -1,8 +1,21 @@
 {{- if .Values.networkPolicy.enabled -}}
-{{- /* Who reaches each part: Postgres the hopper and OpenFGA, OpenFGA and Solr the hopper alone, the lane pods no one. */ -}}
-{{- $parts := list (list "postgres" 5432 (list "hopper" "openfga")) (list "openfga" 8080 (list "hopper")) (list "lanes" 0 list) -}}
+{{- /*
+Who reaches each part: Postgres the hopper, OpenFGA and the vault pod; OpenFGA, Solr and the vault pod the hopper alone;
+the local KMS the pod the vault runs in; the lane pods no one.
+*/ -}}
+{{- $db := list "hopper" "openfga" -}}
+{{- if .Values.hopperVault.enabled -}}
+{{- $db = append $db "vault" -}}
+{{- end -}}
+{{- $parts := list (list "postgres" 5432 $db) (list "openfga" 8080 (list "hopper")) (list "lanes" 0 list) -}}
 {{- if .Values.solr.enabled -}}
 {{- $parts = append $parts (list "solr" 8983 (list "hopper")) -}}
+{{- end -}}
+{{- if .Values.hopperVault.enabled -}}
+{{- $parts = append $parts (list "vault" 4791 (list "hopper")) -}}
+{{- end -}}
+{{- if .Values.kms.local.enabled -}}
+{{- $parts = append $parts (list "kms" 8080 (list (include "hopper.vaultRunner" $))) -}}
 {{- end -}}
 {{- range $i, $p := $parts }}
 {{- if $i }}

@@ -20,7 +20,7 @@ app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
-{{/* The generated runtime Secret: the database password, URL and OpenFGA's preshared key. */}}
+{{/* The generated runtime Secret: the database password, URL and the preshared keys of OpenFGA and the vault pod. */}}
 {{- define "hopper.runtimeSecret" -}}
 {{- printf "%s-runtime" (include "hopper.fullname" .) -}}
 {{- end -}}
@@ -87,4 +87,75 @@ bytes. With no limit set, Kubernetes gives the node's allocatable.
       containerName: {{ . }}
       resource: limits.memory
       divisor: "1"
+{{- end -}}
+
+{{/*
+The master key, for each pod that seals or opens with it: the hopper, and the vault pod. From the mounted Secret's files
+(a start without its file is refused), else from its keys as variables.
+*/}}
+{{- define "hopper.masterKeyEnv" -}}
+{{- if include "hopper.masterKeyFromFile" . -}}
+# The master key from the mounted Secret: a start without its file is refused.
+- name: HOPPER_MASTER_KEY_FILE
+  value: /run/hopper-master-key/master-key
+- name: HOPPER_MASTER_KEY_PREVIOUS_FILE
+  value: /run/hopper-master-key/previous
+{{- else -}}
+- name: HOPPER_MASTER_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "hopper.masterKeySecret" . }}
+      key: master-key
+      optional: true
+- name: HOPPER_MASTER_KEY_PREVIOUS
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "hopper.masterKeySecret" . }}
+      key: previous
+      optional: true
+{{- end -}}
+{{- end -}}
+
+{{/* The master key Secret's volume, when it is read from files. */}}
+{{- define "hopper.masterKeyVolume" -}}
+{{- if include "hopper.masterKeyFromFile" . -}}
+# Optional: with no Secret the pod starts and refuses, saying the key file is missing.
+- name: master-key
+  secret:
+    secretName: {{ include "hopper.masterKeySecret" . }}
+    defaultMode: 0440
+    optional: true
+{{- end -}}
+{{- end -}}
+
+{{/*
+The KMS that wraps the vault's data key, for the pod the vault runs in (the hopper, or the vault pod): AWS KMS, or the
+local KMS. Neither: the vault seals under the master key.
+*/}}
+{{- define "hopper.kmsEnv" -}}
+{{- if and .Values.kms.local.enabled .Values.kms.aws.region -}}
+{{- fail "kms.local.enabled and kms.aws.region: one KMS wraps the vault's data key; set one" -}}
+{{- end -}}
+{{- with .Values.kms.aws -}}
+{{- if .region -}}
+- name: HOPPER_KMS_REGION
+  value: {{ .region | quote }}
+- name: HOPPER_KMS_KEY
+  value: {{ required "kms.aws.key: the AWS KMS key that wraps the vault's data key (the hopper never makes one in AWS)" .key | quote }}
+{{- if .endpoint }}
+- name: HOPPER_KMS_URL
+  value: {{ .endpoint | quote }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if .Values.kms.local.enabled -}}
+# The local KMS (issue #586): it makes its key alias/hopper-vault at the vault's first ask.
+- name: HOPPER_KMS_URL
+  value: {{ printf "http://%s-kms:8080" (include "hopper.fullname" .) | quote }}
+{{- end -}}
+{{- end -}}
+
+{{/* Who runs the vault, and so asks the KMS: the vault pod, else the hopper. */}}
+{{- define "hopper.vaultRunner" -}}
+{{- if .Values.hopperVault.enabled }}vault{{ else }}hopper{{ end -}}
 {{- end -}}
