@@ -58,6 +58,17 @@ describe('sync loop: paused sources', () => {
     expect(sync.statuses()[0]).toMatchObject({ state: 'disabled', activeJobs: 0 });
   });
 
+  // Issue #1351: the pass is told why it takes nothing new, so its traffic line says it on every pass.
+  it('tells its pass why it takes nothing new, and nothing once unpaused', async () => {
+    const { source, sync, pause } = setup('no GitHub account connected');
+    const idle: (string | undefined)[] = [];
+    source.pass = async (run, why) => { idle.push(why); return run(); };
+    await sync.syncNow();
+    pause(undefined);
+    await sync.syncNow();
+    expect(idle).toEqual(['no GitHub account connected', undefined]);
+  });
+
   it('unpaused again: discovers and drops detail.paused', async () => {
     const { source, sync, pause } = setup('x');
     await sync.syncNow();
