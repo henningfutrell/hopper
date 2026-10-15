@@ -45,7 +45,7 @@ export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handof
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
-  hopper job rerun <id>                              run a failed, finished or rejected job again; it runs its item's approved text
+  hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)

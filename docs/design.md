@@ -1778,9 +1778,13 @@ after a job that finished without shipping stayed stuck, skipped without a word.
 **Run again** (issues #313, #354). An ended job need not wait for a human to clear its marker at the
 source, nor for a sync to offer its item again: `POST /ui/api/jobs/:id/rerun` (operator; the Ended
 panel's Run again button) asks the sync loop (`SourceRegistry.rerun`) to queue the item again now. Only
-the newest job of its key, status `failed` or `finished` (a result that is not wanted), whose end was
-reported (`finalReported`), of a running source that implements `JobSource.rerun` — else 409; unknown →
-404. On the job's report chain the source gives the item back (`JobSource.rerun`) — on GitHub
+the newest job of its key, status `failed`, `finished` (a result that is not wanted), `rejected` or `cancelled`
+(issue #1352), whose end was reported (`finalReported`), of a running source that implements `JobSource.rerun` —
+else 409; unknown → 404. **An item belongs to its repository and issue, not to the source that first saw it**
+(issue #1352): when a job's own source no longer runs (its instance was removed, as the polling `github-account`
+was), a running source that **adopts** it (`JobSource.adopts`: the job's repository is one of its job repositories)
+takes the item back in its place, and the new job is that source's. Its end need not be reported: the removed source
+is told nothing more. Retry, Continue and Push it ask the same (`takesBack`). On the job's report chain the source gives the item back (`JobSource.rerun`) — on GitHub
 (`takeBack`) a closed issue is **reopened** (the new job is cancelled while its issue is closed, and its
 own pull request's merge closes it again), `hopper:failed`, `hopper:done`, `hopper:rejected` and
 `hopper:claimed` go, and the source label comes back if it was taken off — and answers the item as it
