@@ -6,6 +6,7 @@ import { execCalls } from './exec.ts';
 import { imageCalls } from './images.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
+import { notASandbox, sandboxLabelled } from './owned.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
 export const API = '/v5.0.0/libpod';
@@ -25,6 +26,26 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     if (a.status === 404) return undefined;
     if (!ok(a)) throw refusal(`inspect the box ${id}`, a);
     return JSON.parse(a.text) as Inspected;
+  };
+
+  // Over the socket the hopper stops and removes only what carries a sandbox label (owned.ts, issue #1371); through a
+  // machine's relay its client holds the same line at its end (src/client/runtime.ts).
+  const guarded = via === socketCall;
+  /** Whether the box is there; refused when it carries no sandbox label. */
+  const boxThere = async (id: string): Promise<boolean> => {
+    if (!guarded) return true;
+    const c = await read(id);
+    if (c && !sandboxLabelled(c.Config?.Labels)) throw notASandbox(`box ${id}`);
+    return c !== undefined;
+  };
+  /** Whether the volume is there; refused when it carries no sandbox label. */
+  const volumeThere = async (name: string): Promise<boolean> => {
+    if (!guarded) return true;
+    const a = await call('GET', `/volumes/${enc(name)}/json`);
+    if (a.status === 404) return false;
+    if (!ok(a)) throw refusal(`inspect the volume ${name}`, a);
+    if (!sandboxLabelled((JSON.parse(a.text) as { Labels?: Record<string, string> | null }).Labels)) throw notASandbox(`volume ${name}`);
+    return true;
   };
 
   return {
@@ -78,6 +99,7 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async removeVolume(name) {
+      if (!(await volumeThere(name))) return;
       const a = await call('DELETE', `/volumes/${enc(name)}?force=true`);
       if (!ok(a) && a.status !== 404) throw refusal(`remove the volume ${name}`, a);
     },
@@ -121,11 +143,13 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async stop(id) {
+      if (!(await boxThere(id))) return;
       const a = await call('POST', `/containers/${enc(id)}/stop?timeout=${STOP_S}`, undefined, CALL_MS + STOP_S * 1000);
       if (!ok(a) && a.status !== 304 && a.status !== 404) throw refusal(`stop the box ${id}`, a);
     },
 
     async remove(id) {
+      if (!(await boxThere(id))) return;
       const a = await call('DELETE', `/containers/${enc(id)}?force=true&timeout=${STOP_S}`, undefined, CALL_MS + STOP_S * 1000);
       if (!ok(a) && a.status !== 404) throw refusal(`remove the box ${id}`, a);
     },

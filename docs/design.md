@@ -18756,6 +18756,36 @@ archive calls of both APIs, against the API double; a remote runtime has neither
 and outputs; another box or a `--secret` refused; in a step, the box's helper asks for the job and stops at its vault
 grant, and outside a step the same ask is refused).
 
+## Sandboxes are fresh and leave nothing (issue #1371, part 1, 2026-10-15)
+
+Owner direction: every sandbox a job or a step gets is fresh, made from a clean base, and destroyed with all its state
+on any outcome; nothing is reused across jobs; and cleanup acts only on resources labelled as sandbox resources, never
+on host Podman or the hopper stack. Issue #1349 makes a sandbox one step and burns it after; this part adds the two
+guards below. What is left is listed in the issue's pull request.
+
+- **A fresh home or no sandbox.** A need box (`need-box.ts`) and a check box (`check.ts`) start only on a home volume
+  they made: when `createVolume` answers that a volume of that name is there already — an earlier box's, or anyone's —,
+  the step or check does not run (`staleHome`, `src/sandbox/owned.ts`), and that volume is left as it is: the step
+  removes only what it made. The names already hold a random part, so this is a guard, not a path a step takes.
+- **Only sandbox resources are stopped or removed.** A **sandbox label** (`owned.ts`) is `io.hopper.box`,
+  `io.hopper.need` or `io.hopper.check` on a container or volume, and on Kubernetes the runtime's own `POD_LABEL` on its
+  pods (`true`) and claims (`claim`). The Podman and Docker adapters, over their socket, inspect a container before each
+  `stop` and `remove` and a volume before each `removeVolume`, and refuse one with no sandbox label ("the hopper leaves
+  the box …: it carries no sandbox label"); one already gone is no error, as before. The Kubernetes runtime reads the pod
+  or claim first (`KubeApi.readClaim`, new) and refuses the hopper's own pod, its Postgres's claim, or any other. The
+  check is in the adapters, not in the callers, so a wrong id in any caller (the reconcile pass, a sweep, a step's
+  cleanup) never reaches a stack container. Through a machine's relay the adapters do not check: the machine's client
+  holds the same line at its end (`src/client/runtime.ts`), so the relay carries no extra call.
+- **Residual risk.** The hopper still holds the runtime's socket (#603): the label check stops a mistake in the hopper,
+  not a compromise of its process. A volume or container from before labels, with none, is no longer removed by the
+  hopper; it shows as a cleanup problem and a person removes it.
+
+Tests: `test/sandbox/fresh-sandbox.test.ts` (a check box on a home that is there does not run and leaves it; on a fresh home
+it runs and leaves nothing), `test/sandbox/need-box.test.ts` (the same for a need box; a later step of the same template
+does not see a marker file an earlier one wrote), `test/adapters/podman-runtime.test.ts`,
+`test/adapters/docker-runtime.test.ts` and `test/sandbox/kubernetes.test.ts` (a stack container, a volume or claim of
+someone else's, the hopper's own pod: refused, nothing deleted).
+
 ## Approve several at once (issue #1018, 2026-10-13)
 
 Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at

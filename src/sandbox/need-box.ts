@@ -14,7 +14,7 @@
 // holds no proxy token, so the apply wrapper in it reads the plan file there (HOPPER_PLAN_FILE) and fetches nothing.
 // The outputs (paths relative to the step's work directory) come back as a tar in base64 after a mark at the end of the
 // box's output, which the job's log never shows. The box ends with the command's exit code; the box and its home volume
-// are removed after it.
+// are removed after it. It starts only on a home volume it made itself (issue #1371): never one of an earlier box.
 import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
@@ -25,8 +25,9 @@ import { boxImage, USER_LABEL } from './launch.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 import { filesTar } from './socket-http.ts';
 
-/** The label on every need box: its value is the hopper's instance id. The reconcile pass leaves it; the step removes it. */
-export const NEED_LABEL = 'io.hopper.need';
+import { NEED_LABEL, staleHome } from './owned.ts';
+
+export { NEED_LABEL };
 /** The most a step's files may hold in the box's environment, when its runtime takes no copy. */
 export const NEED_BOX_ENV_FILES_MAX_BYTES = 64 * 1024;
 /** The most a step's outputs tar may hold: it comes back in the box's output. */
@@ -201,6 +202,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
   const labels = { [NEED_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
   const volume = `${box.name}-home`;
   let id = '';
+  let madeHome = false;
   let shown = 0;
   let output = '';
   const show = (text: string): void => {
@@ -223,7 +225,8 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
   const home = join(box.dir, 'need-home.tar'), ready = join(box.dir, 'need-ready.tar');
   try {
     const { image, user } = await boxImage(runtime, box.template.image, box.template.tools ? [...box.template.tools] : undefined, box.template.readOnly);
-    await runtime.createVolume(volume, labels);
+    if (!(await runtime.createVolume(volume, labels))) throw staleHome(volume);
+    madeHome = true;
     id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env, limits: LIMITS, script: NEED_BOX_SCRIPT });
     if (io.signal.aborted) return { exit: 125, problem: 'stopped before it started' };
     await runtime.start(id);
@@ -271,6 +274,6 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     rmSync(home, { force: true });
     rmSync(ready, { force: true });
     if (id) await runtime.remove(id).catch(() => {});
-    await runtime.removeVolume(volume).catch(() => {});
+    if (madeHome) await runtime.removeVolume(volume).catch(() => {});
   }
 }

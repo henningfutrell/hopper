@@ -7,6 +7,7 @@
 //   Scenario: build sends the Containerfile in a tar, only when the image is not there yet; a stream error fails it (issue #716)
 //   Scenario: inspect and list read Docker's names without the leading slash
 //   Scenario: stop, remove and volumes: gone is no error, and removing keeps the volumes
+//   Scenario: stop, remove and removeVolume refuse what carries no sandbox label (issue #1371)
 //   Scenario: a rootful Docker is a problem: the hopper launches boxes only through a rootless runtime
 //   Scenario: a box's start check is its health check, which Docker runs on its own interval; startCheck reads the last
 //     run (issue #708)
@@ -124,11 +125,14 @@ describe('the Docker container runtime', () => {
   });
 
   it('stop, remove and volumes: gone is no error, and removing keeps the volumes', async () => {
+    let made = false;
     api = await startFakeRuntimeApi([
+      on('GET', `${API}/containers/d0cker/json`, { status: 200, body: { Id: 'd0cker', Name: `/${spec.name}`, Config: { Labels: spec.labels }, State: { Status: 'running' } } }),
       on('POST', `${API}/containers/d0cker/start`, { status: 204 }),
       on('POST', `${API}/containers/d0cker/stop`, { status: 204 }),
       on('DELETE', `${API}/containers/d0cker`, { status: 204 }),
-      on('POST', `${API}/volumes/create`, { status: 201, body: {} }),
+      on('POST', `${API}/volumes/create`, () => { made = true; return { status: 201, body: {} }; }),
+      on('GET', `${API}/volumes/home`, () => (made ? { status: 200, body: { Name: 'home', Labels: { 'io.hopper.box': 'i-1' } } } : { status: 404, body: { message: 'no such volume' } })),
       on('DELETE', `${API}/volumes/home`, { status: 204 }),
     ]);
     const rt = createDockerRuntime(api.socket);
@@ -145,6 +149,18 @@ describe('the Docker container runtime', () => {
     expect(removed.query.get('force')).toBe('true');
     expect(removed.query.get('v')).toBeNull();
     expect(api.seen.find((r) => r.path === `${API}/volumes/create`)!.body).toEqual({ Name: 'home', Labels: { 'io.hopper.box': 'i-1' } });
+  });
+
+  it('stop, remove and removeVolume refuse what carries no sandbox label (issue #1371)', async () => {
+    api = await startFakeRuntimeApi([
+      on('GET', `${API}/containers/stack/json`, { status: 200, body: { Id: 'stack', Name: '/hopper-hopper-1', Config: { Labels: { 'com.docker.compose.project': 'hopper' } }, State: { Status: 'running' } } }),
+      on('GET', `${API}/volumes/hopper_pgdata`, { status: 200, body: { Name: 'hopper_pgdata', Labels: { 'com.docker.compose.project': 'hopper' } } }),
+    ]);
+    const rt = createDockerRuntime(api.socket);
+    await expect(rt.stop('stack')).rejects.toThrow('the hopper leaves the box stack: it carries no sandbox label');
+    await expect(rt.remove('stack')).rejects.toThrow('the hopper leaves the box stack: it carries no sandbox label');
+    await expect(rt.removeVolume('hopper_pgdata')).rejects.toThrow('the hopper leaves the volume hopper_pgdata: it carries no sandbox label');
+    expect(api.seen.filter((r) => r.method !== 'GET')).toEqual([]);
   });
 
   it('a rootful Docker is a problem: the hopper launches boxes only through a rootless runtime', async () => {
