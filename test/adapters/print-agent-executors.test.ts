@@ -4,9 +4,9 @@
 // resuming the same session) or failed (design.md "Print-mode agent executors"). The CLIs are stand-ins
 // that print the JSON events each real one prints.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
@@ -14,6 +14,7 @@ import type { TaskCount } from '../../src/domain/task-count.ts';
 import { createPrintAgentExecutor, type PrintAgent } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { userSystemd } from '../support/systemd.ts';
+import { useStandInPodman } from '../support/stand-in-podman.ts';
 
 const FAKE = join(import.meta.dirname, 'fake-print-agent.mjs');
 // Its own per run: the job's TMPDIR is a link in /tmp named for the job id (issue #506), and runs share /tmp.
@@ -24,8 +25,6 @@ let work: string;
 
 /** Whether bubblewrap runs here as the job's sandbox needs it (issue #1295): where it cannot, a turn runs as before. */
 const bwrapRuns = spawnSync('bwrap', ['--dev-bind', '/', '/', '--proc', '/proc', '--unshare-pid', '--unshare-ipc', '--die-with-parent', 'true']).status === 0;
-// A stand-in podman (issue #1295): its socket service runs until it is stopped, so a turn's socket left behind shows.
-const FAKE_PODMAN = '#!/bin/sh\ncase "$*" in *"system service"*) while :; do sleep 1; done;; esac\nexit 0\n';
 /** The job's socket service, while it runs: its stand-in, named by its socket. */
 const socketRuns = (): boolean => spawnSync('pgrep', ['-f', `hopper-runtime-${ID}/podman/podman.sock`]).status === 0;
 
@@ -33,10 +32,7 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-print-agent-'));
   work = join(dir, 'work');
   process.env.FAKE_AGENT_DIR = dir;
-  // The job's container runtime set up with a stand-in podman, never this machine's.
-  mkdirSync(join(dir, 'bin'));
-  writeFileSync(join(dir, 'bin', 'podman'), FAKE_PODMAN, { mode: 0o755 });
-  process.env.PATH = `${join(dir, 'bin')}${delimiter}${process.env.PATH ?? ''}`;
+  useStandInPodman(dir);
   // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
   delete process.env.HOPPER_URL;
 });
