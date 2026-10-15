@@ -4,9 +4,9 @@
 // resuming the same session) or failed (design.md "Print-mode agent executors"). The CLIs are stand-ins
 // that print the JSON events each real one prints.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
@@ -22,10 +22,21 @@ const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online:
 let dir: string;
 let work: string;
 
+/** Whether bubblewrap runs here as the job's sandbox needs it (issue #1295): where it cannot, a turn runs as before. */
+const bwrapRuns = spawnSync('bwrap', ['--dev-bind', '/', '/', '--proc', '/proc', '--unshare-pid', '--unshare-ipc', '--die-with-parent', 'true']).status === 0;
+// A stand-in podman (issue #1295): its socket service runs until it is stopped, so a turn's socket left behind shows.
+const FAKE_PODMAN = '#!/bin/sh\ncase "$*" in *"system service"*) while :; do sleep 1; done;; esac\nexit 0\n';
+/** The job's socket service, while it runs: its stand-in, named by its socket. */
+const socketRuns = (): boolean => spawnSync('pgrep', ['-f', `hopper-runtime-${ID}/podman/podman.sock`]).status === 0;
+
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-print-agent-'));
   work = join(dir, 'work');
   process.env.FAKE_AGENT_DIR = dir;
+  // The job's container runtime set up with a stand-in podman, never this machine's.
+  mkdirSync(join(dir, 'bin'));
+  writeFileSync(join(dir, 'bin', 'podman'), FAKE_PODMAN, { mode: 0o755 });
+  process.env.PATH = `${join(dir, 'bin')}${delimiter}${process.env.PATH ?? ''}`;
   // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
   delete process.env.HOPPER_URL;
 });
@@ -36,7 +47,7 @@ beforeEach(() => {
   rmSync(join(dir, 'agent-calls.jsonl'), { force: true });
 });
 
-interface Call { argv: string[]; cwd: string; env: Record<string, string | undefined> }
+interface Call { argv: string[]; cwd: string; env: Record<string, string | undefined>; sandbox: { sandboxed?: string; containerHost?: string; pid: number } }
 const calls = (): Call[] => readFileSync(join(dir, 'agent-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Call);
 const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 
@@ -120,6 +131,20 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(calls().at(-1)!.argv).toEqual([...resumed(session), 'French.']);
   });
 
+  // Issue #1295: a turn's agent runs as Claude does in a pane, in the job's sandbox, with podman a client of the job's
+  // socket; that socket runs in the turn's scope only while the agent runs.
+  it('runs the CLI in the job\'s sandbox, with the job\'s socket started for the turn and stopped when it ends', async () => {
+    reply('Done.\n\nHOPPER_DONE');
+    expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }).ctx)).toMatchObject({ kind: 'finished' });
+    const [call] = calls();
+    if (bwrapRuns) {
+      expect(call!.sandbox).toMatchObject({ sandboxed: '1', containerHost: expect.stringMatching(new RegExp(`^unix:///.*/hopper-runtime-${ID}/podman/podman\\.sock$`)) });
+      // Its own PID namespace: the agent is one of the first processes in it.
+      expect(call!.sandbox.pid).toBeLessThan(10);
+    } else expect(call!.sandbox).toMatchObject({ sandboxed: undefined, containerHost: undefined });
+    expect(socketRuns()).toBe(false);
+  });
+
   it('HOPPER_FAILED fails the job with its reason', async () => {
     reply('Tried.\nHOPPER_FAILED the repo is archived');
     expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }).ctx)).toEqual({ kind: 'failed', error: 'the repo is archived' });
@@ -164,8 +189,10 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(saved[0]).toEqual({ cwd: work });
     const running = (): boolean => spawnSync('pgrep', ['-f', leftover]).status === 0;
     try {
-      // The CLI ends as soon as it spawned the leftover; its exec under its name can come a moment later.
-      await vi.waitFor(() => expect(running()).toBe(true), { timeout: 5000 });
+      // The CLI ends as soon as it spawned the leftover; its exec under its name can come a moment later. In the job's
+      // sandbox (issue #1295), its PID namespace ends with the turn, and the leftover with it.
+      if (bwrapRuns) await vi.waitFor(() => expect(running()).toBe(false), { timeout: 5000 });
+      else await vi.waitFor(() => expect(running()).toBe(true), { timeout: 5000 });
       const job = { ...ctx.job, status: 'finished' as const, executorState: saved.at(-1)! };
       expect(await ex.cleanup!(job)).toEqual({ kept: [] });
       expect(running()).toBe(false);
