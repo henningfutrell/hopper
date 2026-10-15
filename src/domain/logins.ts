@@ -135,6 +135,15 @@ export interface LastAccountRepository {
 }
 
 /**
+ * What a sign-in request of `service` on `machineId` shows (issue #1269): its last account, `null` when none was ever read
+ * there, `undefined` with no machine or for a service whose account is not read (`LAST_ACCOUNT_TOOLS`).
+ */
+export function lastAccountOf(repo: Pick<LastAccountRepository, 'get'>, machineId: MachineId | undefined, service: string): LastAccount | null | undefined {
+  if (!machineId || !(LAST_ACCOUNT_TOOLS as readonly string[]).includes(service)) return undefined;
+  return repo.get(machineId, service) ?? null;
+}
+
+/**
  * What the requester of a login says of it (issue #1110): only it knows whether the login worked. `completed` ends the
  * login, or completes one that failed; `failed` fails an open login, or reopens a completed or dismissed one, with
  * `reason`.

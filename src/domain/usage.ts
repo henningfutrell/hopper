@@ -1,6 +1,6 @@
 // Usage and accounts on the wire (design.md "Usage and accounts (issue #18)"): what a usage source
 // says beside its readings, the usage report, and who each part acts as. Re-exported by types.ts.
-import type { MachineId } from './types.ts';
+import type { LastAccount, MachineId } from './types.ts';
 
 /** One usage budget reading. `used`/`limit` share a unit; `unit` names it. */
 export interface UsageReading {
@@ -160,6 +160,8 @@ export interface ToolAccountMachine {
   signIn?: true;
   /** The infra credentials the machine's job user holds (issues #1128 part 7, #1248): a machine holding any is not ready. Absent: none, or not read. */
   infraCredentials?: string[];
+  /** Not signed in (issue #1269): who the machine's tool was last signed in as, `null` when none is known; absent when not read. */
+  lastAccount?: LastAccount | null;
 }
 
 /** One tool account: a service and the identity its machines are signed in as. No identity: the machines signed in as nobody. */

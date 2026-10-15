@@ -5,7 +5,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ToolAccount, ToolAccountsReport } from '../../src/domain/types.ts';
+import type { ToolAccount, ToolAccountMachine, ToolAccountsReport } from '../../src/domain/types.ts';
 import { accountTitle, machineLine, signedOutLines, signedOutMachines } from '../../ui/src/model/tool-accounts.ts';
 
 type El = ReturnType<typeof createElement>;
@@ -95,6 +95,17 @@ describe('the Accounts view', () => {
     for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     expect(posts).toEqual([{ path: '/ui/api/tool-accounts/sign-in', body: { source: 'claude-server' } }]);
     expect(window.location.hash).toBe('#logins');
+  });
+
+  it('a machine signed in as nobody names who it was last signed in as, or that none is known there (issue #1269)', async () => {
+    const out = (lastAccount: ToolAccountMachine['lastAccount']): ToolAccount => ({ ...SIGNED_OUT, machines: [{ ...SIGNED_OUT.machines[0]!, lastAccount }] });
+    await render({ accounts: [SIGNED_IN, out({ machineId: 'm3', service: 'claude', identity: 'old@example.com', organization: 'Example Org', capturedAt: at(600) })] });
+    const lines = () => [...document.querySelectorAll('[data-slot="last-account"]')].map((e) => e.textContent);
+    expect(lines()).toEqual(['Last signed in as old@example.com (Example Org) on Server']);
+    await act(async () => { root?.unmount(); });
+    vi.resetModules();
+    await render({ accounts: [out(null)] });
+    expect(lines()).toEqual(['No previous account known for this machine (Server)']);
   });
 
   it('a machine whose home holds infra credential folders is flagged with their names (issue #1128 part 7)', async () => {

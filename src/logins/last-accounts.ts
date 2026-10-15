@@ -2,7 +2,7 @@
 // that tool on that machine says who to sign in as. Read from the usage sources' accounts (`claude auth status`), only while
 // the tool reads signed in: a signed-out read keeps the one before. The logins' sweep records them at each tick, so a sign-in
 // that completed, which its source reads again at once, is kept a tick later. Only the label — identity, organization, when — is kept, in the database; never a token.
-import { LAST_ACCOUNT_TOOLS, type LastAccount, type LastAccountRepository, type Login, type UsageSourceReport } from '../domain/types.ts';
+import { lastAccountOf, type LastAccount, type LastAccountRepository, type Login, type UsageSourceReport } from '../domain/types.ts';
 
 export interface LastAccounts {
   /** Keep each machine's account the usage sources read signed in now; one the same as kept, read no later, is not written again. */
@@ -30,10 +30,6 @@ export function createLastAccounts(o: { repo: LastAccountRepository; sources: ()
   };
   return {
     record,
-    of(login) {
-      const service = serviceOfTool(login.tool);
-      if (!login.machineId || !(LAST_ACCOUNT_TOOLS as readonly string[]).includes(service)) return undefined;
-      return o.repo.get(login.machineId, service) ?? null;
-    },
+    of: (login) => lastAccountOf(o.repo, login.machineId, serviceOfTool(login.tool)),
   };
 }
