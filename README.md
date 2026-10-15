@@ -77,16 +77,21 @@ compose` works the same everywhere below).
 ```sh
 mkdir hopper && cd hopper
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
-podman compose up -d
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+bash hopper-service.sh install                                       # the stack under hopper-compose.service, with linger
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 # save the master key it shows once (the UI banner only, never the log) in your password manager, then:
 podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
 bash master-key.sh seal                                              # paste it; sealed to this host, never in a file
-bash master-key.sh run podman compose up -d --force-recreate         # each start: the key is unsealed for it alone
+systemctl --user restart hopper-compose.service                      # each start: the key is unsealed for compose alone
 podman compose exec hopper claude                                    # once: /login, then /exit
 # then Sources → GitHub account: choose the repositories jobs may come from
-systemctl --user enable podman-restart.service                        # once: start it again after a reboot
 ```
+
+The service owns the stack (issue #1320): with rootless Podman the published port belongs to whoever started the
+containers, and goes away when that terminal or agent exits. Start, restart and update through the service, never
+`podman compose up` by hand; it starts the stack at boot, and every minute checks the port from the host and restarts
+the stack when it does not answer. Docker needs no service: `docker compose up -d`.
 
 The container is not a machine: jobs run on attached machines ("Add machines"). No `.env`: the hopper keeps its
 settings and secrets itself, set in the UI; the master key and what compose needs are given at launch. Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the image tag; every image carries its own `compose.yaml` and the update: one command, the update notice gives it: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>` — it asks for the master key unless it is given at launch and refuses without it, uses the compose tool that started the stack, backs up the database, puts in the image's `compose.yaml`, restarts the whole stack on the new image, never the hopper alone, and checks the image, the health and the master key; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: give a setting it names at launch (`export HOPPER_BIND=0.0.0.0` for a LAN install), the rest in `compose.override.yaml`.

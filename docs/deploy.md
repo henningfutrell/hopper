@@ -108,7 +108,7 @@ key from you. No file holds the key in plaintext, and no log line holds it (the 
 podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
 bash master-key.sh seal                    # paste the key from your password manager; nothing is shown
 bash master-key.sh status                  # sealed with systemd-creds (or kek), and it unseals on this host
-bash master-key.sh run podman compose up -d --force-recreate    # each start: the key goes to compose only
+systemctl --user restart hopper-compose.service                 # each start: the key goes to compose only
 ```
 
 - **How it seals.** With `systemd-creds --user` (systemd 256 and later; as root, `systemd-creds`): under the host's
@@ -116,7 +116,8 @@ bash master-key.sh run podman compose up -d --force-recreate    # each start: th
   key-encryption key of this host, made once, mode 600, at `~/.config/hopper/master-key.kek` (never in the compose
   folder or a volume), and openssl, in `hopper-master-key.enc`. `HOPPER_KEY_SEAL=systemd-creds` or `kek` picks one.
   Neither file opens on another host.
-- **At launch.** `bash master-key.sh run <command>` unseals the key and gives it to the command as
+- **At launch.** The user service ("The user service" below) unseals it at each start. Without the service,
+  `bash master-key.sh run <command>` unseals the key and gives it to the command as
   `HOPPER_MASTER_KEY`, for that process only. A sealed key that does not unseal stops it before the command runs. With
   `HOPPER_MASTER_KEY` given and no key sealed here yet, it seals that key first: the first start with the key seals it.
 - **Update.** The update unseals it by itself when you give no key (`hopper update script | bash -s -- <image>`, in the
@@ -124,8 +125,8 @@ bash master-key.sh run podman compose up -d --force-recreate    # each start: th
 - **A wrong or missing key.** The hopper does not start, and names the key it needs by its fingerprint. Seal the right
   key again from your password manager: `bash master-key.sh seal`.
 - **Rotation.** `bash master-key.sh rotate` rotates the key of the running hopper and seals the new one in the same
-  step. Then recreate the hopper with it: `bash master-key.sh run podman compose up -d --force-recreate --no-deps
-  hopper`. While the key is sealed to the host, the UI's **Rotate the master key** is refused: it cannot seal the new key.
+  step. Then restart the stack with it: `systemctl --user restart hopper-compose.service` (without the service:
+  `bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper`). While the key is sealed to the host, the UI's **Rotate the master key** is refused: it cannot seal the new key.
 - **Keep the key in a password manager too.** A new host, a new TPM or a lost key-encryption key opens nothing
   sealed. Whoever runs as your user on this host can unseal the key, as the launch does.
 - **Host install** (systemd --user): seal it with `systemd-creds --user encrypt --name=hopper-master-key - <file>`, and
@@ -229,24 +230,28 @@ works the same — `docker compose` in place of `podman compose` everywhere belo
 
 ```sh
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
-podman compose up -d
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+bash hopper-service.sh install            # the stack under hopper-compose.service ("The user service" below)
 ```
+
+With Docker, `docker compose up -d` in place of the last two lines: Docker's daemon keeps the port.
 
 Then open `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 There is no bootstrap login: a new hopper creates no user, no password and no login code (issue #238).
 
 **Save the master key now.** The first start makes the master key and shows it once, in the UI banner, to the admin
 (**Show the key (once)**). It is never in `podman compose logs hopper`: the log has only its fingerprint. Put it in
-your password manager. Then give it at launch, in the environment compose starts with (never in a file, issue #894), and
-recreate the hopper:
+your password manager. Then seal it to this host (never in a file, issue #894) and restart the stack through the
+service, which unseals it for compose at each start ("The master key sealed to the host" above):
 
 ```sh
-read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY    # paste the 64 hex digits; nothing is shown
-podman compose up -d --force-recreate --no-deps hopper
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+bash master-key.sh seal                            # paste the 64 hex digits; nothing is shown
+systemctl --user restart hopper-compose.service
 ```
 
-Or seal it to this host once, and start with `bash master-key.sh run podman compose up -d --force-recreate` ("The master
-key sealed to the host" above). Without it, a new container on the same database does not start ("The master key"
+Without the service (Docker): `read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`, then `docker compose up -d
+--force-recreate --no-deps hopper`. Without it, a new container on the same database does not start ("The master key"
 above). No volume or file holds it in plaintext. A container keeps the key it was started with: give it again at each
 `up` that recreates the hopper.
 
@@ -309,9 +314,7 @@ is only in the hopper's environment, given at launch.
   that mount too, or that range in `HOPPER_LAN_PEERS`.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
-  nothing starts them after a reboot by itself: `systemctl --user enable podman-restart.service` (it
-  starts every container whose restart policy is `always` or `unless-stopped`) and
-  `sudo loginctl enable-linger "$USER"`, once.
+  nothing starts them after a reboot by itself: the user service does, with linger on ("The user service" below).
 - **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
@@ -357,7 +360,8 @@ is only in the hopper's environment, given at launch.
        `compose.override.yaml.bak`); an update with no person removes it only with `HOPPER_UPDATE_FIX_OVERRIDE=1`. An
        override setting that gives another value than one `compose.yaml` fixes is a warning: the override's value wins.
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
-       data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image. Every container is made again on the new
+       data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image; when `hopper-compose.service` owns the stack
+       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
        `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
        the old `compose.yaml` and `compose.override.yaml` back, points the image tag the old file names at the image
@@ -365,7 +369,7 @@ is only in the hopper's environment, given at launch.
        back and the stack that runs is not touched.
     6. **Checks the result**: the hopper's container runs the image pulled (the image ids match), answers `/api/health`
        (it waits up to `HOPPER_UPDATE_WAIT` seconds, 180 by default, and shows the last log lines when the container
-       stops: a wrong master key stops it), has its master key (`hopper master-key status` is not `missing`), and the
+       stops: a wrong master key stops it), answers on its published port from the host (issue #1320), has its master key (`hopper master-key status` is not `missing`), and the
        stack has no drift (`hopper update drift` exits 0). Then it says `hopper update: done: …` with the image and the
        key's fingerprint, and exits 0. When a check fails, it says which and exits 1.
     7. **Removes the older hopper images** (issue #1120), once every check passed: each image labelled
@@ -463,6 +467,47 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 **From the earlier container deploy** (`deploy/compose.yaml --profile container`, removed): its database
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
+
+### The user service
+
+Issue #1320. With rootless Podman, the published port is served by a `rootlessport` process that belongs to whoever
+started the hopper's container. Started from a terminal, or by an agent that recreates the hopper, that process lives
+under the caller: when the caller exits, the port goes away while the container still shows `Up`. So the stack runs
+under a user service of its own. `hopper-service.sh` is in every image. Save it beside `compose.yaml` and
+`master-key.sh`, and run it in that folder:
+
+```sh
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+bash hopper-service.sh install       # write the units, turn on linger, start the stack through the service
+bash hopper-service.sh uninstall     # stop the stack and remove the units; the data stays
+```
+
+- **`hopper-compose.service`** (in `~/.config/systemd/user`, `Type=oneshot`, `RemainAfterExit=yes`) owns the stack: the
+  containers' `conmon` and `rootlessport` processes are in its cgroup. Its start takes the stack down and starts it
+  again, with the master key sealed to this host (`bash master-key.sh run …`, "The master key sealed to the host"), for
+  compose only: never a file or a volume. With no key sealed here, it starts the stack with no key: a new hopper makes
+  one; a hopper that keeps secrets refuses to start and names the key it needs. Its stop takes the stack down; the
+  volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at the install.
+- **`hopper-compose-check.timer`** runs `hopper-compose-check.service` every minute. It reads the port the hopper's
+  container publishes (`podman port`) and connects to it from the host (loopback for `0.0.0.0`). When the container runs
+  and the port does not answer, twice, 10 seconds apart (`HOPPER_SERVICE_RETRY`), it restarts `hopper-compose.service`.
+  It does nothing while the service is stopped or the container does not run: `restart: unless-stopped` and the
+  service's own start cover those.
+- **Linger.** The install turns it on (`loginctl enable-linger`), so the user's manager, and the stack with it, starts
+  at boot and stays after the last logout. When the user may not, it says the line: `sudo loginctl enable-linger
+  "$USER"`. `podman-restart.service` is not needed: the service's start makes every container again.
+- **Settings.** The settings `compose.yaml` names (`HOPPER_PORT`, `HOPPER_BIND`, `COMPOSE_PROFILES`, …) that are set
+  where the install runs go into the unit as `Environment=` lines, and `HOPPER_PODMAN_SOCKET_HOST` when `podman.socket`
+  is on. Never a secret (a name with `KEY`, `TOKEN`, `SECRET` or `PASSWORD`), and never `HOPPER_IMAGE`: the update
+  writes the image into `compose.yaml`. Run the install again to change them.
+- **Restarts and updates go through it.** Restart: `systemctl --user restart hopper-compose.service`, never `podman
+  compose up` by hand. The update ("Upgrade" below) restarts the stack through the service when it owns the stack, and
+  then checks the port from the host too. It needs the key sealed here, and stops before it changes anything when none
+  is, or when the key given is another. It puts in the new image's `hopper-service.sh`. On Podman with no service, it
+  says the line that installs one.
+- **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service`.
+- **Docker and Kubernetes.** Not needed and not used: Docker's daemon serves the port, and on Kubernetes ("On
+  Kubernetes, with Helm") the cluster does.
 
 ### Keep a hopper in WSL running
 

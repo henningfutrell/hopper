@@ -57,11 +57,13 @@ export const CONFLICT_EXIT = 4;
 
 /**
  * `hopper master-key script` (issue #1296): scripts/master-key.sh of this build, which seals the master key to the host and
- * unseals it at launch. Saved beside compose.yaml; the update replaces it there with the new image's.
+ * unseals it at launch. `hopper service script` (issue #1320): scripts/hopper-service.sh, which puts the compose stack under
+ * a user service of its own. Each is saved beside compose.yaml; the update replaces it there with the new image's.
  */
-export function printMasterKeyScript(args: string[], io: CliIo, appDir = BUILD_DIR): number {
-  if (args.length > 0) { io.err('hopper master-key: usage: hopper master-key script\n'); return 2; }
-  try { io.out(readFileSync(join(appDir, 'scripts', 'master-key.sh'), 'utf8')); } catch { io.err(`hopper master-key: this build ships no scripts/master-key.sh (${appDir})\n`); return 1; }
+export function printHostScript(command: 'master-key' | 'service', args: string[], io: CliIo, appDir = BUILD_DIR): number {
+  const file = command === 'master-key' ? 'master-key.sh' : 'hopper-service.sh';
+  if (args.length > 0) { io.err(`hopper ${command}: usage: hopper ${command} script\n`); return 2; }
+  try { io.out(readFileSync(join(appDir, 'scripts', file), 'utf8')); } catch { io.err(`hopper ${command}: this build ships no scripts/${file} (${appDir})\n`); return 1; }
   return 0;
 }
 

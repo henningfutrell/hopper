@@ -3,16 +3,23 @@
 # attached machines. No host install, nothing to build, nothing to set before the first start:
 #
 #   curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
-#   podman compose up -d
+#   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+#   bash hopper-service.sh install
 #   then open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
+#
+# The user service (issue #1320, docs/deploy.md "The user service"): with rootless Podman, the published port belongs to
+# whoever started the containers, and goes away when that terminal or agent exits while the containers still show Up.
+# hopper-compose.service owns the stack: start, restart (`systemctl --user restart hopper-compose.service`) and update
+# through it, never `podman compose up` by hand. It starts at boot (linger), and a timer checks the port from the host
+# every minute and restarts the stack when it does not answer. Docker needs none: `docker compose up -d`.
 #
 # The master key (issue #659, docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it, and
 # it is kept in no volume. The first start makes one and shows it once, in the UI only: never in the log (issue #685).
 # Save it in a password manager, then seal it to this host (issue #1296), so no start needs it from you again:
 #   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
 #   bash master-key.sh seal                                           (paste the key; nothing is shown)
-#   bash master-key.sh run podman compose up -d --force-recreate      (each start: it unseals the key for compose only)
-# Or give it at launch yourself — in the environment compose starts with, never in a file (issue #894):
+#   systemctl --user restart hopper-compose.service                   (each start: it unseals the key for compose only)
+# Without the service: bash master-key.sh run podman compose up -d --force-recreate. Or give it at launch yourself — in the environment compose starts with, never in a file (issue #894):
 #   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY      (paste the 64 hex digits; nothing is shown)
 #   podman compose up -d --force-recreate --no-deps hopper
 # A start without it, once secrets are kept, is refused, and says the fingerprint of the key it needs: nothing is deleted.
