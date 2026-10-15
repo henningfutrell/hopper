@@ -39,9 +39,13 @@ export function signInArgs(email?: string): string[] {
 // eslint-disable-next-line no-control-regex -- the colours a CLI prints are escape sequences
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g;
 
-/** The sign-in URL in what the tool printed: its first https URL; undefined until it shows one. */
+/** A terminal link (OSC 8) to an https URL: what `claude setup-token` prints, its visible text cut to the terminal's width. */
+// eslint-disable-next-line no-control-regex -- the link is an escape sequence
+const LINK = /\x1b\]8;[^;\x07\x1b]*;(https:\/\/[^\x07\x1b\s]+)/;
+
+/** The sign-in URL in what the tool printed: its first terminal link's target, else its first https URL; undefined until it shows one. */
 export function signInUrlIn(text: string): string | undefined {
-  return /https:\/\/[^\s'"<>]+/.exec(text.replace(ANSI, ''))?.[0];
+  return LINK.exec(text)?.[1] ?? /https:\/\/[^\s'"<>]+/.exec(text.replace(ANSI, ''))?.[0];
 }
 
 /** Why a code cannot be one: a code the page shows is one line of printable characters. */
@@ -60,9 +64,10 @@ function reasonOf(output: string, from: number, code: string | undefined, fallba
 
 /**
  * Start a sign-in: `file argv` with its stdin open. Resolves once it printed its URL; rejects when it ends first, or prints none
- * in `urlMs`. Stopped after `lifeMs` with no code, and `pasteMs` after the code when it has not ended.
+ * in `urlMs`. Stopped after `lifeMs` with no code, and `pasteMs` after the code when it has not ended. `enter` ends the code (a
+ * terminal in raw mode reads Enter as `\r`); `onOutput` sees each piece it prints.
  */
-export function startSignIn(file: string, argv: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; urlMs?: number; lifeMs?: number; pasteMs?: number } = {}): Promise<SignInRun> {
+export function startSignIn(file: string, argv: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; urlMs?: number; lifeMs?: number; pasteMs?: number; enter?: string; onOutput?: (text: string) => void } = {}): Promise<SignInRun> {
   const child = spawn(file, argv, { ...(o.cwd ? { cwd: o.cwd } : {}), ...(o.env ? { env: o.env } : {}), stdio: ['pipe', 'pipe', 'pipe'] });
   let output = '';
   let ended: { code: number | null; error?: string } | undefined;
@@ -78,7 +83,7 @@ export function startSignIn(file: string, argv: string[], o: { cwd?: string; env
   const life = setTimeout(kill, o.lifeMs ?? SIGN_IN_LIFE_MS);
   life.unref();
   child.stdin.on('error', () => undefined); // a tool that exits first answers its own exit code
-  for (const out of [child.stdout, child.stderr]) out.on('data', (c: Buffer) => { output = (output + c.toString('utf8')).slice(-OUTPUT_CAP); });
+  for (const out of [child.stdout, child.stderr]) out.on('data', (c: Buffer) => { const text = c.toString('utf8'); output = (output + text).slice(-OUTPUT_CAP); o.onOutput?.(text); });
   child.on('error', (e: NodeJS.ErrnoException) => end({ code: null, error: e.code === 'ENOENT' ? `not found: ${file}` : e.message }));
   child.on('close', (code) => end({ code }));
   let pasted = false;
@@ -89,7 +94,7 @@ export function startSignIn(file: string, argv: string[], o: { cwd?: string; env
       pasted = true;
       if (ended) return { ok: false, reason: `the sign-in ended first: ${reasonOf(output, 0, undefined, 'it stopped')}` };
       const from = output.length;
-      child.stdin.write(`${code.trim()}\n`);
+      child.stdin.write(`${code.trim()}${o.enter ?? '\n'}`);
       const timer = setTimeout(kill, o.pasteMs ?? SIGN_IN_PASTE_MS);
       const e = await exited();
       clearTimeout(timer);

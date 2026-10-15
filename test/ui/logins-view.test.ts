@@ -290,6 +290,36 @@ describe('a tool sign-in (issue #1128)', () => {
   });
 });
 
+describe('the Claude sign-in for pods (issue #1287)', () => {
+  const podSignIn = (over: Record<string, unknown> = {}) => pending({
+    kind: 'paste_code', tool: 'claude setup-token', jobId: undefined, laneId: undefined, machineId: undefined, run: 'sign-in', renewable: false, userCode: undefined,
+    verificationUrl: 'https://claude.com/cai/oauth/authorize?code=true&state=s2', host: 'claude.com', account: 'pods@example.com', ...over,
+  });
+  const form = () => document.querySelector<HTMLButtonElement>('[data-claude-pod-sign-in]');
+
+  it('an admin names the account and starts it; its card names the account and the hopper, and takes the code', async () => {
+    await boot('#logins', { logins: [podSignIn()], role: 'admin' });
+    const c = card()!;
+    expect(c.textContent).toContain('the Claude sign-in for pods, in the hopper');
+    expect(c.querySelector('[data-slot="login-details"]')!.textContent).toContain('pods@example.com');
+    expect(c.querySelector('[data-slot="sign-in-code"] input')).not.toBeNull();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Claude account"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ' pods@example.com ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { form()!.click(); });
+    await settle();
+    expect(daemon.bodies.at(daemon.posts.indexOf('POST /ui/api/logins/claude-setup-token'))).toEqual({ account: 'pods@example.com' });
+  });
+
+  it('a failed one says why and to start it again below; an operator sees no start', async () => {
+    await boot('#logins', { logins: [podSignIn({ status: 'failed', reason: 'OAuth error', endedAt: at(1), codeKept: false, verificationUrl: undefined })], role: 'operator' });
+    expect(card()!.textContent).toContain('Failed: OAuth error. Start it again below.');
+    expect(form()).toBeNull();
+  });
+});
+
 describe('the last account (issue #1269)', () => {
   const claude = (over: Record<string, unknown> = {}) => pending({ tool: 'claude', host: 'claude.com', userCode: undefined, ...over });
   const line = () => card()!.querySelector('[data-slot="login-last-account"]');

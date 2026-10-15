@@ -3,10 +3,14 @@
 // a login of kind `paste_code` on that machine, with no job: the person opens its URL, signs in, and pastes the code the page
 // shows, which goes to the tool. The tool's end completes or fails the login. One sign-in per machine and tool: a new one cancels
 // the one before. What runs on the machine is held in this process only: after a restart its login fails, and is started again.
+// The hopper's Claude sign-in for pods (issue #1287, design.md "The hopper's Claude sign-in for pods") is one more: `claude
+// setup-token` in the hopper itself, its login on no machine and naming the account; its end keeps the token it printed
+// (`keep`, the vault) before the login completes.
 import type { Clock, UsageSource } from '../domain/ports.ts';
 import type { Login, ToolSignIn } from '../domain/types.ts';
 import { codeProblem, SIGN_IN_LIFE_MS } from '../client/sign-in.ts';
 import type { LoginAction, Logins } from './service.ts';
+import { SETUP_TOKEN_TOOL, type SetupTokenRun } from './setup-token.ts';
 
 /** What a sign-in login names as its run. */
 export const SIGN_IN_RUN = 'sign-in';
@@ -17,6 +21,8 @@ export type SignInPaste = LoginAction | { ok: false; reason: 'bad_code'; message
 export interface SignIns {
   /** Start the sign-in of usage source `source`'s tool on its machine; `email`: the account to pre-fill. */
   start(source: string, o?: { email?: string }): Promise<SignInStart>;
+  /** Start the hopper's `claude setup-token` for the account `account` (an email), for `by`; its token is kept once it ends. */
+  startSetupToken(o: { account: string; by: string }): Promise<SignInStart>;
   /** Give the sign-in of login `id` the code its page showed; answers the login once the tool ended: completed, or failed and why. */
   paste(id: string, code: string): Promise<SignInPaste>;
   /** Stop each sign-in whose login ended (cancelled, dismissed, expired); fail each open sign-in login nothing here runs. */
@@ -27,17 +33,45 @@ export interface SignIns {
 
 const OPEN = new Set(['pending', 'expired']);
 
+/** A sign-in that runs: a tool's on a machine, or the hopper's setup token, on none. */
+type Run = Omit<ToolSignIn, 'machineId'> & { machineId?: string };
+
 export function createSignIns(o: {
   logins: Logins; sources: () => readonly UsageSource[]; clock: Clock; sweepMs?: number;
   /** A sign-in completed: the tool on `machineId` is signed in now (the not-signed-in questions there are answered). */
   onSignedIn?: (s: { machineId: string; tool: string; loginId: string }) => void;
+  /**
+   * The hopper's Claude sign-in for pods (issue #1287): `start` runs `claude setup-token`; `keep` keeps the token it printed
+   * for `account` and answers why it could not. Absent: none starts.
+   */
+  setupToken?: { start(): Promise<SetupTokenRun>; keep(k: { token: string; account: string; by: string }): Promise<string | undefined> };
 }): SignIns {
   const { logins } = o;
   /** The sign-ins running now, by login id. */
-  const runs = new Map<string, ToolSignIn>();
+  const runs = new Map<string, Run>();
   /** The sign-ins given their code, until the tool ends. */
   const pasting = new Set<string>();
   const isOpen = (l: Login | undefined): l is Login => l !== undefined && OPEN.has(l.status);
+
+  /** Its login, the sign-in before on its machine and tool cancelled (one per machine and tool). */
+  const open = (run: Run, account?: string): SignInStart => {
+    for (const [id, had] of runs) {
+      if (had.machineId !== run.machineId || had.tool !== run.tool) continue;
+      runs.delete(id);
+      had.cancel();
+      if (isOpen(logins.get(id))) logins.cancel(id);
+    }
+    const expiresAt = new Date(o.clock.now().getTime() + SIGN_IN_LIFE_MS).toISOString();
+    let login: Login;
+    try {
+      login = logins.report({ kind: 'paste_code', tool: run.tool, verificationUrl: run.url, expiresAt, ...(account ? { account } : {}) }, { ...(run.machineId ? { machineId: run.machineId } : {}), run: SIGN_IN_RUN, renewable: false });
+    } catch (e) {
+      run.cancel();
+      return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    runs.set(login.id, run);
+    return { ok: true, login };
+  };
 
   const signIns: SignIns = {
     async start(name, x = {}) {
@@ -50,23 +84,27 @@ export function createSignIns(o: {
       } catch (e) {
         return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
       }
-      // One per machine and tool: the one before is cancelled.
-      for (const [id, had] of runs) {
-        if (had.machineId !== run.machineId || had.tool !== run.tool) continue;
-        runs.delete(id);
-        had.cancel();
-        if (isOpen(logins.get(id))) logins.cancel(id);
-      }
-      const expiresAt = new Date(o.clock.now().getTime() + SIGN_IN_LIFE_MS).toISOString();
-      let login: Login;
+      return open(run);
+    },
+
+    async startSetupToken({ account, by }) {
+      const setup = o.setupToken;
+      if (!setup) return { ok: false, reason: 'no_sign_in', message: 'this hopper cannot run claude setup-token' };
+      let started: SetupTokenRun;
       try {
-        login = logins.report({ kind: 'paste_code', tool: run.tool, verificationUrl: run.url, expiresAt }, { machineId: run.machineId, run: SIGN_IN_RUN, renewable: false });
+        started = await setup.start();
       } catch (e) {
-        run.cancel();
         return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
       }
-      runs.set(login.id, run);
-      return { ok: true, login };
+      return open({
+        tool: SETUP_TOKEN_TOOL, url: started.url, cancel: () => started.cancel(),
+        async paste(code) {
+          const end = await started.paste(code);
+          if (!end.ok) return end;
+          const problem = await setup.keep({ token: end.token, account, by });
+          return problem ? { ok: false, reason: `the token was not kept: ${problem}` } : { ok: true };
+        },
+      }, account);
     },
 
     async paste(id, code) {
@@ -82,7 +120,7 @@ export function createSignIns(o: {
         const end = await run.paste(code.trim());
         if (end.ok) {
           logins.completed(id);
-          o.onSignedIn?.({ machineId: run.machineId, tool: run.tool, loginId: id });
+          if (run.machineId) o.onSignedIn?.({ machineId: run.machineId, tool: run.tool, loginId: id });
         } else logins.failed(id, end.reason);
       } finally {
         pasting.delete(id);
