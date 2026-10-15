@@ -164,7 +164,7 @@ describe('a job of the connected account holds no GitHub token (#652)', () => {
       name: 'holder', idempotent: false, validate: () => null,
       machineShell: () => localShell(),
       async run(ctx) {
-        env = { ...(await ctx.credentials!(join(work, '.hopper-scratch', ctx.job.id))) };
+        env = { ...(await ctx.credentials!(join(work, '.worktrees', '@scratch', ctx.job.id))) };
         await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve, { once: true }));
         return { kind: 'failed', error: 'stopped' };
       },
@@ -175,7 +175,7 @@ describe('a job of the connected account holds no GitHub token (#652)', () => {
     await waitFor(async () => env !== undefined, { what: 'the job to start', timeoutMs: 15_000 });
 
     const job = (await jobs(app))[0]!;
-    const dir = join(work, '.hopper-scratch', job.id, 'credentials');
+    const dir = join(work, '.worktrees', '@scratch', job.id, 'credentials');
     // The GitHub proxy's files (issue #563): the job's proxy token and hopper-gh; hopper-skill (issue #582) and
     // hopper-artifact (issue #624); and git's way to the hopper (issue #652). Never a GitHub token.
     const url = expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/);

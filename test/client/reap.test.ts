@@ -62,7 +62,7 @@ function reap(jobId = JOB, dir = scratch, env: NodeJS.ProcessEnv = process.env):
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'jh-reap-'));
-  scratch = join(root, 'work', '.hopper-scratch', JOB);
+  scratch = join(root, 'work', '.worktrees', '@scratch', JOB);
   mkdirSync(scratch, { recursive: true });
 });
 
@@ -74,7 +74,7 @@ afterEach(() => {
 describe('the reap at job end (issue #401)', () => {
   it('removes the job\'s TMPDIR link to its scratch dir (issue #506), never a link that points elsewhere', () => {
     const id = `job-506-${process.pid}`;
-    const own = join(root, 'work', '.hopper-scratch', id);
+    const own = join(root, 'work', '.worktrees', '@scratch', id);
     mkdirSync(own, { recursive: true });
     const link = `/tmp/hopper-${id}`;
     try {
@@ -105,7 +105,7 @@ describe('the reap at job end (issue #401)', () => {
     const out = reap();
     expect(readReap(out)).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
-    expect(existsSync(join(root, 'work', '.hopper-scratch'))).toBe(true);
+    expect(existsSync(join(root, 'work', '.worktrees', '@scratch'))).toBe(true);
   });
 
   it('keeps the scratch dir and names each repository holding uncommitted or unpushed work', () => {
@@ -164,7 +164,7 @@ describe('the reap at job end (issue #401)', () => {
   });
 
   it('reads nothing from a reap that did not finish', () => {
-    expect(readReap('hopper-kept /w/.hopper-scratch/j/repo\n')).toBeUndefined();
+    expect(readReap('hopper-kept /w/.worktrees/@scratch/j/repo\n')).toBeUndefined();
   });
 
   it('with no scratch dir named, stops the job\'s processes and removes nothing', () => {
@@ -194,7 +194,7 @@ describe('a job worktree linked to shared dependencies (issue #410)', () => {
   it('its node_modules link is no work of the job\'s: the worktree is removed, never with --force, and the shared dependencies stay', () => {
     const main = join(root, 'main');
     cloneAt(main);
-    const shared = join(root, 'work', '.hopper-scratch', 'deps', 'abc', 'node_modules');
+    const shared = join(root, 'work', '.worktrees', '@deps', 'abc', 'node_modules');
     mkdirSync(join(shared, 'left-pad'), { recursive: true });
     writeFileSync(join(shared, 'left-pad', 'index.js'), '');
     const tree = join(scratch, 'wt');
@@ -236,11 +236,11 @@ describe('the survey a sweep asks of a machine (issue #410)', () => {
 
   it('lists each scratch dir under the work trees with its age, and nothing that is no directory', () => {
     const work = join(root, 'work');
-    const old = join(work, '.hopper-scratch', OTHER);
+    const old = join(work, '.worktrees', '@scratch', OTHER);
     mkdirSync(old);
     const hour = Date.now() / 1000 - 3600;
     utimesSync(old, hour, hour);
-    writeFileSync(join(work, '.hopper-scratch', '.gitignore'), '*\n');
+    writeFileSync(join(work, '.worktrees', '.gitignore'), '*\n');
     const found = readSurvey(survey(work, join(root, 'nowhere')));
     expect(found?.scratch.map((d) => d.path).sort()).toEqual([old, scratch].sort());
     const aged = found!.scratch.find((d) => d.path === old)!;
@@ -249,11 +249,12 @@ describe('the survey a sweep asks of a machine (issue #410)', () => {
     expect(found!.scratch.find((d) => d.path === scratch)!.ageMs).toBeLessThan(60_000);
   });
 
-  it('lists each job worktree in the work trees\' workspace with its age (issue #1103), so one whose scratch dir is gone is swept too', () => {
+  it('lists each job worktree in the work trees\' .worktrees with its age (issue #1188), so one whose scratch dir is gone is swept too', () => {
     const work = join(root, 'work');
-    const tree = join(work, 'workspace', 'worktrees', `app-${OTHER}`);
+    const tree = join(work, '.worktrees', 'app', OTHER);
     mkdirSync(tree, { recursive: true });
-    writeFileSync(join(work, 'workspace', 'worktrees', '.gitignore'), '*\n');
+    mkdirSync(join(work, '.worktrees', '@deps', 'abc'), { recursive: true });
+    writeFileSync(join(work, '.worktrees', '.gitignore'), '*\n');
     const hour = Date.now() / 1000 - 3600;
     utimesSync(tree, hour, hour);
     const found = readSurvey(survey(work));
@@ -280,17 +281,17 @@ describe('the survey a sweep asks of a machine (issue #410)', () => {
 
 describe('what a client takes in a /reap or /survey body (issue #410)', () => {
   it('a job id and its own scratch dir, or work trees: nothing else reaches the script', () => {
-    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}` })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`));
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.worktrees/@scratch/${JOB}` })).toEqual(reapArgv(JOB, `/w/.worktrees/@scratch/${JOB}`));
     expect(scriptArgvOf('/reap', { jobId: JOB })).toEqual(reapArgv(JOB));
-    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, true));
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.worktrees/@scratch/${JOB}`, keep: true })).toEqual(reapArgv(JOB, `/w/.worktrees/@scratch/${JOB}`, true));
     expect(scriptArgvOf('/reap', { jobId: JOB, keep: 'yes' })).toBe('keep must be true or false');
-    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, discard: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, false, true));
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.worktrees/@scratch/${JOB}`, discard: true })).toEqual(reapArgv(JOB, `/w/.worktrees/@scratch/${JOB}`, false, true));
     expect(scriptArgvOf('/reap', { jobId: JOB, discard: 'yes' })).toBe('discard must be true or false');
-    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true, discard: true })).toBe('keep and discard cannot both be true');
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.worktrees/@scratch/${JOB}`, keep: true, discard: true })).toBe('keep and discard cannot both be true');
     expect(scriptArgvOf('/reap', { jobId: '-rf' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: 'a*' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: '/home/me' })).toBe('scratch must be the job\'s own scratch dir');
-    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${OTHER}` })).toBe('scratch must be the job\'s own scratch dir');
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.worktrees/@scratch/${OTHER}` })).toBe('scratch must be the job\'s own scratch dir');
     expect(scriptArgvOf('/survey', { roots: ['/w', '/x'] })).toEqual(surveyArgv(['/w', '/x']));
     expect(scriptArgvOf('/survey', { roots: ['relative'] })).toBe('roots must be at most 256 absolute paths');
     expect(scriptArgvOf('/survey', {})).toBe('roots must be at most 256 absolute paths');

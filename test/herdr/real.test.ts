@@ -86,7 +86,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     const { ctx } = contextFor(jobWith(payload, { id: randomUUID() }), undefined, { ...LOCAL, workTree: tree });
     const done = await executor.run(ctx);
     expect(done.kind, JSON.stringify(done)).toBe('finished');
-    const scratch = join(tree, '.hopper-scratch');
+    const scratch = join(tree, '.worktrees', '@scratch');
     expect(readFileSync(join(tree, 'where.txt'), 'utf8').trim().startsWith(`${scratch}/`)).toBe(true);
     expect(readFileSync(join(tree, 'scratchpad.txt'), 'utf8').trim().startsWith(`${scratch}/`)).toBe(true);
     // Only the job's own files show: the scratch dir ignores itself.

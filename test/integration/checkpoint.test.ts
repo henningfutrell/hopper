@@ -70,7 +70,7 @@ describe('taking a checkpoint', () => {
 
     const k = await a.user().engine.checkpoints.take(job.id);
     expect(k).toMatchObject({ machineId: 'local', branch: 'hopper/shed', base: BASE, commits: ['ccccccc Sand the shed'], session: true });
-    expect(herdr.checkpoints).toEqual([{ jobId: job.id, worktree: `${tree()}/workspace/worktrees/shed-${job.id}`, session: job.agentSession }]);
+    expect(herdr.checkpoints).toEqual([{ jobId: job.id, worktree: `${tree()}/.worktrees/shed/${job.id}`, session: job.agentSession }]);
     expect((await a.job(job.id)).checkpoint).toEqual(k);
     const kept = a.user().store.checkpoints.get(job.id)!;
     const patch = gunzipSync(kept.patch).toString('utf8');

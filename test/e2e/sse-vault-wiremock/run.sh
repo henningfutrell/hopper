@@ -101,7 +101,7 @@ if [ "$HELPER" = null ] || [ -z "$HELPER" ]; then
   podman exec $N-box test -x $HELPER || { say "no vault helper in the box"; exit 1; }
 fi
 say "job $JOBID running on $(jq -r .lane <<<"$JOB"); hopper-skill uses the job stream: $SSE; helper: $HELPER"
-CREDS=/home/agent/work/.hopper-scratch/$JOBID/credentials
+CREDS=/home/agent/work/.worktrees/@scratch/$JOBID/credentials
 podman exec $N-box mkdir -p "$CREDS"
 jq -r .token <<<"$JOB" | podman exec -i $N-box sh -c "umask 077; cat > $CREDS/token"
 jq -r .skill <<<"$JOB" | podman exec -i $N-box sh -c "umask 077; cat > $CREDS/skill"

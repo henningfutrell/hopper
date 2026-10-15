@@ -205,7 +205,7 @@ describe('a user connects their own GitHub', () => {
     const seen: Record<string, string>[] = [];
     const recorder: Executor = {
       name: 'recorder', idempotent: false, validate: () => null,
-      async run(ctx) { seen.push({ ...(await ctx.credentials?.(`/w/.hopper-scratch/${ctx.job.id}`)) }); return { kind: 'failed', error: 'recorded' }; },
+      async run(ctx) { seen.push({ ...(await ctx.credentials?.(`/w/.worktrees/@scratch/${ctx.job.id}`)) }); return { kind: 'failed', error: 'recorded' }; },
       resume: async () => ({ kind: 'failed', error: 'recorded' }),
     };
     const app = await start(f, { executor: 'recorder', seams: { executors: [recorder] } });
