@@ -85,10 +85,9 @@ export interface GitHubSourceOptions {
   /**
    * Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never.
    * And a repository's landing branch, from its landing batch settings (issue #1143); absent or undefined: no pull request is moved.
+   * And the change rule of a repository (issue #1076): a followed pull request's kind and its merge gate. Absent: the built-in rule.
    */
-  yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined;
-  /** The change rule of a repository (issue #1076): a followed pull request's kind and its merge gate. Absent: the built-in rule. */
-  changeRule?: (repo: string) => ChangeRule;
+  yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */

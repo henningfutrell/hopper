@@ -63,7 +63,7 @@
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
-import { strayHousekeeping } from './strays.ts';
+import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
@@ -96,9 +96,6 @@ export interface AfterDoneContext {
 
 const NOT_COMPLETE = /^not complete: /;
 
-/** The change kind of the job's followed pull request, as its follow last classified it (issue #1076). */
-const changeOf = (job: Job | undefined) => (job?.sourceState?.source as { seen?: PullRequestSeen } | undefined)?.seen?.change;
-
 /** Which follows a sync makes (issue #985): every one, only those in motion, or none. */
 export type FollowRound = 'all' | 'in_motion' | 'none';
 
@@ -110,18 +107,9 @@ export function createAfterDone(c: AfterDoneContext) {
   const newestOfItem = (j: Job) => !j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id;
   const rechecks = (j: Job) => rechecksMerge(j) && newestOfItem(j);
 
-  /**
-   * Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. A change
-   * kind that is new or changed is recorded first (issue #1076).
-   */
+  /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
-    const was = changeOf(store.jobs.get(jobId));
-    const now = (r.state as { seen?: PullRequestSeen }).seen?.change;
-    c.setSource(jobId, r.state);
-    if (now && (now.kind !== was?.kind || JSON.stringify(now.why) !== JSON.stringify(was.why))) {
-      store.events.append({ type: 'job.pull_request_classified', jobId, data: { pullRequest: r.pullRequest, kind: now.kind, why: now.why } });
-    }
-    if (r.retargeted) store.events.append({ type: 'job.pull_request_retargeted', jobId, data: { pullRequest: r.pullRequest, ...r.retargeted } });
+    keepFollowed(c, jobId, r);
     if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({

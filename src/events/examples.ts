@@ -1,6 +1,6 @@
 // One example `data` payload per event type, shaped like the real emitters produce them.
 // Used by docs/events.md and by the schema tests.
-import type { EventType } from '../domain/types.ts'; import { LANDING_BATCH_EXAMPLES } from './landing-batch-examples.ts'; import { MACHINE_DISK_EVENT_EXAMPLES } from './machine-disk-schemas.ts'; import { TERMINAL_EVENT_EXAMPLES } from './terminal-schemas.ts';
+import type { EventType } from '../domain/types.ts'; import { LANDING_BATCH_EXAMPLES } from './landing-batch-examples.ts'; import { MACHINE_DISK_EVENT_EXAMPLES } from './machine-disk-schemas.ts'; import { TERMINAL_EVENT_EXAMPLES } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_EXAMPLES } from './change-kind-schemas.ts';
 
 const advice = { action: 'proceed_full', reason: 'ok', details: { intent: 'x', gatesAsked: true }, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
 const start = { jobId: 'j1', laneId: 'm/lane-1', machineId: 'm', effectivePriority: 50, reason: 'idle lane' };
@@ -143,7 +143,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.pull_request_base_merged': { pullRequest: 'https://github.com/owner/repo/pull/14', commit: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', resolved: ['WHATS-NEW.md'] }, 'job.pull_request_retargeted': { pullRequest: 'https://github.com/owner/repo/pull/15', from: 'dev', to: 'main' },
   'job.pull_request_followed': { pullRequest: 'https://github.com/owner/repo/pull/14', part: false }, 'job.pull_request_seen': { pullRequest: 'https://github.com/owner/repo/pull/14', wait: 'checks_running' }, 'work_item.issue_closed': { key: 'https://github.com/owner/repo/issues/9', reason: 'completed', via: 'delivery' }, 'work_item.issue_reopened': { key: 'https://github.com/owner/repo/issues/9', via: 'read' }, 'source.request_withdrawn': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/8' },
   'contribution.changed': { from: { on: false }, to: { on: true }, by: 'owner' }, 'shrink_guard.changed': { from: { percent: 50 }, to: { percent: 30 }, by: 'owner' },
-  'job.pull_request_classified': { pullRequest: 'https://github.com/owner/repo/pull/14', kind: 'docs', why: ['README.md: docs path (**/*.md)'] },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high', holdHighPriority: false }, to: { enabled: true, threshold: 'medium', holdHighPriority: false }, by: 'admin' },
   'remote_access.changed': { from: { enabled: false, provider: 'cloudflare' }, to: { enabled: true, provider: 'cloudflare', provisioned: { provider: 'cloudflare', domain: 'hopper.example.com', accountId: 'a1b2', zoneId: 'z3c4', tunnelId: 'f1e2d3c4-0000-4000-8000-000000000000', dnsRecordId: 'r5d6' } }, credential: 'set', by: 'admin' },
@@ -301,5 +300,5 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'step.finished': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', exit: 0, seconds: 94, outputsBytes: 1048576 },
   'step.refused': { reason: 'the hopper has no Windows host build. It has: build-host.', host: 'build' },
   'vault.step_delivered': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
-  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again' }, ...LANDING_BATCH_EXAMPLES, ...MACHINE_DISK_EVENT_EXAMPLES, ...TERMINAL_EVENT_EXAMPLES,
+  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again' }, ...LANDING_BATCH_EXAMPLES, ...MACHINE_DISK_EVENT_EXAMPLES, ...TERMINAL_EVENT_EXAMPLES, ...CHANGE_KIND_EVENT_EXAMPLES,
 };
