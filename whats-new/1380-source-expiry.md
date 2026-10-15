@@ -1,0 +1,1 @@
+- When your GitHub connection ends, you stay signed in to the hopper: only GitHub is marked as needing a new connection, and you connect it again from Sources.
