@@ -32,11 +32,11 @@ describe('Sources view: GitHub', () => {
   });
 
   it('a GitHub App source not configured: a setup card names what is missing, says how to set it up, links its help, and shows no zeros (#1243)', async () => {
-    const setupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
+    const setupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
     await boot({ '/api/sources': { sources: [{ ...source('github-app', 'github-app', 'needs-setup', { mode: 'app', paused: 'no GitHub App configured' }), setupProblem }] } });
     const card = () => document.querySelector('[data-setup-problem="github-app"]');
     await vi.waitFor(() => expect(card()).not.toBeNull());
-    expect([...card()!.querySelectorAll('[data-setup-missing]')].map((e) => e.textContent)).toEqual(['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY']);
+    expect([...card()!.querySelectorAll('[data-setup-missing]')].map((e) => e.textContent)).toEqual(['appId', 'slug', 'private key']);
     expect(card()!.textContent).toContain('scripts/create-github-app.sh');
     expect(card()!.querySelector('a[href="/help/github-app-setup"]')).not.toBeNull();
     const stats = [...document.querySelectorAll('[data-source-sync="github-app"] [data-stat]')].map((e) => e.textContent);
@@ -173,7 +173,7 @@ describe('Sources view: GitHub', () => {
   });
 
   it('signed in with GitHub: the connection is the one GitHub piece, with its sync; an unset GitHub App that is on needs setup (#254, #1243)', async () => {
-    const setupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
+    const setupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
     await boot({
       '/api/sources': { sources: [
         source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' }),

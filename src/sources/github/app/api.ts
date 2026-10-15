@@ -38,8 +38,8 @@ interface Loaded {
 interface Installation { id: number; account?: { login?: string } | null }
 interface InstalledRepo { full_name: string }
 
-/** `app`: the identity now (github-app options + the key's variable); `keyEnv` names that variable in messages. */
-export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; baseUrl?: string; clock: Clock }): GitHubAppApi {
+/** `app`: the identity now (github-app options + the key kept in the vault). */
+export function createGitHubAppApi(o: { app(): GitHubAppLoad; baseUrl?: string; clock: Clock }): GitHubAppApi {
   const req = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
   // The reads that look for new jobs stop at the intake reserve, so a job's own calls still go (issue #983).
   const intake = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS, intake: true });
@@ -65,7 +65,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
   const need = (): Loaded => {
     const c = current();
     if ('reason' in c) {
-      const why = c.reason === 'missing' ? `set appId and slug in the plugins config and ${o.keyEnv} in the environment (create-github-app.sh)` : c.reason;
+      const why = c.reason === 'missing' ? 'set appId and slug in the plugins config and the private key on the setup card in Sources (create-github-app.sh)' : c.reason;
       throw new GitHubApiError(`no app configured: ${why}`, true);
     }
     return c;
@@ -78,7 +78,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       authError = undefined;
       return v;
     } catch (err) {
-      const e = toApiError(err, what, o.keyEnv);
+      const e = toApiError(err, what);
       if (e.status === 401) authError = e.message;
       throw e;
     }

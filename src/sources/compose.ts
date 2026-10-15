@@ -15,7 +15,7 @@ import type { Rejection } from './github/discover.ts';
 import type { JobArtifacts } from './github/completion.ts';
 import type { IssueGraphRecorder } from './github/graph.ts';
 import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
-import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
+import { createGitHubAppApi, GITHUB_APP_KEY_VARIABLE, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
 import { gitHubThread } from './github/thread.ts';
@@ -60,7 +60,7 @@ export interface GitHubSourceDeps {
   rerunnable: (keys: string[]) => Set<string>;
   /** Of the keys, those whose newest job was rejected: when, and the assignee it was taken for (issue #387). */
   rejections?: (keys: string[]) => Map<string, Rejection>;
-  /** An environment variable of the daemon (the App key). */
+  /** A secret by name: the App's key by `GITHUB_APP_KEY_VARIABLE`, which the user's runtime answers from the vault (issue #1243). */
   env(name: string): string | undefined;
   /** A double at the GitHubApi seam (tests). */
   api?: GitHubApi;
@@ -106,10 +106,10 @@ const listingOf = (o: GitHubSourceDeps) => ({
 export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions): JobSource {
   const app = (): GitHubAppLoad => loadGitHubApp({
     ...(options.appId === undefined ? {} : { appId: options.appId }), ...(options.slug === undefined ? {} : { slug: options.slug }),
-    privateKeyEnv: options.privateKeyEnv, privateKey: o.env(options.privateKeyEnv),
+    privateKey: o.env(GITHUB_APP_KEY_VARIABLE),
   });
   const assignee = () => o.accounts?.account('github');
-  const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
+  const real = o.api ? undefined : createGitHubAppApi({ app, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
   // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`. Conflicts
   // from the mirror (issue #858), inside it, so a pass shares git's answer as it shares GitHub's; so are checks the rollup
   // would not give, read again over REST (issue #1244).

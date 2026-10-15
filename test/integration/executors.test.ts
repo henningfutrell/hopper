@@ -128,7 +128,7 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('anthropic-api')).toEqual(['apiKeyEnv', 'baseUrl']);
     expect(marked('gate-router')).toEqual(['jevPath', 'python']);
     expect(marked('github-account')).toEqual([]);
-    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'privateKeyEnv', 'slug']);
+    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'slug']);
     expect(marked('local')).toEqual(['workTree', 'workTrees']);
   });
 

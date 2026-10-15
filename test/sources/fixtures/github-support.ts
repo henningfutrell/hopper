@@ -19,7 +19,7 @@ export const REPO = 'owner/sandbox';
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
   const r = parseOptions(githubApp, { repos: [REPO], ...over });
   if (!r.ok) throw new Error(r.error);
-  const { enabled: _e, appId: _i, slug: _s, privateKeyEnv: _k, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
+  const { enabled: _e, appId: _i, slug: _s, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
   return sourceConfig(shared);
 }
 

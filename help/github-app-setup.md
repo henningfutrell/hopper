@@ -4,7 +4,7 @@ The GitHub App source reads issues as an admin's own GitHub App, and acts as its
 
 ## What you see when it is not configured
 
-- **Sources** shows the source as **needs setup**. Its card names each missing part, for example `appId`, `slug` or `GITHUB_APP_PRIVATE_KEY`. Its counts say *not configured*, not 0: the source did not look at GitHub.
+- **Sources** shows the source as **needs setup**. Its card names each missing part, for example `appId`, `slug` or `private key`. Its counts say *not configured*, not 0: the source did not look at GitHub.
 - **Needs you** counts it in the **Setup** row, with what it lacks.
 - The daemon log says it one time: `hopper: source github-app not configured: …`. It says `hopper: source github-app configured` one time when the setup is complete.
 
@@ -17,7 +17,7 @@ When you do not want the GitHub App source, switch it off in **Plugins → Job s
 Do one of these:
 
 - **Use an app you already have.** It must be installed on the account or organization that owns your job repositories. On GitHub, open the app's settings page. Its **App ID** and its slug (the last part of the app's URL, `https://github.com/apps/<slug>`) are on that page.
-- **Make a new app.** On the machine that runs the hopper, run `bash scripts/create-github-app.sh` from the hopper's checkout. It opens GitHub's create-app page with the right permissions. When you confirm, the script prints the new app's id and slug, and writes its private key to the hopper's environment file. Then install the app on the account or organization that owns your job repositories.
+- **Make a new app.** On the machine that runs the hopper, run `bash scripts/create-github-app.sh` from the hopper's checkout. It opens GitHub's create-app page with the right permissions. When you confirm, the script prints the new app's id and slug, and writes its private key to a secrets file (by default `~/.config/hopper/daemon.env`, the line `GITHUB_APP_PRIVATE_KEY=`). Copy the key from that file for step 3, then remove the line. Then install the app on the account or organization that owns your job repositories.
 
 Each hopper needs its own app. Do not share one app's private key between two hoppers.
 
@@ -28,11 +28,15 @@ Each hopper needs its own app. Do not share one app's private key between two ho
 3. Set `appId` to the app's id, and `slug` to its slug.
 4. Save.
 
-## Step 3: give the hopper the private key
+## Step 3: save the private key in the hopper's vault
 
-The hopper reads the private key from the variable that the source's `privateKeyEnv` option names. The default is `GITHUB_APP_PRIVATE_KEY`. Give the key to the hopper's runtime, as you give its other credentials: in the environment, or as a mounted file that `GITHUB_APP_PRIVATE_KEY_FILE` names. A key on one line with `\n` in place of each line break is correct.
+1. Open **Sources**. The `github-app` source shows its setup card.
+2. Paste the app's private key into the key field. The whole key, from `-----BEGIN` to `-----END … PRIVATE KEY-----`, is necessary. A key on one line with `\n` in place of each line break is also correct.
+3. Select **Save the key**.
 
-`scripts/create-github-app.sh` does this step for you when the hopper reads its environment file.
+The hopper checks that the value is a private key, and keeps it sealed in your vault. The field is write-only: the hopper never shows the key again. Settings → Vault lists it in the system scope, with who saved it and when.
+
+Do not put the key in a file or in the hopper's environment. When the hopper's environment still gives `GITHUB_APP_PRIVATE_KEY` at a start and no key is saved, the hopper moves that key into the vault once, and does not read the variable again. Then remove the variable.
 
 ## Step 4: check it
 

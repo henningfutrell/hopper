@@ -10,7 +10,7 @@ import { createFakeSource, createWorld, item } from './sync-support.ts';
 let sync: ReturnType<typeof createSourceSync> | undefined;
 afterEach(async () => { await sync?.stop(); sync = undefined; vi.restoreAllMocks(); });
 
-const MISSING: SetupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
+const MISSING: SetupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
 
 function setup(initial: SetupProblem | undefined) {
   const world = createWorld();
@@ -38,7 +38,7 @@ describe('sync loop: a source not configured (issue #1243)', () => {
     expect(st).toMatchObject({ state: 'needs-setup', itemsSeen: 0, setupProblem: MISSING });
     expect(st.lastOkAt).toBeUndefined();
     const said = warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('not configured'));
-    expect(said).toEqual(['hopper: source github-app not configured: appId, slug, GITHUB_APP_PRIVATE_KEY not set']);
+    expect(said).toEqual(['hopper: source github-app not configured: appId, slug, private key not set']);
   });
 
   it('config completed: the setup problem clears at the next sync, without a restart, and the source works', async () => {

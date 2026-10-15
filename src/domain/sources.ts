@@ -14,6 +14,19 @@ export interface SetupProblem {
   help: string;
 }
 
+/**
+ * The GitHub App's private key (issue #1243): set through the write-only field on the app source's setup card, kept in
+ * the vault's system scope. Never the key: whether one is kept, who set it and when, the variable the runtime still
+ * gives it in (imported once, never read again), and why none can be kept or opened.
+ */
+export interface GitHubAppKeyView {
+  set: boolean;
+  setAt?: string;
+  setBy?: string;
+  environment?: { variable: string };
+  problem?: string;
+}
+
 export interface SourceStatus {
   name: string;
   kind: string;

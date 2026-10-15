@@ -224,8 +224,10 @@ hopper only. One App, one key, one hopper.
 3. In the UI, Settings → Plugins → Job sources, open the `github-app` instance and set `appId` and
    `slug` (marked "runs a command"; an admin edits them). It takes the issues assigned to your connected
    GitHub account, as in [Give it jobs](#give-it-jobs).
-4. `systemctl --user restart hopper` (or the container), so the daemon reads the key. The
-   `github-app` source then takes the jobs of the repositories the App is installed on.
+4. Open Sources, paste the App's private key into the write-only field on the `github-app` setup card, and
+   save it: the hopper keeps it in its vault. No restart is necessary. A key the daemon's environment still
+   gives as `GITHUB_APP_PRIVATE_KEY` is moved into the vault once at a start; then remove it from the
+   environment. The `github-app` source then takes the jobs of the repositories the App is installed on.
 
 ### Not built: other ways in
 

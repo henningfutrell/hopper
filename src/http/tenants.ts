@@ -27,6 +27,7 @@ import type { Logins, SignIns } from '../logins/index.ts';
 import type { JobTerminal } from '../engine/terminal.ts';
 import type { MachineTerminal } from '../engine/machine-terminal.ts';
 import type { MinorDecisions, TypesafeKey } from '../minor-decisions/index.ts';
+import type { GitHubAppKey } from '../sources/index.ts';
 import type { Tldrs } from '../tldr/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
@@ -69,6 +70,8 @@ export interface TenantParts {
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): its view, set and remove; never the key. */
   typesafeKey: TypesafeKey;
+  /** The GitHub App's private key (issue #1243): its view, set and remove; never the key. */
+  githubAppKey: GitHubAppKey;
   /** The TL;DR of every long card (issue #569): its sweep, run at once when the setting turns on. */
   tldrs: Pick<Tldrs, 'sweep'>;
   /** Every job source's status (/api/sources, SSE source.updated). */

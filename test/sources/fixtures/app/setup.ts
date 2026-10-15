@@ -10,7 +10,6 @@ import type { GitHubAppApi } from '../../../../src/sources/github/app/index.ts';
 export const APP_ID = 4242;
 export const SLUG = 'hopper-test';
 export const BOT = `${SLUG}[bot]`;
-export const KEY_ENV = 'GITHUB_APP_PRIVATE_KEY';
 export const clock = { now: () => new Date() };
 
 export interface KeyPair { publicKey: string; privateKey: string }
@@ -38,8 +37,8 @@ export async function startApp(o: Partial<FakeGitHubOptions> & { privateKey?: st
     appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG, installations: [], ...fakeOpts,
   });
   const key = privateKey ?? KEYS.privateKey;
-  const app = () => loadGitHubApp({ appId: APP_ID, slug: SLUG, privateKeyEnv: KEY_ENV, privateKey: key });
-  const api = createGitHubAppApi({ app, keyEnv: KEY_ENV, baseUrl: fake.url, clock });
+  const app = () => loadGitHubApp({ appId: APP_ID, slug: SLUG, privateKey: key });
+  const api = createGitHubAppApi({ app, baseUrl: fake.url, clock });
   return { fake, api, close: () => fake.close() };
 }
 

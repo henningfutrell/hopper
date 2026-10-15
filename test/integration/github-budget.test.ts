@@ -108,7 +108,7 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
     const world = createWorld();
     const clock = { now: () => new Date() };
     ROLES.forEach((_, i) => world.jobs.set(`job-${i}`, followingJob(`job-${i}`, REPOS[i]!)));
-    const parsed = parseOptions(githubApp, { appId: APP_ID, slug: SLUG, privateKeyEnv: KEY_ENV, apiUrl: fake.url, executor: 'test' });
+    const parsed = parseOptions(githubApp, { appId: APP_ID, slug: SLUG, apiUrl: fake.url, executor: 'test' });
     if (!parsed.ok) throw new Error(parsed.error);
     const keys = new Set([...world.jobs.values()].map((j) => j.source!.key));
     const source = createAppSource({

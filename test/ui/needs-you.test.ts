@@ -44,7 +44,7 @@ describe('Needs you rows (issue #897)', () => {
   });
 
   it('a job source on but not configured waits on its setup (issue #1243): the Setup row names what each lacks', () => {
-    const line = 'github-app: appId, slug, GITHUB_APP_PRIVATE_KEY not set';
+    const line = 'github-app: appId, slug, private key not set';
     const row = needsYouRows(counts({ notConfigured: [line] })).find((r) => r.kind === 'setup')!;
     expect(row).toMatchObject({ n: 1, href: '#sources', details: [line] });
     expect(needsYouRows(counts()).find((r) => r.kind === 'setup')!.details).toBeUndefined();
