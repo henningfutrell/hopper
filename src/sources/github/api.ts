@@ -9,6 +9,7 @@ import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 import type { IssuePlace } from '../../domain/issue-graph.ts';
 import type { BaseMergeTarget, GitRemote } from '../../git-mirror/mirrors.ts';
 import type { BaseMerge } from '../../domain/pull-requests.ts';
+import type { ChangedLines } from '../../domain/change-kinds.ts';
 import type { RepoListing } from '../../domain/github-listing.ts';
 import type { TaggedHit } from '../../domain/tagged.ts';
 
@@ -80,6 +81,8 @@ export interface OpenPullRequest {
    */
   commits?: string[];
   files?: string[];
+  /** It changes more files than the mirror names (issue #1076): `files` is not all of them. */
+  filesCut?: true;
 }
 
 /** A pull request by its number (issue #618): one an issue names to update, in any state. */
@@ -316,6 +319,11 @@ export interface GitHubApi {
    * `gitAnswers`); undefined: git cannot say. Absent: no mirror.
    */
   baseTip?(repo: string, base: string): Promise<string | undefined>;
+  /**
+   * The lines open pull request `pr` of `repo` changes in `paths`, as the hopper's mirror says (issue #1076, `gitAnswers`);
+   * undefined: git cannot say. Absent: no mirror.
+   */
+  changedLines?(repo: string, pr: { number: number; base?: string; headOid?: string }, paths: string[]): Promise<ChangedLines | undefined>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
 }

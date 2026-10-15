@@ -4,7 +4,7 @@
 // With the user's work dir, the user's mirrors of the job repositories too (issue #858, `<work dir>/git-mirrors`). The connected accounts are added by the runtime.
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
-import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
+import { changeRuleFor, DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
 import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
@@ -40,6 +40,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
     // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
     landingBranch: (repo) => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
+    changeRule: (repo) => changeRuleFor(store.settings.getYoloMode()?.changeKinds, repo),
     // Each read kept names its issues and pull requests to search (issue #945), once the store has it.
     issueGraph: {
       record: (issue, graph, readAt) => { store.issueGraph.record(issue, graph, readAt); graphRead?.(graphKeys(graph)); },

@@ -14,6 +14,7 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'no pull request': 'no pull request found yet', tending: 'a job works on it now', 'tend failed': 'the job that worked on it failed: waiting for a person',
   'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
+  'person merges': 'waiting for a person to merge: a person merges this kind of change',
   'checks pending': 'waiting for checks', 'checks unknown': 'the hopper cannot read its checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
   'merge held': 'ready, waits for another pull request to merge first', ready: 'ready, merging',
 };
@@ -31,7 +32,7 @@ const DOING_TEXT: Partial<Record<MergeWait, string>> = {
   'checks not started': 'the hopper merges it when its checks pass, or when no check starts within 2 minutes of its last push',
   ready: 'the hopper merges it on its next sync', 'merge refused': 'the hopper tries the merge again on each sync',
   'checks unknown': 'nothing: the hopper may not read its checks, so a person merges it',
-  'yolo off': 'nothing: yolo mode is off, so a person merges it', draft: 'nothing: the hopper does not tend a draft, so a person marks it ready',
+  'yolo off': 'nothing: yolo mode is off, so a person merges it', 'person merges': 'nothing: the change rules say a person merges this kind of change', draft: 'nothing: the hopper does not tend a draft, so a person marks it ready',
 };
 
 /**
@@ -56,6 +57,17 @@ export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 
   }
   return DOING_TEXT[c.waits] ?? '';
 }
+
+type ChangeKind = NonNullable<PullRequestCard['change']>['kind'];
+
+/** A change kind in plain words (issue #1076), and its tone: the lighter, the calmer. */
+export const CHANGE_KIND_TEXT: Record<ChangeKind, { label: string; tone: 'ok' | 'muted' | 'warn' | 'bad' }> = {
+  docs: { label: 'docs only', tone: 'ok' }, tests: { label: 'tests only', tone: 'muted' }, low_risk: { label: 'low risk', tone: 'ok' },
+  code: { label: 'code', tone: 'muted' }, sensitive: { label: 'sensitive', tone: 'bad' },
+};
+
+/** Why a card has its change kind (issue #1076): the files and the rule each matched, one per line. */
+export const changeWhy = (c: Pick<PullRequestCard, 'change'>): string => c.change?.why.join('\n') ?? '';
 
 export function waitingLine(v: PullRequestsView): string {
   if (v.waiting.length === 0) return 'merging waits: nothing';

@@ -3987,7 +3987,7 @@ Version 1 (`docs/schemas/vault.grant_denied.v1.json`). A person, or a delegate a
 
 ## `yolo_mode.changed`
 
-Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
+Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `changeKinds` (issue #1076): the change-kind rules over the built-in rule, `default` and per repository, and the merge gate of each kind. `from` and `to` the settings, `by` who changed them. Done never depends on it.
 
 | field | type | required |
 |---|---|---|
@@ -4204,6 +4204,26 @@ Version 1 (`docs/schemas/work_item.issue_reopened.v1.json`). GitHub reopened the
 {
   "key": "https://github.com/owner/repo/issues/9",
   "via": "read"
+}
+```
+
+## `job.pull_request_classified`
+
+Version 1 (`docs/schemas/job.pull_request_classified.v1.json`). A followed pull request's change kind (issue #1076), new or changed: `kind` — `docs` (docs or comments only), `tests`, `low_risk`, `code` or `sensitive` (auth, secrets, migrations, the sandbox, CI, infra, dependencies, agent instructions, or a line a content rule matches) —, read from the files and lines it changes by the repository's change rule, and `why`: a few files and the rule each matched. The kind names its merge gate: merged when ready with no person, merged when ready only with yolo mode on, or merged only by a person. The work-item ledger keeps it on the item.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `kind` | `docs` \| `tests` \| `low_risk` \| `code` \| `sensitive` | yes |
+| `why` | string[] | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "kind": "docs",
+  "why": [
+    "README.md: docs path (**/*.md)"
+  ]
 }
 ```
 

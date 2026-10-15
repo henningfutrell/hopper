@@ -132,6 +132,13 @@ describe('the work-item reducer', () => {
     expect(counts.done).toBe(1);
     expect(counts.queued).toBe(0);
   });
+
+  it('keeps the change kind of its pull request (issue #1076): its state stays; a new job clears it', () => {
+    const open = [['job.queued'], ['job.started'], ['job.finished', { result: 'pull request ready for review' }], ['job.pull_request_followed', { pullRequest: PR, part: false }]] as [EventType, Record<string, unknown>?][];
+    const classified = fold([...open, ['job.pull_request_classified', { pullRequest: PR, kind: 'docs', why: ['README.md: docs path (**/*.md)'] }]]);
+    expect(classified).toMatchObject({ state: 'pr_open', changeKind: 'docs' });
+    expect(fold([...open, ['job.pull_request_classified', { pullRequest: PR, kind: 'docs', why: [] }], ['job.queued', {}, j2]])?.changeKind).toBeUndefined();
+  });
 });
 
 describe('what every view reads of an item (issue #1067, part 2)', () => {

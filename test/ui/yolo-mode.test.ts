@@ -1,7 +1,7 @@
 // Yolo mode in the UI (issue #579), pure: one row per job repository and per repository set apart, each saying
 // whether its jobs may merge and why; the summary; and the change a save sends — only what differs.
 import { describe, expect, it } from 'vitest';
-import { YOLO_WARNING, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
+import { YOLO_WARNING, changeKindsText, gateText, parseChangeKinds, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
 
 const view = (on: boolean, repos: Record<string, boolean> = {}, choices = ['owner/a', 'owner/b']) => ({ on, repos, choices: { repos: choices } });
 
@@ -43,5 +43,25 @@ describe('yolo mode model', () => {
   it('the warning says what it allows', () => {
     expect(YOLO_WARNING).toContain('no person reviews');
     expect(YOLO_WARNING).toContain('branch protection');
+  });
+});
+
+describe('change kinds in the yolo mode panel (issue #1076)', () => {
+  it('the rules as text: the admin\'s own, or none for the built-in rule', () => {
+    expect(changeKindsText({ ...view(false), changeKinds: { default: { lowRisk: ['ui/**'] } } })).toBe(JSON.stringify({ default: { lowRisk: ['ui/**'] } }, null, 2));
+    expect(changeKindsText(view(false))).toBe('');
+  });
+
+  it('a save: the rules parsed; empty text is the built-in rule again; text that is no object is refused', () => {
+    expect(parseChangeKinds('{"repos":{"o/r":{"merge":{"sensitive":"person"}}}}')).toEqual({ ok: true, value: { repos: { 'o/r': { merge: { sensitive: 'person' } } } } });
+    expect(parseChangeKinds('  ')).toEqual({ ok: true, value: null });
+    expect(parseChangeKinds('[1]')).toMatchObject({ ok: false });
+    expect(parseChangeKinds('{')).toMatchObject({ ok: false });
+  });
+
+  it('says what each kind\'s gate does', () => {
+    expect(gateText('ready')).toBe('merged when ready, no person asked');
+    expect(gateText('yolo')).toBe('merged when ready only with yolo mode on');
+    expect(gateText('person')).toBe('only a person merges');
   });
 });

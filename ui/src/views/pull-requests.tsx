@@ -9,6 +9,7 @@
 // A card the hopper gave up on (its tend job ended failed, cancelled or rejected) has Tend again (issue #1010).
 // Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
 // moves it to the tested branch.
+// Each card shows its change kind (issue #1076), why in its title.
 import { ExternalLink, GitBranch, GitMerge, GitPullRequest, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
@@ -21,7 +22,7 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { MERGEABLE_TEXT, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
 import { act } from '@/store';
 import { setPolled } from '@/store/polled';
@@ -116,6 +117,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
         <GhLink url={c.issue.url} className="text-xs">{closesText(c)}</GhLink>
         <span data-slot="pr-state"><StatusBadge status={c.state} tone={STATE_TONE[c.state]} /></span>
         <span data-slot="pr-yolo"><YoloBadge on={c.yolo} /></span>
+        {c.change && <span data-slot="pr-change-kind"><StatusBadge status={`change-${c.change.kind}`} label={CHANGE_KIND_TEXT[c.change.kind].label} tone={CHANGE_KIND_TEXT[c.change.kind].tone} title={changeWhy(c)} /></span>}
         {c.draft && <StatusBadge status="draft" tone="warn" />}
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">

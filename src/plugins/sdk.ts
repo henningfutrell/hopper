@@ -10,7 +10,7 @@ import type {
 import type { VaultBackend } from '../domain/vault.ts';
 import type { InfraPlanNotice } from '../domain/infra-watchers.ts';
 import type { ClientTransport } from '../executors/client.ts';
-import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
+import type { Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
@@ -173,6 +173,8 @@ export interface JobSourceContext {
   yoloMode(repo: string): boolean;
   /** A repository's landing branch (issue #1143): its landing batch setting (issue #1142), read at each call; undefined: no landing batches. */
   landingBranch?(repo: string): string | undefined;
+  /** The change rule of this repository (issue #1076): what kind of change a pull request is, and each kind's merge gate. Read at each call. */
+  changeRule(repo: string): ChangeRule;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "docs",
+        "tests",
+        "low_risk",
+        "code",
+        "sensitive"
+      ]
+    },
+    "why": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "pullRequest",
+    "kind",
+    "why"
+  ],
+  "additionalProperties": false
+}
