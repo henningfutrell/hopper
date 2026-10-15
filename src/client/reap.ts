@@ -1,4 +1,4 @@
-// The reap and the survey (issues #401, #410, #1103, design.md "Work tree" → "The reap"), beside server.ts for its size:
+// The reap and the survey (issues #401, #410, #1103, #1188, design.md "Work tree" → "The reap"), beside server.ts for its size:
 // what runs on a job's machine when the job ends, and what the sweep asks of it: fixed POSIX sh scripts,
 // run through the machine's own connection (this machine, ssh, or a client target's `/reap` and
 // `/survey`), never typed into a pane where Claude may still be. They live in the client's directory because a client
@@ -21,12 +21,19 @@ export const JOB_LABEL = 'hopper.job';
 export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
 
+/**
+ * Where a job's files are in its work tree (issue #1188, src/domain/job-layout.ts, which test/domain/job-layout.test.ts
+ * holds these to): `.worktrees/<name>/<job id>` its worktrees, `.worktrees/@scratch/<job id>` its scratch dir. The layout
+ * before (`.hopper-scratch/<job id>`, `workspace/worktrees/<name>-<job id>`) is only found, to be removed.
+ */
+export const LAYOUT = { worktrees: '.worktrees', scratch: '.worktrees/@scratch', oldScratch: '.hopper-scratch', oldWorktrees: 'workspace/worktrees' } as const;
+
 // $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
 // job's, issue #630: it may go on there), or `discard` to remove it whatever it holds (a person discarded the work
-// it kept, issue #1010). The job's worktrees are in its work tree's workspace, `<work tree>/workspace/worktrees/<name>-<job
-// id>` (issue #1103), the work tree the one the scratch dir is in; they go or stay with the scratch dir. Job ids are
-// UUIDs, so no other job's worktree ends in this one's. Run with HOPPER_JOB_ID unset, so neither it nor what it starts
-// matches the processes it stops.
+// it kept, issue #1010). The job's worktrees are `<work tree>/.worktrees/<name>/<job id>` (issue #1188), the work tree
+// the one the scratch dir is in; they go or stay with the scratch dir. Its scratch dir and worktrees of the layout before
+// are found by the same job id and go or stay with them, and once that layout holds no job's, the rest of it goes. Run
+// with HOPPER_JOB_ID unset, so neither it nor what it starts matches the processes it stops.
 const REAP_SCRIPT = [
   'id=$1; s=$2; k=$3;',
   // The job's scope: every process in it, whatever it did to its environment or session.
@@ -55,13 +62,14 @@ const REAP_SCRIPT = [
   'done; fi;',
   // The job's temp link /tmp/hopper-<job id> (issue #506), only while it points at this scratch dir.
   't=/tmp/hopper-$id; [ -n "$s" ] && [ -L "$t" ] && [ "$(readlink "$t")" = "$s" ] && rm -f "$t";',
-  // Only ever this job's own scratch dir: <work tree>/.hopper-scratch/<job id>.
-  'case $s in */.hopper-scratch/"$id") ;; *) printf "%s\\n" hopper-reaped; exit 0;; esac;',
+  // Only ever this job's own scratch dir: <work tree>/.worktrees/@scratch/<job id>, or the layout before's.
+  `case $s in */${LAYOUT.scratch}/"$id") w=\${s%/${LAYOUT.scratch}/*};; */${LAYOUT.oldScratch}/"$id") w=\${s%/${LAYOUT.oldScratch}/*};; *) printf "%s\\n" hopper-reaped; exit 0;; esac;`,
+  `n=$w/${LAYOUT.scratch}/$id; o=$w/${LAYOUT.oldScratch}/$id;`,
   // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.
-  'rm -rf "$s/credentials";',
-  'w=${s%/.hopper-scratch/*};',
-  'trees() { for t in "$w"/workspace/worktrees/*-"$id"; do [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };',
-  'repos() { { find "$s" -name node_modules -prune -o -name .git -print -prune; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
+  'rm -rf "$n/credentials" "$o/credentials";',
+  'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
+  `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
+  'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
   // Whether the work of commit $2 in repository $1 is on a remote though its commits are not (issue #1187: a rebase, a
   // re-run that made the commits again, a squash or rebase merge): the default branch or one of the newest remote
   // branches has each of its patches (`git cherry`, when it holds no merge of its own), or has every file it changed from
@@ -101,23 +109,28 @@ const REAP_SCRIPT = [
   '    f=; [ "$k" = discard ] && f="--force --force";',
   '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove $f "$d" 2>/dev/null;',
   '  done;',
-  '  trees | while IFS= read -r t; do rm -rf "$t"; done;',
-  '  rm -rf "$s";',
+  '  trees | while IFS= read -r t; do rm -rf "$t"; rmdir "${t%/*}" 2>/dev/null; done;',
+  '  rm -rf "$n" "$o";',
   'fi;',
-  // A repository mirror an older release made in the scratch dirs (issue #1103: no job is made of one now) goes once no
-  // worktree is made of it; one a kept worktree is of stays.
-  'if [ "$k" != keep ]; then for m in "$w"/.hopper-scratch/repos/*/*.git; do',
-  '  [ -d "$m" ] && [ ! -L "$m" ] || continue; git --git-dir="$m" worktree prune 2>/dev/null || continue;',
-  '  [ "$(git --git-dir="$m" worktree list --porcelain 2>/dev/null | grep -c "^worktree ")" -le 1 ] && rm -rf "$m" && rmdir "${m%/*}" "$w/.hopper-scratch/repos" 2>/dev/null;',
-  'done; fi;',
+  // The layout before issue #1188, once it holds no job's scratch dir or worktree: its scratch area (with the shared
+  // dependencies and repository mirrors only its jobs used) and its worktrees dir go. Then git forgets every worktree
+  // that is gone, in the work tree's repository and in its workspace's checkouts.
+  'if [ "$k" != keep ]; then',
+  `  x=$w/${LAYOUT.oldScratch}; y=$w/${LAYOUT.oldWorktrees};`,
+  '  if [ -z "$(ls -A "$x" 2>/dev/null | grep -vx -e .gitignore -e deps -e repos)" ] && [ -z "$(ls -A "$y" 2>/dev/null | grep -vx .gitignore)" ]; then',
+  '    [ -d "$x" ] && [ ! -L "$x" ] && rm -rf "$x"; [ -d "$y" ] && [ ! -L "$y" ] && rm -rf "$y";',
+  '  fi;',
+  '  for g in "$w/.git" "$w"/workspace/*/.git; do [ -d "$g" ] && git --git-dir="$g" worktree prune 2>/dev/null; done;',
+  'fi;',
   'printf "%s\\n" hopper-reaped',
 ].map((l) => l.trim()).join(' ');
 
 // $@ the work trees whose scratch dirs to list. What it prints, one per line: the jobs with a scope, the
-// jobs with a process carrying their id, the jobs with a container or a volume labelled with their id (issue #1120), each work tree whose scratch area is there (issue #1120), each scratch dir with
-// its age in seconds, and each job worktree in the work tree's workspace with its age (issue #1103). And the hopper's own
-// disk use (issue #1120): for each work tree it names, the KiB its scratch area and its job worktrees hold (`du -skx`, so
-// a link, such as a worktree's node_modules, counts as a link). Only where `timeout` is: a measure is cut off at 20 s, so a
+// jobs with a process carrying their id, the jobs with a container or a volume labelled with their id (issue #1120), each
+// work tree whose `.worktrees` is there (issue #1120), each scratch dir with its age in seconds, and each job worktree with
+// its age (issue #1188), of either layout. And the hopper's own disk use (issue #1120): for each work tree it names, the
+// KiB its `.worktrees` holds, and what the layout before left (`du -skx`, so a link, such as a worktree's node_modules,
+// counts as a link). Only where `timeout` is: a measure is cut off at 20 s, so a
 // slow disk never holds the survey up; one cut off says nothing.
 const SURVEY_SCRIPT = [
   'if command -v systemctl >/dev/null 2>&1; then',
@@ -131,18 +144,18 @@ const SURVEY_SCRIPT = [
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
   'done;',
-  'for r in "$@"; do if [ -d "$r/.hopper-scratch" ]; then printf "hopper-root %s\\n" "$r";',
-  '  [ -n "$to" ] && for p in "$r/.hopper-scratch" "$r/workspace/worktrees"; do',
+  `for r in "$@"; do if [ -d "$r/${LAYOUT.worktrees}" ] || [ -d "$r/${LAYOUT.oldScratch}" ]; then printf "hopper-root %s\\n" "$r";`,
+  `  [ -n "$to" ] && for p in "$r/${LAYOUT.worktrees}" "$r/${LAYOUT.oldScratch}" "$r/${LAYOUT.oldWorktrees}"; do`,
   '    [ -d "$p" ] && [ ! -L "$p" ] || continue;',
   '    k=$($to du -skx "$p" 2>/dev/null | tail -n 1 | cut -f 1); case $k in ""|*[!0-9]*) continue;; esac;',
   '    printf "hopper-du %s %s\\n" "$k" "$p";',
   '  done;',
-  'fi; for d in "$r"/.hopper-scratch/*; do',
+  `fi; for d in "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; do`,
   '  [ -d "$d" ] && [ ! -L "$d" ] || continue;',
   '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
   '  printf "hopper-dir %s %s\\n" "$((now - m))" "$d";',
-  'done; for d in "$r"/workspace/worktrees/*; do',
-  '  [ -d "$d" ] && [ ! -L "$d" ] || continue;',
+  `done; for d in "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*; do`,
+  `  case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$d" ] && [ ! -L "$d" ] || continue;`,
   '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
   '  printf "hopper-tree %s %s\\n" "$((now - m))" "$d";',
   'done; done;',
@@ -176,9 +189,9 @@ export function readReap(stdout: string): { kept: string[]; pushed?: string[]; r
 
 /** One scratch dir the survey found: its job, path and age. */
 export interface SurveyedDir { jobId: string; path: string; ageMs: number }
-/** One job worktree the survey found in a work tree's workspace (issue #1103): its path and age; its job is known by its name. */
+/** One job worktree the survey found (issue #1188): its path and age; its job is known by its name. */
 export interface SurveyedTree { path: string; ageMs: number }
-/** One place of the hopper's in a work tree the survey measured (issue #1120): its scratch area or its job worktrees. */
+/** One place of the hopper's in a work tree the survey measured (issue #1120): its `.worktrees`, or what the layout before left. */
 export interface SurveyedUsage { path: string; bytes: number }
 /** What a finished survey found. Undefined when it did not finish. */
 export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[] }
@@ -192,21 +205,22 @@ export function readSurvey(stdout: string): Survey | undefined {
   const roots: string[] = [];
   const usage: SurveyedUsage[] = [];
   for (const l of lines) {
-    const u = /^hopper-du (\d+) (\/.*\/(?:\.hopper-scratch|workspace\/worktrees))$/.exec(l);
+    const u = /^hopper-du (\d+) (\/.*\/(?:\.worktrees|\.hopper-scratch|workspace\/worktrees))$/.exec(l);
     if (u) usage.push({ path: u[2]!, bytes: Number(u[1]) * 1024 });
     const r = /^hopper-root (\/.*)$/.exec(l);
     if (r) roots.push(r[1]!);
-    const m = /^hopper-dir (\d+) (\/.*\/\.hopper-scratch\/([^/]+))$/.exec(l);
+    const m = /^hopper-dir (\d+) (\/.*\/(?:\.worktrees\/@scratch|\.hopper-scratch)\/([^/]+))$/.exec(l);
     if (m && isJobId(m[3])) scratch.push({ jobId: m[3]!, path: m[2]!, ageMs: Number(m[1]) * 1000 });
-    const t = /^hopper-tree (\d+) (\/.*\/workspace\/worktrees\/[^/]+)$/.exec(l);
+    const t = /^hopper-tree (\d+) (\/.*\/(?:\.worktrees\/[^/@][^/]*\/[^/]+|workspace\/worktrees\/[^/]+))$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
   return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container ') };
 }
 
-/** A scratch dir a reap may name: absolute, one line, and the job's own. */
+/** A scratch dir a reap may name: absolute, one line, and the job's own, of either layout. */
 export const isScratchOf = (path: unknown, jobId: string): path is string =>
-  typeof path === 'string' && path.startsWith('/') && !/[\n\0]/.test(path) && path.endsWith(`/.hopper-scratch/${jobId}`);
+  typeof path === 'string' && path.startsWith('/') && !/[\n\0]/.test(path)
+  && (path.endsWith(`/${LAYOUT.scratch}/${jobId}`) || path.endsWith(`/${LAYOUT.oldScratch}/${jobId}`));
 
 /** A work tree a survey may list under: absolute and one line. */
 const isRoot = (path: unknown): path is string => typeof path === 'string' && path.startsWith('/') && !/[\n\0]/.test(path) && path.length <= 4096;

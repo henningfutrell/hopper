@@ -101,8 +101,8 @@ describe('one start at a time per repository mirror (issue #1075)', () => {
 
   it('a work tree that is the job\'s repository takes its own repository\'s lock the same way', async () => {
     const { tree } = repository();
-    mkdirSync(join(tree, '.hopper-scratch'));
-    writeFileSync(join(tree, '.hopper-scratch', '.gitignore'), '*\n');
+    mkdirSync(join(tree, '.worktrees', '@scratch'), { recursive: true });
+    writeFileSync(join(tree, '.worktrees', '.gitignore'), '*\n');
     const lock = heldLock(join(tree, '.git'));
     const done = started(tree, ID, makeJobWorktreeCommand(tree, ID));
     await wait(1500);

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { T0, at, view, boot, settle, buttonsIn, daemon, unmount } from './failures-view-harness.ts';
 
 const kept = (over: Record<string, unknown> = {}) => ({
-  jobId: 'j7', paths: ['/w/.hopper-scratch/j7/repo'], at: at(-10), status: 'failed', machineId: 'desk',
+  jobId: 'j7', paths: ['/w/.worktrees/@scratch/j7/repo'], at: at(-10), status: 'failed', machineId: 'desk',
   actions: { push: { ok: true }, discard: { ok: true } }, ...over,
 });
 const row = () => document.querySelector('[data-kept-work="j7"]');
@@ -30,7 +30,7 @@ afterEach(async () => {
 describe('Work not pushed (issue #1010)', () => {
   it('shows where the work is, with Push it and Discard; the nav badge counts it', async () => {
     await boot('#failures', { failures: view({ problems: [], keptWork: [kept()] }) });
-    expect(row()?.textContent).toContain('/w/.hopper-scratch/j7/repo');
+    expect(row()?.textContent).toContain('/w/.worktrees/@scratch/j7/repo');
     expect(row()?.textContent).toContain('desk');
     expect(buttonsIn(row())).toEqual(expect.arrayContaining(['Push it', 'Discard']));
     expect(document.querySelector('a[href="#failures"] [data-slot="nav-badge"]')?.textContent).toBe('1');

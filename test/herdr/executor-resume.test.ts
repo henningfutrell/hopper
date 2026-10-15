@@ -150,18 +150,18 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
     const typed = herdr.calls.filter((c) => c.method === 'runInPane').length;
     await executor.cleanup!(job);
     const order = herdr.calls.map((c) => c.method);
-    expect(herdr.reaps).toEqual([{ jobId: job.id, scratch: `${CWD}/.hopper-scratch/${job.id}` }]);
+    expect(herdr.reaps).toEqual([{ jobId: job.id, scratch: `${CWD}/.worktrees/@scratch/${job.id}` }]);
     expect(order.indexOf('reap')).toBeGreaterThan(order.lastIndexOf('sendKeys'));
     expect(order.indexOf('reap')).toBeLessThan(order.indexOf('closePane'));
     expect(herdr.calls.filter((c) => c.method === 'runInPane')).toHaveLength(typed);
   });
 
   it('cleanup answers the repositories the reap kept for their uncommitted or unpushed work (issue #401)', async () => {
-    const s = setup({ turns: [ASK], reapKeeps: ['/w/.hopper-scratch/j/repo'] });
+    const s = setup({ turns: [ASK], reapKeeps: ['/w/.worktrees/@scratch/j/repo'] });
     const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
     await s.executor.run(first.ctx);
     const job = jobWith({ prompt: 'Write a greeting' }, { executorState: first.saved.at(-1) });
-    expect(await s.executor.cleanup!(job)).toEqual({ kept: ['/w/.hopper-scratch/j/repo'] });
+    expect(await s.executor.cleanup!(job)).toEqual({ kept: ['/w/.worktrees/@scratch/j/repo'] });
   });
 
   it('reaps a Claude that does not exit by itself: the reap stops it with the job\'s other processes, nothing typed into it (issue #410)', async () => {
@@ -192,7 +192,7 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
     await s.herdr.closePane('w1:p1');
     const job = jobWith({ prompt: 'Write a greeting' }, { executorState: first.saved.at(-1) });
     expect(await s.executor.cleanup!(job)).toEqual({ kept: [] });
-    expect(s.herdr.reaps).toEqual([{ jobId: job.id, scratch: `${CWD}/.hopper-scratch/${job.id}` }]);
+    expect(s.herdr.reaps).toEqual([{ jobId: job.id, scratch: `${CWD}/.worktrees/@scratch/${job.id}` }]);
   });
 
   it('a cancelled job is reaped as its pane closes, and cleanup after still answers what was kept', async () => {

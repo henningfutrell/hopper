@@ -38,7 +38,7 @@ const reap = (): string => {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'jh-reap-landed-'));
-  scratch = join(root, 'work', '.hopper-scratch', JOB);
+  scratch = join(root, 'work', '.worktrees', '@scratch', JOB);
   mkdirSync(scratch, { recursive: true });
 });
 

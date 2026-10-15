@@ -184,7 +184,7 @@ describe('parking a job on a question', () => {
     expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
     await a.waitForStatus(job.id, 'cancelled');
     await waitFor(() => herdr.reaps.length === 2, { what: 'the cancel reap' });
-    expect(herdr.reaps[1]).toEqual({ jobId: job.id, scratch: expect.stringMatching(new RegExp(`/\\.hopper-scratch/${job.id}$`)) });
+    expect(herdr.reaps[1]).toEqual({ jobId: job.id, scratch: expect.stringMatching(new RegExp(`/\\.worktrees/@scratch/${job.id}$`)) });
     expect((await a.questionsOf(job.id))[0]!.status).toBe('cancelled');
   });
 });
@@ -321,7 +321,7 @@ describe('a restart while parked', () => {
     apps.splice(apps.indexOf(first), 1);
 
     // The machine still has the job's scope and its scratch dir, older than the sweep's age.
-    const scratch = `/tmp/.hopper-scratch/${job.id}`;
+    const scratch = `/tmp/.worktrees/@scratch/${job.id}`;
     const there = createFakeHerdrClient({ session: 'jh-test', turns: [DONE], survey: { scopes: [job.id], processes: [], scratch: [{ jobId: job.id, path: scratch, ageMs: 99 * 3600_000 }] } });
     const second = await boot(there, { dbPath: first.dbPath });
     const after = await second.job(job.id);

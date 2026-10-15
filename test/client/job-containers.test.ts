@@ -56,7 +56,7 @@ describe('the reap removes a job\'s containers and volumes (issue #1120)', () =>
   });
 
   it('a timed-out job\'s reap (keep) removes none: it may go on there', () => {
-    const scratch = join(fake, '.hopper-scratch', JOB);
+    const scratch = join(fake, '.worktrees', '@scratch', JOB);
     const said = readReap(run(reapArgv(JOB, scratch, true)));
     expect(said?.removed).toBeUndefined();
     expect(lines('containers')).toHaveLength(3);

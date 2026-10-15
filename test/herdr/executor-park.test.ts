@@ -69,7 +69,7 @@ describe('herdr-claude executor: park and resume (issue #501)', () => {
 
     expect(herdr.keys).toHaveLength(keysBefore);
     expect(herdr.closed).toEqual([state.paneId]);
-    expect(herdr.reaps.at(-1)).toEqual({ jobId: JOB_ID, scratch: `${CWD}/.hopper-scratch/${JOB_ID}` });
+    expect(herdr.reaps.at(-1)).toEqual({ jobId: JOB_ID, scratch: `${CWD}/.worktrees/@scratch/${JOB_ID}` });
   });
 
   it('a parked job with no recorded session (issue #530) starts a fresh one in the same worktree: its task, the brief, the footer', async () => {

@@ -176,7 +176,7 @@ describe('herdr-claude', () => {
       laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: cwd }, signal: new AbortController().signal,
       progress() {}, saveState() {}, workTree(path) { trees.push(path); },
     });
-    expect(trees.at(-1)).toBe(made ? `${cwd}/workspace/worktrees/${basename(cwd)}-abcdef12-0000` : cwd);
+    expect(trees.at(-1)).toBe(made ? `${cwd}/.worktrees/${basename(cwd)}/abcdef12-0000` : cwd);
   });
 });
 

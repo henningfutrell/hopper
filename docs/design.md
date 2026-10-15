@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659) | http, decider |
@@ -765,7 +765,7 @@ Code's scratchpad lives under `/tmp` by default and its system prompt sends temp
 which is how a job drifted out of its tree. So the hopper directs it three ways:
 
 - **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `/tmp/hopper-<job id>`, the
-  job's **temp link** to its **scratch dir** `<cwd>/.hopper-scratch/<job id>`: Claude's scratchpad and
+  job's **temp link** to its **scratch dir** `<cwd>/.worktrees/@scratch/<job id>` (issue #1188): Claude's scratchpad and
   every tool's temp files land inside the tree, in a directory that is the job's alone (issue #401), so
   the reap can remove it. The payload cannot move them. Not the scratch dir's own path (issue #506): a
   Unix socket path takes at most 108 bytes, tools bind sockets under `TMPDIR`, and Chromium's
@@ -774,8 +774,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   same link as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on.
-- **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
-  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+- **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
+  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
@@ -856,7 +856,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
      unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
-  3. removes the job's scratch dir — only a path that is `…/.hopper-scratch/<job id>` — unless a
+  3. removes the job's scratch dir — only a path that is `…/.worktrees/@scratch/<job id>` — unless a
      repository in it (`.git`, outside `node_modules`) has uncommitted changes (a `node_modules` link to
      shared dependencies aside), or commits no remote has (a worktree: its `HEAD`; a clone: `HEAD` and
      every branch) whose work is not on a remote either (issue #1187: a rebase, a re-run that made the
@@ -866,12 +866,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      own the remote does not have) or has every file it changed from the default branch with the same
      content. Then nothing is removed and each such repository is printed; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
-     `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees
-     in its work tree's workspace, `<work tree>/workspace/worktrees/<name>-<job id>` (issue #1103), are
-     read and removed with the scratch dir by the same rule: they go or stay with it.
-  4. removes a **repository mirror** an older release made in the work tree's scratch dirs
-     (`.hopper-scratch/repos/<owner>/<name>.git`, issue #1103) once no worktree is made of it after a
-     `git worktree prune`; one a kept worktree is of stays until that worktree goes.
+     `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
+     `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
+     rule: they go or stay with it. An emptied `.worktrees/<name>` goes too.
+  4. removes what the layout before issue #1188 left ("Job worktrees in `.worktrees`" below): the job's scratch dir and
+     worktrees there by the same rule, and, once that layout holds no job's, the rest of it. Then `git worktree
+     prune` in the work tree's repository and its workspace's checkouts.
   It also prints each repository whose `HEAD` holds a remote branch the default branch (`origin/HEAD`) does not,
   `hopper-pushed <path>` (issue #630): the job pushed work. Asked with `keep` (`POST /reap {jobId, scratch, keep}`;
   a timed-out job's, issue #630), it says what is there and removes nothing but the job's credentials: the scratch
@@ -897,15 +897,15 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `reapEveryMinutes` (a `local`, `ssh` and `client` machine option, default 10; checked every minute, read
   at each sweep), the engine asks the machine — through the first of its executors that reaches it,
   `Executor.machineShell` — what jobs left there (the survey: the `hopper-job-*` scopes, the
-  `HOPPER_JOB_ID`s of its processes, and the scratch dirs and the job worktrees in the workspaces
-  (`workspace/worktrees/*`, issue #1103) under the work trees of the newest 2000 jobs, with their ages; a
+  `HOPPER_JOB_ID`s of its processes, and the scratch dirs and the job worktrees in `.worktrees`
+  (`.worktrees/<name>/<job id>`, issue #1188; and the layout before's) under the work trees of the newest 2000 jobs, with their ages; a
   client target's `POST /survey {roots}`), and reaps:
   - the scope and processes of every job the hopper knows that is not live (live: claimed, running,
     waiting on an answer, or led by an operator);
   - an ended job's scratch dir once it is `scratchMaxAgeHours` old (a machine option, default 24), or at
     once while its work was kept (`job.work_kept`), with the reap's rule: work not pushed is never
     removed. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
-    keeps the first time, as `job.work_kept`. A job worktree `<name>-<job id>` of an ended job is reaped
+    keeps the first time, as `job.work_kept`. A job worktree `<name>/<job id>` of an ended job is reaped
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
     outlives its job;
   - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder;
@@ -925,7 +925,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   git repository (`git rev-parse --show-toplevel` is the shell's `pwd -P`; a directory inside a
   repository, such as a home kept in git, is not), it fetches (`GIT_TERMINAL_PROMPT=0`, a failure
   ignored), runs `git worktree prune`, makes the **job worktree**
-  `<work tree>/workspace/worktrees/<work tree's name>-<job id>` (issue #1103) with `git worktree add --detach` at
+  `<work tree>/.worktrees/<work tree's name>/<job id>` (issue #1188) with `git worktree add --detach` at
   `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD`, enters it, and prints
   `hopper-job-worktree-made` (waited for up to 10 minutes, for the fetch or a first clone). A worktree an earlier run of
   the job left is entered as it is, nothing fetched. The command is one line that prints
@@ -943,13 +943,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   job's alone, the work tree is shared and left as it is. Not a repository's top, and the job has a repository (a GitHub issue's,
   issue #361): the command first fetches its **checkout** `<work tree>/workspace/<name>` (issue #1103), the one a
   workflow repo tends in its workspace, or clones it there from `https://github.com/<owner/name>.git` the first time,
-  then makes the job worktree `<work tree>/workspace/worktrees/<name>-<job id>` of the checkout the same way, enters it
+  then makes the job worktree `<work tree>/.worktrees/<name>/<job id>` of the checkout the same way, enters it
   and prints `hopper-job-worktree-checkout`; the pane state keeps the checkout as `checkout`, and the footer names
   it as what the worktree is of. The fetch is of the default branch only (issue #858, "Git efficiency" below), and moves
   only the remote's branches: the checkout's own branch and files stay as a person left them. A `workspace` the hopper
-  makes ignores itself (`.gitignore` of `*`), and its `worktrees` dir always does, so a work tree that is a repository
-  shows neither. Until issue #1103 the job worktree was in the job's scratch dir, a worktree of a **repository mirror**
-  there: a copy of the repository inside the work tree, nested in itself when the work tree was the repository.
+  makes ignores itself (`.gitignore` of `*`), and `.worktrees` always does, so a work tree that is a repository
+  shows neither.
   Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
   `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
   ends with the job through the reap: it is removed with the scratch dir (`git worktree
@@ -960,7 +959,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
 - **Shared dependencies** (issue #410, `src/executors/herdr/shared-deps.ts`). Each job ran its own `npm
   ci`, about 400 MB, for as long as it ran. With the herdr-claude option `sharedDependencies` (default on),
   after the job worktree is made its pane's shell links the worktree's `node_modules` to the dependencies
-  installed for its lockfile, `<work tree>/.hopper-scratch/deps/<git hash of package-lock.json>/node_modules`.
+  installed for its lockfile, `<work tree>/.worktrees/@deps/<git hash of package-lock.json>/node_modules`.
   When no job has installed them yet, the first runs `npm ci --prefer-offline` in its worktree and moves
   the result into place, under a lock per work tree (`flock`), so jobs at once with one lockfile install
   once and the others wait and link. A new lockfile gets an entry of its own, so dependencies in use never
@@ -972,8 +971,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `node_modules` is a link to dependencies shared with the repository's other jobs, read-only, and to
   replace it with an install of the job's own (`rm node_modules && npm ci`) before changing dependencies.
   The reap removes the link, never what it points to. Not done: a worktree per issue reused across runs
-  (`worktrees/<repo>-<issue>`, a `hopper/<issue>` branch); the job worktree of issue #379 stays the job's
-  own, `workspace/worktrees/<name>-<job id>`.
+  (a `hopper/<issue>` branch); the job worktree of issue #379 stays the job's own, `.worktrees/<name>/<job id>`.
 
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.
@@ -987,7 +985,7 @@ default job rules (the first five lines; "Job rules", issue #172):
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
 [hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.
 [hopper formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note) in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use raw HTML or images.
-[hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
+[hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.worktrees/@scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
 [hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.
 [hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
@@ -4233,7 +4231,7 @@ its environment. The last message's marker decides: `HOPPER_DONE` finished `{ ma
 the same session at most three times in a row (issue #163). Not idempotent, nothing to reattach.
 
 Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the temp link to the job's own scratch dir
-`<cwd>/.hopper-scratch/<job id>` (issue #506), the scratch dir named in the footer; each turn runs in the job's scope
+`<cwd>/.worktrees/@scratch/<job id>` (issues #506, #1188), the scratch dir named in the footer; each turn runs in the job's scope
 `hopper-job-<job id>` where the machine has a systemd user manager (`systemd-run --user --scope … --
 env … <agent> </dev/null`; the scope a turn before left is stopped first, since a print-mode turn never
 waits on background work); the job keeps `{ cwd, ssh? }` from its start; and when it ends its `cleanup`
@@ -5351,7 +5349,7 @@ client target runs a client the hopper did not release.
   the files arrive as the hopper sent them. `POST /reap {jobId, scratch?}` and `POST /survey {roots}` (issue
   #410) run the client's own copy of the reap and the survey ("Work tree" → "The reap", "The sweep") with
   no shell of the request's: a job id (letters, digits, `-`), its own scratch dir
-  (`…/.hopper-scratch/<job id>`), absolute work trees — anything else is refused 400 before a script runs;
+  (`…/.worktrees/@scratch/<job id>`, or the layout before's `…/.hopper-scratch/<job id>`, issue #1188), absolute work trees — anything else is refused 400 before a script runs;
   the answer is `{code, stdout, stderr}`. The scripts live in `server.ts`.
 - **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
   asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
@@ -8921,7 +8919,7 @@ there) and `env` (the token as it is now). The executor asks with the job's scra
 (`ExecutionContext.credentials(scratch, makeWorkTree)`); the engine records the dir on the job
 (`credentialsDir`), writes the files through the machine's own connection — this machine's shell, ssh, or a
 client target's `POST /credential` (`src/client/credential.ts`: a fixed script, the content on stdin, the
-file replaced whole, mode 600, only under `…/.hopper-scratch/<job id>/credentials`, never making a work
+file replaced whole, mode 600, only under `…/.worktrees/@scratch/<job id>/credentials`, never making a work
 tree that is not there unless it is the jobs dir) — and answers the variables. For GitHub: `gh/hosts.yml`
 with the token under the host, and `GH_CONFIG_DIR` pointing at it; `gh` reads it at each run, and so does
 gh's git credential helper. After every renewal (`onRenewed` → `engine.renewCredentials()`), each job in
@@ -10530,7 +10528,7 @@ low disk; every threshold a setting that applies without a restart.
   removed once `scratchMaxAgeHours` old (default 24), or at once while its work was kept and is now pushed
   (`job.work_removed`).
 - **Shared dependencies**: a job worktree's `node_modules` links to the dependencies installed once per
-  lockfile in `<work tree>/.hopper-scratch/deps/<hash>` (herdr-claude option `sharedDependencies`).
+  lockfile in `<work tree>/.worktrees/@deps/<hash>` (herdr-claude option `sharedDependencies`, issue #1188).
 - **Print agents**: their own scratch dir, a scope per turn, the reap at the end.
 - **A low disk holds new claims** on that machine, by its `diskLowBelowGiB` / `diskLowBelowPercent`.
 
@@ -10539,7 +10537,7 @@ plain options of the `local`, `ssh` and `client` machine sources, read at every 
 `sharedDependencies` an option of herdr-claude, read when a job starts. Machines and executors follow the
 plugins config live ("Every setting applies without a restart").
 
-**Not done, by choice**: a worktree per issue reused across runs (`worktrees/<repo>-<issue>`, branch
+**Not done, by choice**: a worktree per issue reused across runs (branch
 `hopper/<issue>`), as the issue sketched: issue #379 (merged first) gives each job its own worktree in its
 scratch dir, which the reap and the sweep already own; reuse across runs would need a second lifetime for
 it. A Windows client has no `sh`: its reap and survey answer an error and the job is left to its pane's
@@ -10700,11 +10698,10 @@ machine; a routing rule may still override it per repository, on the machine it 
   of a git repository — a checkout the owner keeps, as before — is used as it is: no clone is put in it,
   and each job gets its own worktree of it ("Each job its own git worktree"). Any other work tree (the
   jobs directory, a fresh box's) gets the job's repository when the job has one (a GitHub issue's,
-  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/workspace/<name>` (issue #1103;
-  from issue #858 until then the repository mirror `<work tree>/.hopper-scratch/repos/<owner>/<name>.git`), whose
+  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/workspace/<name>` (issue #1103), whose
   `origin` must be that repository, or clones it there from `https://github.com/<owner/name>.git` the
   first time (into `<name>.hopper-clone-<pid>`, then moved in, so two jobs cloning at once leave one),
-  and makes the job's worktree of it, `<work tree>/workspace/worktrees/<name>-<job id>`. Git takes github.com
+  and makes the job's worktree of it, `<work tree>/.worktrees/<name>/<job id>` (issue #1188). Git takes github.com
   credentials from `GH_TOKEN` when the pane has it, else from `gh auth git-credential` (the job's
   credentials dir, issue #441), through `GIT_CONFIG_*` variables naming a helper: the token is never on
   a command line. `GIT_TERMINAL_PROMPT=0`: git never waits for a person. A checkout of another
@@ -18719,6 +18716,8 @@ mirror logs why. The guard is a net for a resolution gone wrong, not a gate a br
 
 ## Job worktrees in the workspace (issue #1103, 2026-10-14)
 
+Superseded by "Job worktrees in `.worktrees`" (issue #1188): the paths below are the layout that issue replaced.
+
 **The gap.** A job's worktree was in its scratch dir, `<work tree>/.hopper-scratch/<job id>/<name>`, made of a repository
 mirror in the scratch dirs, `<work tree>/.hopper-scratch/repos/<owner>/<name>.git`. A work tree is often a checkout itself, so
 each job left a copy of the repository nested inside the repository, its name repeated, and nobody asked for that layout.
@@ -18765,12 +18764,12 @@ periodic reconcile removes orphans and old images, with a backup retention; that
 host against a budget; and that kept-work records are reconciled against disk. It ships in parts.
 
 **Part 1: kept work reconciled against disk** (`src/engine/sweep.ts` `goneKept`, pure; `src/client/reap.ts`).
-- **The survey names its work trees.** For each work tree asked about whose scratch area (`.hopper-scratch`) is there, it
+- **The survey names its work trees.** For each work tree asked about whose `.worktrees` (issue #1188; or the layout before's scratch area) is there, it
   prints `hopper-root <path>` (`Survey.roots`). A work tree that is not there, or has no scratch area (an unmounted disk, a
   path not made yet), is not named, so nothing in it counts as gone.
 - **Gone is resolved.** On each pass, kept work (`job.work_kept`, newest work event) of an ended job that ran on the
   machine swept, whose scratch dir is in a named work tree, and which the survey found neither as a scratch dir nor as a job
-  worktree (`workspace/worktrees/<name>-<job id>`), is recorded as `job.work_removed` with `gone` and the scratch dir. Nothing
+  worktree (`.worktrees/<name>/<job id>`, issue #1188), is recorded as `job.work_removed` with `gone` and the scratch dir. Nothing
   is removed: the folder is already gone. One log line each. The work-item ledger drops the job from its item's kept work,
   so Failures and its badge stop listing it.
 - **Not resolved:** a parked or live job's (its work tree is its own while it may go on), another machine's, and any while
@@ -18786,8 +18785,8 @@ runs and the one it ran before (read from the hopper's container before the stac
 
 **Part 2: the hopper's disk use per machine, and the disk budget** (`src/domain/hopper-disk.ts`, pure; `src/engine/sweep.ts`;
 `src/client/reap.ts`; Machines).
-- **The survey measures it.** For each work tree it names (`hopper-root`), it prints `hopper-du <KiB> <path>` for the
-  scratch area and for `workspace/worktrees`, by `du -skx` (a link, such as a worktree's `node_modules`, counts as a link).
+- **The survey measures it.** For each work tree it names (`hopper-root`), it prints `hopper-du <KiB> <path>` for its
+  `.worktrees` (issue #1188; and for what the layout before left, while it is there), by `du -skx` (a link, such as a worktree's `node_modules`, counts as a link).
   Each measure is cut off at 20 s by `timeout`, so a slow disk never holds the survey (and so the sweep) up; one cut off
   says nothing, and a machine with no `timeout` (macOS by default) or a client older than this measures nothing.
 - **The sweep keeps it.** Each machine's last measure (`Sweep.disk`), in memory: after a restart the first pass, at
@@ -19283,3 +19282,43 @@ Tests: `test/github-proxy/pr-status.test.ts` (the status from a card and from th
 the broker: from the hopper with GitHub not asked, from GitHub once, then from the repo-query cache while fresh),
 `test/integration/github-proxy.test.ts` (the real daemon and `hopper-gh`: a followed pull request answered as the Pull
 requests list shows it, with no GitHub call; one the hopper does not know read on GitHub, then from the cache).
+
+## Job worktrees in `.worktrees` (issue #1188, 2026-10-14)
+
+**The gap.** Issue #1103 asked for every job worktree at `<wd>/.worktrees/<repo>/<job>`, never inside a repository, and
+`.hopper-scratch` gone. It shipped `<work tree>/workspace/worktrees/<name>-<job id>` instead — inside the workflow repo's
+checkout when the work tree is one — and kept `.hopper-scratch/<job id>` as the scratch dir that the reap, the sweep, the
+checkpoint and Work not pushed key on.
+
+**The change** (`src/domain/job-layout.ts`, the one layout; `src/client/reap.ts` keeps the same names, `LAYOUT`, since the
+client imports nothing of hopper, and `test/domain/job-layout.test.ts` holds the two together):
+- **One place.** Everything a job puts in its work tree is under `<work tree>/.worktrees`, which ignores itself
+  (`.gitignore` of `*`, written by the scratch command and by the job worktree command):
+  - each job worktree, `.worktrees/<name>/<job id>` (`jobWorktreeOf`): `<name>` the job's repository's, or the work tree's
+    own when the worktree is of the work tree;
+  - each job's scratch dir, `.worktrees/@scratch/<job id>` (`jobScratchOf`): its temporary files, its credentials dir,
+    its temp link's target;
+  - the shared dependencies, `.worktrees/@deps/<lockfile hash>/node_modules`.
+  A name that starts with `@` is the hopper's own: no GitHub repository name holds `@`, so no repository's worktrees and
+  the hopper's areas share a directory.
+- **Of what** is unchanged: the work tree itself when it is the top of the job's repository, else the repository's
+  checkout `<work tree>/workspace/<name>`, the one the workflow repo tends. The worktree is never in that checkout.
+- **Everything reads the one layout.** The reap and the survey (`src/client/reap.ts`), the sweep (`src/engine/sweep.ts`,
+  by `worktreeParts` and `scratchParts`), the checkpoint (`src/client/checkpoint.ts`), the credentials
+  (`src/client/credential.ts`), kept work (`src/domain/kept-work.ts`), the machine shell, the footer's work-tree line and
+  the disk budget's paths: the survey measures `.worktrees`, one path per work tree.
+- **The layout before is only cleaned up.** Nothing is made there. The survey still lists `.hopper-scratch/<job id>` and
+  `workspace/worktrees/<name>-<job id>` (and measures them while they are there), and a reap takes them by the same rule as
+  the new ones: removed when clean and pushed, kept and recorded as `job.work_kept` otherwise, removed whatever they hold
+  on a discard. A reap of any job of the work tree, once the layout before holds no job's scratch dir or worktree, removes
+  the rest of it — `.hopper-scratch` with its shared dependencies and repository mirrors, and `workspace/worktrees` — and
+  runs `git worktree prune` in the work tree's repository and in each checkout of its workspace. A kept old worktree holds
+  that back until a person pushes or discards it.
+
+**Not changed.** The temp link `/tmp/hopper-<job id>`, the scratch command's marker `hopper-scratch-ready`, and the
+checkout `workspace/<name>`. A client target that runs an older release refuses the new scratch paths until the hopper
+loads this release onto it ("Client releases"); the sweep reaps what that left once it has.
+
+Tests: `test/domain/job-layout.test.ts` (every job worktree under `<wd>/.worktrees/`, real git), `test/herdr/job-worktree.test.ts`,
+`job-worktree-reap.test.ts` (the layout before cleaned up), `test/client/reap.test.ts`, `test/client/survey-roots.test.ts`,
+`test/engine/sweep.test.ts`, `test/domain/kept-work.test.ts`, `test/herdr/shared-deps.test.ts`.
