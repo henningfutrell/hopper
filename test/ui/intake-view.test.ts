@@ -206,10 +206,19 @@ describe('Intake says why a source lists no issue (issue #1125)', () => {
   it('a paused source has its panel, with why it lists nothing', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
-    await update({ name: 'github-app', kind: 'github-app', state: 'disabled', itemsSeen: 0, jobsCreated: 0, activeJobs: 0,
-      detail: { mode: 'app', paused: 'no GitHub account connected: the app takes the issues assigned to it — Sources → Connect GitHub' } });
-    await vi.waitFor(() => expect(panel('github-app')).not.toBeNull());
-    expect(panel('github-app')!.querySelector('[data-intake-paused]')!.textContent).toContain('Not listing issues: no GitHub account connected');
+    await update({ name: 'work', kind: 'github-account', state: 'disabled', itemsSeen: 0, jobsCreated: 0, activeJobs: 0,
+      detail: { paused: 'no repositories chosen for jobs: Sources → GitHub account → choose them' } });
+    await vi.waitFor(() => expect(panel('work')).not.toBeNull());
+    expect(panel('work')!.querySelector('[data-intake-paused]')!.textContent).toContain('Not listing issues: no repositories chosen for jobs');
+  });
+
+  it('the GitHub connection\'s source that cannot be built has its panel, with the error, never left out (issue #1377)', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await update({ name: 'broken', kind: 'github-account', state: 'error', itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: {}, lastError: 'invalid options: pollSeconds' });
+    await vi.waitFor(() => expect(panel('broken')).not.toBeNull());
+    expect(panel('broken')!.querySelector('[data-intake-error]')!.textContent).toBe('Not listing issues: this source cannot run. invalid options: pollSeconds');
+    expect(view()!.textContent).not.toMatch(/no GitHub App configured|private key/);
   });
 
   it('a repository the last sync could not list is named, with what GitHub said', async () => {

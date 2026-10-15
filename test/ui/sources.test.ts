@@ -1,69 +1,75 @@
-// The Sources view's GitHub section (issues #160, #214, #254, #359): the connected GitHub account is the
-// one way the hopper reads GitHub as the user; a GitHub App an admin set up is the one other connection.
-// The view says which one reads issues, why the other is paused, and orders them so. An unset GitHub App
-// that is on needs setup and says what it lacks (issue #1243).
+// The Sources view's GitHub section (issues #160, #214, #254, #359, #1377): the GitHub sign-in is the one way the hopper
+// reads and writes GitHub. The summary line reads the sign-in and its job repositories, never only whether a source status
+// exists: it never says no connection is configured while a person is signed in with GitHub; with no repositories it asks to
+// choose them; with an expired token, to sign in again; with a source that cannot run, why.
 import { describe, expect, it } from 'vitest';
-import { notConfiguredLines, sourcesView } from '../../ui/src/model/sources.ts';
-import type { SourceStatus } from '../../ui/src/model/wire.ts';
+import { sourcesView } from '../../ui/src/model/sources.ts';
+import type { ConnectedAccountStatus, SourceStatus } from '../../ui/src/model/wire.ts';
+import { CONNECTED_VIA } from '../../src/domain/types.ts';
 
 const NOT_CONNECTED = 'GitHub is not connected: Sources → Connect GitHub';
 const EXPIRED = "GitHub's sign-in expired: Sources → Connect GitHub again";
+const NO_REPOSITORIES = 'no repositories chosen for jobs: Sources → GitHub account → choose them';
 
-const source = (name: string, kind: string, state: SourceStatus['state'], detail: Record<string, unknown> = {}): SourceStatus =>
-  ({ name, kind, state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail });
-const app = (state: SourceStatus['state'] = 'ok', paused?: string) => source('github-app', 'github-app', state, { mode: 'app', ...(paused ? { paused } : {}) });
+const source = (name: string, kind: string, state: SourceStatus['state'], detail: Record<string, unknown> = {}, more: Partial<SourceStatus> = {}): SourceStatus =>
+  ({ name, kind, state, itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail, ...more });
 const account = (login?: string, paused = NOT_CONNECTED) => source('github-account', 'github-account', login ? 'ok' : 'disabled', {
-  mode: 'account', ...(login ? { login } : { paused }),
+  ...(login ? { login } : { paused }),
 });
+const BASE = { provider: 'github', via: CONNECTED_VIA } as const;
+const signedIn = (jobRepositories: string[] = ['o/r']): ConnectedAccountStatus =>
+  ({ ...BASE, state: 'connected', account: 'octo-user', connectedAt: '2026-10-15T10:00:00Z', jobRepositories, configUrl: 'https://github.com/settings/installations' }) as ConnectedAccountStatus;
 
 describe('sourcesView', () => {
-  it('signed in with GitHub: the connection reads issues; a GitHub App source on but not set up needs setup, and says what it lacks (#254, #1243)', () => {
+  it('signed in, repositories chosen: the connection reads issues', () => {
     const acc = account('octo-user');
-    const unset = { ...app('needs-setup', 'no GitHub App configured'), setupProblem: { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' } };
-    const v = sourcesView([unset, acc]);
+    const v = sourcesView([acc], signedIn());
     expect(v.account).toBe(acc);
     expect(v.connected).toBe(true);
-    expect(v.github.map((c) => [c.use, c.why])).toEqual([['needs-setup', 'appId, slug, private key not set']]);
-    expect(notConfiguredLines([unset, acc])).toEqual(['github-app: appId, slug, private key not set']);
+    expect(v.github).toEqual([]);
     expect(v.others).toEqual([]);
     expect(v.summary).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
   });
 
-  it('an admin\'s own GitHub App stays beside the connection (#254)', () => {
-    const v = sourcesView([app(), account('octo-user')]);
-    expect(v.github.map((c) => [c.source.name, c.use])).toEqual([['github-app', 'in-use']]);
-    expect(v.summary).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user. The GitHub App an admin set up also reads issues, as its bot.');
+  it('signed in, no repositories chosen: it asks to choose them', () => {
+    const v = sourcesView([account(undefined, NO_REPOSITORIES)], signedIn([]));
+    expect(v.summary).toBe('Signed in with GitHub as octo-user. Choose the repositories for jobs below: until then no issue is read.');
   });
 
-  it('not connected, or a sign-in expired: Sources says so and how to sign in again; nothing else reads issues as the user (#359)', () => {
-    const v = sourcesView([account()]);
+  it('a sign-in whose token expired: it asks to sign in again', () => {
+    const expired = { ...BASE, state: 'expired', account: 'octo-user', connectedAt: '2026-10-15T10:00:00Z', error: EXPIRED } as ConnectedAccountStatus;
+    expect(sourcesView([account(undefined, EXPIRED)], expired).summary).toBe('Your GitHub sign-in expired. Sign in with GitHub again to read issues and work through it.');
+  });
+
+  it('signed in, the source missing or unable to run: never "no connection configured", and it says why', () => {
+    for (const v of [sourcesView([], signedIn()), sourcesView([source('github-account', 'github-account', 'error', {}, { lastError: 'invalid options: pollSeconds' })], signedIn())]) {
+      expect(v.summary).not.toMatch(/No GitHub connection is configured/);
+      expect(v.summary).toMatch(/^Signed in with GitHub as octo-user, but its job source/);
+    }
+    expect(sourcesView([source('github-account', 'github-account', 'error', {}, { lastError: 'invalid options: pollSeconds' })], signedIn()).summary)
+      .toBe('Signed in with GitHub as octo-user, but its job source cannot run: invalid options: pollSeconds.');
+    expect(sourcesView([source('github-account', 'github-account', 'disabled', {})], signedIn()).summary)
+      .toBe('Signed in with GitHub as octo-user, but its job source is switched off in Settings → Plugins.');
+  });
+
+  it('not signed in: it says how to sign in', () => {
+    const v = sourcesView([account()], { ...BASE, state: 'not-connected' } as ConnectedAccountStatus);
     expect(v.connected).toBe(false);
-    expect(v.account?.name).toBe('github-account');
-    expect(v.summary).toBe(`No issue is read through your GitHub connection: ${NOT_CONNECTED}.`);
-    expect(sourcesView([account(undefined, EXPIRED)]).summary).toBe(`No issue is read through your GitHub connection: ${EXPIRED}.`);
+    expect(v.summary).toBe('Sign in with GitHub, or connect GitHub below, to read issues and work through it.');
   });
 
-  it('the GitHub App in use while GitHub is not connected', () => {
-    expect(sourcesView([app(), account()]).summary).toBe('Issues are read through the GitHub App, as its bot. Connect GitHub to read your own issues too.');
+  it('before the sign-in is read: the source says it, and never "no connection configured"', () => {
+    expect(sourcesView([account()]).summary).toBe(`No issue is read through your GitHub connection: ${NOT_CONNECTED}.`);
+    expect(sourcesView([account('octo-user')]).summary).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
+    expect(sourcesView([]).summary).not.toMatch(/No GitHub connection is configured/);
   });
 
-  it('a GitHub App set up but broken stays, saying why; a disabled one says it is switched off', () => {
-    expect(sourcesView([app('ok', 'the private key does not parse')]).github.map((c) => [c.use, c.why])).toEqual([['paused', 'the private key does not parse']]);
-    expect(sourcesView([app('disabled')]).github.map((c) => [c.use, c.why])).toEqual([['disabled', 'switched off in its settings']]);
-  });
-
-  it('a paused source with no active jobs reports state disabled; it is still paused, not disabled', () => {
-    expect(sourcesView([app('disabled', 'the private key does not parse')]).github.map((c) => c.use)).toEqual(['paused']);
-  });
-
-  it('no GitHub connection at all', () => {
-    expect(sourcesView([]).summary).toBe('No GitHub connection is configured.');
-  });
-
-  it('other sources stay out of the GitHub section', () => {
+  it('a second connected-account source is a card of its own; other sources stay out of the GitHub section', () => {
     const other = source('linear', 'linear', 'ok');
-    const v = sourcesView([other, app()]);
-    expect(v.github.map((c) => c.source.name)).toEqual(['github-app']);
+    const second = { ...account('octo-user'), name: 'gh-2', duplicateOf: 'github-account' };
+    const v = sourcesView([other, account('octo-user'), second]);
+    expect(v.github.map((s) => s.name)).toEqual(['gh-2']);
     expect(v.others).toEqual([other]);
+    expect(v.duplicates).toEqual([second]);
   });
 });
