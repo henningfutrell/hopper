@@ -18,6 +18,10 @@ export const ALREADY_APPROVED = 'already approved';
 export const ALREADY_TAKEN = 'already taken, no approval needed';
 /** Take into Intake on an issue the last census did not offer (issue #1176). */
 export const NOT_OFFERED_TAKE_IN = 'not offered: no untracked pull request closes it';
+/** Approve resolved again (issue #1316, approvals.ts `resolve`): why not. */
+export const NOT_SHOWN = 'not offered: the source does not list it as a request now';
+export const HAS_JOB = 'already taken: it has a job here';
+export const DECLINED = 'declined before: an edit to its title or body shows it again';
 const NO_ACCOUNT = 'no GitHub account connected';
 const NOTHING_FAILED = 'no GitHub write of this item failed';
 
@@ -31,6 +35,11 @@ export interface IntakeActionContext {
   intake: IntakeContext | undefined;
   /** Approve a request card (issue #652): false when it is not the text the last sync showed. Its GitHub work is outbox rows (issue #1238). */
   approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): boolean;
+  /**
+   * Approve resolved again (issue #1316): the issue read now, approved while it is a request card of the text `a.hash`
+   * names. `approved` or `done`, else why not. Absent: not resolved again.
+   */
+  resolve?(key: string, a: IntakeAction): Promise<string>;
   /** Keeps a person's decline of a request card (issue #1035); the text a person approved (issue #1045). */
   trust: Pick<IntakeTrust, 'decline' | 'approvedText'>;
   /** The source's label: what Take into Intake gives an issue. */
@@ -89,6 +98,16 @@ function retryOutbox(c: IntakeActionContext, keys: string[]): IntakeActionResult
   return { done, failed };
 }
 
+/** `resolve`'s answer: undefined when the key is done, else why not. A read that failed says so. */
+async function again(c: IntakeActionContext, key: string, a: IntakeAction): Promise<string | undefined> {
+  try {
+    const r = await c.resolve!(key, a);
+    return r === 'approved' || r === 'done' ? undefined : r;
+  } catch (err) {
+    return `the issue could not be read again: ${(err as Error).message}`;
+  }
+}
+
 export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promise<IntakeActionResult> {
   if (a.kind === 'take_in') return takeIn(c, a.keys);
   if (a.kind === 'retry_outbox') return retryOutbox(c, a.keys);
@@ -97,7 +116,12 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
   const failed: Record<string, string> = {};
   for (const key of [...new Set(a.keys)]) {
     const x = offered.get(key);
-    if (!x?.repo) { failed[key] = NOT_IN_SCOPE; continue; }
+    if (!x?.repo) {
+      // Not listed (no sync since a restart, say): Approve reads the issue now (issue #1316).
+      const r = a.kind === 'approve' && c.resolve ? await again(c, key, a) : NOT_IN_SCOPE;
+      if (r === undefined) done.push(key); else failed[key] = r;
+      continue;
+    }
     if (x.action !== offeredAs(a.kind)) {
       // Approve again of a text already approved, from a page that still shows the card or another client, is done:
       // nothing more to do (issue #1045).
@@ -109,7 +133,11 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
     try {
       if (a.kind === 'approve') {
         // A reopened card (issue #1126): the approve takes `hopper:done` off, after it (issue #1194), so the sync takes it again.
-        if (!c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
+        // Another hash: the issue as GitHub has it now may be the text the person read (issue #1316).
+        if (!c.approve(x.repo, key, x.request, a)) {
+          const r = c.resolve ? await again(c, key, a) : TEXT_CHANGED_SINCE_SHOWN;
+          if (r !== undefined) { failed[key] = r === NOT_SHOWN ? TEXT_CHANGED_SINCE_SHOWN : r; continue; }
+        }
       } else if (a.kind === 'decline') {
         // Only the text the person read, as the last sync showed it. Nothing on GitHub.
         if (!x.request || x.request.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
