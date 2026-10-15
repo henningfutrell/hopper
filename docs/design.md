@@ -12893,6 +12893,13 @@ cannot see which. A client in the same distro can, so it tests the link:
   (`localhost`, `127.x.x.x`, `[::1]`) is on the same PC as the hopper. Any other client tests nothing. In the
   background, at most every 5 minutes, and at its first `/release` after a start; a result older than 15 minutes is
   dropped.
+- **The `[::1]` port** (the path "Publish the port on IPv6 loopback too"). Windows tries `::1` first for `localhost`,
+  and WSL passes it through only to a port the distro publishes on `::1`. So on Windows the install page writes a
+  `compose.override.yaml` that publishes the UI on `[::1]` beside `127.0.0.1`, only when the distro has IPv6 loopback
+  (`/proc/net/if_inet6` lists `::1`): a distro without it cannot bind `::1`, and the start would fail. Not in
+  `compose.yaml` itself: compose cannot add a port on a condition, and a Linux host gains nothing from it. A request on
+  `::1` reaches the daemon from the compose network, as one on `127.0.0.1` does; nothing listens on a LAN interface
+  (`docs/deploy.md` "Open it at localhost from Windows").
 - **The test** (`src/client/windows-link.ts`). `wslinfo --networking-mode` gives the **mode** (`nat`, `mirrored`).
   `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on the
   **address check** (`/job/address`, issue #698: 204 to anyone the Host guard lets in, with no session; `/api/health`

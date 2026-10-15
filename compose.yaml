@@ -181,7 +181,9 @@ services:
     # The socket is not a file SELinux lets a container open (Fedora and the like); without SELinux this changes nothing.
     security_opt: [label=disable]
     ports:
-      # HOPPER_BIND: the address the UI is published on; 0.0.0.0 reaches it from the LAN (issue #697).
+      # HOPPER_BIND: the address the UI is published on; 0.0.0.0 reaches it from the LAN (issue #697). On Windows (WSL),
+      # compose.override.yaml publishes it on [::1] too, so Windows opens localhost (issue #712, docs/deploy.md "Open it at
+      # localhost from Windows").
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
     # `tunnel` (issues #795, #880): the network the hopper shares with the tunnel alone (below). `search` (issue #945): the
     # one it shares with Solr alone.
