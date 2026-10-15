@@ -92,7 +92,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — and `install.html`, the install page; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/`; of `ui/` only `index.css` and `app/story.ts`; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
-| `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, the same images as `compose.yaml`; tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
+| `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, and its lane pods (issue #1284, "Lane pods"), the same images as `compose.yaml`; tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
@@ -20301,7 +20301,7 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   details' link), `test/ui/board.test.ts` (`waitOnLinkOf`), `test/integration/skill-wait-wakes-job.test.ts` (an approval
   still ends the wait with the skill's answer).
 
-## Lane pods (issue #1284, 2026-10-15, part 1)
+## Lane pods (issue #1284, 2026-10-15)
 
 Part of #1281 (hopper and every machine on Kubernetes). Owner request: a StatefulSet of **lane pods** (chart value
 `replicas`) that register with the hopper by dialling out — one machine per pod, a stable name, a volume for the
@@ -20318,7 +20318,7 @@ join, a preshared key of the install's as `HOPPER_TUNNEL_KEY` is) and to the pod
 takes it as it takes a join code (`src/machines/lane-pool.ts`, constant time), and never spends it.
 
 - A lane pod is a machine of the hopper's first user, `admin` — the first person who signed in. Before anyone has,
-  the join is refused (409) and the join step tries again (the init container's restart).
+  the join is refused (409) and the join step tries again (every 10 s, part 2).
 - It joins under its pod's name (`hopper-lanes-0`), with `pool: true` on its `client` instance. A key a machine
   holds joins as that machine, as before. **A pod that lost its volume** joins with a new key under its name: a lane
   pod of that name is the same machine, its key replaced and its other options kept (`applyMachineJoin`). A
@@ -20343,10 +20343,24 @@ Machines view shows *leaving*. The answer: `{ jobs, retired }`, the jobs still o
   its name: the same machine, with the machine defaults' lanes and executors. Any other machine is never removed by a
   leave: it only takes no new job until it dials in again.
 
-**Not in this part** (part 2, after #1282's chart): the StatefulSet itself in the chart — `replicas`, the init join
-step, the Secret, the volume claim template, the grace period, `HOPPER_LANE_POOL_KEY_FILE` on the hopper's pod, the LAN
-names and peers so the pods reach the hopper by its Service name — and a kind run of the acceptance (1 → 3 → 1).
-`docs/deploy.md` "Lane pods on Kubernetes" has the pod spec the chart is to carry.
+**Part 2: the StatefulSet in the chart** (`deploy/helm/hopper/templates/lanes.yaml`, `docs/deploy.md` "Lane pods on
+Kubernetes"). `lanes.replicas` (default 0) pods of the box image of the hopper's update channel (`box-claude` for
+`latest` and `stable`, `box-claude-<channel>` for the others).
+- The chart makes the lane pool key at the first install (the SHA-256 of 64 random characters: 64 hex) in the Secret
+  `<release>-lane-pool`, kept at each upgrade (read back) and at an uninstall, as the runtime Secret is. The hopper's pod
+  mounts it and reads it through `HOPPER_LANE_POOL_KEY_FILE`; in a lane pod only the init container `join` mounts it.
+- The init container copies the image's home into the volume once, then joins under the pod's name
+  (`metadata.name`) at the hopper's Service (`http://<release>:<port>`, a LAN name the chart already sets, from the pod
+  network in `lanPeers`), again every 10 s until it is let in. A refusal before anyone signed in is no crash loop.
+- One volume per pod (`volumeClaimTemplates` `home`, `lanes.size`): the link key, the agent's sign-in, the work trees.
+  `persistentVolumeClaimRetentionPolicy` `whenScaled: Delete`: a pod scaled away was retired, so its volume goes too.
+- `terminationGracePeriodSeconds` is `lanes.drainSeconds` (3600); the lane container has `HOPPER_CLIENT_DRAIN`.
+- No Service selects the pods, and the NetworkPolicy `<release>-lanes` lets nothing reach them (`ingress: []`). The
+  NetworkPolicies of Postgres, OpenFGA and Solr do not name them, so a lane pod reaches none of them.
+- The chart is not yet merged (#1282): part 2 is built on its branch, and lands it with it.
+
+**Not done here:** a run of the acceptance on a cluster (1 → 3 → 1, a pod restart, a scale-down while a job runs): no
+CI runner has a cluster. `docs/deploy.md` "Lane pods on Kubernetes" has the steps.
 
 **Verification:** `test/integration/lane-pool.test.ts` (three pods join with one key; a restart with and without its
 volume is the same machine; a wrong key, no pool, no user yet refused; a pod leaving with no job retired, then joining

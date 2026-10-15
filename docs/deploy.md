@@ -644,17 +644,17 @@ To give a key from the first start, make that Secret before `helm install`. A ro
 | `solr.enabled` | `false`: no Solr, and no search |
 | `networkPolicy.enabled` | NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. Default on; they take effect where the network plugin enforces them |
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
+| `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
 The chart makes the database password and OpenFGA's preshared key at the first install, in the Secret `hopper-runtime`,
-and keeps them at each upgrade. An uninstall keeps that Secret and the home volume (`helm.sh/resource-policy: keep`), and
+and the lane pool key in the Secret `hopper-lane-pool`, and keeps them at each upgrade. An uninstall keeps those Secrets and the home volume (`helm.sh/resource-policy: keep`), and
 the StatefulSets' volumes stay too: the database keeps the password it was made with. Remove them by hand only together.
 
 Update: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values` with the chart of the new version.
 The hopper stops before the new one starts (one writer of its database).
 
-Not in the chart yet (issue #1281 has the parts): machines in the cluster (join machines from outside as `client`
-targets: `README.md` "Add machines"), sandbox boxes the hopper starts, remote access (`tunnel`, `cloudflared`: use the Ingress), the
+Not in the chart yet (issue #1281 has the parts): sandbox boxes the hopper starts, remote access (`tunnel`, `cloudflared`: use the Ingress), the
 optional services, and an update and drift check that know Kubernetes — the hopper's drift check reads a compose stack,
 and in the cluster it says compose services are not running.
 
@@ -1152,73 +1152,34 @@ runs on it.
 ## Lane pods on Kubernetes
 
 Lane pods are machines that run as a StatefulSet and dial out to the hopper (design.md "Lane pods", issue #1284). Each
-pod is one machine under its pod's name. No sshd, no inbound port, no Service for the pods. The Helm chart (#1282) is
-to carry this; until it does, this is the pod spec it carries.
+pod is one machine under its pod's name, a machine of the first person who signed in. No sshd, no inbound port, no
+Service for the pods. The Helm chart ("On Kubernetes, with Helm") carries them: the StatefulSet `hopper-lanes`, and the
+lane pool key, which the chart makes at the first install in the Secret `hopper-lane-pool` and gives to the hopper and
+to the pods' join step only.
 
-1. Make the lane pool key, and keep it in a Secret: `kubectl create secret generic hopper-lane-pool --from-literal=key="$(openssl rand -hex 32)"`.
-2. Give the hopper the same key: mount the Secret into the hopper's pod and set `HOPPER_LANE_POOL_KEY_FILE` to its
-   file. The hopper reads it at each join.
-3. Let the pods reach the hopper by its Service name: `HOPPER_LAN_NAMES` holds that name (here `hopper`), and
-   `HOPPER_LAN_PEERS` the cluster's pod network.
-4. Sign in to the hopper once. The pods are the machines of the first person who signed in; until then, a pod's join
-   is refused, and its init container tries again.
-5. Apply the StatefulSet:
+1. Sign in to the hopper once. Until then, a pod's join is refused, and the pod tries again every 10 seconds.
+2. Set how many: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set lanes.replicas=3`.
+3. Sign each pod's agent in once: `kubectl --namespace hopper exec -it hopper-lanes-0 -c lane -- claude`. The sign-in
+   stays in the pod's volume.
 
-```yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata: { name: hopper-lanes }
-spec:
-  serviceName: hopper-lanes
-  replicas: 3                       # one machine per pod
-  podManagementPolicy: Parallel
-  # A pod scaled away gives up its volume: it was retired, and a new one starts as a new machine.
-  persistentVolumeClaimRetentionPolicy: { whenScaled: Delete, whenDeleted: Retain }
-  selector: { matchLabels: { app: hopper-lanes } }
-  template:
-    metadata: { labels: { app: hopper-lanes } }
-    spec:
-      # Told to stop, a pod takes no new job and waits this long for the jobs on it to end.
-      terminationGracePeriodSeconds: 3600
-      securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, runAsNonRoot: true }
-      initContainers:
-        # At each start: the image's home into the volume once, then the join. Only this container sees the key.
-        - name: join
-          image: ghcr.io/henningfutrell/hopper:box-claude
-          command: [sh, -c, 'cp -an /home/agent/. /var/lib/lane-home/ && HOPPER_CLIENT_DIR=/var/lib/lane-home/.config/hopper-client node /usr/local/lib/hopper-client/main.ts join "$HOPPER_URL#$(cat /run/lane-pool/key)" "$POD_NAME"']
-          env:
-            - { name: HOPPER_URL, value: "http://hopper:4790" }
-            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
-          volumeMounts:
-            - { name: home, mountPath: /var/lib/lane-home }
-            - { name: lane-pool, mountPath: /run/lane-pool, readOnly: true }
-      containers:
-        - name: lane
-          image: ghcr.io/henningfutrell/hopper:box-claude
-          env:
-            - { name: HOPPER_CLIENT_DRAIN, value: "1" }
-          securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
-          volumeMounts:
-            - { name: home, mountPath: /home/agent }
-            - { name: tmp, mountPath: /tmp }
-      volumes:
-        - { name: lane-pool, secret: { secretName: hopper-lane-pool, items: [{ key: key, path: key }] } }
-        - { name: tmp, emptyDir: {} }
-  volumeClaimTemplates:
-    - metadata: { name: home }
-      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 20Gi } } }
-```
-
-6. Sign each pod's agent in once: `kubectl exec -it hopper-lanes-0 -c lane -- claude`. The sign-in stays in the pod's
-   volume.
+| value | |
+|---|---|
+| `lanes.replicas` | how many lane pods: one machine each. Default `0`: none |
+| `lanes.drainSeconds` | how long a pod told to stop waits for the jobs on it to end (`terminationGracePeriodSeconds`). Default `3600` |
+| `lanes.size`, `lanes.storageClass` | each pod's volume: its link key, the agent's sign-in and the jobs' work trees. Default `20Gi` |
+| `lanes.agent`, `lanes.imageTag` | the box image: `box-<agent>` for the `latest` and `stable` channels, `box-<agent>-<channel>` for the others, unless `lanes.imageTag` names another tag |
+| `lanes.resources`, `lanes.nodeSelector`, `lanes.tolerations`, `lanes.affinity` | where the pods run, and with what |
 
 What to expect:
 
-- Scale 1 → 3 (`kubectl scale statefulset hopper-lanes --replicas=3`): Machines shows `hopper-lanes-0`, `-1` and `-2`,
-  online, each taking jobs.
+- Scale 1 → 3: Machines shows `hopper-lanes-0`, `-1` and `-2`, online, each taking jobs.
 - Scale down: each pod that goes is *leaving* on Machines — no new job, its jobs run to their end — then retired, gone
-  from Machines. A job still on it at the end of the grace period is a job on a machine that went away.
+  from Machines. Its volume goes with it. A job still on it at the end of `lanes.drainSeconds` is a job on a machine
+  that went away.
 - A pod restarted (a rollout, a node drained) leaves the same way, then joins again as the same machine.
+
+Without the chart, give the same: a Secret with the key (`openssl rand -hex 32`), mounted into the hopper's pod with
+`HOPPER_LANE_POOL_KEY_FILE` naming its file, and a StatefulSet like `deploy/helm/hopper/templates/lanes.yaml`.
 
 ## Vault backends (optional)
 

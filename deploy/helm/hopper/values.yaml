@@ -77,3 +77,23 @@ solr:
 # only where the cluster's network plugin enforces them.
 networkPolicy:
   enabled: true
+
+# Lane pods (docs/deploy.md "Lane pods on Kubernetes", issue #1284): machines in the cluster, a StatefulSet that joins the
+# hopper by dialling out — one machine per pod, under its pod's name, of the first person who signed in. No sshd, no
+# inbound port. Each pod's agent signs in once: `kubectl exec -it hopper-lanes-0 -c lane -- claude`.
+lanes:
+  # How many: 0 runs none. Scaled down, a pod takes no new job and is retired once the jobs on it end.
+  replicas: 0
+  # The agent CLI in the box image (ghcr.io/…:box-<agent>, of the hopper's update channel).
+  agent: claude
+  # Another box image tag; empty: box-<agent> for latest and stable, box-<agent>-<channel> for the other channels.
+  imageTag: ""
+  # How long a pod told to stop waits for the jobs on it to end.
+  drainSeconds: 3600
+  # Each pod's home: its link key, the agent's sign-in and the jobs' work trees.
+  size: 20Gi
+  storageClass: ""
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

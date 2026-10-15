@@ -1,0 +1,1 @@
+- The Helm install can now run those machines too: set how many, and each one joins by itself with no setup.

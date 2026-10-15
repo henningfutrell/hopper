@@ -92,6 +92,9 @@ spec:
               value: {{ printf "http://%s-openfga:8080" $name | quote }}
             - name: HOPPER_OPENFGA_KEY_FILE
               value: /run/hopper-secrets/openfga_key
+            # The key lane pods join with (issue #1284), read at each join.
+            - name: HOPPER_LANE_POOL_KEY_FILE
+              value: /run/lane-pool/key
             {{- if .Values.solr.enabled }}
             - name: HOPPER_SOLR_URL
               value: {{ printf "http://%s-solr:8983/solr/hopper" $name | quote }}
@@ -136,6 +139,9 @@ spec:
             - name: secrets
               mountPath: /run/hopper-secrets
               readOnly: true
+            - name: lane-pool
+              mountPath: /run/lane-pool
+              readOnly: true
             # Its home: the claude sign-in.
             - name: home
               mountPath: /home/node
@@ -149,6 +155,13 @@ spec:
                 path: database_url
               - key: openfga_key
                 path: openfga_key
+        - name: lane-pool
+          secret:
+            secretName: {{ include "hopper.lanePoolSecret" . }}
+            defaultMode: 0440
+            items:
+              - key: key
+                path: key
         - name: home
           persistentVolumeClaim:
             claimName: {{ $name }}-home
