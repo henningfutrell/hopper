@@ -303,11 +303,20 @@ is only in the hopper's environment, given at launch.
        hopper; when it is off, the update goes on without it and says the line that turns it on (`systemctl --user
        enable --now podman.socket`). A `compose.override.yaml` that is the old `compose.sandboxes.yaml` goes to
        `compose.override.yaml.bak` ("Sandbox boxes the hopper starts" below).
+       **First it checks the new `compose.yaml` with your `compose.override.yaml`** as compose merges them (issue #1246,
+       `hopper update check`): a target mounted twice or a host port published twice makes `up -d` fail, so the update
+       stops before it changes anything, and says the file, the service, the key and the fix
+       (`conflict: compose.override.yaml: services.hopper.volumes: /run/podman/podman.sock: …`). When the override entry
+       only repeats what `compose.yaml` gives now, the update asks to remove it (a backup stays as
+       `compose.override.yaml.bak`); an update with no person removes it only with `HOPPER_UPDATE_FIX_OVERRIDE=1`. An
+       override setting that gives another value than one `compose.yaml` fixes is a warning: the override's value wins.
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
        data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image. Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
        `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
-       the old `compose.yaml` back and starts the old stack again.
+       the old `compose.yaml` and `compose.override.yaml` back, points the image tag the old file names at the image
+       the hopper ran before (the pull moved it), and starts the old stack again. When the pull fails, the old files go
+       back and the stack that runs is not touched.
     6. **Checks the result**: the hopper's container runs the image pulled (the image ids match), answers `/api/health`
        (it waits up to `HOPPER_UPDATE_WAIT` seconds, 180 by default, and shows the last log lines when the container
        stops: a wrong master key stops it), has its master key (`hopper master-key status` is not `missing`), and the
@@ -340,7 +349,11 @@ is only in the hopper's environment, given at launch.
     writes no file itself. When the old file has what the new one cannot name — a setting it does not name, a service of
     the install's own with the volumes it names, a host folder mounted into a service, a key of a service the hopper
     never sets, the install's own project name — it prints that part on stderr, to add to `compose.override.yaml`. A
-    service the hopper once shipped and no longer does is dropped, and said so.
+    service the hopper once shipped and no longer does is dropped, and said so. With `--with-override`, stdin is
+    `compose.yaml`, a line `#--- hopper update: compose.override.yaml`, then the override: carry prints nothing and
+    exits 4 while the two conflict. `hopper update check` answers the conflicts alone, as JSON (`{ok, conflicts: [{kind,
+    file, service, key, value, detail, resolution, refuse, fixable}]}`), exit 4 when one stops the update; `hopper update
+    fix-override` prints the override without the entries `compose.yaml` gives itself.
 
     **To go back:** run the update with the image you ran before (`ghcr.io/henningfutrell/hopper:sha-<commit>`;
     `compose.yaml.bak` names it). A migration leaves a store the build before still runs on. To restore the database

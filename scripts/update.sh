@@ -13,16 +13,22 @@
 #   3. looks for your rootless Podman socket (issue #1157): when podman.socket is on, the new compose.yaml gives it to the
 #      hopper; when it is off, the update goes on without it and says the one line that turns it on. A compose.override.yaml
 #      that is the old compose.sandboxes.yaml goes to compose.override.yaml.bak: compose.yaml gives the socket now;
-#   4. backs up the database (hopper-backup.dump), puts in the compose.yaml of the image with the install's own settings
-#      (`hopper update carry`; the old one stays as compose.yaml.bak), pulls, stops the stack and starts it on the image,
-#      so every container is made again (when it does not start: back to the old compose.yaml and stack);
-#   5. checks that the hopper runs the image pulled, answers /api/health, has its master key, that the openfga-migrate
+#   4. backs up the database (hopper-backup.dump) and pulls the image;
+#   5. checks the new compose.yaml with compose.override.yaml as compose merges them (issue #1246): a target mounted twice
+#      or a port published twice stops the update before it changes anything. An override entry that only repeats what
+#      compose.yaml gives is removed when you accept it (on the terminal, or HOPPER_UPDATE_FIX_OVERRIDE=1; the old file:
+#      compose.override.yaml.bak);
+#   6. puts in the compose.yaml of the image with the install's own settings (`hopper update carry`; the old one stays as
+#      compose.yaml.bak), pulls the stack, stops it and starts it on the image, so every container is made again. When it
+#      does not start: back to the old compose.yaml, compose.override.yaml and the image the hopper ran before;
+#   7. checks that the hopper runs the image pulled, answers /api/health, has its master key, that the openfga-migrate
 #      one-shot exited 0 (then removes its container, issue #1247), and that the stack has no drift (`hopper update
 #      drift`), and says the result. It exits 1 when one of these fails;
-#   6. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
+#   8. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
 #      before, to go back to. An image a container still uses is not removed.
 #
-#   HOPPER_UPDATE_WAIT  seconds to wait for the hopper's health (default: 180)
+#   HOPPER_UPDATE_WAIT          seconds to wait for the hopper's health (default: 180)
+#   HOPPER_UPDATE_FIX_OVERRIDE  1: remove the compose.override.yaml entries compose.yaml gives itself, with no question
 #
 # Everything is in main(), called on the last line, so a download cut short runs nothing.
 set -euo pipefail
@@ -31,11 +37,11 @@ main() {
   local project=hopper
 
   [ -f compose.yaml ] || fail "no compose.yaml here: run it in the folder that holds the hopper's compose.yaml"
-  local image="${1:-}"
-  if [ -z "$image" ]; then
-    image="$(sed -n 's/^ *image: \${HOPPER_IMAGE:-\([^}]*\)}.*/\1/p' compose.yaml | head -n 1)"
-    [ -n "$image" ] || fail "give the image to update to: bash -s -- ghcr.io/henningfutrell/hopper:<channel>"
-  fi
+  # The image compose.yaml names now: a failed start goes back to it.
+  local old_ref; old_ref="$(sed -n 's/^ *image: \${HOPPER_IMAGE:-\([^}]*\)}.*/\1/p' compose.yaml | head -n 1)"
+  local image="${1:-$old_ref}"
+  [ -n "$image" ] || fail "give the image to update to: bash -s -- ghcr.io/henningfutrell/hopper:<channel>"
+
   [[ "$image" =~ ^[A-Za-z0-9][A-Za-z0-9._/:@-]*$ ]] || fail "'$image' is no image reference"
 
   # The master key, given at launch (issue #970): never from a file or the running container.
@@ -101,11 +107,9 @@ main() {
     fi
   fi
   # compose.sandboxes.yaml saved as compose.override.yaml (issue #603) mounts the same socket: podman-compose would mount it
-  # twice, and the stack would not start.
+  # twice, and the stack would not start. Any other override that does is a conflict, found below.
   local sandboxes=0
-  if [ -f compose.override.yaml ] && grep -q '/run/podman/podman.sock' compose.override.yaml; then
-    [ "$(grep -Ev '^ *(#|$)' compose.override.yaml)" = "$SANDBOXES_OVERRIDE" ] \
-      || fail 'compose.override.yaml gives the hopper the Podman socket, and compose.yaml does that now: remove those lines from compose.override.yaml (keep the rest), then run the update again. Nothing changed'
+  if [ -f compose.override.yaml ] && [ "$(grep -Ev '^ *(#|$)' compose.override.yaml)" = "$SANDBOXES_OVERRIDE" ]; then
     sandboxes=1
   fi
 
@@ -116,12 +120,33 @@ main() {
     "$runtime" pull "$image" >&2 || fail "the pull of $image failed: the update stops, and nothing changed"
   fi
 
+  # The merge compose will start (issue #1246), checked while nothing changed yet.
+  local carry=("$runtime" run --rm -i "$image" hopper update)
+  local flags=(--image "$image" --podman-socket "$socket" --with-override)
+  local fixed_override=0 swapped=0 code=0
+  merge_input "$sandboxes" | "${carry[@]}" check "${flags[@]}" >/dev/null || code=$?
+  if [ "$code" = 4 ]; then
+    local fixed
+    fixed="$(merge_input "$sandboxes" | "${carry[@]}" fix-override "${flags[@]}")" \
+      || fail 'compose.override.yaml conflicts with the compose.yaml of the new version (above): fix it as said, then run the update again. Nothing changed'
+    if ! accept_fix; then
+      fail 'compose.override.yaml repeats what the compose.yaml of the new version gives (above): the stack would not start. Nothing changed. Remove those entries yourself, or run the update again with HOPPER_UPDATE_FIX_OVERRIDE=1 (or answer y on a terminal) and it removes them, with a backup'
+    fi
+    cp compose.override.yaml compose.override.yaml.bak
+    printf '%s\n' "$fixed" >compose.override.yaml
+    fixed_override=1
+    say 'removed the repeated entries from compose.override.yaml (the old file: compose.override.yaml.bak)'
+  elif [ "$code" != 0 ]; then
+    fail 'the check of compose.yaml and compose.override.yaml failed (above): the update stops, and nothing changed'
+  fi
+
   say "put in the compose.yaml of $image (the old one: compose.yaml.bak)"
-  "$runtime" run --rm -i "$image" hopper update carry --image "$image" --podman-socket "$socket" <compose.yaml >compose.yaml.next \
-    || { rm -f compose.yaml.next; fail 'hopper update carry failed: the update stops, and nothing changed'; }
+  merge_input "$sandboxes" | "${carry[@]}" carry "${flags[@]}" >compose.yaml.next \
+    || { rm -f compose.yaml.next; restore_files; fail 'hopper update carry failed: the update stops, and the old files are back'; }
   diff -u compose.yaml compose.yaml.next >&2 || true
   cp compose.yaml compose.yaml.bak
   mv compose.yaml.next compose.yaml
+  swapped=1
   if [ "$sandboxes" = 1 ]; then
     say 'compose.override.yaml was compose.sandboxes.yaml: compose.yaml gives the socket now (the old file: compose.override.yaml.bak)'
     mv compose.override.yaml compose.override.yaml.bak
@@ -129,7 +154,8 @@ main() {
 
   export HOPPER_IMAGE="$image"
   say 'pull the stack'
-  "${compose[@]}" pull </dev/null >&2 || [ "$local_image" = 1 ] || fail "${compose[*]} pull failed. To go back: cp compose.yaml.bak compose.yaml"
+  "${compose[@]}" pull </dev/null >&2 || [ "$local_image" = 1 ] \
+    || { restore_files; fail "${compose[*]} pull failed: the old compose.yaml is back, and the stack that runs was not touched"; }
   # Every container is made again on the new image: podman-compose's plain `up -d` keeps a container whose image changed
   # under the same tag, and it cannot `--force-recreate` a service with no container yet (issue #894). So the old stack
   # stops (its volumes stay), and the new one starts.
@@ -140,15 +166,45 @@ main() {
     say 'the stack did not start: back to the old compose.yaml and image'
     unset HOPPER_IMAGE
     "${compose[@]}" down </dev/null >/dev/null 2>&1 || true
-    cp compose.yaml.bak compose.yaml
-    [ "$sandboxes" = 0 ] || mv compose.override.yaml.bak compose.override.yaml
+    restore_files
     clear_one_shot "$runtime"
+    # The pull moved the tag compose.yaml.bak names when the update kept its channel: the tag goes back to the image the
+    # hopper ran before.
+    local back=''
+    if [ -n "$previous" ] && [ -n "$old_ref" ] && "$runtime" tag "$previous" "$old_ref" >/dev/null 2>&1; then
+      back=", back on the image it ran before (${previous:0:12})"
+    fi
     "${compose[@]}" up -d </dev/null >&2 || true
-    fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again; the database backup is hopper-backup.dump"
+    fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again${back}; the database backup is hopper-backup.dump"
   fi
 
   check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}"
   prune "$runtime" "$image" "$previous"
+}
+
+# compose.yaml, the mark, then compose.override.yaml (none when it is the old compose.sandboxes.yaml, moved aside):
+# what `hopper update carry --with-override` reads (issue #1246).
+merge_input() {
+  printf '%s\n%s\n' "$(<compose.yaml)" '#--- hopper update: compose.override.yaml'
+  [ "$1" = 1 ] || [ ! -f compose.override.yaml ] || printf '%s\n' "$(<compose.override.yaml)"
+}
+
+# Whether the person lets the update remove the override entries compose.yaml gives itself: HOPPER_UPDATE_FIX_OVERRIDE=1,
+# else their answer on the terminal; with neither, no.
+accept_fix() {
+  [ "${HOPPER_UPDATE_FIX_OVERRIDE:-}" = 1 ] && return 0
+  local tty="${HOPPER_UPDATE_TTY:-/dev/tty}" answer=''
+  { : <"$tty"; } 2>/dev/null || return 1
+  printf 'hopper update: compose.yaml gives these itself now: remove them from compose.override.yaml (a backup stays as compose.override.yaml.bak)? [y/N] ' >&2
+  IFS= read -r answer <"$tty" || true
+  [[ "$answer" =~ ^[Yy] ]]
+}
+
+# The files as they were before the update: compose.yaml and compose.override.yaml (main's own variables).
+restore_files() {
+  [ "$swapped" = 0 ] || cp compose.yaml.bak compose.yaml
+  [ "$swapped" = 0 ] || [ "$sandboxes" = 0 ] || mv compose.override.yaml.bak compose.override.yaml
+  [ "$fixed_override" = 0 ] || mv compose.override.yaml.bak compose.override.yaml
 }
 
 # The older hopper images (issue #1120): every one but the one the hopper runs and the one it ran before. An image a

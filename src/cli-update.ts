@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { CliIo } from './cli.ts';
 import { carryCompose, carryOverride, PODMAN_SOCKET_PATH } from './update/compose-carry.ts';
+import { COMPOSE, composeConflicts, conflictLine, dropRedundant, OVERRIDE, OVERRIDE_MARK } from './update/compose-conflicts.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
 import { COMPOSE_TOOLS, IMAGE_REF, PUBLISHED_IMAGE, runtimeOf, updateCommand, type ComposeTool } from './update/update-commands.ts';
 import { UPDATE_SKILL } from './update/update-skill.ts';
@@ -21,7 +22,14 @@ export const UPDATE_USAGE = `  hopper update script                             
                                                      HOPPER_IMAGE; run as <tool> run --rm -i <ref> hopper update carry
                                                      --image <ref> < compose.yaml > compose.yaml.next. --podman-socket
                                                      <path>: the rootless Podman socket on the host, mounted into the
-                                                     hopper; empty or absent: none (/dev/null)
+                                                     hopper; empty or absent: none (/dev/null). --with-override: stdin
+                                                     is compose.yaml, a line '${OVERRIDE_MARK}', then
+                                                     compose.override.yaml; it refuses (exit 4) while the two conflict
+  hopper update check --image <ref> --with-override  carry's check alone: the conflicts of the new compose.yaml and
+                                                     compose.override.yaml, as JSON; exit 4 when one stops the update
+  hopper update fix-override --image <ref> --with-override
+                                                     print compose.override.yaml without the entries compose.yaml gives
+                                                     itself; exit 4, and nothing printed, when another conflict stays
   hopper update compose                              print the compose.yaml this build ships with, stamped with its version
   hopper update skill                                print the steps an agent follows to update a container hopper
 ${DRIFT_USAGE}`;
@@ -41,9 +49,12 @@ function removed(what: string, image: string | undefined): string | undefined {
     + `In the folder that holds compose.yaml, run (what it does: hopper update skill):\n  ${updateCommand(runtimeOf(tool), ref)}\n`;
 }
 
+/** A conflict of compose.yaml and compose.override.yaml stops the update (issue #1246): not 1 (a failure), 2 (a refusal) or 3 (drift). */
+export const CONFLICT_EXIT = 4;
+
 /** `hopper update …`; the exit code. */
 export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { image: { type: 'string' }, 'podman-socket': { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { image: { type: 'string' }, 'podman-socket': { type: 'string' }, 'with-override': { type: 'boolean' } } });
   const [what, ...extra] = positionals;
   const fail = (text: string, code = 2): number => { io.err(`hopper update: ${text}\n`); return code; };
   if (extra.length > 0 || what === undefined) return fail(`usage:\n${UPDATE_USAGE}`);
@@ -54,19 +65,38 @@ export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number
   }
   const gone = removed(what, values.image);
   if (gone !== undefined) return fail(gone);
-  if (what !== 'compose' && what !== 'carry') return fail(`unknown command ${what}; usage:\n${UPDATE_USAGE}`);
+  if (!['compose', 'carry', 'check', 'fix-override'].includes(what)) return fail(`unknown command ${what}; usage:\n${UPDATE_USAGE}`);
   const read = readShippedCompose(appDir);
   if (!read.ok) return fail(read.reason, 1);
   if (what === 'compose') { io.out(read.shipped.compose); return 0; }
   if (!values.image || !IMAGE_REF.test(values.image)) return fail('carry needs --image <ref>, the image updated to');
-  const old = io.stdin();
+  const input = io.stdin();
+  const mark = values['with-override'] ? input.indexOf(`\n${OVERRIDE_MARK}\n`) : -1;
+  if (values['with-override'] && mark < 0) return fail(`--with-override: no line '${OVERRIDE_MARK}' on stdin after compose.yaml`);
+  const old = mark < 0 ? input : input.slice(0, mark + 1);
+  const override = mark < 0 ? undefined : input.slice(mark + OVERRIDE_MARK.length + 2);
   if (!old.trim()) return fail('no compose.yaml on stdin: run it as … hopper update carry --image <ref> < compose.yaml', 1);
   const podmanSocket = values['podman-socket'] || undefined;
   if (podmanSocket !== undefined && !PODMAN_SOCKET_PATH.test(podmanSocket)) return fail(`--podman-socket ${podmanSocket}: not an absolute path compose.yaml can hold`);
   const carried = carryCompose({ old, shipped: read.shipped.compose, image: values.image, ...(podmanSocket ? { podmanSocket } : {}) });
+  // The merge compose starts, checked before the stack goes down (issue #1246).
+  const check = composeConflicts([{ name: COMPOSE, text: carried.compose }, ...(override === undefined ? [] : [{ name: OVERRIDE, text: override }])]);
+  if (check.unread) return fail(`${check.unread}: fix it, then run the update again. Nothing changed`, 1);
+  const refused = check.conflicts.filter((c) => c.refuse);
+  if (what === 'fix-override') {
+    if (refused.some((c) => !c.fixable)) { for (const c of refused) io.err(`hopper update: ${conflictLine(c)}\n`); return CONFLICT_EXIT; }
+    io.out(override === undefined ? '' : dropRedundant(override, check.conflicts));
+    return 0;
+  }
+  for (const c of check.conflicts) io.err(`hopper update: ${conflictLine(c)}\n`);
+  if (what === 'check') {
+    io.out(`${JSON.stringify({ ok: refused.length === 0, conflicts: check.conflicts }, null, 2)}\n`);
+    return refused.length ? CONFLICT_EXIT : 0;
+  }
+  if (refused.length) return fail(`compose.yaml and ${OVERRIDE} conflict: no compose.yaml printed. Nothing changed`, CONFLICT_EXIT);
   for (const note of carried.notes) io.err(`hopper update: ${note}\n`);
   // What the new compose.yaml cannot hold is said, never dropped in silence: the person adds it to compose.override.yaml.
-  const kept = carryOverride(old, carried.compose, undefined, carried.overrideEnv);
+  const kept = carryOverride(old, carried.compose, override, carried.overrideEnv);
   if (kept.override !== undefined) {
     io.err(`hopper update: the new compose.yaml cannot hold all of the old one. Add this to compose.override.yaml (keep what it has), then start the stack:\n${kept.override}`);
   }

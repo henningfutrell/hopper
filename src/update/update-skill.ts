@@ -45,6 +45,10 @@ Do not do the update another way.
    health check, has its master key, OpenFGA's tables are up to date, and the stack has no drift. Else it says what
    failed and exits 1. A part of the old compose.yaml the new one cannot hold is said too: it goes in
    \`compose.override.yaml\`. A drift is fixed by the update again, never by a hand edit.
+   A line \`hopper update: conflict: <file>: services.<service>.<key>: …\` means \`compose.override.yaml\` conflicts with the
+   new compose.yaml (issue #1246). The update stopped before it changed anything. When the override entry only repeats what
+   compose.yaml gives, run the update again with \`HOPPER_UPDATE_FIX_OVERRIDE=1\`: it removes the entry and keeps a backup.
+   Else fix the override as the line says, or ask the person.
 6. Optional: remove the image the update replaced: \`${pruneCommand('podman')}\`.
 
 ## Go back

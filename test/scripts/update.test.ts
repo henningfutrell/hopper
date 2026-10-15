@@ -5,128 +5,16 @@
 // and checks the hopper runs the new image, is healthy, has its master key and shows no drift. The container tools are
 // stubs on PATH that record each call; `run … hopper …` runs this checkout's CLI. Nothing leaves this process tree.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:net';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { composeCalls, dirs, IMAGE, KEY, MIGRATE_ID, NEW_ID, runtimeDir, SANDBOXES, SCRIPT, servers, update } from '../support/update-script.ts';
 
-const ROOT = join(import.meta.dirname, '..', '..');
-const SCRIPT = join(ROOT, 'scripts', 'update.sh');
-const IMAGE = 'ghcr.io/henningfutrell/hopper:beta';
-const KEY = 'a'.repeat(64);
-const SHIPPED = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
-const NEW_ID = 'b'.repeat(64);
-const HOPPER_ID = 'c'.repeat(64);
-
-const SANDBOXES = readFileSync(join(ROOT, 'test', 'fixtures', 'compose', 'sandboxes-override.yaml'), 'utf8');
-
-const dirs: string[] = [];
-const servers: Server[] = [];
 afterEach(async () => {
   for (const s of servers.splice(0)) await new Promise((done) => s.close(done));
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
-
-/** An XDG_RUNTIME_DIR with a listening podman/podman.sock in it, as podman.socket makes. */
-async function runtimeDir(): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'jh-xdg-'));
-  dirs.push(dir);
-  mkdirSync(join(dir, 'podman'));
-  const server = createServer();
-  servers.push(server);
-  await new Promise<void>((done) => server.listen(join(dir, 'podman', 'podman.sock'), done));
-  return dir;
-}
-
-// The stack (STUB_STACK) was started by podman-compose or docker-compose, or there is none. `podman compose` runs the
-// provider PODMAN_COMPOSE_PROVIDER names, else docker-compose (it runs docker-compose when it finds it); a compose tool sees
-// only the stack its own kind started. The openfga-migrate one-shot (issue #1247) is the file .migrate in the install's
-// folder, its exit code in it: podman-compose's `up -d` makes it, its `down` leaves it, and its `up -d` exits 125 while it
-// is there (the container name is in use); `podman rm -f` removes it.
-const MIGRATE_ID = '9999999999ab';
-const PODMAN = `#!/bin/sh
-printf 'podman %s | HOPPER_IMAGE=%s\\n' "$*" "\${HOPPER_IMAGE:-}" >> "$STUB_LOG"
-compose() {
-  case "$*" in
-    *"ps -q") [ "$STUB_STACK" = "$1" ] && echo 0123456789abcdef ;;
-    *"exec -T postgres pg_dump"*) echo DUMP ;;
-  esac
-  exit 0
-}
-case "$*" in
-  "compose "*) shift; compose "\${PODMAN_COMPOSE_PROVIDER:-docker-compose}" "$@" ;;
-  "ps -aq --filter label=com.docker.compose.project=hopper") [ -n "$STUB_STACK" ] && echo 0123456789abcdef ;;
-  "ps -aq --filter label=io.podman.compose.project=hopper") [ "$STUB_STACK" = podman-compose ] && echo 0123456789abcdef ;;
-  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=postgres") [ -n "$STUB_STACK" ] && echo 0123456789abcdef ;;
-  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") echo ${HOPPER_ID} ;;
-  "image inspect --format {{.Id}} "*) echo ${NEW_ID} ;;
-  "inspect --format {{.Image}} "*) if grep -q 'up -d' "$STUB_LOG"; then echo "\${STUB_RUNNING_IMAGE:-${NEW_ID}}"; else echo "\${STUB_BEFORE_IMAGE:-}"; fi ;;
-  "images -q --no-trunc --filter label=org.opencontainers.image.title=hopper") printf '%s\\n' \${STUB_IMAGES:-} ;;
-  "rmi "*) [ "$2" != "\${STUB_IN_USE:-}" ]; exit $? ;;
-  "ps -aq --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=openfga-migrate") [ -f .migrate ] && echo ${MIGRATE_ID} ;;
-  "inspect --format {{.State.Status}} {{.State.ExitCode}} ${MIGRATE_ID}") read code < .migrate; echo "exited $code" ;;
-  "rm -f ${MIGRATE_ID}") rm -f .migrate ;;
-  "logs --tail 20 ${MIGRATE_ID}") echo 'openfga-migrate: the last migrate log line' ;;
-  "inspect --format {{.State.Running}} "*) echo "\${STUB_STATE:-true}" ;;
-  "logs "*) echo 'the last log line' ;;
-  "exec ${HOPPER_ID} node "*) exit "\${STUB_HEALTH:-0}" ;;
-  "exec ${HOPPER_ID} hopper master-key status") printf '{\\n  "source": "%s",\\n  "fingerprint": "%s",\\n  "previous": false\\n}\\n' "\${STUB_KEY_SOURCE:-given}" "${'f'.repeat(64)}" ;;
-  "exec ${HOPPER_ID} hopper update drift") echo '{"state":"checked","gaps":[]}'; exit "\${STUB_DRIFT:-0}" ;;
-  run\\ *) while [ "$1" != hopper ]; do shift; done; shift; exec '${process.execPath}' '${join(ROOT, 'src', 'cli.ts')}' "$@" ;;
-esac
-exit 0
-`;
-const PODMAN_COMPOSE = `#!/bin/sh
-printf 'podman-compose %s | HOPPER_IMAGE=%s\\n' "$*" "\${HOPPER_IMAGE:-}" >> "$STUB_LOG"
-case "$*" in
-  *"up -d")
-    if [ -f .migrate ]; then echo 'Error: creating container storage: the container name "hopper_openfga-migrate_1" is already in use' >&2; exit 125; fi
-    [ -n "\${HOPPER_IMAGE:-}" ] && [ "\${STUB_UP:-0}" != 0 ] && exit "$STUB_UP"
-    echo "\${STUB_MIGRATE_EXIT:-0}" > .migrate ;;
-  *"ps -q") [ "$STUB_STACK" = podman-compose ] && echo 0123456789abcdef ;;
-  *"exec -T postgres pg_dump"*) echo DUMP ;;
-esac
-exit 0
-`;
-
-interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string }
-
-/** One update run; `o.dir` runs it again in the folder of an earlier run, with what that run left there. */
-function update(o: Run = {}) {
-  const again = o.dir !== undefined;
-  const dir = o.dir ?? mkdtempSync(join(tmpdir(), 'jh-update-sh-'));
-  if (!again) dirs.push(dir);
-  if (!again) writeFileSync(join(dir, 'compose.yaml'), SHIPPED.replace('${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}', `\${HOPPER_IMAGE:-${IMAGE}}`));
-  if (o.override !== undefined) writeFileSync(join(dir, 'compose.override.yaml'), o.override);
-  const bin = join(dir, '.bin');
-  rmSync(bin, { recursive: true, force: true });
-  mkdirSync(bin);
-  writeFileSync(join(bin, 'podman'), PODMAN);
-  chmodSync(join(bin, 'podman'), 0o755);
-  // Only the tools the script needs, so no container tool of this machine ever answers.
-  for (const tool of ['sed', 'grep', 'head', 'diff', 'cp', 'mv', 'rm', 'sleep']) symlinkSync(`/usr/bin/${tool}`, join(bin, tool));
-  // No docker here.
-  writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n');
-  chmodSync(join(bin, 'docker'), 0o755);
-  if (!o.noPodmanCompose) { writeFileSync(join(bin, 'podman-compose'), PODMAN_COMPOSE); chmodSync(join(bin, 'podman-compose'), 0o755); }
-  const log = join(dir, '.calls');
-  writeFileSync(log, '');
-  const r = spawnSync('/bin/bash', [SCRIPT, ...(o.args ?? [IMAGE])], {
-    cwd: dir, encoding: 'utf8',
-    env: {
-      PATH: bin, HOME: dir, STUB_LOG: log, STUB_STACK: o.stack ?? '', HOPPER_UPDATE_WAIT: '1',
-      // The prompt reads the terminal: here a file stands in for it.
-      HOPPER_UPDATE_TTY: o.tty ?? join(dir, 'no-tty'),
-      ...(o.masterKey ? { HOPPER_MASTER_KEY: o.masterKey } : {}),
-      ...o.env,
-    },
-  });
-  const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean);
-  return { dir, status: r.status, out: `${r.stdout}${r.stderr}`, calls, read: (f: string) => readFileSync(join(dir, f), 'utf8') };
-}
-
-const composeCalls = (calls: string[]) => calls.filter((c) => /^(podman compose|podman-compose) /.test(c));
 
 describe('scripts/update.sh (issue #1104)', () => {
   it('updates a podman-compose stack with podman-compose and the project hopper: backup, new compose.yaml, pull, down and up', () => {
@@ -317,14 +205,45 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.read('compose.override.yaml')).toBe(SANDBOXES);
   });
 
-  it('stops before it changes anything when an override of the install\'s own mounts the socket too', () => {
+  it('stops before it takes the stack down when an override of the install\'s own mounts the socket too (issue #1246)', () => {
     const own = `${SANDBOXES}  mine:\n    image: docker.io/library/alpine\n`;
     const r = update({ masterKey: KEY, stack: 'podman-compose', override: own });
     expect(r.status).not.toBe(0);
-    expect(r.out).toMatch(/compose\.override\.yaml gives the hopper the Podman socket, and compose\.yaml does that now: remove those lines/);
+    expect(r.out).toMatch(/conflict: compose\.override\.yaml: services\.hopper\.volumes: \/run\/podman\/podman\.sock/);
+    expect(r.out).toMatch(/HOPPER_UPDATE_FIX_OVERRIDE=1/);
     expect(r.read('compose.override.yaml')).toBe(own);
     expect(() => r.read('compose.yaml.bak')).toThrow();
-    expect(r.calls.filter((c) => / pull| up |carry/.test(c))).toEqual([]);
+    expect(composeCalls(r.calls).filter((c) => / pull| down| up /.test(c))).toEqual([]);
+  });
+
+  const SOCKET_OVERRIDE = 'services:\n  hopper:\n    volumes:\n      - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock\n    labels: [mine]\n';
+
+  it('drops the redundant override entry when the person accepts it, keeps a backup, and goes on (issue #1246)', () => {
+    const headless = update({ masterKey: KEY, stack: 'podman-compose', override: SOCKET_OVERRIDE, env: { HOPPER_UPDATE_FIX_OVERRIDE: '1' } });
+    expect(headless.status, headless.out).toBe(0);
+    expect(headless.read('compose.override.yaml.bak')).toBe(SOCKET_OVERRIDE);
+    expect(headless.read('compose.override.yaml')).not.toContain('podman.sock');
+    expect(headless.read('compose.override.yaml')).toContain('labels: [mine]');
+    expect(headless.out).toMatch(/hopper update: done: /);
+    const dir = mkdtempSync(join(tmpdir(), 'jh-update-tty-'));
+    dirs.push(dir);
+    writeFileSync(join(dir, 'tty'), 'y\n');
+    const asked = update({ masterKey: KEY, stack: 'podman-compose', override: SOCKET_OVERRIDE, tty: join(dir, 'tty') });
+    expect(asked.status, asked.out).toBe(0);
+    expect(asked.out).toMatch(/remove them from compose\.override\.yaml/);
+    expect(asked.read('compose.override.yaml')).not.toContain('podman.sock');
+  });
+
+  it('goes back to the image it ran before, its compose.yaml and its override when the new stack does not start (issue #1246)', () => {
+    const before = 'd'.repeat(64);
+    const r = update({ masterKey: KEY, stack: 'podman-compose', override: SOCKET_OVERRIDE, env: { STUB_UP: '1', STUB_BEFORE_IMAGE: `sha256:${before}`, HOPPER_UPDATE_FIX_OVERRIDE: '1' } });
+    expect(r.status).not.toBe(0);
+    expect(r.read('compose.yaml')).toBe(r.read('compose.yaml.bak'));
+    expect(r.read('compose.override.yaml')).toBe(SOCKET_OVERRIDE);
+    const tag = r.calls.indexOf(`podman tag ${before} ${IMAGE} | HOPPER_IMAGE=`);
+    expect(tag).toBeGreaterThan(-1);
+    expect(r.calls.slice(tag + 1).filter((c) => c.startsWith('podman-compose'))).toEqual(['podman-compose -p hopper up -d | HOPPER_IMAGE=']);
+    expect(r.out).toMatch(/back on the image it ran before \(dddddddddddd\)/);
   });
 
   it('refuses an image reference a shell would read, and a folder without compose.yaml', () => {
