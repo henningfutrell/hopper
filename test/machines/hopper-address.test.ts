@@ -4,8 +4,11 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { execFile } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { hopperAddresses, jobHopperUrl, ADDRESS_PATH, addressCommand, networkFix, readAddress } from '../../src/machines/hopper-address.ts';
+import { hopperAddresses, jobHopperUrl, ADDRESS_PATH, addressCommand, networkFix, readAddress, wslHopperUrl } from '../../src/machines/hopper-address.ts';
 import type { MachineSnapshot } from '../../src/domain/types.ts';
 
 const servers: Server[] = [];
@@ -20,8 +23,8 @@ async function answering(status: number): Promise<string> {
 }
 
 /** Runs the address check as a machine's shell would; the servers answer meanwhile. */
-const run = (urls: string[], path = process.env.PATH ?? ''): Promise<string> => new Promise((resolve, reject) => {
-  execFile('/bin/sh', ['-c', addressCommand(urls)], { encoding: 'utf8', env: { PATH: path } }, (e, out) => (e ? reject(e) : resolve(out)));
+const run = (urls: string[], path = process.env.PATH ?? '', wsl?: { url: string; procVersion: string }): Promise<string> => new Promise((resolve, reject) => {
+  execFile('/bin/sh', ['-c', addressCommand(urls, wsl)], { encoding: 'utf8', env: { PATH: path } }, (e, out) => (e ? reject(e) : resolve(out)));
 });
 
 const base: MachineSnapshot = { id: 'm', label: 'm', maxLanes: 1, online: true, executors: ['herdr-claude'] };
@@ -67,6 +70,53 @@ describe('the address check on a machine', () => {
 
   it('an address is quoted for the shell', () => {
     expect(addressCommand(["http://a'b:1"])).toContain("'http://a'\\''b:1'");
+  });
+});
+
+// Issue #1248 part 4: a WSL machine on the computer that runs the hopper in WSL could not reach it at its LAN names (the
+// container's bare name). WSL distros on one computer share one network, so the hopper's host link reaches it there.
+describe('a WSL machine, when the hopper runs in WSL', () => {
+  /** A kernel version file, as /proc/version reads in WSL or on plain Linux. */
+  const kernel = (text: string): string => {
+    const f = join(mkdtempSync(join(tmpdir(), 'hopper-kernel-')), 'version');
+    writeFileSync(f, text);
+    return f;
+  };
+  const wslKernel = (): string => kernel('Linux version 6.6.87.2-microsoft-standard-WSL2 (gcc) #1 SMP\n');
+
+  it('the address it is asked: the host link base, else localhost with the port; none when the hopper is not in WSL', () => {
+    expect(wslHopperUrl({ wsl: true, hostLinkBase: '', port: 4790 })).toBe('http://localhost:4790');
+    expect(wslHopperUrl({ wsl: true, hostLinkBase: 'http://pc.local:4790/', port: 4790 })).toBe('http://pc.local:4790');
+    expect(wslHopperUrl({ wsl: false, hostLinkBase: 'http://pc.local:4790', port: 4790 })).toBeUndefined();
+  });
+
+  it('is asked that address after the others, and a job there is given it when it answers', async () => {
+    const good = await answering(204);
+    const urls = ['http://127.0.0.1:1'];
+    const wsl = { url: good, procVersion: wslKernel() };
+    expect(readAddress(await run(urls, undefined, wsl), urls, good)).toEqual({ hopperUrl: good });
+  });
+
+  it('a machine not in WSL is not asked it', async () => {
+    const good = await answering(204);
+    const urls = ['http://127.0.0.1:1'];
+    const out = await run(urls, undefined, { url: good, procVersion: kernel('Linux version 6.8.0-generic\n') });
+    const r = readAddress(out, urls, good);
+    expect(r).toEqual({ addressProblem: expect.stringContaining('http://127.0.0.1:1 (no connection)') });
+    expect('addressProblem' in r && r.addressProblem).not.toContain(good);
+  });
+
+  it('a WSL machine that does not reach it: not ready, and the problem names the address it should reach the hopper at', async () => {
+    const urls = ['http://hopper.invalid:1'];
+    const wsl = 'http://127.0.0.1:1';
+    const r = readAddress(await run(urls, undefined, { url: wsl, procVersion: wslKernel() }), urls, wsl);
+    expect(r).toEqual({ addressProblem: expect.stringContaining(`a WSL machine on the computer that runs the hopper reaches it at ${wsl}, and this one did not (no connection)`) });
+    expect('addressProblem' in r && r.addressProblem).toContain('HOPPER_PUBLIC_URL');
+  });
+
+  it('a hopper with no LAN name or public URL: a WSL machine still finds it at that address', async () => {
+    const good = await answering(204);
+    expect(readAddress(await run([], undefined, { url: good, procVersion: wslKernel() }), [], good)).toEqual({ hopperUrl: good });
   });
 });
 
