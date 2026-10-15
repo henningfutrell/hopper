@@ -22,4 +22,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 40: a join code names the job pod the hopper started with it (issue #1283). A column only: the build before never
   // reads it, and joins such a pod as a plain client target.
   'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS pod TEXT;',
+  // 41: local accounts (issue #1380): the hopper's own email and password sign-in, a scrypt hash per account. A table only:
+  // the build before never reads it, and signs nobody in with it.
+  'CREATE TABLE IF NOT EXISTS local_accounts (email TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);',
 ];

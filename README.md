@@ -141,10 +141,11 @@ node src/main.ts                                              # node src/main.ts
 ## Sign in
 
 The UI is at `http://localhost:4790/` on the daemon's host: sign in with GitHub, which every hopper
-offers. The first person to sign in with GitHub is the admin. There is no bootstrap login: a new hopper
-creates no user, no password and no login code, and no command on the host signs anyone in. For other
-people and other devices: sign-in realms — GitHub, LDAP, OIDC, SAML or an auth gateway in front (the hopper
-keeps no password accounts of its own), set up in Settings → Sign-in or from the environment at
+offers. The first person to sign in with GitHub is the admin. With no GitHub and no identity provider,
+add the first admin's local account on the host (`hopper local-account add <email>`, the password on
+stdin) and sign in with its email and password. A new hopper creates no user, no password and no login
+code. For other people and other devices: local accounts (an email and a password, the hopper's own) and
+sign-in realms — GitHub, LDAP, OIDC, SAML or an auth gateway in front —, set up in Settings → Sign-in or from the environment at
 launch (`docs/deploy.md` "Sign-in set up at launch") — and the LAN or a public URL — `docs/sign-in.md`.
 
 <img src="docs/screenshots/sign-in.webp" width="720" alt="The hopper's sign-in page: a Sign in with GitHub button beside what the hopper does in three steps.">

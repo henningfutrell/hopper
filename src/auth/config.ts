@@ -1,6 +1,6 @@
 // The sign-in config (design.md "Sign-in: realms"): how people sign in, the instance's config record
-// `sign-in` (design.md "Config in the database"). There is no password user realm (issue #237): the
-// hopper keeps no username-and-password accounts of its own. Loaded at start and after every change from Settings →
+// `sign-in` (design.md "Config in the database"). The hopper's own local accounts (issue #1380) are no realm of it:
+// they are rows of `local_accounts`, under the reserved realm name `local-accounts`. Loaded at start and after every change from Settings →
 // Sign-in; an invalid one stops the daemon at start, naming the field, and is refused by the UI (sign-in
 // fails closed). None → the one-time login code only. `realms` is the ordered list of realms, each of a
 // realm type, on unless `enabled: false`; `local` (the login code) and `none` (no sign-in) are not realms.
@@ -9,6 +9,7 @@
 // them yet. A SAML IdP certificate is public and sits inline.
 import { z } from 'zod';
 import { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type SessionLengths, type UiRole } from '../domain/types.ts';
+import { LOCAL_ACCOUNTS_REALM } from './local-accounts.ts';
 import type { RoleRules } from './roles.ts';
 
 interface RealmBase { name: string; label: string; enabled: boolean }
@@ -109,8 +110,8 @@ export interface AuthConfig {
 
 /** The config record that holds it. */
 export const SIGN_IN = 'sign-in';
-/** Identities of the login code and no sign-in carry these as their realm; `complete` is a sign-in route. */
-const RESERVED = ['local', 'complete', 'none'];
+/** Identities of the login code, no sign-in and the local accounts carry these as their realm; `complete` is a sign-in route. */
+const RESERVED = ['local', 'complete', 'none', LOCAL_ACCOUNTS_REALM];
 
 const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
 /** https, or http to loopback (a local test IdP). */

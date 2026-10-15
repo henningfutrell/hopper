@@ -525,7 +525,8 @@ export interface MasterKeyResealed {
 
 export interface InstanceStore {
   users: UserRepository;
-  identities: IdentityLinks;
+  /** The identity links; the local accounts (issue #1380): the hopper's own email and password sign-in. */
+  identities: IdentityLinks; localAccounts: import('./local-accounts.ts').LocalAccountRepository;
   /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
   uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;

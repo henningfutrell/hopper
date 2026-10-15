@@ -1,9 +1,9 @@
 // Signing in through the realms (design.md "Sign-in: realms"). The sign-in config as it applies now, swapped at
 // once by `apply` when Settings → Sign-in changes it.
 //
-// Form realms (ldap): the username and password form is tried against each one that is on, in order;
-// the first that accepts the password decides. The hopper keeps no password accounts of its own (issue
-// #237), and there is no bootstrap login (issue #238): the way in is a realm.
+// Form realms: the username and password form is tried against the local accounts (issue #1380, `local-accounts.ts`)
+// while there is one, then each LDAP realm that is on, in order; the first that accepts the password decides. A local
+// account is the hopper's own: an email, a scrypt hash, and the role it signs in with.
 //
 // Device realms (github; issue #214): the person signs in with a device code entered at GitHub, through
 // the hopper's GitHub App (its public client id, no secret). The browser keeps a random
@@ -45,9 +45,10 @@ import { isDeviceRealm, isFormRealm, isGatewayRealm, isRedirectRealm, type AuthC
 import { createTokenCheck, githubIdentity, type TokenCheckOutcome } from './api-door.ts';
 import { createGatewayRealm } from './gateway.ts';
 import { createLdapRealm } from './ldap.ts';
+import { createLocalAccountsRealm, LOCAL_ACCOUNTS_REALM, localAccountRole, type LocalAccounts } from './local-accounts.ts';
 import { createOidcRealm } from './oidc.ts';
 import type { FlowSecrets, FormRealm, GatewayRealm, RealmCallback, RedirectRealm } from './realm.ts';
-import { roleFor } from './roles.ts';
+import { isSuperAdmin, roleFor } from './roles.ts';
 import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
@@ -55,6 +56,7 @@ export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.t
 export type { TokenCheckOutcome } from './api-door.ts';
 export { claimGithubAdmin } from './github-admin.ts';
 export { prepareSignIn } from './start.ts';
+export { isSuperAdmin } from './roles.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
@@ -96,7 +98,7 @@ export interface SignIn {
   readonly local: boolean;
   /** No sign-in: the role everyone gets; null when off. */
   readonly none: UiRole | null;
-  /** Password sign-in is on: an LDAP realm is. */
+  /** Password sign-in is on: there is a local account, or an LDAP realm is on. */
   readonly password: boolean;
   /** The username and password tried against the form realms that are on, in order. */
   checkPassword(username: string, password: string): Promise<PasswordOutcome>;
@@ -145,9 +147,10 @@ interface Ticket { who: Identity; role: UiRole; binding: string; expires: number
 const hash = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 const random = (): string => randomBytes(32).toString('hex');
 
-/** The role `config` grants `who`; null: none, or its realm is gone or off. */
-export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
+/** The role `config` grants `who`, a local account's from `accounts`; null: none, or its realm is gone or off. */
+export function roleIn(config: AuthConfig, who: Identity, accounts?: LocalAccounts): UiRole | null {
   if (who.realm === 'local') return config.local.enabled ? 'admin' : null;
+  if (who.realm === LOCAL_ACCOUNTS_REALM) return accounts ? localAccountRole(accounts, who) : null;
   if (who.realm === 'none') return config.none?.role ?? null;
   const r = config.realms.find((x) => x.name === who.realm);
   if (!r?.enabled) return null;
@@ -155,12 +158,6 @@ export function roleIn(config: AuthConfig, who: Identity): UiRole | null {
   if (r.type === 'github' && first?.realm === who.realm && first.subject === who.subject) return 'admin';
   if (isSuperAdmin(config, who)) return 'admin';
   return roleFor(who, r.roles);
-}
-
-/** `who` is a super admin (issue #242): named in the super admins, and its realm is there and on. Never the login code or no sign-in. */
-export function isSuperAdmin(config: AuthConfig, who: Pick<Identity, 'realm' | 'subject'>): boolean {
-  return config.superAdmins.some((a) => a.realm === who.realm && a.subject === who.subject)
-    && config.realms.some((r) => r.name === who.realm && r.enabled);
 }
 
 function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'saml' }>, origin: string): RedirectRealm {
@@ -188,6 +185,8 @@ export function createSignIn(o: {
   apps?: HopperApps;
   /** The app's client secret, from the runtime, read at each use (issue #258); undefined: no browser redirect, the device code only. */
   githubClientSecret?: () => string | undefined;
+  /** The local accounts (issue #1380); absent: none. */
+  accounts?: LocalAccounts;
 }): SignIn {
   const apps = o.apps ?? hopperApps({ github: {} });
   const maxFlows = o.maxFlows ?? MAX_FLOWS;
@@ -251,7 +250,10 @@ export function createSignIn(o: {
       f.state = { state: 'failed', status: 403, error: `${label} sign-in failed: ${deviceFlowFailure(e)}` };
     }
   }
-  const roleOf = (who: Identity): UiRole | null => roleIn(config, who);
+  const roleOf = (who: Identity): UiRole | null => roleIn(config, who, o.accounts);
+  const accountsRealm = o.accounts && createLocalAccountsRealm(o.accounts);
+  // The local accounts first, while there is one.
+  const formsNow = (): FormRealm[] => (accountsRealm && o.accounts!.list().length > 0 ? [accountsRealm, ...forms] : forms);
 
   async function checkGateway(headers: Record<string, string | string[] | undefined>): Promise<GatewayCheckOutcome> {
     const refusals: string[] = [];
@@ -305,10 +307,10 @@ export function createSignIn(o: {
   return {
     get local() { return config.local.enabled; },
     get none() { return config.none?.role ?? null; },
-    get password() { return forms.length > 0; },
+    get password() { return formsNow().length > 0; },
     async checkPassword(username, password) {
       const errors: string[] = [];
-      for (const realm of forms) {
+      for (const realm of formsNow()) {
         const r = await realm.check(username, password);
         if (r.ok) {
           // The first realm that accepts the password decides, even when it grants no role.
@@ -316,7 +318,7 @@ export function createSignIn(o: {
         }
         if ('error' in r) errors.push(r.error);
       }
-      return errors.length ? { ok: false, status: 502, error: `sign-in could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: 'wrong username or password' };
+      return errors.length ? { ok: false, status: 502, error: `sign-in could not be checked: ${errors.join('; ')}` } : { ok: false, status: 403, error: 'wrong email, username or password' };
     },
     get gateway() { return gateways.length > 0; },
     checkGateway,

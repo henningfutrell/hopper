@@ -35,7 +35,6 @@ export type FormOutcome =
 export interface FormRealm {
   name: string;
   label: string;
-  type: RealmType;
   check(username: string, password: string): Promise<FormOutcome>;
 }
 
