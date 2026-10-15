@@ -205,6 +205,12 @@ describe('the reap resets the job\'s runtime and only it (issue #1295)', () => {
     expect(existsSync(join(host, 'bus'))).toBe(true);
   });
 
+  it('stops the health check timers its containers left in the user\'s systemd, by their ids', () => {
+    writeFileSync(join(fake, 'systemctl'), '#!/bin/sh\nprintf "systemctl %s\\n" "$*" >> "$FAKE/calls"\n', { mode: 0o755 });
+    run(reapArgv(JOB, scratch));
+    expect(calls()).toContain('systemctl --user stop kindnode01*.timer kindnode01*.service ryuk0002*.timer ryuk0002*.service');
+  });
+
   it('a job that pointed its storage config at the host\'s storage: the reap writes it again first', () => {
     writeFileSync(join(containers(), 'storage.conf'), `[storage]\ngraphroot = "${host}"\nrunroot = "${host}"\n`);
     run(reapArgv(JOB, scratch));
