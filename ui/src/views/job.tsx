@@ -64,6 +64,7 @@ export function JobView() {
   const bom = useJobBom(id);
   const events = useJobEvents(id, bom?.events ?? NONE);
   const machines = useHopper((s) => s.machines);
+  const jobs = useHopper((s) => s.jobs);
   const nameOf = useJobName();
   const back = <a href="#dashboard" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" />Dashboard</a>;
   return (
@@ -103,7 +104,7 @@ export function JobView() {
       {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
       <Panel title="Timeline" count={events.length}>
-        <JobTimeline job={read.state === 'found' ? read.job : undefined} events={events} nameOf={nameOf} machines={machines} />
+        <JobTimeline job={read.state === 'found' ? read.job : undefined} events={events} nameOf={nameOf} machines={machines} statusOf={(jobId) => jobs[jobId]?.status} />
       </Panel>
       {bom && <Panel title="Parts list" bodyClassName="p-3"><BomTable bom={bom} /></Panel>}
     </div>

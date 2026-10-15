@@ -62,5 +62,7 @@ describe('a stack drifted from the compose file of this version (#697)', () => {
     expect(text).toContain('HOPPER_OPENFGA_URL');
     expect(text).toContain(`podman run --rm --pull=always ${IMAGE} hopper update script | bash -s -- ${IMAGE}`);
     expect(text).toMatch(/[Nn]ever recreate the hopper.s container alone/);
+    // Issue #1169: the fix is a code block with copy.
+    expect(banner.querySelector('[data-slot="code-block"] [data-slot="code-block-copy-button"]')).not.toBeNull();
   });
 });

@@ -4,6 +4,7 @@
 // its open questions (answered in Questions), its result, its error and its artifacts. The brief and the results stay in
 // the hopper until a person promotes them to GitHub (issue #946, direct-job-promotion.tsx); one offered for promotion is
 // pinned at the top. The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
+import { LogBlock } from '@/components/log-block';
 import { Send, Zap } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
@@ -109,7 +110,7 @@ function Row({ d, canOperate, onChanged }: { d: DirectJobView; canOperate: boole
           ))}
         </ul>
       )}
-      {result !== undefined && <pre data-slot="direct-job-result" className="max-h-48 overflow-auto rounded-md bg-muted/50 p-2 text-xs whitespace-pre-wrap">{result}</pre>}
+      {result !== undefined && <div data-slot="direct-job-result"><LogBlock title="Result" copy={result} wrap contentClassName="max-h-48 text-xs">{result}</LogBlock></div>}
       {d.job?.error && <p className="text-xs text-bad">{d.job.error}</p>}
       {d.artifacts.length > 0 && (
         <ul data-slot="direct-job-artifacts" className="grid gap-0.5 text-xs">
