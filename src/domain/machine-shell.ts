@@ -16,18 +16,18 @@ export interface Survey {
   scopes: string[];
   /** Jobs with a process carrying their HOPPER_JOB_ID. */
   processes: string[];
-  /** Each `<work tree>/.hopper-scratch/<job id>` under the work trees asked about. */
+  /** Each scratch dir `<work tree>/.worktrees/@scratch/<job id>` under the work trees asked about (job-layout.ts; and the layout before's). */
   scratch: { jobId: string; path: string; ageMs: number }[];
-  /** Each job worktree `<work tree>/workspace/worktrees/<name>-<job id>` there (issue #1103); absent, none. */
+  /** Each job worktree `<work tree>/.worktrees/<name>/<job id>` there (issue #1188; and the layout before's); absent, none. */
   trees?: { path: string; ageMs: number }[];
   /**
-   * Each work tree asked about whose scratch area (`.hopper-scratch`) is there (issue #1120): a kept job's scratch dir
+   * Each work tree asked about whose `.worktrees` is there (issue #1120): a kept job's scratch dir
    * missing from one of these is gone. Absent (a client older than this), none is known.
    */
   roots?: string[];
   /**
-   * The hopper's own disk use there (issue #1120): for each work tree in `roots`, the bytes its scratch area and its job
-   * worktrees hold. Absent or empty: not measured (a client older than this, a machine with no `timeout`, a slow disk).
+   * The hopper's own disk use there (issue #1120): for each work tree in `roots`, the bytes its `.worktrees` holds, and what the layout
+   * before left. Absent or empty: not measured (a client older than this, a machine with no `timeout`, a slow disk).
    */
   usage?: { path: string; bytes: number }[];
   /** Jobs with a container or a volume labelled with their id there (issue #1120); absent (a client older than this), none known. */
@@ -49,7 +49,7 @@ export interface MachineShell {
   /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
   survey(roots: string[]): Promise<Survey>;
   /**
-   * Writes `content` to `file` under `dir`, the job's own credentials dir (`…/.hopper-scratch/<job id>/credentials`),
+   * Writes `content` to `file` under `dir`, the job's own credentials dir (`…/.worktrees/@scratch/<job id>/credentials`),
    * mode 600, replacing it whole (issue #441): a running job reads its connection's current token there.
    * `make`: the work tree may be made here (the jobs dir); else a work tree that is not there is refused.
    */

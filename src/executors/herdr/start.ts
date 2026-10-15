@@ -16,7 +16,8 @@ import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from '
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
 import { RESTORE_MARK, restoreOutcome } from '../../client/checkpoint.ts';
-import { SCRATCH_DIR, windowsShellOf } from './screen.ts';
+import { windowsShellOf } from './screen.ts';
+import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
 import { shellQuote } from '../ssh.ts';
@@ -152,14 +153,15 @@ export interface StartTimedOut { startTimedOut: string }
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
-/** The work tree's scratch dirs, git-ignored as one (design.md "Work tree"). */
-export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}/${SCRATCH_DIR}`;
-
 /**
- * The job's own scratch dir: Claude's scratchpad, every temp file, and the clones it makes only for this
- * job. Its own, so the reap can remove it when the job ends (issue #401, reap.ts).
+ * The job's own scratch dir (src/domain/job-layout.ts): Claude's scratchpad, every temp file, and the clones it makes only
+ * for this job. Its own, so the reap can remove it when the job ends (issue #401, reap.ts).
  */
-export const jobScratchOf = (cwd: string, jobId: string): string => `${scratchDirOf(cwd)}/${jobId}`;
+export { jobScratchOf };
+
+/** Makes the job's scratch dir, `.worktrees` git-ignored as one (design.md "Work tree", issue #1188). */
+export const mkScratchCommand = (cwd: string, jobId: string): string =>
+  `mkdir -p ${shellQuote(jobScratchOf(cwd, jobId))} && printf '*\\n' > ${shellQuote(`${worktreesOf(cwd)}/.gitignore`)}`;
 
 /**
  * The job's temp link (issue #506), its TMPDIR: a short link to its scratch dir. A Unix socket path takes at most 108
@@ -178,7 +180,7 @@ export const linkTmpCommand = (scratch: string, jobId: string): string => {
 /** Makes the job's scratch dir, git-ignored, and its temp link; prints the ready or unusable marker. */
 export const scratchCommand = (cwd: string, jobId: string, make: boolean): string => {
   const scratch = jobScratchOf(cwd, jobId);
-  return `${make ? `mkdir -p ${shellQuote(cwd)} && ` : ''}cd ${shellQuote(cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)}`
+  return `${make ? `mkdir -p ${shellQuote(cwd)} && ` : ''}cd ${shellQuote(cwd)} && ${mkScratchCommand(cwd, jobId)}`
     + ` && ${linkTmpCommand(scratch, jobId)} && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
 };
 

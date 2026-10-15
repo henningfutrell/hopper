@@ -852,7 +852,7 @@ Version 1 (`docs/schemas/job.reassigned.v1.json`). A flagged job's issue is assi
 
 ## `job.work_kept`
 
-Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1103: in its work tree's workspace): each of `paths` is a repository there holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
+Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1188: in its work tree's `.worktrees`): each of `paths` is a repository there holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
 
 | field | type | required |
 |---|---|---|
@@ -861,7 +861,7 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 ```json
 {
   "paths": [
-    "/home/me/hopper-jobs/workspace/worktrees/hopper-7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
+    "/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
   ]
 }
 ```
@@ -882,7 +882,7 @@ Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or 
 ```json
 {
   "paths": [
-    "/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
+    "/home/me/hopper-jobs/.worktrees/@scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
   ]
 }
 ```
@@ -2630,7 +2630,7 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 
 ## `machine.disk_over_budget`
 
-Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: its scratch areas and job worktrees, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, or more than the budget allows. Once while it stays over.
+Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, or more than the budget allows. Once while it stays over.
 
 | field | type | required |
 |---|---|---|
@@ -2646,12 +2646,12 @@ Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own di
   "budgetBytes": 50000000000,
   "paths": [
     {
-      "path": "/home/me/work/.hopper-scratch",
-      "bytes": 12000000000
+      "path": "/home/me/work/.worktrees",
+      "bytes": 50000000000
     },
     {
-      "path": "/home/me/work/workspace/worktrees",
-      "bytes": 50000000000
+      "path": "/home/me/jobs/.worktrees",
+      "bytes": 12000000000
     }
   ]
 }
