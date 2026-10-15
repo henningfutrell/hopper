@@ -81,13 +81,13 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const pool = isLanePoolKey(o.poolKey?.(), b.code);
     const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code);
     if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
-    const { userId, template, container } = taken;
+    const { userId, template, container, pod } = taken;
     const tenant = o.tenants.user(userId);
     if (!tenant && pool) throw new HttpError(409, 'the lane pods are the machines of the first person to sign in, and nobody has signed in yet: sign in, and the pod joins at its next try');
     if (!tenant) throw new HttpError(404, `no user ${userId}`);
     // The template may have been removed since the code was minted (issue #604): no box joins as one that is not there.
     if (template && !holdsTemplate(tenant.vault, template)) throw new HttpError(409, `no template ${template}: it was removed after the join line was made. Add machine shows a fresh line`);
-    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}), ...(container ? { container } : {}), ...(pool ? { pool: true as const } : {}) });
+    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}), ...(container ? { container } : {}), ...(pool ? { pool: true as const } : {}), ...(pod ? { pod } : {}) });
     if (!r.ok) throw new HttpError(409, r.error);
     return { user: userId, machine: r.machine, hopperKey: tenant.machineLink.hopperKey };
   });

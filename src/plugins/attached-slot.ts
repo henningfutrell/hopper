@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { HostKeyOffer, HostKeyOfferOutcome, InstanceSpec, MachineDefaults, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig } from '../domain/types.ts';
 import { isPlainTarget, type SshAuth } from '../executors/ssh.ts';
 import { hostKeyOffer, isThisMachine, readSshTargets, resolveSshTarget, type ResolvedTarget } from '../machines/index.ts';
-import { applyMachineDefaultsEdit, applyMachineEdit, applyMachineJoin, IN_A_CONTAINER, machineDefaults, type MachineJoin } from './attached-edit.ts';
+import { applyMachineDefaultsEdit, applyMachineEdit, applyMachineJoin, applyPodLeave, IN_A_CONTAINER, machineDefaults, type MachineJoin } from './attached-edit.ts';
 import type { PluginLogger } from './sdk.ts';
 
 /** What attaching or removing a machine needs. Defaults: ~/.ssh/config, the target resolved over ssh, no job in use. */
@@ -131,5 +131,15 @@ export function createMachinesEditor(o: AttachedEditOptions & {
     return r;
   }
 
-  return { config, edit, editDefaults, hostKey, joinMachine };
+  /** A job pod's machine removed (issue #1283): the client target that joined with its pod's join code. */
+  async function leavePod(pod: string): Promise<void> {
+    const c = o.configured();
+    const r = applyPodLeave(pod, { config: o.config, configured: c.machines.map((instance) => ({ role: 'machine-source' as const, instance })) });
+    if (!r.ok) throw new Error(`the machine of job pod ${pod} was not removed: ${r.error}`);
+    if (!r.changed) return;
+    await o.reload();
+    o.logger.info(`hopper: job pod ${pod} left: its machine removed`);
+  }
+
+  return { config, edit, editDefaults, hostKey, joinMachine, leavePod };
 }

@@ -88,7 +88,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
     machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),
     machines: () => liveMachines.list(), escalationMachine: () => configured?.escalationMachine,
-    client: o.executorContext?.client ?? (() => undefined),
+    client: o.executorContext?.client ?? (() => undefined), ...(o.executorContext?.pods ? { pods: o.executorContext.pods } : {}),
   };
 
   const sign = (): string => o.config.version(PLUGINS);
@@ -283,7 +283,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     targets,
     machinesConfig: () => machinesEditor.config(), editMachines: (e) => machinesEditor.edit(e),
-    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e), joinMachine: (j) => machinesEditor.joinMachine(j),
+    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e), joinMachine: (j) => machinesEditor.joinMachine(j), leavePod: (pod) => machinesEditor.leavePod(pod),
     reload: enqueue,
     routingRules: () => [...(configured?.routing ?? [])],
     machineIds,

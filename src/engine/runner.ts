@@ -193,7 +193,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       // A login the job waits on (issue #476) goes to the logins, never into a question.
       logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: m.id, run: job.spec.executor }, () => !c.stopping()),
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
-      credentials: (scratch, make = false) => placeCredentials(c, started, m, executor?.machineShell?.(m), scratch, make, (line) => progress.report(line)),
+      // `on`: the machine the job's work is on, when not the lane's (a job pod, issue #1283).
+      credentials: (scratch, make = false, on = m) => placeCredentials(c, started, on, executor?.machineShell?.(on), scratch, make, (line) => progress.report(line)),
       progress: (msg, tasks) => progress.report(msg, tasks),
       // Before a nudge (issue #627): the job's source, then what it waits on a person for.
       beforeNudge: () => nudgeCheck(c, j),
