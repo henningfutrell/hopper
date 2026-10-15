@@ -1,5 +1,5 @@
 // The fake GitHub's reads of a pull request a job asks through the hopper (issue #1074, fake-forges.ts): its files with
-// their patches, its commits, and the check runs and combined status of a commit. What a test did not set is empty. And
+// their patches, its commits, its reviews (issue #1072), and the check runs and combined status of a commit. What a test did not set is empty. And
 // the list of a repository's open pull requests (issue #1147).
 
 /** One file of a pull request, as GitHub's REST answers it. */
@@ -11,19 +11,21 @@ export interface PullReadsForge {
   pullFiles?: Record<string, FakePullFile[]>;
   /** GitHub: each pull request's commits, by `owner/name#N`, as GitHub's REST answers them. */
   pullCommits?: Record<string, Record<string, unknown>[]>;
+  /** GitHub: each pull request's reviews, by `owner/name#N`, as GitHub's REST answers them (issue #1072). */
+  pullReviews?: Record<string, Record<string, unknown>[]>;
   /** GitHub: each commit's check runs and statuses, by `owner/name@sha`. */
   commitChecks?: Record<string, { runs?: Record<string, unknown>[]; statuses?: Record<string, unknown>[] }>;
 }
 
 type Answer = { status: number; body?: unknown };
 
-/** The answer to a read of a pull request's files or commits, or of a commit's checks or status; undefined: `rest` is none. */
+/** The answer to a read of a pull request's files, commits or reviews, or of a commit's checks or status; undefined: `rest` is none. */
 export function pullReadsRoute(forge: PullReadsForge | undefined, method: string, repo: string, rest: string): Answer | undefined {
   if (method !== 'GET') return undefined;
-  const p = /^pulls\/(\d+)\/(files|commits)$/.exec(rest);
+  const p = /^pulls\/(\d+)\/(files|commits|reviews)$/.exec(rest);
   if (p) {
     const key = `${repo}#${p[1]}`;
-    return { status: 200, body: (p[2] === 'files' ? forge?.pullFiles?.[key] : forge?.pullCommits?.[key]) ?? [] };
+    return { status: 200, body: (p[2] === 'files' ? forge?.pullFiles?.[key] : p[2] === 'commits' ? forge?.pullCommits?.[key] : forge?.pullReviews?.[key]) ?? [] };
   }
   const c = /^commits\/([^/]+)\/(check-runs|status)$/.exec(rest);
   if (!c) return undefined;

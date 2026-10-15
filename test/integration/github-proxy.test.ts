@@ -162,6 +162,12 @@ describe('GitHub through the hopper (issue #563)', () => {
       { filename: 'logo.png', status: 'added', additions: 0, deletions: 0 },
     ] };
     t.github.pullCommits = { 'octo/tools#8': [{ sha: 'c1', commit: { message: 'Make the queue faster', author: { name: 'n', date: '2026-10-13T01:00:00Z' } }, author: { login: 'hopper-bot' } }] };
+    // Its reviews (issue #1072): the latest of each reviewer decides; a comment alone decides nothing.
+    t.github.pullReviews = { 'octo/tools#8': [
+      { id: 21, user: { login: 'a' }, state: 'CHANGES_REQUESTED', body: 'Name it.', submitted_at: '2026-10-13T02:00:00Z', html_url: `${t.github.url}/octo/tools/pull/8#pullrequestreview-21` },
+      { id: 22, user: { login: 'a' }, state: 'APPROVED', body: '', submitted_at: '2026-10-13T03:00:00Z', html_url: `${t.github.url}/octo/tools/pull/8#pullrequestreview-22` },
+      { id: 23, user: { login: 'b' }, state: 'COMMENTED', body: 'A nit.', submitted_at: '2026-10-13T04:00:00Z', html_url: `${t.github.url}/octo/tools/pull/8#pullrequestreview-23` },
+    ] };
     t.github.commitChecks = { 'octo/tools@sha-8': {
       runs: [{ id: 115, name: 'pr / test', status: 'completed', conclusion: 'failure', html_url: `${t.github.url}/octo/tools/actions/runs/1/job/115` }],
       statuses: [{ context: 'deploy/preview', state: 'pending', target_url: null, description: 'Waiting' }],
@@ -182,15 +188,20 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(await ask(['pr', 'commits', '8'])).toMatchObject({ source: 'github', commits: [{ sha: 'c1', message: 'Make the queue faster', author: 'hopper-bot', date: '2026-10-13T01:00:00Z' }] });
     expect(await ask(['pr', 'checks', '8'])).toMatchObject({ source: 'github', state: 'open', merged: false, head: 'issue-7-faster', headSha: 'sha-8',
       checks: [{ id: 115, name: 'pr / test', status: 'completed', conclusion: 'failure' }], statuses: [{ context: 'deploy/preview', state: 'pending', description: 'Waiting' }] });
+    expect(await ask(['pr', 'reviews', '8'])).toMatchObject({ source: 'github', op: 'pr.reviews', number: 8, url: `${t.github.url}/octo/tools/pull/8`, decision: 'approved', reviews: [
+      { id: 21, author: 'a', state: 'changes_requested', body: 'Name it.', submittedAt: '2026-10-13T02:00:00Z' },
+      { id: 22, author: 'a', state: 'approved', body: '', submittedAt: '2026-10-13T03:00:00Z' },
+      { id: 23, author: 'b', state: 'commented', body: 'A nit.', submittedAt: '2026-10-13T04:00:00Z' },
+    ] });
     // The work-item ledger's word on the job's issue, beside GitHub's.
     expect(await ask(['issue', 'comments', '7'])).toMatchObject({ source: 'github', url: `${t.github.url}/octo/tools/issues/7`, ledger: { key: `${t.github.url}/octo/tools/issues/7`, state: 'working' }, comments: [{ id: 1, author: 'someone', body: 'Looks good.', createdAt: '2026-10-13T00:00:00Z' }] });
 
-    for (const args of [['pr', 'diff', '8'], ['pr', 'commits', '8'], ['pr', 'checks', '8'], ['issue', 'comments', '7']]) {
+    for (const args of [['pr', 'diff', '8'], ['pr', 'commits', '8'], ['pr', 'checks', '8'], ['pr', 'reviews', '8'], ['issue', 'comments', '7']]) {
       expect(await ask(args)).toMatchObject({ ok: true, source: 'cache' });
     }
-    expect([gets('pulls/8/files'), gets('pulls/8/commits'), gets('commits/sha-8/check-runs'), gets('issues/7/comments')]).toEqual([1, 1, 1, 1]);
+    expect([gets('pulls/8/files'), gets('pulls/8/commits'), gets('commits/sha-8/check-runs'), gets('pulls/8/reviews'), gets('issues/7/comments')]).toEqual([1, 1, 1, 1, 1]);
     const done = eventsOf(t.app, ADMIN_ID, 'github_proxy.done').filter((e) => e.jobId === job.id && e.data.source !== undefined);
-    expect(done.map((e) => e.data.source).reverse()).toEqual(['github', 'github', 'github', 'github', 'cache', 'cache', 'cache', 'cache']);
+    expect(done.map((e) => e.data.source).reverse()).toEqual(['github', 'github', 'github', 'github', 'github', 'cache', 'cache', 'cache', 'cache', 'cache']);
 
     await ask(['issue', 'comment', '7', '--body', 'Pushed a fix.']);
     expect(await ask(['issue', 'comments', '7'])).toMatchObject({ source: 'github', comments: [{ body: 'Looks good.' }, { body: 'Pushed a fix.' }] });
