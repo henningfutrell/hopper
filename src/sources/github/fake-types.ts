@@ -95,6 +95,8 @@ export interface PullRequestInput {
   diff?: Record<string, string[] | 'binary'>;
   /** Its body in place of the fixed text (issue #786); it still mentions the issue. */
   body?: string;
+  /** false: the issue's timeline shows no cross-reference of it (issue #1337: seen for a merge into the landing branch). */
+  crossReferenced?: false;
 }
 
 export interface FakeAppIdentity {

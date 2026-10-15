@@ -1,13 +1,18 @@
 // The in-memory fake's batched pull request reads (issue #985, the in-motion cycle), for fake.ts: each followed pull request
 // and its issue as GitHub would tell them, and the open pull requests of many repositories. One the fake does not know is an
-// error of its own, never a throw.
-import type { BranchPullRequest, GitHubIssue, OpenPullRequestsIn, PullRequestRef, PullRequestStates, ReferencingPullRequest } from './api.ts';
+// error of its own, never a throw. And the pull requests merged into a branch (issue #1337), the newest first.
+import type { BranchPullRequest, GitHubIssue, MergedPullRequest, OpenPullRequestsIn, PullRequestRef, PullRequestStates, ReferencingPullRequest } from './api.ts';
 import { pullKey } from './api.ts';
 
 type Pull = ReferencingPullRequest & { headRef: string; base?: string; title?: string };
 
-export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn', args: unknown[]) => void) {
+export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn' | 'mergedPullRequestsInto', args: unknown[]) => void) {
   return {
+    async mergedPullRequestsInto(repo: string, base: string): Promise<MergedPullRequest[]> {
+      enter('mergedPullRequestsInto', [repo, base]);
+      return pulls.filter((p) => p.repo === repo && p.base === base && p.state === 'merged' && p.mergedAt !== undefined).reverse()
+        .map((p) => ({ url: p.url, number: Number(p.url.split('/').pop()), createdAt: p.createdAt, mergedAt: p.mergedAt!, body: p.body }));
+    },
     async pullRequestStates(refs: PullRequestRef[]): Promise<PullRequestStates> {
       enter('pullRequestStates', [refs]);
       const out: PullRequestStates = { pulls: new Map(), errors: new Map() };

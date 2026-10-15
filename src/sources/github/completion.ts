@@ -110,6 +110,9 @@ function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDra
 const DELIVERABLE_ARTIFACT = /^\s*deliverable:\s*artifact\s*$/im;
 export const isArtifactDeliverable = (issue: Pick<GitHubIssue, 'body'>): boolean => DELIVERABLE_ARTIFACT.test(issue.body);
 
+/** Whether issue `n` of `repo` waits on its batch run (issue #1337, batch-wait.ts); a merge at or after `since` counts at any age. */
+export type WaitsOnBatch = (repo: string, n: number, since: string) => Promise<boolean>;
+
 /** The artifacts a job made (issue #673): each one's id, and the URL of the issue it is linked to. */
 export type JobArtifacts = (jobId: string) => { id: string; issue?: string }[];
 
@@ -138,10 +141,12 @@ async function artifactMissing(api: GitHubApi, job: Job, artifacts: JobArtifacts
  * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
  *   merged, at any time; the job need not have pushed;
  * - an issue whose deliverable is an artifact (`isArtifactDeliverable`, issue #673): an artifact the job made, linked
- *   to the issue, named by a comment on it.
+ *   to the issue, named by a comment on it;
+ * - an issue that waits on its batch run (`waits`, issue #1337, batch-wait.ts): its work merged into the landing branch,
+ *   which GitHub does not close it for, by the job or before it while its batch run is still to come.
  * Undefined: done. Else why not, naming what was looked at. An error asking GitHub throws: the caller asks again.
  */
-export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtifacts): Promise<string | undefined> {
+export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtifacts, waits?: WaitsOnBatch): Promise<string | undefined> {
   const { repo, number, url } = job.source ?? {};
   if (!repo || !number) return `job ${job.id} has no GitHub issue reference`;
   const issue = await api.getIssue(repo, number);
@@ -177,6 +182,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
     if (counts(pr)) return undefined;
     found.set(pr.url, { ...pr, state: 'open' });
   }
+  if (issue.state === 'open' && await waits?.(repo, number, job.createdAt)) return undefined;
   const lines = [issue.state === 'open' ? `the issue ${url ?? `${repo}#${number}`} is open`
     : `the issue ${url ?? `${repo}#${number}`} is ${issue.stateReason === 'not_planned' ? 'closed as not planned' : 'closed, not as completed'}`];
   // The job's own pull request with red checks (issue #1230): said by its number and its failed checks, never hidden as none.

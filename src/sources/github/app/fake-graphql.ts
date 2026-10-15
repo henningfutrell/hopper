@@ -50,6 +50,8 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
     if (repo.issues.has(n)) return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'Issue' } } } } };
     return { status: 200, body: { data: { repository: { issueOrPullRequest: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issueOrPullRequest'], message: `Could not resolve to an issue or pull request with the number of ${n}.` }] } };
   }
+  // The pull requests merged into a branch (issue #1337): the fake merges none into a branch of its own.
+  if (/\$base: String!/.test(b.query ?? '')) return { status: 200, body: { data: { repository: { pullRequests: { nodes: [] } } } } };
   const issue = repo.issues.get(Number(b.variables?.number));
   if (!issue) return { status: 200, body: { data: { repository: { issue: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issue'], message: 'Could not resolve to an Issue.' }] } };
   if (/commitRepository/.test(b.query ?? '')) {
