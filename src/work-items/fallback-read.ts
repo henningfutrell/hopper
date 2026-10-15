@@ -1,7 +1,8 @@
 // The work-item ledger's fallback read (issue #1067 part 3, design.md "The work-item ledger"). GitHub deliveries move an
 // item when its issue closes or reopens; a hopper with no delivery set up, or one that missed a delivery, would never
 // hear of it. So every `FALLBACK_READ_INTERVAL_MS` one user's ledger is sampled for items no job or person acts on and not
-// done (`pr_open`, `partly_done`, `failed`, `dropped`, issue #1105) with no news for `FALLBACK_READ_QUIET_MS` — no event
+// done (`pr_open`, `partly_done`, `failed`, `dropped`, issue #1105), or whose job waits on something outside
+// (`waiting_outside`, issue #1356: a batch run's merge closes its issue, and the close wakes the job), with no news for `FALLBACK_READ_QUIET_MS` — no event
 // moved them and this read did not read them —, their issues are read on
 // GitHub in one batched call (the component watchers' `states`, through the shared rate limiter), and a close or a reopen
 // is recorded as the event a delivery records (`work_item.issue_closed`, `work_item.issue_reopened`, `via: read`). The

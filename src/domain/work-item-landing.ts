@@ -63,6 +63,22 @@ export function landingOf(item: Pick<WorkItem, 'pullRequest' | 'landing'>): Item
  */
 const DONE_BY_MERGE: ReadonlySet<WorkItem['state']> = new Set(['done', 'waiting_for_approval']);
 
+/** The states in which a job or a person still acts on the item (issue #1356): after a whole merge, its job may still wait. */
+const STILL_ACTED_ON: ReadonlySet<WorkItem['state']> = new Set(['queued', 'working', 'needs_you', 'waiting_outside']);
+
+/** The states `mergedWhole` takes: what a store lists for `batchClosingIssues`. */
+export const MERGE_STANDS: readonly WorkItem['state'][] = [...DONE_BY_MERGE, ...STILL_ACTED_ON];
+
+/**
+ * Whether the item's merged pull request did the whole item (issue #1356): done by it, or a job still at work or on its
+ * own wait after a merge recorded as the whole item (`wholeMerged`), as one that waits for its issue to close. Not a
+ * culprit or a reverted one.
+ */
+export function mergedWhole(item: Pick<WorkItem, 'state' | 'pullRequestState' | 'wholeMerged' | 'landing' | 'pullRequest'>): boolean {
+  if (item.pullRequestState !== 'merged' || isLandingUndone(landingOf(item))) return false;
+  return DONE_BY_MERGE.has(item.state) || (STILL_ACTED_ON.has(item.state) && item.wholeMerged === true);
+}
+
 /**
  * Whether the item waits on its batch (issue #1175): done by a pull request merged into the landing branch of a repository
  * with landing batches (`landingRepo`, by its lowercased `owner/name`), not yet promoted, a culprit or reverted. Its issue
@@ -80,14 +96,15 @@ export function awaitsBatch(item: Pick<WorkItem, 'state' | 'stateSince' | 'pullR
 
 /**
  * Whether the item is done by a pull request its batch run promoted to the tested branch while its issue stays open
- * (issue #1232): the batch run's text did not close it, as when the item was not `done` at the batch's start. The hopper
+ * (issue #1232): the batch run's text did not close it, as when the item was not `done` at the batch's start. Its job may
+ * still be at work or on its own wait, as one that waits for the issue to close (issue #1356): `mergedWhole`. The hopper
  * closes the issue, once, and records the close (`work_item.issue_closed`, `via: landing`): an issue the ledger holds
  * closed is not closed again, and a person's reopen after a close ends the landing stage, so it is a reopened card.
  */
-export function promotedOpen(item: Pick<WorkItem, 'state' | 'pullRequest' | 'pullRequestState' | 'issueState' | 'landing'> | undefined,
+export function promotedOpen(item: Pick<WorkItem, 'state' | 'pullRequest' | 'pullRequestState' | 'wholeMerged' | 'issueState' | 'landing'> | undefined,
   landingRepo: (repo: string) => boolean): boolean {
   const pr = pullRequestOf(item?.pullRequest);
-  if (!item || !pr || !DONE_BY_MERGE.has(item.state) || item.pullRequestState !== 'merged' || !landingRepo(pr.repo)) return false;
+  if (!item || !pr || !mergedWhole(item) || !landingRepo(pr.repo)) return false;
   return landingOf(item)?.stage === 'promoted' && item.issueState !== 'closed';
 }
 
@@ -99,17 +116,18 @@ const issueOf = (url: string): { repo: string; number: number } | undefined => {
 
 /**
  * The issues a batch run of `repo` closes (issue #1175), as GitHub's closing references from `repo`: `#N`, or
- * `owner/name#N` for an issue of another repository. Of the items done by a pull request of `merges` — not a part, a
- * culprit or a reverted one (none of those is `done`) —, those whose issue is not closed, in the order of `merges`.
+ * `owner/name#N` for an issue of another repository. Of the items whose pull request of `merges` did the whole item
+ * (`mergedWhole`: not a part, a culprit or a reverted one, whatever its job does now, issue #1356), those whose issue is
+ * not closed, in the order of `merges`.
  */
-export function batchClosingIssues(items: Iterable<Pick<WorkItem, 'key' | 'state' | 'pullRequest' | 'pullRequestState' | 'issueState' | 'landing'>>,
+export function batchClosingIssues(items: Iterable<Pick<WorkItem, 'key' | 'state' | 'pullRequest' | 'pullRequestState' | 'wholeMerged' | 'issueState' | 'landing'>>,
   repo: string, merges: readonly number[]): string[] {
   const at = new Map<number, string[]>();
   for (const i of items) {
     const pr = pullRequestOf(i.pullRequest);
     const issue = issueOf(i.key);
     if (!pr || !issue || pr.repo !== repo.toLowerCase() || !merges.includes(pr.number)) continue;
-    if (i.state !== 'done' || i.pullRequestState !== 'merged' || i.issueState === 'closed' || isLandingUndone(landingOf(i))) continue;
+    if (!mergedWhole(i) || i.state === 'waiting_for_approval' || i.issueState === 'closed') continue;
     const ref = issue.repo.toLowerCase() === repo.toLowerCase() ? `#${issue.number}` : `${issue.repo}#${issue.number}`;
     at.set(pr.number, [...at.get(pr.number) ?? [], ref]);
   }

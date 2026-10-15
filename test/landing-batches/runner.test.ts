@@ -42,6 +42,8 @@ interface World {
   closeFails?: string;
   /** The error the compare throws. */
   compareFails?: string;
+  /** The pull requests whose text GitHub does not answer (issue #1356). */
+  unreadable?: Set<number>;
 }
 
 function world(): World {
@@ -70,8 +72,8 @@ function fake(w: World): LandingBatchGitHub {
       return { number: n, url: `https://github.test/${REPO}/pull/${n}` };
     },
     pullRequest: async (_repo, n) => {
-      const p = w.pulls.get(n);
-      if (!p) throw new Error(`GitHub answered 404 to ${REPO}#${n}`);
+      if (w.unreadable?.has(n)) throw new Error(`GitHub answered 404 to ${REPO}#${n}`);
+      const p = w.pulls.get(n) ?? { state: 'closed' as const, merged: true, mergeable: null, headSha: '', base: 'main', url: '', body: '' };
       return { state: p.state, merged: p.merged, mergeable: p.mergeable, headSha: p.headSha, base: p.base, url: p.url, body: p.body ?? '' };
     },
     checkRuns: async () => w.checks,
@@ -135,25 +137,11 @@ describe('the batch runner (issue #1073)', () => {
   });
 
   it('a batch run\'s pull request closes each issue its job pull requests\' own text closes, whatever the ledger knows (issue #1356)', async () => {
-    const w = world();
-    const merged = (n: number, body: string) => w.pulls.set(n, { head: `issue-${n}`, base: 'main', state: 'closed', merged: true, mergeable: null, url: `https://github.test/${REPO}/pull/${n}`, headSha: `h${n}`, body });
-    merged(12, 'Closes #1\n\nCloses #1264');
-    merged(14, 'Part of #3');
+    const w: World = { ...world(), unreadable: new Set([12]) };
+    w.pulls.set(14, { head: 'issue-2-b', base: 'main', state: 'closed', merged: true, mergeable: null, url: 'u14', headSha: 'h14', body: 'Closes #1\n\nFixes #1264\nPart of #3' });
     const log: string[] = [];
-    const { r } = runner(w, { closingIssues: () => ['#1'], log });
-    await r.pass();
+    await runner(w, { closingIssues: () => ['#1'], log }).r.pass();
     expect(w.pulls.get(100)!.body).toMatch(/- #12\n- #14\n\nCloses #1\nCloses #1264$/);
-    expect(log).toEqual([]);
-  });
-
-  it('a pull request whose text cannot be read is said, and the batch run starts with the rest (issue #1356)', async () => {
-    const w = world();
-    w.pulls.set(14, { head: 'issue-14', base: 'main', state: 'closed', merged: true, mergeable: null, url: `https://github.test/${REPO}/pull/14`, headSha: 'h14', body: 'Fixes #5' });
-    const log: string[] = [];
-    const { r, events } = runner(w, { log });
-    await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started']);
-    expect(w.pulls.get(100)!.body).toMatch(/\n\nCloses #5$/);
     expect(log).toEqual([`hopper: landing batches: the text of ${REPO}#12 was not read: GitHub answered 404 to ${REPO}#12`]);
   });
 

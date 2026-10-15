@@ -240,6 +240,25 @@ export function mergedPullRequests(messages: readonly string[]): number[] {
   return out;
 }
 
+/** GitHub's closing keywords, each before one issue reference: `#N`, `owner/name#N`, or the issue's URL. */
+const CLOSING_REF = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+(?:https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)\b|([\w.-]+\/[\w.-]+)?#(\d+)\b)/gi;
+
+/**
+ * The issues a pull request's text closes (issue #1356), as GitHub's closing references from `repo`: `#N` for an issue
+ * of `repo`, `owner/name#N` for one of another repository, in the order the text names them, once each. A batch run's
+ * text names them again, so its merge into the tested branch closes them whatever the ledger knows of their items.
+ */
+export function closingReferences(body: string, repo: string): string[] {
+  const out: string[] = [];
+  for (const m of body.matchAll(CLOSING_REF)) {
+    const of = m[1] ?? m[3];
+    const n = Number(m[2] ?? m[4]);
+    const ref = !of || of.toLowerCase() === repo.toLowerCase() ? `#${n}` : `${of}#${n}`;
+    if (!out.includes(ref)) out.push(ref);
+  }
+  return out;
+}
+
 /** A batch run's branch: the prefix and the tip's first 12 characters. */
 export const batchBranch = (tip: string): string => `${BATCH_BRANCH_PREFIX}${short(tip)}`;
 
