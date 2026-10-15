@@ -9,7 +9,7 @@ import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
-import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts';
+import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
@@ -38,6 +38,9 @@ export interface UserSettingsRepository {
   /** The memory alert (issue #868); absent: off, or never set. */
   getMemoryAlert(): MemoryAlert | undefined;
   setMemoryAlert(alert: MemoryAlert | null): void;
+  /** The header badges the user chose (issue #1181); absent: never chosen, one Lanes badge. */
+  getHeaderBadges(): HeaderBadgeSettings | undefined;
+  setHeaderBadges(settings: HeaderBadgeSettings): void;
   /** The disk budget (issue #1120); absent: none, or never set. */
   getDiskBudget(): DiskBudget | undefined;
   setDiskBudget(budget: DiskBudget | null): void;

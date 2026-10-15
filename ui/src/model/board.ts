@@ -3,7 +3,7 @@
 // a machine or an event's subject is named.
 import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';
-import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView, WorkItemState } from './wire.ts';
+import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineLaneEffect, MachineView, WorkItemState } from './wire.ts';
 
 /** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Waiting on, Running, Ended). */
 export const GROUP = {
@@ -132,6 +132,8 @@ export interface LaneRow {
   state: Lane['state'] | 'unopened';
   /** A specialty or tend job's lane past the machine's lanes (issues #762, #967): it elbowed in, and closes when its job ends. */
   elbowIn?: true;
+  /** A lane a reattach opened past the machine's lanes (issue #1181): its job came back from its pane with no lane idle. */
+  pastCap?: true;
 }
 
 const inUse = (m: Pick<MachineView, 'lanes'>): number => m.lanes.filter((l) => l.state !== 'idle').length;
@@ -158,7 +160,11 @@ export function laneRows(machines: MachineView[], running: Job[], jobs: Readonly
       const job = (lane.jobId && byId.get(lane.jobId)) || byLane.get(lane.id);
       if (job) placed.add(job.id);
       const elbowIn = over && (job?.spec.specialty === true || job?.spec.tend === true) && lane.state !== 'idle';
-      rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state, ...(elbowIn ? { elbowIn: true as const } : {}) });
+      const pastCap = over && !elbowIn && lane.pastCap === true && lane.state !== 'idle';
+      rows.push({
+        key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state,
+        ...(elbowIn ? { elbowIn: true as const } : {}), ...(pastCap ? { pastCap: true as const } : {}),
+      });
     }
     for (let i = m.lanes.length; i < m.maxLanes; i += 1) rows.push({ key: `${m.id}/unopened-${i}`, machine, state: 'unopened' });
   }
@@ -180,9 +186,13 @@ export function laneJobState(job: Job): LaneJobState {
 }
 
 export interface Kpis {
+  /** Lanes holding a job: busy and draining (issue #1181). */
   lanesBusy: number;
   lanesOpen: number;
+  /** The machines' effective lane caps (issue #1181): the decider's, usage pacing included. */
   lanesMax: number;
+  /** Lanes holding a job past their machine's effective cap, summed over the machines (issue #1181). */
+  lanesOver: number;
   waiting: number;
   held: number;
   waitingAnswer: number;
@@ -194,14 +204,24 @@ export interface Kpis {
   failed: number;
 }
 
-/** `items`: the work-item ledger's counts (issue #1067), null until read. */
-export function kpis(board: JobBoard, machines: MachineView[], items: Record<WorkItemState, number> | null): Kpis {
+/**
+ * A machine's effective lane cap (issue #1181): the decider's lane cap from the usage report, usage pacing included. With
+ * no reading of it, or offline (its cap 0 then, while its lanes still run), its lanes.
+ */
+export function effectiveCap(m: Pick<MachineView, 'id' | 'maxLanes'>, effects: readonly MachineLaneEffect[] | null): number {
+  const e = effects?.find((x) => x.machineId === m.id);
+  return e && e.band !== 'offline' ? e.cap : m.maxLanes;
+}
+
+/** `items`: the work-item ledger's counts (issue #1067), null until read. `effects`: the usage report's machines, null until read. */
+export function kpis(board: JobBoard, machines: MachineView[], items: Record<WorkItemState, number> | null, effects: readonly MachineLaneEffect[] | null = null): Kpis {
   const lanes = machines.flatMap((m) => m.lanes);
   const ended = (status: JobStatus) => board.ended.filter((j) => j.status === status).length;
   return {
     lanesBusy: lanes.filter((l) => l.state !== 'idle').length,
     lanesOpen: lanes.length,
-    lanesMax: machines.reduce((s, m) => s + m.maxLanes, 0),
+    lanesMax: machines.reduce((s, m) => s + effectiveCap(m, effects), 0),
+    lanesOver: machines.reduce((s, m) => s + Math.max(0, inUse(m) - effectiveCap(m, effects)), 0),
     waiting: board.waiting.length,
     held: board.waiting.filter((j) => j.status === 'held').length,
     waitingAnswer: board.waitingAnswer.length,
@@ -210,6 +230,18 @@ export function kpis(board: JobBoard, machines: MachineView[], items: Record<Wor
     finished: ended('finished'),
     failed: items?.failed ?? 0,
   };
+}
+
+/**
+ * The Lanes card's line under its number (issue #1181): the lanes open, then the room under the cap still unopened, or
+ * what is past the cap — lanes holding a job, and idle lanes not closed yet. Never a 0 that hides lanes past the cap.
+ */
+export function lanesSub(k: Pick<Kpis, 'lanesOpen' | 'lanesMax' | 'lanesOver'>): string {
+  const parts = [`${k.lanesOpen} open`];
+  if (k.lanesOpen <= k.lanesMax) parts.push(`${k.lanesMax - k.lanesOpen} unopened`);
+  else if (k.lanesOpen - k.lanesMax > k.lanesOver) parts.push(`${k.lanesOpen - k.lanesMax - k.lanesOver} idle past the cap`);
+  if (k.lanesOver > 0) parts.push(`${k.lanesOver} over the cap`);
+  return parts.join(' · ');
 }
 
 export interface WaitingRow {
