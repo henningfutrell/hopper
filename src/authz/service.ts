@@ -13,8 +13,8 @@ import {
   profileProblem, TEMPLATE_NAME, type RadiusRules,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, vaultGrantGaps, type ModelJson } from './model.ts';
-import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, profileOf, relationshipPath, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject } from './objects.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, vaultGrantGaps, type ModelJson } from './model.ts';
+import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, relationshipPath, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -88,7 +88,7 @@ export function createAccess(o: AccessOptions): Access {
     return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
   const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps), itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps);
-  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps);
+  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -97,7 +97,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length + searchGapsOf(m.dsl).length + terminalGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length + searchGapsOf(m.dsl).length + terminalGapsOf(m.dsl).length + machineTerminalGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -204,8 +204,7 @@ export function createAccess(o: AccessOptions): Access {
     return { id: approval.seq, template, profile, approvedBy: approval.writtenBy, approvedAt: approval.writtenAt, chain: [plain(approval), grant] };
   };
 
-  const approvals = (): Approval[] =>
-    o.repo.liveTuples().filter((t) => t.relation === 'approved_for').map(approvalOf).filter((a): a is Approval => a !== undefined);
+  const approvals = (): Approval[] => o.repo.liveTuples().filter((t) => t.relation === 'approved_for').map(approvalOf).filter((a): a is Approval => a !== undefined);
 
   /** OpenFGA's answer to one check apart from mints (an artifact, a system secret), once everything is pushed; a deny when it cannot be had, marked `unavailable` (issue #696). Not recorded. */
   const checkOnce = async (what: string, gaps: string[], tuple: RelationshipTuple, contextual: RelationshipTuple[], why: (allowed: boolean) => string): Promise<AccessAnswer> => {
@@ -247,6 +246,7 @@ export function createAccess(o: AccessOptions): Access {
     decideVaultGrant: (userId, grant) => checkOnce('vault grants', vaultGrantGapsOf(model().dsl), { subject: userObject(userId), relation: 'can_grant', object: vaultGrantObject(grant) },
       [{ subject: userObject(grant.ownerId), relation: 'owner', object: vaultGrantObject(grant) }], (allowed) => (allowed ? 'they own the job' : 'only the job\'s owner may grant it the vault')),
     decideTerminal: (userId, terminal) => may('a job\'s terminal', terminalGapsOf, terminalCheck(userId, terminal), () => 'attach to the job\'s terminal'),
+    decideMachineTerminal: (userId, terminal) => may('a machine\'s terminal', machineTerminalGapsOf, machineTerminalCheck(userId, terminal), () => 'attach to the machine\'s terminal'),
     decideIntakeActor(userId, login, actors) {
       const { tuple, contextual } = intakeActorCheck(userId, login, actors);
       return checkOnce('intake', intakeGapsOf(model().dsl), tuple, contextual, (allowed) => `${login} is${allowed ? '' : ' not'} a trusted actor`);

@@ -80,7 +80,7 @@ describe('the job terminal on the job view (issue #1128)', () => {
     await vi.waitFor(() => expect(button(/Open terminal/)).toBeDefined());
     expect(posts('/ui/api/jobs/r1/terminal/screen')).toHaveLength(0);
     await act(async () => { button(/Open terminal/)!.click(); });
-    await vi.waitFor(() => expect(document.querySelector('[data-slot="job-terminal-screen"]')!.textContent).toContain('● Checking port 8443'));
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="pane-terminal-screen"]')!.textContent).toContain('● Checking port 8443'));
     expect(posts('/ui/api/jobs/r1/terminal/screen').length).toBeGreaterThan(0);
 
     const input = document.querySelector<HTMLInputElement>('[data-slot="job-terminal"] input')!;

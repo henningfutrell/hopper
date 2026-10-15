@@ -138,6 +138,14 @@ type terminal
   relations
     define owner: [user]
     define can_attach: owner
+
+# A machine's terminal (issue #1128): a person who views a pane of the hopper's herdr session on a machine and types
+# into it, a pane no job holds too. At each use the hopper tells the user whose machine it is as its owner. Only a
+# person signed in attaches, an admin, through a UI session or an API token; a job, a machine or a box never.
+type machine_terminal
+  relations
+    define owner: [user]
+    define can_attach: owner
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -188,6 +196,8 @@ const SEARCH_HIT_ASKED: readonly [type: string, relation: string][] = [['search_
 /** What the hopper tells and asks for a job's terminal (issue #1128): apart, so a model edited before it still decides mints. */
 const TERMINAL_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['terminal', 'owner', 'user']];
 const TERMINAL_ASKED: readonly [type: string, relation: string][] = [['terminal', 'can_attach']];
+const MACHINE_TERMINAL_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['machine_terminal', 'owner', 'user']];
+const MACHINE_TERMINAL_ASKED: readonly [type: string, relation: string][] = [['machine_terminal', 'can_attach']];
 
 /** What the hopper writes and asks for artifacts (issue #624): apart, so a model edited before them still decides mints. */
 const ARTIFACT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['artifact', 'viewer', 'user'], ['artifact', 'viewer', 'link']];
@@ -254,6 +264,11 @@ export function searchHitGaps(model: ModelJson): string[] {
 /** What the model lacks for a job's terminal (issue #1128); empty: attaching is decided. A gap here denies every attach, never a mint. */
 export function terminalGaps(model: ModelJson): string[] {
   return gapsIn(model, TERMINAL_WRITTEN, TERMINAL_ASKED);
+}
+
+/** What the model lacks for a machine's terminal (issue #1128); empty: attaching is decided. A gap here denies every attach. */
+export function machineTerminalGaps(model: ModelJson): string[] {
+  return gapsIn(model, MACHINE_TERMINAL_WRITTEN, MACHINE_TERMINAL_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

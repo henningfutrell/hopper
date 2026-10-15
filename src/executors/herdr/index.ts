@@ -1,5 +1,5 @@
 export { HerdrError } from './client.ts';
-export type { AgentInfo, AgentStatus, HerdrClient, ReadSource, StartAgentResult } from './client.ts';
+export type { AgentInfo, AgentStatus, HerdrClient, HerdrPane, ReadSource, StartAgentResult } from './client.ts';
 export { createHerdrCliClient } from './cli-client.ts';
 export type { HerdrCliClient } from './cli-client.ts';
 export { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, protocolFooter, isTrustDialog, readTurn } from './screen.ts';
