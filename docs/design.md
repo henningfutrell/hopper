@@ -16441,7 +16441,20 @@ starts at the newest turn, keeps its place when **Load earlier turns** puts the 
 (`preserveScrollOnPrepend`), and shows a button to the end. A reply's text is Markdown; each run of steps between texts is
 a `Trace`, a line per step that opens to its input and result in small code blocks: a failed tool call is an error, and
 the last tool call of the newest turn with no result runs while the job is at work. A new checkpoint (its `at` changes)
-reads the newest turns again. Not live between checkpoints: the terminal shows the pane now.
+reads the newest turns again.
+
+**The live transcript** (issue #1169 part 7, the same route and view). A read with `fresh: true`, for a job at work
+(`running`, `waiting_answer`, `waiting_on`), takes the job's checkpoint first (`Checkpoints.take`, as the ten-minute pass:
+read on the machine, scrubbed, kept, `job.checkpointed`) when the latest checkpoint, or the route's last fresh try of that
+job, is `TRANSCRIPT_FRESH_MS` (a minute) old or more; else it answers the checkpoint kept. When the take says why it took
+none (the machine cannot be reached, too large, one is being taken), the answer is the kept checkpoint's turns with
+`stale` and why, or 409 and why when none is kept. The checkpoint is the one live source: the hopper reads the session
+file only through it, never through the pane, so the scrub and the size limit stay one path. The view of a job at work
+reads fresh when it opens and each `FOLLOW_MS` (a minute) while it is open, and says that it follows the job, or why the
+last read took no new checkpoint; the checkpoint its own read took is no reason to read again at once. A newer read keeps
+the earlier turns already loaded in front of its own (`newer`: a session only grows, so a turn keeps its index), so the
+scroller neither jumps nor drops what the person loaded; at the end, the Message Scroller stays at the newest turn. A job
+not at work is read as before, with no fresh checkpoint. The terminal still shows the pane second by second.
 
 **Pull request diffs** (issue #1169 part 6, `src/http/ui/pull-request-acts.ts`, `ui/src/components/pull-request-diff.tsx`).
 A card on the Pull requests page with a pull request, and each Landing card — a batch's **culprit** among them —, has

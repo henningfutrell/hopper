@@ -19,8 +19,11 @@ export type TranscriptPart =
 /** A prompt and everything the agent did after it, up to the next prompt. The first turn may have no prompt. */
 export interface TranscriptTurn { index: number; at?: string; prompt?: string; parts: TranscriptPart[]; truncated?: true }
 
-/** A page of a job's transcript (`POST /ui/api/jobs/:id/transcript`): the turns from `start`, of `total`. */
-export interface JobTranscript { jobId: string; checkpointAt: string; total: number; start: number; turns: TranscriptTurn[] }
+/**
+ * A page of a job's transcript (`POST /ui/api/jobs/:id/transcript`): the turns from `start`, of `total`. `stale`: a fresh
+ * read could take no checkpoint now, and why; the turns are then the kept checkpoint's.
+ */
+export interface JobTranscript { jobId: string; checkpointAt: string; total: number; start: number; turns: TranscriptTurn[]; stale?: string }
 
 /** At most this many characters of a prompt, a text or a reasoning. */
 export const TRANSCRIPT_TEXT_MAX = 20_000;
