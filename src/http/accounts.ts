@@ -3,7 +3,7 @@
 // source's (`detail.account` in its status) — a part describes its own, so a custom plugin's appears
 // the same way. Never a token: no part puts one there, and nothing else is read.
 // GET /api/tool-accounts (issue #1128, design.md "Tool accounts"): the same usage sources' accounts by service and identity, with
-// the machines that use each, their sign-in, when each last ran a job, the infra credential folders each holds (part 7), and each
+// the machines that use each, their sign-in, when each last ran a job, the infra credentials each job user holds (part 7, issue #1248), and each
 // account's week windows.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { machineOf } from '../failures/evidence.ts';
@@ -33,7 +33,7 @@ const latest = (xs: (string | undefined)[]): string | undefined =>
  */
 export function toolAccountsOf(o: {
   sources: UsageSourceReport[]; readings: UsageReading[]; labels: ReadonlyMap<string, string>; jobs: readonly Job[];
-  /** The infra credential folders each machine's home holds, as its last read found them (issue #1128 part 7). */
+  /** The infra credentials each machine's job user holds, as its last read found them (issues #1128 part 7, #1248). */
   infraCredentials?: ReadonlyMap<string, readonly string[]>;
 }): ToolAccount[] {
   const started = new Map<string, Job[]>();
@@ -82,7 +82,7 @@ export function toolAccountsOf(o: {
 
 /** Its operation in the API reference: its scope is in the State and usage section. */
 export const TOOL_ACCOUNT_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/tool-accounts', tag: 'State', summary: 'The tool accounts: who each machine\'s agent tool is signed in as', description: 'Per service and identity, from the usage sources\' accounts: the machines that use it, whether each is signed in, signed out or not known, when its source last read it, when a job last started there, the infra credential folders its home holds (`infraCredentials`, names only), and the account\'s week windows. Machines signed out are one entry with no identity. Never a token.', returns: '`{ accounts: ToolAccount[] }`' },
+  { method: 'get', path: '/api/tool-accounts', tag: 'State', summary: 'The tool accounts: who each machine\'s agent tool is signed in as', description: 'Per service and identity, from the usage sources\' accounts: the machines that use it, whether each is signed in, signed out or not known, when its source last read it, when a job last started there, the infra credentials its job user holds (`infraCredentials`, names only: any makes the machine not ready), and the account\'s week windows. Machines signed out are one entry with no identity. Never a token.', returns: '`{ accounts: ToolAccount[] }`' },
 ];
 
 export function accountRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {

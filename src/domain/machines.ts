@@ -25,8 +25,9 @@ export interface HerdrVersions {
 }
 
 /**
- * The infra credential folders a machine's home holds, as its last read found them (issue #1128 part 7, design.md "Infra credentials
- * on machines"): a machine must hold none, so Machines and Accounts flag them; no job is held for them. Only the names. `[]`: none.
+ * The infra credentials its job user's context holds, as its last read found them (issues #1128 part 7, #1248, design.md "Infra
+ * credentials on machines"): credential folders and files in its home, a git credential helper, token variables. A machine
+ * holding any is not ready: it takes no new job, and Machines, Accounts and Needs you say so. Only the names. `[]`: none.
  * Absent: not read (a container target, a client older than this, offline).
  */
 export interface MachineInfraCredentials { infraCredentials?: string[] }

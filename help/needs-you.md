@@ -16,6 +16,7 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 | Research | **Research** | Research reports that wait for you to accept or steer them. |
 | Logins | **Logins** | Logins a job waits on, and connections that ended. A code that ran out still counts while its job waits for a new code: by default the job gets a new code by itself. |
 | Accounts | **Accounts** | Machines whose agent tool (Claude) is signed in as nobody, one line each. The row shows as soon as the machine's usage source reads the sign-out. Sign the tool in again from Accounts: no terminal on the machine is needed. |
+| Machines | **Machines** | Machines that are not ready, one line each, with why: its job user holds credentials a job could use, or the machine cannot reach the hopper. Such a machine takes no new job until you fix it. Its row on Machines gives the fix. |
 | Setup | **Sources** | Job sources that are on but not configured, one line each, with what each lacks. Such a source takes no job until you set it up. For the GitHub App source, see [Set up the GitHub App source](github-app-setup.md). |
 | Failures | **Failures** | Open problems and jobs handed off to a person. |
 | Pull requests | **Pull requests** | Open pull requests with merge conflicts. Fix them, or close them. |

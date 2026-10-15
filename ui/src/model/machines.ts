@@ -103,10 +103,38 @@ function herdrSide(what: string, side: { version?: string; protocol?: number; bi
   return `${what}${side.version ? ` ${side.version}` : ''}${said ? ` (${said})` : ''}`;
 }
 
-/** The infra credential folders its home holds, and what to do (issue #1128 part 7): a machine must hold none. None, or not read: null. */
+/** What its job user holds, and that it takes no new job (issues #1128 part 7, #1248). None, or not read: null. */
 export function infraCredentialsText(m: MachineSnapshot): string | null {
   if (!m.infraCredentials?.length) return null;
-  return `${m.infraCredentials.join(', ')} in its home: a machine must hold no infra credentials. Remove them on the machine.`;
+  return `Not ready, takes no new job: its job user holds credentials a job could use: ${m.infraCredentials.join(', ')}. Its jobs wait for another machine. Run its jobs as a dedicated user that holds none; a job that needs a credential gets it from the vault, through a grant.`;
+}
+
+/** The dedicated job user the guided fix makes (issue #1248). */
+export const JOB_USER = 'hopper-job';
+
+/**
+ * The guided fix for a machine not ready for its credentials (issue #1248): the commands an admin runs there to make a
+ * dedicated job user with no credentials and no password, then how the machine moves to it. Its work tree is made under
+ * that user's home by the next probe. Null: it holds none.
+ */
+export function jobUserFix(m: MachineSnapshot): { commands: string[]; then: string } | null {
+  if (!m.infraCredentials?.length) return null;
+  const make = [`sudo useradd --create-home --shell /bin/bash ${JOB_USER}`, `sudo passwd --lock ${JOB_USER}`];
+  if (m.ssh) {
+    const host = m.ssh.slice(m.ssh.indexOf('@') + 1);
+    return { commands: make, then: `Then put the hopper's ssh public key in /home/${JOB_USER}/.ssh/authorized_keys there, and Edit this machine: set its ssh target to ${JOB_USER}@${host}. It takes jobs at its next probe.` };
+  }
+  const client = `Then Machines → Add machine → A computer, open a shell as that user with sudo -iu ${JOB_USER}, and run the line there. Remove this machine once the new one is online.`;
+  if (m.client) return { commands: [...make, `sudo loginctl enable-linger ${JOB_USER}`], then: client };
+  return { commands: [...make, `sudo loginctl enable-linger ${JOB_USER}`], then: `This is the hopper's own machine: remove the credentials from the hopper's user, or set its lanes to 0 and add this computer as a client target as that user. ${client}` };
+}
+
+/** Needs you's lines (issue #1248): each online machine that is not ready, and why. */
+export function notReadyLines(machines: readonly MachineSnapshot[]): string[] {
+  return machines.filter((m) => m.online).flatMap((m) => {
+    const why = m.infraCredentials?.length ? `its job user holds ${m.infraCredentials.join(', ')}` : m.addressProblem;
+    return why ? [`${m.label || m.id}: not ready — ${why}`] : [];
+  });
 }
 
 /** An ssh target's herdr client and server versions on Machines (issue #741); null when its probe read none. */

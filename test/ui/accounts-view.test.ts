@@ -101,8 +101,8 @@ describe('the Accounts view', () => {
     const flagged: ToolAccount = { ...SIGNED_IN, machines: [{ ...SIGNED_IN.machines[0]!, infraCredentials: ['.aws', '.keycloak'] }, SIGNED_IN.machines[1]!] };
     await render({ accounts: [flagged] });
     const [desk, laptop] = machines();
-    expect(desk).toContain('infra credentials in its home: .aws, .keycloak');
-    expect(laptop).not.toContain('infra credentials');
+    expect(desk).toContain('not ready, takes no new job: its job user holds .aws, .keycloak');
+    expect(laptop).not.toContain('not ready');
   });
 
   it('no tool account: says where to add a usage source', async () => {
