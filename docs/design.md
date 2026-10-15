@@ -16406,6 +16406,27 @@ job waits, with a link to the fork job. An event with no such id stays a line of
 decider decision's raw inputs, the built-in change rule) is the same `JsonBlock`; commands to copy, a direct job's result,
 a failure's error, an out-of-band change's detail and an infra plan's text are `LogBlock`s (title, wrap toggle, copy).
 
+**The job's transcript** (issue #1169 part 4, `src/domain/transcript.ts`, `src/http/ui/job-transcript.ts`,
+`ui/src/views/job-transcript.tsx`). The agent session a job's latest checkpoint keeps ("Checkpoints and resume
+elsewhere"; scrubbed when it was kept) is the transcript's one source: the hopper keeps no other copy of what the agent
+said. `parseTranscript` (pure) reads Claude's session file, one JSON object a line: each prompt (a user line with text,
+not `isMeta`) starts a **turn**; the agent's lines after it are the turn's parts, in order — `text`, `reasoning`
+(thinking), `tool` (a tool call, its `title` from its description or the field that names its target, its `input`, the
+command or the input as JSON, and its result and error from the tool result with its id), `plan` (`TodoWrite`) and
+`subagent` (`Task`, `Agent`: what for, its kind, its prompt and what it gave back). A subagent's own lines (`isSidechain`),
+a line that is no JSON and the session's bookkeeping lines are left out. A prompt, text or reasoning is cut at 20,000
+characters, a tool call's input or result at 8,000, and says `truncated`. `POST /ui/api/jobs/:id/transcript` `{ before?,
+limit? }` answers the newest `limit` turns (20 unless it says, at most 100) before turn `before`, with `start` and `total`.
+Operator; Access decides as for the job's terminal (`terminal#can_attach`), because the transcript is what the job's pane
+showed. A POST, as the terminal's screen, so it is behind the role guard; it changes and records nothing. 409: the
+checkpoint keeps no session. The job view shows **Open transcript** to an operator when the job's checkpoint holds its
+session: each turn is a prompt `Message` (end) and the agent's reply `Message` (start) in a `Message Scroller`, which
+starts at the newest turn, keeps its place when **Load earlier turns** puts the turns before in front
+(`preserveScrollOnPrepend`), and shows a button to the end. A reply's text is Markdown; each run of steps between texts is
+a `Trace`, a line per step that opens to its input and result in small code blocks: a failed tool call is an error, and
+the last tool call of the newest turn with no result runs while the job is at work. A new checkpoint (its `at` changes)
+reads the newest turns again. Not live between checkpoints: the terminal shows the pane now.
+
 **Part 2** (2026-10-12) adds the parts part 1 left, each from a record that exists, plus one fact the follow now keeps:
 
 - **Usage.** The route reads the job's own job runs (`MachineHistoryRepository.jobRuns` takes a `jobId` now), from a day
