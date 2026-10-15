@@ -129,9 +129,10 @@ const REAP_SCRIPT = [
 // jobs with a process carrying their id, the jobs with a container or a volume labelled with their id (issue #1120), each
 // work tree whose `.worktrees` is there (issue #1120), each scratch dir with its age in seconds, and each job worktree with
 // its age (issue #1188), of either layout. And the hopper's own disk use (issue #1120): for each work tree it names, the
-// KiB its `.worktrees` holds, and what the layout before left (`du -skx`, so a link, such as a worktree's node_modules,
-// counts as a link). Only where `timeout` is: a measure is cut off at 20 s, so a
-// slow disk never holds the survey up; one cut off says nothing.
+// KiB its `.worktrees` holds, what the layout before left, and each repository checkout in its workspace
+// (`workspace/<name>` with a `.git`, part 5): one `du -skx` per work tree, so a link, such as a worktree's node_modules,
+// counts as a link, and one in the workspace is not measured. Only where `timeout` is: the measure is cut off at 20 s, so
+// a slow disk never holds the survey up; a place not measured by then says nothing.
 const SURVEY_SCRIPT = [
   'if command -v systemctl >/dev/null 2>&1; then',
   '  systemctl --user list-units --type=scope --plain --no-legend "hopper-job-*" 2>/dev/null | sed -n "s/^hopper-job-\\([^ ]*\\)\\.scope .*/hopper-scope \\1/p";',
@@ -144,12 +145,13 @@ const SURVEY_SCRIPT = [
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
   'done;',
+  `measure() { set --; for p in "$r/${LAYOUT.worktrees}" "$r/${LAYOUT.oldScratch}" "$r"/workspace/*; do`,
+  `    [ -d "$p" ] && [ ! -L "$p" ] || continue; case $p in "$r/${LAYOUT.worktrees}"|"$r/${LAYOUT.oldScratch}"|"$r/${LAYOUT.oldWorktrees}") ;; *) [ -e "$p/.git" ] || continue;; esac;`,
+  '    set -- "$@" "$p";',
+  '  done; [ $# -gt 0 ] || return 0;',
+  `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-du " k " " $0 }'; };`,
   `for r in "$@"; do if [ -d "$r/${LAYOUT.worktrees}" ] || [ -d "$r/${LAYOUT.oldScratch}" ]; then printf "hopper-root %s\\n" "$r";`,
-  `  [ -n "$to" ] && for p in "$r/${LAYOUT.worktrees}" "$r/${LAYOUT.oldScratch}" "$r/${LAYOUT.oldWorktrees}"; do`,
-  '    [ -d "$p" ] && [ ! -L "$p" ] || continue;',
-  '    k=$($to du -skx "$p" 2>/dev/null | tail -n 1 | cut -f 1); case $k in ""|*[!0-9]*) continue;; esac;',
-  '    printf "hopper-du %s %s\\n" "$k" "$p";',
-  '  done;',
+  '  [ -n "$to" ] && measure;',
   `fi; for d in "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; do`,
   '  [ -d "$d" ] && [ ! -L "$d" ] || continue;',
   '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
@@ -191,7 +193,10 @@ export function readReap(stdout: string): { kept: string[]; pushed?: string[]; r
 export interface SurveyedDir { jobId: string; path: string; ageMs: number }
 /** One job worktree the survey found (issue #1188): its path and age; its job is known by its name. */
 export interface SurveyedTree { path: string; ageMs: number }
-/** One place of the hopper's in a work tree the survey measured (issue #1120): its `.worktrees`, or what the layout before left. */
+/**
+ * One place of the hopper's in a work tree the survey measured (issue #1120): its `.worktrees`, what the layout before
+ * left, or a repository checkout in its workspace (part 5).
+ */
 export interface SurveyedUsage { path: string; bytes: number }
 /** What a finished survey found. Undefined when it did not finish. */
 export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[] }
@@ -205,7 +210,7 @@ export function readSurvey(stdout: string): Survey | undefined {
   const roots: string[] = [];
   const usage: SurveyedUsage[] = [];
   for (const l of lines) {
-    const u = /^hopper-du (\d+) (\/.*\/(?:\.worktrees|\.hopper-scratch|workspace\/worktrees))$/.exec(l);
+    const u = /^hopper-du (\d+) (\/.*\/(?:\.worktrees|\.hopper-scratch|workspace\/[^/]+))$/.exec(l);
     if (u) usage.push({ path: u[2]!, bytes: Number(u[1]) * 1024 });
     const r = /^hopper-root (\/.*)$/.exec(l);
     if (r) roots.push(r[1]!);

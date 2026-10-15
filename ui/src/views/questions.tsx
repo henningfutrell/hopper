@@ -33,7 +33,7 @@ import { ThreadState } from '@/components/thread-ask';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
-import { unseenByOwner } from '@/model/questions';
+import { isLoginScreen, isNotSignedIn, raisedName, unseenByOwner } from '@/model/questions';
 import { REASON_LABELS, reasonCounts, reasonSentence, reasonsOf, recommendationLine, riskCheckNote, stageName, trailReason } from '@/model/escalation';
 import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
@@ -135,6 +135,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
         {!movedOn && <ParkButton job={job} />}</div>}
       {q.tier === 'human' && <ReasonBanner q={q} />}
       <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} tldr={q.tldr?.text} /></div>
+      {isNotSignedIn(q.text) && <SignInLink q={q} />}
       <ThreadState q={q} />
       <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
@@ -246,6 +247,19 @@ export function Questions() {
         })}
       </nav>
       {history ? <QuestionHistory /> : <OpenQuestions />}
+    </div>
+  );
+}
+
+/** A not-signed-in question (issue #1128): sign Claude in on its machine from Accounts, with no terminal there. */
+function SignInLink({ q }: { q: QuestionView }) {
+  const then = isLoginScreen(q.text)
+    ? 'then answer this question: the login screen does not see a sign-in made beside it.'
+    : 'the sign-in answers this question by itself.';
+  return (
+    <div data-slot="sign-in-link" className="text-sm">
+      <a href="#accounts" className="font-medium underline">Sign Claude in on {raisedName(q.raisedBy)} from Accounts</a>
+      <span className="text-muted-foreground">: {then}</span>
     </div>
   );
 }

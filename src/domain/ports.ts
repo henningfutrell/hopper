@@ -663,8 +663,8 @@ export interface SourceRegistry {
    */
   rework(jobId: JobId, notes: string, acting?: ActingPerson): Promise<RerunResult>;
   /**
-   * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
-   * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
+   * The user's act on items a source listed (Assign to me, Release claim; issue #440), answered once the act is recorded;
+   * a sync of that source runs after, not awaited (issue #1194), and its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
    */
   intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
   /**

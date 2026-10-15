@@ -887,6 +887,24 @@ Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or 
 }
 ```
 
+## `job.work_discard_failed`
+
+Version 1 (`docs/schemas/job.work_discard_failed.v1.json`). A person discarded the kept work in Failures, Work not pushed (issue #1010), and the removal on the job's machine, which runs after the answer (issue #1194), failed: `error` says why (its machine out of reach, or a client older than the discard that kept it). The work is still kept, and Discard is offered again. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `error` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "error": "job 7d0c9b1e's work cannot be discarded: its machine desk is out of reach",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `job.containers_removed`
 
 Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.
@@ -1297,7 +1315,7 @@ Version 1 (`docs/schemas/source.intake_migrated.v1.json`). A job source was move
 
 ## `source.issues_assigned`
 
-Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned these labelled items (`keys`) to their connected account from Sources (issue #440): the next sync takes them. `assignee` is the account.
+Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned these labelled items (`keys`) to their connected account from Sources (issue #440): the next sync takes them. `assignee` is the account. Recorded once GitHub took the assignment, after the action answered, one event per item (issue #1194).
 
 | field | type | required |
 |---|---|---|
@@ -1431,6 +1449,26 @@ Version 1 (`docs/schemas/source.backburner_lifted.v1.json`). A person took an it
 {
   "source": "github-account",
   "key": "https://github.com/octocat/hello/issues/9"
+}
+```
+
+## `source.issue_taken_in`
+
+Version 1 (`docs/schemas/source.issue_taken_in.v1.json`). A person took an issue into Intake from the Pull requests view's Not tracked list (issue #1176): an untracked pull request (`pullRequest`) closes it, and it was no work item. The issue (`key`) got the source's label and was assigned to the connected account (`assignee`), as Assign to me assigns. The source syncs at once, and Intake lists the issue: a request card when the label is not a trusted actor's.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `pullRequest` | string | yes |
+| `assignee` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/11",
+  "pullRequest": "https://github.com/octocat/hello/pull/12",
+  "assignee": "octocat"
 }
 ```
 
@@ -2630,7 +2668,7 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 
 ## `machine.disk_over_budget`
 
-Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, or more than the budget allows. Once while it stays over.
+Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, and the repository checkouts in its workspace, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, the repository checkouts (the sweep never removes one), or more than the budget allows. Once while it stays over.
 
 | field | type | required |
 |---|---|---|

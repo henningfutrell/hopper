@@ -9,6 +9,7 @@ export function fakeMachineShell(o: FakeHerdrOptions, fake: () => FakeHerdrClien
     async reap(jobId, scratch, keep, discard) {
       onMachine('reap', jobId, scratch);
       fake().reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}), ...(discard ? { discard } : {}) });
+      if (discard && o.discardMs) await new Promise((res) => setTimeout(res, o.discardMs));
       return { kept: discard ? [] : [...(o.reapKeeps ?? [])], ...(o.reapPushes?.length ? { pushed: [...o.reapPushes] } : {}) };
     },
     survey: async (roots) => (onMachine('survey', roots), o.survey ?? { scopes: [], processes: [], scratch: [] }),

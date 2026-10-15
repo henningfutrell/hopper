@@ -166,7 +166,8 @@ export async function refreshFailures() {
 /** A Failures action (issue #509): the daemon's answer, then the failures read again. Failures toast, as `act`. */
 export async function failureAct(path: string, body: unknown, done: string): Promise<boolean> {
   const r = await actFor(path, body, done);
-  refreshFailures().catch(() => {});
+  // Read again before the act ends, so the entry shows the act's result, never what it was before (issue #1194).
+  await refreshFailures().catch(() => {});
   return r.ok;
 }
 /** POST /ui/api/failures/settings (admin). Failures toast; a rejected session drops to the landing page. */
@@ -228,7 +229,7 @@ const refreshQuestionsSoon = debounced(refreshQuestions);
 const refreshLoginsSoon = debounced(refreshLogins);
 const refreshFailuresSoon = debounced(refreshFailures);
 /** What the assessor writes, and what changes what it shows (a job run again, a job failed). */
-const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'handoff.checked', 'job.rerun', 'job.failed', 'job.dismissed', 'job.work_kept', 'job.work_removed', 'job.continued']);
+const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'handoff.checked', 'job.rerun', 'job.failed', 'job.dismissed', 'job.work_kept', 'job.work_removed', 'job.work_discard_failed', 'job.continued']);
 
 export async function checkSession() {
   try {

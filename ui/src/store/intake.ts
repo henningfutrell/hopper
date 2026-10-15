@@ -1,6 +1,7 @@
 // Intake actions in the store (issue #811). An intake action's answer names the keys it did not do: `intakeRefusal` makes
 // that a failure, not a success toast. Approve on a request card: each approval this page sent, by the issue's key —
-// waiting for the daemon, which approves and then syncs the source, so it takes seconds; done; or refused, with why.
+// waiting for the daemon, which records the approval and answers, then syncs the source after (issue #1194); done; or
+// refused, with why.
 // Intake reads it (issue #897): the button waits at once and sends once, a refusal shows on the card, and an approved
 // issue stays where it was. Decline (issue #1035) is kept the same way: a person's decision on the card.
 // The daemon is the source of truth (issue #1178): each decision keeps the hash of the text it decided, and the source's

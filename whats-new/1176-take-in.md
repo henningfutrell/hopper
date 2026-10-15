@@ -1,0 +1,1 @@
+- In Pull requests, an open pull request whose issue the hopper does not know has a Take into Intake button. The issue then waits in Intake for you to approve it. A second pull request for the same issue now says which pull request the hopper looks after.

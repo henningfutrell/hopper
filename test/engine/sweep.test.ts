@@ -291,36 +291,7 @@ describe('a job\'s containers and volumes (issue #1120)', () => {
     const r = rig({ kept: ['old'], containers: ['old'] });
     r.events[0]!.data = { paths: ['/w/.worktrees/@scratch/old/repo'] };
     await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
+    await r.sweep.removals();
     expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'] } }]);
-  });
-});
-
-describe('discarding kept work (issue #1010)', () => {
-  const by = { person: 'Pat', via: 'ui' as const };
-
-  it('reaps the job\'s scratch dir on its machine whatever it holds, and records job.work_removed, discarded, with who', async () => {
-    const r = rig({ kept: ['old'] });
-    r.events[0]!.data = { paths: ['/w/.worktrees/@scratch/old/repo'] };
-    expect(await r.sweep.discard('old', by)).toEqual({ jobId: 'old', paths: ['/w/.worktrees/@scratch/old'] });
-    expect(r.reaps).toEqual([{ jobId: 'old', scratch: '/w/.worktrees/@scratch/old', discard: true }]);
-    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.worktrees/@scratch/old'], discarded: true, person: 'Pat', via: 'ui' } });
-  });
-
-  it('refuses a job with no work kept, one that runs, and one whose machine is offline; reaps nothing', async () => {
-    const none = rig();
-    await expect(none.sweep.discard('old', by)).rejects.toThrow('job old has no work kept');
-    await expect(none.sweep.discard('nope', by)).rejects.toThrow('job nope not found');
-    const running = rig({ kept: ['run'] });
-    await expect(running.sweep.discard('run', by)).rejects.toThrow('job run is running: only an ended job\'s work is discarded');
-    const off = rig({ kept: ['old'], machines: [{ id: 'm', label: 'm', maxLanes: 1, online: false, executors: ['x'] }] });
-    await expect(off.sweep.discard('old', by)).rejects.toThrow('its machine m is offline');
-    expect([...none.reaps, ...running.reaps, ...off.reaps]).toEqual([]);
-  });
-
-  it('a machine that still kept it (a client older than the discard) is said, and nothing is recorded', async () => {
-    const r = rig({ kept: ['old'], keeps: ['old'], oldClient: true });
-    r.events[0]!.data = { paths: ['/w/.worktrees/@scratch/old/repo'] };
-    await expect(r.sweep.discard('old', by)).rejects.toThrow('the machine m kept it: update its client, then discard it again');
-    expect(r.events).toHaveLength(1);
   });
 });

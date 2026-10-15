@@ -7,12 +7,14 @@
 // focus (issue #811): the list does not move under the person who acted. So does an issue declined here (issue #1035). Taken and partly done issues are on Jobs.
 // The source's list is the source of truth (issue #1178): a decision it makes stale is forgotten — the card asks again, and
 // an item whose job ended leaves Needs approval —, and an approved row says what it waits on: no job yet, or its job and state.
+// Assign to me, Release claim and Take off the backburner answer before their GitHub write (issue #1194): from the click on,
+// the row says the write runs and offers that action no more; a write that failed says why, and offers it again.
 import { Flame, Hand, Loader2, Unlock } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GhLink } from '@/components/job';
 import { RequestCard } from '@/components/request-card';
-import type { IntakeOutcome } from '../../../src/domain/intake.ts';
+import type { IntakeActionKind, IntakeOutcome } from '../../../src/domain/intake.ts';
 import { INTAKE_GROUP_LABEL, intakeGroups, issueNumber, jobEnded } from '@/model/intake';
 import { ago } from '@/model/format';
 import { useNow } from '@/hooks/use-now';
@@ -22,6 +24,32 @@ import { forgetEndedApprovals, intakeRefusal, keepsPlace, reconcileApprovals, us
 import { useCanOperate } from '@/store/selectors';
 
 type Send = 'assign' | 'release' | 'unbackburner';
+
+/** What a write-behind does on GitHub, as the row says it. */
+const WRITE_BEHIND: Partial<Record<IntakeActionKind, string>> = {
+  assign: 'assigning to you on GitHub', release: 'releasing the claim on GitHub', unbackburner: 'taking off the backburner on GitHub',
+  approve: 'updating the issue on GitHub',
+};
+
+/**
+ * The GitHub write an action left after its answer (issue #1194): sent from this page, running, or failed. What was sent
+ * shows until a list the daemon sent after it says how it ended: a failure, or the action no longer offered.
+ */
+function useWriteBehind(x: IntakeOutcome) {
+  const [sent, setSent] = useState<{ kind: Send; on: IntakeOutcome }>();
+  const ended = sent !== undefined && x !== sent.on && (x.writeBehind?.state === 'failed' || x.action !== sent.kind);
+  if (ended) setSent(undefined);
+  const mine = ended ? undefined : sent;
+  const running = mine?.kind ?? (x.writeBehind?.state === 'running' ? x.writeBehind.act : undefined);
+  const failed = !mine && x.writeBehind?.state === 'failed' ? x.writeBehind : undefined;
+  return { running, failed, send: (kind: Send) => setSent({ kind, on: x }), unsend: () => setSent(undefined) };
+}
+
+function WriteBehindLine({ running, failed }: { running?: IntakeActionKind; failed?: { act: IntakeActionKind; error: string } }) {
+  if (running) return <span data-write-behind="running" className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />{WRITE_BEHIND[running] ?? 'updating GitHub'} ·</span>;
+  if (failed) return <span data-write-behind="failed" className="text-destructive">{WRITE_BEHIND[failed.act] ?? 'updating GitHub'} failed: {failed.error} ·</span>;
+  return null;
+}
 
 function Taken({ x }: { x: IntakeOutcome }) {
   // The job as the UI knows it now, else as the daemon read it: an ended job's issue is taken no more.
@@ -53,7 +81,14 @@ function useFocusOnApproved(key: string) {
 }
 
 function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; canOperate: boolean }) {
-  const send = (kind: Send, done: string) => actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [x.key] }, done, intakeRefusal([x.key]));
+  const writeBehind = useWriteBehind(x);
+  const { running, failed } = writeBehind;
+  const send = async (kind: Send, done: string) => {
+    writeBehind.send(kind);
+    const r = await actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [x.key] }, done, intakeRefusal([x.key]));
+    if (!r.ok) writeBehind.unsend();
+  };
+  const offers = (kind: Send) => canOperate && x.action === kind && running !== kind;
   const backburner = x.group === 'backburner';
   const n = issueNumber(x.key);
   const { row, state } = useFocusOnApproved(x.key);
@@ -68,15 +103,16 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       {asked && state === 'approved' && x.reason !== undefined && <span data-approved-waits className="text-muted-foreground">no job yet ·</span>}
       {asked && state === 'declining' && <span data-declining className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />declining ·</span>}
       {asked && state === 'declined' && <span data-declined className="text-muted-foreground">declined ·</span>}
+      <WriteBehindLine running={running} failed={failed} />
       {x.reason === undefined ? <Taken x={x} /> : <Reason x={x} />}
-      {canOperate && x.action === 'assign' && (
-        <Button size="xs" variant="outline" title="Assigns the issue to your GitHub account: the next sync takes it" onClick={() => void send('assign', 'Assigned to you')}><Hand />Assign to me</Button>
+      {offers('assign') && (
+        <Button size="xs" variant="outline" title="Assigns the issue to your GitHub account: the next sync takes it" onClick={() => void send('assign', 'Assigning to you')}><Hand />Assign to me</Button>
       )}
-      {canOperate && x.action === 'release' && (
-        <Button size="xs" variant="outline" title="Removes hopper:claimed and its holder label: no job here holds it, and the next sync takes it" onClick={() => void send('release', 'Claim released')}><Unlock />Release claim</Button>
+      {offers('release') && (
+        <Button size="xs" variant="outline" title="Removes hopper:claimed and its holder label: no job here holds it, and the next sync takes it" onClick={() => void send('release', 'Releasing the claim')}><Unlock />Release claim</Button>
       )}
-      {canOperate && x.action === 'unbackburner' && (
-        <Button size="xs" variant="outline" title="Removes hopper:backburner from the issue: the next sync takes it" onClick={() => void send('unbackburner', 'Taken off the backburner')}><Flame />Take off the backburner</Button>
+      {offers('unbackburner') && (
+        <Button size="xs" variant="outline" title="Removes hopper:backburner from the issue: the next sync takes it" onClick={() => void send('unbackburner', 'Taking off the backburner')}><Flame />Take off the backburner</Button>
       )}
       {x.action === 'approve' && x.request && <RequestCard request={x.request} source={source} itemKey={x.key} canOperate={canOperate} />}
     </li>

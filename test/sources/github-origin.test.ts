@@ -98,21 +98,35 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash, acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
-    expect(trust.approvals.get(url(1))).toMatchObject({ source: 'github', text: { title: 'Do it', body: 'Change the README.', comments: [{ author: 'owner', body: 'Go ahead.' }] } });
+    expect(trust.approvals.get(url(1))).toMatchObject({ source: 'github', text: { title: 'Do it', body: 'Change the README.' } });
+    // The comments are read after the answer (issue #1194); the next discover waits for them.
     const items = await source.discover();
+    expect(trust.approvals.get(url(1))).toMatchObject({ text: { comments: [{ author: 'owner', body: 'Go ahead.' }] } });
     expect(items.map((i) => [i.number, i.origin, i.body])).toEqual([[1, 'approved', 'Change the README.']]);
   });
 
-  it('Approve refuses a text that changed since it was shown', async () => {
+  it('Approve refuses a hash that is not of the text the last sync showed', async () => {
+    const trust = testTrust();
+    const { gh, source } = setup({}, { trust });
+    gh.createIssue({ repo: REPO, author: 'stranger', body: 'Change the README.', labels: ['hopper'] });
+    await source.discover();
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'f'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: TEXT_CHANGED_SINCE_SHOWN } });
+    expect(trust.approvals.size).toBe(0);
+  });
+
+  it('Approve after an edit the last sync did not see (issue #1194): the text shown is approved, with no read of the issue; the sync shows the card again', async () => {
     const trust = testTrust();
     const { gh, source } = setup({}, { trust });
     gh.createIssue({ repo: REPO, author: 'stranger', body: 'Change the README.', labels: ['hopper'] });
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
     gh.editIssue(REPO, 1, { body: 'Change the CI.' }, 'stranger');
-    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [], failed: { [url(1)]: TEXT_CHANGED_SINCE_SHOWN } });
-    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'f'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: TEXT_CHANGED_SINCE_SHOWN } });
-    expect(trust.approvals.size).toBe(0);
+    const reads = gh.calls.filter((x) => x.method === 'getIssue').length;
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [url(1)], failed: {} });
+    expect(gh.calls.filter((x) => x.method === 'getIssue')).toHaveLength(reads);
+    expect(trust.approvals.get(url(1))).toMatchObject({ text: { body: 'Change the README.' } });
+    expect(await source.discover()).toEqual([]);
+    expect(source.intake!()[0]).toMatchObject({ action: 'approve', request: { body: 'Change the CI.', approved: { body: 'Change the README.' } } });
   });
 
   it('an issue edited after its approval makes no job until it is approved again, and the card shows what changed', async () => {
