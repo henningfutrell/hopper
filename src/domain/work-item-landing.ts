@@ -34,6 +34,58 @@ export const LANDING_LEDGER_EVENTS: ReadonlySet<EventType> = new Set<EventType>(
 /** A culprit or a reverted one: later batches name its merge again (the revert is a commit of its own), and move it no more. */
 const STICKY: ReadonlySet<LandingStage> = new Set(['culprit', 'reverted']);
 
+/** Whether the stage takes the item's change off the landing branch (issue #1175): the item is not done. */
+export const isLandingUndone = (l: Pick<ItemLanding, 'stage'> | undefined): boolean => l !== undefined && STICKY.has(l.stage);
+
+/** The stages of a merge on its way to the tested branch: it waits for a batch run, or is in one (issue #1175). */
+const ON_ITS_WAY: ReadonlySet<LandingStage> = new Set(['waiting', 'batch_run', 'bisecting']);
+
+/**
+ * How long a merge no landing event named yet counts as on its way (issue #1175): the runner names it within a pass (2
+ * minutes). One older is a merge from before the batches, whose open issue a person reopened.
+ */
+export const LANDING_UNSEEN_MS = 60 * 60_000;
+
+/**
+ * Whether the item waits on its batch (issue #1175): done by a pull request merged into the landing branch of a repository
+ * with landing batches (`landingRepo`, by its lowercased `owner/name`), not yet promoted, a culprit or reverted. Its issue
+ * stays open until its batch run reaches the tested branch, and Intake neither offers it again nor starts a job for it.
+ */
+export function awaitsBatch(item: Pick<WorkItem, 'state' | 'stateSince' | 'pullRequest' | 'pullRequestState' | 'landing'> | undefined,
+  landingRepo: (repo: string) => boolean, now: number): boolean {
+  const pr = pullRequestOf(item?.pullRequest);
+  if (!item || !pr || item.state !== 'done' || item.pullRequestState !== 'merged' || !landingRepo(pr.repo)) return false;
+  if (item.landing?.repo === pr.repo) return ON_ITS_WAY.has(item.landing.stage);
+  return now - Date.parse(item.stateSince) <= LANDING_UNSEEN_MS;
+}
+
+/** An issue URL's `owner/name` (as written) and number. */
+const issueOf = (url: string): { repo: string; number: number } | undefined => {
+  const m = /\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(url);
+  return m ? { repo: m[1]!, number: Number(m[2]) } : undefined;
+};
+
+/**
+ * The issues a batch run of `repo` closes (issue #1175), as GitHub's closing references from `repo`: `#N`, or
+ * `owner/name#N` for an issue of another repository. Of the items done by a pull request of `merges` — not a part, a
+ * culprit or a reverted one (none of those is `done`) —, those whose issue is not closed, in the order of `merges`.
+ */
+export function batchClosingIssues(items: Iterable<Pick<WorkItem, 'key' | 'state' | 'pullRequest' | 'pullRequestState' | 'issueState' | 'landing'>>,
+  repo: string, merges: readonly number[]): string[] {
+  const at = new Map<number, string[]>();
+  for (const i of items) {
+    const pr = pullRequestOf(i.pullRequest);
+    const issue = issueOf(i.key);
+    if (!pr || !issue || pr.repo !== repo.toLowerCase() || !merges.includes(pr.number)) continue;
+    if (i.state !== 'done' || i.pullRequestState !== 'merged' || i.issueState === 'closed' || isLandingUndone(i.landing)) continue;
+    const ref = issue.repo.toLowerCase() === repo.toLowerCase() ? `#${issue.number}` : `${issue.repo}#${issue.number}`;
+    at.set(pr.number, [...at.get(pr.number) ?? [], ref]);
+  }
+  const out: string[] = [];
+  for (const n of merges) for (const ref of (at.get(n) ?? []).sort()) if (!out.includes(ref)) out.push(ref);
+  return out;
+}
+
 /** The repository (lowercased) and number of a pull request's URL. */
 export function pullRequestOf(url: string | undefined): { repo: string; number: number } | undefined {
   const m = url ? /\/([^/]+\/[^/]+)\/pull\/(\d+)(?:[/?#]|$)/.exec(url) : null;

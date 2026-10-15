@@ -4,7 +4,7 @@
 // tip; red, closed and recorded failed; either way its branch is removed —; failing checks start a bisect within the
 // batch, and a pass takes its next step, then the culprit's revert and fix issue (`red.ts`); merge conflicts with the
 // tested branch start a back-merge of it into the landing branch (`back-merge.ts`); with none of these at work,
-// a batch run starts when due (`batchDue`). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
+// a batch run starts when due (`batchDue`), its text closing the issues of its job pull requests (issue #1175). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
   batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
@@ -69,6 +69,8 @@ export function createLandingBatches(o: {
   record(event: NewEvent): void;
   /** The URLs of the pull requests the user's jobs named, followed or not (issue #1143): only those move to the landing branch. */
   jobPullRequests(): readonly string[];
+  /** The issues the job pull requests `merges` close (issue #1175), as closing references from `repo`: named in the batch run's text. */
+  closingIssues?(repo: string, merges: readonly number[]): string[];
   now(): Date;
   log(line: string): void;
   everyMs?: number;
@@ -147,7 +149,7 @@ export function createLandingBatches(o: {
     }
     const branch = batchBranch(cmp.tip);
     await gh.createBranch(repo, branch, cmp.tip);
-    const b = { landing, tested: cfg.tested, tip: cmp.tip, merges };
+    const b = { landing, tested: cfg.tested, tip: cmp.tip, merges, closes: o.closingIssues?.(repo, merges) ?? [] };
     const pr = await gh.openPullRequest(repo, { head: branch, base: cfg.tested, title: batchTitle(b), body: batchBody(b) });
     o.record({ type: 'landing_batch.started', data: { repo, landing, tested: cfg.tested, tip: cmp.tip, branch, pullRequest: pr.number, url: pr.url, merges, why: due.why } });
     note(repo, { why: due.why });

@@ -18534,6 +18534,42 @@ Not taken: the base merge of the hopper's mirror ("The base merge"), which also 
 pull request inside a source's sync pass, with that pass's fetch; the batch runner has neither, and a back-merge is rare.
 A conflict in an additions file therefore files the issue, and a job resolves it.
 
+## Issues fixed on the landing branch (issue #1175, 2026-10-14)
+
+**The problem.** A job's pull request merges into the landing branch (`main`), but GitHub closes an issue from a closing
+keyword only on a merge into the default branch (the tested branch, `dev`), and a batch run's pull request carried no
+closing keyword. So the issue stayed open after its fix merged. The follow put `hopper:done` on it, and the next sync took
+an open issue with `hopper:done` whose job ended for a reopened one: a **reopened card** asked for approval again, and an
+approval ran a second job on work already done. A culprit's revert, meanwhile, left its item `done`.
+
+**Waits on its batch** (`awaitsBatch`, `src/domain/work-item-landing.ts`, pure). An item waits on its batch while it is
+`done` by a merged pull request of a repository with landing batches, and its landing stage is `waiting`, `batch_run` or
+`bisecting` — or it has none yet and it is done for at most an hour (`LANDING_UNSEEN_MS`): the runner names a merge within
+one pass, so an older merge with no stage predates the batches, and a reopen of its issue is a person's. Its ledger state
+stays `done`. A sync (`awaitingBatch`, `src/sources/github/origin.ts`) says such an issue is "done: merged into the landing
+branch; its batch run closes the issue", in the pull request waiting group, with no action: no reopened card, so no
+approval and no job. The source asks through `IntakeContext.awaitsBatch`, which the user's store answers from the ledger
+and the landing batch settings.
+
+**The batch run closes the issues.** A batch run's pull request text (`batchBody`) ends with `Closes <ref>` for each issue
+its job pull requests close (`batchClosingIssues`): of the batch's merges, the ledger's `done` items with a merged pull
+request — not a part (`partly_done`), not a culprit or reverted one (`failed`, below) — whose issue is not closed, `#N` in
+the batch's repository, `owner/name#N` in another, in the order of the merges. Its merge into the tested branch is a merge
+into the default branch, so GitHub closes them, as it would close the issue of a pull request merged there: the hopper
+itself closes no issue. A red batch run is closed, not merged, and closes nothing. The bisect's runs are never merged.
+
+**A culprit is not done** (`stateOf`, `src/domain/work-items.ts`). An item whose landing stage is `culprit` or `reverted`
+(`isLandingUndone`) is `failed`, whatever its issue says, until a new job takes it over (`job.queued` clears the stage):
+its change is off the landing branch. Its row names its fix issue (`landing.fixIssue`), and Pull requests → Landing lists
+it. The ledger settles the state at each landing event (`applyLandingEvent`). Its issue is open (the batch that carried it
+was red, so nothing closed it), and its item waits on no batch, so the next sync offers it as a reopened card: a person
+runs it again, or lets the fix issue's job do the work. Tenant migration 59 rebuilds the ledger, so a culprit recorded
+before it is failed too.
+
+Not taken: the hopper closing each issue itself after a promotion. That is a GitHub write of the hopper's own, and the
+rule is that the merge closes an issue, never the hopper ("GitHub text is neutral" in `AGENTS.md`). An issue closed
+before this change whose fix was reverted (the old path) is not reopened: its fix issue carries the work.
+
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
 **The problem.** `stable` moved straight from `beta` to every stable install at once. A change that broke on a stable
