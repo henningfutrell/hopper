@@ -21310,7 +21310,8 @@ job's.
   the job id in the user's runtime dir, and the scratch dir as given, else as the runtime dir names it — only ever a
   `…/.worktrees/@scratch/<job id>`. It writes the config again (a job that changed it cannot point the reset at another
   runtime), prints each container and volume as removed (`job.containers_removed`), runs `podman system reset --force`
-  with `--root`, `--runroot` and `--tmpdir` the job's, removes what of the storage is left through `podman unshare`, stops
+  with `--root` and `--tmpdir` the job's (its runroot only in the config it wrote: Podman 4 refuses a `--runroot` longer
+  than 50 characters, and the runtime dir's is), removes what of the storage is left through `podman unshare`, stops
   every process still started from the runtime dir (its environment's `XDG_RUNTIME_DIR`: the pause process, network
   helpers), stops the health check timers of the containers it named and kills their scopes (what a reset that failed
   left in the user's systemd), and removes the runtime dir. The reap may take 180 s (`REAP_TIMEOUT_MS`): a kind cluster is slow to stop.
