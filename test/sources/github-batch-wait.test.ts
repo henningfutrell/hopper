@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import type { IntakeContext } from '../../src/domain/intake.ts';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import { AWAITS_BATCH } from '../../src/sources/github/origin.ts';
+import { issueNodeId, jobGraph } from '../../src/domain/job-graph.ts';
+import { awaitingBatchKeys } from '../../src/sources/intake-live.ts';
 import { REPO, githubConfig, jobForIssue, testTrust } from './fixtures/github-support.ts';
 
 const NOW = Date.parse('2026-10-02T12:00:00.000Z');
@@ -109,5 +111,18 @@ describe('Intake does not offer an issue that waits on its batch (issue #1337)',
     mergedIntoMain(gh, 1, at(90 * MIN), at(80 * MIN));
     openBatch(gh, at(20 * MIN), [], []);
     expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
+  });
+});
+
+describe('the job graph shows an issue that waits on its batch (issue #1337)', () => {
+  it('an issue named by an open batch run\'s closing lines is done in the graph, waiting on its batch run', async () => {
+    const { gh, source } = setup({ ended: [url(1)] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:done'] });
+    const pr = mergedIntoMain(gh, 1, at(90 * MIN), at(80 * MIN));
+    openBatch(gh, at(20 * MIN), [pr.number], [1]);
+    await source.discover();
+    const status = { name: 'github', kind: 'github-account', state: 'ok' as const, detail: { intake: source.intake!() } };
+    const g = jobGraph({ jobs: [{ ...jobForIssue(1), status: 'failed' }], awaitingBatch: awaitingBatchKeys([status]) });
+    expect(g.nodes.find((n) => n.id === issueNodeId(REPO, 1))).toMatchObject({ stage: 'done', awaitsBatch: true });
   });
 });

@@ -301,3 +301,25 @@ describe('the tend attempts of a pull request (issue #927)', () => {
     expect(node(g, pullRequestNodeId(PR(5)))).not.toHaveProperty('tends');
   });
 });
+
+describe('an issue that waits on its batch (issue #1337)', () => {
+  const ISSUE = 'https://github.com/acme/app/issues/1';
+
+  it('is done, says its batch run closes it, and waits on nobody, though its job failed and the ledger missed the merge', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed', {}, 1)], awaitingBatch: new Set([ISSUE]) });
+    expect(node(g, issueNodeId('acme/app', 1))).toMatchObject({ stage: 'done', awaitsBatch: true, stageText: 'Merged: waits on its batch run' });
+    expect(node(g, issueNodeId('acme/app', 1))).not.toHaveProperty('waitsOnYou');
+    expect(g.trees[0]!.summary).toBe('1 of 1 piece shipped, nothing waiting on you.');
+  });
+
+  it('an issue not in the list is as before', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed', {}, 1)], awaitingBatch: new Set(['https://github.com/acme/app/issues/2']) });
+    expect(node(g, issueNodeId('acme/app', 1))).toMatchObject({ stage: 'failed' });
+    expect(node(g, issueNodeId('acme/app', 1))).not.toHaveProperty('awaitsBatch');
+  });
+
+  it('adds no issue the graph does not hold', () => {
+    const g = jobGraph({ jobs: [job('a', 'finished', {}, 1)], awaitingBatch: new Set(['https://github.com/acme/app/issues/9']) });
+    expect(g.nodes.find((n) => n.id === issueNodeId('acme/app', 9))).toBeUndefined();
+  });
+});
