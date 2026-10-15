@@ -200,8 +200,10 @@ describe('the health port (issue #1383)', () => {
    * loop of this process is held all the while, as a held hopper's is.
    */
   const ask = (port: number, o: { afterMs?: number; host?: string; path?: string } = {}): { status: number; body: string } => {
-    const script = `setTimeout(() => fetch('http://127.0.0.1:${port}${o.path ?? '/api/health'}', { headers: { host: ${JSON.stringify(o.host ?? `127.0.0.1:${port}`)} } })
-      .then(async (r) => { process.stdout.write(JSON.stringify({ status: r.status, body: await r.text() })); }, (e) => { process.stdout.write(JSON.stringify({ status: 0, body: String(e) })); }), ${o.afterMs ?? 0});`;
+    // node:http, not fetch: fetch sets the Host header itself.
+    const script = `setTimeout(() => require('node:http').get({ host: '127.0.0.1', port: ${port}, path: ${JSON.stringify(o.path ?? '/api/health')}, headers: { host: ${JSON.stringify(o.host ?? `127.0.0.1:${port}`)} } }, (r) => {
+      let body = ''; r.on('data', (c) => { body += c; }).on('end', () => { process.stdout.write(JSON.stringify({ status: r.statusCode, body })); });
+    }).on('error', (e) => { process.stdout.write(JSON.stringify({ status: 0, body: String(e) })); }), ${o.afterMs ?? 0});`;
     return JSON.parse(execFileSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 10_000 })) as { status: number; body: string };
   };
 
