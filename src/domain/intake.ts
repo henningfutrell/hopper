@@ -39,8 +39,13 @@ export interface IntakeOutcome {
   writeBehind?: IntakeWriteBehind;
 }
 
-/** An intake action's write-behind: its GitHub work after the answer (issue #1194): running, or failed with why. Absent once it went through. */
-export type IntakeWriteBehind = { act: IntakeActionKind; state: 'running' } | { act: IntakeActionKind; state: 'failed'; error: string };
+/**
+ * An intake action's write-behind: its GitHub work after the answer (issue #1194): running, or failed with why. Absent once it
+ * went through. Running a second or third time (part 8): `attempt`, and `error`, why GitHub refused the try before.
+ */
+export type IntakeWriteBehind =
+  | { act: IntakeActionKind; state: 'running'; attempt?: number; error?: string }
+  | { act: IntakeActionKind; state: 'failed'; error: string };
 
 /** When an item went on the backburner, and who put it there (issue #808); a part absent: GitHub did not say. */
 export interface BackburnerSince {

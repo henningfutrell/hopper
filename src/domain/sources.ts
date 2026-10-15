@@ -29,10 +29,12 @@ export interface TimingSpread { p50: number; p95: number; max: number }
  * How the work after a person's act spent its time (issue #1194): per act, the time its runs waited on their queue (the
  * job's report chain, or the source's sync chain) apart from the time they ran; the last runs of each act since the
  * daemon started. `act` is a give-back act (`rerun`, `retry`, …), `merge` or `close`, an intake action's `approve`, `assign`, …; and
- * `sync:<act>` for the sync an act asks for.
+ * `sync:<act>` for the sync an act asks for; with `source`, an intake action's GitHub writes after it, in that source.
  */
 export interface AfterAnswerTiming {
   act: string;
+  /** The job source whose own work it is (part 8): an intake action's GitHub writes, its write-behind. Absent: the hopper's queues. */
+  source?: string;
   /** Runs since the daemon started. */
   count: number;
   waitMs: TimingSpread;

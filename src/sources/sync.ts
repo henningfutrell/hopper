@@ -345,7 +345,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),
-    afterAnswerTimings: () => timings.summary(),
+    afterAnswerTimings: () => [...timings.summary(), ...[...slots.values()].filter((s) => !s.removed)
+      .flatMap((s) => (s.source.afterAnswerTimings?.() ?? []).map((t) => ({ ...t, source: s.source.name })))],
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     // Run again, Continue and Rework.
     ...rerunning,

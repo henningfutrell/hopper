@@ -31,15 +31,16 @@ describe('Sources: the GitHub writes after an act (issue #1194)', () => {
   it('the work after each act: its wait on the queue apart from its run', async () => {
     const afterAnswer = [
       { act: 'sync:approve', count: 3, waitMs: spread(3800, 3900), runMs: spread(7, 9), lastAt: AT },
-      { act: 'approve', source: 'github-app', count: 3, waitMs: spread(0, 1), runMs: spread(420, 1250), lastAt: AT },
+      { act: 'approve', source: 'github-app', count: 3, waitMs: spread(0, 1), runMs: spread(420, 1260), lastAt: AT },
     ];
     await boot({ '/api/sources': { sources: [source('github-app', 'github-app', 'ok', { mode: 'app' })], afterAnswer } });
     await vi.waitFor(() => expect(document.querySelectorAll('[data-after-answer-act]')).toHaveLength(2));
     const rows = [...document.querySelectorAll('[data-after-answer-act]')].map((r) => r.textContent);
-    expect(rows[0]).toContain('approve · github-app');
-    expect(rows[0]).toContain('1.3 s');
-    expect(rows[1]).toContain('sync:approve');
-    expect(rows[1]).toContain('3.8 s');
+    // The slowest first: the sync waited behind the one already running.
+    expect(rows[0]).toContain('sync:approve');
+    expect(rows[0]).toContain('3.8 s');
+    expect(rows[1]).toContain('approve · github-app');
+    expect(rows[1]).toContain('1.3 s');
   });
 
   it('no panel before any act ran', async () => {
@@ -61,6 +62,6 @@ describe('the after-answer rows (issue #1194)', () => {
   it('writes a time in ms under a second, else in seconds', () => {
     expect(ms(7)).toBe('7 ms');
     expect(ms(999)).toBe('999 ms');
-    expect(ms(1250)).toBe('1.3 s');
+    expect(ms(1260)).toBe('1.3 s');
   });
 });

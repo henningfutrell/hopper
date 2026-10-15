@@ -163,6 +163,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     thread: gitHubThread(api),
     paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
+    afterAnswerTimings: () => current()?.afterAnswerTimings?.() ?? [],
     pass: reads.pass,
     discover: (d) => current()?.discover(d) ?? Promise.resolve([]),
     repoChanged: (repo) => current()?.repoChanged?.(repo) ?? false,

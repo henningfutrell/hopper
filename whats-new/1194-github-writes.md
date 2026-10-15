@@ -1,0 +1,1 @@
+- When GitHub refuses an assignment, a label or an approval for a short time, the hopper now tries it again by itself. Sources shows how many GitHub changes are still under way, when the last one went through, and which ones failed. It also shows how long the work after each of your actions waited and ran.

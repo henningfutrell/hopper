@@ -452,7 +452,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, Partial<AfterAnswerTimed> {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
