@@ -10,11 +10,11 @@ function withIssue(over: Record<string, unknown> = {}) {
 }
 
 describe('GitHub source report', () => {
-  it('claimed: ensures the hopper labels, labels the issue claimed, posts nothing; state unchanged', async () => {
+  it('claimed: ensures the claim label, labels the issue claimed, posts nothing; state unchanged', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { priority: 75, sourceState: { source: { claimCommentId: 5 } } });
     const state = await source.report({ kind: 'claimed', job });
-    expect(gh.labelsIn(REPO)).toEqual(expect.arrayContaining(['hopper:claimed', 'hopper:done', 'hopper:failed', 'hopper:rejected']));
+    expect(gh.labelsIn(REPO)).toContain('hopper:claimed');
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:claimed']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
     expect(state).toEqual({ claimCommentId: 5 });
@@ -26,7 +26,7 @@ describe('GitHub source report', () => {
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.report({ kind: 'claimed', job: jobForIssue(1) });
     await source.report({ kind: 'claimed', job: jobForIssue(2) });
-    expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(7);
+    expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(1);
   });
 
   it('finished with the issue open: claimed → pr-ready, no comment, the issue left to the merge that closes it (issues #187, #579); the pull request to follow kept', async () => {
@@ -41,7 +41,7 @@ describe('GitHub source report', () => {
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
     // No ready pull request closes it: one that references it, or one named for it on its branch, is looked for (issue #637).
-    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'addLabels']);
+    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'ensureLabel', 'addLabels']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(state).toEqual({ ...claimed, follow: 'open' });
   });
@@ -125,6 +125,7 @@ describe('GitHub source report', () => {
   it('rerun that GitHub refuses throws a SourceError with its reason', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed' });
+    await source.report({ kind: 'failed', job });
     gh.failNext('removeLabels', new GitHubApiError('gh: Resource not accessible (HTTP 403)', true, 403));
     const err = await source.rerun!(job).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SourceError);

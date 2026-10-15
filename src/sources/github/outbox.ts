@@ -245,19 +245,19 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 }
 
 /**
- * Each coalesced change on GitHub; Approve's comment read through `readComments`; the hopper's labels made first, with
- * `ensureLabels`, before an add; a Merge now, Close PR, Run again or Rework through `acts`, the sync loop's: without it,
- * it waits.
+ * Each coalesced change on GitHub; Approve's comment read through `readComments`; the hopper's labels an add names made
+ * first, with `ensureLabels` (issue #1154: only those); a Merge now, Close PR, Run again or Rework through `acts`, the
+ * sync loop's: without it, it waits.
  */
 export function outboxSend(
   api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment'>,
   readComments: (repo: string, key: string) => Promise<void>,
-  ensureLabels: (repo: string) => Promise<void> = async () => {},
+  ensureLabels: (repo: string, labels: readonly string[]) => Promise<void> = async () => {},
   acts?: OutboxActs,
 ): OutboxSend {
   return async (repo, key, change) => {
     const n = Number(key.slice(key.lastIndexOf('/') + 1));
-    if (change.op === 'add_labels') { await ensureLabels(repo); await api.addLabels(repo, n, change.labels); }
+    if (change.op === 'add_labels') { await ensureLabels(repo, change.labels); await api.addLabels(repo, n, change.labels); }
     else if (change.op === 'remove_labels') await api.removeLabels(repo, n, change.labels);
     else if (change.op === 'add_assignees') await api.addAssignees(repo, n, change.assignees);
     else if (change.op === 'comment') await api.postComment(repo, n, change.body);
