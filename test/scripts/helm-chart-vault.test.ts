@@ -83,7 +83,7 @@ describe('the Helm chart\'s vault pod', () => {
 
   it('lets only the hopper reach the vault, and the vault reach Postgres', () => {
     expect(from(rs, 'hopper-vault')).toEqual(['hopper']);
-    expect(from(rs, 'hopper-postgres')).toEqual(['hopper', 'openfga', 'vault']);
+    expect(from(rs, 'hopper-postgres')).toEqual(['hopper', 'openfga', 'openfga-migrate', 'vault']);
   });
 
   it('starts the vault once Postgres takes connections', () => {
