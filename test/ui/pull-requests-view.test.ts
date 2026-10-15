@@ -61,6 +61,8 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'merge held' }))).toBe('ready, waits for another pull request to merge first');
     expect(waitsText(card({ waits: 'checks not started' }))).toBe('waiting for checks to start');
     expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
+    expect(waitsText(card({ waits: 'checks unknown', checksWhy: 'the GitHub App lacks Checks: read' }))).toBe('checks unknown: the GitHub App lacks Checks: read');
+    expect(waitsText(card({ waits: 'checks unknown' }))).toBe('the hopper cannot read its checks');
     expect(waitsText(card({ waits: 'no pull request' }))).toBe('no pull request found yet');
     expect(waitsText(card({ waits: 'not checked yet' }))).toBe('not checked yet');
   });
@@ -183,6 +185,18 @@ describe('Pull requests view', () => {
   it('a viewer is not offered rework', async () => {
     await boot(fixture, 'viewer');
     expect(cardOf('j1').querySelector('[data-slot="pr-rework"]')).toBeNull();
+  });
+
+  it('a repository whose checks no read gets: its group says it once, with the fix, and each card says why (issue #1244)', async () => {
+    const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
+    const unread = card({ jobId: 'j5', repo: 'org/b', yolo: true, checks: 'unknown', waits: 'checks unknown', checksWhy: why });
+    await boot({ ...fixture, repos: fixture.repos.map((r) => r.repo === 'org/b' ? { ...r, pullRequests: [...r.pullRequests, unread] } : r),
+      checksProblems: [{ repo: 'org/b', why, pullRequests: [11] }] });
+    const group = (repo: string) => document.querySelector(`[data-repo="${repo}"]`)!;
+    expect(group('owner/a').querySelector('[data-slot="repo-checks-unread"]')).toBeNull();
+    expect(group('org/b').querySelectorAll('[data-slot="repo-checks-unread"]')).toHaveLength(1);
+    expect(text('[data-slot="repo-checks-unread"]', group('org/b'))).toBe(`The hopper cannot read the checks of #11, so it does not merge it: ${why}`);
+    expect(text('[data-slot="pr-waits"]', cardOf('j5'))).toBe(`checks unknown: ${why}`);
   });
 
   it('a repository with no checks is flagged in the header and in its group (issue #677)', async () => {

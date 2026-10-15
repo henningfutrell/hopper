@@ -21,14 +21,19 @@ import { createIssueGraphRepository } from './issue-graph.ts';
 import { createWorkItemLedger } from './work-items.ts';
 import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
+import { createLastAccountRepository } from './last-accounts.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
 import { createDirectJobRepository } from './direct-jobs.ts';
 import { createPromotionRepository } from './promotions.ts';
 import { createGitHubListingRepository } from './github-listings.ts';
+import { createSourceCallLog } from './source-calls.ts';
+import { createGitHubOutboxRepository } from './github-outbox.ts';
 import { createCheckpointRepository } from './checkpoints.ts';
 import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
+import { createRepoChecksReadRepository } from './repo-checks.ts';
+import { createAppInstallationsReadRepository } from './app-installations.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
@@ -81,6 +86,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     questions: createQuestionRepository(ctx),
     reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),
+    lastAccounts: createLastAccountRepository(ctx),
     failures: createFailureRepository(ctx),
     problems: createProblemRepository(ctx),
     handoffs: createHandoffRepository(ctx),
@@ -93,7 +99,11 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     directJobs: createDirectJobRepository(ctx),
     promotions: createPromotionRepository(ctx),
     githubListings: createGitHubListingRepository(ctx),
+    githubOutbox: createGitHubOutboxRepository(ctx),
     githubWatches: createGitHubWatchRepository(ctx),
+    sourceCalls: createSourceCallLog(ctx),
+    repoChecks: createRepoChecksReadRepository(ctx),
+    appInstallations: createAppInstallationsReadRepository(ctx),
     checkpoints: createCheckpointRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
     searchPending: createSearchPendingRepository(ctx),

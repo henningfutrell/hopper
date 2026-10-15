@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineHerdr, MachineInfraCredentials } from './machines.ts';
+import type { JobMachineLink, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -47,9 +47,10 @@ export const JOBS_DIR = '~/hopper-jobs';
  * review); `until`, how it will know it happened (a check it runs in the background, an event), as it wrote it.
  * `ownCommand` (issue #1037): `until` names the job's own background command, so it waits on nothing outside the job and
  * shows as running. Then, while its pane shows no background work: `goneSince`, when that was first seen; `nudgedAt`, when
- * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge.
+ * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge. `on` (issue #1245): what it
+ * waits on, typed; every wait since has one, and one without is a legacy wait, stuck work.
  */
-export interface JobWait { for: string; until?: string; since: string; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -291,8 +292,8 @@ export interface Lane {
   idleSince?: string; pastCap?: true;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr and infra credentials: `MachineHerdr`, `MachineInfraCredentials` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials and leaving: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
@@ -490,7 +491,7 @@ export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER,
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
-export type { AfterAnswerTimed, AfterAnswerTiming, SourceStatus, TimingSpread } from './sources.ts';
+export type { AfterAnswerTimed, AfterAnswerTiming, GitHubAppKeyView, InstalledApp, InstalledAppsView, SetupProblem, SourceCallLog, SourceCalls, SourceStatus, TimingSpread } from './sources.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
@@ -504,7 +505,7 @@ export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettin
 export * from './machine-history.ts'; export * from './hopper-disk.ts';
 export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView };
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
 export * from './check-logs.ts';
@@ -522,11 +523,11 @@ export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
 export * from './kept-work.ts';
-export * from './stuck.ts';
+export * from './stuck.ts'; export * from './wait-on.ts';
 export * from './yolo-mode.ts'; export * from './landing-batches.ts'; export * from './change-kinds.ts';
 export * from './contribution.ts'; export * from './shrink-guard.ts';
 export * from './pull-requests.ts';
-export * from './pull-request-list.ts'; export * from './untracked-pull-requests.ts';
+export * from './pull-request-list.ts'; export * from './untracked-pull-requests.ts'; export type { JobActMarker } from './github-outbox.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
@@ -561,11 +562,11 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID, type InstanceTotals, type
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type ShippedCompose, type StackDrift, type StackGap, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdatePullRequest, type UpdateStatus, type UpdateTarget, type VersionEntry, type VersionHistory } from './update.ts';
+export { isUpdateChannel, UPDATE_CHANNELS, type ClusterInstall, type InstallInfo, type InstallKind, type ShippedCompose, type StackDrift, type StackGap, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdatePullRequest, type UpdateStatus, type UpdateTarget, type VersionEntry, type VersionHistory } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
-export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
+export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type AppInstallationsRead, type AppInstallationsReadRepository, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
 export * from './vault.ts';
 export type { SandboxApprovals, SandboxRequestState, SandboxRequestView } from './sandbox-approvals.ts';
 export type { RememberedWrite, RememberedWriteView } from './remembered-writes.ts';

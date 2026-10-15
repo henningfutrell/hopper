@@ -9,6 +9,7 @@ import { diskAt, judged } from './disk.ts';
 import { createResourceMeter } from '../client/resources.ts';
 import { DEFAULT_WORK_TREE, makeWorkTree } from '../client/work-tree.ts';
 import { infraCredentialsAt } from '../client/infra-credentials.ts';
+import { scrubbedEnv } from '../executors/env.ts';
 
 /** How often this machine's herdr session is checked, and started when it is not running. */
 const SESSION_EVERY_MS = 30000;
@@ -97,7 +98,8 @@ export function createLocalMachineSource(o: {
           ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}),
           ...(d ? { disk: d } : {}),
           ...(res ? { resources: res } : {}),
-          infraCredentials: infraCredentialsAt(homedir()),
+          // Its jobs start with this environment (issue #1248): a token variable in it is theirs.
+          infraCredentials: infraCredentialsAt(homedir(), scrubbedEnv()),
           ...(sweep ? { sweep } : {}),
           ...(workTreeProblem ? { workTreeProblem } : {}),
         },

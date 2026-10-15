@@ -1,0 +1,1 @@
+- On the setup card of a GitHub App job source in Sources, you can now list the GitHub Apps that are installed on your organizations and pick one. The hopper fills in its id and slug for you.

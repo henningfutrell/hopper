@@ -9,6 +9,8 @@
 //   so a built-in instance left at its default `bin` (claude-plan's background `/usage` read,
 //   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`.
 // - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL.
+// - KUBERNETES_SERVICE_HOST is unset, so a test run in a pod (a lane pod's job) reads as a host install does; a test
+//   of a cluster install sets it in the environment it passes (issue #1289).
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -30,6 +32,8 @@ if (process.env.HOPPER_REAL_HERDR !== '1') {
   writeFileSync(join(guards, 'claude'), CLAUDE_GUARD, { mode: 0o755 });
   process.env.PATH = `${guards}${delimiter}${process.env.PATH ?? ''}`;
 }
+
+delete process.env.KUBERNETES_SERVICE_HOST;
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 const realFetch = globalThis.fetch;

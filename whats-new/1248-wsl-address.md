@@ -1,0 +1,1 @@
+- When the hopper runs in WSL, a machine in WSL on the same computer now finds the hopper at its local address and can take work. If it still cannot reach the hopper, Machines names the address it should use.

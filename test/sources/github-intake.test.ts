@@ -99,6 +99,14 @@ describe('claims name their holder (issue #440)', () => {
     expect(events).toEqual([{ type: 'source.claim_released', data: { source: 'github', key: url(1), by: 'hopper', reason: 'claimed by this user of this hopper, with no job here' } }]);
   });
 
+  it('a release removes only the claim labels the issue carries (issue #1154)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    await source.discover();
+    expect(gh.calls.filter((c) => c.method === 'removeLabels').map((c) => c.args)).toEqual([[REPO, 1, ['hopper:claimed']]]);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
   it('a claim with a job here is the job\'s: kept and taken', async () => {
     const { gh, source, events } = setup({ migration: migrated, knownKeys: (k) => new Set(k) });
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed', MINE] });
@@ -114,6 +122,7 @@ describe('claims name their holder (issue #440)', () => {
     expect(source.intake?.()[0]).toMatchObject({ reason: 'claimed by another hopper', action: 'release' });
     expect(gh.issue(REPO, 1).labels).toContain('hopper:claimed');
     expect(await source.intakeAction?.({ kind: 'release', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox?.();
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(events).toEqual([{ type: 'source.claim_released', data: { source: 'github', key: url(1), by: 'user', reason: 'released in Sources' } }]);
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
@@ -152,7 +161,8 @@ describe('assign to me (issue #440)', () => {
     await source.discover();
     expect(await source.intakeAction?.({ kind: 'assign', keys: [url(1), url(2), url(9)] }))
       .toEqual({ done: [url(1), url(2)], failed: { [url(9)]: 'not in this source\'s scope' } });
-    // The assignment runs after the answer (issue #1194); the next discover waits for it.
+    // The assignment is an outbox row (issue #1238), sent after the answer; the discover after it takes the issues.
+    expect(await source.flushOutbox?.()).toEqual({ due: 2, wrote: [REPO] });
     expect((await source.discover()).map((i) => i.number)).toEqual([1, 2]);
     expect(gh.issue(REPO, 1).assignees).toEqual(['owner']);
     expect(events).toEqual([url(1), url(2)].map((k) => ({ type: 'source.issues_assigned', data: { source: 'github', keys: [k], assignee: 'owner' } })));

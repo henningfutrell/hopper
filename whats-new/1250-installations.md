@@ -1,0 +1,1 @@
+- The GitHub account in Sources opens at once and shows where the hopper's app is installed as last read, with when. It reads GitHub again only when you press Refresh, when you connect, or by itself every half hour.

@@ -57,6 +57,8 @@ export interface PullRequestCard {
   state: 'open' | 'merged' | 'closed';
   /** Its checks as last seen: `none`, it has none; `unknown`, not seen yet. */
   checks: PullRequestSeen['checks'] | 'unknown';
+  /** Why its checks are `unknown` (issue #1244), as the follow last saw it; absent: known, or not said. */
+  checksWhy?: string;
   mergeable: 'mergeable' | 'conflicts' | 'unknown';
   draft: boolean;
   /** The branch it merges into, as last seen (issue #677). */
@@ -103,7 +105,16 @@ export interface PullRequestsView {
   landing?: LandingCard[];
   /** The open pull requests of the job repositories the hopper does not track, each with why (issue #1176); absent: none. */
   untracked?: UntrackedPullRequest[];
+  /** The checks read problems (issue #1244): one per repository, never per pull request; absent: none. */
+  checksProblems?: ChecksProblem[];
 }
+
+/**
+ * A checks read problem (issue #1244): GitHub refused every read of a repository's pull request checks to the source's
+ * connection, so they are `unknown` and the hopper merges none of them. `why`: the connection, the permissions it lacks,
+ * and the fix, as the newest refusal said it; `pullRequests`: the open ones it holds, by number.
+ */
+export interface ChecksProblem { repo: string; why: string; pullRequests: number[] }
 
 interface Followed extends Holds { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; tended?: Tended }
 
@@ -165,7 +176,7 @@ function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob:
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
     ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
     ...(retryAt !== undefined ? { tendWaits: retryWaits(f.tended!, tendJob!, retryAt) } : {}),
-    ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
+    ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}), ...(seen?.checks === 'unknown' && seen.checksWhy ? { checksWhy: seen.checksWhy } : {}),
   };
 }
 
@@ -256,9 +267,19 @@ export function pullRequestList(jobs: Job[], newest: (key: string) => Job | unde
     const at = counts.get(k) ?? counts.set(k, { repo: c.repo, count: 0, reason: c.waits }).get(k)!;
     at.count++;
   }
+  const problems = checksProblemsOf(groups, (id) => waiting.find((j) => j.id === id));
   return {
     yolo: { on: groups.filter((g) => g.yolo).length, total: groups.length },
     waiting: [...counts.values()].sort((a, b) => b.count - a.count || a.repo.localeCompare(b.repo) || a.reason.localeCompare(b.reason)),
     repos: groups,
+    ...(problems.length ? { checksProblems: problems } : {}),
   };
+}
+
+/** One checks read problem per repository whose open cards wait on checks GitHub refused to the connection (issue #1244). */
+function checksProblemsOf(groups: { repo: string; pullRequests: PullRequestCard[] }[], jobOf: (id: string) => Job | undefined): ChecksProblem[] {
+  return groups.flatMap(({ repo, pullRequests }) => {
+    const held = pullRequests.filter((c) => c.waits === 'checks unknown' && c.checksWhy && c.pullRequest && followedOf(jobOf(c.jobId)!).seen?.checksRefused);
+    return held.length ? [{ repo, why: held[held.length - 1]!.checksWhy!, pullRequests: held.map((c) => c.pullRequest!.number) }] : [];
+  });
 }

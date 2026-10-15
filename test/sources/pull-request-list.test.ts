@@ -37,6 +37,27 @@ describe('why a pull request waits (issue #677)', () => {
     expect(waits(seen()).waits).toBe('ready');
   });
 
+  it('checks the hopper cannot read: checks unknown, never ready, and the card says why (issue #1244)', () => {
+    const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
+    expect(waits(seen({ checks: 'unknown', checksWhy: why }))).toMatchObject({ waits: 'checks unknown', checksWhy: why });
+    expect(waits(seen({ checks: 'unknown' }))).not.toHaveProperty('checksWhy');
+  });
+
+  it('checks no read of which works: one checks read problem per repository, naming its pull requests (issue #1244)', () => {
+    const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
+    const job = (n: number, s: PullRequestSeen) =>
+      jobForIssue(n, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: `https://github.com/${REPO}/pull/${n + 10}`, seen: s } } });
+    const jobs = [job(1, seen({ checks: 'unknown', checksWhy: why, checksRefused: true })), job(2, seen({ checks: 'unknown', checksWhy: why, checksRefused: true })), job(3, seen())];
+    const v = pullRequestList(jobs, (key) => jobs.find((j) => j.source!.key === key), { on: true, repos: {} }, [REPO, 'owner/other'], NOW, () => undefined);
+    expect(v.checksProblems).toEqual([{ repo: REPO, why, pullRequests: [11, 12] }]);
+    expect(v.repos[0]!.pullRequests.filter((c) => c.checksWhy === why)).toHaveLength(2);
+  });
+
+  it('checks unknown for a GitHub error, not a refusal: no checks read problem (issue #1244)', () => {
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: PR, seen: seen({ checks: 'unknown', checksWhy: 'GitHub did not answer the read of its checks: timeout' }) } } });
+    expect(pullRequestList([job], () => job, { on: true, repos: {} }, [REPO], NOW, () => undefined)).not.toHaveProperty('checksProblems');
+  });
+
   it('yolo on, checks running: checks pending', () => {
     expect(waits(seen({ checks: 'pending' })).waits).toBe('checks pending');
   });

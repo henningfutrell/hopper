@@ -5,7 +5,7 @@
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
 // request's; `POST /release` answers `{release, loads, home, disk, resources}`, the id of the release this process runs
 // (release.ts, issue #70), `loads: 'manifest'` — it loads any release its manifest vouches for (issue #545; a
-// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401), the infra credential folders its home holds (issue #1128 part 7, infra-credentials.ts) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
+// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401), the infra credentials its home and environment hold (issues #1128 part 7, #1248, infra-credentials.ts) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
 // `POST /reap {jobId, scratch?, keep?, discard?}`, `POST /survey {roots}` (reap.ts) and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
@@ -13,8 +13,8 @@
 // `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
 // `POST /checkpoint {jobId, worktree, session}` takes a running job's checkpoint (issue #921, checkpoint.ts): it only reads; `{code, stdout, stderr}`;
 // `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
-// `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
-// read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
+// `POST /claude {args, timeoutMs?, token?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
+// read-only calls `claude-plan` makes, nothing else, with a lane pod's setup token when it carries one (issue #1287) — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
 // {workTree}` makes the machine's work tree under this user's home, `{workTreeProblem}` when it cannot (issue #361).
 // `POST /sign-in {act, …}` runs this machine's claude sign-in (issue #1128, sign-in.ts): `start` answers its URL, `paste` writes the
@@ -22,7 +22,9 @@
 // `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs an escalation level's claude in print
 // mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
-// is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
+// is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s. A dial refused as
+// stale waited behind a stall of the hopper's event loop (issue #1154): it is dialled again at the first backoff, signed
+// fresh, once; a second stale refusal in a row is a clock that is wrong, and backs off as any failure.
 // Each request the hopper signed and each keepalive PING it answers is the hopper heard; cut off from it longer than its
 // max isolation, the client stops the jobs the hopper last named in `/release`, and the next `/release` answer says so (issue #752, isolation.ts).
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -52,6 +54,8 @@ const MAX_BODY = 1024 * 1024;
 const MAX_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15000;
 const BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
+/** The hopper's refusal of a dial-in whose signature was older than its window when it was read (dial.ts). */
+const STALE_REFUSAL = /refused: stale\b/;
 /** A link that stayed up this long starts the backoff over. */
 const STABLE_MS = 60000;
 
@@ -109,6 +113,9 @@ const CLAUDE_CALLS = [
   ['-p', '/usage', '--output-format', 'json', '--no-session-persistence'],
   ['auth', 'status', '--json'],
 ];
+
+/** What `claude setup-token` prints (src/domain/agent-credential.ts; the client imports nothing of hopper). */
+const SETUP_TOKEN = /^sk-ant-oat\d\d-[A-Za-z0-9_-]{8,}$/;
 
 const allowedClaude = (v: unknown): v is string[] =>
   Array.isArray(v) && CLAUDE_CALLS.some((c) => c.length === v.length && c.every((a, i) => a === v[i]));
@@ -176,12 +183,15 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   if (path === '/sign-in') { const r = await signIn(body); return answer(r.status, r.payload); }
   if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
-  let parsed: { args?: unknown; timeoutMs?: unknown };
+  let parsed: { args?: unknown; timeoutMs?: unknown; token?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
   if (path === '/claude') {
     if (!allowedClaude(parsed.args)) return answer(400, { error: 'args must be one of the claude calls of a usage read' });
-    return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs));
+    // A lane pod's read (issue #1287): the user's setup token, for this one call, never kept here.
+    if (parsed.token !== undefined && (typeof parsed.token !== 'string' || !SETUP_TOKEN.test(parsed.token))) return answer(400, { error: 'token must be what claude setup-token prints' });
+    const env = typeof parsed.token === 'string' ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: parsed.token } : undefined;
+    return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs, '', env));
   }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   answer(200, await herdr(o, parsed.args, timeoutMs));
@@ -233,6 +243,8 @@ export function startClient(o: ClientOptions): Client {
   const backoff = o.backoffMs ?? BACKOFF_MS;
   let stopped = false;
   let attempt = 0;
+  /** The last dial was refused as stale: the next stale refusal backs off. */
+  let staleBefore = false;
   let link: Duplex | undefined;
   let timer: NodeJS.Timeout | undefined;
   let exited: Promise<void> = Promise.resolve();
@@ -257,6 +269,7 @@ export function startClient(o: ClientOptions): Client {
     exited = new Promise((r) => { close = r; });
     o.dial().then((socket) => {
       if (stopped) { socket.destroy(); close(); return; }
+      staleBefore = false;
       link = socket;
       const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping, watch.heard);
       session.on('stream', (stream, headers) => {
@@ -274,6 +287,9 @@ export function startClient(o: ClientOptions): Client {
       });
     }, (e: unknown) => {
       close();
+      const stale = STALE_REFUSAL.test((e as Error).message);
+      if (stale && !staleBefore) attempt = 0;
+      staleBefore = stale;
       again(`dialing the hopper failed: ${(e as Error).message}`, started);
     });
   }

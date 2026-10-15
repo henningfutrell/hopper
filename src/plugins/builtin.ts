@@ -6,6 +6,7 @@ import codex from './executor/codex/index.ts';
 import command from './executor/command/index.ts';
 import cursorAgent from './executor/cursor-agent/index.ts';
 import herdrClaude from './executor/herdr-claude/index.ts';
+import kubernetes from './executor/kubernetes/index.ts';
 import omp from './executor/omp/index.ts';
 import opencode from './executor/opencode/index.ts';
 import testExecutor from './executor/test/index.ts';
@@ -13,6 +14,7 @@ import githubAccount from './job-source/github-account/index.ts';
 import githubApp from './job-source/github-app/index.ts';
 import client from './machine-source/client/index.ts';
 import docker from './machine-source/docker/index.ts';
+import kubernetesCluster from './machine-source/kubernetes-cluster/index.ts';
 import local from './machine-source/local/index.ts';
 import ssh from './machine-source/ssh/index.ts';
 import newestFirst from './queue-sorter/newest-first/index.ts';
@@ -29,6 +31,6 @@ import onePassword from './vault-backend/1password/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
-  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, codex, opencode, omp, claude, testExecutor, command, githubAccount, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
+  gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, codex, opencode, omp, claude, testExecutor, command, kubernetes, githubAccount, githubApp, local, ssh, docker, client, kubernetesCluster, claudePlan, commandUsage, grokbotRoutine,
   hashicorpVault, onePassword, bitwarden,
 ];

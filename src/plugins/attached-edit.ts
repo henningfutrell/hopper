@@ -151,8 +151,22 @@ async function addThisMachine(e: MachineEdit, ctx: MachineEditContext, target?: 
   });
 }
 
-/** A machine joining (issue #308): its machine key, the name it asks for, its template and the box the hopper launched (issue #603). */
-export interface MachineJoin { key: string; name: string; template?: string; container?: string }
+/**
+ * A machine joining (issue #308): its machine key, the name it asks for, its template and the box the hopper launched
+ * (issue #603); `pool` when it joined with the lane pool key, a lane pod (issue #1284); the job pod it started (issue #1283).
+ */
+export interface MachineJoin { key: string; name: string; template?: string; container?: string; pool?: true; pod?: string }
+
+/**
+ * A job pod's machine removed (issue #1283): the client target that joined with the job pod's join code, and no other
+ * machine. None is no change.
+ */
+export function applyPodLeave(pod: string, ctx: Pick<MachineEditContext, 'config' | 'configured'>): EditRefusal | { ok: true; changed: boolean } {
+  const machine = ctx.configured.find((c) => c.role === 'machine-source' && c.instance.plugin === client.id && c.instance.options?.pod === pod);
+  if (!machine) return { ok: true, changed: false };
+  const r = writePlugins(ctx.config, ctx.config.version(PLUGINS), (doc) => list(doc, 'machine-source', machine.instance.name, null, ctx.configured));
+  return r.ok ? { ok: true, changed: true } : r;
+}
 
 /** A machine name as the plugins config takes it: letters, digits, `_` and `-`. */
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/;
@@ -161,16 +175,32 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/;
  * POST /client/join (design.md "Joining a machine", issue #308): a new `client` instance holding the
  * machine key, under the name asked for — `<name>-2`, `-3`, … when a machine already has it — with the
  * machine defaults' lanes and executors. A key a client target already holds joins as that one, unchanged.
+ * A lane pod (issue #1284) joins under its own name: a lane pod of that name with another key — its volume was
+ * lost — is the same machine, its key replaced, its other options kept. Its name is the pod's, which only one pod
+ * holds at a time (a StatefulSet's), so the old key is not in use.
  */
 export function applyMachineJoin(j: MachineJoin, ctx: Pick<MachineEditContext, 'config' | 'configured' | 'defaults'>): EditRefusal | { ok: true; machine: string } {
   const machines = ctx.configured.filter((c) => c.role === 'machine-source').map((c) => c.instance);
   const same = machines.find((m) => m.plugin === client.id && m.options?.key === j.key);
   if (same) return { ok: true, machine: same.name };
   if (!NAME.test(j.name)) return refuse('invalid', `a machine name is letters, digits, _ and -, at most 63: ${JSON.stringify(j.name)}`);
+  const pod = j.pool ? machines.find((m) => m.plugin === client.id && m.name === j.name && m.options?.pool === true) : undefined;
+  if (pod) {
+    const r = writePlugins(ctx.config, ctx.config.version(PLUGINS), (doc) => {
+      list(doc, 'machine-source', pod.name, null, ctx.configured);
+      list(doc, 'machine-source', pod.name, { ...pod, options: { ...pod.options, key: j.key } }, ctx.configured);
+    });
+    return r.ok ? { ok: true, machine: pod.name } : r;
+  }
   const taken = new Set(machines.map((m) => m.name));
   let name = j.name;
   for (let n = 2; taken.has(name); n++) name = `${j.name}-${n}`;
-  const options = { key: j.key, ...(j.template ? { template: j.template } : {}), ...(j.container ? { container: j.container } : {}), lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
+  // A job pod (issue #1283) is its one job's machine, named after the pod: the decider gives it no job (no executors);
+  // its job's executor reaches it by name.
+  if (j.pod && taken.has(j.pod)) return refuse('conflict', `a machine is already named ${j.pod}: the job pod cannot join as it`);
+  if (j.pod) name = j.pod;
+  const options = j.pod ? { key: j.key, pod: j.pod, lanes: 1, executors: [] }
+    : { key: j.key, ...(j.template ? { template: j.template } : {}), ...(j.container ? { container: j.container } : {}), ...(j.pool ? { pool: true } : {}), lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
   const parsed = parseOptions(client, options);
   if (!parsed.ok) return refuse('invalid', parsed.error);
   const r = writePlugins(ctx.config, ctx.config.version(PLUGINS), (doc) => list(doc, 'machine-source', name, { name, plugin: client.id, options }, ctx.configured));

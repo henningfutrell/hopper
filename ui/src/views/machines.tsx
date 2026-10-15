@@ -15,7 +15,7 @@
 // whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx). A machine whose link dropped under a running
 // job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx). Each card
 // says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx).
-// A machine whose home holds infra credential folders is flagged with their names (issue #1128 part 7).
+// A machine whose job user holds infra credentials is not ready: their names and the guided fix to a dedicated job user (issues #1128 part 7, #1248).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, SquareTerminal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -28,7 +28,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, herdrText, infraCredentialsText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, herdrText, infraCredentialsText, jobUserFix, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
@@ -114,7 +114,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{infraCredentialsText(m) && <StatusBadge status="infra credentials" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.leaving && <StatusBadge status="leaving" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{infraCredentialsText(m) && <StatusBadge status="not ready" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
@@ -157,7 +157,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
-      {infraCredentialsText(m) && <p role="alert" data-slot="infra-credentials" className="text-sm text-warn">{infraCredentialsText(m)}</p>}
+      {infraCredentialsText(m) && <JobUserFix m={m} />}
       {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
@@ -281,6 +281,27 @@ export function Machines() {
       {machines.length > 0 && <JobCostsPanel />}
       {machines.length > 0 && <PriorityLanesPanel />}
       {machines.length > 0 && <BlastRadiusPanel />}
+    </div>
+  );
+}
+
+/** A machine not ready for its credentials (issue #1248): what its job user holds, and the guided fix with its commands. */
+function JobUserFix({ m }: { m: MachineView }) {
+  const fix = jobUserFix(m);
+  const commands = fix?.commands.join('\n') ?? '';
+  return (
+    <div role="alert" data-slot="infra-credentials" className="grid gap-1.5 text-sm">
+      <p className="text-warn">{infraCredentialsText(m)}</p>
+      {fix && (
+        <>
+          <p className="text-xs text-muted-foreground">To set up a dedicated job user, run these on that machine as an admin:</p>
+          <div className="flex flex-wrap items-start gap-2 text-xs">
+            <code data-slot="job-user-commands" className="min-w-0 flex-1 rounded-md border bg-muted/40 p-2 font-mono break-all whitespace-pre-wrap">{commands}</code>
+            <Button type="button" size="sm" variant="outline" className="min-h-9" onClick={() => void navigator.clipboard?.writeText(commands).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'))}>Copy</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">{fix.then}</p>
+        </>
+      )}
     </div>
   );
 }

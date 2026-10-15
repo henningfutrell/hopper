@@ -1,7 +1,7 @@
 // High priority and priority lanes (issue #535, design.md "High priority everywhere"): a job at or above the
 // high-priority threshold is tagged and listed first wherever jobs are listed or wait, and the most reliable lanes
 // are kept for it. Re-exported by types.ts.
-import type { Job, JobId, LaneId, MachineId, Question } from './types.ts';
+import type { Job, JobId, LaneId, LastAccount, MachineId, Question } from './types.ts';
 import type { QuestionFork, QuestionShifts } from './phase.ts';
 
 /**
@@ -45,7 +45,11 @@ export interface PriorityTag { priority: number; high: boolean }
  * A question as the routes answer it: with its job's live priority (issue #535), the phase shifts it offers now (issue
  * #548), and the forks made from it (issue #570).
  */
-export type QuestionView = Question & PriorityTag & { shifts?: QuestionShifts; forks?: QuestionFork[] };
+export type QuestionView = Question & PriorityTag & {
+  shifts?: QuestionShifts; forks?: QuestionFork[];
+  /** On a not-signed-in question of a machine (issue #1269): who Claude there was last signed in as, `null` when none is known. */
+  lastAccount?: LastAccount | null;
+};
 
 /** The tag of a job's priority; undefined for no job. */
 export const priorityTag = (priority: number | undefined, threshold: number): PriorityTag | undefined =>

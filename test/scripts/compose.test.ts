@@ -257,8 +257,8 @@ describe('the install page', () => {
 
   it('gives the container install with Podman as commands to copy', () => {
     expect(page).toContain('data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml"');
-    expect(page).toContain('data-copy="podman compose up -d"'); // and the Podman socket at the first start (issue #1157)
-    expect(page).toContain('data-copy="systemctl --user enable --now podman.socket &amp;&amp; export HOPPER_PODMAN_SOCKET_HOST=&quot;$XDG_RUNTIME_DIR/podman/podman.sock&quot;"');
+    // Started under a user service of its own, which owns the published port (issue #1320), with the Podman socket (#1157).
+    for (const cmd of ['podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script &gt; hopper-service.sh', 'bash hopper-service.sh install', 'systemctl --user enable --now podman.socket']) expect(page).toContain(`data-copy="${cmd}"`);
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
     // Updated by its user (issue #494): the release's compose file, the whole stack (#697), one command (#1104).
@@ -276,8 +276,8 @@ describe('the install page', () => {
 
   it('recommends the container: its first command is the Podman one, before the install on the machine itself', () => {
     const first = (cmd: string): number => page.indexOf(`data-copy="${cmd}`);
-    expect(first('podman compose up -d')).toBeGreaterThan(0);
-    expect(first('podman compose up -d')).toBeLessThan(first('curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash'));
+    expect(first('bash hopper-service.sh install')).toBeGreaterThan(0);
+    expect(first('bash hopper-service.sh install')).toBeLessThan(first('curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash'));
     expect(page).toMatch(/[Rr]ecommended/);
   });
 });

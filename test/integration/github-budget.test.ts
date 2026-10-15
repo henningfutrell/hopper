@@ -108,7 +108,7 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
     const world = createWorld();
     const clock = { now: () => new Date() };
     ROLES.forEach((_, i) => world.jobs.set(`job-${i}`, followingJob(`job-${i}`, REPOS[i]!)));
-    const parsed = parseOptions(githubApp, { appId: APP_ID, slug: SLUG, privateKeyEnv: KEY_ENV, apiUrl: fake.url, executor: 'test' });
+    const parsed = parseOptions(githubApp, { appId: APP_ID, slug: SLUG, apiUrl: fake.url, executor: 'test' });
     if (!parsed.ok) throw new Error(parsed.error);
     const keys = new Set([...world.jobs.values()].map((j) => j.source!.key));
     const source = createAppSource({
@@ -184,9 +184,10 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
     const made = fake.state.requests.filter(isChangeRead);
     expect(made.length).toBeGreaterThan(50 * REPOS.length);
     // Charged once for each installation token (the ETag cache is per credential, a token lasts an hour), and again only
-    // where an issue changed: the merged and the closed pull requests' repositories.
+    // where an issue changed: the merged and the closed pull requests' repositories, and the yolo one, whose merge closed its
+    // issue: the change read after it starts from that close (issue #1276).
     const tokens = fake.state.requests.filter((r) => /^\/app\/installations\/\d+\/access_tokens$/.test(r.path)).length;
-    const changedRepos = new Set(['merged', 'closed'].map((role) => `/repos/${OWNER}/${REPOS[ROLES.indexOf(role as Role)]}/issues`));
+    const changedRepos = new Set(['merged', 'closed', 'yolo'].map((role) => `/repos/${OWNER}/${REPOS[ROLES.indexOf(role as Role)]}/issues`));
     expect(changeReads.filter((r) => !changedRepos.has(r.path))).toHaveLength((REPOS.length - changedRepos.size) * tokens);
     expect(changeReads.length).toBeLessThan(REPOS.length * tokens + 10);
   });

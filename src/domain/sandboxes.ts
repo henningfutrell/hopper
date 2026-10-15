@@ -1,8 +1,11 @@
 // Sandbox boxes the hopper launches (issues #603, #708; design.md "Sandbox boxes the hopper launches"): the container
 // runtime port, what a box is created as, the launch parameters a template allows, and the sandbox record.
 
-/** The container runtimes the hopper can drive (issue #708). `remote` is an attached machine's, through its client. */
-export const RUNTIME_KINDS = ['podman', 'docker', 'remote'] as const;
+/**
+ * The container runtimes the hopper can drive (issue #708). `remote` is an attached machine's, through its client;
+ * `kubernetes` starts boxes as pods in a cluster, with no container socket (issue #1286).
+ */
+export const RUNTIME_KINDS = ['podman', 'docker', 'remote', 'kubernetes'] as const;
 export type RuntimeKind = (typeof RUNTIME_KINDS)[number];
 
 /** A container as the container runtime lists or inspects it. */
@@ -79,8 +82,11 @@ export interface ContainerRuntime {
   problem(): Promise<string | undefined>;
   /** Pull the image when it is not there yet; answers what the hopper reads of it. */
   pull(image: string): Promise<ImageInfo>;
-  /** Build the image `tag` from this Containerfile when no image of that tag is there yet (issue #716). */
-  build(tag: string, containerfile: string): Promise<void>;
+  /**
+   * Build the image `tag` from this Containerfile when no image of that tag is there yet (issue #716). Absent: this
+   * runtime builds nothing (Kubernetes, issue #1286), and a box with tools runs the tools image CI published.
+   */
+  build?(tag: string, containerfile: string): Promise<void>;
   /** Make the volume; one that exists already is kept as it is. True: it made a new one. */
   createVolume(name: string, labels: Record<string, string>): Promise<boolean>;
   /** Remove the volume; one already gone is no error. */
@@ -121,6 +127,9 @@ export interface ContainerRuntime {
    */
   removeImage?(id: string): Promise<boolean>;
 }
+
+/** A runtime that builds images: Podman, Docker, and a client target's through the remote runtime. */
+export type BuildingRuntime = ContainerRuntime & Required<Pick<ContainerRuntime, 'build'>>;
 
 /** A command run in a box (issue #1004): its argv (no shell but the one it names), and its environment beside the box's. */
 export interface ExecRun {

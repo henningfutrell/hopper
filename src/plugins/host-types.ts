@@ -10,7 +10,7 @@ import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
 import type { BuiltJobSource } from './source-slots.ts';
 import type { ConfiguredBackend } from '../domain/vault.ts';
-import type { DetectionKit, ExecutorContext, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
+import type { DetectionKit, ExecutorContext, UsageSourceContext, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export interface PluginHostOptions {
   /** Custom plugins, one directory each; undefined: none (design.md "Where plugins live"). */
@@ -34,6 +34,8 @@ export interface PluginHostOptions {
   machineContext?: Partial<MachineSourceContext>;
   /** What every executor is told (RoleContext['executor']): a client target's link (issue #308). Default: none is reached. */
   executorContext?: ExecutorContext;
+  /** What every usage source is told besides the machines (RoleContext['usage-source']): a lane pod's sign-in (issue #1287). Default: none. */
+  usageSourceContext?: Pick<UsageSourceContext, 'agentSignIn'>;
   dataDir: string;
   /** PluginContext.userEnv: what the user's processes add to the daemon's environment; default none. */
   userEnv?: Readonly<Record<string, string>>;
@@ -69,6 +71,8 @@ export interface PluginHost {
   executors(): BuiltExecutor[];
   /** The job source instances now, running, disabled or not; follows the plugins config live (issue #356). Valid after start(). */
   jobSources(): BuiltJobSource[];
+  /** Each configured job source that takes the same work as an earlier one (issue #1264), with the name of that one. */
+  duplicateJobSources(): ReadonlyMap<string, string>;
   /** Every machine of every machine source, in the plugins config order; follows the plugins config live. One that cannot run lists none. Valid after start(). */
   machines(): MachineSource;
   /** The usage sources now that run; follows the plugins config live (issue #356). Valid after start(). */
@@ -95,6 +99,8 @@ export interface PluginHost {
   editMachineDefaults(e: MachineDefaultsEdit): Promise<MachineEditOutcome>;
   /** POST /client/join (issue #308): a machine joining as a client target; resolves once the plugins config is reloaded. */
   joinMachine(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
+  /** A job pod's machine removed (issue #1283); none is no change. Rejects when the plugins config could not be written. */
+  leavePod(pod: string): Promise<void>;
   report(): PluginsReport;
   /** the plugins config `routing:` now (none when absent; the last good list on an invalid config). */
   routingRules(): RoutingRule[];

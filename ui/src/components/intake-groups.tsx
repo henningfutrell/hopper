@@ -42,11 +42,13 @@ function useWriteBehind(x: IntakeOutcome) {
   const mine = ended ? undefined : sent;
   const running = mine?.kind ?? (x.writeBehind?.state === 'running' ? x.writeBehind.act : undefined);
   const failed = !mine && x.writeBehind?.state === 'failed' ? x.writeBehind : undefined;
-  return { running, failed, send: (kind: Send) => setSent({ kind, on: x }), unsend: () => setSent(undefined) };
+  // A write the GitHub outbox tries again by itself (issue #1238): why the try before failed.
+  const retry = !mine && x.writeBehind?.state === 'running' ? x.writeBehind.error : undefined;
+  return { running, failed, retry, send: (kind: Send) => setSent({ kind, on: x }), unsend: () => setSent(undefined) };
 }
 
-function WriteBehindLine({ running, failed }: { running?: IntakeActionKind; failed?: { act: IntakeActionKind; error: string } }) {
-  if (running) return <span data-write-behind="running" className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />{WRITE_BEHIND[running] ?? 'updating GitHub'} ·</span>;
+function WriteBehindLine({ running, retry, failed }: { running?: IntakeActionKind; retry?: string; failed?: { act: IntakeActionKind; error: string } }) {
+  if (running) return <span data-write-behind="running" className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />{WRITE_BEHIND[running] ?? 'updating GitHub'}{retry ? `, trying again: ${retry}` : ''} ·</span>;
   if (failed) return <span data-write-behind="failed" className="text-destructive">{WRITE_BEHIND[failed.act] ?? 'updating GitHub'} failed: {failed.error} ·</span>;
   return null;
 }
@@ -82,7 +84,7 @@ function useFocusOnApproved(key: string) {
 
 function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; canOperate: boolean }) {
   const writeBehind = useWriteBehind(x);
-  const { running, failed } = writeBehind;
+  const { running, retry, failed } = writeBehind;
   const send = async (kind: Send, done: string) => {
     writeBehind.send(kind);
     const r = await actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [x.key] }, done, intakeRefusal([x.key]));
@@ -103,7 +105,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       {asked && state === 'approved' && x.reason !== undefined && <span data-approved-waits className="text-muted-foreground">no job yet ·</span>}
       {asked && state === 'declining' && <span data-declining className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />declining ·</span>}
       {asked && state === 'declined' && <span data-declined className="text-muted-foreground">declined ·</span>}
-      <WriteBehindLine running={running} failed={failed} />
+      <WriteBehindLine running={running} retry={retry} failed={failed} />
       {x.reason === undefined ? <Taken x={x} /> : <Reason x={x} />}
       {offers('assign') && (
         <Button size="xs" variant="outline" title="Assigns the issue to your GitHub account: the next sync takes it" onClick={() => void send('assign', 'Assigning to you')}><Hand />Assign to me</Button>

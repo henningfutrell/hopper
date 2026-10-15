@@ -108,6 +108,23 @@ describe('herdr over a client target', () => {
     expect(out).toMatch(/status: running/);
   });
 
+  it('a usage read on a lane pod runs with the token it carries, as CLAUDE_CODE_OAUTH_TOKEN; anything but a setup token is refused (issue #1287)', async () => {
+    const plan = mkdtempSync(join(tmpdir(), 'jh-ct-plan-'));
+    process.env.FAKE_PLAN_DIR = plan;
+    try {
+      client = await startTestClient({ token: () => TOKEN, herdrBin: HERDR, claudeBin: CLAUDE, session: 'hopper' });
+      const t = client.transport(TOKEN);
+      await expect(clientClaude(t, ['auth', 'status', '--json'], 15000, 'sk-ant-ort01-refresh-0123456789')).rejects.toThrow(/400/);
+      expect(existsSync(join(plan, 'calls.jsonl'))).toBe(false);
+      expect(await clientClaude(t, ['auth', 'status', '--json'], 15000, 'sk-ant-oat01-lane-pod-0123456789')).toMatchObject({ code: 0 });
+      expect(await clientClaude(t, ['auth', 'status', '--json'], 15000)).toMatchObject({ code: 0 });
+      const ran = readFileSync(join(plan, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { token?: boolean });
+      expect(ran.map((c) => c.token)).toEqual([true, undefined]);
+    } finally {
+      rmSync(plan, { recursive: true, force: true });
+    }
+  });
+
   it('the client runs only the two read-only claude calls of a usage read (issue #366): anything else is refused, claude never runs', async () => {
     const plan = mkdtempSync(join(tmpdir(), 'jh-ct-plan-'));
     process.env.FAKE_PLAN_DIR = plan;

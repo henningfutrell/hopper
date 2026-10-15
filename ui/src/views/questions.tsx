@@ -35,6 +35,7 @@ import { ThreadState } from '@/components/thread-ask';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
+import { lastAccountText } from '@/model/logins';
 import { isLoginScreen, isNotSignedIn, raisedName, unseenByOwner } from '@/model/questions';
 import { REASON_LABELS, reasonCounts, reasonSentence, reasonsOf, recommendationLine, riskCheckNote, stageName, trailReason } from '@/model/escalation';
 import { questionOrder } from '@/model/priority';
@@ -259,10 +260,15 @@ function SignInLink({ q }: { q: QuestionView }) {
   const then = isLoginScreen(q.text)
     ? 'then answer this question: the login screen does not see a sign-in made beside it.'
     : 'the sign-in answers this question by itself.';
+  // Who to sign in as (issue #1269): the account Claude on the machine was last signed in as.
+  const lastAccount = lastAccountText(q.lastAccount, raisedName(q.raisedBy));
   return (
-    <div data-slot="sign-in-link" className="text-sm">
-      <a href="#accounts" className="font-medium underline">Sign Claude in on {raisedName(q.raisedBy)} from Accounts</a>
-      <span className="text-muted-foreground">: {then}</span>
+    <div className="space-y-0.5">
+      <div data-slot="sign-in-link" className="text-sm">
+        <a href="#accounts" className="font-medium underline">Sign Claude in on {raisedName(q.raisedBy)} from Accounts</a>
+        <span className="text-muted-foreground">: {then}</span>
+      </div>
+      {lastAccount && <div data-slot="last-account" className="text-sm">{lastAccount}</div>}
     </div>
   );
 }

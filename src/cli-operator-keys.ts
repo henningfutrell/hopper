@@ -7,34 +7,40 @@ import { parseArgs } from 'node:util';
 import { UI_ROLES, type MasterKeyRotated, type MasterKeyView, type UiRole } from './domain/types.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
-export const MASTER_KEY_USAGE = `  hopper master-key status                           the master key: where it came from (source), its fingerprint, and whether
-                                                     a previous key is set (previous); never the key
-  hopper master-key rotate                           a new master key: every secret sealed again under it in one transaction,
+export const MASTER_KEY_USAGE = `  hopper master-key status                           the master key: where it came from (source), its fingerprint, whether
+                                                     a previous key is set (previous), and how the host seals it (sealed);
+                                                     never the key
+  hopper master-key rotate [--host-seals]            a new master key: every secret sealed again under it in one transaction,
                                                      the running hopper on it; prints the new key once (key) — save it, and
-                                                     give it as HOPPER_MASTER_KEY before the next start. The hopper's admin's`;
+                                                     give it as HOPPER_MASTER_KEY before the next start. The hopper's admin's.
+                                                     --host-seals: the caller seals the new key to the host now (master-key.sh
+                                                     rotate does); a key the host sealed rotates only so
+  hopper master-key script                           print the host's master-key script (scripts/master-key.sh): it seals
+                                                     the key to this host and unseals it at launch. No daemon needed`;
 
 /**
- * `hopper master-key status`: GET /api/master-key, narrowed to the source, the fingerprint and `previous` (and `problem`,
- * when missing). `hopper master-key rotate`: POST /ui/api/master-key `rotate`, narrowed to the new key, its fingerprint and
- * the counts.
+ * `hopper master-key status`: GET /api/master-key, narrowed to the source, the fingerprint, `previous` and `sealed`.
+ * `hopper master-key rotate`: POST /ui/api/master-key `rotate`, narrowed to the new key, its fingerprint and the counts.
+ * (`hopper master-key script` needs no daemon: src/cli.ts.)
  */
 export function masterKeyCall(args: string[]): Call {
-  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { 'host-seals': { type: 'boolean' } } });
   if (positionals.length === 1 && positionals[0] === 'rotate') {
+    const hostSeals = values['host-seals'] === true;
     return {
-      role: 'admin', path: '/ui/api/master-key', body: async () => ({ action: 'rotate' }),
+      role: 'admin', path: '/ui/api/master-key', body: async () => ({ action: 'rotate', ...(hostSeals ? { hostSeals } : {}) }),
       pick: (v) => {
         const { key, fingerprint, resealed, unreadable } = v as MasterKeyRotated;
         return { key, fingerprint, resealed, unreadable, next: 'save the key in a password manager now, then give it as HOPPER_MASTER_KEY before the next start: a start with the old key is refused' };
       },
     };
   }
-  if (positionals.length !== 1 || positionals[0] !== 'status') throw usage('master-key status | hopper master-key rotate');
+  if (positionals.length !== 1 || positionals[0] !== 'status' || values['host-seals']) throw usage('master-key status | hopper master-key rotate [--host-seals] | hopper master-key script');
   return {
     role: 'viewer', path: '/api/master-key',
     pick: (v) => {
-      const { source, fingerprint, previous, problem } = v as MasterKeyView;
-      return { source, ...(fingerprint === undefined ? {} : { fingerprint }), previous, ...(problem === undefined ? {} : { problem }) };
+      const { source, fingerprint, previous, sealed } = v as MasterKeyView;
+      return { source, fingerprint, previous, ...(sealed === undefined ? {} : { sealed }) };
     },
   };
 }

@@ -3,6 +3,7 @@
 
 import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
+import type { IntakeAutoApproval } from './intake-auto-approve.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
 import type { ReadPolicy } from './read-policy.ts';
@@ -133,6 +134,9 @@ export interface UserSettingsRepository {
   /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */
   getIntakeActors(): IntakeActorSettings | undefined;
   setIntakeActors(settings: IntakeActorSettings): void;
+  /** Auto-approval at intake (issue #1268); undefined: never set, so on, with no app listed. */
+  getIntakeAutoApproval(): IntakeAutoApproval | undefined;
+  setIntakeAutoApproval(settings: IntakeAutoApproval): void;
   /** The job repositories whose "Add PR checks" recommendation the person dismissed (issue #677), `owner/repo` lowercased; none: []. */
   getRepoChecksDismissed(): string[];
   setRepoChecksDismissed(repos: string[]): void;

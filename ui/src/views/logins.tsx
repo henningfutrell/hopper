@@ -1,7 +1,8 @@
 // Logins (issue #477): the logins jobs and escalation runs wait on (issue #476), apart from the questions — one
 // card each, the least time left on top. A card names the machine, the tool and what waits on it, and shows the
 // code with copy and open (`DeviceCode`) and a countdown of server time. What asks — the tool, the host of its page,
-// the account and the scopes it showed (issue #698) — and the lane are listed under what waits. Under the warning it warns, and a screen
+// the account and the scopes it showed (issue #698) — and the lane are listed under what waits; above them, who the machine
+// was last signed in as, or that no account is known there (issue #1269). Under the warning it warns, and a screen
 // reader hears that once; at `expiresAt` the code goes and the card says Expired, on the browser's clock before the
 // server's `auth.expired` arrives, whose word is final. Cancelled and failed say so. Ended logins stay a short while,
 // then go to Earlier logins below; a completed or dismissed one goes there at once (issue #1110). Dismiss puts an open
@@ -21,7 +22,7 @@ import { SignInCode } from '@/components/sign-in-code';
 import { StatusBadge } from '@/components/status';
 import { cn } from '@/lib/utils';
 import { clock } from '@/model/format';
-import { countdownText, isOpen, onCard, phaseOf, sortByTimeLeft, type LoginPhase } from '@/model/logins';
+import { countdownText, isOpen, lastAccountText, onCard, phaseOf, sortByTimeLeft, type LoginPhase } from '@/model/logins';
 import type { LoginSettings, LoginView } from '@/model/wire';
 import { actFor, refreshLogins, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex, useMachineName, useServerNow } from '@/store/selectors';
@@ -67,6 +68,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
   const job = useJobIndex().get(l.jobId ?? '');
   const machine = useMachineName(l.machineId);
   const name = machine ?? 'machine unknown';
+  const lastAccount = lastAccountText(l.lastAccount, machine ?? l.machineId ?? name);
   const [busy, setBusy] = useState(false);
   const left = countdownText(l, now);
   const open = isOpen(phase);
@@ -109,6 +111,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
             : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : isSignIn(l) ? `the ${l.tool} sign-in on ${name}` : `the ${l.run} escalation run for a question`}</span>}
           {!job && l.high && l.priority !== undefined && <HighTag priority={l.priority} />}
         </div>
+        {lastAccount && <div data-slot="login-last-account" className="text-sm">{lastAccount}</div>}
         {(l.host || l.account || l.scopes?.length || l.laneId) && (
           <dl data-slot="login-details" className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
             {l.host && <><dt className="text-muted-foreground">Asking:</dt><dd className="min-w-0 truncate">{l.tool} at {l.host}</dd></>}

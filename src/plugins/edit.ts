@@ -6,6 +6,7 @@
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, MachineDefaults, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
+import { duplicateJobSource } from './duplicates.ts';
 import { machineOptions, optionsJsonSchema, parseOptions } from './options.ts';
 import { PLUGINS, pluginsConfigProblem } from './plugins-config.ts';
 import type { PluginDefinition } from './sdk.ts';
@@ -70,6 +71,14 @@ export function configuredInstances(c: Configured, detectedRouter: InstanceSpec)
 }
 
 const refuse = (code: EditRefusal['code'], error: string): EditRefusal => ({ ok: false, code, error });
+
+/** A job source that would take the same work as one configured (issue #1264): refused, naming that one. */
+function duplicateRefusal(role: Role, spec: InstanceSpec, ctx: EditContext): EditRefusal | undefined {
+  if (role !== 'job-source') return undefined;
+  const first = duplicateJobSource(spec, ctx.configured, (id) => ctx.find(id)?.definition);
+  return first === undefined ? undefined
+    : refuse('conflict', `job source ${first} already takes this work (the same account or app, label and repositories): edit ${first}, or remove it first`);
+}
 
 /** The options marked `.meta({ commandBearing: true })` in the plugin's schema. */
 export function commandBearingKeys(def: PluginDefinition): string[] {
@@ -252,6 +261,8 @@ export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: Ed
     const parsed = parseOptions(def, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
     const next = { ...current.instance, options: e.options };
+    const duplicate = duplicateRefusal(e.role, next, ctx);
+    if (duplicate) return duplicate;
     if (e.rename !== undefined && e.rename !== e.name) return applyRename(e.name, e.rename, next, e.version, e.role, ctx);
     return writePlugins(ctx.config, e.version, (doc) => place(doc, e.role, e.name, next, ctx.configured));
   }
@@ -317,5 +328,7 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
     const parsed = parseOptions(found.definition, e.options);
     if (!parsed.ok) return refuse('invalid', parsed.error);
   }
+  const duplicate = duplicateRefusal(e.role, { name: e.name, plugin: e.plugin, options: e.options ?? {} }, ctx);
+  if (duplicate) return duplicate;
   return writePlugins(ctx.config, e.version, (doc) => list(doc, e.role, e.name, { name: e.name, plugin: e.plugin, ...(e.options ? { options: e.options } : {}) }, ctx.configured));
 }

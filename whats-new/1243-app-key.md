@@ -1,0 +1,1 @@
+- You can paste your GitHub App's private key on its setup card in Sources. The hopper keeps it safely in its vault, and the app starts to take issues at its next sync, with no restart.

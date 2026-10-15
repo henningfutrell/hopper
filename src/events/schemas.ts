@@ -6,13 +6,13 @@
 import { z } from 'zod';
 import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS } from '../domain/types.ts';
 import { DISMISSED_BY } from '../domain/locked.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
-import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts';
+import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
-import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitOn, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
 // A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
@@ -141,7 +141,7 @@ export const EVENT_SCHEMAS = {
   'job.reattached': strict({ reason: z.string() }),
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
-  'job.waiting': strict({ for: z.string(), until: z.string().optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
+  'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
   'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
@@ -345,7 +345,7 @@ export const EVENT_SCHEMAS = {
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   // A launch's agent credential (issue #708, part 10): given to a box at its launch, before it runs a job. Never the value.
-  'vault.agent_credential_given': strict({ name: z.string(), template: z.string(), box: z.string(), backend: z.string().optional() }),
+  'vault.agent_credential_given': strict({ name: z.string(), template: z.string(), box: z.string(), backend: z.string().optional() }), 'vault.pod_credential_given': strict({ name: z.string(), pod: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
   'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean(), plan: z.string().optional(), principal: z.string().optional() }),
   'vault.mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(), }),
@@ -377,7 +377,7 @@ export const EVENT_SCHEMAS = {
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
-  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, // the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts
+  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, // the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   ...THREAD_ASK_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, // issues #997, #1128: notes to a job, the job's terminal

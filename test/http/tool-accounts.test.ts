@@ -3,7 +3,7 @@
 // entry with no identity, beside the accounts.
 import { describe, expect, it } from 'vitest';
 import { toolAccountsOf } from '../../src/http/accounts.ts';
-import type { Job, UsageReading, UsageSourceReport } from '../../src/domain/types.ts';
+import type { Job, LastAccount, UsageReading, UsageSourceReport } from '../../src/domain/types.ts';
 
 const signedIn = (name: string, machine: string, identity: string, extra: Partial<UsageSourceReport> = {}): UsageSourceReport => ({
   name, refreshedAt: '2026-10-14T10:00:00.000Z', accountReadAt: '2026-10-14T10:00:00.000Z',
@@ -47,6 +47,16 @@ describe('toolAccountsOf', () => {
       { machineId: 'm2', login: 'signed-out', problem: 'not logged in' }, { machineId: 'm3', login: 'signed-out', problem: 'not logged in' },
     ] });
     expect(accounts[1]).not.toHaveProperty('identity');
+  });
+
+  it('a machine not signed in names who it was last signed in as, or null when none is known; a signed-in one names none (issue #1269)', () => {
+    const kept: LastAccount = { machineId: 'm2', service: 'claude', identity: 'old@example.com', organization: 'Example Org', capturedAt: '2026-10-13T10:00:00.000Z' };
+    const accounts = toolAccountsOf({
+      sources: [signedIn('claude-m1', 'm1', 'a@example.com'), signedOut('claude-m2', 'm2'), signedOut('claude-m3', 'm3')],
+      readings: [], labels, jobs: [], lastAccount: (machineId, service) => (machineId === 'm2' && service === 'claude' ? kept : null),
+    });
+    expect(accounts[0]!.machines[0]).not.toHaveProperty('lastAccount');
+    expect(accounts[1]!.machines.map((m) => [m.machineId, m.lastAccount])).toEqual([['m2', kept], ['m3', null]]);
   });
 
   it('a machine whose tool could not be read is not known, apart from the machines signed out', () => {

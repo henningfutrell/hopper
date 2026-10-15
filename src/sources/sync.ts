@@ -21,14 +21,20 @@
 // other sync — its timer, one after a merge, a rerun — only what is due (`discover({ due: true })`).
 // A GitHub delivery (issue #1079, `repoChanged`) makes the repository due at each source whose job repository it is, and
 // that source syncs once `DELIVERY_SYNC_MS` after the first delivery of a burst: a timed sync, before its timer.
-
+// A source not configured (issue #1243, `JobSource.setupProblem`) runs no sync pass while no job of its own needs one: its
+// status is `needs-setup` with the problem, never ok, and the log says it once, and once when it clears.
+// The GitHub outbox (issue #1238): an intake action answers and asks for no full sync. Its source's outbox sends its rows `OUTBOX_BATCH_MS`
+// after it (a burst in one batch), and every `OUTBOX_EVERY_MS` the rows due; each repository a send wrote to is made due, and the source syncs then, a timed sync. A sync never waits for the outbox.
+// Poll backoff (issue #1264, `poll-backoff.ts`): a configured source's timed syncs that find nothing changed come further
+// apart; each pass's calls go to the call log, and its status shows its poll interval and its calls in the last hour and day.
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
-import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
+import { needsWork, notConfigured, setupTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
@@ -36,7 +42,7 @@ import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
-import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts';
+import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -51,6 +57,9 @@ export interface SourceSyncOptions {
   jevFirst?: JevFirst;
   /** How often a round follows the pull requests in motion, and every one (issue #985), read at each sync. Absent: every sync follows every one. */
   followEvery?: () => FollowEvery;
+  /** Poll backoff (issue #1264): whether the source's timed syncs come further apart while they find nothing changed (absent: never); the call log: each pass's calls, and each status shows the last hour and day from it. */
+  backoff?: (sourceName: string) => boolean; calls?: SourceCallLog;
+  outboxBatchMs?: number; // the outbox's batch window after an intake action (issue #1238); default OUTBOX_BATCH_MS
 }
 
 /** How long after a GitHub delivery its sources sync (issue #1079): GitHub sends opened, labeled and assigned at once. */
@@ -66,7 +75,7 @@ export type SourceSync = SourceRegistry & {
   /** The sources as the plugins config names them now (issue #356). */
   setSources(sources: JobSource[]): void;
   /** The source synced under `name` now, a removed one still reporting its jobs included. */
-  source(name: string): JobSource | undefined;
+  source(name: string): JobSource | undefined; giveBackChecks(check: GiveBackCheck): void; checkTendAgain(jobId: string, acting: ActingPerson): GiveBackChecked; // the services' checks of Retry, Continue, I fixed it, Push it and Tend again (issue #1238 part 5), set once they exist; Tend again's own, which they ask for `tend`
 };
 
 
@@ -218,7 +227,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   async function pull(slot: Slot, asked: boolean): Promise<{ seen: number; created: number }> {
-    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(asked ? undefined : { due: true }), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
+    const discovered = await slot.source.discover(asked ? undefined : { due: true }); slot.answer = answerPrint(discovered);
+    const items = await intakeOrder(o.jevFirst, slot.source.name, discovered, (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
@@ -239,16 +249,20 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const st = slot.status;
     // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
     // source fires, at the next sync time shown; and the old next time goes while it runs.
-    clearTimeout(slot.timer);
-    delete st.nextSyncAt;
-    delete slot.again;
-    const round = followRound(slot, clock.now().getTime(), o.followEvery?.(), asked || slot.followAll === true);
+    clearTimeout(slot.timer); delete st.nextSyncAt; delete slot.again;
+    const all = asked || slot.followAll === true, made = st.jobsCreated;
+    const round = followRound(slot, clock.now().getTime(), o.followEvery?.(), all);
     delete slot.followAll;
     st.syncing = true;
     emit(slot);
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
+    // Not configured (issue #1243): no sync pass at all — it would ask nothing and look like a healthy zero —, unless jobs
+    // of its own still need their checks or reports.
+    const setup = slot.removed ? undefined : slot.source.setupProblem?.();
+    if (!slot.removed) setupTold(slot, setup);
+    if (setup && !jobsOf(slot).some(needsWork)) { notConfigured(slot, setup, clock.now(), paused); schedule(slot); emit(slot); return; }
     // One pass (issue #822): the source asks GitHub once for what the steps read twice.
     const pass = async () => {
       if (paused === undefined) {
@@ -260,9 +274,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       }
       await applySignals(slot.source, jobsOf(slot).filter((j) => !isTerminal(j)));
       await finishCompleteOperatorLed(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
-      await Promise.all(jobsOf(slot)
-        .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
-        .map((j) => queueReport(slot, j.id)));
+      await Promise.all(jobsOf(slot).filter(needsWork).map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
     };
@@ -278,11 +290,12 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
-    delete st.syncing;
-    st.lastSyncAt = clock.now().toISOString();
+    delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
+    if (setup) st.setupProblem = setup; else delete st.setupProblem;
     st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
+    afterSync(slot, { changed: all || st.state !== 'ok' || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
@@ -296,7 +309,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   function schedule(slot: Slot) {
     if (!running) { delete slot.status.nextSyncAt; return; }
-    const ms = slot.again ? 0 : o.pollMs(slot.source.name);
+    const ms = slot.again ? 0 : nextPollMs(slot, o.pollMs(slot.source.name), o.backoff?.(slot.source.name) === true);
     slot.status.nextSyncAt = new Date(clock.now().getTime() + ms).toISOString();
     slot.timer = setTimeout(() => { void runSync(slot); }, ms);
   }
@@ -306,10 +319,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
    * for while one waits to start joins it (issue #1019): it starts after the ask, so it sees what the ask did, and ten
    * approvals in a row wait for one sync behind the running one, not for ten in a row.
    */
-  function runSync(slot: Slot, asked = false): Promise<void> {
+  function runSync(slot: Slot, asked = false, askedAt?: number): Promise<void> {
     clearTimeout(slot.timer);
-    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now.
-    const asks = syncAsks();
+    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now, or from when the act asked its outbox to send (issue #1238).
+    const asks = syncAsks(askedAt);
     const joining = joined(slot, asked, asks);
     if (joining) return joining;
     const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve(), asks };
@@ -321,31 +334,32 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
+  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }), acts: () => ({ ...afterDone.outboxActs, ...giveBackRows }),
+    refresh: (slot) => { slot.status.detail = detailOf(slot, slot.removed ? REMOVED : slot.source.paused?.(), jobsOf(slot).filter((j) => flagsOf(j).permanentErrors?.length).length); emit(slot); } });
+
   /** A status with each taken item's job as it is now (issue #798). */
   const live = (st: SourceStatus): SourceStatus => liveIntake(st, (key) => store.jobs.getBySourceKey(key));
 
   const emit = (slot: Slot) => { for (const l of listeners) l(live(slot.status)); };
 
   const sourceOfJob = (jobId: string) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined);
-  const retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
-  const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob });
+  const sendNow = (source: JobSource) => { const slot = slots.get(source.name); if (slot && running) outbox.now(slot); }, retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
+  const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob, kept: (s) => { const slot = slots.get(s.name); if (slot && running) outbox.soon(slot); } });
   const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
   const afterDone = createAfterDone({
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain,
-    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(),
+    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(), sendNow,
   });
 
-  const rerunning = createRerun({
-    host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id),
-    syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
-  });
+  const { outboxActs: giveBackRows, ...rerunning } = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); }, sendNow, now: () => clock.now().toISOString() });
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),
-    afterAnswerTimings: () => timings.summary(),
+    afterAnswerTimings: () => [...timings.summary(), ...[...slots.values()].filter((s) => !s.removed)
+      .flatMap((s) => (s.source.afterAnswerTimings?.() ?? []).map((t) => ({ ...t, source: s.source.name })))],
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     // Run again, Continue and Rework.
     ...rerunning,
@@ -357,9 +371,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
       const result = await slot.source.intakeAction(action);
       withTakenStatus(result.failed, (key) => store.jobs.getBySourceKey(key));
-      // The answer does not wait for the sync (issue #1194): the action is recorded, and the sync it asks for takes the
-      // assigned, released or approved issues after, its status on the stream.
-      void withAct(action.kind, () => runSync(slot, true));
+      // The answer waits for no GitHub write and no sync (issues #1194, #1238): the outbox sends its rows after its batch window, then the source syncs, timed as the act's.
+      if (result.done.length > 0) withAct(action.kind, () => outbox.soon(slot));
       return { ok: true, result };
     },
     start() {
@@ -367,15 +380,18 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       running = true;
       unsubscribe = store.events.subscribe(onEvent);
       for (const slot of slots.values()) void runSync(slot, true);
+      outbox.start();
     },
     repoChanged(repo) {
       const named = running ? [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true) : [];
-      for (const slot of named) slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS);
+      // A delivery is a change (issue #1264): the backoff ends.
+      for (const slot of named) { slot.unchanged = 0; slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS); }
       return named.map((s) => s.source.name);
     },
     async stop() {
       running = false;
       unsubscribe?.();
+      outbox.stop();
       for (const slot of slots.values()) { clearTimeout(slot.timer); clearTimeout(slot.delivered); delete slot.delivered; }
       await drain();
       await Promise.allSettled([...syncs]);

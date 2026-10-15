@@ -65,8 +65,9 @@ describe('the GitHub sources\' shared options', () => {
 });
 
 describe('github-app options', () => {
-  it('no options get the defaults: enabled, the default key variable, no identity yet, no API override', () => {
-    expect(ok(parseOptions(githubApp, AUTHORS))).toEqual({ enabled: true, privateKeyEnv: 'GITHUB_APP_PRIVATE_KEY', ...SHARED_DEFAULTS });
+  it('no options get the defaults: enabled, no identity yet, no API override; privateKeyEnv as stored before issue #1243 is dropped', () => {
+    expect(ok(parseOptions(githubApp, AUTHORS))).toEqual({ enabled: true, ...SHARED_DEFAULTS });
+    expect(ok(parseOptions(githubApp, { ...AUTHORS, privateKeyEnv: 'MY_KEY' }))).toEqual({ enabled: true, ...SHARED_DEFAULTS });
   });
 
   it('apiUrl: an http(s) URL without its trailing slash (tests point it at a fake GitHub)', () => {

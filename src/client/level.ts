@@ -45,8 +45,8 @@ export function levelCallOf(body: unknown): { argv: string[]; input: string; tim
 
 export interface Ran { code: number; stdout: string; stderr: string }
 
-/** One claude call, in a fresh private dir, `input` on its stdin; the dir and the project dir claude keeps for it removed after. */
-export function runClaude(bin: string, args: string[], timeoutMs: number, input = ''): Promise<Ran> {
+/** One claude call, in a fresh private dir, `input` on its stdin; the dir and the project dir claude keeps for it removed after. `env`: default the client's. */
+export function runClaude(bin: string, args: string[], timeoutMs: number, input = '', env?: NodeJS.ProcessEnv): Promise<Ran> {
   const dir = mkdtempSync(join(tmpdir(), 'hopper-claude-'));
   const done = (r: Ran): Ran => {
     rmSync(dir, { recursive: true, force: true });
@@ -54,7 +54,7 @@ export function runClaude(bin: string, args: string[], timeoutMs: number, input 
     return r;
   };
   return new Promise((resolve) => {
-    const child = execFile(bin, args, { cwd: dir, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile(bin, args, { cwd: dir, ...(env ? { env } : {}), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (!err) return resolve(done({ code: 0, stdout, stderr }));
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (e.killed) return resolve(done({ code: 124, stdout, stderr: `claude timed out after ${timeoutMs} ms` }));

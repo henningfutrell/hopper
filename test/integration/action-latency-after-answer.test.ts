@@ -52,8 +52,10 @@ describe('the wait on the queue apart from the run, per act (issue #1194)', () =
     await waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === issue.url), { what: 'the approved job', timeoutMs: 20_000 });
     const timing = await waitFor(async () => (await sources()).afterAnswer.find((t) => t.act === 'sync:approve'), { what: 'the sync\'s timing' });
     expect(timing).toMatchObject({ count: 1, lastAt: expect.any(String) });
-    // It waited for the running sync, which made several slowed calls after the Approve.
+    // It waited from the Approve on: the outbox's batch window and its slowed read of the comments (issue #1238).
     expect(timing.waitMs.max).toBeGreaterThanOrEqual(CALL_MS);
     expect(timing.runMs.max).toBeGreaterThanOrEqual(0);
+    // The Approve's own GitHub work after the answer (its write-behind) is timed too, as the source's (part 8).
+    expect((await sources()).afterAnswer).toContainEqual(expect.objectContaining({ act: 'approve', source: 'github', count: 1 }));
   });
 });

@@ -25,11 +25,18 @@ export interface HerdrVersions {
 }
 
 /**
- * The infra credential folders a machine's home holds, as its last read found them (issue #1128 part 7, design.md "Infra credentials
- * on machines"): a machine must hold none, so Machines and Accounts flag them; no job is held for them. Only the names. `[]`: none.
+ * The infra credentials its job user's context holds, as its last read found them (issues #1128 part 7, #1248, design.md "Infra
+ * credentials on machines"): credential folders and files in its home, a git credential helper, token variables. A machine
+ * holding any is not ready: it takes no new job, and Machines, Accounts and Needs you say so. Only the names. `[]`: none.
  * Absent: not read (a container target, a client older than this, offline).
  */
 export interface MachineInfraCredentials { infraCredentials?: string[] }
+
+/**
+ * A client target that said it leaves (issue #1284, `POST /client/leave`), until it dials in again: no new job is placed
+ * on it; the jobs on it run to their end. A lane pod leaves when it is told to stop.
+ */
+export interface MachineLeaving { leaving?: true }
 
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {
@@ -95,9 +102,10 @@ export interface ClientMachine extends AttachedBase {
   /** `key`: its machine key, the public half of its link key — who it is when it dials in. */
   /**
    * Its machine key; the template its join line named (issue #558), when it is a sandbox box of one; the box the
-   * hopper started for it (issue #603), when it did.
+   * hopper started for it (issue #603), when it did; `pool` when it is a lane pod (issue #1284), joined with the lane
+   * pool key; the job pod it started (issue #1283), when it is one.
    */
-  client: { key: string; template?: string; container?: string };
+  client: { key: string; template?: string; container?: string; pool?: true; pod?: string };
 }
 
 /**

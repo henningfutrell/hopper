@@ -11,12 +11,14 @@
 // A check box (the read-only check, issue #716) is made the same way, under its own label and name; it alone runs a
 // script in place of its entrypoint, and it alone is waited on and has its output read.
 // A box's one-shot stats (`stream=false`, nothing else) are read for the stack resources (issue #947); never a stream.
+// In a Kubernetes pod with no socket (issue #1289) the problem asks for no socket or systemd fix: a pod has neither.
 // A refused call answers 403 in the runtime's own shape, `{message}`. The checks restate src/sandbox/flags.ts's
 // builder on purpose: this end imports nothing of hopper, and it holds the line even if the hopper's end is wrong.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { existsSync } from 'node:fs';
 import { request } from 'node:http';
 import { join } from 'node:path';
+import { inCluster, type Env } from './cluster.ts';
 
 export type RuntimeKind = 'podman' | 'docker';
 export interface RuntimeSockets { podman?: string; docker?: string }
@@ -42,6 +44,7 @@ const TOOLS_TAG = /^localhost\/hopper-box-tools:[0-9a-f]{16}$/;
 const BUILD_OPTIONS: Record<RuntimeKind, Record<string, string>> = { podman: { dockerfile: 'Containerfile', layers: 'true', rm: 'true' }, docker: { dockerfile: 'Containerfile', rm: '1' } };
 const MAX_CONTAINERFILE = 64 * 1024;
 const NO_RUNTIME = 'no Podman or Docker socket on this machine: run `systemctl --user enable --now podman.socket` there, and `loginctl enable-linger` so it outlives the sign-in session';
+const NO_RUNTIME_IN_POD = 'this machine is a Kubernetes pod: the hopper starts no sandbox box in a pod';
 
 /** Podman when its socket is here, else Docker; undefined: neither. */
 export function runtimeHere(sockets: RuntimeSockets): { kind: RuntimeKind; socket: string } | undefined {
@@ -205,10 +208,11 @@ export function runtimeCallOf(v: unknown): RuntimeCall | { which: true } | strin
 }
 
 /** One `POST /runtime`: what the client answers (always 200; the runtime's status is in it). */
-export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { which: true }): Promise<{ kind: RuntimeKind } | { problem: string } | Answer> {
+export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { which: true }, env: Env = process.env): Promise<{ kind: RuntimeKind } | { problem: string } | Answer> {
   const here = runtimeHere(sockets);
-  if ('which' in c) return here ? { kind: here.kind } : { problem: NO_RUNTIME };
-  if (!here) return { status: 503, text: JSON.stringify({ message: NO_RUNTIME }) };
+  const none = inCluster(env) ? NO_RUNTIME_IN_POD : NO_RUNTIME;
+  if ('which' in c) return here ? { kind: here.kind } : { problem: none };
+  if (!here) return { status: 503, text: JSON.stringify({ message: none }) };
   const prefix = PREFIX[here.kind];
   const at = c.path.indexOf('?');
   const route = at < 0 ? c.path : c.path.slice(0, at);

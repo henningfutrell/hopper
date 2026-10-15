@@ -1,0 +1,1 @@
+- Lane pods on Kubernetes now start each job signed in to Claude with the long-lived token in your vault, so a lane pod that starts again does not ask you to sign in.

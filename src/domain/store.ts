@@ -295,9 +295,9 @@ export interface LoginCodeRepository {
 /** One-time join codes (issue #308): only each code's SHA-256 is kept, with its user and expiry. */
 /**
  * What a join code names beside its user: the template the machine joins as (issue #558), when the line names one;
- * the sandbox box the hopper launched with it (issue #603), when it did.
+ * the sandbox box the hopper launched with it (issue #603), when it did; the job pod it started with it (issue #1283).
  */
-export interface JoinCodePlace { template?: string; container?: string }
+export interface JoinCodePlace { template?: string; container?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
@@ -483,7 +483,7 @@ export interface UserStore {
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
-  logins: LoginRepository;
+  logins: LoginRepository; lastAccounts: import('./logins.ts').LastAccountRepository; // the last accounts (issue #1269)
   failures: FailureRepository;
   problems: ProblemRepository;
   handoffs: HandoffRepository;
@@ -494,12 +494,13 @@ export interface UserStore {
   issueGraph: import('./issue-graph.ts').IssueGraphRepository; workItems: import('./work-items.ts').WorkItemLedger; // the work-item ledger (issue #1067)
   /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */
   pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
-  /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing. */
-  githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository;
+  /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing; the GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent; the repositories' checks as last read (issue #1250), with their answers' ETags. */
+  githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; githubOutbox: import('./github-outbox.ts').GitHubOutboxRepository; repoChecks: import('./repo-checks.ts').RepoChecksReadRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
   checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
   settings: UserSettingsRepository;
-  connectedAccounts: ConnectedAccountRepository;
+  /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
+  connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
   usageHistory: UsageHistoryRepository;
   machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */

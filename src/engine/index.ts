@@ -1,6 +1,7 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
+import { settledBy } from '../domain/wait-on.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
@@ -27,6 +28,7 @@ import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
+import { wakeOn } from './wait.ts';
 export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
@@ -117,7 +119,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines, configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
     jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
@@ -189,6 +191,18 @@ export function createEngine(o: EngineOptions): Engine {
         }
         if ((event.type === 'job.claimed' || event.type === 'job.cancelled') && event.jobId) placementPicks.forget(event.jobId);
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
+        // A job waiting on something goes on when the event that settles it comes (issue #1245): on the event, never a poll.
+        const settled = settledBy(event);
+        if (settled) {
+          setImmediate(() => {
+            if (stopping) return;
+            try {
+              if (store.tx(() => wakeOn(c, settled)).length > 0) c.trigger('job.wait_ended');
+            } catch (e) {
+              console.error(`hopper: waking the jobs waiting on what ${event.type} settled failed`, e);
+            }
+          });
+        }
       });
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
       o.questions.recover();

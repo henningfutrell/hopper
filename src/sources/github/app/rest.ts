@@ -81,10 +81,10 @@ interface RestIssueEvent {
 const listEvents = (req: Request, token: string, repo: string, number: number): Promise<RestIssueEvent[]> =>
   paginate(req, 'GET /repos/{owner}/{repo}/issues/{issue_number}/events', { ...splitRepo(repo), issue_number: number, per_page: 100 }, `token ${token}`, (d) => d as RestIssueEvent[]);
 
-/** The issue's `labeled` and `assigned` events, oldest first (issue #652). */
+/** The issue's `labeled`, `assigned` (issue #652) and `reopened` (issue #1268) events, oldest first. */
 export async function issueEvents(req: Request, token: string, repo: string, number: number): Promise<IssueEvent[]> {
   return (await listEvents(req, token, repo, number)).flatMap((e): IssueEvent[] => {
-    if (e.event !== 'labeled' && e.event !== 'assigned') return [];
+    if (e.event !== 'labeled' && e.event !== 'assigned' && e.event !== 'reopened') return [];
     return [{
       event: e.event, at: e.created_at, actor: e.actor?.login ?? '', ...(typeof e.actor?.id === 'number' ? { actorId: e.actor.id } : {}),
       ...(e.actor?.type ? { actorType: e.actor.type } : {}),

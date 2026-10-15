@@ -10,7 +10,7 @@ export const EVENT_TYPES = [
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
   'job.rerun', 'job.rework_requested', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept', 'job.work_removed', 'job.work_discard_failed', 'job.give_back_failed', 'job.pull_request_act_failed', 'job.containers_removed', 'job.cleanup_deferred', 'job.cleaned_up',
   'job.parked', 'job.unparked', 'job.continued', 'job.waiting', 'job.wait_ended', 'job.own_command_nudged', 'job.own_command_stuck', 'job.checkpointed', 'job.note_added', 'job.note_delivered', 'job.note_carried', 'terminal.opened', 'terminal.typed',
-  'source.stalled', 'connected_account.expired', 'connected_account.renewed', 'connected_account.renewal_failed', 'ui_session.ended', 'source.claim_released', 'source.intake_migrated', 'source.issues_assigned', 'source.request_approved', 'intake.actors_changed', 'job.origin_judged',
+  'source.stalled', 'connected_account.expired', 'connected_account.renewed', 'connected_account.renewal_failed', 'ui_session.ended', 'source.claim_released', 'source.intake_migrated', 'source.issues_assigned', 'source.request_approved', 'source.request_auto_approved', 'intake.actors_changed', 'intake.auto_approval_changed', 'job.origin_judged',
   'source.request_opened', 'source.backburner_lifted', 'source.issue_taken_in', 'source.request_declined', 'source.request_withdrawn', 'source.delivery_received', 'source.review_requested',
   'auth.pending', 'auth.completed', 'auth.expired', 'auth.cancelled', 'auth.failed', 'auth.reopened', 'auth.dismissed',
   'job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'handoff.checked',
@@ -28,7 +28,7 @@ export const EVENT_TYPES = [
   'question.thread_held', 'question.thread_approved', 'question.thread_posted', 'thread_ask.settings_changed',
   'github_proxy.done', 'github_proxy.refused', 'github_proxy.failed',
   'vault.secret_set', 'vault.secret_removed', 'vault.secret_read', 'vault.secret_migrated', 'vault.master_key_rotated', 'template.saved', 'template.removed', 'vault.approved', 'vault.revoked', 'template.profile_approved', 'template.checked', 'template.check_requested', 'vault.delivered', 'vault.refused', 'vault.minted', 'vault.mint_refused', 'vault.mint_tested', 'vault.check_minted', 'vault.check_mint_refused',
-  'vault.credential_asked', 'vault.credential_given', 'vault.agent_credential_given', 'vault.credential_declined', 'vault.read_policy_set', 'vault.sandbox_approvals_set', 'vault.sandbox_requested', 'vault.sandbox_approved', 'vault.sandbox_declined', 'vault.sandbox_started', 'vault.sandbox_failed', 'vault.write_forgotten', 'vault.grant_asked', 'vault.granted', 'vault.grant_revoked', 'vault.grant_denied',
+  'vault.credential_asked', 'vault.credential_given', 'vault.agent_credential_given', 'vault.pod_credential_given', 'vault.credential_declined', 'vault.read_policy_set', 'vault.sandbox_approvals_set', 'vault.sandbox_requested', 'vault.sandbox_approved', 'vault.sandbox_declined', 'vault.sandbox_started', 'vault.sandbox_failed', 'vault.write_forgotten', 'vault.grant_asked', 'vault.granted', 'vault.grant_revoked', 'vault.grant_denied',
   'yolo_mode.changed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.finish_briefed', 'job.checks_rerun', 'job.pull_request_tended', 'job.pull_request_base_merged', 'job.pull_request_retargeted', 'job.pull_request_followed', 'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'job.pull_request_classified',
   'skill.listed', 'skill.loaded', 'skill.refused',
   'artifact.created', 'artifact.shared', 'artifact.share_revoked', 'artifact.removed', 'artifact.settings_changed', 'artifact.posted',
@@ -47,6 +47,7 @@ export const EVENT_TYPES = [
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit', 'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed',
   'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed', 'landing_batch.canary_promoted',
+  'hopper.event_loop_stalled',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -65,7 +66,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.rerun': 1, 'job.rework_requested': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1, 'job.work_removed': 1, 'job.work_discard_failed': 1, 'job.give_back_failed': 1, 'job.pull_request_act_failed': 1, 'job.containers_removed': 1, 'job.cleanup_deferred': 1, 'job.cleaned_up': 1,
   'job.parked': 1, 'job.unparked': 1, 'job.continued': 1, 'job.waiting': 1, 'job.wait_ended': 1, 'job.own_command_nudged': 1, 'job.own_command_stuck': 1, 'job.checkpointed': 1, 'job.note_added': 1, 'job.note_delivered': 1, 'job.note_carried': 1, 'terminal.opened': 1, 'terminal.typed': 1,
   'source.stalled': 1, 'connected_account.expired': 1, 'connected_account.renewed': 1, 'connected_account.renewal_failed': 1, 'ui_session.ended': 1,
-  'source.claim_released': 1, 'source.intake_migrated': 1, 'source.issues_assigned': 1, 'source.request_approved': 1, 'intake.actors_changed': 1, 'job.origin_judged': 1,
+  'source.claim_released': 1, 'source.intake_migrated': 1, 'source.issues_assigned': 1, 'source.request_approved': 1, 'source.request_auto_approved': 1, 'intake.actors_changed': 1, 'intake.auto_approval_changed': 1, 'job.origin_judged': 1,
   'source.request_opened': 1, 'source.backburner_lifted': 1, 'source.issue_taken_in': 1, 'source.request_declined': 1, 'source.request_withdrawn': 1, 'source.delivery_received': 1, 'source.review_requested': 1,
   'auth.pending': 1, 'auth.completed': 1, 'auth.expired': 1, 'auth.cancelled': 1, 'auth.failed': 1, 'auth.reopened': 1, 'auth.dismissed': 1,
   'job.assessed': 1, 'failure.grouped': 1, 'failure.resolved': 1, 'failure.released': 1, 'handoff.opened': 1, 'handoff.closed': 1, 'handoff.checked': 1,
@@ -83,7 +84,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'question.thread_held': 1, 'question.thread_approved': 1, 'question.thread_posted': 1, 'thread_ask.settings_changed': 1,
   'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
   'vault.secret_set': 1, 'vault.secret_removed': 1, 'vault.secret_read': 1, 'vault.secret_migrated': 1, 'vault.master_key_rotated': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.revoked': 1, 'template.profile_approved': 1, 'template.checked': 1, 'template.check_requested': 1, 'vault.delivered': 1, 'vault.refused': 1, 'vault.minted': 1, 'vault.mint_refused': 1, 'vault.mint_tested': 1, 'vault.check_minted': 1, 'vault.check_mint_refused': 1,
-  'vault.credential_asked': 1, 'vault.credential_given': 1, 'vault.agent_credential_given': 1, 'vault.credential_declined': 1, 'vault.read_policy_set': 1, 'vault.sandbox_approvals_set': 1, 'vault.sandbox_requested': 1, 'vault.sandbox_approved': 1, 'vault.sandbox_declined': 1, 'vault.sandbox_started': 1, 'vault.sandbox_failed': 1, 'vault.write_forgotten': 1, 'vault.grant_asked': 1, 'vault.granted': 1, 'vault.grant_revoked': 1, 'vault.grant_denied': 1,
+  'vault.credential_asked': 1, 'vault.credential_given': 1, 'vault.agent_credential_given': 1, 'vault.pod_credential_given': 1, 'vault.credential_declined': 1, 'vault.read_policy_set': 1, 'vault.sandbox_approvals_set': 1, 'vault.sandbox_requested': 1, 'vault.sandbox_approved': 1, 'vault.sandbox_declined': 1, 'vault.sandbox_started': 1, 'vault.sandbox_failed': 1, 'vault.write_forgotten': 1, 'vault.grant_asked': 1, 'vault.granted': 1, 'vault.grant_revoked': 1, 'vault.grant_denied': 1,
   'yolo_mode.changed': 1, 'job.pull_request_merged': 1, 'job.pull_request_closed': 1, 'job.pull_request_abandoned': 1, 'job.finish_briefed': 1, 'job.checks_rerun': 1, 'job.pull_request_tended': 1, 'job.pull_request_base_merged': 1, 'job.pull_request_retargeted': 1, 'job.pull_request_followed': 1, 'job.pull_request_seen': 1, 'work_item.issue_closed': 1, 'work_item.issue_reopened': 1, 'job.pull_request_classified': 1,
   'skill.listed': 1, 'skill.loaded': 1, 'skill.refused': 1,
   'artifact.created': 1, 'artifact.shared': 1, 'artifact.share_revoked': 1, 'artifact.removed': 1, 'artifact.settings_changed': 1, 'artifact.posted': 1,
@@ -102,4 +103,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'landing_batch.bisect_started': 1, 'landing_batch.bisect_run': 1, 'landing_batch.bisect_tested': 1, 'landing_batch.culprit': 1, 'landing_batch.revert_opened': 1, 'landing_batch.reverted': 1, 'landing_batch.revert_failed': 1, 'landing_batch.fix_filed': 1, 'landing_batch.pending': 1,
   'landing_batch.back_merge_opened': 1, 'landing_batch.back_merged': 1, 'landing_batch.back_merge_failed': 1, 'landing_batch.back_merge_issue_filed': 1,
   'landing_batch.canary_started': 1, 'landing_batch.canary_held': 1, 'landing_batch.canary_issue_filed': 1, 'landing_batch.canary_promoted': 1,
+  'hopper.event_loop_stalled': 1,
 };

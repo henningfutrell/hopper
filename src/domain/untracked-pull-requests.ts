@@ -88,3 +88,12 @@ export function untrackedPullRequests(repo: string, prs: readonly CensusPullRequ
   return out;
 }
 
+
+/**
+ * An untracked pull request whose issue was just taken into Intake (issue #1238): no longer offered, its reason as the next
+ * census gives it — off the landing branch, or by no job, as no job of the new item follows one yet — until that census.
+ */
+export function takenIntoIntake(u: UntrackedPullRequest, landing: string | undefined): UntrackedPullRequest {
+  const { offer: _offer, ...rest } = u;
+  return { ...rest, reason: landing !== undefined && u.base !== undefined && u.base !== landing ? 'wrong_base' : 'not_by_a_job' };
+}

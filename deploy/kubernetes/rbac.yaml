@@ -1,0 +1,33 @@
+# The hopper's service account and its least-privilege role for job pods (issue #1283, docs/design.md "Job pods on
+# Kubernetes"). The hopper may manage pods in its own namespace and nothing else: no Secrets, no other kind, no other
+# namespace, no cluster-wide role. A job pod gets no service account token (automountServiceAccountToken: false), so a
+# job cannot use this role.
+#
+#   kubectl apply -n <namespace> -f deploy/kubernetes/rbac.yaml
+#
+# Run the hopper's pod as this service account (spec.serviceAccountName: hopper).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hopper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hopper-job-pods
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hopper-job-pods
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hopper-job-pods
+subjects:
+  - kind: ServiceAccount
+    name: hopper

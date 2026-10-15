@@ -6,7 +6,7 @@
 // A build (a tools image, issue #716) carries its context, a tar, in base64; the box then runs the image built there.
 // A check box (the read-only check, issue #716) runs there too: its end is awaited, and its output comes back in base64,
 // as the bytes the runtime sent (libpod frames them).
-import type { ContainerRuntime, RuntimeRelay } from '../domain/sandboxes.ts';
+import type { BuildingRuntime, RuntimeRelay } from '../domain/sandboxes.ts';
 import { createDockerRuntime } from './docker.ts';
 import { createPodmanRuntime } from './podman.ts';
 import type { SocketCall } from './socket-http.ts';
@@ -23,18 +23,18 @@ export const relayCall = (relay: RuntimeRelay): SocketCall => async (_socket, me
   return { status: a.status, text: a.text, ...(a.base64 !== undefined ? { bytes: Buffer.from(a.base64, 'base64') } : {}) };
 };
 
-export function createRemoteRuntime(machine: string, relay: RuntimeRelay): ContainerRuntime {
+export function createRemoteRuntime(machine: string, relay: RuntimeRelay): BuildingRuntime {
   const via = relayCall(relay);
-  let inner: { kind: 'podman' | 'docker'; runtime: ContainerRuntime } | undefined;
+  let inner: { kind: 'podman' | 'docker'; runtime: BuildingRuntime } | undefined;
 
   /** The machine's runtime, as its client names it now; throws with what is wrong. */
-  const here = async (): Promise<ContainerRuntime> => {
+  const here = async (): Promise<BuildingRuntime> => {
     const which = await relay.which();
     if ('problem' in which) throw new Error(`${machine}: ${which.problem}`);
     if (inner?.kind !== which.kind) inner = { kind: which.kind, runtime: which.kind === 'podman' ? createPodmanRuntime(machine, via) : createDockerRuntime(machine, via) };
     return inner.runtime;
   };
-  const known = (): Promise<ContainerRuntime> => (inner ? Promise.resolve(inner.runtime) : here());
+  const known = (): Promise<BuildingRuntime> => (inner ? Promise.resolve(inner.runtime) : here());
 
   return {
     kind: 'remote',

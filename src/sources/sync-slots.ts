@@ -37,6 +37,14 @@ export interface Slot {
   followedAllAt?: number;
   /** A GitHub delivery named one of its job repositories (issue #1079): the sync it starts soon after. */
   delivered?: NodeJS.Timeout;
+  /** The setup problem last logged (issue #1243), so each is said once, and once when it clears. */
+  setupSaid?: string;
+  /** Poll backoff (issue #1264): the syncs in a row that found nothing changed; what its discover answered now, and in the sync before. */
+  unchanged?: number;
+  answer?: string;
+  answered?: string;
+  /** The outbox send an intake action asked for (issue #1238), once its batch window ends. */
+  outboxSoon?: NodeJS.Timeout;
 }
 
 /**

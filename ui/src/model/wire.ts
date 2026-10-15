@@ -3,13 +3,13 @@
 import type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   WindowsHost, WindowsHostsView,
-  Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, WebhookDelivery,
+  Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, GitHubAppKeyView, InstalledApp, InstalledAppsView, SetupProblem, SourceStatus, JobActMarker, UsageReading, UsageReport, UsageSourceReport, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
   LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
-  Login, LoginSettings, LoginStatus, LoginView,
+  LastAccount, Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, KeptWorkView, StuckActResult, StuckCause, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
   ReviewDecision, ReviewEntry, ReviewItem, ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettings, ReviewSettingsView, ReviewSignOffBy, ReviewStatus, ReviewVersion,
@@ -20,26 +20,26 @@ import type {
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
   ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
-  ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
+  ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, ChecksProblem, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView, HostLinkView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
-  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
+  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval,
   BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   WindowsHost, WindowsHostsView,
-  Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, WebhookDelivery,
+  Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, GitHubAppKeyView, InstalledApp, InstalledAppsView, SetupProblem, SourceStatus, JobActMarker, UsageReading, UsageReport, UsageSourceReport, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
   LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
-  Login, LoginSettings, LoginStatus, LoginView,
+  LastAccount, Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, KeptWorkView, StuckActResult, StuckCause, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
   ReviewDecision, ReviewEntry, ReviewItem, ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettings, ReviewSettingsView, ReviewSignOffBy, ReviewStatus, ReviewVersion,
@@ -50,10 +50,10 @@ export type {
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
   ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
-  ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
+  ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, ChecksProblem, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
-  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
+  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval,
   BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView, HostLinkView,
   Tldr, TldrSettings,
@@ -107,7 +107,7 @@ export interface Health {
   reviewingExecutors?: string[];
   uptimeS: number;
   /** The last time the event loop was held for more than 2 s, for 10 minutes after (issue #1002): `during`, the routes in flight. */
-  eventLoopStall?: { at: string; ms: number; during: string[] };
+  eventLoopStall?: { at: string; ms: number; during: string[]; store?: { ms: number; calls: { what: string; ms: number; count: number }[] } };
 }
 
 /** A subscription as GET /api/webhooks shows it: when its secret changed (or the variable one from before reads), and why it cannot sign (if so). Never a secret. */
@@ -122,6 +122,7 @@ export interface WebhooksView {
 
 export type { GitHubCallKind, HourlyCalls, RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
 export type { DeliverySecretView, GitHubDeliveriesView } from '../../../src/domain/github-deliveries.ts';
+export type { AfterAnswerTiming, TimingSpread } from '../../../src/domain/sources.ts';
 export type { CredentialMeta, RemoteAccessChange, RemoteAccessLinks, RemoteAccessProvider, RemoteAccessState, RemoteAccessStatus, RemoteAccessView } from '../../../src/domain/remote-access.ts';
 export type { GitHubWatch, GitHubWatchSettings, GitHubWatchView } from '../../../src/domain/github-watch.ts';
 export type { ComponentWatcherSettings, ComponentWatcherView, ComponentWatchersView, DriftItem, DriftView } from '../../../src/domain/drift.ts';
@@ -134,4 +135,5 @@ export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/jo
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
+export type { WaitOn } from '../../../src/domain/types.ts';
 export type { PullRequestDiff, PullRequestDiffFile } from '../../../src/domain/pull-request-diff.ts';

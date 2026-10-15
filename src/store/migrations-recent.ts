@@ -19,4 +19,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // tunnel runs at, with the authtoken given by hand: `provisioned`, which the hopper keeps when remote access is turned
   // off (it minted none of it). The build before reads `enabled` and `domain` only, as before.
   remoteAccessProvider,
+  // 40: a join code names the job pod the hopper started with it (issue #1283). A column only: the build before never
+  // reads it, and joins such a pod as a plain client target.
+  'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS pod TEXT;',
 ];

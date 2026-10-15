@@ -24,6 +24,13 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(() => loadConfig({ ...DB, HOPPER_DATABASE_URL_FILE: file })).toThrow(/HOPPER_DATABASE_URL and HOPPER_DATABASE_URL_FILE are both set/);
   });
 
+  it('the vault\'s KMS: HOPPER_KMS_REGION names AWS KMS, HOPPER_KMS_URL alone a local KMS (issues #586, #1288)', () => {
+    expect(loadConfig({ ...DB, HOPPER_KMS_REGION: 'eu-west-1', HOPPER_KMS_KEY: 'alias/hopper' }).kms).toEqual({ region: 'eu-west-1', key: 'alias/hopper' });
+    expect(loadConfig({ ...DB, HOPPER_KMS_URL: 'http://kms:8080' }).kms).toEqual({ url: 'http://kms:8080', key: 'alias/hopper-vault' });
+    expect(loadConfig(DB).kms).toBeUndefined();
+    expect(() => loadConfig({ ...DB, HOPPER_KMS_REGION: 'not a region' })).toThrow(/HOPPER_KMS_REGION/);
+  });
+
   it('HOPPER_SECRET_KEY is no longer read: the hopper seals nothing, it keeps no secret (issue #56)', () => {
     expect(loadConfig({ ...DB, HOPPER_SECRET_KEY: 'k' }).leftoverEnv).toEqual({ HOPPER_SECRET_KEY: 'k' });
   });

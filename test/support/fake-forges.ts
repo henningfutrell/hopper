@@ -20,11 +20,11 @@ import type { AddressInfo } from 'node:net';
 import { commentEditRoute, editIssue, forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
-import { jobLogBlobRoute, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
+import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
-import { peopleRoute, type PeopleForge } from './fake-people.ts';
+import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
 import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
@@ -48,11 +48,12 @@ export interface FakeIssue {
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
 interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean }
 
-export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string }
+/** `notModified`: answered 304, as it named the ETag of an answer that still holds (issue #1250). */
+export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string; notModified?: boolean }
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, JobLogsForge {
+export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, OrgAppsForge, JobLogsForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -93,7 +94,7 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   close(): Promise<void>;
 }
 
-type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string; text?: string };
+type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string; text?: string; etag?: string };
 
 async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; gitRoot?: string }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
@@ -110,7 +111,8 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];
       const out = handle(r, token ? extra.tokens.get(token) : undefined);
       if (out.location || out.text !== undefined) { res.writeHead(out.status, out.location ? { location: out.location } : { 'content-type': 'text/plain; charset=utf-8' }); res.end(out.text); return; }
-      send(res, out.status, out.body);
+      // A conditional request whose ETag still holds: 304, no body, as GitHub answers it (and does not charge it).
+      const same = out.etag !== undefined && req.headers['if-none-match'] === out.etag; if (same) r.notModified = true; send(res, same ? 304 : out.status, same ? undefined : out.body, out.etag);
     })().catch((err: unknown) => send(res, 500, { message: String(err) }));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -248,7 +250,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
       // A repository listing (issue #985: first, it asks check rollups too); a repository's checks (issue #677); the accounts GitHub knows (issue #930).
-      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query);
+      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query) ?? orgAppsRoute(forge, base, r.method, path, r.query);
       if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
@@ -261,14 +263,14 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           // What the installation grants, as GitHub answers it: the shipped app's permissions.
           permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
         })), r.query);
-        return { status: 200, body: { total_count: on.length, installations: page } };
+        return tagged({ total_count: on.length, installations: page }); // with an ETag (issue #1250)
       }
       const ir = /^\/user\/installations\/(\d+)\/repositories$/.exec(path);
       if (r.method === 'GET' && ir) {
         const account = (forge?.installedOn ?? [login])[Number(ir[1]) - 1];
         if (!account) return { status: 404, body: { message: 'Not Found' } };
         const repos = forge?.chosenRepos?.[account] ?? [...new Set(issues.map((i) => i.repo).filter((repo) => repo.split('/')[0] === account))];
-        return { status: 200, body: { total_count: repos.length, repositories: pageOf(repos.map((full_name) => ({ full_name })), r.query) } };
+        return tagged({ total_count: repos.length, repositories: pageOf(repos.map((full_name) => ({ full_name })), r.query) });
       }
       if (r.method === 'GET' && path === '/search/issues') {
         const q = r.query.q ?? '';

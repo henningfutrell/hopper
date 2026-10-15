@@ -1,0 +1,9 @@
+apiVersion: v2
+name: hopper
+description: The hopper in a Kubernetes cluster, with its Postgres, OpenFGA and Solr (docs/deploy.md "On Kubernetes, with Helm").
+type: application
+version: 0.1.0
+appVersion: latest
+home: https://github.com/henningfutrell/hopper
+sources:
+  - https://github.com/henningfutrell/hopper

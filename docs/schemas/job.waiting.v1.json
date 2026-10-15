@@ -8,6 +8,161 @@
     "until": {
       "type": "string"
     },
+    "on": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pull_request"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "number": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "about": {
+              "type": "string",
+              "enum": [
+                "checks",
+                "merge",
+                "review"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "number",
+            "about"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "job"
+            },
+            "jobId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "jobId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "item"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "number": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "kind",
+            "number"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "question"
+            },
+            "questionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "questionId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "approval"
+            },
+            "of": {
+              "type": "string",
+              "enum": [
+                "sandbox",
+                "template"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "of"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "grant"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "own_command"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "outside"
+            },
+            "what": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "what"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "ownCommand": {
       "type": "boolean",
       "const": true

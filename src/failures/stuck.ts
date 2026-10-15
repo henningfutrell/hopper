@@ -2,8 +2,9 @@
 // items, read from the Failures view at the press, through the same path as the item's own button — a hand-off's
 // resolution, a failure's Run again, Push it, Tend again —, each with who pressed it. An item refused meanwhile is
 // skipped and said with why; the others go on. It answers at once (issue #1194): each give-back is checked now and runs
-// after the answer, as its own button's does; Won't do is the hopper's alone, and is resolved now.
-import type { GiveBackAct, GiveBackAnswer } from '../domain/give-back.ts';
+// after the answer, as its own button's does; Won't do is the hopper's alone, and is resolved now. Resume all (issue #1245)
+// ends each wait that names nothing it waits on, now: the job goes on, or names what it waits on.
+import type { AfterAnswerAct, GiveBackAnswer } from '../domain/give-back.ts';
 import type { ActingPerson, FailuresView, HandoffView, Job, StuckActResult, StuckBulkCause } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
 import type { FailureAction } from './failures.ts';
@@ -14,18 +15,33 @@ export interface StuckActs {
   /** Won't do: the hand-off resolved now. */
   resolveHandoff(id: string, input: HandoffResolve, by: ActingPerson): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
   /** The item's own button's give-back, checked now and answered; its give-back runs after (issue #1194). */
-  giveBack(act: GiveBackAct, id: string, by: ActingPerson): GiveBackAnswer;
+  giveBack(act: AfterAnswerAct, id: string, by: ActingPerson): GiveBackAnswer;
+  /** A person ends the job's own wait with the note (issue #1245). */
+  endWait(id: string, note: string): void;
 }
+
+/** What a job on a wait that names nothing it waits on is told when a person resumes it (issue #1245). */
+export const WAIT_UNNAMED_NOTE = 'Your wait named nothing the hopper can watch. If you still wait, end your turn with HOPPER_WAITING again and add a line on: <what you wait on>. Else go on with the job.';
 
 type One = { ok: true } | { ok: false; message: string };
 
 /** The give-back of each cause that gives its items back. */
-const GIVE_BACK: Record<Exclude<StuckBulkCause, 'wont_do'>, GiveBackAct> = { continue: 'continue', run_again: 'fixed', retry: 'retry', push: 'push', tend: 'tend' };
+const GIVE_BACK: Record<Exclude<StuckBulkCause, 'wont_do' | 'wait_unnamed'>, AfterAnswerAct> = { continue: 'continue', run_again: 'fixed', retry: 'retry', push: 'push', tend: 'tend' };
 
 function oneOf(d: StuckActs, cause: StuckBulkCause, view: FailuresView, by: ActingPerson): (id: string) => Promise<One> {
   // Won't do says why: the card's why, as a person reads it.
   if (cause === 'wont_do') {
     return (id) => d.resolveHandoff(id, { action: 'wont_do', note: view.handoffs.find((h) => h.id === id)?.card.why ?? 'Nothing is left to do.' }, by);
+  }
+  if (cause === 'wait_unnamed') {
+    return async (id) => {
+      try {
+        d.endWait(id, WAIT_UNNAMED_NOTE);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, message: (e as Error).message };
+      }
+    };
   }
   const act = GIVE_BACK[cause];
   return async (id) => d.giveBack(act, id, by);

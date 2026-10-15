@@ -14,6 +14,7 @@ import type { Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, Opti
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
+import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 
 export type {
@@ -135,7 +136,14 @@ export interface EscalationLevelContext extends MachineLookup, Pick<ExecutorCont
  * and how to reach it when it is a client target (issue #366). An escalation level learns the machine
  * too, so it can run on its designated machine (issue #150).
  */
-export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'>;
+export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'> & {
+  /**
+   * The agent's sign-in a read on `machine` runs with (issue #1287, design.md "The agent's sign-in in a lane pod"): a lane
+   * pod's user's setup token, as its jobs start with; none on any other machine, which keeps its own sign-in; or why not.
+   * Absent: none.
+   */
+  agentSignIn?(machine: string): Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
+};
 
 /**
  * What a machine source learns: the executors registered when it is asked, and how the hopper reaches
@@ -144,8 +152,25 @@ export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'>
  * executors or label change.
  */
 /** What an executor learns (issue #308): how to reach a client target, by its machine id; undefined when no client target has it. */
-export interface ExecutorContext {
+export interface ExecutorContext extends Partial<Pick<MachineLookup, 'machine'>> {
   client(machine: string): ClientTransport | undefined;
+  /** Job pods (issue #1283): what a pod per job needs of the hopper. Absent: no job pod can join this hopper. */
+  pods?: JobPodHost;
+}
+
+/** What the hopper does for a job pod (issue #1283, design.md "Job pods on Kubernetes"). */
+export interface JobPodHost {
+  /** A fresh join code for the user, naming the pod: the pod joins once with it, as a machine only its job runs on. */
+  join(pod: string): string;
+  /** Removes the machine the pod joined as; none is no error. */
+  leave(pod: string): Promise<void>;
+  /** The hopper's instance id: the label that makes a pod this hopper's. */
+  instanceId(): string;
+  /**
+   * The job's user's vault secret `name` for the job's pod (issue #1287): a Claude setup token the pod's panes sign in
+   * with; `none` when the user holds no such secret; or why the vault refuses it. Absent: no vault, nothing is given.
+   */
+  agentCredential?(ask: { name: string; pod: string; job: string }): Promise<{ name: string; value: string } | { none: true } | { refused: string }>;
 }
 
 export interface MachineSourceContext {
@@ -181,6 +206,8 @@ export interface JobSourceContext {
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
   /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */
   githubListings?: GitHubListingRepository;
+  /** The user's GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent. Absent: a source keeps it in memory. */
+  githubOutbox?: GitHubOutboxRepository;
   /** The user's mirrors of the job repositories (issue #858): whether a pull request has conflicts, as git says. Absent: none. */
   gitMirrors?: GitMirrors;
 }
@@ -216,5 +243,10 @@ export interface PluginDefinition<R extends Role = Role, O = any> {
    * limits as `detect`. Absent, empty or throwing → the options are typed.
    */
   choices?(sys: DetectionKit): Promise<Record<string, OptionChoice[]>>;
+  /**
+   * A job source's (issue #1264): whether two instances of this plugin, with these parsed options, take the same work, so a
+   * second is refused and one already configured shows as a duplicate. False when either is off. Absent: never.
+   */
+  sameWork?(a: O, b: O): boolean;
   create(ctx: PluginContext & RoleContext[R], options: O): RoleInstance[R] | Promise<RoleInstance[R]>;
 }

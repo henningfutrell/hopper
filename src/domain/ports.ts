@@ -5,15 +5,15 @@ import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeActi
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
+  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
-import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
+import type { HasSetup, RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts';
+import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -50,9 +50,10 @@ export interface ExecutionContext {
    * The variables the job's own processes run with: its way to the hopper (issues #563, #652) — the hopper's URL, the
    * files `hopper-gh` and its proxy token kept under `<scratch>/credentials` on the job's machine, and git's way to GitHub
    * through the hopper. Never a GitHub token: the hopper acts on GitHub for the job. Asked when the job starts, resumes,
-   * or takes a turn, with the job's own scratch dir, and whether its work tree may be made (the jobs dir).
+   * or takes a turn, with the job's own scratch dir, and whether its work tree may be made (the jobs dir). `machine`: the
+   * machine the job's work is on, when it is not the lane's — a job pod's (issue #1283); absent: the lane's.
    */
-  credentials?: (scratch: string, makeWorkTree?: boolean) => Promise<Readonly<Record<string, string>>>;
+  credentials?: (scratch: string, makeWorkTree?: boolean, machine?: MachineSnapshot) => Promise<Readonly<Record<string, string>>>;
   /**
    * The job rules (issue #172): the text a job's prompt carries before its work tree and the protocol —
    * the config record `job-rules` as it is when the job starts, or the default while none is saved.
@@ -112,7 +113,7 @@ export type ExecutionOutcome =
    * The job waits on something it named (issue #483): no question. Its executor state must let `answeredInPane` see it go
    * on by itself, and `resume` tell it that a person ended the wait.
    */
-  | { kind: 'wait'; wait: Omit<JobWait, 'since'> };
+  | { kind: 'wait'; wait: import('./wait-on.ts').WaitAsked };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
@@ -452,7 +453,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, HasSetup, Partial<AfterAnswerTimed> {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
@@ -508,10 +509,11 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
   /**
    * Tell the item what a person did about the job's hand-off (issue #551): on GitHub one short comment — what was
    * done, the note and the link, naming no person — and the end label (done by hand `hopper:done`, won't do
-   * `hopper:rejected`; Continue and I fixed it took the item back already). Throws SourceError; the sync loop tries it
-   * again. Absent: the source takes no resolution.
+   * `hopper:rejected`; Continue and I fixed it took the item back already). On GitHub they are rows of the GitHub outbox
+   * (issue #1238), kept the first time and sent after: asked again, it answers where they stand and keeps nothing more.
+   * Throws SourceError; the sync loop asks again at each sync. Absent: the source takes no resolution.
    */
-  resolved?(job: Job, resolution: HandoffResolution): Promise<void>;
+  resolved?(job: Job, resolution: HandoffResolution): Promise<ResolutionWrite>;
   /**
    * Why a job that ended done is not complete (its work did not reach the item's completion, e.g. a
    * merged or an open pull request), or undefined when it is (issues #171, #187). Asked before the
@@ -550,8 +552,16 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
    * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
    */
   intake?(): IntakeOutcome[];
-  /** The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError. */
-  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>;
+  /**
+   * The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError.
+   * Its GitHub writes are outbox rows (issue #1238): `flushOutbox` sends the rows due, one batch, coalesced, and answers how
+   * many were due and the repositories it wrote to, so the sync loop lists them again. It never throws: a failed row waits
+   * its backoff, or is failed. `pullRequestAct`: a person's Merge now or Close PR (part 3), a row sent through
+   * `acts.pullRequest`; it answers the act on its way. `giveBackAct`: a person's act that gives an ended job's item back
+   * (Run again and Rework, part 4; Retry, Continue, I fixed it, Push it and Tend again, part 5, with what names their run), a
+   * row sent through `acts.giveBack`; it answers the give-back on its way. Either answers undefined when the job names no repository.
+   */
+  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>; flushOutbox?(acts?: OutboxActs): Promise<{ due: number; wrote: string[] }>; pullRequestAct?(job: Job, act: PullRequestAct, acting: ActingPerson): PullRequestAct | undefined; giveBackAct?(job: Job, act: OutboxGiveBack, acting?: ActingPerson, more?: OutboxGiveBackMore): OutboxGiveBack | undefined;
 }
 
 /**
@@ -761,8 +771,12 @@ export interface Connection {
 
 /** A user's connected accounts (issue #214): GET /api/connected-accounts, POST /ui/api/connected-accounts. */
 export interface ConnectedAccounts {
-  /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
-  status(): Promise<ConnectedAccountStatus[]>;
+  /**
+   * `status`: every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed, as last read
+   * (issue #1250): never reads GitHub. `refresh`: reads where the app is installed from GitHub again, in the background;
+   * answers at once, `installationsReading` while it reads.
+   */
+  status(): Promise<ConnectedAccountStatus[]>; refresh(provider: ConnectedAccountProvider): ConnectedAccountStatus;
   /**
    * Keep the connection a GitHub sign-in made: it replaces the account there was, unless that one is healthy — then it is
    * held until the person takes or drops it (issue #647).

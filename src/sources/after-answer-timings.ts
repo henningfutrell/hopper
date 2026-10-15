@@ -69,10 +69,10 @@ export function timed(timings: AfterAnswerTimings, fn: () => Promise<void>): () 
 /** A person's act that asked for a sync, and when (`performance.now()`). */
 export interface SyncAsk { act: string; at: number }
 
-/** The ask of a sync the act whose work runs now makes, timed as `sync:<act>`; none when no act runs. */
-export function syncAsks(): SyncAsk[] {
+/** The ask of a sync the act whose work runs now makes, timed as `sync:<act>` from `at` (the act's outbox send, issue #1238); none when no act runs. */
+export function syncAsks(at = performance.now()): SyncAsk[] {
   const act = actOf();
-  return act === undefined ? [] : [{ act: `sync:${act}`, at: performance.now() }];
+  return act === undefined ? [] : [{ act: `sync:${act}`, at }];
 }
 
 /** Runs a queued sync, timed once for each act that asked for it, each wait from its own ask. */

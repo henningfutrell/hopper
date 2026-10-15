@@ -6,8 +6,8 @@ import { personBase } from './artifacts/links.ts';
 import { jobHopperUrl } from './github-proxy/reach.ts';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createMachineLinks } from './machines/links.ts';
-import { hopperAddresses } from './machines/hopper-address.ts';
+import { createMachineLinks } from './machines/links.ts'; import { LANE_POOL_KEY_VARIABLE } from './machines/lane-pool.ts';
+import { hopperAddresses, wslHopperUrl } from './machines/hopper-address.ts';
 import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts'; import { createSolrIndex } from './search/solr.ts'; import type { SearchIndex } from './domain/search.ts';
@@ -19,7 +19,7 @@ import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createAllowedHosts, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
-import { readRelease } from './client/release.ts';
+import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
@@ -30,7 +30,7 @@ import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
-import { createInstallScriptBuilder, createReleaseCheck, createRestarter, releaseAccount, createStackProbe, databaseHostOf, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
+import { clusterChannelTag, clusterInstall, createInstallScriptBuilder, createReleaseCheck, createRestarter, releaseAccount, createStackProbe, databaseHostOf, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts'; import { createOutboundGuard } from './outbound/index.ts';
@@ -125,8 +125,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
   if (!store.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
-  // The master key (issue #659): from the launch, checked against the database's fingerprint before anything opens a
-  // secret; a wrong key stops the start. The parts read it through `keyed`, never from a file or the old token key.
+  // The master key (issue #659): from the launch (its variable or a mounted Secret file, issue #1288), checked against the database's fingerprint before anything opens a
+  // secret; a wrong key, or none while the database keeps secrets, stops the start (issue #1296: never limited).
+  // The parts read it through `keyed`, never from the file or the old token key.
   let masterKey: MasterKey;
   try {
     const { settings } = store;
@@ -135,9 +136,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     store.close();
     throw e;
   }
-  const { env: keyed, use: useKey } = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
+  const { env: keyed, use: useKey } = withMasterKey(env, masterKey);
   // A rotation (issue #659): every secret sealed again, then the running hopper on the new key (src/users/master-key-rotation.ts).
-  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings, masterKeyRotation({ store, keyed: { use: useKey }, mask: logMask, vaultUrl: config.vaultUrl, logger, append: (e) => runtimes.events.append(e) }));
+  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings, masterKeyRotation({ store, keyed: { use: useKey }, mask: logMask, vaultUrl: config.vaultUrl, logger, append: (e) => runtimes.events.append(e) }), env.HOPPER_MASTER_KEY_SEALED || undefined);
   logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
   // The sign-in realms' secrets are in the instance's vault (issue #658): moved there now, before the sign-in config is read.
   const secrets = openInstanceSecrets(store, { env: keyed, clock, logger, migrate: true });
@@ -162,7 +163,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   const workDir = config.workDir;
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
-  let port = config.port;
+  let port = config.port; const inPod = inCluster(env); const wsl = !inPod && runsInWsl(seams.procVersion ?? kernelVersion()); // its container shares the kernel (issue #712); a WSL machine here is asked its host link (issue #1248 part 4); a pod is never WSL (issue #1289)
   // The base of a person's link (issues #673, #712): the user's link base, else the public URL, else the host link base
   // (Settings → Host link), else an IP or `.local` LAN name, else localhost. Never a container's bare name.
   const linkBase = (userLinkBase: string): string => personBase({ linkBase: userLinkBase, publicUrl: config.publicUrl, hostLinkBase: instance.settings.getHostLinkBase(), lanNames: config.lanNames, port });
@@ -213,7 +214,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher, outboundGuard,
+      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
       installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -267,9 +268,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
   let restartApp: Restarter = async () => {};
-  const appDir = seams.update?.appDir ?? APP_DIR;
+  // A cluster install (issue #1285): updated by helm upgrade of its release, never by compose.
+  const appDir = seams.update?.appDir ?? APP_DIR, cluster = clusterInstall(env);
   const updater = createUpdater({
-    appDir, dataDir: workDir, settings: instance.settings, events: runtimes.events, clock, logger,
+    appDir, cluster, dataDir: workDir, settings: instance.settings, events: runtimes.events, clock, logger,
     builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(workDir, 'update', 'build.log') }),
     restart: seams.update?.restart ?? (() => restartApp()),
     // Only the merge of a pull request whose checks passed (issue #652), asked of github.com's API with the oldest
@@ -281,11 +283,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   // The sandbox boxes the hopper starts (issues #603, #708): through the container runtime selected once here (Podman
   // whenever it is reachable), beside the hopper — on the compose network, reaching it by its LAN name, or on the host
-  // network, reaching it on loopback.
+  // network, reaching it on loopback; or, with the Kubernetes runtime (issue #1286), as pods that reach it by its LAN
+  // name, its Service's.
   const sandboxes = createSandboxes({
-    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
+    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }),
     repo: sandboxRecords, instanceId: instance.settings.instanceId(),
-    network: hopperNetwork(config),
+    network: hopperNetwork(config), cluster: inPod,
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
     address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),
     ...(seams.startCheckMs !== undefined ? { startCheckMs: seams.startCheckMs } : {}),
@@ -306,7 +309,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
-    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: stack.resources, stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl, database: databaseHostOf(config.databaseUrl, () => { store.databaseStats.read(); return true; }) }) }),
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: stack.resources, cluster, stackDrift: startStackDrift({ appDir, env, logger, cluster, channel: () => clusterChannelTag(updater.status()), probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl, database: databaseHostOf(config.databaseUrl, () => { store.databaseStats.read(); return true; }) }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
@@ -323,10 +326,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         return id === undefined ? undefined : instance.users.get(id);
       },
     },
-    port: () => port, signIn, signInEnvironment,
+    port: () => port, signIn, signInEnvironment, events: runtimes.events,
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl: runsInWsl(seams.procVersion ?? kernelVersion()), uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
-    client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
   });
 
   // Before listening: the boot after an update records update.applied before anything is answered.

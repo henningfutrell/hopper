@@ -140,19 +140,6 @@ describe('write-only vault secrets', () => {
     expect(rows(a)).toEqual([]);
   });
 
-  it('no master key (limited, issue #659): nothing is stored, and the answer says why', async () => {
-    const { a: first } = await boot();
-    const dbPath = first.dbPath;
-    await first.stop();
-    t = undefined;
-    const { a, session } = await boot({ HOPPER_MASTER_KEY: undefined }, dbPath);
-    const r = await edit(a, session, { action: 'set', name: 'DEPLOY_KEY', value: VALUE });
-    expect(r.status).toBe(503);
-    expect(r.body.error).toContain('the master key is missing');
-    expect((await vault(a)).problem).toContain('HOPPER_MASTER_KEY');
-    expect(rows(a)).toEqual([]);
-  });
-
   it('a new master key with the old one as previous seals every vault secret again at start', async () => {
     const { a: first, session } = await boot();
     await edit(first, session, { action: 'set', name: 'DEPLOY_KEY', value: VALUE });

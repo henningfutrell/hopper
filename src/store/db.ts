@@ -4,6 +4,7 @@
 //
 // SQL is written with `?` placeholders, numbered ($1, $2, …) before it is sent.
 import { createSyncFn } from 'synckit';
+import { slowStoreCalls, statementOf } from './slow-calls.ts';
 
 export type Param = string | number | null;
 export type Row = Record<string, unknown>;
@@ -52,9 +53,14 @@ export function openDb(url: string, o: { timeoutMs?: number } = {}): Db {
   worker ??= createSyncFn(new URL('./postgres-worker.ts', import.meta.url).pathname, { timeout: CALL_TIMEOUT_MS }) as WorkerCall;
   const call = worker;
   const { handle } = call('open', 0, parseDatabaseUrl(url), [Math.min(o.timeoutMs ?? STATEMENT_TIMEOUT_MS, STATEMENT_TIMEOUT_MS)]);
-  const query = (sql: string, params: Param[]) => call('query', handle, numberPlaceholders(sql), params);
+  // Each call blocks the event loop while it lasts: a slow one is kept, for the watchdog to name (issue #1154).
+  const timed = <T>(sql: string, run: () => T): T => {
+    const from = performance.now();
+    try { return run(); } finally { slowStoreCalls.record(from, performance.now(), statementOf(sql)); }
+  };
+  const query = (sql: string, params: Param[]) => timed(sql, () => call('query', handle, numberPlaceholders(sql), params));
   return {
-    exec: (sql) => { call('exec', handle, sql, []); },
+    exec: (sql) => { timed(sql, () => call('exec', handle, sql, [])); },
     run: (sql, ...p) => ({ changes: query(sql, p).changes }),
     get: (sql, ...p) => query(sql, p).rows[0],
     all: (sql, ...p) => query(sql, p).rows,

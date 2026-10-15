@@ -927,7 +927,7 @@ Version 1 (`docs/schemas/job.give_back_failed.v1.json`). A person's act on this 
 
 ## `job.pull_request_act_failed`
 
-Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge now (`act` `merge`) or Close PR (`close`) on this finished job's open pull request was answered at once (issue #1194), and its source's merge or close, which runs after the answer, failed: `error` says why (GitHub refused it — a draft, merge conflicts, a required check — or was out of reach, or the pull request was no longer open). The pull request stays as it was, and the act is offered again. `person` and `via` say who and the way.
+Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge now (`act` `merge`) or Close PR (`close`) on this finished job's open pull request was answered at once (issue #1194), and its source's merge or close, which runs after the answer, failed for good: `error` says why (GitHub refused it — a draft, merge conflicts, a required check —, or was out of reach at each of the GitHub outbox's attempts, issue #1238, or the pull request was no longer open). Recorded once, when its outbox row fails. The pull request stays as it was, and the act is offered again. `person` and `via` say who and the way.
 
 | field | type | required |
 |---|---|---|
@@ -1048,18 +1048,23 @@ Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its ow
 
 ## `job.waiting`
 
-Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it; `ownCommand` (issue #1037): `until` names its own background command, so it shows as running. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998).
+Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it; `on` (issue #1245): what it waits on, typed — a pull request (`number`, `about`: `checks`, `merge` or `review`), a job, an item, a person's question, a `sandbox` or `template` approval, a vault grant, its own command, or an outside event —, from its `on:` line, else read from what it wrote; absent only on a wait from before; `ownCommand` (issue #1037): `until` names its own background command, so it shows as running. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998), or when the event that settles what it waits on comes (issue #1245): the pull request merged or closed, the job ended, the item's issue closed, the question answered, closed, dismissed or expired, its vault grant given or denied.
 
 | field | type | required |
 |---|---|---|
 | `for` | string | yes |
 | `until` | string | no |
+| `on` | any | no |
 | `ownCommand` | boolean | no |
 
 ```json
 {
   "for": "write access to the repository",
-  "until": "a background poll of the push"
+  "until": "a background poll of the push",
+  "on": {
+    "kind": "outside",
+    "what": "write access to the repository"
+  }
 }
 ```
 
@@ -1415,6 +1420,43 @@ Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a 
 }
 ```
 
+## `source.request_auto_approved`
+
+Version 1 (`docs/schemas/source.request_auto_approved.v1.json`). The hopper approved a request card a rule of the user's auto-approval matched (issue #1268), as a person's approval does: its text is the item's snapshot (`approved`), the next sync takes it, and its job runs that text. `rule`: `reopened` (a trusted actor or a listed app reopened the issue after its job was done), `author` (a trusted actor wrote it), `app` (a listed app or bot wrote it) or `high-label` (a trusted actor or a listed app added `hopper:high`); `actor`: who did that act. `actors`: who wrote, labelled and assigned it, as on `source.request_approved`. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `author` | string | yes |
+| `rule` | `reopened` \| `author` \| `app` \| `high-label` | yes |
+| `actor` | string | yes |
+| `actors` | object[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "author": "stranger",
+  "rule": "high-label",
+  "actor": "octocat",
+  "actors": [
+    {
+      "role": "author",
+      "login": "stranger",
+      "trusted": false
+    },
+    {
+      "role": "labelled",
+      "login": "octocat",
+      "trusted": true
+    }
+  ]
+}
+```
+
 ## `intake.actors_changed`
 
 Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted actors changed in Settings → Intake (issue #652): the GitHub logins whose issues, labels and assignments start the user's jobs. `from` and `to` the logins named (empty: the connected login only), `by` who changed them.
@@ -1432,6 +1474,32 @@ Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted act
     "octocat",
     "teammate"
   ],
+  "by": "octocat"
+}
+```
+
+## `intake.auto_approval_changed`
+
+Version 1 (`docs/schemas/intake.auto_approval_changed.v1.json`). An admin changed the user's auto-approval in Settings → Intake (issue #1268): `on`, whether the hopper approves the request cards a rule matches, and `apps`, the apps and bots trusted to act for the user. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": true,
+    "apps": []
+  },
+  "to": {
+    "on": true,
+    "apps": [
+      "octo-helper"
+    ]
+  },
   "by": "octocat"
 }
 ```
@@ -3802,6 +3870,25 @@ Version 1 (`docs/schemas/vault.agent_credential_given.v1.json`). A box the hoppe
   "name": "CLAUDE",
   "template": "kube",
   "box": "hopper-sandbox-kube"
+}
+```
+
+## `vault.pod_credential_given`
+
+Version 1 (`docs/schemas/vault.pod_credential_given.v1.json`). A job pod, or a lane pod, was given its user's Claude token at a start of its job (issue #1287): the vault secret the kubernetes executor names (`agentCredential`; on a lane pod `CLAUDE_TOKEN`), a token `claude setup-token` printed, in the job's pane as `CLAUDE_CODE_OAUTH_TOKEN`, so Claude in the pod starts signed in. The secret's name, the pod and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `pod` | string | yes |
+| `job` | string | yes |
+| `backend` | string | no |
+
+```json
+{
+  "name": "CLAUDE_TOKEN",
+  "pod": "hopper-job-0a1b2c3d",
+  "job": "0a1b2c3d"
 }
 ```
 
@@ -6371,5 +6458,41 @@ Version 1 (`docs/schemas/landing_batch.canary_promoted.v1.json`). The canary can
   "stable": "stable",
   "tip": "0123456789abcdef0123456789abcdef01234567",
   "why": "no bug report named it in 24 hours"
+}
+```
+
+## `hopper.event_loop_stalled`
+
+Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event loop was held for `ms` (issue #1154): for that long no request was answered and no machine's link was served. `during`: the routes of the requests in flight, never their URLs. `store`: the slow store calls in it, `ms` in all and the statements that held it longest (`what`: the verb and table, never a value). `skipped`: the stalls since the last one raised, which are logged only: at most one is raised a minute. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `ms` | integer | yes |
+| `during` | string[] | yes |
+| `store` | object | no |
+| `skipped` | integer | yes |
+
+```json
+{
+  "ms": 5200,
+  "during": [
+    "POST /job/step"
+  ],
+  "store": {
+    "ms": 3900,
+    "calls": [
+      {
+        "what": "SELECT jobs",
+        "ms": 2100,
+        "count": 3
+      },
+      {
+        "what": "INSERT checkpoints",
+        "ms": 1800,
+        "count": 1
+      }
+    ]
+  },
+  "skipped": 2
 }
 ```

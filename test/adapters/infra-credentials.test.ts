@@ -1,6 +1,6 @@
-// Issue #1128 part 7 (design.md "Infra credentials on machines"): each machine's snapshot carries the infra credential folders
-// its home holds, as its last read found them — this machine at every list, an ssh target in its probe, a client target in its
-// client's `/release` answer. Only the folder names. The Machines and Accounts views flag them; no job is held for them.
+// Issues #1128 part 7, #1248 (design.md "Infra credentials on machines"): each machine's snapshot carries the infra credentials
+// its job user's context holds, as its last read found them — this machine at every list, an ssh target in its probe, a client
+// target in its client's `/release` answer. Only the names. A machine holding any is not ready and takes no new job.
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,8 @@ import { clientRunningRelease } from '../../src/executors/client.ts';
 import { createAttachedMachineSource, createClientReleaseKeeper, createLocalMachineSource, probeSsh, type MachineProbe } from '../../src/machines/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { testSshAuth } from '../support/ssh.ts';
+import { decide } from '../../src/decider/index.ts';
+import { inputs, job } from '../decider/support.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('../herdr/fake-ssh-bin.mjs', import.meta.url));
@@ -76,5 +78,26 @@ describe('infra credential folders on machines (issue #1128)', () => {
     expect((await clientRunningRelease(client.transport(token), [])).infraCredentials).toEqual(['.keycloak', '.terraform.d']);
     const keep = createClientReleaseKeeper({ release: readRelease(fileURLToPath(new URL('../../src/client', import.meta.url))), logger: { info: () => {}, warn: () => {} } });
     expect(await keep(client.transport(token), () => [])).toMatchObject({ online: true, infraCredentials: ['.keycloak', '.terraform.d'] });
+  });
+});
+
+// Issue #1248: a machine whose job user holds credentials is not ready; once its probe finds none, it takes jobs again,
+// with no restart: each probe says afresh.
+describe('a machine not ready for its credentials (issue #1248)', () => {
+  it('takes no job while its probe finds credentials, and takes one once the next probe finds none', async () => {
+    let answer: MachineProbe = { online: true, home: '/home/job', infraCredentials: ['.kube', '.aws'] };
+    let t = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'wsl', ssh: 'wsl', lanes: 1, executors: ['test'], herdr: true, session: 'hopper' }),
+      clock: { now: () => new Date(t) }, probeEveryMs: 30000, probe: async () => answer,
+    });
+    await src.list(); await flush();
+    const before = decide(inputs({ machines: await src.list(), waiting: [job('a')] }), 'd1');
+    expect(before.start).toEqual([]);
+    expect(before.hold).toEqual([{ jobId: 'a', reason: expect.stringContaining('wsl is not ready: its job user holds credentials a job could use (.kube, .aws)') }]);
+    answer = { online: true, home: '/home/job', infraCredentials: [] };
+    t += 30000; await src.list(); await flush();
+    const after = decide(inputs({ machines: await src.list(), waiting: [job('a')] }), 'd2');
+    expect(after.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'wsl' })]);
   });
 });

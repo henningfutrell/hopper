@@ -62,9 +62,9 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
 
     const approved = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash: card!.request!.hash }, { token });
     expect(approved).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+    // The outbox takes `hopper:done` off after the answer (issue #1238), and the sync after it takes the issue.
+    const jobs = await waitFor(async () => { const js = await jobsFor(a, issue.url); return js.length === 2 ? js : undefined; }, { what: 'the new job' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
-    const jobs = await jobsFor(a, issue.url);
-    expect(jobs).toHaveLength(2);
     expect(jobs.find((j) => j.id !== first!.id)).toMatchObject({ rerunOf: first!.id });
   });
 });

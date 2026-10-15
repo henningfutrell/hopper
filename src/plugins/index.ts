@@ -20,7 +20,7 @@ import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
 import { machineOptions, optionsJsonSchema, parseOptions, withMachineChoices } from './options.ts';
-import { applyEdit, configuredInstances, describeEdit, type Configured } from './edit.ts';
+import { applyEdit, configuredInstances, describeEdit, type Configured } from './edit.ts'; import { duplicateJobSources } from './duplicates.ts';
 import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
@@ -88,7 +88,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
     machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),
     machines: () => liveMachines.list(), escalationMachine: () => configured?.escalationMachine,
-    client: o.executorContext?.client ?? (() => undefined),
+    client: o.executorContext?.client ?? (() => undefined), ...(o.executorContext?.pods ? { pods: o.executorContext.pods } : {}), ...(o.usageSourceContext?.agentSignIn ? { agentSignIn: o.usageSourceContext.agentSignIn } : {}),
   };
 
   const sign = (): string => o.config.version(PLUGINS);
@@ -264,6 +264,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     levels: () => started(levels).map((l) => l.level),
     executors: () => [...started(executors.built)],
     jobSources: () => [...started(jobSources.built)],
+    duplicateJobSources: () => (configured ? duplicateJobSources(instances(), find) : new Map()),
     machines: () => { started(machines.built); return liveMachines; },
     usageSources: () => started(usageSources.built).flatMap((b) => (b.instance ? [b.instance] : [])),
     notifiers: () => started(notifiers.built).flatMap((b) => (b.instance ? [b.instance] : [])),
@@ -282,7 +283,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     },
     targets,
     machinesConfig: () => machinesEditor.config(), editMachines: (e) => machinesEditor.edit(e),
-    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e), joinMachine: (j) => machinesEditor.joinMachine(j),
+    machineHostKey: (ssh) => machinesEditor.hostKey(ssh), editMachineDefaults: (e) => machinesEditor.editDefaults(e), joinMachine: (j) => machinesEditor.joinMachine(j), leavePod: (pod) => machinesEditor.leavePod(pod),
     reload: enqueue,
     routingRules: () => [...(configured?.routing ?? [])],
     machineIds,

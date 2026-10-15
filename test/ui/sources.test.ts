@@ -1,9 +1,9 @@
 // The Sources view's GitHub section (issues #160, #214, #254, #359): the connected GitHub account is the
 // one way the hopper reads GitHub as the user; a GitHub App an admin set up is the one other connection.
 // The view says which one reads issues, why the other is paused, and orders them so. An unset GitHub App
-// is not shown.
+// that is on needs setup and says what it lacks (issue #1243).
 import { describe, expect, it } from 'vitest';
-import { sourcesView } from '../../ui/src/model/sources.ts';
+import { notConfiguredLines, sourcesView } from '../../ui/src/model/sources.ts';
 import type { SourceStatus } from '../../ui/src/model/wire.ts';
 
 const NOT_CONNECTED = 'GitHub is not connected: Sources → Connect GitHub';
@@ -17,12 +17,14 @@ const account = (login?: string, paused = NOT_CONNECTED) => source('github-accou
 });
 
 describe('sourcesView', () => {
-  it('signed in with GitHub: the connection reads issues; an unset GitHub App is not shown (#254)', () => {
+  it('signed in with GitHub: the connection reads issues; a GitHub App source on but not set up needs setup, and says what it lacks (#254, #1243)', () => {
     const acc = account('octo-user');
-    const v = sourcesView([app('ok', 'no GitHub App configured'), acc]);
+    const unset = { ...app('needs-setup', 'no GitHub App configured'), setupProblem: { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' } };
+    const v = sourcesView([unset, acc]);
     expect(v.account).toBe(acc);
     expect(v.connected).toBe(true);
-    expect(v.github).toEqual([]);
+    expect(v.github.map((c) => [c.use, c.why])).toEqual([['needs-setup', 'appId, slug, private key not set']]);
+    expect(notConfiguredLines([unset, acc])).toEqual(['github-app: appId, slug, private key not set']);
     expect(v.others).toEqual([]);
     expect(v.summary).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
   });

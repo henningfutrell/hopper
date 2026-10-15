@@ -165,6 +165,13 @@ export interface PullRequestSeen {
   draft: boolean;
   conflicting: boolean;
   checks: ChecksState | 'none';
+  /** Why its checks are `unknown` (issue #1244): no read of them works with the source's connection, and the fix. */
+  checksWhy?: string;
+  /**
+   * GitHub refused every read of its checks to the source's connection (issue #1244): its repository has a checks read
+   * problem. Absent: not refused — known, or a read that failed otherwise (`checksWhy` says GitHub's error).
+   */
+  checksRefused?: true;
   /** When it was opened. */
   openedAt?: string;
   /** When it was last pushed to (issue #677): the later of when it was opened and its head commit. */
@@ -223,6 +230,12 @@ export interface OwnPullRequestChecks { pullRequest: string; headOid?: string; c
 
 /** The text of a done-check miss whose job's own pull request is there, only its checks red (issue #1230, `redChecksLine`). */
 export const OWN_PR_CHECKS_RED_TEXT = /^not complete:.*\bPR #\d+: checks failed: /i;
+
+/**
+ * The text of a done-check miss whose job's own pull request one fixed step finishes, other than its checks (issue #1265,
+ * `unfinishedLine`): it has merge conflicts with its base, or it is a draft.
+ */
+export const OWN_PR_UNFINISHED_TEXT = /^not complete:.*\bPR #\d+: (merge conflicts with its base|a draft)\b/i;
 
 /** A run again of failed checks (issue #1230): the checks run again, by name, and why none or not all were (`refused`). */
 export interface ChecksRerun { rerun: string[]; refused?: string }
@@ -364,6 +377,21 @@ export function checksRedBrief(pullRequest: string, checks: TendChecks, resumes:
   'Do not open a new pull request.',
   'If you cannot fix a check, end the job as failed. Say which checks, and why.',
   'Then end the job as done.'].join('\n');
+}
+
+/**
+ * What a job is told when the hopper sends it back because its own pull request has merge conflicts or is a draft (issue
+ * #1265, the cause Own PR unfinished): finish it on the same branch. `finish`: the step its source names now; undefined: none
+ * named, so the job is told what ready for review means. `resumes`: as `checksRedBrief`. Fixed text, no model call.
+ */
+export function unfinishedBrief(finish: UnfinishedPullRequest | undefined, resumes: boolean): string {
+  const which = finish?.pullRequest ?? 'of this job';
+  return [resumes
+    ? 'The hopper sends this job back to you in this same session and work tree: your pull request is not ready for review after you ended the job as done.'
+    : `The hopper runs this issue again: the earlier job's pull request ${which} is not ready for review. Look for its branch first.`,
+  ...(finish ? [`Work on the branch of ${finish.pullRequest}.`, ...stepLines(finish), ...(finish.step === 'rebase' ? REBASE_LINES : [])]
+    : ['Work on the branch of your pull request.', 'Make it ready for review: no merge conflicts with its base branch, not a draft, and its checks pass.']),
+  'Make the checks of the pull request pass.', 'Do not open a new pull request.', 'Then end the job as done.'].join('\n');
 }
 
 /**

@@ -9,6 +9,19 @@ import type { ActingPerson } from './types.ts';
 export const GIVE_BACK_ACTS = ['rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend'] as const;
 export type GiveBackAct = typeof GIVE_BACK_ACTS[number];
 
+/** The acts their own services check and run (Retry, Continue, I fixed it, Push it, Tend again): `SourceRegistry.afterAnswer`. */
+export type AfterAnswerAct = Exclude<GiveBackAct, 'rerun' | 'rework'>;
+
+/** What a person gave with the act: a hand-off's note and link, Push it's note. */
+export interface GiveBackInput { note?: string; link?: string }
+
+/**
+ * An act checked now by its own service, from what names it — `id`, the failure record (Retry), the hand-off (Continue, I
+ * fixed it) or the job (Push it, Tend again) — and the person's `input`: why it is refused, or the run. The sync loop asks
+ * it at the answer and again at the send of its GitHub outbox row (issue #1238 part 5), after a restart too.
+ */
+export type GiveBackCheck = (act: AfterAnswerAct, id: string, acting: ActingPerson, input: GiveBackInput) => GiveBackChecked;
+
 /** A person's act, answered: its give-back runs, or why it is refused now. */
 export type GiveBackAnswer =
   | { ok: true; jobId: string; giveBack: GiveBackAct }
@@ -30,15 +43,14 @@ export interface GiveBackRegistry {
    * the newest of its item, its end reported to its source, for Rework finished and following an open pull request —,
    * then the answer. Its source gives the item back after, on the job's report chain, and the new job follows
    * (`job.rerun`, `job.rework_requested`); a give-back that fails records `job.give_back_failed` and makes no job. The same
-   * act sent again while one runs answers that one.
+   * act sent again while one runs answers that one. With a GitHub outbox the act is its row (issue #1238 part 4), kept across a restart.
    */
   giveBack(jobId: string, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }, acting?: ActingPerson): GiveBackAnswer;
   /**
-   * A person's Retry, a hand-off's Continue or I fixed it, Push it or Tend again, `checked` now by its own service (issue
-   * #1194): refused with why, else answered; its `run` goes on after, and one that fails records `job.give_back_failed`.
-   * The same job's act sent again while one runs answers that one.
+   * A person's Retry, a hand-off's Continue or I fixed it, Push it or Tend again on `id`, checked now by its own service
+   * (issue #1194, `GiveBackCheck`): refused with why, else answered; its run goes on after, and one that fails records
+   * `job.give_back_failed`. The same job's act sent again while one runs answers that one. With a GitHub outbox the act
+   * is its row (issue #1238 part 5), checked and run again at its send, kept across a restart.
    */
-  afterAnswer(act: GiveBackAct, checked: GiveBackChecked, acting?: ActingPerson): GiveBackAnswer;
-  /** Tend again checked now (issue #1194): refused with why, or its run, for `afterAnswer`. */
-  checkTendAgain(jobId: string, acting: ActingPerson): GiveBackChecked;
+  afterAnswer(act: AfterAnswerAct, id: string, acting: ActingPerson, input?: GiveBackInput): GiveBackAnswer;
 }

@@ -32,6 +32,10 @@ export interface SlotDeps {
   escalationMachine(): string | undefined;
   /** A client target's link (RoleContext['executor'], issue #308). */
   client: ExecutorContext['client'];
+  /** A usage read's agent sign-in on a lane pod (RoleContext['usage-source'], issue #1287). Absent: none. */
+  agentSignIn?: UsageSourceContext['agentSignIn'];
+  /** Job pods (RoleContext['executor'], issue #1283). Absent: none. */
+  pods?: ExecutorContext['pods'];
   find(id: string): PluginDefinition | undefined;
 }
 
@@ -70,6 +74,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   return {
     clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, secretName: deps.kit.secretName, userEnv: deps.userEnv,
     ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine, machines: deps.machines, escalationMachine: deps.escalationMachine, client: deps.client,
+    ...(deps.pods ? { pods: deps.pods } : {}), ...(deps.agentSignIn ? { agentSignIn: deps.agentSignIn } : {}),
   };
 }
 

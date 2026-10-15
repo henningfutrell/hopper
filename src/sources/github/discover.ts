@@ -173,7 +173,8 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     if (v.kind === 'skip') { skip(v.reason, v.action); continue; }
     if (v.kind !== 'release') continue;
     try {
-      await api.removeLabels(i.repo, i.number, claimLabels(scope.holder));
+      // Only the claim labels it carries (issue #1154): a remove of one it lacks changes nothing.
+      await api.removeLabels(i.repo, i.number, claimLabels(scope.holder).filter((l) => i.labels.includes(l)));
       i.labels = i.labels.filter((l) => l !== LABEL_CLAIMED && !l.startsWith(HOLDER_PREFIX));
       listed.set(i.url, [...i.labels]);
       released.push(v.released);

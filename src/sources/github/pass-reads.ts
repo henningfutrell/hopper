@@ -12,7 +12,7 @@ import type { GitHubApi } from './api.ts';
 const READS = [
   'getIssue', 'subIssues', 'listComments', 'issueEdits', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
   'closingPullRequest', 'openClosingPullRequests', 'referencingPullRequests', 'crossReferences', 'pullRequest', 'openPullRequests',
-  'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'issuesChangedSince', 'openPullRequestsIn', 'pullRequestStates', 'jobLog', 'taggedItems',
+  'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'issuesChangedSince', 'openPullRequestsIn', 'pullRequestStates', 'jobLog', 'taggedItems', 'headChecks',
 ] as const;
 export const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'retarget', 'toDraft', 'baseMerge', 'rerunJob'] as const;
 /** Reads whose first argument is not a repository: any write drops them. */
@@ -34,6 +34,8 @@ export interface PassReads {
   api: GitHubApi;
   /** Run one sync pass: the reads `run` makes, and the reads of what it starts, are asked once. */
   pass<T>(run: () => Promise<T>): Promise<T>;
+  /** The REST and GraphQL calls the last pass made (issue #1264); 0 before the first. */
+  calls(): number;
 }
 
 /** `source`: the source's name, which its pass line names. `traffic`: the process's own unless a test gives one. */
@@ -71,8 +73,10 @@ export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic
   if (api.baseTip) out.baseTip = api.baseTip.bind(api);
   if (api.changedLines) out.changedLines = api.changedLines.bind(api);
 
+  let last = 0;
   return {
     api: out as unknown as GitHubApi,
+    calls: () => last,
     pass(run) {
       return traffic.pass(source, async () => {
         const pass: Pass = new Map();
@@ -82,7 +86,7 @@ export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic
         } finally {
           open.delete(pass);
         }
-      });
+      }, (n) => { last = n; });
     },
   };
 }

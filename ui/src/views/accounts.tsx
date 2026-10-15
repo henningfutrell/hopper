@@ -2,8 +2,8 @@
 // service and identity, the plan, the machines signed in as it with their sign-in, when each was read and last ran a job, and the
 // account's week windows (its spend) —, and one for the machines signed in as nobody. Read from GET /api/tool-accounts, shared with
 // the nav badge. Never a token. Sign in (issue #1128, an operator): starts the tool's sign-in on that machine, which waits in Logins
-// for the person to open its page and paste the code it shows. A machine whose home holds infra credential folders is flagged with
-// their names (issue #1128 part 7).
+// for the person to open its page and paste the code it shows. A machine whose job user holds infra credentials is flagged as not
+// ready, with their names (issues #1128 part 7, #1248). A machine not signed in says who it was last signed in as (issue #1269).
 import { LogIn, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Empty, Panel } from '@/components/panel';
 import { ReadingGauge } from '@/components/reading';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
+import { lastAccountText } from '@/model/logins';
 import { accountTitle, LOGIN_LABEL, LOGIN_TONE, machineLine } from '@/model/tool-accounts';
 import { accountFacts } from '@/model/usage';
 import type { ToolAccount, ToolAccountMachine } from '@/model/wire';
@@ -57,7 +58,8 @@ function AccountCard({ a, now }: { a: ToolAccount; now: number }) {
               </div>
               <div className="num text-xs text-muted-foreground">{machineLine(m, now)}</div>
               {m.problem && <div className="text-xs break-words text-warn">{m.problem}</div>}
-              {m.infraCredentials?.length ? <div data-slot="infra-credentials" className="text-xs break-words text-warn">infra credentials in its home: {m.infraCredentials.join(', ')}</div> : null}
+              {m.lastAccount !== undefined && <div data-slot="last-account" className="text-xs break-words">{lastAccountText(m.lastAccount, m.label)}</div>}
+              {m.infraCredentials?.length ? <div data-slot="infra-credentials" className="text-xs break-words text-warn">not ready, takes no new job: its job user holds {m.infraCredentials.join(', ')}</div> : null}
               {canOperate && m.signIn && <div className="pt-1"><SignIn m={m} /></div>}
             </li>
           ))}

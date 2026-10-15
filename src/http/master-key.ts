@@ -1,6 +1,6 @@
 // The master key (issue #659, design.md "The master key"): GET /api/master-key, the banner's source — where this start's
-// key came from, whether a person saved it, and why there is none. Never the key. Every signed-in person reads it: a
-// limited hopper says so to everyone; only the hopper's admin may reveal the key (POST /ui/api/master-key, ui/instance.ts).
+// key came from, whether a person saved it, and whether the host sealed it (issue #1296). Never the key. Every signed-in
+// person reads it; only the hopper's admin may reveal the key (POST /ui/api/master-key, ui/instance.ts).
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { InstanceSettingsRepository, MasterKeyResealed } from '../domain/ports.ts';
@@ -15,8 +15,12 @@ export interface MasterKeyStatus {
   reveal(): string | undefined;
   /** A person saved this key: the banner asks no more. */
   saved(): MasterKeyView;
-  /** A new key, every secret sealed again under it, the running hopper on it; the new key answered this once. `by` pressed it. Throws HttpError 409 when it cannot. */
-  rotate(by: string): MasterKeyRotated;
+  /**
+   * A new key, every secret sealed again under it, the running hopper on it; the new key answered this once. `by` pressed
+   * it. `hostSeals`: the caller seals the new key to the host in the same step (scripts/master-key.sh rotate, issue #1296);
+   * a key the host sealed is rotated only so. Throws HttpError 409 when it cannot.
+   */
+  rotate(by: string, o?: { hostSeals?: boolean }): MasterKeyRotated;
 }
 
 /**
@@ -25,19 +29,23 @@ export interface MasterKeyStatus {
  */
 export type RotateMasterKey = ((o: { from: { key: string; previous: readonly string[] }; to: string; by: string }) => MasterKeyResealed) | { why: string };
 
-export function createMasterKeyStatus(initial: MasterKey, settings: Pick<InstanceSettingsRepository, 'masterKeySaved' | 'setMasterKeySaved'>, rotation: RotateMasterKey = { why: 'this hopper cannot rotate its master key' }): MasterKeyStatus {
+/**
+ * `sealed`: how the host seals the key the launch unsealed (HOPPER_MASTER_KEY_SEALED, issue #1296); undefined: the key is
+ * given some other way.
+ */
+export function createMasterKeyStatus(initial: MasterKey, settings: Pick<InstanceSettingsRepository, 'masterKeySaved' | 'setMasterKeySaved'>, rotation: RotateMasterKey = { why: 'this hopper cannot rotate its master key' }, sealed?: string): MasterKeyStatus {
   let key = initial;
-  let shown = key.source === 'given' || key.source === 'missing' ? undefined : key.key;
-  const isSaved = (): boolean => key.fingerprint !== undefined && settings.masterKeySaved() === key.fingerprint;
+  let shown = key.source === 'given' ? undefined : key.key;
+  const isSaved = (): boolean => settings.masterKeySaved() === key.fingerprint;
   // A key no one saved is shown once in the UI; one saved is never shown again.
   if (isSaved()) shown = undefined;
   const view = (): MasterKeyView => ({
     source: key.source,
-    ...(key.fingerprint ? { fingerprint: shortFingerprint(key.fingerprint) } : {}),
-    previous: key.source !== 'missing' && key.previous.length > 0,
+    fingerprint: shortFingerprint(key.fingerprint),
+    previous: key.previous.length > 0,
     saved: key.source === 'given' || isSaved(),
     revealable: shown !== undefined,
-    ...(key.source === 'missing' ? { problem: key.problem } : {}),
+    ...(sealed ? { sealed } : {}),
   });
   return {
     view,
@@ -47,14 +55,16 @@ export function createMasterKeyStatus(initial: MasterKey, settings: Pick<Instanc
       return k;
     },
     saved() {
-      if (key.source !== 'missing' && key.source !== 'given') {
+      if (key.source !== 'given') {
         settings.setMasterKeySaved(key.fingerprint);
         shown = undefined;
       }
       return view();
     },
-    rotate(by) {
-      if (key.source === 'missing') throw new HttpError(409, `the master key cannot be rotated: ${key.problem}`);
+    rotate(by, o = {}) {
+      if (sealed && !o.hostSeals) {
+        throw new HttpError(409, 'the master key is sealed to this host: rotate it on the host, so the new key is sealed in the same step (bash master-key.sh rotate, docs/deploy.md "Rotating the master key")');
+      }
       if (typeof rotation !== 'function') throw new HttpError(409, rotation.why);
       const next = randomBytes(32).toString('hex');
       // Synchronous from here on: no other request runs between the transaction and the switch to the new key.

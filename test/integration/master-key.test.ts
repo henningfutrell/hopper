@@ -3,9 +3,10 @@
 //
 // Feature: the master key does not depend on a persistent volume
 //   Scenario: HOPPER_MASTER_KEY given: secrets seal and open, and a restart with the same key keeps them
-//   Scenario: a first start with no key makes one and shows it once in the UI, never in the log; a second start without it is limited, and makes no new secret
+//   Scenario: a first start with no key makes one and shows it once in the UI, never in the log; a second start without it is refused, naming the expected fingerprint, and changes nothing (issue #1296: never limited)
 //   Scenario: a wrong key stops the start, saying the key does not match; nothing in the database changes
 //   Scenario: the old token key is moved: every secret stays readable, and once HOPPER_MASTER_KEY is set the old key can go
+//   Scenario: the key from a mounted Secret file (issue #1288): a start with no file there is refused; a new key in the file with the old one as previous seals everything again on restart, and the old data still opens
 //   Scenario: `hopper master-key status` says the source, the fingerprint and whether a previous key is set, never a key (issue #685)
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -91,7 +92,7 @@ describe('the master key (issue #659)', () => {
     expect(logged.join('\n')).not.toContain(KEY);
   });
 
-  it('a first start with no key makes one, shows it once in the UI and never in the log; a second start without it is limited', async () => {
+  it('a first start with no key makes one, shows it once in the UI and never in the log; a second start without it is refused (issue #1296)', async () => {
     const dbPath = freshDb();
     const { a, session } = await boot(dbPath, {});
     const fingerprint = instanceSettings(dbPath).masterKeyFingerprint!;
@@ -115,23 +116,16 @@ describe('the master key (issue #659)', () => {
     expect((await setSecret(a, session)).status).toBe(200);
     const before = vaultRows(dbPath);
 
-    // A new container without the key: limited. It names the key, deletes nothing, makes no new key and stores no secret.
+    // A new container without the key: refused, never limited. The error names the key it needs by its fingerprint; the
+    // database is as it was: no new key, no new secret.
+    await a.stop();
+    t = undefined;
     logged = [];
-    const { a: limited, session: s2 } = await boot(dbPath, {});
-    expect(logged.some((l) => l.includes('SAVE THIS NOW'))).toBe(false);
-    expect(logged.some((l) => l.includes('LIMITED') && l.includes('HOPPER_MASTER_KEY'))).toBe(true);
-    const view = await keyView(limited);
-    expect(view).toMatchObject({ source: 'missing', fingerprint: fingerprintOf(key).slice(0, 16), revealable: false });
-    expect(view.problem).toContain('HOPPER_MASTER_KEY');
-    expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(key));
-    const refused = await setSecret(limited, s2, 'another-value-0123456789');
-    expect(refused.status).toBe(503);
-    expect(refused.body.error).toContain('HOPPER_MASTER_KEY');
+    const settings = instanceSettings(dbPath);
+    await expect(startTestApp({ dbPath, secrets: { HOPPER_MASTER_KEY: undefined } })).rejects.toThrow(`the master key is missing: this database was set up with the key of fingerprint ${fingerprintOf(key).slice(0, 16)}`);
+    expect(logged.some((l) => l.includes('LIMITED'))).toBe(false);
+    expect(instanceSettings(dbPath)).toEqual(settings);
     expect(vaultRows(dbPath)).toEqual(before);
-    expect((await vault(limited)).problem).toContain('HOPPER_MASTER_KEY');
-    // Connecting GitHub asks for no new sign-in: it says the key is missing.
-    const connect = await limited.ui<{ error?: string; state?: string }[]>('/ui/api/connected-accounts', { action: 'connect', provider: 'github' }, { token: s2 });
-    expect(JSON.stringify(connect.body)).toContain('the master key is missing');
 
     // Given the key again: everything opens.
     const { a: back } = await boot(dbPath, { HOPPER_MASTER_KEY: key });
@@ -178,6 +172,35 @@ describe('the master key (issue #659)', () => {
     expect(await keyView(set)).toMatchObject({ source: 'given', saved: true });
     expect(logged.some((l) => l.includes('can be removed'))).toBe(true);
     expect(logged.join('\n')).not.toContain(KEY);
+  });
+
+  it('from a mounted Secret file (issue #1288): a missing file stops the start; a rotation in the Secret seals again on restart', async () => {
+    const dbPath = freshDb();
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-master-key-secret-'));
+    const keyFile = join(dir, 'master-key');
+    const previousFile = join(dir, 'previous');
+    const files = { HOPPER_MASTER_KEY_FILE: keyFile, HOPPER_MASTER_KEY_PREVIOUS_FILE: previousFile };
+
+    await expect(startTestApp({ dbPath, secrets: { HOPPER_MASTER_KEY: undefined, ...files } })).rejects.toThrow('HOPPER_MASTER_KEY_FILE: cannot read');
+
+    writeFileSync(keyFile, `${KEY}\n`);
+    const { a, session } = await boot(dbPath, files);
+    expect((await setSecret(a, session)).status).toBe(200);
+    expect(await keyView(a)).toMatchObject({ source: 'given', fingerprint: fingerprintOf(KEY).slice(0, 16) });
+    expect(await opened(a, KEY)).toBe(VALUE);
+
+    // The rotation, as an operator does it in the Secret: the new key under master-key, the old one under previous.
+    writeFileSync(keyFile, `${NEW_KEY}\n`);
+    writeFileSync(previousFile, `${KEY}\n`);
+    const { a: rotated } = await boot(dbPath, files);
+    expect(await keyView(rotated)).toMatchObject({ source: 'given', fingerprint: fingerprintOf(NEW_KEY).slice(0, 16), previous: true });
+    expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(NEW_KEY));
+    expect(await opened(rotated, NEW_KEY)).toBe(VALUE);
+    expect(() => createSealer(KEY).open(String(vaultRows(dbPath)[0]!.sealed), `vault:${String(vaultRows(dbPath)[0]!.id)}/value`)).toThrow();
+    for (const text of [logged.join('\n')]) {
+      expect(text).not.toContain(KEY);
+      expect(text).not.toContain(NEW_KEY);
+    }
   });
 
   it('hopper master-key status: the source, the fingerprint and whether a previous key is set, as JSON; never a key (issue #685)', async () => {

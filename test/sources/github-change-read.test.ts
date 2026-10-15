@@ -5,7 +5,8 @@
 // source could not list is asked again by that source each interval, whatever another source's listing of it keeps fresh.
 import { describe, expect, it } from 'vitest';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
-import { memoryListings } from '../../src/sources/github/listing.ts';
+import { createIntakeListing, memoryListings } from '../../src/sources/github/listing.ts';
+import { listedReads } from '../../src/sources/github/listed-reads.ts';
 import { GitHubApiError } from '../../src/sources/github/api.ts';
 import type { GitHubListingRepository } from '../../src/domain/github-listing.ts';
 import type { Job } from '../../src/domain/types.ts';
@@ -64,6 +65,34 @@ describe('the change read (issue #1125)', () => {
     pass(MIN);
     await source.discover({ due: true });
     expect(gh.calls.filter((c) => c.method === 'issuesChangedSince').map((c) => c.args)).toEqual([[REPO, issue.updatedAt]]);
+  });
+
+  it('a read of a listed issue does not move where the next change read starts (issue #1276)', async () => {
+    const gh = createFakeGitHub();
+    const listings = memoryListings();
+    const clock = { at: Date.parse('2026-10-14T18:00:00.000Z') };
+    const listing = createIntakeListing({ api: gh, listings, clock: { now: () => new Date(clock.at) }, everyMs: () => 15 * MIN });
+    const listedAt = gh.createIssue({ repo: REPO, labels: ['hopper'] }).updatedAt;
+    await listing.issues([REPO], 'hopper', true);
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.editIssue(REPO, 1, { body: 'Changed.' }, 'owner', '2026-10-02T10:00:00.000Z');
+    await listedReads(gh, listings).api.getIssue(REPO, 1);
+    clock.at += MIN;
+    expect((await listing.issues([REPO], 'hopper', true)).issues.map((i) => i.number)).toEqual([1, 2]);
+    expect(gh.calls.filter((c) => c.method === 'issuesChangedSince').map((c) => c.args)).toEqual([[REPO, listedAt]]);
+    expect(gh.calls.filter((c) => c.method === 'listRepos')).toHaveLength(2);
+  });
+
+  it('a change read moves where the next one starts to the newest change it read', async () => {
+    const { gh, source, pass } = setup();
+    const firstAt = gh.createIssue({ repo: REPO, labels: ['hopper'] }).updatedAt;
+    await source.discover({ due: true });
+    gh.editIssue(REPO, 1, { body: 'Changed.' }, 'owner', '2026-10-02T10:00:00.000Z');
+    pass(MIN);
+    await source.discover({ due: true });
+    pass(MIN);
+    await source.discover({ due: true });
+    expect(gh.calls.filter((c) => c.method === 'issuesChangedSince').map((c) => c.args)).toEqual([[REPO, firstAt], [REPO, '2026-10-02T10:00:00.000Z']]);
   });
 
   it('an issue without the label, and not listed, changes nothing', async () => {

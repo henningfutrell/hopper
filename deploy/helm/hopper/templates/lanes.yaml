@@ -1,0 +1,140 @@
+{{- /*
+Lane pods (issue #1284, docs/design.md "Lane pods", docs/deploy.md "Lane pods on Kubernetes"): long-lived machines that
+join the hopper by dialling out, one machine per pod under its pod's name. No sshd, no inbound port, no Service for them.
+They join with the lane pool key, made here at the first install and kept at each upgrade (read back from the Secret).
+*/ -}}
+{{- $name := include "hopper.fullname" . -}}
+{{- $sel := dict "ctx" . "component" "lanes" -}}
+{{- $channel := .Values.image.tag | toString -}}
+{{- $box := printf "box-%s" .Values.lanes.agent -}}
+{{- $tag := .Values.lanes.imageTag | default (ternary $box (printf "%s-%s" $box $channel) (has $channel (list "latest" "stable"))) -}}
+{{- $image := printf "%s:%s" .Values.image.repository $tag -}}
+{{- $old := (lookup "v1" "Secret" .Release.Namespace (include "hopper.lanePoolSecret" .)).data | default dict -}}
+{{- $key := get $old "key" | b64dec | default (randAlphaNum 64 | sha256sum) -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "hopper.lanePoolSecret" . }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  key: {{ $key | quote }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}-lanes
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  # No Service selects the pods: nothing reaches them, they dial out.
+  serviceName: {{ $name }}-lanes
+  replicas: {{ .Values.lanes.replicas | int }}
+  podManagementPolicy: Parallel
+  # A pod scaled away was retired: its volume goes, and a new pod with its name starts as a new machine.
+  persistentVolumeClaimRetentionPolicy:
+    whenScaled: Delete
+    whenDeleted: Retain
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # Told to stop, a pod takes no new job and waits this long for the jobs on it to end.
+      terminationGracePeriodSeconds: {{ .Values.lanes.drainSeconds | int }}
+      # The box image's agent user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # At each start: the image's home into the volume once, then the join, again until the hopper lets it in (no
+        # one signed in yet). A pod that kept its volume joins with the key it has: the same machine. Only this
+        # container sees the lane pool key.
+        - name: join
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - >-
+              cp -an /home/agent/. /var/lib/lane-home/ &&
+              until HOPPER_CLIENT_DIR=/var/lib/lane-home/.config/hopper-client node /usr/local/lib/hopper-client/main.ts
+              join "$HOPPER_URL#$(cat /run/lane-pool/key)" "$POD_NAME"; do sleep 10; done
+          env:
+            - name: HOPPER_URL
+              value: {{ printf "http://%s:%d" $name (.Values.port | int) | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: home
+              mountPath: /var/lib/lane-home
+            - name: lane-pool
+              mountPath: /run/lane-pool
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        # The box's entrypoint: herdr, whose panes the jobs run in, and the hopper client, dialling in.
+        - name: lane
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # Told to stop, it leaves the hopper and lets the jobs on it end before herdr stops.
+            - name: HOPPER_CLIENT_DRAIN
+              value: "1"
+            {{- include "hopper.podLimits" "lane" | nindent 12 }}
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+            readOnlyRootFilesystem: true
+          resources:
+            {{- toYaml .Values.lanes.resources | nindent 12 }}
+          volumeMounts:
+            # Its link key and the jobs' work trees. The agent's sign-in comes from the vault with each job (issue #1287).
+            - name: home
+              mountPath: /home/agent
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: lane-pool
+          secret:
+            secretName: {{ include "hopper.lanePoolSecret" . }}
+            defaultMode: 0400
+            items:
+              - key: key
+                path: key
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.lanes.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.lanes.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.lanes.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: home
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "hopper.storageClass" .Values.lanes.storageClass | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.lanes.size }}

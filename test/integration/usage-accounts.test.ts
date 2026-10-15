@@ -141,12 +141,12 @@ describe('tool accounts (issue #1128)', () => {
     expect((await hopper(a, ['accounts', 'extra'])).code).toBe(2);
   });
 
-  it('a machine whose claude is signed out: an entry with no identity, signed out, and why', async () => {
+  it('a machine whose claude is signed out: an entry with no identity, signed out, why, and that no account is known there (issue #1269)', async () => {
     writeFileSync(join(control, 'mode'), 'logged-out');
     const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
     const list = await waitFor(async () => { const l = await toolAccounts(a); return l.length ? l : undefined; }, { what: 'the signed-out machine' });
     expect(list).toEqual([{ service: 'claude', detail: {}, login: 'signed-out', spend: [],
-      machines: [{ machineId: 'local', label: expect.any(String), source: 'claude', login: 'signed-out', problem: 'not logged in', readAt: expect.any(String), signIn: true }] }]);
+      machines: [{ machineId: 'local', label: expect.any(String), source: 'claude', login: 'signed-out', problem: 'not logged in', readAt: expect.any(String), signIn: true, lastAccount: null }] }]);
   });
 });
 

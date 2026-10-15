@@ -1,7 +1,7 @@
 // The Podman container runtime (issues #603, #708): rootless Podman, through its own (libpod) REST API on its socket.
 // The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts). The create body is
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
-import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import type { BuildingRuntime, ContainerInfo } from '../domain/sandboxes.ts';
 import { execCalls } from './exec.ts';
 import { imageCalls } from './images.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
@@ -17,7 +17,7 @@ interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Recor
 
 const enc = encodeURIComponent;
 
-export function createPodmanRuntime(socket: string, via: SocketCall = socketCall): ContainerRuntime {
+export function createPodmanRuntime(socket: string, via: SocketCall = socketCall): BuildingRuntime {
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
   const read = async (id: string): Promise<Inspected | undefined> => {

@@ -12,6 +12,7 @@ import { taggedItems } from '../app/graphql-tagged.ts';
 import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
+import { headChecks } from '../app/rest-checks.ts';
 
 /** What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). */
 export function accountError(err: unknown, what: string): GitHubApiError {
@@ -83,6 +84,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, (t) => rest.retargetPullRequest(req, t, repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),
+    headChecks: (repo, ref) => call(`checks of ${repo}@${ref}`, (t) => headChecks(req, t, repo, ref)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, (t) => rest.jobLog(req, t, repo, jobId)),
     rerunJob: (repo, jobId) => call(`rerun of Actions job ${jobId} of ${repo}`, (t) => rest.rerunJob(req, t, repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (t) => ({ url: `${webOriginOf(o.apiUrl)}/${repo}.git`, token: t })),

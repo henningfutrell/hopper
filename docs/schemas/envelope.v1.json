@@ -92,7 +92,9 @@
         "source.intake_migrated",
         "source.issues_assigned",
         "source.request_approved",
+        "source.request_auto_approved",
         "intake.actors_changed",
+        "intake.auto_approval_changed",
         "job.origin_judged",
         "source.request_opened",
         "source.backburner_lifted",
@@ -191,6 +193,7 @@
         "vault.credential_asked",
         "vault.credential_given",
         "vault.agent_credential_given",
+        "vault.pod_credential_given",
         "vault.credential_declined",
         "vault.read_policy_set",
         "vault.sandbox_approvals_set",
@@ -301,6 +304,7 @@
         "landing_batch.canary_held",
         "landing_batch.canary_issue_filed",
         "landing_batch.canary_promoted",
+        "hopper.event_loop_stalled",
         "jev.mode_changed",
         "router.mode_changed"
       ]

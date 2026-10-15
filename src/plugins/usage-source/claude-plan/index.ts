@@ -11,6 +11,8 @@
 // (issue #174); a source stored with none reads the only machine there is, at each read (issue #442).
 // `signIn` (issue #1128, design.md "Tool sign-in") starts `claude auth login` on that machine, the same way, with its stdin open:
 // a person opens its URL, and the code the sign-in page shows goes to its stdin. claude keeps its own token there.
+// A lane pod keeps no sign-in of its own (issue #1287, design.md "The agent's sign-in in a lane pod"): its reads run with
+// the user's setup token, as its jobs do (`agentSignIn`), else the pod reads signed out and its jobs are held.
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -88,12 +90,14 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
       }
       return runCli(file, argv, { cwd: ctx.scratchDir, timeoutMs: TIMEOUT_MS, signal });
     };
-    /** On a client target, its client runs its own claude: `bin` names the hopper's, not the machine's. */
+    /** On a client target, its client runs its own claude: `bin` names the hopper's, not the machine's. A lane pod's with the user's token. */
     const runOnClient = async (id: string, args: string[]): Promise<CliRun> => {
       const t = ctx.client(id);
       if (!t) return { error: `machine ${id}: client ${id} is not dialled in` };
       try {
-        return await clientClaude(t, args, TIMEOUT_MS);
+        const signIn = (await ctx.agentSignIn?.(id)) ?? { none: true };
+        if ('refused' in signIn) return { error: `the agent credential: ${signIn.refused}` };
+        return await clientClaude(t, args, TIMEOUT_MS, 'value' in signIn ? signIn.value : undefined);
       } catch (e) {
         return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
       }

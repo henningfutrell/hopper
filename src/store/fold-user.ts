@@ -29,8 +29,9 @@ export function foldPluginsConfig(keep: unknown, from: unknown): unknown {
   return out;
 }
 
+/** A table's columns that take a value: a generated column (job-filter-columns.ts) is computed from the row, never copied. */
 const columnsOf = (db: Db, schema: string, table: string): string[] =>
-  db.all('SELECT column_name AS c FROM information_schema.columns WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position', schema, table)
+  db.all("SELECT column_name AS c FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND is_generated = 'NEVER' ORDER BY ordinal_position", schema, table)
     .map((r) => String(r.c));
 
 /** Move every row of `from`'s schema into `keep`'s; `from`'s schema is left as it was, for the caller to drop. */

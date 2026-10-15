@@ -6,6 +6,9 @@ import { isSharedSecret } from './vault.ts';
 /** The variable the claude CLI signs in with where its login is not on the machine (docs/deploy.md, issue #533). */
 export const AGENT_CREDENTIAL_VARIABLE = 'CLAUDE_CODE_OAUTH_TOKEN';
 
+/** The vault secret a job pod's agent signs in with unless the kubernetes executor names another (issue #1287). */
+export const POD_AGENT_CREDENTIAL = 'CLAUDE_TOKEN';
+
 /**
  * What `claude setup-token` prints: an OAuth access token good for a year, which no box renews. A token of a `/login`
  * (`~/.claude/.credentials.json`) is refused: its refresh token rotates, and one box renewing it signs every other out.

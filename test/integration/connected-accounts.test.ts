@@ -22,7 +22,8 @@
 //     Then its issues become jobs, and an issue of a repository not chosen does not
 //     And the choice is changed without disconnecting, and outlives a disconnect
 //   Scenario: the app installed on two accounts, one with chosen repositories: each with the repositories it reaches, every page of them
-//   Scenario: GitHub cannot say where the app is installed: the status says why and where to see it, never that it is not installed
+//   Scenario: GitHub cannot say where the app is installed: the status says why and where to see it, never that it is not installed;
+//     a load reads GitHub no more, and Refresh reads it again (issue #1250)
 //   Scenario: a job of the connected account runs with no GitHub token where its machine keeps no credential files (issue #652)
 //   Scenario: disconnect
 //     Then GitHub reads as not connected, its source says so, and no issue becomes a job
@@ -152,14 +153,19 @@ describe('a user connects their own GitHub', () => {
   it('says why, and where to see the installs, when GitHub cannot say where the app is installed (#263)', async () => {
     const f = await forges();
     const app = await start(f);
-    await connect(app, f.github, 'github', 'octo-user', await app.login());
+    const token = await app.login();
+    // Connecting reads where the app is installed: here GitHub cannot say.
     f.github.installationsDown = true;
+    await connect(app, f.github, 'github', 'octo-user', token);
     const connected = await account(app, 'github');
     expect(connected).toMatchObject({ state: 'connected', account: 'octo-user', configUrl: `${f.github.url}/settings/installations` });
     expect(connected).not.toHaveProperty('installations');
     expect(connected.state === 'connected' && connected.installationsError).toMatch(/^GitHub could not say where the app is installed: .+/);
+    // A load reads GitHub no more (issue #1250): Refresh reads it again.
     f.github.installationsDown = false;
-    const again = await account(app, 'github');
+    expect(await account(app, 'github')).toHaveProperty('installationsError');
+    expect((await app.ui('/ui/api/connected-accounts/refresh', { provider: 'github' }, { token })).status).toBe(200);
+    const again = await waitFor(async () => { const a = await account(app, 'github'); return a.state === 'connected' && a.installations ? a : undefined; }, { what: 'the installations read again' });
     expect(again).not.toHaveProperty('installationsError');
     expect(again.state === 'connected' && again.installations).toHaveLength(1);
   });

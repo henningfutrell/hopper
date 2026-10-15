@@ -10,9 +10,15 @@ import { DIRECT_JOB_TABLE } from './direct-jobs.ts';
 import { SEARCH_PENDING_TABLE } from './search-pending.ts';
 import { PROMOTION_TABLE } from './promotions.ts';
 import { GITHUB_LISTING_TABLES } from './github-listings.ts';
+import { SOURCE_CALLS_TABLE } from './source-calls.ts';
 import { OUTBOUND_SEND_TABLE } from './outbound-sends.ts';
+import { GITHUB_OUTBOX_TABLE } from './github-outbox.ts';
 import { workItemLedger } from './work-items.ts';
 import { rebuildWorkItems } from './work-items.ts';
+import { REPO_CHECKS_TABLE } from './repo-checks.ts';
+import { LAST_ACCOUNT_TABLE } from './last-accounts.ts';
+import { APP_INSTALLATIONS_TABLE } from './app-installations.ts';
+import { JOB_FILTER_COLUMNS } from './job-filter-columns.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -51,4 +57,24 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 60: The work-item ledger, rebuilt (issue #1232): each landing stage names its pull request, so an earlier part's
   // `promoted` no longer stands for the item's next merge. Rows only, a new field in each landing: the build before ignores it.
   (db) => { rebuildWorkItems(db); },
+  // 61: The call log (issue #1264): the calls each job source's sync passes made, a row per source and minute. A table only:
+  // the build before runs on it.
+  SOURCE_CALLS_TABLE,
+  // 62: The GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent. A table only: the build
+  // before runs on it, and sends what it left there no more — its rows wait for the next start of this build.
+  GITHUB_OUTBOX_TABLE,
+  // 63: Where each listing's next change read starts (issue #1276), apart from its rows. A nullable column only: the build
+  // before runs on it, and names its columns when it inserts.
+  'ALTER TABLE github_listings ADD COLUMN since TEXT',
+  // 64: The repositories' checks as last read (issue #1250): Sources answers from them, and a restart reads nothing again.
+  // A table only: the build before runs on it.
+  REPO_CHECKS_TABLE,
+  // 65: The last accounts (issue #1269): who each machine's agent tool was last read signed in as. A table only: the build before runs on it.
+  LAST_ACCOUNT_TABLE,
+  // 66: Where the hopper's app is installed, as last read (issue #1250): Sources shows it, and a restart reads nothing
+  // again. A table only: the build before runs on it.
+  APP_INSTALLATIONS_TABLE,
+  // 67: The fields job and failure lists filter on, as generated columns (issue #1154): a filtered list makes Postgres
+  // parse no body. Generated columns only: the build before names none of them, and Postgres keeps them at its writes too.
+  JOB_FILTER_COLUMNS,
 ];

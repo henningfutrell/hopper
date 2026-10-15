@@ -4,8 +4,9 @@ Everything the daemon keeps is in one Postgres database it is given — the only
 local file. Its secrets come from its runtime — environment variables or mounted secret files — and it
 stores none; its config is config records in that database, edited in the UI, with no config file
 (docs/design.md "Deployable"). It runs as a self-hosted service anywhere it can reach its database:
-containers from one compose file, systemd `--user` units on a host that also runs the jobs, or any
-platform that runs a container and hands it a managed Postgres. **Recommended: the published image,
+containers from one compose file, systemd `--user` units on a host that also runs the jobs, a Helm chart
+on Kubernetes ("On Kubernetes, with Helm"), or any platform that runs a container and hands it a managed
+Postgres. **Recommended: the published image,
 with Podman** ("In containers, with Podman"); the host install is the other way.
 
 ## What every deploy needs
@@ -14,7 +15,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
 | Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job holds no GitHub token: its `git` and GitHub steps go through the hopper, which uses the connected account's token (docs/design.md "Git through the hopper"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
-| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, never from a file or a volume: "The master key" below. |
+| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, or as a mounted Secret file (`HOPPER_MASTER_KEY_FILE`), never from a volume of the hopper's own: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
@@ -58,9 +59,11 @@ and give the receiver the new one. From then on the variable is not read: delete
 
 Every secret the hopper keeps is sealed under one key, the **master key**. The database keeps only its
 fingerprint (an HMAC of a fixed label under the key), never the key. The key comes from the launch, as the
-variable `HOPPER_MASTER_KEY`. It is never read from a file or a volume: a container is ephemeral, and a key
-kept beside it is lost with it. No KMS gives the master key: `HOPPER_KMS_URL` changes only the key of the vault's
-own secrets (`docs/design.md` "A KMS as the master key's source: not built").
+variable `HOPPER_MASTER_KEY`, or as the file `HOPPER_MASTER_KEY_FILE` names: a Secret the orchestrator mounts (in
+Kubernetes, "On Kubernetes, with Helm"). A key file named but not there stops the start. Never keep the key in a volume
+beside the container: a container is ephemeral, and a key kept beside it is lost with it. No KMS gives the master key:
+`HOPPER_KMS_URL` and `HOPPER_KMS_REGION` change only the key of the vault's own secrets (`docs/design.md` "A KMS as the
+master key's source: not built").
 
 **Keep the master key in a password manager.** Without it, a new container on the same database opens none
 of the secrets. Keep it apart from the database's backups: a backup with its key beside it holds every secret.
@@ -69,7 +72,8 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   once in the UI, to the hopper's admin (**Show the key (once)**). The key never goes to the log: the start log
   says only where the key came from and its fingerprint (`master key: made for this new hopper (generated),
   fingerprint <16 hex digits>`). The banner stays until the admin clicks **I saved it**. Then give the key at each launch:
-  - compose: give it in the environment compose starts with, never in a file (issue #894):
+  - compose: seal it to the host, so no start needs it from you again ("The master key sealed to the host" below);
+    or give it in the environment compose starts with, never in a file (issue #894):
     `read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY` (paste the key; nothing is shown), then
     `podman compose up -d --force-recreate --no-deps hopper`. A container keeps the key it was started with: give it
     again at each `up` that recreates the hopper;
@@ -78,21 +82,58 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   - any other runtime: set the variable `HOPPER_MASTER_KEY` in the container's or service's environment.
 - **A wrong key.** The hopper does not start: `the master key does not match this database`. Nothing in the
   database changes. Give the right key.
-- **No key, while the database keeps secrets.** The hopper starts **limited**. The log (`LIMITED`) and a
-  banner name the missing key by its fingerprint. Nothing is deleted. Nothing that needs a secret works: no
-  secret is stored or opened, and no new GitHub token is kept. Do not connect GitHub again: give the key and
-  restart.
+- **No key, while the database keeps secrets.** The hopper does not start (issue #1296; it never starts limited).
+  The error names the key it needs by its fingerprint: `the master key is missing: this database was set up with
+  the key of fingerprint <16 hex digits>`. Nothing in the database changes. Do not connect GitHub again: give the
+  key, or unseal it (`bash master-key.sh run …`), and start again.
 - **Moving from the old token key.** An install from before kept its key in the compose `secrets` volume
   (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, a host install reads
   `HOPPER_TOKEN_KEY`, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
   `HOPPER_MASTER_KEY`, and restart. The log then says the old key is not read and can be removed: delete the
   `HOPPER_TOKEN_KEY` line. The compose file no longer mounts the `secrets` volume or reads its `token_key`: save the key
   from the UI and give it at launch as `HOPPER_MASTER_KEY` **before** you update (the update refuses until then).
-  A compose install that updated without it starts limited, and nothing is lost: the key is still in the old volume.
+  A compose install that updated without it does not start, and nothing is lost: the key is still in the old volume.
   Read it once, give it at launch as `HOPPER_MASTER_KEY`, and recreate the hopper:
   `podman run --rm -v hopper_secrets:/s:ro docker.io/library/alpine:3 cat /s/token_key`. Once the hopper starts with
   the key, remove the old volume: `podman volume rm hopper_secrets` (with the stack stopped, or after
   `podman compose up -d --remove-orphans`).
+
+### The master key sealed to the host
+
+Issue #1296. The host keeps the key sealed, and each launch unseals it: a restart, an update or a recreate needs no
+key from you. No file holds the key in plaintext, and no log line holds it (the fingerprint only).
+`master-key.sh` is in every image. Save it beside `compose.yaml`, and run it in that folder:
+
+```sh
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+bash master-key.sh seal                    # paste the key from your password manager; nothing is shown
+bash master-key.sh status                  # sealed with systemd-creds (or kek), and it unseals on this host
+systemctl --user restart hopper-compose.service                 # each start: the key goes to compose only
+```
+
+- **How it seals.** With `systemd-creds --user` (systemd 256 and later; as root, `systemd-creds`): under the host's
+  TPM2 when it has one, else under the host's own credential key, in `hopper-master-key.cred`. Else with a
+  key-encryption key of this host, made once, mode 600, at `~/.config/hopper/master-key.kek` (never in the compose
+  folder or a volume), and openssl, in `hopper-master-key.enc`. `HOPPER_KEY_SEAL=systemd-creds` or `kek` picks one.
+  Neither file opens on another host.
+- **At launch.** The user service ("The user service" below) unseals it at each start. Without the service,
+  `bash master-key.sh run <command>` unseals the key and gives it to the command as
+  `HOPPER_MASTER_KEY`, for that process only. A sealed key that does not unseal stops it before the command runs. With
+  `HOPPER_MASTER_KEY` given and no key sealed here yet, it seals that key first: the first start with the key seals it.
+- **Update.** The update unseals it by itself when you give no key (`hopper update script | bash -s -- <image>`, in the
+  same folder), and puts in the new image's `master-key.sh`.
+- **A wrong or missing key.** The hopper does not start, and names the key it needs by its fingerprint. Seal the right
+  key again from your password manager: `bash master-key.sh seal`.
+- **Rotation.** `bash master-key.sh rotate` rotates the key of the running hopper and seals the new one in the same
+  step. Then restart the stack with it: `systemctl --user restart hopper-compose.service` (without the service:
+  `bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper`). While the key is sealed to the host, the UI's **Rotate the master key** is refused: it cannot seal the new key.
+- **Keep the key in a password manager too.** A new host, a new TPM or a lost key-encryption key opens nothing
+  sealed. Whoever runs as your user on this host can unseal the key, as the launch does.
+- **Host install** (systemd --user): seal it with `systemd-creds --user encrypt --name=hopper-master-key - <file>`, and
+  give it to the unit in a drop-in: `LoadCredentialEncrypted=hopper-master-key:<file>` and
+  `Environment=HOPPER_MASTER_KEY_FILE=%d/hopper-master-key`. Remove `HOPPER_MASTER_KEY` from `daemon.env`.
+- **Kubernetes.** The master key Secret, filled by the External Secrets Operator from an outside store ("On Kubernetes,
+  with Helm"). A Helm upgrade needs no key from you; a missing Secret stops the pod.
 
 **The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
 every log line goes through a mask that removes the key in any form. To see the key's status without the key:
@@ -106,6 +147,9 @@ anyone who can read that journal or a copy of it has the key. Search for the lin
 If either count is not 0, rotate the key now (below). Deleting the log lines is not enough: rotate.
 
 ### Rotating the master key
+
+**A key sealed to the host** (issue #1296): `bash master-key.sh rotate` in the compose folder, then
+`bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper` ("The master key sealed to the host").
 
 **With one command** (issue #659): the hopper's admin rotates the key from Settings → Vault → Master key → **Rotate the
 master key**, or from the operator CLI: `hopper master-key rotate` (in compose:
@@ -186,30 +230,36 @@ works the same — `docker compose` in place of `podman compose` everywhere belo
 
 ```sh
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml
-podman compose up -d
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+bash hopper-service.sh install            # the stack under hopper-compose.service ("The user service" below)
 ```
+
+With Docker, `docker compose up -d` in place of the last two lines: Docker's daemon keeps the port.
 
 Then open `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 There is no bootstrap login: a new hopper creates no user, no password and no login code (issue #238).
 
 **Save the master key now.** The first start makes the master key and shows it once, in the UI banner, to the admin
 (**Show the key (once)**). It is never in `podman compose logs hopper`: the log has only its fingerprint. Put it in
-your password manager. Then give it at launch, in the environment compose starts with (never in a file, issue #894), and
-recreate the hopper:
+your password manager. Then seal it to this host (never in a file, issue #894) and restart the stack through the
+service, which unseals it for compose at each start ("The master key sealed to the host" above):
 
 ```sh
-read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY    # paste the 64 hex digits; nothing is shown
-podman compose up -d --force-recreate --no-deps hopper
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+bash master-key.sh seal                            # paste the 64 hex digits; nothing is shown
+systemctl --user restart hopper-compose.service
 ```
 
-Without it, a new container on the same database is limited ("The master key" above). No volume or file holds it. A
-container keeps the key it was started with: give it again at each `up` that recreates the hopper.
+Without the service (Docker): `read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`, then `docker compose up -d
+--force-recreate --no-deps hopper`. Without it, a new container on the same database does not start ("The master key"
+above). No volume or file holds it in plaintext. A container keeps the key it was started with: give it again at each
+`up` that recreates the hopper.
 
 | service | |
 |---|---|
 | `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. Before it starts, it makes a random database password and the database URL from it, and OpenFGA's and the vault container's preshared keys, in `runtime-secrets`, and sets the password again once it takes connections. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
 | `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `runtime-secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
-| `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. Nothing depends on it ("Access: OpenFGA" below). |
+| `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. The update removes its container once it exited 0 (issue #1247). Nothing depends on it ("Access: OpenFGA" below). |
 | `openfga` | OpenFGA, which access asks before every credential a job is given; on no host port, behind a preshared key `postgres` makes. |
 
 No secret is in a persistent volume (issue #659). `runtime-secrets` is in memory (tmpfs): the services share it while
@@ -264,9 +314,7 @@ is only in the hopper's environment, given at launch.
   that mount too, or that range in `HOPPER_LAN_PEERS`.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
-  nothing starts them after a reboot by itself: `systemctl --user enable podman-restart.service` (it
-  starts every container whose restart policy is `always` or `unless-stopped`) and
-  `sudo loginctl enable-linger "$USER"`, once.
+  nothing starts them after a reboot by itself: the user service does, with linger on ("The user service" below).
 - **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
@@ -286,10 +334,11 @@ is only in the hopper's environment, given at launch.
     ```
 
     In order, it:
-    1. **Takes the master key** from `HOPPER_MASTER_KEY` in its environment, else asks for it on the terminal (paste
+    1. **Takes the master key** from `HOPPER_MASTER_KEY` in its environment, else unseals the key sealed to this host
+       (`master-key.sh` and its sealed key beside `compose.yaml`, issue #1296), else asks for it on the terminal (paste
        it; nothing is shown). Without it, or with a value that is no master key, it stops before it changes anything,
-       so the stack never comes back limited. It reads the key from nowhere else: not from a file, and not from the
-       running container (issue #970). An update with no person (an agent, a scheduled task; issue #1013) gives the key
+       so the hopper never fails to start for want of it. It reads the key from nowhere else: not from a plaintext
+       file, and not from the running container (issue #970). An update with no person (an agent, a scheduled task; issue #1013) gives the key
        from a secret manager: `export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`. The KMS (`kms` profile)
        wraps only the vault's data key: the master key is required with it too.
     2. **Finds the compose tool that started the stack** and uses it with the project `hopper` (`-p hopper`): podman-compose
@@ -303,14 +352,24 @@ is only in the hopper's environment, given at launch.
        hopper; when it is off, the update goes on without it and says the line that turns it on (`systemctl --user
        enable --now podman.socket`). A `compose.override.yaml` that is the old `compose.sandboxes.yaml` goes to
        `compose.override.yaml.bak` ("Sandbox boxes the hopper starts" below).
+       **First it checks the new `compose.yaml` with your `compose.override.yaml`** as compose merges them (issue #1246,
+       `hopper update check`): a target mounted twice or a host port published twice makes `up -d` fail, so the update
+       stops before it changes anything, and says the file, the service, the key and the fix
+       (`conflict: compose.override.yaml: services.hopper.volumes: /run/podman/podman.sock: …`). When the override entry
+       only repeats what `compose.yaml` gives now, the update asks to remove it (a backup stays as
+       `compose.override.yaml.bak`); an update with no person removes it only with `HOPPER_UPDATE_FIX_OVERRIDE=1`. An
+       override setting that gives another value than one `compose.yaml` fixes is a warning: the override's value wins.
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
-       data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image. Every container is made again on the new
+       data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image; when `hopper-compose.service` owns the stack
+       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
        `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
-       the old `compose.yaml` back and starts the old stack again.
+       the old `compose.yaml` and `compose.override.yaml` back, points the image tag the old file names at the image
+       the hopper ran before (the pull moved it), and starts the old stack again. When the pull fails, the old files go
+       back and the stack that runs is not touched.
     6. **Checks the result**: the hopper's container runs the image pulled (the image ids match), answers `/api/health`
        (it waits up to `HOPPER_UPDATE_WAIT` seconds, 180 by default, and shows the last log lines when the container
-       stops: a wrong master key stops it), has its master key (`hopper master-key status` is not `missing`), and the
+       stops: a wrong master key stops it), answers on its published port from the host (issue #1320), has its master key (`hopper master-key status` is not `missing`), and the
        stack has no drift (`hopper update drift` exits 0). Then it says `hopper update: done: …` with the image and the
        key's fingerprint, and exits 0. When a check fails, it says which and exits 1.
     7. **Removes the older hopper images** (issue #1120), once every check passed: each image labelled
@@ -340,7 +399,11 @@ is only in the hopper's environment, given at launch.
     writes no file itself. When the old file has what the new one cannot name — a setting it does not name, a service of
     the install's own with the volumes it names, a host folder mounted into a service, a key of a service the hopper
     never sets, the install's own project name — it prints that part on stderr, to add to `compose.override.yaml`. A
-    service the hopper once shipped and no longer does is dropped, and said so.
+    service the hopper once shipped and no longer does is dropped, and said so. With `--with-override`, stdin is
+    `compose.yaml`, a line `#--- hopper update: compose.override.yaml`, then the override: carry prints nothing and
+    exits 4 while the two conflict. `hopper update check` answers the conflicts alone, as JSON (`{ok, conflicts: [{kind,
+    file, service, key, value, detail, resolution, refuse, fixable}]}`), exit 4 when one stops the update; `hopper update
+    fix-override` prints the override without the entries `compose.yaml` gives itself.
 
     **To go back:** run the update with the image you ran before (`ghcr.io/henningfutrell/hopper:sha-<commit>`;
     `compose.yaml.bak` names it). A migration leaves a store the build before still runs on. To restore the database
@@ -370,6 +433,10 @@ is only in the hopper's environment, given at launch.
     a LAN install's `0.0.0.0` as `${HOPPER_BIND:-0.0.0.0}` in `compose.yaml`, prints its own services and mounts (a
     container socket for boxes, say) to add to `compose.override.yaml`, adds OpenFGA, and keeps the old file as
     `compose.yaml.bak`. Until then the stack banner names the gaps.
+  - **The `openfga-migrate` one-shot** (issue #1247): its container stays after it exits, and podman-compose's `down`
+    can leave it, so a plain `up -d` exits 125 (the container name is in use). The update removes a leftover one before
+    it starts the stack (a failed one shows its last log lines first), waits until the new run exits 0, then removes its
+    container. A run that still exits non-zero when the health wait ends fails the update, with its last log lines.
   - **Older images go with the update** (issue #1120, step 7 above): repeated upgrades do not pile up images. By hand,
     `podman image prune -f --filter label=org.opencontainers.image.title=hopper` removes the untagged ones.
   - **When.** Recreating the container is a restart. A job whose machine reattaches (a herdr pane on an
@@ -400,6 +467,47 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 **From the earlier container deploy** (`deploy/compose.yaml --profile container`, removed): its database
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
+
+### The user service
+
+Issue #1320. With rootless Podman, the published port is served by a `rootlessport` process that belongs to whoever
+started the hopper's container. Started from a terminal, or by an agent that recreates the hopper, that process lives
+under the caller: when the caller exits, the port goes away while the container still shows `Up`. So the stack runs
+under a user service of its own. `hopper-service.sh` is in every image. Save it beside `compose.yaml` and
+`master-key.sh`, and run it in that folder:
+
+```sh
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper service script > hopper-service.sh
+bash hopper-service.sh install       # write the units, turn on linger, start the stack through the service
+bash hopper-service.sh uninstall     # stop the stack and remove the units; the data stays
+```
+
+- **`hopper-compose.service`** (in `~/.config/systemd/user`, `Type=oneshot`, `RemainAfterExit=yes`) owns the stack: the
+  containers' `conmon` and `rootlessport` processes are in its cgroup. Its start takes the stack down and starts it
+  again, with the master key sealed to this host (`bash master-key.sh run …`, "The master key sealed to the host"), for
+  compose only: never a file or a volume. With no key sealed here, it starts the stack with no key: a new hopper makes
+  one; a hopper that keeps secrets refuses to start and names the key it needs. Its stop takes the stack down; the
+  volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at the install.
+- **`hopper-compose-check.timer`** runs `hopper-compose-check.service` every minute. It reads the port the hopper's
+  container publishes (`podman port`) and connects to it from the host (loopback for `0.0.0.0`). When the container runs
+  and the port does not answer, twice, 10 seconds apart (`HOPPER_SERVICE_RETRY`), it restarts `hopper-compose.service`.
+  It does nothing while the service is stopped or the container does not run: `restart: unless-stopped` and the
+  service's own start cover those.
+- **Linger.** The install turns it on (`loginctl enable-linger`), so the user's manager, and the stack with it, starts
+  at boot and stays after the last logout. When the user may not, it says the line: `sudo loginctl enable-linger
+  "$USER"`. `podman-restart.service` is not needed: the service's start makes every container again.
+- **Settings.** The settings `compose.yaml` names (`HOPPER_PORT`, `HOPPER_BIND`, `COMPOSE_PROFILES`, …) that are set
+  where the install runs go into the unit as `Environment=` lines, and `HOPPER_PODMAN_SOCKET_HOST` when `podman.socket`
+  is on. Never a secret (a name with `KEY`, `TOKEN`, `SECRET` or `PASSWORD`), and never `HOPPER_IMAGE`: the update
+  writes the image into `compose.yaml`. Run the install again to change them.
+- **Restarts and updates go through it.** Restart: `systemctl --user restart hopper-compose.service`, never `podman
+  compose up` by hand. The update ("Upgrade" below) restarts the stack through the service when it owns the stack, and
+  then checks the port from the host too. It needs the key sealed here, and stops before it changes anything when none
+  is, or when the key given is another. It puts in the new image's `hopper-service.sh`. On Podman with no service, it
+  says the line that installs one.
+- **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service`.
+- **Docker and Kubernetes.** Not needed and not used: Docker's daemon serves the port, and on Kubernetes ("On
+  Kubernetes, with Helm") the cluster does.
 
 ### Keep a hopper in WSL running
 
@@ -595,6 +703,98 @@ fallback:
 4. `podman compose up -d`. The next probe finds `http://host.containers.internal:4790`, and the seat's jobs use it.
 
 Publish on that address only, never on every interface: the port then stays off the LAN.
+
+## On Kubernetes, with Helm
+
+The chart `deploy/helm/hopper` (issue #1281) brings up in a cluster what `compose.yaml` brings up with Podman: the hopper,
+its Postgres, OpenFGA and Solr. It needs no container runtime socket, no host path and no settings. Every object runs as
+a non-root user, with no privilege and no capability.
+
+```sh
+helm install hopper deploy/helm/hopper --namespace hopper --create-namespace
+kubectl --namespace hopper port-forward svc/hopper 4790      # then open http://localhost:4790/
+```
+
+Sign in with GitHub: the first person to do so is the admin. Then give the master key ("The master key"). The first start
+makes one and shows it once, in the UI. Keep it in a password manager, then put it in a Secret and restart the hopper:
+
+```sh
+read -rs KEY && kubectl --namespace hopper create secret generic hopper-master-key --from-literal=master-key="$KEY"
+kubectl --namespace hopper rollout restart deployment/hopper
+```
+
+To give a key from the first start, make that Secret before `helm install`. A rotation puts the old key under
+`previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`).
+
+**The master key from a Secret you manage** (issue #1288). Set `masterKey.existingSecret` to a Secret with the key
+under `master-key`. The chart mounts it as files, and the hopper reads `HOPPER_MASTER_KEY_FILE`. A start with no
+`master-key` file there is refused: the pod restarts and its log says the file is missing. Nothing is in an `.env` file.
+
+- **From an outside store**, with the External Secrets Operator (https://external-secrets.io) already in the cluster:
+  set `masterKey.externalSecret.enabled=true`, `masterKey.externalSecret.secretStoreRef.name` (and `.kind`, default
+  `ClusterSecretStore`) and `masterKey.externalSecret.masterKey.key` (and `.property` for a map). The chart makes an
+  `ExternalSecret` that fills the Secret (`masterKey.existingSecret`, else `hopper-master-key`) and mounts it as above.
+- **Rotate** in the Secret, or in the outside store: put the new key under `master-key` and the old one under
+  `previous` (`masterKey.externalSecret.previous.key`), then `kubectl --namespace hopper rollout restart
+  deployment/hopper`. At start every secret the old key sealed is sealed again under the new one, and still opens. Once
+  the log says so, remove `previous`. The hopper reads the files only at start: a Secret change needs the restart.
+
+**AWS KMS for the vault** (issue #1288, "The local KMS"). On EKS, the vault's data key can be wrapped by AWS KMS. Then the
+vault's secrets open with no master key. Make the KMS key and an IAM role with `kms:GenerateDataKey` and `kms:Decrypt`
+on it, and let the hopper's service account take the role (IRSA or EKS Pod Identity):
+
+```sh
+helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values \
+  --set kms.aws.region=eu-west-1 --set kms.aws.key=alias/hopper-vault \
+  --set serviceAccount.create=true \
+  --set 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::<account>:role/<role>'
+```
+
+The hopper never makes a key in AWS: `kms.aws.key` is required. `kms.aws.endpoint` names a VPC endpoint. The hopper's
+own secrets (webhook secrets, the GitHub connection, sign-in realms' secrets) stay under the master key.
+
+| value | |
+|---|---|
+| `image.tag` | the update channel: `latest` (the default, the same image as `stable`), `stable`, `beta`, `canary` or `dev` |
+| `ingress.enabled`, `ingress.host`, `ingress.className`, `ingress.tlsSecretName`, `ingress.annotations` | publish the UI on a host name through the cluster's ingress controller. That host is the public URL (`HOPPER_PUBLIC_URL`, `https://<host>` unless `ingress.publicUrl`): a request through it is a public request |
+| `lanPeers` | the pod network the hopper takes LAN requests from (the ingress controller, the kubelet). Default: the private ranges, as compose |
+| `solr.enabled` | `false`: no Solr, and no search |
+| `networkPolicy.enabled` | NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. Default on; they take effect where the network plugin enforces them |
+| `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above) |
+| `kms.aws.region`, `kms.aws.key`, `kms.aws.endpoint` | AWS KMS wraps the vault's data key (above) |
+| `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
+| `extraEnv` | more environment for the hopper ("What every deploy needs") |
+| `sandbox.enabled` | sandbox boxes the hopper starts as pods in the release's namespace ("Sandbox boxes on Kubernetes"). Default off |
+| `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
+| `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
+
+The chart makes the database password and OpenFGA's preshared key at the first install, in the Secret `hopper-runtime`,
+and the lane pool key in the Secret `hopper-lane-pool`, and keeps them at each upgrade. An uninstall keeps those Secrets and the home volume (`helm.sh/resource-policy: keep`), and
+the StatefulSets' volumes stay too: the database keeps the password it was made with. Remove them by hand only together.
+
+Update: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values` with the chart of the new version.
+The hopper stops before the new one starts (one writer of its database).
+
+In the cluster the hopper updates by `helm upgrade` and checks drift on its image, not on a compose stack (issue #1285):
+its update notice gives the command. Not in the chart yet: remote access (`tunnel`, `cloudflared`: use the Ingress) and
+the optional services.
+
+### Check the chart on kind
+
+`scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
+alone brings up the hopper; its health answers ok in its pod; and no pod anywhere in the cluster
+has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose. Then it
+deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
+Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
+
+```sh
+node scripts/kind-check.ts --tag dev          # --cluster NAME, --set key=value, --keep
+```
+
+A pull request that changes the chart runs it (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
+runs to a merged pull request needs a GitHub sign-in, which no check has: with `--keep`, port-forward the hopper
+(`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in with GitHub, add a
+`kubernetes-cluster` machine for the kubernetes executor (`docs/design.md` "Job pods on Kubernetes"), and queue a job on an issue of a test repository.
 
 ## Access: OpenFGA
 
@@ -834,10 +1034,10 @@ recreates `postgres` once.
 - The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").
 - When the vault container is not running, the hopper still works. Settings → Vault says the vault is not reachable,
   a change answers 503, and a box's ask is refused.
-- Its key: the master key, or the KMS's data key when `HOPPER_KMS_URL` is set. `HOPPER_MASTER_KEY_PREVIOUS` given at launch
+- Its key: the master key, or the KMS's data key when `HOPPER_KMS_URL` or `HOPPER_KMS_REGION` is set. `HOPPER_MASTER_KEY_PREVIOUS` given at launch
   reaches it too (key rotation, "Rotating the master key").
 - **Elsewhere** (not compose): run `node src/vault/main.ts` with `HOPPER_DATABASE_URL`, `HOPPER_MASTER_KEY` and
-  `HOPPER_VAULT_KEY` (each also `_FILE`), and optionally `HOPPER_KMS_URL`; `HOPPER_VAULT_PORT` moves its port (4791).
+  `HOPPER_VAULT_KEY` (each also `_FILE`), and optionally `HOPPER_KMS_URL` or `HOPPER_KMS_REGION`; `HOPPER_VAULT_PORT` moves its port (4791).
   Give the hopper `HOPPER_VAULT_URL` and the same `HOPPER_VAULT_KEY`. Keep the port off every network but the hopper's.
 
 ### The local KMS (`kms`)
@@ -854,7 +1054,8 @@ first ask. Its keys are in the `kms` volume.
   up with the database.
 - When the KMS is down, the vault stores and delivers nothing and Settings → Vault says why. The vault container asks
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
-- local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
+- local-kms checks no credentials. For AWS KMS itself, set `HOPPER_KMS_REGION` (and `HOPPER_KMS_KEY`, a key you made:
+  the hopper makes none in AWS); the vault uses AWS's own credential chain. In a cluster: "On Kubernetes, with Helm".
 
 ### Remote access (the `tunnel` and `cloudflared` services)
 
@@ -1086,6 +1287,101 @@ again. A box with tools on a machine runs a tools image the hopper builds in tha
 client, once per base image and set of tools; the client builds only a tools image, from the hopper's one
 Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
 runs on it.
+
+### Sandbox boxes on Kubernetes
+
+A hopper in a cluster starts sandbox boxes as pods, with no container socket anywhere (issue #1286). Set
+`HOPPER_SANDBOX_RUNTIME=kubernetes`. The hopper uses the Kubernetes API with its pod's service account (outside a
+cluster: the kubeconfig).
+
+| Setting | What it does |
+|---|---|
+| `HOPPER_KUBERNETES_NAMESPACE` | The namespace the boxes start in. Unset: the hopper's own namespace. |
+| `HOPPER_KUBERNETES_HOPPER_LABELS` | The labels of the hopper's pods, `key=value`, comma-separated. Default `app.kubernetes.io/name=hopper`. A box may reach only pods with these labels in the hopper's namespace, on the hopper's port. |
+| `HOPPER_LAN_NAMES` | Its first name is the address a box dials: the name of the hopper's Service in that namespace (for example `hopper`). The box's start check proves it from inside the box. |
+
+**With the Helm chart**, set `sandbox.enabled=true`. The chart sets these settings, makes the Role below in the
+release's namespace and binds it to the hopper's service account (one it makes, `hopper`, unless `serviceAccount.name`
+names one). Only the hopper's pod gets the account's token. The boxes start in the release's namespace, and a box may
+reach the hopper's pod alone, by its three labels (`app.kubernetes.io/name`, `instance` and `component`), not Postgres,
+OpenFGA or Solr:
+
+```sh
+helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set sandbox.enabled=true
+```
+
+The service account needs this Role in the boxes' namespace (and nothing in any other):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: hopper-sandbox }
+rules:
+  - { apiGroups: [""], resources: [pods], verbs: [get, list, create, delete] }
+  - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+  - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+  - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [create, delete] }
+  - { apiGroups: [networking.k8s.io], resources: [networkpolicies], verbs: [create, update] }
+```
+
+What is different from Podman:
+
+- **A box is a pod** with the sandbox flags as its security context: every capability dropped, no privilege
+  escalation, a read-only root, `/tmp` an empty dir, no service account token, no service links, nothing of the node.
+  It runs as uid and gid 1000 (the box image's `agent` user), whatever user its image names, and the kubelet refuses
+  root. Its home is a PersistentVolumeClaim `<name>-home` of 5 GiB, of the cluster's default storage class.
+- **Egress.** Before each pod, the hopper applies one NetworkPolicy, `hopper-sandbox`, to every pod it starts: no
+  ingress, and egress only to DNS (port 53), the hopper's pods on its port, and public addresses. A box cannot reach
+  any other pod, Service or private address of the cluster or your network (`10.0.0.0/8`, `172.16.0.0/12`,
+  `192.168.0.0/16`, `100.64.0.0/10`, link-local and loopback). Your cluster's network plugin must enforce
+  NetworkPolicy, or the policy does nothing. A box still reaches any public host: an allowlist of hosts per template
+  is not built yet.
+- **No image is built.** A box with tools runs the tools image CI publishes for its box image, with every tool:
+  `ghcr.io/henningfutrell/hopper:box-<agent>-tools`, or `…-tools-read-only` for a read-only template's boxes. A
+  template with its own image and tools cannot start a box here; one with no tools can. The node pulls each image.
+- **Steps and copies** go through the API's exec: the box image needs `tar` for a copy (the published one has it).
+
+Leftover box builds are not removed here: the hopper builds none.
+
+## Lane pods on Kubernetes
+
+Lane pods are machines that run as a StatefulSet and dial out to the hopper (design.md "Lane pods", issue #1284). Each
+pod is one machine under its pod's name, a machine of the first person who signed in. No sshd, no inbound port, no
+Service for the pods. The Helm chart ("On Kubernetes, with Helm") carries them: the StatefulSet `hopper-lanes`, and the
+lane pool key, which the chart makes at the first install in the Secret `hopper-lane-pool` and gives to the hopper and
+to the pods' join step only.
+
+1. Sign in to the hopper once. Until then, a pod's join is refused, and the pod tries again every 10 seconds.
+2. Set how many: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values --set lanes.replicas=3`.
+3. Keep the agent's sign-in in your vault once: run `claude setup-token` on any machine, sign in, and set what it prints
+   (`sk-ant-oat…`) as the vault secret `CLAUDE_TOKEN` in Settings → Vault. Each job on a lane pod starts signed in with
+   it, also after a pod starts again with a new volume. A `claude-plan` usage source that names a lane pod reads it with
+   the token too. The token is not kept in a pod's volume, its spec or a ConfigMap.
+   Without it, sign each pod in once (`kubectl --namespace hopper exec -it hopper-lanes-0 -c lane -- claude`): that
+   sign-in stays in the pod's volume only.
+
+| value | |
+|---|---|
+| `lanes.replicas` | how many lane pods: one machine each. Default `0`: none |
+| `lanes.drainSeconds` | how long a pod told to stop waits for the jobs on it to end (`terminationGracePeriodSeconds`). Default `3600` |
+| `lanes.size`, `lanes.storageClass` | each pod's volume: its link key and the jobs' work trees (the agent's sign-in only without `CLAUDE_TOKEN`). Default `20Gi` |
+| `lanes.agent`, `lanes.imageTag` | the box image: `box-<agent>` for the `latest` and `stable` channels, `box-<agent>-<channel>` for the others, unless `lanes.imageTag` names another tag |
+| `lanes.resources`, `lanes.nodeSelector`, `lanes.tolerations`, `lanes.affinity` | where the pods run, and with what |
+
+What to expect:
+
+- Scale 1 → 3: Machines shows `hopper-lanes-0`, `-1` and `-2`, online, each taking jobs.
+- Scale down: each pod that goes is *leaving* on Machines — no new job, its jobs run to their end — then retired, gone
+  from Machines. Its volume goes with it. A job still on it at the end of `lanes.drainSeconds` is a job on a machine
+  that went away.
+- A pod restarted (a rollout, a node drained) leaves the same way, then joins again as the same machine.
+- Machines shows each pod's CPU and memory as its limits (`lanes.resources`). With no limit set, a pod may use the whole
+  node, and Machines shows the node's. The chart passes the limits as `HOPPER_POD_CPU_LIMIT` and
+  `HOPPER_POD_MEMORY_LIMIT` (design.md "Host-only parts in a cluster").
+- No view asks for a Podman or Docker socket, systemd or WSL in a pod: a cluster install has none of them.
+
+Without the chart, give the same: a Secret with the key (`openssl rand -hex 32`), mounted into the hopper's pod with
+`HOPPER_LANE_POOL_KEY_FILE` naming its file, and a StatefulSet like `deploy/helm/hopper/templates/lanes.yaml`.
 
 ## Vault backends (optional)
 

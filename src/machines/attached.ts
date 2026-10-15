@@ -22,7 +22,7 @@ import { HerdrError, createHerdrCliClient } from '../executors/herdr/index.ts';
 import { herdrMismatch, readHerdrStatus } from './herdr-version.ts';
 import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
-import { isAddressLine, addressCommand, networkFix, readAddress } from './hopper-address.ts';
+import { isAddressLine, addressCommand, networkFix, readAddress, type WslAddress } from './hopper-address.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -39,7 +39,7 @@ export interface MachineProbe {
   disk?: DiskReading;
   /** Its CPU, memory and swap (issue #560). Absent: not read. */
   resources?: ResourceReading;
-  /** The infra credential folders its home holds (issue #1128 part 7). Absent: not read. */
+  /** The infra credentials its job user holds (issues #1128 part 7, #1248): any makes it not ready. Absent: not read. */
   infraCredentials?: string[];
   /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
   workTreeProblem?: string;
@@ -61,6 +61,8 @@ interface AttachedOptions {
   templateWait?: (template: string) => string | undefined;
   /** The hopper's network (issue #711): a machine off it is given the command that joins it. Absent or `host`: none. */
   network?: string;
+  /** Whether the client target holding this machine key is leaving (issue #1284): it takes no new job. Read at every list(). */
+  leaving?: (key: string) => boolean;
 }
 
 /** One attached machine. `machine()` is read on every list(), so lanes, executors and label apply at once. */
@@ -137,7 +139,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
         const name = m.client.template;
         // Fails closed: with no way to read the template's approval, its box takes no job.
         const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
-        return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
+        return [{ ...base, client: { ...clientRelease }, ...(o.leaving?.(m.client.key) ? { leaving: true as const } : {}), ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
       }
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session, ...herdr } } : {}), ...(m.herdr && herdrProblem ? { herdrProblem } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem, ...withFix(networkFix(m.ssh, o.network)) } : {}) }];
     },
@@ -181,21 +183,25 @@ export type HerdrProbe = Pick<MachineProbe, 'online' | 'herdr' | 'herdrProblem'>
  * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). In the same
  * call its work tree (the jobs directory when it names none) is made there, and what is wrong with it said
  * (issue #361): the home or above it, or a directory that cannot be made or written. Rejects when ssh
- * fails or the answer is not an absolute home. With it, the disk the home is on (issue #401), when its df says,
- * its CPU, memory and swap (issue #560), when it has /proc, and the infra credential folders its home holds (issue #1128 part 7).
+ * fails or the answer is not an absolute home. A session with no HOME (seen on a WSL machine, issue #1154) takes its
+ * user's home from the user database; the home comes on a line of its own (`hopper-home`), so a line a shell's startup
+ * file prints first is not taken for it. With it, the disk the home is on (issue #401), when its df says,
+ * its CPU, memory and swap (issue #560), when it has /proc, and the infra credentials its job user holds (issues #1128 part 7, #1248).
  */
 export function probeSsh(o: {
   target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string;
   /** The hopper's addresses (issue #698): which one the machine reaches is asked in the same call. Absent: not asked. */
   hopperUrls?: readonly string[];
+  /** The address a WSL machine on the hopper's computer reaches it at (issue #1248 part 4): asked after the others, only there. */
+  wsl?: WslAddress;
 }): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; infraCredentials?: string[]; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
   const workTree = o.workTree ?? DEFAULT_WORK_TREE;
   // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
   const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
-  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${INFRA_CREDENTIALS_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
+  const command = `${HOME_COMMAND}; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${INFRA_CREDENTIALS_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls, o.wsl)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
     + ` else printf '%s\\n' "$out"; echo ${WORK_TREE_UNUSABLE}; fi`;
   // Each address asked takes at most 3 s more.
-  const timeoutMs = o.timeoutMs ?? 15000 + 3500 * (o.hopperUrls?.length ?? 0);
+  const timeoutMs = o.timeoutMs ?? 15000 + 3500 * ((o.hopperUrls?.length ?? 0) + (o.wsl ? 1 : 0));
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
@@ -208,16 +214,16 @@ export function probeSsh(o: {
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
       if (!e) {
         const lines = stdout.trim().split('\n');
-        const home = lines[0] ?? '';
-        if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
+        const home = lines.find((l) => l.startsWith(HOME_LINE))?.slice(HOME_LINE.length) ?? '';
+        if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}${home ? '' : ' (its session has no HOME, and its user database names none)'}`));
         const disk = readDf(stdout);
         const resources = readResources(stdout);
         const infraCredentials = readInfraCredentials(stdout);
-        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls) : {}) };
+        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls, o.wsl?.url) : {}) };
         const refused = resolveWorkTree(workTree, home);
         if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
         if (lines.at(-1) === WORK_TREE_OK) return resolve(found);
-        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ') && !isInfraCredentialsLine(l) && !isAddressLine(l)).join(' ').trim() || 'no answer';
+        const said = lines.slice(0, -1).filter((l) => !l.startsWith(HOME_LINE) && !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ') && !isInfraCredentialsLine(l) && !isAddressLine(l)).join(' ').trim() || 'no answer';
         return resolve({ ...found, workTreeProblem: `its work tree ${workTree} cannot be made: ${said}` });
       }
       if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${timeoutMs} ms`));
@@ -225,6 +231,11 @@ export function probeSsh(o: {
     });
   });
 }
+
+/** The line the home is printed on. */
+const HOME_LINE = 'hopper-home ';
+/** The machine's home: HOME, else its user's from the user database (a session with no HOME, issue #1154), set for the rest of the command. */
+const HOME_COMMAND = `[ -n "$HOME" ] || HOME=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6); printf '${HOME_LINE}%s\\n' "$HOME"`;
 
 /** What the work tree check prints last: made and writable, or not. */
 const WORK_TREE_OK = 'hopper-work-tree-ok';

@@ -3,8 +3,9 @@
 // found when it opened the hopper's address check at localhost, else at 127.0.0.1 (`--link`, the URL that answered, else
 // the localhost one: `--url` names the daemon, as for every
 // operator action). One POST /ui/api/windows-link, an admin's. The loop keeps no credential:
-// the CLI uses the container's.
+// the CLI uses the container's. Refused in a Kubernetes pod (issue #1289): no keep-alive loop on Windows runs beside one.
 import { parseArgs } from 'node:util';
+import { inCluster, type Env } from './client/cluster.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 import { WINDOWS_LINK_URL } from './domain/machine-history.ts';
 import { MAX_WINDOWS_LINK_ERROR, NETWORKING_MODE } from './http/ui/windows-link.ts';
@@ -14,7 +15,8 @@ export const WINDOWS_LINK_USAGE = `  hopper windows-link report --link <url> (--
 
 const USAGE = 'windows-link report --link <url> (--status <n> | --error <text>) [--mode <mode>]';
 
-export function windowsLinkCall(args: string[]): Call {
+export function windowsLinkCall(args: string[], env: Env = process.env): Call {
+  if (inCluster(env)) throw new OperatorRefusal('this hopper runs in a Kubernetes pod: it has no Windows link to report');
   let parsed;
   try {
     parsed = parseArgs({ args, allowPositionals: true, options: { link: { type: 'string' }, status: { type: 'string' }, error: { type: 'string' }, mode: { type: 'string' } } });

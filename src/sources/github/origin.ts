@@ -30,15 +30,17 @@ export const AWAITS_BATCH = 'done: merged into the landing branch; its batch run
 export const PROMOTED_CLOSED = 'done: promoted to the tested branch with its batch; the issue is closed';
 /** The same, when its close failed: asked again at the next sync. */
 export const PROMOTED_OPEN = 'done: promoted to the tested branch with its batch; closing the issue failed, asked again at the next sync';
+/** Why a card is a request when Access cannot be asked: no auto-approval holds then (issue #1268). */
+export const UNCHECKED = 'trusted actors cannot be checked';
 /** A request card a person declined (issue #1035). */
 export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
 
-type Act = Omit<OriginActor, 'trusted'>;
+export type Act = Omit<OriginActor, 'trusted'>;
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /** One act from its newest event. `own`: this hopper did it for the user (Assign to me), so it is the user's act. */
-function actOf(role: OriginRole, e: IssueEvent | undefined, own: { login: string } | undefined): Act {
+export function actOf(role: OriginRole, e: IssueEvent | undefined, own: { login: string } | undefined): Act {
   if (!e) return { role };
   const bot = e.actorType === 'Bot' || isBotLogin(e.actor);
   if (own && (bot || e.viaApp)) return { role, login: own.login };
@@ -82,7 +84,7 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
     const why = [
       ...actors.map(untrustedReason).filter((r): r is string => r !== undefined),
       ...(FILED_BY_JOB.test(i.body) ? [FILED_BY_JOB_REASON] : []),
-      ...(unavailable ? [`trusted actors cannot be checked: ${unavailable.reason}`] : []),
+      ...(unavailable ? [`${UNCHECKED}: ${unavailable.reason}`] : []),
     ];
     const approved = trust.approvedText(i.url);
     const hash = requestHash(i);

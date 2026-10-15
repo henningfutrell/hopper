@@ -3,6 +3,7 @@
 import type { ItemComment, ItemEdit, ItemText } from './item-snapshots.ts';
 import type { Parts } from './types.ts';
 import type { JobOrigin } from './intake-origin.ts';
+import type { SetupProblem } from './sources.ts';
 
 /** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
 export interface SourceItem {
@@ -62,8 +63,20 @@ export interface SourceRef {
   withText?: (item: SourceItem, text: ItemText) => SourceItem;
 }
 
+/** A source that can lack the config it needs to run at all (issue #1243). */
+export interface HasSetup {
+  /**
+   * What the source lacks to run at all: required config not set, or set wrong. While it has one the sync loop runs no
+   * sync pass for it, unless jobs of its own still need checks or reports; its status is `needs-setup` with the problem.
+   * Read at each sync, so config completed later clears it at the next. Absent → always configured.
+   */
+  setupProblem?(): SetupProblem | undefined;
+}
+
 /** A source that runs each sync in one pass (issue #822, design.md "One read per sync pass"). */
 export interface RunsPasses {
   /** Run one sync pass: the source may ask its service once for what `run` reads twice. Absent: run as is. */
   pass?<T>(run: () => Promise<T>): Promise<T>;
+  /** The calls to its service its last pass made (issue #1264), for the call log. Absent: not counted. */
+  passCalls?(): number;
 }

@@ -4,7 +4,10 @@
 //   POST /client/join      a one-time join code (minted through an admin's UI session, or the operator CLI)
 //                          and the machine's key: the machine is added as a client target. The code is
 //                          what authorizes the write; it is spent by it. A machine on native Windows is
-//                          refused, the code not spent (issue #704).
+//                          refused, the code not spent (issue #704). Or the lane pool key (issue #1284), never
+//                          spent: a lane pod joins as the first user's machine, under its own name.
+//   POST /client/leave     a machine's say that it leaves (issue #1284), signed with its client token over its
+//                          user and machine key: it takes no new job; a lane pod with no job left is retired.
 //   GET  /client/connect   an HTTP/1.1 upgrade to `hopper-client/1`, signed with the client token: the
 //                          machine's link. Refused unless a client target holds the machine key and the
 //                          signature is its token's. Answered 101, the socket goes to the links.
@@ -20,12 +23,13 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CONNECT_PATH, JOIN_PATH, LINK_PROTOCOL, MACHINE_KEY_HEADER, USER_HEADER, unsupportedPlatform } from '../client/link.ts';
+import { CONNECT_PATH, JOIN_PATH, LEAVE_PATH, LINK_PROTOCOL, MACHINE_KEY_HEADER, USER_HEADER, unsupportedPlatform } from '../client/link.ts';
 import type { ClientRelease } from '../client/release.ts';
-import { REQUEST_HEADER, createNonceCache, nonceOf, verifyConnect, verifyVault } from '../client/signature.ts';
+import { REQUEST_HEADER, createNonceCache, nonceOf, verifyConnect, verifyLeave, verifyVault } from '../client/signature.ts';
 import { askOf, sealAnswer, VAULT_CONTENT_TYPE, VAULT_PATH } from '../client/vault.ts';
-import type { Clock, InstanceStore } from '../domain/ports.ts';
+import type { Clock, InstanceStore, JoinCodePlace } from '../domain/ports.ts';
 import { useJoinCode } from '../machines/join-code.ts';
+import { isLanePoolKey, LANE_POOL_USER } from '../machines/lane-pool.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, publicOriginOf, type Lan } from './reach.ts';
@@ -43,6 +47,8 @@ export interface ClientLinkOptions {
   release: ClientRelease;
   /** scripts/client-install.sh. */
   installScript: string;
+  /** The lane pool key (issue #1284), read at each join; undefined: this hopper has no lane pool. */
+  poolKey?: () => string | undefined;
 }
 
 const joinBody = z.strictObject({
@@ -72,14 +78,16 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     // Native Windows is refused before the code is spent (issue #704): the same line then joins from WSL.
     const unsupported = b.platform === undefined ? undefined : unsupportedPlatform(b.platform);
     if (unsupported) throw new HttpError(400, unsupported);
-    const taken = useJoinCode(o.instance, o.clock, b.code);
+    const pool = isLanePoolKey(o.poolKey?.(), b.code);
+    const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code);
     if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
-    const { userId, template, container } = taken;
+    const { userId, template, container, pod } = taken;
     const tenant = o.tenants.user(userId);
+    if (!tenant && pool) throw new HttpError(409, 'the lane pods are the machines of the first person to sign in, and nobody has signed in yet: sign in, and the pod joins at its next try');
     if (!tenant) throw new HttpError(404, `no user ${userId}`);
     // The template may have been removed since the code was minted (issue #604): no box joins as one that is not there.
     if (template && !holdsTemplate(tenant.vault, template)) throw new HttpError(409, `no template ${template}: it was removed after the join line was made. Add machine shows a fresh line`);
-    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}), ...(container ? { container } : {}) });
+    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}), ...(container ? { container } : {}), ...(pool ? { pool: true as const } : {}), ...(pod ? { pod } : {}) });
     if (!r.ok) throw new HttpError(409, r.error);
     return { user: userId, machine: r.machine, hopperKey: tenant.machineLink.hopperKey };
   });
@@ -108,6 +116,20 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const r = 'name' in ask ? await tenant.vault.deliver(ask, key) : await tenant.vault.mint(ask, key);
     if ('refused' in r) throw new HttpError(403, r.refused);
     return sealAnswer(token, nonceOf(signature), ask, r.value);
+  });
+
+  const leaveNonces = createNonceCache();
+  app.post(LEAVE_PATH, async (req) => {
+    const user = header(req.raw, USER_HEADER);
+    const key = header(req.raw, MACHINE_KEY_HEADER);
+    const tenant = o.tenants.user(user);
+    const token = tenant?.machineLink.tokenFor(key);
+    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyLeave(token, header(req.raw, REQUEST_HEADER), user, key, leaveNonces);
+    if (!verdict.ok || !tenant) {
+      console.warn(`hopper: refused a machine's leave from ${req.socket.remoteAddress}: ${verdict.ok ? 'no such user' : verdict.why}`);
+      throw new HttpError(401, `refused: ${verdict.ok ? 'no such user' : verdict.why}`);
+    }
+    return tenant.machineLink.leave(key);
   });
 
   app.get('/client/install', async (_req, reply) => reply.type('text/x-shellscript; charset=utf-8').header('cache-control', 'no-cache').send(o.installScript));

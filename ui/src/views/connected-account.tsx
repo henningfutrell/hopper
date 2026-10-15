@@ -21,8 +21,10 @@
 // GitHub gave no refresh token says so while it works, with when it ends, and offers to connect again (issue #518).
 // The connection's health (issue #647): when and how it was made, its last and next renewal, its last error; one GitHub
 // refused reads "reconnect needed". A sign-in made while it works is held: Use this sign-in replaces it, Keep this
-// connection drops the sign-in.
-import { Link2, LogOut, Unlink } from 'lucide-react';
+// connection drops the sign-in. Where the app is installed is shown as the hopper last read it, with when (issue #1250: from
+// the hopper's database, a load never reads GitHub); Refresh reads GitHub again in the background, and the panel is read
+// again every few seconds while it reads. A read that failed says why, above what was read before it.
+import { Link2, LogOut, RefreshCw, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { DeviceCode } from '@/components/device-code';
@@ -31,9 +33,10 @@ import { Input } from '@/components/ui/input';
 import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
+import { ago } from '@/model/format';
 import type { AppInstallation, ConnectedAccountStatus, SourceStatus } from '@/model/wire';
 import { logout, useHopper } from '@/store';
-import { useCanAdmin, useSignedInWith } from '@/store/selectors';
+import { useCanAdmin, useServerNow, useSignedInWith } from '@/store/selectors';
 import { SourceSync } from './source-sync';
 
 const POLL_MS = 2000;
@@ -45,7 +48,7 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
   const canAdmin = useCanAdmin();
   const signedInWith = useSignedInWith(provider);
-  const waiting = s?.state === 'waiting';
+  const waiting = s?.state === 'waiting' || (s?.state === 'connected' && s.installationsReading === true);
   useEffect(() => {
     let live = true;
     const read = () => get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts')
@@ -65,6 +68,9 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
     }
   };
   const act = (action: 'connect' | 'cancel' | 'disconnect' | 'take-held' | 'drop-held') => send({ action });
+  const refresh = async () => {
+    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts/refresh', { provider })); } catch (e) { toast.error((e as Error).message); }
+  };
   const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' || s.state === 'unreadable' ? 'bad' : 'warn';
   const adminOnly = canAdmin ? undefined : `An admin can connect ${name}: sign in as one`;
   return (
@@ -99,9 +105,13 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           {s.renewal && <div data-renewal className="break-words text-warn">
             Its token could not be renewed yet: {s.renewal}. The hopper tries again by itself; the connection goes on.
           </div>}
+          <InstallationsRead s={s} name={name} refresh={() => void refresh()} />
+          {s.installations !== undefined && s.installationsError && <div data-installations-error className="text-warn break-words">{s.installationsError}. Shown: the read before it.</div>}
           {s.installations === undefined
             ? <div data-installations className="space-y-1">
-              <div data-installations-error className="text-warn break-words">{s.installationsError ?? `${name} could not say where the app is installed.`}</div>
+              {s.installationsError
+                ? <div data-installations-error className="text-warn break-words">{s.installationsError}</div>
+                : <div data-installations-unread className="text-muted-foreground">Where the app is installed is not read from {name} yet.</div>}
               {s.configUrl && <div><a className="underline" href={s.configUrl} target="_blank" rel="noreferrer">See where the app is installed</a></div>}
             </div>
             : s.installations.length > 0
@@ -150,6 +160,23 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
         </>}
       </div>
     </Panel>
+  );
+}
+
+/** When where the app is installed was read from GitHub (issue #1250), and Refresh to read it again. */
+function InstallationsRead({ s, name, refresh }: { s: Extract<ConnectedAccountStatus, { state: 'connected' }>; name: string; refresh: () => void }) {
+  const now = useServerNow();
+  const cls = 'text-muted-foreground';
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={cls}>Where the app is installed:</span>
+      {s.installationsReading
+        ? <span data-installations-read className={cls}>reading {name}…</span>
+        : s.installationsCheckedAt
+          ? <time data-installations-read dateTime={s.installationsCheckedAt} title={s.installationsCheckedAt} className={cls}>read {ago(s.installationsCheckedAt, now)}</time>
+          : <span data-installations-read className={cls}>not read yet</span>}
+      <Button data-installations-refresh size="xs" variant="ghost" disabled={s.installationsReading === true} title={`Reads from ${name} again where the app is installed`} onClick={refresh}><RefreshCw />Refresh</Button>
+    </div>
   );
 }
 

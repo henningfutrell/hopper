@@ -6,6 +6,7 @@ import type { JobSource, SourceItem } from '../../../src/domain/ports.ts';
 import type { IntakeTrust } from '../../../src/domain/intake.ts';
 import type { ItemText } from '../../../src/domain/item-snapshots.ts';
 import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
+import type { AutoApproval, IntakeAutoApproval } from '../../../src/domain/intake-auto-approve.ts';
 import githubApp from '../../../src/plugins/job-source/github-app/index.ts';
 import { parseOptions } from '../../../src/plugins/options.ts';
 import { sourceConfig, type GitHubAppOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
@@ -18,7 +19,7 @@ export const REPO = 'owner/sandbox';
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
   const r = parseOptions(githubApp, { repos: [REPO], ...over });
   if (!r.ok) throw new Error(r.error);
-  const { enabled: _e, appId: _i, slug: _s, privateKeyEnv: _k, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
+  const { enabled: _e, appId: _i, slug: _s, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
   return sourceConfig(shared);
 }
 
@@ -31,15 +32,28 @@ export interface TestTrust extends IntakeTrust {
   asked: string[][];
   /** Every set of acts asked, with their GitHub user ids (issue #930), in order. */
   askedActs: { login: string; id?: number }[][];
+  /** The hopper's approvals (issue #1268), by key: the rule and actor, and the text. */
+  autoApprovals: Map<string, { approval: AutoApproval; text: ItemText; request: IntakeRequest; source: string }>;
 }
 
-export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[] } = {}): TestTrust {
+/** `autoApproval` (issue #1268): the user's setting; absent: the trust has none, so no card is approved by the hopper. */
+export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[]; autoApproval?: IntakeAutoApproval; takenIn?: string[] } = {}): TestTrust {
   const approvals: TestTrust['approvals'] = new Map();
   const declines: TestTrust['declines'] = new Map();
   const asked: string[][] = [];
   const askedActs: { login: string; id?: number }[][] = [];
+  const autoApprovals: TestTrust['autoApprovals'] = new Map();
+  const auto = o.autoApproval;
   return {
-    approvals, declines, asked, askedActs,
+    approvals, declines, asked, askedActs, autoApprovals,
+    ...(auto ? {
+      autoApproval: () => auto,
+      takenIn: (key: string) => (o.takenIn ?? []).includes(key),
+      autoApprove: (source: string, key: string, text: ItemText, request: IntakeRequest, approval: AutoApproval) => {
+        autoApprovals.set(key, { approval, text, request, source });
+        approvals.set(key, { text, request, source });
+      },
+    } : {}),
     async trusted(acts, connected) {
       const ls = acts.map((a) => a.login);
       asked.push(ls);

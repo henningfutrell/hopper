@@ -1,6 +1,6 @@
-// Issue #659 requirement 6: the master key status's rotation. It refuses when there is no key (limited) and when the
-// composition root says this hopper cannot rotate (the vault in a container of its own); else it hands the current keys
-// and a new key to the rotation, and answers the new key this once.
+// Issue #659 requirement 6: the master key status's rotation. It refuses when the composition root says this hopper
+// cannot rotate (the vault in a container of its own), and a key the host sealed unless the caller seals the new one in
+// the same step (issue #1296); else it hands the current keys and a new key to the rotation, and answers the new key this once.
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createMasterKeyStatus } from '../../src/http/master-key.ts';
@@ -14,11 +14,15 @@ const settings = () => {
 };
 
 describe('MasterKeyStatus.rotate', () => {
-  it('a limited hopper cannot rotate: 409 naming the missing key; the rotation is not asked', () => {
-    let asked = false;
-    const status = createMasterKeyStatus({ source: 'missing', problem: 'the master key is missing: give it as HOPPER_MASTER_KEY' }, settings(), () => { asked = true; return { resealed: 0, unreadable: 0 }; });
-    expect(() => status.rotate('admin')).toThrow(expect.objectContaining({ status: 409, message: expect.stringContaining('HOPPER_MASTER_KEY') }));
-    expect(asked).toBe(false);
+  it('a key the host sealed (issue #1296): 409 saying to rotate on the host, the rotation not asked; with hostSeals it rotates', () => {
+    let asked = 0;
+    const status = createMasterKeyStatus(given, settings(), () => { asked += 1; return { resealed: 0, unreadable: 0 }; }, 'systemd-creds');
+    expect(status.view()).toMatchObject({ source: 'given', sealed: 'systemd-creds' });
+    expect(() => status.rotate('admin')).toThrow(expect.objectContaining({ status: 409, message: expect.stringContaining('bash master-key.sh rotate') }));
+    expect(asked).toBe(0);
+    const r = status.rotate('admin', { hostSeals: true });
+    expect(asked).toBe(1);
+    expect(r).toMatchObject({ source: 'rotated', sealed: 'systemd-creds', key: expect.stringMatching(/^[0-9a-f]{64}$/) });
   });
 
   it('the vault in a container of its own: 409 with the reason; the key stays', () => {

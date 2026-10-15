@@ -101,7 +101,7 @@ export type LedgerRead =
 
 /** The events the ledger reads; every other event leaves every item as it is. */
 export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
-  'source.request_opened', 'source.request_approved', 'source.request_declined', 'source.request_withdrawn',
+  'source.request_opened', 'source.request_approved', 'source.request_auto_approved', 'source.request_declined', 'source.request_withdrawn',
   'job.queued', 'job.claimed', 'job.started', 'job.continued', 'job.wait_ended', 'job.reattached', 'job.requeued',
   'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
   'handoff.opened', 'handoff.closed',
@@ -181,7 +181,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   if (event.type === 'source.request_declined' || event.type === 'source.request_withdrawn') {
     return item?.eventState === 'waiting_for_approval' ? move('dropped', { waitingOn: undefined, requestSource: undefined }) : undefined;
   }
-  if (event.type === 'source.request_approved') return item?.eventState === 'waiting_for_approval' ? move('queued', { waitingOn: undefined, requestSource: undefined }) : undefined;
+  if (event.type === 'source.request_approved' || event.type === 'source.request_auto_approved') return item?.eventState === 'waiting_for_approval' ? move('queued', { waitingOn: undefined, requestSource: undefined }) : undefined;
   // GitHub closed or reopened the item's issue (a delivery, or the fallback read): as a read of the issue says it.
   if (event.type === 'work_item.issue_closed' || event.type === 'work_item.issue_reopened') {
     if (!item) return undefined;

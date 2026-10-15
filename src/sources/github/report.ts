@@ -11,25 +11,27 @@
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
 // Run again (`takeBack`, issues #313, #354) is one other issue write: an issue no longer assigned to the connected account
 // is assigned to it (issue #1010), a closed issue is reopened, the end labels go and the source label comes back, so the new job runs and finishes against it. A person's resolution
-// of a hand-off (`writeResolution`, issue #551) is the other, and the hopper's only comment: one short comment saying
+// of a hand-off (`resolutionChanges`, issue #551; rows of the GitHub outbox, issue #1238) is the other, and the hopper's only comment: one short comment saying
 // what was done, with the person's note and link, naming no person, and the end label it leaves the issue with. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
 import { SourceError } from '../../domain/ports.ts';
 import type { SourceReport } from '../../domain/ports.ts';
-import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job } from '../../domain/types.ts';
+import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job, type ResolutionWrite } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import { isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
+import type { OutboxChange } from '../../domain/github-outbox.ts';
+import type { GitHubOutbox } from './outbox.ts';
 
 export interface ReportContext {
   api: GitHubApi;
-  /** Repos whose hopper labels were ensured by this process. */
-  labelledRepos: Set<string>;
+  /** The hopper labels this process made sure of, as `<repo> <label>` (issue #1154: only the ones it adds). */
+  ensuredLabels: Set<string>;
   /** This user's claim holder id (issue #440); absent: claims carry no holder label. */
   holder?: string;
 }
@@ -42,20 +44,36 @@ function issueOf(job: Job): { repo: string; number: number } {
   return { repo, number };
 }
 
-export async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
-  if (ctx.labelledRepos.has(repo)) return;
-  for (const l of HOPPER_LABELS) await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
-  if (ctx.holder) await ctx.api.ensureLabel(repo, holderLabel(ctx.holder), HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION);
-  ctx.labelledRepos.add(repo);
+/** Make sure `repo` has each hopper label of `names`, with its colour and description: once per label per process. */
+export async function ensureLabels(ctx: ReportContext, repo: string, names: readonly string[]): Promise<void> {
+  const own = [...HOPPER_LABELS, ...(ctx.holder ? [{ name: holderLabel(ctx.holder), color: HOLDER_LABEL_COLOR, description: HOLDER_LABEL_DESCRIPTION }] : [])];
+  for (const l of own.filter((o) => names.includes(o.name))) {
+    const key = `${repo} ${l.name}`;
+    if (ctx.ensuredLabels.has(key)) continue;
+    await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
+    ctx.ensuredLabels.add(key);
+  }
+}
+
+/**
+ * One label change on an issue: `remove` comes off, then `add` goes on. With `carried`, the issue's labels as just read
+ * (issue #1154), a label it does not carry is not removed and one it carries is not added: a write that changes nothing
+ * is not sent. Without it, every one is.
+ */
+export async function relabel(ctx: ReportContext, repo: string, number: number,
+  c: { add?: readonly string[]; remove?: readonly string[]; carried?: readonly string[] }): Promise<void> {
+  const add = (c.add ?? []).filter((l) => !c.carried?.includes(l));
+  const remove = (c.remove ?? []).filter((l) => !c.add?.includes(l) && (!c.carried || c.carried.includes(l)));
+  if (remove.length) await ctx.api.removeLabels(repo, number, [...new Set(remove)]);
+  if (add.length) {
+    await ensureLabels(ctx, repo, add);
+    await ctx.api.addLabels(repo, number, add);
+  }
 }
 
 /** End of a job on its issue: drop `hopper:claimed`, its holder label and `also`, add the outcome label. */
-async function settle(ctx: ReportContext, repo: string, number: number, add: string[], also: string[] = []): Promise<void> {
-  await ctx.api.removeLabels(repo, number, [...claimLabels(ctx.holder), ...also]);
-  if (add.length) {
-    await ensureLabels(ctx, repo);
-    await ctx.api.addLabels(repo, number, add);
-  }
+async function settle(ctx: ReportContext, repo: string, number: number, add: string[], also: string[] = [], carried?: readonly string[]): Promise<void> {
+  await relabel(ctx, repo, number, { add, remove: [...claimLabels(ctx.holder), ...also], ...(carried ? { carried } : {}) });
 }
 
 /**
@@ -68,19 +86,19 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
 async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
   if (handedToFollowOns(job)) return state;
   const issue = await ctx.api.getIssue(repo, number);
-  const also = issue.labels.includes(LABEL_FAILED) ? [LABEL_FAILED] : [];
+  const also = [LABEL_FAILED];
   if (job.partlyDone) {
-    await settle(ctx, repo, number, [LABEL_PARTLY_DONE], also);
+    await settle(ctx, repo, number, [LABEL_PARTLY_DONE], also, issue.labels);
     return { ...state, pullRequest: job.partlyDone, follow: 'open', part: true };
   }
   if (issue.state === 'closed') {
-    await settle(ctx, repo, number, [LABEL_DONE], also);
+    await settle(ctx, repo, number, [LABEL_DONE], also, issue.labels);
     return state;
   }
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
   const own = await readyPullRequest(ctx.api, repo, number);
-  await settle(ctx, repo, number, [LABEL_PR_READY], also);
+  await settle(ctx, repo, number, [LABEL_PR_READY], also, issue.labels);
   return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
 }
 
@@ -111,8 +129,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
   const { repo, number } = issueOf(job);
   switch (r.kind) {
     case 'claimed':
-      await ensureLabels(ctx, repo);
-      await ctx.api.addLabels(repo, number, claimLabels(ctx.holder));
+      await relabel(ctx, repo, number, { add: claimLabels(ctx.holder) });
       return state;
     case 'finished':
       return finished(ctx, job, repo, number, state);
@@ -152,7 +169,7 @@ export async function takeBack(ctx: ReportContext, label: string, job: Job, assi
     const issue = await ctx.api.getIssue(repo, number);
     if (assignee !== undefined && !isAssignedTo(issue, assignee)) await ctx.api.addAssignees(repo, number, [assignee]);
     if (issue.state === 'closed') await ctx.api.reopenIssue(repo, number);
-    await ctx.api.removeLabels(repo, number, [...END_LABELS, ...claimLabels(ctx.holder)]);
+    await relabel(ctx, repo, number, { remove: [...END_LABELS, ...claimLabels(ctx.holder)], carried: issue.labels });
     if (!issue.labels.includes(label)) await ctx.api.addLabels(repo, number, [label]);
     return await ctx.api.getIssue(repo, number);
   } catch (err) {
@@ -178,18 +195,31 @@ export function resolutionComment(r: HandoffResolution): string {
 
 /**
  * Tell the issue a person's resolution of its job's hand-off (issue #551): Done by hand leaves it `hopper:done`, Won't
- * do `hopper:rejected` — either way not taken again —, in place of `hopper:failed`; Continue and I fixed it took it back
- * already (`takeBack`). Then the comment.
+ * do `hopper:rejected` — either way not taken again —, in place of `hopper:failed` and the claim; Continue and I fixed it
+ * took it back already (`takeBack`). Then the comment. The changes, as rows of the GitHub outbox (issue #1238).
  */
-export async function writeResolution(ctx: ReportContext, job: Job, r: HandoffResolution): Promise<void> {
+export function resolutionChanges(r: HandoffResolution, holder?: string): OutboxChange[] {
+  const end = r.action === 'done_by_hand' ? LABEL_DONE : r.action === 'wont_do' ? LABEL_REJECTED : undefined;
+  const labels: OutboxChange[] = end ? [{ op: 'remove_labels', labels: [...claimLabels(holder), LABEL_FAILED] }, { op: 'add_labels', labels: [end] }] : [];
+  return [...labels, { op: 'comment', body: resolutionComment(r) }];
+}
+
+/**
+ * A resolution kept in the source's GitHub outbox (issue #1238), once, tagged with the job and the resolution's time;
+ * asked again, where its rows stand. One that failed before its rows were kept is not sent again by itself: no comment twice.
+ */
+export function keepResolution(outbox: GitHubOutbox, job: Job, r: HandoffResolution, holder?: string): Promise<ResolutionWrite> {
   try {
-    const { repo, number } = issueOf(job);
-    if (r.action === 'done_by_hand') await settle(ctx, repo, number, [LABEL_DONE]);
-    if (r.action === 'wont_do') await settle(ctx, repo, number, [LABEL_REJECTED]);
-    if (r.action === 'done_by_hand' || r.action === 'wont_do') await ctx.api.removeLabels(repo, number, [LABEL_FAILED]);
-    await ctx.api.postComment(repo, number, resolutionComment(r));
+    const { repo } = issueOf(job);
+    const key = job.source!.key;
+    const tag = `${job.id}@${r.at}`;
+    const now = outbox.resolution(key, tag);
+    if (now) return Promise.resolve(now);
+    if (r.writeBack === 'failed') return Promise.resolve({ state: 'failed', error: r.writeBackError ?? 'failed' });
+    outbox.queue('resolve', key, repo, resolutionChanges(r, holder).map((change) => ({ change })), { tag });
+    return Promise.resolve({ state: 'pending' });
   } catch (err) {
-    throw sourceError(err);
+    return Promise.reject(sourceError(err));
   }
 }
 

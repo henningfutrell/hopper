@@ -5,10 +5,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS, HANDOFF_RESOLUTIONS, STUCK_BULK } from '../../domain/types.ts';
-import type { GiveBackAct, GiveBackAnswer, GiveBackChecked, GiveBackRun } from '../../domain/give-back.ts';
-import type { ActingPerson } from '../../domain/types.ts';
+import type { GiveBackAnswer } from '../../domain/give-back.ts';
 import type { FailureAction } from '../../failures/index.ts';
-import { pushable, pushKeptWork } from '../../failures/kept-work.ts';
 import { actOnStuck } from '../../failures/stuck.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
@@ -50,7 +48,7 @@ export const keptWorkPushBody = z.strictObject({ note: z.string().trim().max(NOT
 
 /** Push it and Discard on work not pushed (issue #1010), as the OpenAPI document lists them. */
 export const KEPT_WORK_OPERATIONS: Operation[] = [
-  { method: 'post', path: '/ui/api/failures/kept-work/:id/push', tag: 'Failures', summary: 'Push work not pushed', description: 'Work not pushed (issue #1010): a failed job whose reap kept work in its scratch dir — uncommitted, or commits no remote has — goes on in its own agent session and kept work tree, told to push the work and open the pull request (a draft when the work is not finished), with the `note`, if any. With an open hand-off, it resolves it as Continue (`handoff.closed`, `end: "continued"`); else `job.continued` with `keptWork`. Its source takes the item back, as for Run again. A box action. Answered at once (issue #1194): 202 once the checks pass; the source takes the item back after, then the job goes on. One that fails records `job.give_back_failed` with why. Sent again while one runs, it answers that one. 409: it has no work kept, it is not failed, its session cannot resume, or a newer job of its item exists (the item\'s `actions.push` in `keptWork` of `GET /api/failures` says why).', role: 'operator', body: keptWorkPushBody, returns: '`{ jobId, giveBack: "push" }`: the job, its give-back running', errors: [400, 401, 404, 409] },
+  { method: 'post', path: '/ui/api/failures/kept-work/:id/push', tag: 'Failures', summary: 'Push work not pushed', description: 'Work not pushed (issue #1010): a failed job whose reap kept work in its scratch dir — uncommitted, or commits no remote has — goes on in its own agent session and kept work tree, told to push the work and open the pull request (a draft when the work is not finished), with the `note`, if any. With an open hand-off, it resolves it as Continue (`handoff.closed`, `end: "continued"`); else `job.continued` with `keptWork`. Its source takes the item back, as for Run again. A box action. Answered at once (issue #1194): 202 once the checks pass; the source takes the item back after, then the job goes on. One that fails records `job.give_back_failed` with why. Sent again while one runs, it answers that one. On GitHub the act is a GitHub outbox row (issue #1238 part 5), sent at once and again after a restart; its checks run again at the send. 409: it has no work kept, it is not failed, its session cannot resume, or a newer job of its item exists (the item\'s `actions.push` in `keptWork` of `GET /api/failures` says why).', role: 'operator', body: keptWorkPushBody, returns: '`{ jobId, giveBack: "push" }`: the job, its give-back running', errors: [400, 401, 404, 409] },
   { method: 'post', path: '/ui/api/failures/kept-work/:id/discard', tag: 'Failures', summary: 'Discard work not pushed', description: 'Work not pushed (issue #1010): the ended job\'s kept scratch dir is removed on its machine, whatever it holds — its git worktrees removed with --force —, then `job.work_removed` with `discarded` and who acted (`person`, `via`). The work is lost. A box action. The answer comes once the checks pass, before the removal, which runs after (issue #1194): meanwhile the entry\'s `discarding` is `{ state: "removing" }`; out of reach, or kept all the same (a client older than this hopper: update it, then discard again), it is `{ state: "failed", error }`, with `job.work_discard_failed`, and Discard is offered again. A discard while one is removed answers that one. 409: it has no work kept, it has not ended, or its machine is unknown or offline.', role: 'operator', returns: '`{ jobId, paths }`: the scratch dir that is removed', errors: [401, 404, 409] },
 ];
 
@@ -59,7 +57,7 @@ export const stuckParams = z.object({ cause: z.enum(STUCK_BULK) });
 
 /** A stuck cause's bulk action (issue #1010), as the OpenAPI document lists it. */
 export const STUCK_OPERATIONS: Operation[] = [
-  { method: 'post', path: '/ui/api/failures/stuck/:cause', tag: 'Failures', summary: 'Act on a stuck cause', description: 'Stuck work (issue #1010): runs the bulk action of one stuck cause (`stuck` in `GET /api/failures`) on each of its items now, through the same path as the item\'s own button, answered once each item is checked (issue #1194): each give-back runs after the answer, and one that fails records `job.give_back_failed` with why; `continue`, `run_again` and `wont_do` resolve each open hand-off so (Won\'t do with its card\'s why as the note), `retry` runs each failure again, `push` is Push it on each job\'s work not pushed, `tend` is Tend again on each pull request the hopper gave up on. An item a check refuses is skipped with why; the others go on. `done`: the items answered, their give-back running (for `wont_do`, resolved). A box action. 400: the cause has no bulk action.', role: 'operator', returns: '`StuckActResult`: `{ cause, done, refused: [{ id, why }] }`', errors: [400, 401] },
+  { method: 'post', path: '/ui/api/failures/stuck/:cause', tag: 'Failures', summary: 'Act on a stuck cause', description: 'Stuck work (issue #1010): runs the bulk action of one stuck cause (`stuck` in `GET /api/failures`) on each of its items now, through the same path as the item\'s own button, answered once each item is checked (issue #1194): each give-back runs after the answer, and one that fails records `job.give_back_failed` with why; `continue`, `run_again` and `wont_do` resolve each open hand-off so (Won\'t do with its card\'s why as the note), `retry` runs each failure again, `push` is Push it on each job\'s work not pushed, `tend` is Tend again on each pull request the hopper gave up on, `wait_unnamed` (issue #1245) ends each wait that names nothing it waits on, now, telling the job to go on or name what it waits on. An item a check refuses is skipped with why; the others go on. `done`: the items answered, their give-back running (for `wont_do`, resolved). A box action. 400: the cause has no bulk action.', role: 'operator', returns: '`StuckActResult`: `{ cause, done, refused: [{ id, why }] }`', errors: [400, 401] },
 ];
 
 /** A problem's resolution (issue #623): a note, if any, kept in its `failure.resolved`. */
@@ -70,30 +68,6 @@ const STATUS = { not_found: 404, conflict: 409 } as const;
 function answer<T>(r: FailureAction<T>): T {
   if (r.ok) return r.value;
   throw new HttpError(STATUS[r.reason], r.message);
-}
-
-/** An act that gives an item back, checked now: its job and the run after the answer (issue #1194), or why not. */
-const checkedOf = (a: FailureAction<{ jobId: string }>, run: () => Promise<GiveBackRun>): GiveBackChecked => (a.ok ? { ok: true, jobId: a.value.jobId, run } : a);
-
-/**
- * A give-back act on one item (issue #1194), checked now as its own button checks it, then answered, its give-back running
- * after: a failure's Retry (`id` its record), a hand-off's Continue or I fixed it (`id` the hand-off), Push it or Tend
- * again (`id` the job). A stuck cause's bulk action answers each of its items so.
- */
-function giveBackOf(t: TenantParts, act: GiveBackAct, id: string, by: ActingPerson, input: { note?: string; link?: string } = {}): GiveBackAnswer {
-  const f = t.failures;
-  switch (act) {
-    case 'continue': case 'fixed':
-      return t.registry.afterAnswer(act, checkedOf(f.handoffResolvable(id, act), () => f.resolveHandoff(id, { action: act, ...input }, by)), by);
-    case 'retry': return t.registry.afterAnswer(act, checkedOf(f.retryable(id), () => f.retry(id, by)), by);
-    case 'push': {
-      const d = { store: t.store, resumable: t.engine.resumable, takesBack: t.registry.takesBack, continueJob: t.registry.continueJob, resolveHandoff: f.resolveHandoff };
-      const allowed = pushable(d, id);
-      return t.registry.afterAnswer(act, checkedOf(allowed.ok ? { ok: true, value: { jobId: id } } : allowed, () => pushKeptWork(d, id, input.note, by)), by);
-    }
-    case 'tend': return t.registry.afterAnswer(act, t.registry.checkTendAgain(id, by), by);
-    case 'rerun': case 'rework': return { ok: false, reason: 'conflict', message: `${act} is not a failure's act` };
-  }
 }
 
 /** Its answer: 202 with the ended job and the act, its give-back running; a refusal as its reason says. */
@@ -130,14 +104,15 @@ export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard
     const f = o.tenant(req).failures;
     const input = { action, ...(note ? { note } : {}), ...(link ? { link } : {}) };
     if (action !== 'continue' && action !== 'fixed') return answer(await f.resolveHandoff(id, input, by));
-    return accepted(reply, giveBackOf(o.tenant(req), action, id, by, input));
+    // Its check and run are the failures service's (src/failures/give-backs.ts), from the hand-off and the note and link.
+    return accepted(reply, o.tenant(req).registry.afterAnswer(action, id, by, { ...(note ? { note } : {}), ...(link ? { link } : {}) }));
   });
   // Work not pushed (issue #1010): Push it goes on in the job's own session, answered once checked (issue #1194);
   // Discard removes its kept scratch dir.
   app.post('/ui/api/failures/kept-work/:id/push', o.operator, async (req, reply) => {
     const { note } = parseWith(keptWorkPushBody, req.body ?? {});
     const { id } = parseWith(idParams, req.params);
-    return accepted(reply, giveBackOf(o.tenant(req), 'push', id, actingIn(req), { note: note || undefined }));
+    return accepted(reply, o.tenant(req).registry.afterAnswer('push', id, actingIn(req), note ? { note } : {}));
   });
   app.post('/ui/api/failures/kept-work/:id/discard', o.operator, async (req) => o.tenant(req).engine.discardWork(parseWith(idParams, req.params).id, actingIn(req)));
   // A stuck cause's bulk action (issue #1010): each item through its own button's path.
@@ -146,11 +121,12 @@ export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard
     const t = o.tenant(req);
     return actOnStuck({
       view: () => t.failures.view(), resolveHandoff: t.failures.resolveHandoff,
-      giveBack: (act, id, by) => giveBackOf(t, act, id, by),
+      giveBack: (act, id, by) => t.registry.afterAnswer(act, id, by),
+      endWait: (id, note) => { t.engine.endWait(id, note); },
     }, cause, actingIn(req));
   });
   app.post('/ui/api/failures/:id/retry', o.operator, async (req, reply) => {
-    return accepted(reply, giveBackOf(o.tenant(req), 'retry', parseWith(idParams, req.params).id, actingIn(req)));
+    return accepted(reply, o.tenant(req).registry.afterAnswer('retry', parseWith(idParams, req.params).id, actingIn(req)));
   });
   // Read at each assessment and sweep: applies without a restart.
   app.post('/ui/api/failures/settings', o.admin, async (req) => {

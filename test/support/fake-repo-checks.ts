@@ -2,8 +2,9 @@
 // its default branch's protection and rulesets, its workflow files through the contents API, and the check rollups of its
 // newest pull requests through GraphQL. A repository not named has none. Its setup (issue #652): the branches it has,
 // each one's protection — shown in full only to a repository admin — and rulesets, and its secret scanning and push
-// protection, shown only to an admin. The logs of its GitHub Actions jobs (issue #993) are fake-job-logs.ts, exported from
+// protection, shown only to an admin. Each REST answer has an ETag (issue #1250). The logs of its GitHub Actions jobs (issue #993) are fake-job-logs.ts, exported from
 // here beside the checks.
+import { createHash } from 'node:crypto';
 
 export { jobLogBlobRoute, jobLogsRoute, type JobLogsForge } from './fake-job-logs.ts';
 
@@ -37,7 +38,13 @@ export interface RepoChecksForge {
   repoChecks?: Record<string, FakeRepoChecks>;
 }
 
-type Answer = { status: number; body?: unknown };
+type Answer = { status: number; body?: unknown; etag?: string };
+
+/** An answer's ETag: the same body, the same tag. */
+const etagOf = (body: unknown): string => `"${createHash('sha1').update(JSON.stringify(body)).digest('hex')}"`;
+
+/** A 200 with its ETag, as GitHub answers a list (issue #1250): a request that names the tag is answered 304. */
+export const tagged = (body: unknown): Answer => ({ status: 200, body, etag: etagOf(body) });
 
 const notFound: Answer = { status: 404, body: { message: 'Not Found' } };
 const down: Answer = { status: 503, body: { message: 'Service Unavailable' } };
@@ -111,5 +118,7 @@ function repoChecksAnswer(repo: string, c: FakeRepoChecks | undefined, method: s
 export function repoChecksRoute(all: Record<string, FakeRepoChecks> | undefined, method: string, path: string, body: Record<string, unknown>): Answer | undefined {
   if (method === 'POST' && path === '/graphql') return String(body.query).includes('statusCheckRollup') ? rollupsAnswer(all, body.variables) : undefined;
   const m = /^\/repos\/([^/]+\/[^/]+)\/?(.*)$/.exec(path);
-  return m ? repoChecksAnswer(m[1]!, all?.[m[1]!], method, m[2]!) : undefined;
+  const a = m ? repoChecksAnswer(m[1]!, all?.[m[1]!], method, m[2]!) : undefined;
+  // A REST answer has an ETag, as on GitHub (issue #1250): the same body, the same tag, and a 304 for a request that names it.
+  return a?.status === 200 ? { ...a, etag: etagOf(a.body) } : a;
 }

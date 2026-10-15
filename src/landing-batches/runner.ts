@@ -7,7 +7,7 @@
 // a batch run starts when due (`batchDue`), its text closing the issues of its job pull requests (issue #1175). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
-  batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
+  BATCH_BRANCH_PREFIX, batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
   type BatchCheckRun, type LandingBatchRepoView, type LandingBatchSettings,
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
@@ -34,7 +34,8 @@ export interface LandingBatchGitHub {
   close(repo: string, number: number): Promise<void>;
   /** GitHub's merge of `head` into the branch `base`: its merge commit, nothing to merge, or a conflict it cannot merge. */
   mergeInto(repo: string, base: string, head: string, message: string): Promise<{ kind: 'merged'; sha: string } | { kind: 'nothing' } | { kind: 'conflict' }>;
-  openPullRequests(repo: string, base: string): Promise<{ number: number; url: string }[]>;
+  /** The open pull requests into `base`, with the branch each comes from. */
+  openPullRequests(repo: string, base: string): Promise<{ number: number; url: string; head: string }[]>;
   retarget(repo: string, number: number, base: string): Promise<void>;
   /** One comment on pull request `number`: what the hopper did with it (issue #1143). */
   comment(repo: string, number: number, body: string): Promise<void>;
@@ -78,6 +79,8 @@ export function createLandingBatches(o: {
   const found = new Map<string, { why?: string; problem?: string; checkedAt: string }>();
   const note = (repo: string, f: { why?: string; problem?: string }): void => { found.set(repo, { ...f, checkedAt: o.now().toISOString() }); };
   const canaryFound = new Map<string, { why?: string; problem?: string; checkedAt: string }>();
+  // The pull requests GitHub refused to move (issue #1311), by URL with the refusal: logged once, not on every pass.
+  const refused = new Map<string, string>();
 
   async function passRepo(gh: LandingBatchGitHub, repo: string): Promise<void> {
     const cfg = o.settings().repos[repo];
@@ -89,11 +92,20 @@ export function createLandingBatches(o: {
       note(repo, { problem: `the landing branch of ${repo} is ${landing}, its tested branch: name another landing branch in Settings → Landing batches` });
       return;
     }
-    // A job's pull request lands on the landing branch, never on the tested branch.
+    // A job's pull request lands on the landing branch, never on the tested branch. The hopper's own (a batch run, a
+    // bisect, a back-merge) stays there, even when a job named it (issue #1311): its branch is a landing branch tip.
     const jobs = new Set(o.jobPullRequests());
     for (const p of await gh.openPullRequests(repo, cfg.tested)) {
-      if (!jobs.has(p.url)) continue;
-      await gh.retarget(repo, p.number, landing);
+      if (!jobs.has(p.url) || p.head.startsWith(BATCH_BRANCH_PREFIX)) continue;
+      // One refusal skips that pull request only: the others move, and the batch run goes on (issue #1311).
+      const moved = await gh.retarget(repo, p.number, landing).then(() => true, (e: unknown) => {
+        const why = (e as Error).message;
+        if (refused.get(p.url) !== why) o.log(`hopper: landing batches: ${p.url} not moved to ${landing}: ${why}`);
+        refused.set(p.url, why);
+        return false;
+      });
+      if (!moved) continue;
+      refused.delete(p.url);
       o.record({ type: 'landing_batch.retargeted', data: { repo, pullRequest: p.number, url: p.url, from: cfg.tested, to: landing } });
       // The pull request shows it (issue #1143); a refusal loses only the comment.
       await gh.comment(repo, p.number, retargetNote(cfg.tested, landing))

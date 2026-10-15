@@ -91,7 +91,10 @@ describe('a connected GitHub account renews its token (#358)', () => {
     const [first] = [...github.tokens.keys()];
     const [firstRefresh] = [...github.refreshTokens.keys()];
 
-    await waitFor(async () => { await account(app); return refreshes(github).length > 0; }, { what: 'a renewal', timeoutMs: 15_000 });
+    // A read of GitHub with the token once it is due renews it first: Refresh of where the app is installed is one (a load
+    // of the account reads no GitHub, issue #1250).
+    const ui = await app.login();
+    await waitFor(async () => { await app.ui('/ui/api/connected-accounts/refresh', { provider: 'github' }, { token: ui }); return refreshes(github).length > 0; }, { what: 'a renewal', timeoutMs: 15_000, intervalMs: 500 });
     const renewal = refreshes(github)[0]!;
     expect(renewal.body).toMatchObject({ client_id: 'gh-client-id', grant_type: 'refresh_token', refresh_token: firstRefresh });
     // A device flow grant renews without the client secret, which this hopper has none of.

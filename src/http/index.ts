@@ -1,7 +1,7 @@
 // The HTTP edge: read-only routes, SSE, the static UI, the API reference, and the UI session — the
 // only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
 // passes the Host guard (AGENTS.md).
-import { watchEventLoop } from './event-loop.ts';
+import { watchEventLoop, type EventLoopStall } from './event-loop.ts';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { accessRoutes } from './access.ts';
@@ -14,8 +14,9 @@ import { helpRoutes } from './help.ts';
 import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
-import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
-import type { StackDrift } from '../domain/types.ts';
+import type { Clock, InstanceEvents, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
+import { slowStoreCalls } from '../store/slow-calls.ts';
+import type { ClusterInstall, StackDrift } from '../domain/types.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
@@ -98,6 +99,8 @@ export interface ServerOptions {
   buildDir?: string;
   /** How the stack differs from the compose file of this version (issue #697): GET /api/update/drift. */
   stackDrift?: () => Promise<StackDrift>;
+  /** Set for a cluster install (issue #1285): the agent update skill is helm upgrade, and no compose file is offered. */
+  cluster?: ClusterInstall | undefined;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
   /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */
@@ -116,6 +119,8 @@ export interface ServerOptions {
   allowedHosts: AllowedHosts;
   /** The hopper runs in WSL (issue #712): GET /api/host-link says so, for Settings' Windows hint. */
   wsl: boolean;
+  /** The instance's events (every user's log): an event loop stall is raised there (issue #1154). Absent: only logged. */
+  events?: Pick<InstanceEvents, 'append'>;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -131,7 +136,7 @@ export interface ServerOptions {
   /** The built UI bundle (ui/dist). */
   uiDir: string;
   /** Machines joining and dialling in (issue #308): their links, the client release, the install script. */
-  client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript'>;
+  client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript' | 'poolKey'>;
   /** Fastify logger; off by default. */
   logger?: boolean;
 }
@@ -139,8 +144,13 @@ export interface ServerOptions {
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
-  // The event loop watchdog (issue #1002): a stall is logged with the routes in flight, and shown on /api/health.
-  const loop = watchEventLoop(app, { clock: o.clock, warn: (line) => console.warn(line) });
+  // The event loop watchdog (issue #1002): a stall is logged with the routes in flight and the slow store calls in it
+  // (issue #1154), shown on /api/health, and raised as an instance event.
+  const events = o.events;
+  const loop = watchEventLoop(app, {
+    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.since,
+    ...(events ? { raise: ({ at: _at, ...data }: EventLoopStall & { skipped: number }) => { events.append({ type: 'hopper.event_loop_stalled', data }); } } : {}),
+  });
   // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
   const sessions = createUiSessions({
     repo: o.instance.uiSessions, clock: o.clock, signIn: o.signIn,

@@ -1,0 +1,113 @@
+{{- $name := printf "%s-postgres" (include "hopper.fullname" .) -}}
+{{- $sel := dict "ctx" . "component" "postgres" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-init
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+data:
+  # Run once, when the database is made: OpenFGA's schema, and the statement latency the Resources page shows.
+  hopper.sql: |
+    CREATE SCHEMA IF NOT EXISTS openfga;
+    CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA public;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  selector:
+    {{- include "hopper.selector" $sel | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
+      enableServiceLinks: false
+      # The image's postgres user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          args: [-c, shared_preload_libraries=pg_stat_statements]
+          env:
+            - name: POSTGRES_USER
+              value: hopper
+            - name: POSTGRES_DB
+              value: hopper
+            - name: POSTGRES_PASSWORD_FILE
+              value: /run/hopper-secrets/postgres_password
+            # A directory below the volume's root, which may hold lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -q, -h, 127.0.0.1, -U, hopper, -d, hopper]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: [pg_isready, -q, -h, 127.0.0.1, -U, hopper, -d, hopper]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: secrets
+              mountPath: /run/hopper-secrets
+              readOnly: true
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "hopper.runtimeSecret" . }}
+            defaultMode: 0440
+            items:
+              - key: postgres_password
+                path: postgres_password
+        - name: init
+          configMap:
+            name: {{ $name }}-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "hopper.storageClass" .Values.postgres.storageClass | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.size }}

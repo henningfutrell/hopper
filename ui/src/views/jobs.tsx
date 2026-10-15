@@ -17,6 +17,7 @@ import { GhLink } from '@/components/job';
 import { NodeTends } from '@/components/node-tends';
 import { Empty, Panel } from '@/components/panel';
 import { COLOR, StatusBadge, TEXT, type Tone } from '@/components/status';
+import { WaitsOnLink } from '@/components/waits-on';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -183,6 +184,7 @@ function NodeDetails({ graph, id, laneOf, now, onClose }: { graph: JobGraph; id:
         {node.parts && <><dt>parts</dt><dd className="font-mono">{node.parts.done}/{node.parts.total}</dd></>}
         {node.kind === 'job' && <><dt>lane</dt><dd>{node.laneId ? laneOf(node.laneId) : 'no lane'}</dd></>}
         {node.stageSince && <><dt>in stage</dt><dd>{elapsed(node.stageSince, now)}</dd></>}
+        {node.status === 'waiting_on' && node.ownWait !== 'command' && <><dt>waits on</dt><dd data-slot="graph-node-waits-on"><WaitsOnLink on={node.waitOn} repo={node.repo} /></dd></>}
         {node.pullRequest && <><dt>pull request</dt><dd><PullRequest pr={node.pullRequest} /></dd></>}
         {node.partlyDone && <><dt>after merge</dt><dd>{node.partlyDone.afterMerge}</dd></>}
       </dl>

@@ -67,9 +67,12 @@ export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: numbe
   return clientCall<ClientAnswer>(t, '/herdr', { args, timeoutMs }, timeoutMs);
 }
 
-/** One claude call of a usage read on the client target (issue #366): the client runs its own claude, and only those calls. */
-export function clientClaude(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
-  return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs }, timeoutMs);
+/**
+ * One claude call of a usage read on the client target (issue #366): the client runs its own claude, and only those calls.
+ * `token`: a lane pod's setup token (issue #1287), which that one call runs with as `CLAUDE_CODE_OAUTH_TOKEN`.
+ */
+export function clientClaude(t: ClientTransport, args: string[], timeoutMs: number, token?: string): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs, ...(token ? { token } : {}) }, timeoutMs);
 }
 
 /**
@@ -115,7 +118,7 @@ export async function clientRunningRelease(t: ClientTransport, jobs: readonly st
   const at = clientHome(home);
   // Its CPU, memory and swap (issue #560): a client older than this says none.
   const res = resourcesOf(resources);
-  // The infra credential folders its home holds (issue #1128 part 7): only names on the list; a client older than this says none.
+  // The infra credentials its job user holds (issues #1128 part 7, #1248): only names on the list; a client older than this says none.
   const creds = infraCredentialsOf(infraCredentials);
   // Its vault's helper (issue #558): an absolute path, one line; a client older than this says none.
   const helper = typeof vault === 'string' && vault.startsWith('/') && !/[\n\0]/.test(vault) && vault.length <= 4096 ? { vault } : {};

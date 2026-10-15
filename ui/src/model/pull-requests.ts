@@ -1,7 +1,7 @@
 // The Pull requests view (issue #637), pure: the header lines, and the words for each card's checks, merge state and
 // closing issue, and the repositories with no checks (issue #677). The daemon builds the list; the UI only says it.
 import { ago } from './format.ts';
-import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from './wire.ts';
+import type { ChecksProblem, LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from './wire.ts';
 
 type MergeWait = NonNullable<PullRequestCard['waits']>;
 
@@ -19,8 +19,10 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'merge held': 'ready, waits for another pull request to merge first', ready: 'ready, merging',
 };
 
-export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base'>): string =>
-  !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}` : WAITS_TEXT[c.waits];
+/** Why a card waits; checks the hopper cannot read say why (issue #1244): `checks unknown: <the connection lacks …>`. */
+export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base' | 'checksWhy'>): string =>
+  !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}`
+    : c.waits === 'checks unknown' && c.checksWhy ? `checks unknown: ${c.checksWhy}` : WAITS_TEXT[c.waits];
 
 /**
  * What the hopper does about an open card now (issue #927), when no tend is queued or given up: its tend job's step, the
@@ -112,6 +114,18 @@ export const conflictedPullRequests = (v: PullRequestsView | undefined): number 
 export const gaveUpLines = (v: PullRequestsView | undefined): string[] =>
   Array.isArray(v?.repos) ? v.repos.flatMap((r) => r.pullRequests.flatMap((c) =>
     c.state === 'open' && c.gaveUp ? [`${r.repo}#${c.pullRequest?.number ?? c.issue.number}: ${c.gaveUp}`] : [])) : [];
+
+/** The pull request numbers in plain words: `#7`, `#7 and #8`, `#7, #8 and #9`. */
+const numbers = (ns: readonly number[]): string =>
+  ns.length < 2 ? ns.map((n) => `#${n}`).join('') : `${ns.slice(0, -1).map((n) => `#${n}`).join(', ')} and #${ns[ns.length - 1]}`;
+
+/** A checks read problem (issue #1244), said once for its repository: the pull requests it holds, and the fix. */
+export const checksProblemText = (p: ChecksProblem): string =>
+  `The hopper cannot read the checks of ${numbers(p.pullRequests)}, so it does not merge ${p.pullRequests.length === 1 ? 'it' : 'them'}: ${p.why}`;
+
+/** The checks read problems (issue #1244), one line per repository: Needs you lists them, as each waits on a person's fix. */
+export const checksProblemLines = (v: PullRequestsView | undefined): string[] =>
+  Array.isArray(v?.checksProblems) ? v.checksProblems.map((p) => `${p.repo}: ${checksProblemText(p).replace(/^The/, 'the')}`) : [];
 
 /** The header's line for them; '' when none. */
 export const conflictsLine = (n: number): string =>

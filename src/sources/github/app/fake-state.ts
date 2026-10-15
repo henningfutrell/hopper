@@ -38,14 +38,23 @@ export interface FakeIssueInput {
 export interface FakePullFields {
   headRef?: string; headOid?: string; base?: string; isDraft?: boolean; mergeable?: string; checks?: string;
   state?: 'OPEN' | 'CLOSED' | 'MERGED'; createdAt?: string; committedAt?: string;
+  /** Its head commit's check runs and commit statuses as REST tells them (issue #1244); absent: none. */
+  checkRuns?: { status: string; conclusion?: string | null }[];
+  statuses?: { state: string }[];
 }
+
+/**
+ * What a token may not read in a repository (issue #1244): `checks` (Checks: read) and `statuses` (Commit statuses: read)
+ * refuse their REST reads and the GraphQL rollup; `rollup` refuses only the rollup.
+ */
+export type FakeLack = 'checks' | 'statuses' | 'rollup';
 
 /** A pull request as GraphQL tells it; `headCommittedAt`: when its head commit was made (issue #618). */
 export interface FakePullRequest { url: string; createdAt: string; isDraft: boolean; mergeable?: string; headCommittedAt?: string }
 
 export interface FakeMention extends FakePullRequest { state: 'OPEN' | 'CLOSED' | 'MERGED'; body: string; repo: string; mergedAt?: string }
 
-export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[] }
+export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[]; lacks?: FakeLack[] }
 
 export interface FakeInstallationInput {
   id: number;
@@ -100,6 +109,7 @@ export interface FakeRepo {
   installationId: number;
   labels: Set<string>;
   issues: Map<number, FakeIssue>;
+  lacks: FakeLack[];
 }
 
 export interface FakeTokenRecord {
@@ -152,7 +162,7 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
         });
       }
       state.repos.set(`${r.owner}/${r.name}`, {
-        owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues,
+        owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues, lacks: r.lacks ?? [],
       });
     }
   }

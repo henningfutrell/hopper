@@ -38,15 +38,15 @@ import { gitHubThread } from './thread.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock, type SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
-import { createApprovals } from './approvals.ts';
-import { createWriteBehind } from './write-behind.ts';
+import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
+import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { awaitingBatch, closePromoted, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
-import { reportToGitHub, takeBack, writeResolution } from './report.ts';
+import { ensureLabels, keepResolution, reportToGitHub, takeBack } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
@@ -95,8 +95,8 @@ export interface GitHubSourceOptions {
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
   issueGraph?: IssueGraphRecorder;
-  /** The listing cache (issue #985): the user's store. Absent: kept in memory. */
-  listings?: GitHubListingRepository;
+  /** The listing cache (issue #985) and the GitHub outbox (issue #1238): the user's store. Absent: kept in memory. */
+  listings?: GitHubListingRepository; outbox?: import('../../domain/github-outbox.ts').GitHubOutboxRepository;
   /** The intake sync interval, in ms, read at each discover (issue #985). Default: DEFAULT_RATE_LIMITER's. */
   listingEveryMs?: () => number;
 }
@@ -106,7 +106,7 @@ export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to ta
 
 
 export const CONFIG_URL = 'https://github.com/settings/installations';
-export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its key in GITHUB_APP_PRIVATE_KEY';
+export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its private key on the setup card in Sources';
 
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { config } = o;
@@ -134,7 +134,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let nothingToScan = false;
   /** The job repositories the last discover scanned: what a GitHub delivery may name (issue #1079). */
   let scanned: string[] = [];
-  const labelledRepos = new Set<string>();
+  const ensuredLabels = new Set<string>();
   /** The request cards this process saw opened, as `<key> <hash>`: the events are read once per text. */
   const opened = new Set<string>();
   /** Since when and by whom each issue is on the backburner (issue #808), read once while the label stays. */
@@ -143,7 +143,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
   const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
-  const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
+  const reportContext = () => ({ api, ensuredLabels, ...(o.intake ? { holder: o.intake.holder } : {}) });
+  const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -244,15 +245,17 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake.record('source.intake_migrated', { source: o.name, changes });
   };
 
-  const writeBehind = createWriteBehind();
-  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, writeBehind });
+  // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
+  const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
+  const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, outbox });
 
   return {
-    name: o.name,
-    kind: o.kind ?? o.name,
+    name: o.name, kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outcomes.map(writeBehind.on),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), writeBehind }, a),
+    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
+    pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
+    giveBackAct: (job, act, acting, more) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, more) : undefined),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -263,16 +266,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...outside.detail(), ...tagged.detail(), ...census.detail(writeBehind.of),
+        ...outside.detail(), ...tagged.detail(), ...census.detail(outbox.of),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
-        ...writeBehind.detail(),
+        ...outbox.detail(),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
     discover: (d) => reads.cached(async () => {
-      const round = await writeBehind.begin();
+      const round = outbox.begin();
       const bot = await botLogin();
       const assignee = o.assignee();
       const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
@@ -300,9 +303,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
       if (listed.listed) await outside.read(repos, assignee); await tagged.read(repos, assignee, d?.due !== true);
-      // A listing has no body: each issue taken is read, from GitHub only when its listing changed since.
+      // A listing has no body: each issue taken is read, from GitHub only when its listing changed since. One whose outbox
+      // rows are not sent yet waits for them (issue #1238): Approve's comments, `hopper:done` gone, the claim released.
       const taken: GitHubIssue[] = [];
-      for (const i of found.issues) { const issue = await api.getIssue(i.repo, i.number); if (issue.state === 'open') taken.push(issue); }
+      for (const i of found.issues) { if (outbox.held(i.url)) continue; const issue = await api.getIssue(i.repo, i.number); if (issue.state === 'open') taken.push(issue); }
       const projects = await readProjects(api, config, taken);
       projectErrors = projects.errors;
       const urls = taken.map((i) => i.url);
@@ -320,13 +324,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
         items.push(v ? { ...item, origin: v.origin } : item);
       }
-      next = next.map((x) => requestOutcome(x, requests.get(x.key), o.trust));
+      // A card a rule approves (issue #1268) is the hopper's approval, no card: the next sync takes it.
+      const autos = await approvals.auto(requests, [...taken, ...found.seen]); next = next.map((x) => autoOutcome(x, autos.get(x.key)) ?? requestOutcome(x, requests.get(x.key), o.trust));
       if (intake) { openRequests(o.name, intake, requests, opened); withdrawRequests(o.name, intake, requests, { repos, repoErrors: found.repoErrors }, opened); }
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
       outcomes = next;
-      writeBehind.listed(round);
+      outbox.listed(round);
       listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
@@ -340,16 +345,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return r.signals;
     }),
     report(r) {
-      return reportToGitHub({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, r);
+      return reportToGitHub(reportContext(), r);
     },
     async rerun(job) {
-      const issue = await takeBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job, o.assignee());
+      const issue = await takeBack(reportContext(), config.label, job, o.assignee());
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
     },
     async rework(job) {
-      const back = await sendBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job, o.assignee());
+      const back = await sendBack(reportContext(), config.label, job, o.assignee());
       const bot = await botLogin();
       const projects = await readProjects(api, config, [back.issue]);
       const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), bot, o.assignee());
@@ -362,9 +367,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (!api.issueEdits || item.repo === undefined || item.number === undefined) return [];
       return (await api.issueEdits(item.repo, item.number)).filter((e) => e.at > since);
     },
-    resolved(job, resolution) {
-      return writeResolution({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, job, resolution);
-    },
+    resolved: (job, resolution) => keepResolution(outbox, job, resolution, o.intake?.holder),
     notComplete(job) {
       return notComplete(api, job, o.jobArtifacts);
     },

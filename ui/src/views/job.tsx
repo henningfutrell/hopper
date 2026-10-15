@@ -9,10 +9,12 @@
 // transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169).
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { JobTitle, LinkLostFlag } from '@/components/job';
+import { JobTitle, LinkLostFlag, Since } from '@/components/job';
+import { JobAct } from '@/components/job-act';
 import { JobTimeline } from '@/components/job-timeline';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
+import { WaitsOnLink } from '@/components/waits-on';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
 import { directJobOf } from '@/model/promotions';
@@ -91,6 +93,7 @@ export function JobView() {
               <StatusBadge status={read.job.status} />
             </div>
             <LinkLostFlag job={read.job} />
+            <JobAct jobId={read.job.id} />
             <Fact label="job">{read.job.id}</Fact>
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
             <Fact label="created">{read.job.createdAt}</Fact>
@@ -100,6 +103,9 @@ export function JobView() {
               <Fact label="checkpoint">
                 <span data-slot="checkpoint">{read.job.checkpoint.at} on {machineName(read.job.checkpoint.machineId, machines)}, {Math.ceil(read.job.checkpoint.bytes / 1024)} KiB{read.job.checkpoint.session ? '' : ', no agent session'}{read.job.checkpoint.commits.length ? `, ${read.job.checkpoint.commits.length} commits not pushed` : ''}</span>
               </Fact>
+            )}
+            {read.job.status === 'waiting_on' && read.job.wait && (
+              <Fact label="waits on"><span data-slot="job-waits-on"><WaitsOnLink on={read.job.wait.on} repo={read.job.source?.repo} />, for <Since iso={read.job.wait.since} /></span></Fact>
             )}
             {read.job.error && <Fact label="error"><span className="text-bad">{read.job.error}</span></Fact>}
             {directJobOf(read.job) && <JobPromotion directJobId={directJobOf(read.job)!} />}

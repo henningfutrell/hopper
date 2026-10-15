@@ -5,6 +5,7 @@
 // "between passes", told by the next pass that ends. Each pass logs one line. Counts only: nothing is kept. Each pass has
 // an id, so a fetch made in one is not made again in it (issue #858 part 2): the hopper's own mirror, a machine's at a job start.
 // It also counts the calls GitHub charged in the last hour by kind (issue #985 part 4): in memory, 60 one-minute buckets.
+// A pass's caller may be told its calls when it ends (issue #1264): the sync loop keeps them per source in the call log.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { GITHUB_CALL_KINDS, type GitHubCallKind, type HourlyCalls } from '../domain/github-rate-limit.ts';
 
@@ -32,8 +33,11 @@ export interface GitHubTraffic {
   charged(method: string, url: string, query: unknown, o: { kind?: GitHubCallKind; points: number }): void;
   /** The calls charged in the last hour, by kind. */
   hourly(): HourlyCalls;
-  /** One sync pass of source `name`: its line is logged when it ends, with what went between passes since the last line. */
-  pass<T>(name: string, run: () => Promise<T>): Promise<T>;
+  /**
+   * One sync pass of source `name`: its line is logged when it ends, with what went between passes since the last line.
+   * `counted`: told its REST and GraphQL calls when it ends (issue #1264, the call log).
+   */
+  pass<T>(name: string, run: () => Promise<T>, counted?: (calls: number) => void): Promise<T>;
   /** The id of the pass this runs in; undefined outside any. */
   passId(): number | undefined;
   /** The id of the newest pass begun, of any source; 0 before the first. */
@@ -138,7 +142,7 @@ export function createGitHubTraffic(o: { log(line: string): void; now?: () => nu
     hourly: () => hour.totals(),
     passId: () => scope.getStore()?.id,
     lastPass: () => passes,
-    async pass(name, run) {
+    async pass(name, run, counted) {
       const traffic = empty();
       const id = ++passes;
       try {
@@ -147,6 +151,7 @@ export function createGitHubTraffic(o: { log(line: string): void; now?: () => nu
         const before = between;
         between = empty();
         o.log(trafficLine(name, traffic, before));
+        counted?.(total(traffic.rest) + total(traffic.graphql));
       }
     },
   };

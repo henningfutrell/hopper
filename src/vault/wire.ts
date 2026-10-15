@@ -14,8 +14,16 @@ export const VAULT_PORT = 4791;
 /** The KMS's URL and its key's id or alias: runtime settings (design.md "The KMS: an optional key provider"). */
 export const KMS_URL_VARIABLE = 'HOPPER_KMS_URL';
 export const KMS_KEY_VARIABLE = 'HOPPER_KMS_KEY';
-/** The KMS key the vault asks for when HOPPER_KMS_KEY names none: made, with this alias, when the KMS has none. */
+/** Set: the KMS is AWS KMS in this region, and HOPPER_KMS_URL, if set, its endpoint (issue #1288). */
+export const KMS_REGION_VARIABLE = 'HOPPER_KMS_REGION';
+/** The KMS key the vault asks for when HOPPER_KMS_KEY names none: made, with this alias, when a local KMS has none. */
 export const DEFAULT_KMS_KEY = 'alias/hopper-vault';
+/** The vault's KMS settings (config.ts): `region` set, AWS KMS; else the local KMS at `url`. */
+export type KmsSettings = { key: string } & ({ region: string; url?: string } | { region?: undefined; url: string });
+
+/** An AWS region's name, as `eu-west-1` or `us-gov-west-1`. */
+export const AWS_REGION_PATTERN = /^[a-z]{2}(-[a-z]+)+-\d+$/;
+
 
 const user = z.string().min(1).max(100);
 const by = z.string().max(200);
@@ -67,6 +75,8 @@ export const vaultOps = {
   }),
   /** A launch's agent credential (issue #708, part 10): the template's checks run here too, then the value crosses back. */
   'agent-credential': z.strictObject({ user, ask: z.strictObject({ template: name, secrets: z.array(name).max(256), box: z.string().max(200) }) }),
+  /** A job pod's agent credential (issue #1287): the user's own secret, checked here, then the value crosses back. */
+  'pod-credential': z.strictObject({ user, ask: z.strictObject({ name, pod: z.string().max(200), job: z.string().max(64) }) }),
 } as const;
 
 export type VaultOp = keyof typeof vaultOps;

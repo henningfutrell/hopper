@@ -6,11 +6,12 @@ import type { SourceStatus } from '../domain/types.ts';
 
 export { createGitHubSource, createFakeGitHub } from './github/index.ts';
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
-export { githubAccountOptions, githubAppOptions, sourceConfig } from './config.ts';
+export { githubAccountOptions, githubAppOptions, sameAccountWork, sameAppWork, sourceConfig } from './config.ts';
 export type { GitHubAccountOptions, GitHubAppOptions, GitHubSourceConfig } from './config.ts';
 export { APP_MISSING, appProblem, createAccountSource, createAppSource, followEvery } from './compose.ts';
 export { createAccountGitHubApi } from './github/account/api.ts';
-export { loadGitHubApp } from './github/app/index.ts';
+export { createGitHubAppKey, GITHUB_APP_KEY_VARIABLE, listInstalledApps, loadGitHubApp } from './github/app/index.ts';
+export type { GitHubAppKey } from './github/app/index.ts';
 export { createSourceSync, DELIVERY_SYNC_MS } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';
 
@@ -22,20 +23,27 @@ export function idleStatus(name: string, kind: string, state: 'disabled' | 'erro
   };
 }
 
-/** The running sources' registry plus fixed statuses for the ones that do not run, as they are now. */
-export function withFixedStatuses(running: SourceRegistry, fixed: () => SourceStatus[]): SourceRegistry {
+/**
+ * The running sources' registry plus fixed statuses for the ones that do not run, as they are now. `duplicateOf`: the
+ * configured source each one takes the same work as (issue #1264), on every status and every status update.
+ */
+export function withFixedStatuses(running: SourceRegistry, fixed: () => SourceStatus[], duplicateOf: (name: string) => string | undefined = () => undefined): SourceRegistry {
+  const marked = (s: SourceStatus): SourceStatus => {
+    const { duplicateOf: _was, ...rest } = s;
+    const first = duplicateOf(s.name);
+    return first === undefined ? rest : { ...rest, duplicateOf: first };
+  };
   return {
-    statuses: () => [...fixed().map((s) => ({ ...s })), ...running.statuses()],
+    statuses: () => [...fixed(), ...running.statuses()].map(marked),
     afterAnswerTimings: () => running.afterAnswerTimings(),
-    onStatus: (listener) => running.onStatus(listener),
+    onStatus: (listener) => running.onStatus((s) => listener(marked(s))),
     rerun: (jobId, by, brief, acting) => running.rerun(jobId, by, brief, acting),
     continueJob: (jobId, brief, by) => running.continueJob(jobId, brief, by),
     takesBack: (jobId) => running.takesBack(jobId),
     pullRequestAct: (jobId, act, acting) => running.pullRequestAct(jobId, act, acting),
     tendAgain: (jobId, acting) => running.tendAgain(jobId, acting),
     giveBack: (jobId, act, acting) => running.giveBack(jobId, act, acting),
-    afterAnswer: (act, checked, acting) => running.afterAnswer(act, checked, acting),
-    checkTendAgain: (jobId, acting) => running.checkTendAgain(jobId, acting),
+    afterAnswer: (act, id, acting, input) => running.afterAnswer(act, id, acting, input),
     intakeAction: (source, action) => running.intakeAction(source, action),
     repoChanged: (repo) => running.repoChanged(repo),
   };

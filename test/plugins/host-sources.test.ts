@@ -80,11 +80,11 @@ describe('detection of the job-source plugins', () => {
   const appFile = { version: 1, jobSources: [{ name: 'github-app', plugin: 'github-app', options: { appId: 4242, slug: 'hopper-test' } }] };
   const detection = (h: PluginHost) => h.report().jobSources.instances[0]!.detection;
 
-  it('github-app: needs-setup with the create-github-app command while the key variable is unset; available once it is set', async () => {
+  it('github-app: needs-setup with the create-github-app command while no private key is kept; available once it is', async () => {
     const { host: a } = start({ file: appFile, kit: fakeKit() });
     await a.start();
     expect(detection(a)).toEqual({
-      status: 'needs-setup', reason: expect.stringMatching(/GITHUB_APP_PRIVATE_KEY not set/),
+      status: 'needs-setup', reason: expect.stringMatching(/private key not set/),
       command: expect.stringContaining('scripts/create-github-app.sh'),
     });
     a.stop();
