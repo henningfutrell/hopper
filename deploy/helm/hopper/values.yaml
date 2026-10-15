@@ -17,7 +17,7 @@ port: 4790
 #   kubectl create secret generic hopper-master-key --from-literal=master-key=<64 hex digits>
 #   kubectl rollout restart deployment/hopper
 # Unset: the Secret named <release>-master-key, read as variables, and a start without it, once secrets are kept, is
-# limited.
+# refused (issue #1296).
 masterKey:
   # Set: that Secret is mounted as files and the hopper reads the key from its `master-key` file. A start without that
   # file is refused. To rotate, put the new key under `master-key` and the old one under `previous`, then restart:

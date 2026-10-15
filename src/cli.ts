@@ -50,7 +50,7 @@ import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { OPERATOR_COMMANDS, OPERATOR_USAGE, REFRESH_TOKEN_FILE, runOperatorAction, runOperatorActionWithGrant } from './cli-operator.ts';
 import { OperatorRefusal } from './cli-operator-call.ts';
-import { runUpdate, UPDATE_USAGE } from './cli-update.ts';
+import { printMasterKeyScript, runUpdate, UPDATE_USAGE } from './cli-update.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -268,6 +268,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
   // `update drift` reads the running daemon (issue #1017); every other `update` command needs no database.
   if (command === 'update' && rest[0] !== 'drift') return runUpdate(rest, io);
+  // The host's master-key script (issue #1296) is a file of the build: no database.
+  if (command === 'master-key' && rest[0] === 'script') return printMasterKeyScript(rest.slice(1), io);
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;

@@ -25,8 +25,9 @@ Do not do the update another way.
   not name in \`compose.override.yaml\`.
 - **Put no setting and no secret in another file** (issues #894, #970). Compose reads only its compose files. The hopper
   keeps its settings and secrets itself, set in the UI.
-- **The master key is required.** The update takes \`HOPPER_MASTER_KEY\` from its environment, or asks for it on the
-  terminal. Without it, the update stops before it changes anything: a hopper recreated without it starts limited.
+- **The master key is required.** The update takes \`HOPPER_MASTER_KEY\` from its environment, else unseals the key
+  sealed to the host (\`master-key.sh\` beside compose.yaml, issue #1296), else asks for it on the terminal. Without it,
+  the update stops before it changes anything: a hopper recreated without it does not start.
   When the person does not have the key, stop and ask them: the UI shows it until it is saved.
 - **An update with no person** (issue #1013): give \`HOPPER_MASTER_KEY\` in the environment of the update command,
   from a secret manager, for example \`export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"\`. Then no step waits

@@ -80,8 +80,9 @@ curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.
 podman compose up -d
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 # save the master key it shows once (the UI banner only, never the log) in your password manager, then:
-read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY             # paste it; never in a file
-podman compose up -d --force-recreate --no-deps hopper               # give the key again at each up that recreates it
+podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
+bash master-key.sh seal                                              # paste it; sealed to this host, never in a file
+bash master-key.sh run podman compose up -d --force-recreate         # each start: the key is unsealed for it alone
 podman compose exec hopper claude                                    # once: /login, then /exit
 # then Sources → GitHub account: choose the repositories jobs may come from
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot

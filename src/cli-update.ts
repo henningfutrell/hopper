@@ -55,6 +55,16 @@ function removed(what: string, image: string | undefined): string | undefined {
 /** A conflict of compose.yaml and compose.override.yaml stops the update (issue #1246): not 1 (a failure), 2 (a refusal) or 3 (drift). */
 export const CONFLICT_EXIT = 4;
 
+/**
+ * `hopper master-key script` (issue #1296): scripts/master-key.sh of this build, which seals the master key to the host and
+ * unseals it at launch. Saved beside compose.yaml; the update replaces it there with the new image's.
+ */
+export function printMasterKeyScript(args: string[], io: CliIo, appDir = BUILD_DIR): number {
+  if (args.length > 0) { io.err('hopper master-key: usage: hopper master-key script\n'); return 2; }
+  try { io.out(readFileSync(join(appDir, 'scripts', 'master-key.sh'), 'utf8')); } catch { io.err(`hopper master-key: this build ships no scripts/master-key.sh (${appDir})\n`); return 1; }
+  return 0;
+}
+
 /** `hopper update …`; the exit code. */
 export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { image: { type: 'string' }, 'podman-socket': { type: 'string' }, 'with-override': { type: 'boolean' } } });

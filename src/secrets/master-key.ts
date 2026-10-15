@@ -3,8 +3,9 @@
 // (issue #1288) — and never from a volume of the hopper's own: a container is ephemeral, and a key kept beside it is
 // lost with it. A key file named but not there stops the start. The database keeps the key's fingerprint — an HMAC of a fixed label under the key, never
 // the key — and each start checks the key against it: a wrong key stops the hopper. A fresh hopper given no key makes
-// one, shown once; a hopper that keeps secrets and is given no key starts limited: nothing is opened, nothing is made
-// again. The old token key (HOPPER_TOKEN_KEY, or the file HOPPER_TOKEN_KEY_FILE names, the compose secrets volume's
+// one, shown once; a hopper that keeps secrets and is given no key does not start (issue #1296: never limited), and its
+// error names the fingerprint of the key it needs. A key sealed to the host (scripts/master-key.sh) is unsealed by the
+// launch and given as HOPPER_MASTER_KEY. The old token key (HOPPER_TOKEN_KEY, or the file HOPPER_TOKEN_KEY_FILE names, the compose secrets volume's
 // `token_key`) is read only to move an install to HOPPER_MASTER_KEY, and not once that is set.
 import { createHmac, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -40,6 +41,14 @@ export class MasterKeyMismatch extends Error {
   }
 }
 
+/** No key is given, and the database keeps secrets (issue #1296): the hopper does not start. */
+export class MasterKeyMissing extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MasterKeyMissing';
+  }
+}
+
 /** What the database seals under the master key: the sealed values' key ids, and the sealed tokens (InstanceStore.keptSecrets). */
 export interface KeptSecrets {
   keyIds: readonly string[];
@@ -50,11 +59,9 @@ export interface KeptSecrets {
  * The master key this hopper runs on. `given`: HOPPER_MASTER_KEY. `generated`: made now, on a fresh hopper: shown once,
  * to be given as HOPPER_MASTER_KEY. `old-token-key`: read from the old token key, to be given as HOPPER_MASTER_KEY.
  * `rotated`: made by a rotation in this run, shown once, to be given as HOPPER_MASTER_KEY before the next start.
- * `missing`: none, while the database keeps secrets: the hopper starts limited.
+ * There is no hopper without a key: resolveMasterKey throws instead (issue #1296).
  */
-export type MasterKey =
-  | { source: 'given' | 'generated' | 'old-token-key' | 'rotated'; key: string; previous: string[]; fingerprint: string; notes: string[] }
-  | { source: 'missing'; problem: string; fingerprint?: string };
+export interface MasterKey { source: 'given' | 'generated' | 'old-token-key' | 'rotated'; key: string; previous: string[]; fingerprint: string; notes: string[] }
 
 export interface MasterKeyRecord {
   fingerprint(): string | undefined;
@@ -119,11 +126,12 @@ function launchGiven(env: Record<string, string | undefined>, read: (path: strin
 }
 
 /** How to give the key: the line every message about a missing key ends with. */
-export const GIVE_MASTER_KEY = `give it as ${MASTER_KEY_VARIABLE} at launch and restart (docs/deploy.md "The master key")`;
+export const GIVE_MASTER_KEY = `give it as ${MASTER_KEY_VARIABLE} at launch, or start with the key sealed to this host (bash master-key.sh run …), and start again (docs/deploy.md "The master key")`;
 
 /**
- * The master key from the launch, checked against the database's fingerprint. Throws MasterKeyMismatch on a wrong key;
- * throws on a key that is no key and on a key file named that cannot be read.
+ * The master key from the launch, checked against the database's fingerprint. Throws MasterKeyMismatch on a wrong key,
+ * MasterKeyMissing on no key while the database keeps secrets (issue #1296); throws on a key that is no key and on a key
+ * file named that cannot be read.
  */
 export function resolveMasterKey(o: {
   env: Record<string, string | undefined>;
@@ -172,22 +180,18 @@ export function resolveMasterKey(o: {
     const oldPrevious = listOf(env[OLD_PREVIOUS_VARIABLE]);
     const matches = recorded === undefined ? seals([old, ...oldPrevious], o.kept()) : recorded === fingerprint;
     if (!matches) {
-      return {
-        source: 'missing',
-        ...(recorded ? { fingerprint: recorded } : {}),
-        problem: `the old token key does not match this database (fingerprint ${shortFingerprint(fingerprint)}): the secrets stay closed. Find the key they were sealed under and ${GIVE_MASTER_KEY}`,
-      };
+      throw new MasterKeyMismatch(`the old token key does not match this database (fingerprint ${shortFingerprint(fingerprint)})${recorded ? `: it was set up with the key of fingerprint ${shortFingerprint(recorded)}` : ''}. The hopper does not start: find the key its secrets were sealed under and ${GIVE_MASTER_KEY}`);
     }
     if (recorded === undefined) record.setFingerprint(fingerprint);
     return { source: 'old-token-key', key: old, previous: oldPrevious, fingerprint, notes: [] };
   }
 
   if (recorded !== undefined) {
-    return { source: 'missing', fingerprint: recorded, problem: `the master key is missing: this database was set up with the key of fingerprint ${shortFingerprint(recorded)}; ${GIVE_MASTER_KEY}` };
+    throw new MasterKeyMissing(`the master key is missing: this database was set up with the key of fingerprint ${shortFingerprint(recorded)}. The hopper does not start without it: ${GIVE_MASTER_KEY}`);
   }
   const kept = o.kept();
   if (kept.keyIds.length > 0 || kept.tokens.length > 0) {
-    return { source: 'missing', problem: `the master key is missing: this database keeps secrets sealed under a key the launch does not give; ${GIVE_MASTER_KEY}` };
+    throw new MasterKeyMissing(`the master key is missing: this database keeps secrets sealed under a key the launch does not give. The hopper does not start without it: ${GIVE_MASTER_KEY}`);
   }
   const key = randomBytes(32).toString('hex');
   const fingerprint = fingerprintOf(key);
@@ -242,15 +246,10 @@ const SOURCE_WORDS = { given: `given at launch as ${MASTER_KEY_VARIABLE} or its 
 
 /**
  * The start's lines about the master key: where it came from and its fingerprint, never the key (issue #685: a log goes
- * to the host's journal and stays there; the UI shows a key this start made once, to the hopper's admin); a limited
- * start, loud; the notes. The log mask holds the key and its previous keys from here on, so no later line carries them.
+ * to the host's journal and stays there; the UI shows a key this start made once, to the hopper's admin); the notes. The log mask holds the key and its previous keys from here on, so no later line carries them.
  */
 export function logMasterKey(key: MasterKey, saved: boolean, logger: { info(line: string): void; warn(line: string): void }, mask: Pick<LogMask, 'hold'> = logMask): void {
-  if (key.source !== 'missing') mask.hold(key.key, ...key.previous);
-  if (key.source === 'missing') {
-    logger.warn(`hopper: LIMITED: ${key.problem}. Nothing is deleted, and what needs a secret stays off until then`);
-    return;
-  }
+  mask.hold(key.key, ...key.previous);
   const fingerprint = shortFingerprint(key.fingerprint);
   logger.info(`hopper: master key: ${SOURCE_WORDS[key.source]} (${key.source}), fingerprint ${fingerprint}${key.previous.length ? `; ${key.previous.length} previous key(s) given` : ''}`);
   for (const note of key.notes) logger.info(`hopper: ${note}`);
@@ -259,6 +258,6 @@ export function logMasterKey(key: MasterKey, saved: boolean, logger: { info(line
     logger.warn('hopper: save the master key now: the hopper\'s admin shows it once in the UI (Show the key (once)), never in the log. Keep it in a password manager: every secret the hopper keeps is sealed under it, and without it a new container opens none of them');
   }
   logger.warn(`hopper: give the master key as ${MASTER_KEY_VARIABLE} at each launch (docs/deploy.md "The master key"): ${key.source === 'generated'
-    ? 'a start without it is limited'
+    ? 'a start without it is refused'
     : 'until then it is read from the old token key, and the secrets volume cannot be removed'}`);
 }

@@ -8,8 +8,9 @@
 # <image> is ghcr.io/henningfutrell/hopper:<channel>; unset, the image compose.yaml names. In order, it:
 #   1. finds the compose tool that started the stack and uses it with the project `hopper` (issue #1063): a tool that does
 #      not see the stack that runs would start a second stack on the same data, so the update stops before it changes anything;
-#   2. takes the master key from HOPPER_MASTER_KEY at launch (a secret manager), else asks for it on the terminal (nothing
-#      is shown); without it the update stops, so the hopper never comes back limited. It reads no file and no container;
+#   2. takes the master key from HOPPER_MASTER_KEY at launch (a secret manager), else unseals the key sealed to this host
+#      (master-key.sh beside compose.yaml, issue #1296), else asks for it on the terminal (nothing is shown); without it
+#      the update stops, so the hopper never fails to start for want of it. It reads no plaintext file and no container;
 #   3. looks for your rootless Podman socket (issue #1157): when podman.socket is on, the new compose.yaml gives it to the
 #      hopper; when it is off, the update goes on without it and says the one line that turns it on. A compose.override.yaml
 #      that is the old compose.sandboxes.yaml goes to compose.override.yaml.bak: compose.yaml gives the socket now;
@@ -25,7 +26,8 @@
 #      one-shot exited 0 (then removes its container, issue #1247), and that the stack has no drift (`hopper update
 #      drift`), and says the result. It exits 1 when one of these fails;
 #   8. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
-#      before, to go back to. An image a container still uses is not removed.
+#      before, to go back to. An image a container still uses is not removed. A master-key.sh beside compose.yaml is
+#      replaced with the new image's.
 #
 #   HOPPER_UPDATE_WAIT          seconds to wait for the hopper's health (default: 180)
 #   HOPPER_UPDATE_FIX_OVERRIDE  1: remove the compose.override.yaml entries compose.yaml gives itself, with no question
@@ -44,7 +46,17 @@ main() {
 
   [[ "$image" =~ ^[A-Za-z0-9][A-Za-z0-9._/:@-]*$ ]] || fail "'$image' is no image reference"
 
-  # The master key, given at launch (issue #970): never from a file or the running container.
+  # The master key, given at launch (issue #970), or sealed to this host (issue #1296): never from a plaintext file or the
+  # running container.
+  local sealed=0
+  if [ -z "${HOPPER_MASTER_KEY:-}" ] && [ -f master-key.sh ] && { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; }; then
+    HOPPER_MASTER_KEY="$(bash master-key.sh unseal)" \
+      || fail 'the master key sealed to this host does not unseal (above): the update stops, and nothing changed'
+    HOPPER_MASTER_KEY_SEALED="$(bash master-key.sh method)"
+    export HOPPER_MASTER_KEY_SEALED
+    sealed=1
+    say "the master key: unsealed from this host ($HOPPER_MASTER_KEY_SEALED)"
+  fi
   if [ -z "${HOPPER_MASTER_KEY:-}" ]; then
     local tty="${HOPPER_UPDATE_TTY:-/dev/tty}"
     if { : <"$tty"; } 2>/dev/null; then
@@ -180,6 +192,20 @@ main() {
 
   check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}"
   prune "$runtime" "$image" "$previous"
+  [ "$sealed" = 0 ] || refresh_key_script "$runtime" "$image"
+}
+
+# master-key.sh beside compose.yaml, replaced with the one of the image updated to (issue #1296). One that does not come
+# keeps the old file: it still unseals the key.
+refresh_key_script() {
+  local runtime=$1 image=$2
+  if "$runtime" run --rm "$image" hopper master-key script </dev/null >master-key.sh.next 2>/dev/null && [ -s master-key.sh.next ]; then
+    mv master-key.sh.next master-key.sh
+    say "put in the master-key.sh of $image"
+  else
+    rm -f master-key.sh.next
+    say "the image gives no master-key.sh: the old one stays"
+  fi
 }
 
 # compose.yaml, the mark, then compose.override.yaml (none when it is the old compose.sandboxes.yaml, moved aside):
