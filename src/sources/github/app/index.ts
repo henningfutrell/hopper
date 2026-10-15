@@ -4,6 +4,7 @@
 export { loadGitHubApp, pemFromEnv, PRIVATE_KEY } from './config.ts';
 export { createGitHubAppKey, GITHUB_APP_KEY_VARIABLE } from './key.ts';
 export type { GitHubAppKey } from './key.ts';
+export { listInstalledApps } from './installed-apps.ts';
 export type { GitHubApp, GitHubAppLoad } from './config.ts';
 export { createGitHubAppApi } from './api.ts';
 export type { AppStatus, GitHubAppApi } from './api.ts';

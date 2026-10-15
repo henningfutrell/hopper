@@ -10,7 +10,7 @@ export { githubAccountOptions, githubAppOptions, sameAccountWork, sameAppWork, s
 export type { GitHubAccountOptions, GitHubAppOptions, GitHubSourceConfig } from './config.ts';
 export { APP_MISSING, appProblem, createAccountSource, createAppSource, followEvery } from './compose.ts';
 export { createAccountGitHubApi } from './github/account/api.ts';
-export { createGitHubAppKey, GITHUB_APP_KEY_VARIABLE, loadGitHubApp } from './github/app/index.ts';
+export { createGitHubAppKey, GITHUB_APP_KEY_VARIABLE, listInstalledApps, loadGitHubApp } from './github/app/index.ts';
 export type { GitHubAppKey } from './github/app/index.ts';
 export { createSourceSync, DELIVERY_SYNC_MS } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';
