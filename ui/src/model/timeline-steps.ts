@@ -1,14 +1,16 @@
 // The job timeline's nodes (issue #1169): what belongs together nests under one line. A sandbox step's start and end
 // (`step.started`, `step.finished`, one `step` id) are one step; a fork's spin-off and decision (`job.forked`,
-// `job.fork_resolved`, one `forkId`) are one fork. Every other event is a line of its own. Pure.
+// `job.fork_resolved`, one `forkId`) are one fork. A tend job (`job.pull_request_tended`) and a rework job
+// (`job.rework_requested`) are one line each, by the job they made (`nextJobId`), which opens to that job's own events.
+// Every other event is a line of its own. Pure.
 import type { DomainEvent, JobStatus } from './wire.ts';
 
-export type GroupKind = 'step' | 'fork';
+export type GroupKind = 'step' | 'fork' | 'tend' | 'rework';
 
 export interface TimelineGroup {
   kind: 'group';
   group: GroupKind;
-  /** The step id or the fork job id. */
+  /** The step id, or the job the group stands for: the fork job, the tend job, the rework job. */
   id: string;
   /** Its events, newest first. */
   events: DomainEvent[];
@@ -24,6 +26,7 @@ export type StepStatus = 'running' | 'error' | 'pending';
 
 const OPENS: Record<string, { group: GroupKind; field: string }> = {
   'step.started': { group: 'step', field: 'step' }, 'job.forked': { group: 'fork', field: 'forkId' },
+  'job.pull_request_tended': { group: 'tend', field: 'nextJobId' }, 'job.rework_requested': { group: 'rework', field: 'nextJobId' },
 };
 const CLOSES: Record<string, { group: GroupKind; field: string }> = {
   'step.finished': { group: 'step', field: 'step' }, 'job.fork_resolved': { group: 'fork', field: 'forkId' },
@@ -54,10 +57,10 @@ export function timelineNodes(events: readonly DomainEvent[]): TimelineNode[] {
 
 /**
  * A group's status. A step: an error when it ended with a non-zero exit or a problem; running while it has not ended and
- * its job (`jobStatus`) is at work. A fork: running while it is not decided and its fork job (`forkStatus`) is at work,
- * pending while that job waits for a lane.
+ * its job (`jobStatus`) is at work. A fork, a tend job, a rework job: by the job it stands for (`itsStatus`) — running
+ * while that job is at work, pending while it waits for a lane, an error when it failed. A decided fork has none.
  */
-export function groupStatus(g: TimelineGroup, jobStatus: JobStatus | string | undefined, forkStatus?: JobStatus | string): StepStatus | undefined {
+export function groupStatus(g: TimelineGroup, jobStatus: JobStatus | string | undefined, itsStatus?: JobStatus | string): StepStatus | undefined {
   if (g.group === 'step') {
     if (g.closed) {
       const d = g.closed.data as Record<string, unknown>;
@@ -65,7 +68,8 @@ export function groupStatus(g: TimelineGroup, jobStatus: JobStatus | string | un
     }
     return jobStatus && AT_WORK.has(jobStatus) ? 'running' : undefined;
   }
-  if (g.closed || !forkStatus) return undefined;
-  if (AT_WORK.has(forkStatus)) return 'running';
-  return WAITS.has(forkStatus) ? 'pending' : undefined;
+  if (g.closed || !itsStatus) return undefined;
+  if (AT_WORK.has(itsStatus)) return 'running';
+  if (itsStatus === 'failed') return 'error';
+  return WAITS.has(itsStatus) ? 'pending' : undefined;
 }

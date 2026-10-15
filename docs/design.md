@@ -16402,7 +16402,11 @@ event is a Trace line that opens to its data in a small code block (`JsonBlock`)
 line at the place of its newest event: a sandbox step's `step.started` and `step.finished` (one `step` id) — an error when
 it ended with a non-zero exit or a problem, running while it has not ended and the job is at work —; a fork's `job.forked`
 and `job.fork_resolved` (one `forkId`) — running while it is not decided and the fork job is at work, pending while that
-job waits, with a link to the fork job. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
+job waits, an error when the fork job failed, with a link to the fork job; a **tend job**'s `job.pull_request_tended` and
+a **rework** job's `job.rework_requested` (one `nextJobId` each) — one line that names the step and the pull request, or the
+pull request and the notes, and that job's status: running while it is at work, pending while it waits, an error when it
+failed. Opened, it links that job and reads that job's own events (`GET /api/jobs/:id/bom`, read again when that job's
+status changes), each a line nested under it. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
 decider decision's raw inputs, the built-in change rule) is the same `JsonBlock`; commands to copy, a direct job's result,
 a failure's error, an out-of-band change's detail and an infra plan's text are `LogBlock`s (title, wrap toggle, copy).
 

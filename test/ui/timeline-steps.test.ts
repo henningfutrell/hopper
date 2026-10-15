@@ -2,12 +2,14 @@
 // `step.finished`, one `step` id) are one step with its two events under it; a fork's spin-off and decision
 // (`job.forked`, `job.fork_resolved`, one `forkId`) are one fork. The step's status: a failed step is an error, a step
 // that has not ended runs while its job is at work; a fork that is not decided runs while its fork job is at work, and
-// is pending while that job waits.
+// is pending while that job waits. A tend job (`job.pull_request_tended`) and a rework job (`job.rework_requested`) are
+// one line each, by their `nextJobId`: running while that job works, pending while it waits, an error when it failed.
 //
 // Feature: nested steps on the job timeline
 //   Scenario: a step's start and end are one step, at the place of its newest event
 //   Scenario: events with no step id stay single lines
 //   Scenario: a step's and a fork's status
+//   Scenario: a tend job and a rework job are one line each, with the status of that job
 import { describe, expect, it } from 'vitest';
 import { groupStatus, timelineNodes, type TimelineGroup } from '../../ui/src/model/timeline-steps.ts';
 import type { DomainEvent } from '../../ui/src/model/wire.ts';
@@ -35,6 +37,16 @@ describe('the nodes of the job timeline', () => {
   it('makes a fork of its spin-off and decision', () => {
     const events = [event(3, 'job.fork_resolved', { forkId: 'f1', decision: 'accept' }), event(2, 'question.asked'), event(1, 'job.forked', { forkId: 'f1', to: 'research' })];
     expect(shape(events)).toEqual(['fork:f1[3,1]', 2]);
+  });
+
+  it('makes a tend job and a rework job one line each, by the job they made', () => {
+    const events = [
+      event(3, 'job.rework_requested', { pullRequest: 'u', notes: 'n', nextJobId: 'r1' }),
+      event(2, 'job.pull_request_tended', { pullRequest: 'u', step: 'rebase', nextJobId: 't1' }),
+      event(1, 'job.finished'),
+    ];
+    expect(shape(events)).toEqual(['rework:r1[3]', 'tend:t1[2]', 1]);
+    expect((timelineNodes(events)[1] as TimelineGroup).opened?.seq).toBe(2);
   });
 
   it('keeps an event with no step id a single line', () => {
@@ -70,5 +82,17 @@ describe('the status of a step or a fork', () => {
     expect(groupStatus(open, 'waiting_answer', 'finished')).toBeUndefined();
     expect(groupStatus(open, 'waiting_answer')).toBeUndefined();
     expect(groupStatus(group([event(2, 'job.fork_resolved', { forkId: 'f1' }), event(1, 'job.forked', { forkId: 'f1' })]), 'running', 'running')).toBeUndefined();
+  });
+
+  it('gives a tend job\'s and a rework job\'s line the status of that job', () => {
+    const tend = group([event(1, 'job.pull_request_tended', { pullRequest: 'u', step: 'rebase', nextJobId: 't1' })]);
+    expect(groupStatus(tend, 'finished', 'running')).toBe('running');
+    expect(groupStatus(tend, 'finished', 'queued')).toBe('pending');
+    expect(groupStatus(tend, 'finished', 'failed')).toBe('error');
+    expect(groupStatus(tend, 'finished', 'finished')).toBeUndefined();
+    expect(groupStatus(tend, 'finished')).toBeUndefined();
+    const rework = group([event(1, 'job.rework_requested', { pullRequest: 'u', notes: 'n', nextJobId: 'r1' })]);
+    expect(groupStatus(rework, 'finished', 'claimed')).toBe('running');
+    expect(groupStatus(rework, 'finished', 'failed')).toBe('error');
   });
 });

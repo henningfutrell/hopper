@@ -8,6 +8,7 @@
 //   Scenario: a job that waits for a lane shows a pending line
 //   Scenario: a step opens to its data
 //   Scenario: a sandbox step's start and end nest under one line; a fork's events nest under one line that links its job
+//   Scenario: a tend job nests under one line that links it and, opened, reads that job's own events and shows them nested
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -16,7 +17,10 @@ import type { DomainEvent, Job } from '../../src/domain/types.ts';
 // Browser code, type-checked by ui/tsconfig.json: imported by path.
 const timeline = '../../ui/src/components/job-timeline.tsx';
 const { JobTimeline } = (await import(timeline)) as {
-  JobTimeline: (p: { job?: Job; events: readonly DomainEvent[]; nameOf: (id: string) => string; machines: readonly never[]; statusOf?: (id: string) => string | undefined }) => ReturnType<typeof createElement>;
+  JobTimeline: (p: {
+    job?: Job; events: readonly DomainEvent[]; nameOf: (id: string) => string; machines: readonly never[]; statusOf?: (id: string) => string | undefined;
+    readEvents?: (jobId: string) => Promise<readonly DomainEvent[]>;
+  }) => ReturnType<typeof createElement>;
 };
 
 const T = '2026-10-14T12:00:00.000Z';
@@ -30,12 +34,12 @@ const event = (seq: number, type: string, data: Record<string, unknown> = {}): D
 let root: Root | undefined;
 afterEach(() => { act(() => root?.unmount()); root = undefined; });
 
-function render(j: Job | undefined, events: DomainEvent[], statusOf?: (id: string) => string | undefined): HTMLElement {
+function render(j: Job | undefined, events: DomainEvent[], statusOf?: (id: string) => string | undefined, readEvents?: (jobId: string) => Promise<readonly DomainEvent[]>): HTMLElement {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const el = document.getElementById('root')!;
   root = createRoot(el);
-  act(() => root!.render(createElement(JobTimeline, { job: j, events, nameOf: () => 'Fix it', machines: [], statusOf })));
+  act(() => root!.render(createElement(JobTimeline, { job: j, events, nameOf: () => 'Fix it', machines: [], statusOf, readEvents })));
   return el;
 }
 
@@ -116,5 +120,37 @@ describe('the job timeline', () => {
     expect(line.textContent).toContain('the token lifetime');
     act(() => group.querySelector('button')!.click());
     expect(group.querySelector<HTMLAnchorElement>('a[href="#job/f1234567890"]')).not.toBeNull();
+  });
+
+  it('nests a tend job under one line that links it, and opened, shows that job\'s own events', async () => {
+    const asked: string[] = [];
+    const readEvents = (jobId: string) => {
+      asked.push(jobId);
+      return Promise.resolve([{ ...event(9, 'job.failed', { error: 'conflict in a.ts' }), jobId }, { ...event(8, 'job.started'), jobId }]);
+    };
+    const el = render(job('finished'), [
+      event(2, 'job.pull_request_tended', { pullRequest: 'https://github.com/o/r/pull/7', step: 'rebase', nextJobId: 't1234567890' }),
+      event(1, 'job.finished'),
+    ], (id) => id === 't1234567890' ? 'failed' : undefined, readEvents);
+    const group = el.querySelector<HTMLElement>('[data-step-key="tend:t1234567890"]')!;
+    const line = group.querySelector<HTMLElement>('[data-slot="trace-line"]')!;
+    expect(line.dataset.status).toBe('error');
+    expect(line.textContent).toContain('rebase');
+    expect(line.textContent).toContain('pull/7');
+    expect(group.querySelector('button')!.getAttribute('aria-label')).toContain('failed');
+    expect(asked).toEqual([]);
+    await act(async () => { group.querySelector('button')!.click(); await Promise.resolve(); });
+    expect(asked).toEqual(['t1234567890']);
+    expect(group.querySelector<HTMLAnchorElement>('a[href="#job/t1234567890"]')).not.toBeNull();
+    const nested = [...group.querySelectorAll<HTMLElement>('[data-slot="trace"] [data-event-seq]')].map((n) => n.dataset.eventSeq);
+    expect(nested).toEqual(['2', '9', '8']);
+    expect(group.querySelector<HTMLElement>('[data-event-seq="9"] [data-slot="trace-line"]')!.dataset.status).toBe('error');
+  });
+
+  it('nests a rework job under one line with the person\'s notes', () => {
+    const el = render(job('finished'), [event(1, 'job.rework_requested', { pullRequest: 'https://github.com/o/r/pull/7', notes: 'name the test', nextJobId: 'r1234567890' })], () => 'running');
+    const line = el.querySelector<HTMLElement>('[data-step-key="rework:r1234567890"] [data-slot="trace-line"]')!;
+    expect(line.dataset.status).toBe('running');
+    expect(line.textContent).toContain('name the test');
   });
 });

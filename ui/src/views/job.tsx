@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/status';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
 import { directJobOf } from '@/model/promotions';
-import type { DomainEvent, Job } from '@/model/wire';
+import type { DomainEvent, Job, JobBom } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
@@ -56,6 +56,9 @@ function useJobEvents(id: string, read: readonly DomainEvent[]): DomainEvent[] {
 
 const NONE: DomainEvent[] = [];
 
+/** A tend or rework job's own events, newest first, from its parts list. */
+const readEventsOf = (jobId: string) => get<JobBom>(`/api/jobs/${encodeURIComponent(jobId)}/bom`).then((b) => b.events);
+
 const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div className="flex gap-2 text-xs"><span className="w-20 shrink-0 text-muted-foreground">{label}</span><span className="min-w-0 break-words">{children}</span></div>
 );
@@ -67,6 +70,7 @@ export function JobView() {
   const events = useJobEvents(id, bom?.events ?? NONE);
   const machines = useHopper((s) => s.machines);
   const jobs = useHopper((s) => s.jobs);
+  const locked = useHopper((s) => s.locked);
   const nameOf = useJobName();
   const back = <a href="#dashboard" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" />Dashboard</a>;
   return (
@@ -107,7 +111,7 @@ export function JobView() {
       {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
       <Panel title="Timeline" count={events.length}>
-        <JobTimeline job={read.state === 'found' ? read.job : undefined} events={events} nameOf={nameOf} machines={machines} statusOf={(jobId) => jobs[jobId]?.status} />
+        <JobTimeline job={read.state === 'found' ? read.job : undefined} events={events} nameOf={nameOf} machines={machines} statusOf={(jobId) => (jobs[jobId] ?? locked.find((j) => j.id === jobId))?.status} readEvents={readEventsOf} />
       </Panel>
       {bom && <Panel title="Parts list" bodyClassName="p-3"><BomTable bom={bom} /></Panel>}
     </div>
