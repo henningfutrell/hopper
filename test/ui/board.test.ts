@@ -216,10 +216,13 @@ describe('canRerun (issues #313, #354, #362)', () => {
     const done = job('d', { status: 'finished', ...src('k'), ...reported() });
     expect(canRerun(done, [done])).toBe(true);
   });
-  it('not once a newer job of its item exists, nor a job that did not end failed or finished, nor one of no source', () => {
+  it('a cancelled job can run again too (issue #1352)', () => {
+    expect(canRerun(job('c', { status: 'cancelled', ...src('k'), ...reported() }), [])).toBe(true);
+  });
+  it('not once a newer job of its item exists, nor a live job, nor one of no source', () => {
     const failed = job('f', { status: 'failed', ...src('k'), ...reported() });
     expect(canRerun(failed, [failed, job('n', { status: 'queued', ...src('k'), createdAt: '2026-10-03T11:00:00Z' })])).toBe(false);
-    expect(canRerun(job('c', { status: 'cancelled', ...src('k'), ...reported() }), [])).toBe(false);
+    expect(canRerun(job('r', { status: 'running', ...src('k'), ...reported() }), [])).toBe(false);
     expect(canRerun(job('s', { status: 'failed', ...reported() }), [])).toBe(false);
   });
   it('not while its end is not reported to its source yet: the daemon refuses that', () => {
