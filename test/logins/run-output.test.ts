@@ -11,12 +11,14 @@ import { createPrintAgentExecutor } from '../../src/executors/index.ts';
 import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
 import { parseOptions } from '../../src/plugins/options.ts';
 import { fixedClock } from '../plugins/support.ts';
+import { useStandInPodman } from '../support/stand-in-podman.ts';
 
 const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online: true, executors: ['agent'] };
 let dir: string;
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-logins-'));
+  useStandInPodman(dir);
   process.env.FAKE_AGENT_DIR = dir;
   process.env.FAKE_CLAUDE_OUT = join(dir, 'claude.json');
 });

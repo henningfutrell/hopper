@@ -20,6 +20,8 @@ const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');
 appendFileSync(log, JSON.stringify({
   argv, cwd: process.cwd(),
   env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
+  // Where it runs (issue #1295): in the job's sandbox, with podman a client of the job's socket.
+  sandbox: { sandboxed: process.env.HOPPER_SANDBOXED, containerHost: process.env.CONTAINER_HOST, pid: process.pid },
 }) + '\n');
 const kind = process.env.FAKE_AGENT_KIND;
 const mode = process.env.FAKE_AGENT_MODE ?? 'ok';

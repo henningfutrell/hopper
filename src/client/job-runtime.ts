@@ -131,6 +131,15 @@ const SETUP_SCRIPT = [
   'echo "$how"',
 ].map((l) => l.trim()).join(' ');
 
+/**
+ * A print-agent turn's socket (issue #1295), after the runtime command in the same shell: the job's runtime socket started
+ * in the turn's scope, its pid kept in the shell's `sp` (never in a file the job can write), when the shell has the job's
+ * own runtime; `sp` empty otherwise. `kill "$sp"` stops it when the turn ends: nothing of a turn outlives it.
+ */
+export const turnServiceCommand = (jobId: string, scratch: string): string =>
+  `sp=; case \${XDG_RUNTIME_DIR:-} in */${RUNTIME_PREFIX}${jobId}) ${shq(`${scratch}/${RUNTIME_SUBDIR}/bin/podman`)} system service --time=0 `
+  + `"unix://$XDG_RUNTIME_DIR/podman/podman.sock" </dev/null >/dev/null 2>&1 & sp=$!;; esac;`;
+
 /** What the runtime command prints, followed by its outcome. */
 export const RUNTIME_MARK = 'hopper-runtime-';
 /** own: the job has a runtime of its own; none: no podman or runtime dir here, the host's socket closed all the same; failed. */

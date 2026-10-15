@@ -10,7 +10,8 @@ import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
 import { scopeUnitOf } from '../client/reap.ts';
-import { runtimeCommand, runtimeEnvOf } from '../client/job-runtime.ts';
+import { runtimeCommand, runtimeEnvOf, turnServiceCommand } from '../client/job-runtime.ts';
+import { SANDBOX_SUBDIR, sandboxCommand } from '../client/job-sandbox.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
@@ -81,8 +82,24 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
 export function turnCommand(jobId: string, run: string): string {
   const unit = scopeUnitOf(jobId);
   return `if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet --collect -- true >/dev/null 2>&1; then`
+    // systemd 254 and later expand `$` in the command's arguments, which would rewrite a script's own variables.
+    + ' x=--expand-environment=no; systemd-run --user --scope --quiet --collect $x -- true >/dev/null 2>&1 || x=;'
     + ` systemctl --user stop ${unit}.scope >/dev/null 2>&1;`
-    + ` exec systemd-run --user --scope --quiet --collect --unit=${unit} -p KillMode=control-group -p TimeoutStopSec=10s -- ${run}; fi; exec ${run}`;
+    + ` exec systemd-run --user --scope --quiet --collect $x --unit=${unit} -p KillMode=control-group -p TimeoutStopSec=10s -- ${run}; fi; exec ${run}`;
+}
+
+/**
+ * What a turn's scope runs (issue #1295), `sh -c` of it: the job's own container runtime, with its socket started in the
+ * scope, then the job's sandbox around the agent's `run`, as around Claude in a pane, and the socket stopped when the agent
+ * ends; its exit code is the agent's. What the setup prints stays out of the agent's answer. A runtime that wrote no
+ * environment, or a sandbox that could not be set up, ends the turn (exit 125): it would run next to the host's runtime.
+ * A machine where bubblewrap cannot run runs the agent as before, with the job's runtime and its guards.
+ */
+export function isolatedTurn(jobId: string, scratch: string, run: string): string {
+  const fail = (what: string): string => `{ printf '%s\\n' ${shellQuote(`hopper: the job ${what} could not be set up`)} >&2; exit 125; }`;
+  return `{ ${runtimeCommand(jobId, scratch, false)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] || ${fail('container runtime')}; `
+    + `case $( { ${sandboxCommand(scratch)}; } 2>/dev/null) in *hopper-sandbox-on) w=${shellQuote(`${scratch}/${SANDBOX_SUBDIR}/run`)};; *hopper-sandbox-none) w=;; *) ${fail('sandbox')};; esac; `
+    + `${turnServiceCommand(jobId, scratch)} \${w:+"$w"} ${run}; r=$?; [ -n "$sp" ] && kill "$sp" 2>/dev/null; exit $r`;
 }
 
 function refusal(agent: PrintAgent, ctx: ExecutionContext): string | undefined {
@@ -118,12 +135,9 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
-    // The job's own container runtime (issue #1295), in the turn's environment; no socket of its own, as nothing of a turn
-    // outlives it. What its setup prints stays out of the agent's answer. A setup that wrote no environment ends the turn:
-    // it would run next to the host's runtime.
-    const runtime = `{ ${runtimeCommand(ctx.job.id, scratch, false)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] `
-      + `|| { printf '%s\\n' 'hopper: the job container runtime could not be set up' >&2; exit 125; }; `;
-    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${runtime}${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
+    // The job's own container runtime and its sandbox (issue #1295), in the turn's scope.
+    const isolated = isolatedTurn(ctx.job.id, scratch, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`);
+    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`)}; }`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });

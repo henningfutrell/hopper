@@ -12,6 +12,7 @@ import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { createPrintAgentExecutor } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { testSshAuth } from '../support/ssh.ts';
+import { useStandInPodman } from '../support/stand-in-podman.ts';
 
 const FAKE_CURSOR = join(import.meta.dirname, 'fake-cursor-agent.mjs');
 const FAKE_SSH = join(import.meta.dirname, '..', 'herdr', 'fake-ssh-bin.mjs');
@@ -22,6 +23,7 @@ let work: string;
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-cursor-'));
+  useStandInPodman(dir);
   work = join(dir, 'work');
   process.env.FAKE_CURSOR_DIR = dir;
   process.env.FAKE_HERDR_DIR = dir;
