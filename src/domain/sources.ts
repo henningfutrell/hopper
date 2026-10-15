@@ -1,10 +1,29 @@
 // A job source's status (/api/sources, SSE source.updated). Re-exported by types.ts.
 
+/**
+ * Why a job source that is on cannot run (issue #1243): the required config it lacks, by name — for the app source its
+ * `appId`, its `slug`, the variable of its private key —, or a value that is wrong. `help`: the help page that walks
+ * through its setup.
+ */
+export interface SetupProblem {
+  /** The config not set, by name; empty when what is set is wrong (`reason` says what). */
+  missing: string[];
+  /** What is missing or wrong, in a line. */
+  reason: string;
+  /** The help page's slug (`/help/<help>`). */
+  help: string;
+}
+
 export interface SourceStatus {
   name: string;
   kind: string;
-  /** ok: last sync succeeded. error: last sync failed. disabled: configured off. starting: no sync yet. */
-  state: 'ok' | 'error' | 'disabled' | 'starting';
+  /**
+   * ok: last sync succeeded. error: last sync failed. disabled: configured off. starting: no sync yet. needs-setup: on,
+   * but not configured (`setupProblem`, issue #1243): it ran no sync pass.
+   */
+  state: 'ok' | 'error' | 'disabled' | 'starting' | 'needs-setup';
+  /** Its setup problem while it has one (issue #1243). */
+  setupProblem?: SetupProblem;
   lastSyncAt?: string;
   lastOkAt?: string;
   lastError?: string;

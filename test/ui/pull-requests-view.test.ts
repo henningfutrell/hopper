@@ -61,6 +61,8 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'merge held' }))).toBe('ready, waits for another pull request to merge first');
     expect(waitsText(card({ waits: 'checks not started' }))).toBe('waiting for checks to start');
     expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
+    expect(waitsText(card({ waits: 'checks unknown', checksWhy: 'the GitHub App lacks Checks: read' }))).toBe('checks unknown: the GitHub App lacks Checks: read');
+    expect(waitsText(card({ waits: 'checks unknown' }))).toBe('the hopper cannot read its checks');
     expect(waitsText(card({ waits: 'no pull request' }))).toBe('no pull request found yet');
     expect(waitsText(card({ waits: 'not checked yet' }))).toBe('not checked yet');
   });

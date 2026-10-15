@@ -1,7 +1,7 @@
 // Job sources: where jobs come from, when each last synced, and what is wrong with it. The GitHub
 // sources are one section (issue #160): the GitHub connection first (issue #214), with its source's
 // sync inside it: the one way the hopper reads GitHub as the user (issue #359). Beside it, a GitHub App
-// an admin set up, and why it is paused. Below it, each job repository's setup (issue #652).
+// an admin set up, and why it is paused, or what it lacks while it is on but not configured (issue #1243). Below it, each job repository's setup (issue #652).
 import { Inbox } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -14,7 +14,7 @@ import { RepoSetupSection } from './repo-setup';
 import { SourceSync } from './source-sync';
 
 const USE: Record<SourceUse, { label: string; tone: 'ok' | 'warn' | 'muted' }> = {
-  'in-use': { label: 'in use', tone: 'ok' }, paused: { label: 'paused', tone: 'warn' }, disabled: { label: 'disabled', tone: 'muted' },
+  'in-use': { label: 'in use', tone: 'ok' }, 'needs-setup': { label: 'needs setup', tone: 'warn' }, paused: { label: 'paused', tone: 'warn' }, disabled: { label: 'disabled', tone: 'muted' },
 };
 
 function SourceCard({ s, c }: { s: SourceStatus; c?: GitHubConnection }) {

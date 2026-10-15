@@ -1,12 +1,13 @@
 // The GitHub sources over one source logic, as the job-source plugins build them: `github-app` (the
 // App adapter, as the bot), and a connected account's — `github-account` (issue #214), through the
 // account the user signed in with or connected: the one way GitHub is read as the user (issue #359).
-// Each pauses itself (JobSource.paused): the app while its identity (appId, slug, key) is incomplete,
+// Each pauses itself (JobSource.paused): the app while its identity (appId, slug, key) is incomplete — then it also
+// has a setup problem (issue #1243) that names what is missing, and runs no sync pass —,
 // an account's while it is not connected or its sign-in expired (issue #358) — then it asks for a
 // sign-in again; nothing falls back to another credential. Both take the issues assigned to the user's
 // connected GitHub account (issue #387), so the app's pauses too while none is connected.
 import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
-import { CONNECTED_VIA, type ChangeRule, type ConnectedAccountProvider } from '../domain/types.ts';
+import { CONNECTED_VIA, type ChangeRule, type ConnectedAccountProvider, type SetupProblem } from '../domain/types.ts';
 import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
@@ -21,6 +22,7 @@ import { gitHubThread } from './github/thread.ts';
 import { passReads } from './github/pass-reads.ts';
 import { baseMergeOf, baseTipOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
 import { createCheckLogs } from './github/check-logs.ts';
+import { ACCOUNT_CONNECTION, APP_CONNECTION, checksFallback } from './github/checks-fallback.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
@@ -32,6 +34,16 @@ export const APP_MISSING = 'no GitHub App configured';
 export const NO_ASSIGNEE = 'no GitHub account connected: the app takes the issues assigned to it — Sources → Connect GitHub';
 /** A connected account's source lists only its job repositories (issue #321): none chosen, none listed. */
 export const NO_REPOSITORIES = 'no repositories chosen for jobs: Sources → GitHub account → choose them';
+
+/** The help page that walks through the app source's setup (issue #1243). */
+export const APP_SETUP_HELP = 'github-app-setup';
+
+/** The app source's setup problem (issue #1243): what of its identity is not set, by name, or what is wrong. */
+export function appSetupProblem(load: GitHubAppLoad): SetupProblem | undefined {
+  if (load.ok) return undefined;
+  const reason = load.missing.length ? `${load.missing.join(', ')} not set` : load.reason;
+  return { missing: load.missing, reason, help: APP_SETUP_HELP };
+}
 
 /** Why the app cannot be used right now, or undefined when its identity is complete. */
 export function appProblem(load: GitHubAppLoad): string | undefined {
@@ -96,8 +108,9 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const assignee = () => o.accounts?.account('github');
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
   // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`. Conflicts
-  // from the mirror (issue #858), inside it, so a pass shares git's answer as it shares GitHub's.
-  const reads = passReads(gitAnswers(o.api ?? real!, o.gitMirrors), o.name);
+  // from the mirror (issue #858), inside it, so a pass shares git's answer as it shares GitHub's; so are checks the rollup
+  // would not give, read again over REST (issue #1244).
+  const reads = passReads(gitAnswers(checksFallback(o.api ?? real!, APP_CONNECTION, () => o.clock.now().getTime()), o.gitMirrors), o.name);
   const api = reads.api;
   const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
@@ -106,7 +119,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
-  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
+  return { ...source, setupProblem: () => appSetupProblem(app()), pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
 }
 
 /**
@@ -124,8 +137,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
-  // One read per sync pass (issue #822), across a rebuild of the source too; conflicts from the mirror (issue #858).
-  const reads = passReads(gitAnswers(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }), o.gitMirrors), o.name);
+  // One read per sync pass (issue #822), across a rebuild of the source too; conflicts from the mirror (issue #858); checks
+  // the rollup would not give, read again over REST (issue #1244).
+  const account = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) });
+  const reads = passReads(gitAnswers(checksFallback(account, ACCOUNT_CONNECTION, () => o.clock.now().getTime()), o.gitMirrors), o.name);
   const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {

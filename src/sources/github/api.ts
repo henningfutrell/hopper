@@ -67,6 +67,8 @@ export interface OpenPullRequest {
   headCommittedAt?: string;
   /** Its head commit's checks (issue #637, GitHub's status check rollup); absent: it has none. */
   checks?: ChecksState;
+  /** Why its checks are `unknown` (issue #1244): no read of them works with the connection, and what it lacks. Absent: known. */
+  checksWhy?: string;
   /** The checks of its head commit that failed (issue #927); read only for one pull request by its number. Absent: none, or not read. */
   failedChecks?: FailedCheck[];
   /** Its head commit (issue #858: what the mirror merges); absent: GitHub did not say. */
@@ -164,9 +166,18 @@ export interface PullRequestState {
   headRef?: string;
   base?: string;
   checks?: ChecksState;
+  /** Why its checks are `unknown` (issue #1244); absent: known. */
+  checksWhy?: string;
   body: string;
   issue?: { state: 'open' | 'closed'; stateReason?: string; updatedAt: string };
 }
+
+/**
+ * A commit's checks as GitHub's REST API tells them (issue #1244: the read when the rollup is forbidden): its check runs and
+ * its commit statuses together; `checks` absent: it has none. `unreadable`: the permissions the credential lacks for them,
+ * `checks` (Checks: read), `statuses` (Commit statuses: read): with either one missing, its checks are not known.
+ */
+export type HeadChecks = { checks?: ChecksState } | { unreadable: ('checks' | 'statuses')[] };
 
 /** The answer of a batched pull request read, each by `pullKey`; one GitHub did not answer for is in `errors`, never a throw. */
 export interface PullRequestStates { pulls: Map<string, PullRequestState>; errors: Map<string, string> }
@@ -272,6 +283,12 @@ export interface GitHubApi {
    * job is sent back to fix it). GitHub refuses it (403) without the Actions write permission; a refusal throws. Absent: not run.
    */
   rerunJob?(repo: string, jobId: number): Promise<void>;
+  /**
+   * The checks of commit `ref` (a head commit, or a branch) of `repo` (issue #1244), over REST: its check runs and its
+   * combined status. What the hopper reads when GitHub refuses the GraphQL rollup (`checksFallback`). A refusal of either
+   * read (403, 404) is in `unreadable`; any other error throws. Absent: not read.
+   */
+  headChecks?(repo: string, ref: string): Promise<HeadChecks>;
   /** Make open pull request `number` of `repo` a draft (issue #724: a person sent it back for rework). A draft stays one. GitHub's refusal throws. */
   toDraft(repo: string, number: number): Promise<void>;
 

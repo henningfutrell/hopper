@@ -2,7 +2,7 @@
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { FakeBaseMerge } from './fake-conflicts.ts';
 import type { FakeMentionInput } from './fake-cross-references.ts';
-import type { GitHubApi, GitHubComment, GitHubIssue, OpenPullRequest, ClosingPullRequest } from './api.ts';
+import type { GitHubApi, GitHubComment, GitHubIssue, HeadChecks, OpenPullRequest, ClosingPullRequest } from './api.ts';
 
 export type Method = keyof GitHubApi;
 
@@ -41,6 +41,8 @@ export interface FakeGitHub extends GitHubApi {
   mentionIssue(repo: string, number: number, m: FakeMentionInput): string;
   /** Its head commit's checks now (issue #637); undefined: none. */
   setChecks(url: string, checks: ChecksState | undefined, failedChecks?: FailedCheck[]): void;
+  /** What the REST read of pull request `url`'s head commit checks answers (issue #1244); never set: refused. */
+  setHeadChecks(url: string, answer: HeadChecks): void;
   /** The log of GitHub Actions job `jobId` of `repo` (issue #993): its text, or the error GitHub answers for it. */
   setJobLog(repo: string, jobId: number, log: string | Error): void;
   /** The GitHub Actions jobs run again (issue #1230), `owner/name#job`, oldest first. */
