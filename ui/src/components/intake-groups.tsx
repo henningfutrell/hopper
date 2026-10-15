@@ -5,6 +5,8 @@
 // backburner says since when and by whom (issue #808), and has a dashed edge, so it never looks taken or dropped. An issue a
 // person approved here stays in its place in Needs approval, says approved and what the sync made of it, and takes the
 // focus (issue #811): the list does not move under the person who acted. So does an issue declined here (issue #1035). Taken and partly done issues are on Jobs.
+// The source's list is the source of truth (issue #1178): a decision it makes stale is forgotten — the card asks again, and
+// an item whose job ended leaves Needs approval —, and an approved row says what it waits on: no job yet, or its job and state.
 import { Flame, Hand, Loader2, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -16,7 +18,7 @@ import { ago } from '@/model/format';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { actFor, useHopper } from '@/store';
-import { forgetEndedApprovals, intakeRefusal, keepsPlace, useApprovals } from '@/store/intake';
+import { forgetEndedApprovals, intakeRefusal, keepsPlace, reconcileApprovals, useApprovals } from '@/store/intake';
 import { useCanOperate } from '@/store/selectors';
 
 type Send = 'assign' | 'release' | 'unbackburner';
@@ -27,7 +29,7 @@ function Taken({ x }: { x: IntakeOutcome }) {
   const job = x.jobId ? <span className="font-mono text-muted-foreground"> · job {x.jobId.slice(0, 8)}</span> : null;
   return jobEnded(status)
     ? <span className="text-muted-foreground">its job ended: {status}{job} · the next sync says what became of it</span>
-    : <span className="text-ok">taken{job}</span>;
+    : <span data-taken className="text-ok">taken{job}{status ? <span className="text-muted-foreground"> · {status}</span> : null}</span>;
 }
 
 /** Why an issue is kept out: its reason, and on the backburner since when and by whom when the source read it (issue #808). */
@@ -63,6 +65,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       <GhLink url={x.key}>{x.title || x.key}</GhLink>
       {asked && state === 'pending' && <span data-approving className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />approving ·</span>}
       {asked && state === 'approved' && <span data-approved className="text-ok">approved ·</span>}
+      {asked && state === 'approved' && x.reason !== undefined && <span data-approved-waits className="text-muted-foreground">no job yet ·</span>}
       {asked && state === 'declining' && <span data-declining className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />declining ·</span>}
       {asked && state === 'declined' && <span data-declined className="text-muted-foreground">declined ·</span>}
       {x.reason === undefined ? <Taken x={x} /> : <Reason x={x} />}
@@ -84,7 +87,9 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
 export function IntakeGroups({ items, source }: { items: IntakeOutcome[]; source: string }) {
   const canOperate = useCanOperate();
   const approvals = useApprovals();
+  const jobs = useHopper((s) => s.jobs);
   const kept = useMemo(() => new Set(Object.keys(approvals).filter((k) => keepsPlace(approvals[k]))), [approvals]);
+  useEffect(() => reconcileApprovals(items, (id) => jobs[id]?.status), [items, jobs]);
   useEffect(() => forgetEndedApprovals, []);
   return (
     <div className="space-y-3">
