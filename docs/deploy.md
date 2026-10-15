@@ -314,7 +314,7 @@ is only in the hopper's environment, given at launch.
   mounted: in `compose.override.yaml`, `services.hopper.volumes: ["/var/run/tailscale:/var/run/tailscale:ro"]`. Without
   it, add the names in Settings → Allowed hosts. A tailnet peer whose address the container sees as `100.64.0.0/10` needs
   that mount too, or that range in `HOPPER_LAN_PEERS`.
-- **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container.
+- **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container. While the event loop is held, that read times out; the **health port** still answers inside the container (`curl 127.0.0.1:4791/api/health`: 503 and `eventLoopHeldMs`, issue #1383, docs/design.md "Reading the held event loop"). It is not published. `HOPPER_HEALTH_PORT` moves it; a host install has none unless it is set. An admin reads the process's memory and event-loop delay at `GET /api/process`.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
   nothing starts them after a reboot by itself: the user service does, with linger on ("The user service" below).
 - **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and

@@ -80,9 +80,11 @@ USER node
 ENV NODE_ENV=production \
     HOPPER_LOCAL_MACHINE=false \
     HOPPER_PORT=4790 \
+    HOPPER_HEALTH_PORT=4791 \
     HOPPER_WORK_DIR=/tmp/hopper
 EXPOSE 4790
-# Loopback inside the container, on the daemon's port: a local request, no session needed.
+# Loopback inside the container, on the daemon's port: a local request, no session needed. The health port (4791,
+# loopback in the container, not published) answers while the event loop is held, and says how long (issue #1383).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.HOPPER_PORT || 4790) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 CMD ["node", "src/main.ts"]

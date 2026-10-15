@@ -9,7 +9,10 @@
 // Issue #1383: a worker thread reads where the loop runs while it is held (event-loop-held.ts), so a stall with no store
 // call in it names its code too (`held`); a stall says the process's memory (`memory`); and the time the loop was held
 // since a moment is answered (`heldSince`), so a dial-in that waited behind a stall is not refused as stale. The process's
-// memory is logged each time its resident size grows past another GiB.
+// memory is logged each time its resident size grows past another GiB. The process reading (`reading`, GET /api/process,
+// issue #1383) says the memory now, and the loop's delay and use over the last minute, so growth and a slow loop show
+// before they become a stall.
+import { monitorEventLoopDelay, performance as perf, type EventLoopUtilization } from 'node:perf_hooks';
 import type { FastifyInstance } from 'fastify';
 import type { HeldSample, HeldWatch } from './event-loop-held.ts';
 import type { StoreTotal } from '../store/slow-calls.ts';
@@ -66,9 +69,23 @@ const heldLine = (h: StallHeld[] | undefined): string => (h?.length
 
 const mib = (bytes: number): number => Math.round(bytes / 1024 ** 2);
 
+/**
+ * The process now (issue #1383): its memory in MiB, and its event loop over the last minute (`windowS`, shorter before a
+ * first minute): the delay of its timers in ms, and its use, the share of the time it ran code (0..1).
+ */
+export interface ProcessReading {
+  uptimeS: number;
+  memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number; externalMb: number; arrayBuffersMb: number };
+  eventLoop: { windowS: number; delayMs: { mean: number; p50: number; p99: number; max: number }; utilization: number };
+}
+
+type Memory = { rss: number; heapUsed: number; heapTotal?: number; external?: number; arrayBuffers?: number };
+
 export interface EventLoopWatch {
   /** The last stall, while it is shown. */
   last(): EventLoopStall | undefined;
+  /** The process now: its memory, and its event loop over the last minute. */
+  reading(): ProcessReading;
   /**
    * How long the loop was held since `from` (ms since the epoch): the stalls since, and the one still going on. A request
    * signed at `from` and read only now waited that long behind the loop, not on the wire.
@@ -88,7 +105,7 @@ export interface WatchOptions {
   /** The thread that reads where the loop is held (event-loop-held.ts). Absent: a stall does not say. */
   held?: HeldWatch;
   /** The process's memory; default `process.memoryUsage()`. */
-  memory?: () => { rss: number; heapUsed: number };
+  memory?: () => Memory;
   stallMs?: number;
   tickMs?: number;
   raiseEveryMs?: number;
@@ -107,6 +124,18 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
   const stalls: { from: number; to: number }[] = [];
   let beat = o.held?.beat() ?? Date.now();
   let rssStep = 0, memoryAt = performance.now();
+  // The loop's delay and use, over the minute that ended last and the one going on.
+  const delay = monitorEventLoopDelay({ resolution: 20 });
+  delay.enable();
+  let window: { from: number; elu: EventLoopUtilization; read?: { windowS: number; delayMs: ProcessReading['eventLoop']['delayMs']; utilization: number } } = { from: performance.now(), elu: perf.eventLoopUtilization() };
+  const loopNow = (): { windowS: number; delayMs: ProcessReading['eventLoop']['delayMs']; utilization: number } => {
+    const ms = (ns: number): number => (Number.isFinite(ns) ? Math.round(ns / 1e4) / 100 : 0);
+    return {
+      windowS: Math.round((performance.now() - window.from) / 1000),
+      delayMs: { mean: ms(delay.mean), p50: ms(delay.percentile(50)), p99: ms(delay.percentile(99)), max: ms(delay.max) },
+      utilization: Math.round(perf.eventLoopUtilization(window.elu).utilization * 1000) / 1000,
+    };
+  };
   /** The store's totals at the last tick: a stall's store calls are the difference at its end. */
   let storeAt = o.storeCalls?.();
 
@@ -132,7 +161,12 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     beat = o.held?.beat() ?? wall;
     const storeBefore = storeAt;
     storeAt = o.storeCalls?.();
-    if (now - memoryAt >= memoryEveryMs) { memoryAt = now; watchMemory(); }
+    if (now - memoryAt >= memoryEveryMs) {
+      memoryAt = now;
+      watchMemory();
+      window = { from: now, elu: perf.eventLoopUtilization(), read: loopNow() };
+      delay.reset();
+    }
     if (late < stallMs) return;
     stalls.push({ from: wall - late, to: wall });
     while (stalls.length && stalls[0]!.to < wall - STALLS_KEPT_MS) stalls.shift();
@@ -165,9 +199,19 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
   };
   timer.unref();
   // The held thread ends on its own time: a close never waits on it.
-  app.addHook('onClose', async () => { clearInterval(timer); void o.held?.end().catch(() => undefined); });
+  app.addHook('onClose', async () => { clearInterval(timer); delay.disable(); void o.held?.end().catch(() => undefined); });
 
   return {
+    reading: () => {
+      const m = memory();
+      // A minute that ended, unless the one going on held the loop longer: a stall shows at once.
+      const going = loopNow(), loop = window.read && window.read.delayMs.max >= going.delayMs.max ? window.read : going;
+      return {
+        uptimeS: Math.floor(process.uptime()),
+        memory: { rssMb: mib(m.rss), heapUsedMb: mib(m.heapUsed), heapTotalMb: mib(m.heapTotal ?? 0), externalMb: mib(m.external ?? 0), arrayBuffersMb: mib(m.arrayBuffers ?? 0) },
+        eventLoop: loop,
+      };
+    },
     last: () => (last && performance.now() - last.seen < STALL_SHOWN_MS ? last.stall : undefined),
     heldSince: (from) => {
       // The stall going on now, not yet seen by the timer: this read runs as the loop is freed.

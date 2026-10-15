@@ -21636,9 +21636,27 @@ said what did not hold the loop, never what did.
   calls of 20 ms said the same. The store now totals the time and count of every call by statement, and the watchdog
   names the difference of the totals across a stall (`storeCallsBetween`), so `store` says the store's whole part,
   `SELECT jobs 41.0 s ×2050` included. The rest of the stall is the hopper's own code, or the garbage collector.
-- **Not done here.** `/api/health` still cannot answer while the loop is held: it is served on the loop. A second
-  listener in the worker would be a second network surface, which a person decides. No other code is moved off the
-  loop yet: the reads say what to move, and no hopper has run them through a stall.
+- **The health port answers while the loop is held** (`src/http/event-loop-held.ts`, `event-loop-held-worker.ts`, part
+  4; `HOPPER_HEALTH_PORT`, the image sets 4791). `/api/health` on the daemon's port is served on the loop, so a held
+  loop does not answer it, and a probe sees only a timeout. The held-loop thread, given a port, listens on `127.0.0.1` at
+  it and answers `GET /api/health` (and `HEAD`) from the beat alone: `200 { ok: true, version, uptimeS }` while the beat
+  is fresh, `503 { ok: false, version, uptimeS, eventLoopHeldMs }` once no beat came for 5 s (`HELD_MS`). Inside the
+  container: `curl 127.0.0.1:4791/api/health`. It is a second listener, made as small as it can be: loopback only, never
+  every interface, even with LAN peers; a loopback Host only (`127.0.0.1:<port>`, `localhost:<port>`, else 421), as the
+  Host guard; one path (else 404) and GET only (else 405); the instance's version and uptime only, the same as the
+  daemon's answer to a request with no user, never a user's state; it changes and records nothing, and reads no store.
+  The image publishes no port for it. A port it cannot take is logged (`hopper: the health port cannot answer: …`) and
+  the daemon starts without it. Unset (a host install): no health port. The image's `HEALTHCHECK` stays on the daemon's
+  port: a held loop is not healthy, and the health port is there to say why, not to hide it.
+- **The process reading** (`GET /api/process`, an instance read, `src/http/stack-resources.ts`; `reading` of
+  `src/http/event-loop.ts`, part 4). The hopper's own memory now (`rssMb`, `heapUsedMb`, `heapTotalMb`, `externalMb`,
+  `arrayBuffersMb`) and its event loop over the last minute: the delay of its timers (`monitorEventLoopDelay`, 20 ms
+  resolution: `mean`, `p50`, `p99`, `max` in ms) and its use (`eventLoopUtilization`, 0..1). The minute going on is
+  answered in place of the last one when it held the loop longer, so a stall shows at once. Memory growth and a slow
+  loop show here before they are a stall, with no container runtime to ask (`podman stats`).
+- **Not done here.** No other code is moved off the loop: the cause found (the waits, part 3) was in the loop's own work,
+  not code that needs a thread. A heap-growth check run locally (an idle and a busy hopper driven for a time, the heap
+  read after a forced garbage collection) and the smaller collections with no bound (issue #1402) are left.
 
 **Verification:** `test/http/event-loop.test.ts` (a stall names the code the loop ran while held, from the real worker;
 `heldSince`, a stall going on included; the memory line once per GiB; `frameOf` never an absolute path),
@@ -21647,7 +21665,10 @@ the future; still once), `test/http/sse-held.test.ts` (a replay frees the loop b
 a live event after it; a reader far behind is ended; one that reads is kept), `test/store/slow-calls.test.ts` and
 `test/http/event-loop.test.ts` (the store's totals; a stall of many fast store calls names them with their count; a
 stream its reader closed is no longer in flight), `test/github-proxy/pr-wait.test.ts` (the pull request and skill waits
-hear a user's event log once, however often they are answered again).
+hear a user's event log once, however often they are answered again), `test/http/event-loop.test.ts` part 4 (the health
+port answers 200 while the beat is fresh and 503 with the held time while another process asks it with this one held; a
+host that is not loopback 421, another path 404; no port, no listener; the process reading's memory and loop delay, and a
+held loop in its `max`), `test/integration/config.test.ts` (`HOPPER_HEALTH_PORT`).
 
 ## Local accounts (issue #1380, part 1, 2026-10-15)
 

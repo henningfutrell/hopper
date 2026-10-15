@@ -87,6 +87,12 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     });
   });
 
+  it('HOPPER_HEALTH_PORT names the health port; unset, there is none (issue #1383)', () => {
+    expect(loadConfig({ ...DB, HOPPER_HEALTH_PORT: '4791' }).healthPort).toBe(4791);
+    expect(loadConfig(DB).healthPort).toBeUndefined();
+    expect(() => loadConfig({ ...DB, HOPPER_HEALTH_PORT: '0' })).toThrow(/HOPPER_HEALTH_PORT/);
+  });
+
   it('reads every process setting; paths are taken as given', () => {
     const c = loadConfig({
       HOPPER_PORT: '0', HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', HOPPER_WORK_DIR: '/var/tmp/jh', HOPPER_TICK_MS: '50',

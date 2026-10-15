@@ -1,0 +1,1 @@
+- When the hopper is busy and stops answering, it still answers a health check from inside its container, and says how long it has been busy. An admin can also see how much memory the hopper uses and how quickly it answers.
