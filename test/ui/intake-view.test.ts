@@ -12,10 +12,23 @@ import { DETAIL, SOURCES, boot, button, click, daemon, group, navLink, posts, re
 afterEach(unmount);
 
 describe('Intake: the issues a source listed, grouped by why (issues #798, #897)', () => {
-  it('the nav entry is badged with the items the work-item ledger has waiting for approval (issue #1067), and so is Needs you\'s Intake row', async () => {
-    await boot('#dashboard');
-    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3'));
+  it('the nav entry is badged with the cards the page shows under Needs approval, whatever the ledger counts (issue #1193)', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    const shown = group(view()!, 'request').querySelector('[data-intake-group-count]')!.textContent;
+    expect(shown).toBe('2');
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe(shown));
     expect(navLink('#intake').textContent).toContain('Intake');
+  });
+
+  it('a reopened card (issue #1126) counts on the page and in the badge at the same moment (issue #1193)', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
+    const reopened = { key: url(11), title: 'Done, still open', repo: 'octo-user/hopper', reason: 'reopened after its job was done: approve it to run it again', action: 'approve', group: 'request',
+      request: { ...request(11), why: ['reopened after its job was done'], reopened: { jobs: [{ id: 'j-11', status: 'finished' }] } } };
+    await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify({ ...SOURCES[0], detail: { ...DETAIL, intake: [...DETAIL.intake, reopened] } }) }); });
+    expect(group(view()!, 'request').querySelector('[data-intake-group-count]')!.textContent).toBe('3');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3');
   });
 
   it('groups the issues waiting on an intake decision by why, with counts, requests first', async () => {
@@ -94,7 +107,7 @@ describe('the backburner is always visible (issue #808)', () => {
     await boot('#dashboard');
     await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
     expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
-    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');
   });
 
   it('each row says its issue number; a backburner row says since when and by whom, and looks unlike a taken one', async () => {
