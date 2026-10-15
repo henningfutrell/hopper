@@ -52,10 +52,18 @@ describe('the Kubernetes container runtime', () => {
     expect(c).toMatchObject({
       image: 'ghcr.io/henningfutrell/hopper:box-claude', env: [{ name: 'HOPPER_CLIENT_NAME', value: 'hopper-sandbox-infra' }],
       securityContext: { allowPrivilegeEscalation: false, privileged: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-      resources: { limits: { cpu: '1.5', memory: '2048Mi' } },
+      resources: { limits: { cpu: '1.5', memory: '2048Mi' }, requests: { cpu: '100m', memory: '256Mi' } },
       volumeMounts: [{ name: 'home', mountPath: '/home/agent' }, { name: 'tmp', mountPath: '/tmp' }],
     });
     expect(c.command).toBeUndefined();
+  });
+
+  it('asks the node for a small floor, not its limits: a limit is a ceiling, as with Podman, never a reservation', async () => {
+    const api = createFakeKubeApi();
+    const small = podOf(api, await runtime(api).create(spec({ name: 'hopper-sandbox-small', limits: { cpus: 0.05, memoryMb: 64 } }))).spec!.containers[0]!;
+    expect(small.resources).toEqual({ limits: { cpu: '0.05', memory: '64Mi' }, requests: { cpu: '0.05', memory: '64Mi' } });
+    const none = podOf(api, await runtime(api).create(spec({ name: 'hopper-sandbox-none', limits: { cpus: 0, memoryMb: 0 } }))).spec!.containers[0]!;
+    expect(none.resources).toBeUndefined();
   });
 
   it('refuses a user that is not a number, or root', async () => {
