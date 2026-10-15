@@ -1,0 +1,89 @@
+{{- $name := printf "%s-openfga" (include "hopper.fullname" .) -}}
+{{- $sel := dict "ctx" . "component" "openfga" -}}
+{{- $secret := include "hopper.runtimeSecret" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  selector:
+    {{- include "hopper.selector" $sel | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
+      enableServiceLinks: false
+      # The image's nonroot user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      # Brings the schema up to this version first. It fails, and is started again, until Postgres takes connections.
+      # Until OpenFGA runs, the hopper denies every credential (fail closed).
+      initContainers:
+        - name: migrate
+          image: {{ .Values.openfga.image }}
+          args: [migrate]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: openfga_datastore_uri
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+      containers:
+        - name: openfga
+          image: {{ .Values.openfga.image }}
+          args: [run]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: openfga_datastore_uri
+            # Only the hopper asks it, with this key.
+            - name: OPENFGA_AUTHN_METHOD
+              value: preshared
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: openfga_key
+            - name: OPENFGA_PLAYGROUND_ENABLED
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.openfga.resources | nindent 12 }}

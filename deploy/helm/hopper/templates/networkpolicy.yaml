@@ -1,0 +1,32 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- /* Who reaches each part: Postgres the hopper and OpenFGA, OpenFGA and Solr the hopper alone. */ -}}
+{{- $parts := list (list "postgres" 5432 (list "hopper" "openfga")) (list "openfga" 8080 (list "hopper")) -}}
+{{- if .Values.solr.enabled -}}
+{{- $parts = append $parts (list "solr" 8983 (list "hopper")) -}}
+{{- end -}}
+{{- range $i, $p := $parts }}
+{{- if $i }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-%s" (include "hopper.fullname" $) (index $p 0) }}
+  labels:
+    {{- include "hopper.labels" (dict "ctx" $ "component" (index $p 0)) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "hopper.selector" (dict "ctx" $ "component" (index $p 0)) | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range (index $p 2) }}
+        - podSelector:
+            matchLabels:
+              {{- include "hopper.selector" (dict "ctx" $ "component" .) | nindent 14 }}
+        {{- end }}
+      ports:
+        - port: {{ index $p 1 }}
+{{- end }}
+{{- end }}

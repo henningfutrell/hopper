@@ -4,8 +4,9 @@ Everything the daemon keeps is in one Postgres database it is given — the only
 local file. Its secrets come from its runtime — environment variables or mounted secret files — and it
 stores none; its config is config records in that database, edited in the UI, with no config file
 (docs/design.md "Deployable"). It runs as a self-hosted service anywhere it can reach its database:
-containers from one compose file, systemd `--user` units on a host that also runs the jobs, or any
-platform that runs a container and hands it a managed Postgres. **Recommended: the published image,
+containers from one compose file, systemd `--user` units on a host that also runs the jobs, a Helm chart
+on Kubernetes ("On Kubernetes, with Helm"), or any platform that runs a container and hands it a managed
+Postgres. **Recommended: the published image,
 with Podman** ("In containers, with Podman"); the host install is the other way.
 
 ## What every deploy needs
@@ -612,6 +613,50 @@ fallback:
 4. `podman compose up -d`. The next probe finds `http://host.containers.internal:4790`, and the seat's jobs use it.
 
 Publish on that address only, never on every interface: the port then stays off the LAN.
+
+## On Kubernetes, with Helm
+
+The chart `deploy/helm/hopper` (issue #1281) brings up in a cluster what `compose.yaml` brings up with Podman: the hopper,
+its Postgres, OpenFGA and Solr. It needs no container runtime socket, no host path and no settings. Every object runs as
+a non-root user, with no privilege and no capability.
+
+```sh
+helm install hopper deploy/helm/hopper --namespace hopper --create-namespace
+kubectl --namespace hopper port-forward svc/hopper 4790      # then open http://localhost:4790/
+```
+
+Sign in with GitHub: the first person to do so is the admin. Then give the master key ("The master key"). The first start
+makes one and shows it once, in the UI. Keep it in a password manager, then put it in a Secret and restart the hopper:
+
+```sh
+read -rs KEY && kubectl --namespace hopper create secret generic hopper-master-key --from-literal=master-key="$KEY"
+kubectl --namespace hopper rollout restart deployment/hopper
+```
+
+To give a key from the first start, make that Secret before `helm install`. A rotation puts the old key under
+`previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`). `masterKey.existingSecret` names another Secret.
+
+| value | |
+|---|---|
+| `image.tag` | the update channel: `latest` (the default, the same image as `stable`), `stable`, `beta`, `canary` or `dev` |
+| `ingress.enabled`, `ingress.host`, `ingress.className`, `ingress.tlsSecretName`, `ingress.annotations` | publish the UI on a host name through the cluster's ingress controller. That host is the public URL (`HOPPER_PUBLIC_URL`, `https://<host>` unless `ingress.publicUrl`): a request through it is a public request |
+| `lanPeers` | the pod network the hopper takes LAN requests from (the ingress controller, the kubelet). Default: the private ranges, as compose |
+| `solr.enabled` | `false`: no Solr, and no search |
+| `networkPolicy.enabled` | NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. Default on; they take effect where the network plugin enforces them |
+| `extraEnv` | more environment for the hopper ("What every deploy needs") |
+| `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
+
+The chart makes the database password and OpenFGA's preshared key at the first install, in the Secret `hopper-runtime`,
+and keeps them at each upgrade. An uninstall keeps that Secret and the home volume (`helm.sh/resource-policy: keep`), and
+the StatefulSets' volumes stay too: the database keeps the password it was made with. Remove them by hand only together.
+
+Update: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values` with the chart of the new version.
+The hopper stops before the new one starts (one writer of its database).
+
+Not in the chart yet (issue #1281 has the parts): machines in the cluster (join machines from outside as `client`
+targets: `README.md` "Add machines"), sandbox boxes the hopper starts, remote access (`tunnel`, `cloudflared`: use the Ingress), the
+optional services, and an update and drift check that know Kubernetes — the hopper's drift check reads a compose stack,
+and in the cluster it says compose services are not running.
 
 ## Access: OpenFGA
 
