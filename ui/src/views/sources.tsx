@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/status';
 import { sourcesView, type GitHubConnection, type SourceUse } from '@/model/sources';
 import type { SourceStatus } from '@/model/wire';
 import { useHopper } from '@/store';
+import { AfterAnswer } from './after-answer';
 import { ConnectedAccountPanel } from './connected-account';
 import { RepoSetupSection } from './repo-setup';
 import { SourceSync } from './source-sync';
@@ -48,6 +49,7 @@ export function Sources() {
       {v.others.length > 0 && (
         <section className="grid gap-3 lg:grid-cols-2">{v.others.map((s) => <SourceCard key={s.name} s={s} />)}</section>
       )}
+      <AfterAnswer />
       {!sources.length && <Panel title="Sources" icon={Inbox}><Empty>no job sources configured</Empty></Panel>}
     </div>
   );

@@ -4,6 +4,7 @@
 // and the connected account, and the next sync lists it in Intake. In-memory fake GitHub at the GitHubApi seam; issues carry a scripted-executor op as their first body line.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { UntrackedPullRequest } from '../../src/domain/untracked-pull-requests.ts';
+import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -85,7 +86,8 @@ describe('untracked pull requests (issue #1176)', () => {
     gh.openPullRequest(REPO, unlabelled.number, { createdAt: new Date().toISOString() });
     await app.sync();
     const listed = await waitFor(async () => (await untracked(app))?.find((u) => u.offer === 'take_in'), { what: 'an issue to take in' });
-    gh.failNext('addLabels', new Error('label refused'));
+    // Refused for good: a write GitHub refused for now is tried again (part 8).
+    gh.failNext('addLabels', new GitHubApiError('label refused', true, 422));
     const token = await app.login();
     const r = await app.ui('/ui/api/sources/github/intake', { kind: 'take_in', keys: [listed.issue!.url] }, { token });
     expect(r.status).toBe(200);

@@ -14,6 +14,25 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="num text-lg font-semibold">{value}</div></div>;
 }
 
+/**
+ * The GitHub writes a person's intake actions left after their answer (issue #1194): how many are under way, when the last
+ * went through, and each that failed, offered again on its item. None when no write ever ran.
+ */
+function WriteBehind({ s, now }: { s: SourceStatus; now: number }) {
+  const d = s.detail ?? {};
+  const pending = typeof d.writeBehindPending === 'number' ? d.writeBehindPending : 0;
+  const last = str(d.lastWriteBehindAt);
+  const errors = d.writeBehindErrors && typeof d.writeBehindErrors === 'object' ? Object.entries(d.writeBehindErrors as Record<string, string>) : [];
+  if (!pending && !last && !errors.length) return null;
+  return (
+    <div data-write-behind={s.name} className="space-y-0.5 text-xs text-muted-foreground">
+      <div>GitHub writes: {pending ? <span className="text-foreground/80">{pending} under way</span> : 'none under way'}
+        {last && <> · last went through <span title={last}>{ago(last, now)}</span></>}</div>
+      {errors.map(([key, why]) => <div key={key} data-write-behind-error className="text-bad"><GhLink url={key}>{key}</GhLink>: {why}</div>)}
+    </div>
+  );
+}
+
 /** A source's sync: what it saw and made, when, and what is wrong with it; and what its intake did with each item (issue #440). */
 export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepository?: ((repo: string) => Promise<boolean>) | undefined }) {
   const now = useServerNow(); // the daemon's clock: its times are its own (issue #812)
@@ -29,6 +48,7 @@ export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepositor
         {s.syncing ? <> · <span data-syncing>syncing now</span></>
           : s.nextSyncAt && <> · next <span title={s.nextSyncAt}>{Date.parse(s.nextSyncAt) > now ? countdown(s.nextSyncAt, now) : 'now'}</span></>}
       </div>
+      <WriteBehind s={s} now={now} />
       {s.lastError && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 text-xs break-words text-bad">{s.lastError}</div>}
       {str(d.setup) && <div className="rounded-md border border-warn/30 bg-warn/5 p-2 text-xs">Setup needed: <code className="font-mono">{String(d.setup)}</code></div>}
       {str(d.appError) && <div className="text-xs text-bad">app error: {String(d.appError)}</div>}

@@ -11524,9 +11524,22 @@ the next read, never from a poll.
   The UI's 10 s tick (`ui/src/store/stream.ts`) reads the health and the update notice only; an action's result comes
   from its answer and the stream.
 
-Not yet so (issue #1194, later parts): an outbox that batches and merges GitHub writes; the after-answer timings on a
-page of the UI, and of the write-behind's GitHub work, which runs inside the source; and no end-to-end check measures
-the card in a browser.
+- **The write-behind tries again, and Sources shows it** (part 8). A write GitHub refused for now — a 5xx, or GitHub out
+  of reach — failed at once before, and waited for a person to press the act again. Now it is tried again after 1 s and
+  after 4 s more (`RETRY_MS`, `src/sources/github/write-behind.ts`); meanwhile the item's `writeBehind` is `running` with
+  its `attempt` and the `error` of the try before. A write GitHub refuses for good (`GitHubApiError.permanent`: a 403, 404,
+  410 or 422), or rate-limited past the next try (`retryAt`), fails at once: trying again gets the same answer. The next
+  discover still waits for every write-behind under way, so its tries too: at most 5 s more, and a stale read never undoes
+  what the person did. The source's detail says how many writes run (`writeBehindPending`) and when the last went through
+  (`lastWriteBehindAt`), beside `writeBehindErrors`. Each act's write is timed as an after-answer timing of its source:
+  `afterAnswer` entries with `source`, the act its name (`approve`, `assign`, `release`, `unbackburner`, `take_in`), its
+  run every try. Sources shows both: on a source's card a line "GitHub writes: N under way · last went through …" and each
+  write that failed (`ui/src/views/source-sync.tsx`); below the sources, **Work after an act** (`ui/src/views/after-answer.tsx`),
+  per act its wait and run as p50 / p95, the slowest first, read when Sources opens and on Read again.
+
+Not yet so (issue #1194, later parts): an outbox that batches and merges GitHub writes, and keeps them across a restart
+(the write-behind is in memory: a restart while a write runs loses it, and the item is offered again as GitHub has it);
+and no end-to-end check measures the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 

@@ -244,14 +244,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake.record('source.intake_migrated', { source: o.name, changes });
   };
 
-  const writeBehind = createWriteBehind();
+  const writeBehind = createWriteBehind({ now: () => o.clock.now() });
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), botLogin, writeBehind });
 
   return {
     name: o.name,
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outcomes.map(writeBehind.on),
+    intake: () => outcomes.map(writeBehind.on), afterAnswerTimings: writeBehind.timings,
     intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), writeBehind }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
