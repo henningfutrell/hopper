@@ -5,12 +5,20 @@
 // A LAN or public request reads /api/ only with a live UI session: the x-hopper-session header,
 // or for the event stream (EventSource sends no headers) the `session` query parameter — or with a token
 // in `Authorization` (the API door, issue #255), which the tenancy hook checks next (src/http/tenants.ts).
+// One exception (issue #712): a LAN read of `GET /api/health` without a session, which has no user and so answers the
+// instance's health only, `{ ok, version, uptimeS }` — so a probe on the same machine (Windows beside a hopper in WSL)
+// learns the hopper is up. A public request still needs a session.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import { SESSION_HEADER, sessionIn, sessionTokenIn } from './ui/guard.ts';
 import type { UiSession, UiSessions } from './ui/sessions.ts';
 
 const STREAM = '/api/events/stream';
+const HEALTH = '/api/health';
+
+/** A LAN read of the instance's health (issue #712): open without a session. */
+const lanHealth = (req: FastifyRequest, reach: 'lan' | 'public'): boolean =>
+  reach === 'lan' && (req.method === 'GET' || req.method === 'HEAD') && req.url.split('?')[0] === HEALTH;
 
 /** The event stream's `session` query parameter (EventSource sends no headers), or undefined. */
 function streamToken(req: FastifyRequest): string | undefined {
@@ -43,7 +51,7 @@ export function installHostGuard(app: FastifyInstance, o: { port: () => number; 
     }
     // Every request of a session renews it (issue #439); one that has ended is gone before anything reads it.
     await o.sessions.renew(sessionToken(req), req.headers);
-    if (r.reach !== 'local' && req.url.startsWith('/api/') && !atApiDoor(req) && !requestSession(req, o.sessions)) {
+    if (r.reach !== 'local' && req.url.startsWith('/api/') && !atApiDoor(req) && !requestSession(req, o.sessions) && !lanHealth(req, r.reach)) {
       return reply.code(401).send({ error: r.reach === 'lan' ? 'log in to read across the LAN: sign in, or open a device link from a logged-in browser' : 'sign in to read' });
     }
   });

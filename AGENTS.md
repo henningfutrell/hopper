@@ -29,7 +29,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Loopback plus the LAN names and the public URL, and the hopper pulls.** The daemon binds `127.0.0.1`, or every
   interface only when `HOPPER_LAN_PEERS` is set; a peer outside
   loopback and the LAN peers is refused, and a LAN or public request reads `/api/` only with a UI session
-  (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
+  (`docs/design.md` "Reaching the UI across the LAN", issue #16) — one exception, a LAN `GET /api/health`, which answers
+  without a session the instance's health only, `{ ok, version, uptimeS }` (issue #712). No route creates or changes a job, question, webhook or setting except
   through the UI session below: jobs come only from job sources; webhook subscriptions are rows in the
   database and nothing else (issue #78), which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
   (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port — this host's tailnet names and addresses and the admin's allowed hosts count as LAN names, and while it is on a tailnet a peer in Tailscale's ranges as a LAN peer (issue #1024) — / the public URL's host / the remote access domain while remote access is on (issue #880), else 421). One exception, a

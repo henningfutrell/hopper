@@ -1,0 +1,1 @@
+- A device on your network can now check that the hopper is up, and which version runs, without signing in. Everything else still needs a sign-in.

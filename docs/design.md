@@ -1622,7 +1622,7 @@ omitted, plus `config: { path, loadedAt, error? }`) · `/api/webhooks/deliveries
 
 Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, or a
 LAN name with the port; anything else is 421 — DNS-rebinding guard. A LAN request reads `/api/`
-only with a UI session ("Reaching the UI across the LAN").
+only with a UI session, but for the instance's health (issue #712, "Reaching the UI across the LAN").
 
 SSE adds non-domain `event: source.updated` (`data: SourceStatus`), like `delivery.updated`, and `event: usage.recorded` (`data: { added }`, issue #502) when the usage history keeps new samples.
 
@@ -5629,6 +5629,16 @@ With LAN names set the daemon binds `::` (every interface); without, `127.0.0.1`
 headers — the `session` query parameter. `/`, `/ui/assets/*`, `POST /ui/login` and
 `GET /ui/api/session` stay open, so a logged-out device can load the page and log in. Loopback reads
 stay open: a local process can read the store file anyway.
+
+**One exception: the instance's health** (issue #712). A LAN `GET /api/health` (or `HEAD`) without a
+session is answered, with the instance's part only — `{ ok, version, uptimeS }` and `eventLoopStall`
+while it is shown — as a loopback read on a hopper with several users is: a request with no session
+has no user, so it reads no user's router or executors. With a session the full answer, as before.
+The reason: a probe on the same machine that arrives as a LAN peer (Windows beside a hopper in WSL,
+through a port rootless Podman publishes) learns that the hopper is up without a sign-in. A public
+request (the public URL, remote access) still needs a session. Residual risk, stated: the version
+and the uptime are visible to every peer in `HOPPER_LAN_PEERS` that uses a name the Host guard
+accepts. Nothing else is.
 
 **Mutations** accept `Origin: http://<LAN name>:<port>` beside the loopback origins; every other
 check in "UI session and mutations" 5 stands.
