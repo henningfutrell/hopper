@@ -29,6 +29,18 @@ describe('jobs', () => {
     s.close();
   });
 
+  it('a job enters waiting_on only with what it waits on (issue #1245)', () => {
+    const s = t.open(t.url());
+    const j = s.jobs.create(spec, 50);
+    const since = '2026-10-02T10:00:00.000Z';
+    expect(() => s.jobs.update(j.id, { status: 'waiting_on' })).toThrow(/waits on nothing recorded/);
+    expect(() => s.jobs.update(j.id, { status: 'waiting_on', wait: { for: 'a review', since } })).toThrow(/waits on nothing recorded/);
+    expect(s.jobs.get(j.id)!.status).toBe('queued');
+    const on = { kind: 'pull_request', number: 12, about: 'review' } as const;
+    expect(s.jobs.update(j.id, { status: 'waiting_on', wait: { for: 'a review', since, on } }).wait?.on).toEqual(on);
+    s.close();
+  });
+
   it('update of a missing job throws', () => {
     const s = t.open(t.url());
     expect(() => s.jobs.update('nope', { status: 'failed' })).toThrow();

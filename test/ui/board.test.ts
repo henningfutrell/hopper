@@ -1,7 +1,7 @@
 // The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, ownWaitOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, ownWaitOf, waitOnLink, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineLaneEffect, MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -228,3 +228,19 @@ describe('canRerun (issues #313, #354, #362)', () => {
   });
 });
 
+
+describe('waitOnLink (issue #1245)', () => {
+  const since = '2026-10-15T00:00:00Z';
+  const waiting = (on?: NonNullable<Job['wait']>['on']) =>
+    job('w', { status: 'waiting_on', source: { repo: 'o/r' } as Job['source'], wait: { for: 'x', since, ...(on ? { on } : {}) } });
+  it('a pull request, an item or a job is a link; an outside event is words', () => {
+    expect(waitOnLink(waiting({ kind: 'pull_request', number: 12, about: 'merge' }))).toEqual({ label: 'PR #12 to merge', href: 'https://github.com/o/r/pull/12' });
+    expect(waitOnLink(waiting({ kind: 'item', repo: 'a/b', number: 3 }))).toEqual({ label: 'a/b#3', href: 'https://github.com/a/b/issues/3' });
+    expect(waitOnLink(waiting({ kind: 'job', jobId: 'j9' }))).toEqual({ label: 'job j9', href: '#job/j9' });
+    expect(waitOnLink(waiting({ kind: 'outside', what: 'a release' }))).toEqual({ label: 'outside: a release' });
+  });
+  it('a wait from before says nothing recorded; a job not on a wait has none', () => {
+    expect(waitOnLink(waiting())).toEqual({ label: 'nothing recorded' });
+    expect(waitOnLink(job('r'))).toBeUndefined();
+  });
+});
