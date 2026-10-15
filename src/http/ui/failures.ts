@@ -59,7 +59,7 @@ export const stuckParams = z.object({ cause: z.enum(STUCK_BULK) });
 
 /** A stuck cause's bulk action (issue #1010), as the OpenAPI document lists it. */
 export const STUCK_OPERATIONS: Operation[] = [
-  { method: 'post', path: '/ui/api/failures/stuck/:cause', tag: 'Failures', summary: 'Act on a stuck cause', description: 'Stuck work (issue #1010): runs the bulk action of one stuck cause (`stuck` in `GET /api/failures`) on each of its items now, through the same path as the item\'s own button, answered once each item is checked (issue #1194): each give-back runs after the answer, and one that fails records `job.give_back_failed` with why; `continue`, `run_again` and `wont_do` resolve each open hand-off so (Won\'t do with its card\'s why as the note), `retry` runs each failure again, `push` is Push it on each job\'s work not pushed, `tend` is Tend again on each pull request the hopper gave up on. An item a check refuses is skipped with why; the others go on. `done`: the items answered, their give-back running (for `wont_do`, resolved). A box action. 400: the cause has no bulk action.', role: 'operator', returns: '`StuckActResult`: `{ cause, done, refused: [{ id, why }] }`', errors: [400, 401] },
+  { method: 'post', path: '/ui/api/failures/stuck/:cause', tag: 'Failures', summary: 'Act on a stuck cause', description: 'Stuck work (issue #1010): runs the bulk action of one stuck cause (`stuck` in `GET /api/failures`) on each of its items now, through the same path as the item\'s own button, answered once each item is checked (issue #1194): each give-back runs after the answer, and one that fails records `job.give_back_failed` with why; `continue`, `run_again` and `wont_do` resolve each open hand-off so (Won\'t do with its card\'s why as the note), `retry` runs each failure again, `push` is Push it on each job\'s work not pushed, `tend` is Tend again on each pull request the hopper gave up on, `wait_unnamed` (issue #1245) ends each wait that names nothing it waits on, now, telling the job to go on or name what it waits on. An item a check refuses is skipped with why; the others go on. `done`: the items answered, their give-back running (for `wont_do`, resolved). A box action. 400: the cause has no bulk action.', role: 'operator', returns: '`StuckActResult`: `{ cause, done, refused: [{ id, why }] }`', errors: [400, 401] },
 ];
 
 /** A problem's resolution (issue #623): a note, if any, kept in its `failure.resolved`. */
@@ -147,6 +147,7 @@ export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard
     return actOnStuck({
       view: () => t.failures.view(), resolveHandoff: t.failures.resolveHandoff,
       giveBack: (act, id, by) => giveBackOf(t, act, id, by),
+      endWait: (id, note) => { t.engine.endWait(id, note); },
     }, cause, actingIn(req));
   });
   app.post('/ui/api/failures/:id/retry', o.operator, async (req, reply) => {

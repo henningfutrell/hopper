@@ -1,5 +1,6 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
+import { waitEntryProblem } from '../domain/wait-on.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
 
 export function createJobRepository(c: StoreContext): JobRepository {
@@ -11,6 +12,9 @@ export function createJobRepository(c: StoreContext): JobRepository {
     const cur = get(id);
     if (!cur) throw new Error(`job not found: ${id}`);
     const next: Job = { ...change(cur), updatedAt: c.clock.now().toISOString() };
+    // A job enters waiting_on only with what it waits on (issue #1245).
+    const problem = waitEntryProblem(cur, next);
+    if (problem) throw new Error(problem);
     c.db.run('UPDATE jobs SET status = ?, body = ? WHERE id = ?', next.status, JSON.stringify(next), id);
     return next;
   };

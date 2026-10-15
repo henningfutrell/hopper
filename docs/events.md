@@ -1048,18 +1048,23 @@ Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its ow
 
 ## `job.waiting`
 
-Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it; `ownCommand` (issue #1037): `until` names its own background command, so it shows as running. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998).
+Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it; `on` (issue #1245): what it waits on, typed — a pull request (`number`, `about`: `checks`, `merge` or `review`), a job, an item, a person's question, a `sandbox` or `template` approval, a vault grant, its own command, or an outside event —, from its `on:` line, else read from what it wrote; absent only on a wait from before; `ownCommand` (issue #1037): `until` names its own background command, so it shows as running. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998), or when the pull request it waits on is merged or closed (issue #1245).
 
 | field | type | required |
 |---|---|---|
 | `for` | string | yes |
 | `until` | string | no |
+| `on` | any | no |
 | `ownCommand` | boolean | no |
 
 ```json
 {
   "for": "write access to the repository",
-  "until": "a background poll of the push"
+  "until": "a background poll of the push",
+  "on": {
+    "kind": "outside",
+    "what": "write access to the repository"
+  }
 }
 ```
 

@@ -47,9 +47,10 @@ export const JOBS_DIR = '~/hopper-jobs';
  * review); `until`, how it will know it happened (a check it runs in the background, an event), as it wrote it.
  * `ownCommand` (issue #1037): `until` names the job's own background command, so it waits on nothing outside the job and
  * shows as running. Then, while its pane shows no background work: `goneSince`, when that was first seen; `nudgedAt`, when
- * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge.
+ * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge. `on` (issue #1245): what it
+ * waits on, typed; every wait since has one, and one without is a legacy wait, stuck work.
  */
-export interface JobWait { for: string; until?: string; since: string; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -522,7 +523,7 @@ export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
 export * from './kept-work.ts';
-export * from './stuck.ts';
+export * from './stuck.ts'; export * from './wait-on.ts';
 export * from './yolo-mode.ts'; export * from './landing-batches.ts'; export * from './change-kinds.ts';
 export * from './contribution.ts'; export * from './shrink-guard.ts';
 export * from './pull-requests.ts';
