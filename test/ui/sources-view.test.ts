@@ -32,16 +32,40 @@ describe('Sources view: GitHub', () => {
   });
 
   it('a GitHub App source not configured: a setup card names what is missing, says how to set it up, links its help, and shows no zeros (#1243)', async () => {
-    const setupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
+    const setupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
     await boot({ '/api/sources': { sources: [{ ...source('github-app', 'github-app', 'needs-setup', { mode: 'app', paused: 'no GitHub App configured' }), setupProblem }] } });
     const card = () => document.querySelector('[data-setup-problem="github-app"]');
     await vi.waitFor(() => expect(card()).not.toBeNull());
-    expect([...card()!.querySelectorAll('[data-setup-missing]')].map((e) => e.textContent)).toEqual(['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY']);
+    expect([...card()!.querySelectorAll('[data-setup-missing]')].map((e) => e.textContent)).toEqual(['appId', 'slug', 'private key']);
     expect(card()!.textContent).toContain('scripts/create-github-app.sh');
     expect(card()!.querySelector('a[href="/help/github-app-setup"]')).not.toBeNull();
     const stats = [...document.querySelectorAll('[data-source-sync="github-app"] [data-stat]')].map((e) => e.textContent);
     expect(stats).toEqual(['not configured', 'not configured', 'not configured']);
     expect(document.querySelector('[data-source-use="needs-setup"]')).not.toBeNull();
+  });
+
+  it('a GitHub App source with no private key: the card takes the key in a write-only field and saves it to the vault (#1243)', async () => {
+    const setupProblem = { missing: ['private key'], reason: 'private key not set', help: 'github-app-setup' };
+    await boot({
+      '/api/sources': { sources: [{ ...source('github-app', 'github-app', 'needs-setup', { mode: 'app' }), setupProblem }] },
+      '/ui/api/github-app-key': { set: true, setAt: '2026-10-15T00:00:00.000Z', setBy: 'octo-user' },
+    });
+    const field = () => document.querySelector('[data-setup-problem="github-app"] [data-app-key-field]') as HTMLTextAreaElement | null;
+    await vi.waitFor(() => expect(field()).not.toBeNull());
+    expect(field()!.getAttribute('autocomplete')).toBe('off');
+    expect(field()!.getAttribute('spellcheck')).toBe('false');
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+      set.call(field(), '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----');
+      field()!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const save = [...document.querySelectorAll('[data-setup-problem="github-app"] button')].find((b) => b.textContent === 'Save the key') as HTMLButtonElement;
+    await act(async () => { save.click(); });
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls.filter(([u, i]) => String(u) === '/ui/api/github-app-key' && i?.method === 'POST');
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(String(calls[0]![1]!.body))).toEqual({ action: 'set', value: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----' });
+    await vi.waitFor(() => expect(document.querySelector('[data-app-key-saved]')?.textContent).toContain('Saved in the vault'));
+    expect(field()?.value ?? '').toBe('');
   });
 
   it('a sign-in that expired says so, names the account, and asks to sign in again (#359)', async () => {
@@ -173,7 +197,7 @@ describe('Sources view: GitHub', () => {
   });
 
   it('signed in with GitHub: the connection is the one GitHub piece, with its sync; an unset GitHub App that is on needs setup (#254, #1243)', async () => {
-    const setupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
+    const setupProblem = { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' };
     await boot({
       '/api/sources': { sources: [
         source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' }),

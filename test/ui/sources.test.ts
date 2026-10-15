@@ -19,12 +19,12 @@ const account = (login?: string, paused = NOT_CONNECTED) => source('github-accou
 describe('sourcesView', () => {
   it('signed in with GitHub: the connection reads issues; a GitHub App source on but not set up needs setup, and says what it lacks (#254, #1243)', () => {
     const acc = account('octo-user');
-    const unset = { ...app('needs-setup', 'no GitHub App configured'), setupProblem: { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' } };
+    const unset = { ...app('needs-setup', 'no GitHub App configured'), setupProblem: { missing: ['appId', 'slug', 'private key'], reason: 'appId, slug, private key not set', help: 'github-app-setup' } };
     const v = sourcesView([unset, acc]);
     expect(v.account).toBe(acc);
     expect(v.connected).toBe(true);
-    expect(v.github.map((c) => [c.use, c.why])).toEqual([['needs-setup', 'appId, slug, GITHUB_APP_PRIVATE_KEY not set']]);
-    expect(notConfiguredLines([unset, acc])).toEqual(['github-app: appId, slug, GITHUB_APP_PRIVATE_KEY not set']);
+    expect(v.github.map((c) => [c.use, c.why])).toEqual([['needs-setup', 'appId, slug, private key not set']]);
+    expect(notConfiguredLines([unset, acc])).toEqual(['github-app: appId, slug, private key not set']);
     expect(v.others).toEqual([]);
     expect(v.summary).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
   });
