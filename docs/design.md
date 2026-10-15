@@ -7118,7 +7118,8 @@ provider types are adapters behind one port (`src/auth/provider.ts`), so a fourt
 schema branch.
 
 **Libraries, not hand-rolled protocol code.** OIDC and GitHub's OAuth 2.0: `openid-client` (v6;
-discovery, PKCE, state, nonce, ID token validation, userinfo). SAML: `@node-saml/node-saml` (v5;
+discovery, PKCE, state, nonce, ID token validation — its signature against the issuer's JWKS included,
+issue #1380 —, userinfo). SAML: `@node-saml/node-saml` (v5;
 signature, audience, InResponseTo, clock-skew validation, SP metadata). Tests drive real protocol
 exchanges against loopback IdPs: `oauth2-mock-server`, a GitHub fake, a SAML IdP signing with an
 openssl throwaway key through `xml-crypto` (`test/support/idp.ts`).
@@ -21564,8 +21565,8 @@ built-in realm: a hopper that runs with no GitHub and no identity provider, end 
 
 Inputs, from `main` at `e48e2ec4`: issue #237 removed the password realm and its accounts (argon2 with them); issue #238
 removed every bootstrap login, so a fresh hopper's only way in was GitHub's first sign-in (issue #239). OIDC (issue
-#185) already discovers the issuer, checks the ID token's signature against its keys, `iss`, `aud`, `exp` and `nonce`
-through openid-client, and counts `email` only when `email_verified` is true.
+#185) already discovers the issuer, checks the ID token's `iss`, `aud`, `exp` and `nonce` through openid-client, and
+counts `email` only when `email_verified` is true. It did not check the signature: part 2 below.
 
 **Decisions** (taken from the issue, none asked):
 - **Not a realm of the sign-in config.** The accounts are rows of their own (`local_accounts`, instance migration 41),
@@ -21619,3 +21620,40 @@ required; the migration of GitHub-signed-in users; Kubernetes and service-accoun
 the CLI's refusals; an admin adds an account that signs in as its own user; an admin never sets the password of an
 account that signs in as another user; an account's own password change ends its other sessions; no lockout; the realm
 name reserved), `test/ui/local-accounts-panel.test.ts`.
+
+## OIDC: the ID token's signature against the issuer's keys (issue #1380, part 2, 2026-10-15)
+
+The owner's requirements on issue #1380: hopper does discovery, verifies ID token signatures against the provider's
+JWKS and handles key rotation, and checks `iss`, `aud`, `exp`, `nonce` and `email_verified`. Acceptance tests: a valid
+token passes; a bad signature, a wrong `iss` or a wrong `aud` is refused; a rotated key is picked up without manual
+action, and a removed key stops validating.
+
+**What was missing.** openid-client v6 checks an ID token's claims, but not its signature when the token came straight
+from the token endpoint over TLS (OIDC Core 3.1.3.7 allows that). The oidc realm never asked for more: a token endpoint
+that answered a token signed by any key was believed.
+
+**The change.** `src/auth/oidc.ts` gives discovery `client.enableNonRepudiationChecks`: openid-client then checks the
+signature against the keys at the issuer's `jwks_uri`, and refuses a token signed with a shared secret (`HS*`), which
+has no published key. A refusal names the claim or the key: openid-client's message plus the cause it wraps.
+
+**Key rotation** is openid-client's JWKS cache (oauth4webapi): kept per discovered issuer for at most 300 seconds; a key
+id it does not hold makes it read the JWKS again when its copy is at least 60 seconds old. So a new key is picked up at
+the first token signed with it (one minute after the last read at most), and a removed key stops validating at the next
+read (five minutes at most). These bounds are the library's constants; the hopper sets none.
+
+**Decisions:**
+- **The library's check, not one of our own.** jose (already used by the gateway realm) could verify the ID token a
+  second time with a cache the hopper tunes. The library's check is one switch and no code to own.
+- **Allowed email domains stay the role rules' `emailDomains`.** A new field in the `sign-in` record is one an older
+  build refuses (its schema is strict): a hopper moved to a steadier update channel would stop. A realm whose rules
+  match only on `emailDomains`, with no default role, lets in nobody else.
+
+**Left for later parts of issue #1380:** as part 1 lists, but for the JWKS checks and key rotation: passkeys; identity
+keyed by email in OpenFGA subjects, audit and attribution; GitHub as a source a user attaches, with its repositories,
+the acting identity and the email match setting; a source's expiry marking only that source; no GitHub App; the
+migration of GitHub-signed-in users; Kubernetes and service-account tokens.
+
+**Verification:** `test/auth/oidc-id-token.test.ts` against `test/support/oidc-issuer.ts`, a loopback issuer whose keys
+the test holds: a valid token; a token signed by a key the issuer does not publish (same key id); a wrong `iss`, `aud`,
+`exp` or `nonce`; a rotated key read again after a minute; a removed key refused after five minutes, the new key
+accepted; an unverified email left out.
