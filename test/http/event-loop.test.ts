@@ -3,12 +3,13 @@
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { storeCallsIn, watchEventLoop, type EventLoopStall } from '../../src/http/event-loop.ts';
+import { frameOf, watchHeld, type HeldWatch } from '../../src/http/event-loop-held.ts';
 import { createSlowCalls } from '../../src/store/slow-calls.ts';
 
 const apps: ReturnType<typeof Fastify>[] = [];
 afterEach(async () => { for (const a of apps.splice(0)) await a.close(); });
 
-function setup(o: { raise?: boolean } = {}) {
+function setup(o: { raise?: boolean; held?: HeldWatch; rss?: () => number; memoryEveryMs?: number } = {}) {
   const app = Fastify();
   apps.push(app);
   const lines: string[] = [];
@@ -16,6 +17,8 @@ function setup(o: { raise?: boolean } = {}) {
   const slow = createSlowCalls({ slowMs: 50 });
   const watch = watchEventLoop(app, {
     clock: { now: () => new Date('2026-10-13T10:00:00Z') }, warn: (l) => lines.push(l), stallMs: 200, tickMs: 20,
+    memory: () => ({ rss: o.rss?.() ?? 300 * 1024 ** 2, heapUsed: 120 * 1024 ** 2 }), ...(o.memoryEveryMs ? { memoryEveryMs: o.memoryEveryMs } : {}),
+    ...(o.held ? { held: o.held } : {}),
     ...(o.raise ? { storeCalls: slow.since, raise: (s: EventLoopStall & { skipped: number }) => { raised.push(s); }, raiseEveryMs: 60_000 } : {}),
   });
   app.get('/held/:id', async () => {
@@ -54,7 +57,8 @@ describe('the event loop watchdog (issue #1002)', () => {
     expect(stall).toMatchObject({ at: '2026-10-13T10:00:00.000Z', during: ['GET /held/:id'] });
     expect(stall!.ms).toBeGreaterThanOrEqual(200);
     expect(s.lines).toHaveLength(1);
-    expect(s.lines[0]).toMatch(/^hopper: the event loop stalled for \d\.\d s; requests in flight: GET \/held\/:id$/);
+    expect(s.lines[0]).toMatch(/^hopper: the event loop stalled for \d\.\d s; requests in flight: GET \/held\/:id; memory: 300 MiB resident, 120 MiB heap$/);
+    expect(stall!.memory).toEqual({ rssMb: 300, heapMb: 120 });
     expect(s.lines[0]).not.toContain('secret-id');
   });
 
@@ -66,7 +70,7 @@ describe('the event loop watchdog (issue #1002)', () => {
     await tick(100);
     expect(s.watch.last()?.store).toMatchObject({ calls: [{ what: 'SELECT jobs', count: 1 }] });
     expect(s.watch.last()!.store!.ms).toBeGreaterThanOrEqual(300);
-    expect(s.lines[0]).toMatch(/; store calls in it: 0\.\d s \(SELECT jobs 0\.\d s\)$/);
+    expect(s.lines[0]).toMatch(/; store calls in it: 0\.\d s \(SELECT jobs 0\.\d s\); memory: /);
   });
 
   it('says so when no slow store call ran in a stall', async () => {
@@ -75,7 +79,7 @@ describe('the event loop watchdog (issue #1002)', () => {
     await s.app.inject({ url: '/held/1' });
     await tick(100);
     expect(s.watch.last()).not.toHaveProperty('store');
-    expect(s.lines[0]).toMatch(/; no slow store call in it$/);
+    expect(s.lines[0]).toMatch(/; no slow store call in it; memory: /);
   });
 
   it('raises a stall at most once each interval, and counts the ones between', async () => {
@@ -88,6 +92,70 @@ describe('the event loop watchdog (issue #1002)', () => {
     expect(s.lines).toHaveLength(2);
     expect(s.raised).toHaveLength(1);
     expect(s.raised[0]).toMatchObject({ during: ['GET /held/:id'], skipped: 0 });
+  });
+});
+
+// Issue #1383: what held the loop is read while it is held, by a thread of its own; the time it was held is answered, so
+// a dial-in that waited behind it is not stale; the process's memory is said with each stall and logged as it grows.
+describe('the event loop read while it is held (issue #1383)', () => {
+  const helds: HeldWatch[] = [];
+  afterEach(async () => { for (const h of helds.splice(0)) await h.end(); });
+
+  it('a stall names the code the loop ran while it was held', async () => {
+    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false })!;
+    helds.push(held);
+    const s = setup({ raise: true, held });
+    s.app.get('/long', async () => {
+      const end = Date.now() + 1200;
+      while (Date.now() < end) { /* holds the event loop */ }
+      return { ok: true };
+    });
+    await tick(300); // the worker is up and sees the beat
+    await s.app.inject({ url: '/long' });
+    await tick(200);
+    const stall = s.watch.last()!;
+    expect(stall.held?.length).toBeGreaterThan(0);
+    expect(stall.held![0]!.afterMs).toBeGreaterThanOrEqual(300);
+    expect(stall.held![0]!.frames.join(' ')).toContain('test/http/event-loop.test.ts:');
+    expect(s.raised[0]?.held).toEqual(stall.held);
+    expect(s.lines[0]).toMatch(/; it ran at \d\.\d s: .*test\/http\/event-loop\.test\.ts:\d+/);
+  });
+
+  it('answers how long the loop was held since a moment, the stall going on included', async () => {
+    const s = setup();
+    await tick(50);
+    const before = Date.now();
+    expect(s.watch.heldSince(before)).toBe(0);
+    await s.app.inject({ url: '/held/1' });
+    await tick(100);
+    expect(s.watch.heldSince(before)).toBeGreaterThanOrEqual(200);
+    expect(s.watch.heldSince(Date.now())).toBe(0);
+    // Read from within a stall, before the watchdog's timer saw it.
+    const from = Date.now(), end = from + 400;
+    while (Date.now() < end) { /* holds the event loop */ }
+    expect(s.watch.heldSince(from)).toBeGreaterThanOrEqual(200);
+  });
+
+  it('logs the process\'s resident memory each time it grows past another GiB', async () => {
+    let rss = 900 * 1024 ** 2;
+    const s = setup({ rss: () => rss, memoryEveryMs: 40 });
+    await tick(120);
+    expect(s.lines).toEqual([]);
+    rss = 2.5 * 1024 ** 3;
+    await tick(120);
+    rss = 2.7 * 1024 ** 3;
+    await tick(120);
+    expect(s.lines).toEqual(["hopper: the process's resident memory grew past 2 GiB (2560 MiB)"]);
+  });
+});
+
+describe('frameOf', () => {
+  it('names the file in the hopper\'s tree only, never an absolute path', () => {
+    expect(frameOf('list', 'file:///home/someone/app/src/store/jobs.ts', 88)).toBe('list (src/store/jobs.ts:88)');
+    expect(frameOf('', 'file:///app/node_modules/pg/lib/client.js', 3)).toBe('(anonymous) (node_modules/pg/lib/client.js:3)');
+    expect(frameOf('readFileSync', 'node:fs', 441)).toBe('readFileSync (node:fs:441)');
+    expect(frameOf('x', '/opt/elsewhere/thing.js', 1)).toBe('x (thing.js:1)');
+    expect(frameOf('gc', '', 0)).toBe('gc (native)');
   });
 });
 
