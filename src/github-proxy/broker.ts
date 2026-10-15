@@ -18,6 +18,8 @@
 // requests list and the work-item ledger — (`source: hopper`); only else is it a repo query as above. A wait on its checks
 // (`pr.wait`, issue #1072 part 2) is asked as `pr.status`: while the checks of a pull request the hopper follows run, it
 // opens a watch on the job's stream (`wait`, pr-waits.ts) and answers 202; the job is told there when they end.
+// A poll (issue #1210, polls.ts): the same read of one job again and again is still answered, with a `poll` note that names
+// the hopper's wait; for a job on a wait for its own command, the engine is told (`polled`).
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
@@ -25,7 +27,9 @@ import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
-import { prSettled, type KnownPullRequest, type PullRequestStatus } from './pr-status.ts';
+import { prWaitOver, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
+import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
+import type { WaitOn } from '../domain/wait-on.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -79,7 +83,14 @@ export interface GitHubProxyOptions {
    * Opens a watch on the job's stream for a pull request whose checks run (issue #1072 part 2, `pr wait`), or answers the
    * one open; `seconds`, the most to wait. Absent: no waits, and `pr wait` answers as `pr status`.
    */
-  wait?(user: ProxyUser, jobId: string, pr: { repo: string; number: number; status: PullRequestStatus }, seconds?: number): { id: string; deadline: string } | undefined;
+  wait?(user: ProxyUser, jobId: string, pr: { repo: string; number: number; status: PullRequestStatus; over?: PrWaitOver }, seconds?: number): { id: string; deadline: string } | undefined;
+  /** The poll watch (issue #1210); absent: one of its own. */
+  polls?: PollWatch;
+  /**
+   * A job on a wait for its own command polls (issue #1210): what it polls, how many times in the window, and the answer, as
+   * JSON text. Absent: nobody is told. Never throws.
+   */
+  polled?(user: ProxyUser, job: Job, poll: { on: WaitOn; reads: number; answer: string }): void;
 }
 
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -93,6 +104,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
   const newId = o.newId ?? (() => randomUUID());
   const cache = o.cache ?? createRepoQueryCache();
   const now = o.now ?? (() => Date.now());
+  const polls = o.polls ?? createPollWatch();
   return {
     async handle(authorization, body) {
       const parts = parseProxyToken(BEARER.exec(authorization ?? '')?.[1] ?? '');
@@ -124,7 +136,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const report = raw.op === REPORT_OP;
       // A wait on a pull request's checks is asked as `pr.status`, and remembers how long it may wait.
       const waitParsed = raw.op === WAIT_OP ? waitRequest.safeParse(body) : undefined;
-      const waiting = waitParsed?.success ? { ...(waitParsed.data.timeout !== undefined ? { timeout: waitParsed.data.timeout } : {}) } : undefined;
+      const waiting = waitParsed?.success ? { ...(waitParsed.data.timeout !== undefined ? { timeout: waitParsed.data.timeout } : {}), for: waitParsed.data.for ?? 'checks' } : undefined;
       const parsed = report ? reportRequest.safeParse(body)
         : waitParsed?.success ? proxyRequest.safeParse({ op: 'pr.status', repo: waitParsed.data.repo, number: waitParsed.data.number })
           : waitParsed ?? proxyRequest.safeParse(body);
@@ -171,15 +183,34 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       // Where a pull request stands (issue #1072): the hopper's records first; it costs GitHub nothing, so no limit.
       const knownPr = req.op === 'pr.status' ? user.pullRequest?.(req.repo, req.number) ?? {} : undefined;
       const prItem = knownPr?.item ? { item: knownPr.item } : {};
+      /** A read of one pull request or issue asked again and again (issue #1210): how many times, and its note; nothing for a `pr wait`. */
+      const pollOf = (): { reads: number; note: string } | undefined => {
+        if (waiting || !isRead(req.op) || !('number' in req)) return undefined;
+        const reads = polls.read(job.id, `${req.op}\0${req.repo.toLowerCase()}\0${req.number}`, now());
+        return reads >= POLL_READS ? { reads, note: pollNote(req.op, req.repo, req.number, reads) } : undefined;
+      };
+      /** The engine is told of a job on a wait for its own command that polls, with the answer. */
+      const tellPolled = (poll: { reads: number } | undefined, answer: object): void => {
+        if (!poll || !o.polled || !('number' in req) || job.status !== 'waiting_on' || !job.wait?.ownCommand) return;
+        try {
+          o.polled(user, job, { on: polledOn(req.op, req.repo, req.number), reads: poll.reads, answer: JSON.stringify(answer) });
+        } catch (e) {
+          o.log(`hopper: GitHub proxy: telling the engine that job ${job.id} polls failed: ${(e as Error).message}`);
+        }
+      };
       if (knownPr?.known && req.op === 'pr.status') {
         const at = now();
         const known = knownPr.known;
-        // `pr wait` on checks that run: a watch, and the job is told on its stream; on checks that ended: answered now.
-        const w = waiting && o.wait && !prSettled(known) ? o.wait(user, job.id, { repo: req.repo, number: req.number, status: known }, waiting.timeout) : undefined;
+        const over: PrWaitOver = waiting?.for === 'mergeable' ? { for: 'mergeable', from: known.mergeable } : { for: 'checks' };
+        // `pr wait` while what it waits for has not come: a watch, and the job is told on its stream; else answered now.
+        const settled = prWaitOver(known, over);
+        const w = waiting && o.wait && !settled ? o.wait(user, job.id, { repo: req.repo, number: req.number, status: known, ...(over.for === 'mergeable' ? { over } : {}) }, waiting.timeout) : undefined;
         const wait = !waiting ? {} : w ? { wait: 'open', waitId: w.id, until: w.deadline, waitSeconds: Math.max(0, Math.round((Date.parse(w.deadline) - at) / 1000)) }
-          : { wait: prSettled(known) ? 'settled' : 'none' };
-        record('github_proxy.done', { op: req.op, repo: req.repo, number: known.number, url: known.url, source: 'hopper', ...(waiting ? { wait: w ? w.id : wait.wait } : {}) });
-        return { status: w ? 202 : 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...known, source: 'hopper', readAt: new Date(at).toISOString(), ...wait } };
+          : { wait: settled ? 'settled' : 'none' };
+        const poll = pollOf();
+        record('github_proxy.done', { op: req.op, repo: req.repo, number: known.number, url: known.url, source: 'hopper', ...(waiting ? { wait: w ? w.id : wait.wait } : {}), ...(poll ? { poll: poll.reads } : {}) });
+        tellPolled(poll, known);
+        return { status: w ? 202 : 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...known, source: 'hopper', readAt: new Date(at).toISOString(), ...wait, ...(poll ? { poll: poll.note } : {}) } };
       }
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
@@ -199,11 +230,13 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const ledgerOf = (url: unknown): LedgerView | undefined => (typeof url === 'string' ? user.ledger?.(url) : undefined);
       const answered = (result: Record<string, unknown>, source: 'github' | 'cache', at: number): ProxyAnswer => {
         const ledger = ledgerOf(result.url);
-        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source });
+        const poll = pollOf();
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source, ...(poll ? { poll: poll.reads } : {}) });
         const seen = req.op === 'repo.view' ? { contribution } : {};
         // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end.
         const wait = waiting ? { wait: 'none' } : {};
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait } };
+        tellPolled(poll, result);
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait, ...(poll ? { poll: poll.note } : {}) } };
       };
       if (read) {
         const kept = cache.get(key);

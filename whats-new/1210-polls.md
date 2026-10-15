@@ -1,0 +1,1 @@
+- A job that waits for a pull request's merge conflicts to clear now waits through the hopper and goes on as soon as the hopper sees the change. A job stuck in a loop that keeps asking the same question is shown with what it waits for, and is told to go on after an hour.

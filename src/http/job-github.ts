@@ -78,6 +78,8 @@ export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clo
     log: (line) => console.warn(line),
     now: () => o.clock.now().getTime(),
     wait: (user, jobId, pr, seconds) => prWaits.open(user.id, jobId, pr, seconds),
+    // A job on a wait for its own command that polls (issue #1210): the engine types the wait, or ends it after an hour.
+    polled: (user, job, poll) => { o.tenants.user(user.id)?.engine.pollSeen(job.id, poll.on, poll.answer); },
   });
   void app.register(async (scope) => {
     // What curl's --data-urlencode sends; only on this route.

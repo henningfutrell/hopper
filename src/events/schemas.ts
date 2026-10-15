@@ -142,7 +142,7 @@ export const EVENT_SCHEMAS = {
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
-  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}),
+  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
@@ -362,9 +362,9 @@ export const EVENT_SCHEMAS = {
   // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
-  // the job's stream, or `settled` or `none`.
+  // the job's stream, or `settled` or `none`. A poll (issue #1210): `poll`, how many times the job asked the same read in the window.
   'github_proxy.done': z.union([
-    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional() }),
+    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),

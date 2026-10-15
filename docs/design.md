@@ -2123,10 +2123,8 @@ merged or closed. A held card says since when (`heldSince`) and the tend job tha
 (`ownWaitOf` in `tending`). One tend job ran a `sleep` loop that read another pull request, and named it as its own command:
 four conflicted pull requests waited behind it with every lane free until `MAX_HELD_MS` ran out. Once its wait ends and it
 pushes, it is a head again. The protocol's wait line also says that a poll is never a command of the job's own, and that a job
-never waits in a loop for the hopper to tend, rebase or merge a pull request. Not built (issue #1210, left): a hopper wait on a
-pull request's state (`pr wait`, the job resumed on the pull request's next seen state), the proxy refusing or flagging the same
-read from one job again and again, a one-hour cap on an own command that only sleeps and reads, and a wait that says which
-event it waits on.
+never waits in a loop for the hopper to tend, rebase or merge a pull request. The rest of issue #1210 (a wait on mergeability,
+polls flagged, the one-hour cap, the wait's words): "Polls of hopper state".
 
 **Rework goes back at once** (issue #938). The queue holds only a `rebase`: a rebase onto a base that a head is about to
 move is made again after that merge. A `fix_checks` is rework, and no head holds it: every pull request with failed checks
@@ -21278,3 +21276,43 @@ hopper's another, the stream's first event), `test/ui/other-hopper.test.ts` (an 
 nothing more sent, the session kept; a fresh page knows its hopper from the browser; an answer with no tag; the master
 key banner of a test hopper never shown, the notice in its place; This is my hopper now; the stream takes no event before
 its tag and closes on another's).
+
+## Polls of hopper state (issue #1210 part 2, 2026-10-15)
+
+The problem: a tend job ran `sleep 60` in a loop and read another pull request's mergeability again and again, as its own
+command. A second job ran `sleep 600` for an hour, waiting for the hopper to tend a pull request. Each read cost nothing,
+but each job blocked work, and the UI said "its own command" where it waited on hopper state. Part 1 made such a tend job
+hold nothing ("A tend job on its own command holds nothing"). This part gives the job the hopper's wait, and bounds the loop.
+
+- **`pr wait --for mergeable`** (`waitRequest.for`, `src/github-proxy/policy.ts`; `prWaitOver`, `src/github-proxy/pr-status.ts`,
+  pure). A wait on a pull request the hopper follows that ends when the hopper sees its `mergeable` other than it was when the
+  wait opened (a mergeability not known yet is no change), or the pull request merged or closed. The watch keeps `for` and
+  `from` in its body (`src/github-proxy/pr-waits.ts`), so a wait on its checks and one on its mergeability are two watches.
+  It is answered again on the same events as a wait on checks: `job.pull_request_seen` fires when the follow's merge wait
+  changes, as `conflicts` does. `--for checks` is the default, as before. The job rules' GitHub line and `hopper-gh`'s help say
+  to use it, once.
+- **A poll is flagged** (`src/github-proxy/polls.ts`, in memory). The same read (`op`, repository, number) of one job asked
+  `POLL_READS` (3) times in `POLL_WINDOW_MS` (15 minutes) is a poll. It is still answered — a refusal would break a job that
+  reads twice for a reason —, with `poll`, a note that names `pr wait` (or `HOPPER_WAITING` with `on:`), and the
+  `github_proxy.done` event records `poll`, the count. A `pr wait` is never a poll.
+- **The wait says what it polls.** When the job that polls is on a wait for its own command, the proxy tells the engine
+  (`polled` → `Commands.pollSeen`, `recordPollSeen` in `src/engine/wait.ts`; `polledWait`, `src/domain/own-command.ts`, pure).
+  The first time, its wait's `on` becomes what it polls (`polledOn`: `pr.checks` → the pull request's checks, another `pr.*`
+  read → its merge, an `issue.*` read → the issue) and `polledAt` is set; `job.wait_polled { on }`. It stays `ownCommand`, so
+  it still holds no tending queue, and shows as running: the Queue view's badge says "running: polls the hopper", and "waits
+  on" names the pull request or issue. The ledger's `waitingOn` says `PR #8 to merge (it polls the hopper)`, not the job's
+  `for:`. A merge or a close of what it polls now wakes it (`wakeOn`, issue #1245), as for any wait on it.
+- **The cap.** On a poll an hour (`POLL_WAIT_CAP_MS`, as `MAX_HELD_MS`) or more after the wait began, the hopper ends it
+  (`job.wait_ended`, by `hopper`): the job is told that its command only polls, what the hopper knows now (the last answer, as
+  JSON), and to stop the poll and use `pr wait` or `HOPPER_WAITING`. No timer: the poll itself is the signal, so a command that
+  stopped polling is left to the own-command nudge (issue #1037).
+- **Not built.** A refusal of a poll; a poll that never reaches the hopper (a `sleep` loop on local state only) — the
+  own-command liveness check stays the one guard there.
+- **Persisted state.** No schema change: `polledAt` is optional in the job's `wait` JSON. A build before this one reads such a
+  wait as any wait on its own command, with its `on` a pull request or an issue.
+
+**Verification:** `test/github-proxy/pr-wait.test.ts` (`--for mergeable`: the watch opened though its checks ended, ended on
+the next mergeability seen, the job's wait ended with it), `test/github-proxy/polls.test.ts` (the count, what a poll waits on,
+the note, the engine told only for a wait on its own command, a `pr wait` no poll), `test/domain/own-command.test.ts`
+(`polledWait`: typed once, still its own command, ended at the cap), `test/domain/work-items.test.ts` (the ledger's words),
+`test/integration/job-wait.test.ts` (the engine types the wait, then ends it after an hour, and the job goes on).
