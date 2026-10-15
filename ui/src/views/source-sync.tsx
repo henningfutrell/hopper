@@ -1,8 +1,9 @@
 // A job source's sync (issue #254): what it saw and made, when it last synced, and what is wrong with
-// it — on a source's card in Sources, and inside the GitHub connection's panel for that connection's source.
+// it — on a source's card in Sources, and inside the GitHub connection's panel for that connection's source. A source on but
+// not configured (issue #1243) shows its setup card, and "not configured" in place of its counts.
 import { GhLink } from '@/components/job';
 import { ago, countdown } from '@/model/format';
-import type { SourceStatus } from '@/model/wire';
+import type { SetupProblem, SourceStatus } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
 import { SourceIntake } from './source-intake';
 
@@ -11,7 +12,25 @@ const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const empty = (v: unknown) => v == null || v === 0 || (typeof v === 'object' && Object.keys(v as object).length === 0);
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="num text-lg font-semibold">{value}</div></div>;
+  return <div><div className="text-[11px] text-muted-foreground">{label}</div><div data-stat className="num text-lg font-semibold">{value}</div></div>;
+}
+
+/** A source on but not configured (issue #1243): what it lacks, and how to set it up in place, with its help page. */
+function SetupCard({ s, p }: { s: SourceStatus; p: SetupProblem }) {
+  return (
+    <div data-setup-problem={s.name} className="space-y-2 rounded-md border border-warn/30 bg-warn/5 p-2 text-xs">
+      <div className="font-medium text-warn">Not configured: it takes no job until you set it up. {p.reason}.</div>
+      {p.missing.length > 0 && <div>Missing: {p.missing.map((m, i) => <span key={m}>{i > 0 && ', '}<code data-setup-missing className="font-mono">{m}</code></span>)}</div>}
+      {s.kind === 'github-app' && (
+        <ol className="list-decimal space-y-0.5 pl-4">
+          <li>Use a GitHub App that is already installed on your account or organization, or make one with <code className="font-mono">scripts/create-github-app.sh</code>.</li>
+          <li>Set its app id and slug on this job source in Plugins → Job sources.</li>
+          <li>Give its private key to the hopper in the variable that <code className="font-mono">privateKeyEnv</code> names.</li>
+        </ol>
+      )}
+      <a href={`/help/${p.help}`} className="underline">Help: set it up step by step</a>
+    </div>
+  );
 }
 
 /**
@@ -38,16 +57,19 @@ export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepositor
   const now = useServerNow(); // the daemon's clock: its times are its own (issue #812)
   const d = s.detail ?? {};
   const repos = Array.isArray(d.installedRepos) ? (d.installedRepos as string[]) : [];
+  // Not configured, it ran no sync pass (issue #1243): its counts are not zeros of a pass.
+  const stat = (n: number) => (s.setupProblem ? 'not configured' : n);
   return (
     <div data-source-sync={s.name} className="space-y-3">
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="seen" value={s.itemsSeen} /><Stat label="created" value={s.jobsCreated} /><Stat label="active" value={s.activeJobs} />
+        <Stat label="seen" value={stat(s.itemsSeen)} /><Stat label="created" value={stat(s.jobsCreated)} /><Stat label="active" value={stat(s.activeJobs)} />
       </div>
       <div className="num text-xs text-muted-foreground">
         <span className="font-mono">{s.kind}</span> · last sync <span title={s.lastSyncAt}>{ago(s.lastSyncAt, now)}</span>
         {s.syncing ? <> · <span data-syncing>syncing now</span></>
           : s.nextSyncAt && <> · next <span title={s.nextSyncAt}>{Date.parse(s.nextSyncAt) > now ? countdown(s.nextSyncAt, now) : 'now'}</span></>}
       </div>
+      {s.setupProblem && <SetupCard s={s} p={s.setupProblem} />}
       <WriteBehind s={s} now={now} />
       {s.lastError && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 text-xs break-words text-bad">{s.lastError}</div>}
       {str(d.setup) && <div className="rounded-md border border-warn/30 bg-warn/5 p-2 text-xs">Setup needed: <code className="font-mono">{String(d.setup)}</code></div>}

@@ -8,6 +8,7 @@ These pages tell you how the hopper works and how to use it, for the version you
 - [Needs you: what waits on you](needs-you.md)
 - [The main menu](navigation.md)
 - [How issues become jobs](intake.md)
+- [Set up the GitHub App source](github-app-setup.md)
 - [The Jobs view](jobs.md)
 - [Lanes](lanes.md)
 - [Questions and deciders](questions.md)

@@ -1,7 +1,7 @@
 // The Sources view's GitHub section (issues #160, #214, #254, #359): the connected GitHub account is the
 // one way the hopper reads GitHub as the user; a GitHub App an admin set up is the one other connection.
 // The view says which one reads issues, why the other is paused, and orders them so. An unset GitHub App
-// is not shown.
+// that is on needs setup and says what it lacks (issue #1243).
 import { describe, expect, it } from 'vitest';
 import { notConfiguredLines, sourcesView } from '../../ui/src/model/sources.ts';
 import type { SourceStatus } from '../../ui/src/model/wire.ts';

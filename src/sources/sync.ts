@@ -21,6 +21,8 @@
 // other sync — its timer, one after a merge, a rerun — only what is due (`discover({ due: true })`).
 // A GitHub delivery (issue #1079, `repoChanged`) makes the repository due at each source whose job repository it is, and
 // that source syncs once `DELIVERY_SYNC_MS` after the first delivery of a burst: a timed sync, before its timer.
+// A source not configured (issue #1243, `JobSource.setupProblem`) runs no sync pass while no job of its own needs one: its
+// status is `needs-setup` with the problem, never ok, and the log says it once, and once when it clears.
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
@@ -29,6 +31,7 @@ import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
+import { needsWork, notConfigured, setupTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
@@ -249,6 +252,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
+    // Not configured (issue #1243): no sync pass at all — it would ask nothing and look like a healthy zero —, unless jobs
+    // of its own still need their checks or reports.
+    const setup = slot.removed ? undefined : slot.source.setupProblem?.();
+    if (!slot.removed) setupTold(slot, setup);
+    if (setup && !jobsOf(slot).some(needsWork)) { notConfigured(slot, setup, clock.now(), paused); schedule(slot); emit(slot); return; }
     // One pass (issue #822): the source asks GitHub once for what the steps read twice.
     const pass = async () => {
       if (paused === undefined) {
@@ -260,9 +268,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       }
       await applySignals(slot.source, jobsOf(slot).filter((j) => !isTerminal(j)));
       await finishCompleteOperatorLed(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
-      await Promise.all(jobsOf(slot)
-        .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
-        .map((j) => queueReport(slot, j.id)));
+      await Promise.all(jobsOf(slot).filter(needsWork).map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
     };
@@ -282,6 +288,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
+    if (setup) st.setupProblem = setup; else delete st.setupProblem;
     st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.

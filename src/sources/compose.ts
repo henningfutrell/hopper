@@ -1,12 +1,13 @@
 // The GitHub sources over one source logic, as the job-source plugins build them: `github-app` (the
 // App adapter, as the bot), and a connected account's — `github-account` (issue #214), through the
 // account the user signed in with or connected: the one way GitHub is read as the user (issue #359).
-// Each pauses itself (JobSource.paused): the app while its identity (appId, slug, key) is incomplete,
+// Each pauses itself (JobSource.paused): the app while its identity (appId, slug, key) is incomplete — then it also
+// has a setup problem (issue #1243) that names what is missing, and runs no sync pass —,
 // an account's while it is not connected or its sign-in expired (issue #358) — then it asks for a
 // sign-in again; nothing falls back to another credential. Both take the issues assigned to the user's
 // connected GitHub account (issue #387), so the app's pauses too while none is connected.
 import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
-import { CONNECTED_VIA, type ChangeRule, type ConnectedAccountProvider } from '../domain/types.ts';
+import { CONNECTED_VIA, type ChangeRule, type ConnectedAccountProvider, type SetupProblem } from '../domain/types.ts';
 import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
@@ -32,6 +33,16 @@ export const APP_MISSING = 'no GitHub App configured';
 export const NO_ASSIGNEE = 'no GitHub account connected: the app takes the issues assigned to it — Sources → Connect GitHub';
 /** A connected account's source lists only its job repositories (issue #321): none chosen, none listed. */
 export const NO_REPOSITORIES = 'no repositories chosen for jobs: Sources → GitHub account → choose them';
+
+/** The help page that walks through the app source's setup (issue #1243). */
+export const APP_SETUP_HELP = 'github-app-setup';
+
+/** The app source's setup problem (issue #1243): what of its identity is not set, by name, or what is wrong. */
+export function appSetupProblem(load: GitHubAppLoad): SetupProblem | undefined {
+  if (load.ok) return undefined;
+  const reason = load.missing.length ? `${load.missing.join(', ')} not set` : load.reason;
+  return { missing: load.missing, reason, help: APP_SETUP_HELP };
+}
 
 /** Why the app cannot be used right now, or undefined when its identity is complete. */
 export function appProblem(load: GitHubAppLoad): string | undefined {
@@ -106,7 +117,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
-  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
+  return { ...source, setupProblem: () => appSetupProblem(app()), pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
 }
 
 /**

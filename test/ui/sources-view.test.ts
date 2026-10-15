@@ -3,7 +3,7 @@
 // the connected GitHub account is how the hopper reads GitHub as the user (issue #359), with an admin's
 // GitHub App beside it in one GitHub section. The GitHub account is connected from there
 // (issue #214): the panel says how the hopper connects, and shows the device code to enter. Signed in
-// with GitHub, that connection is the one GitHub piece (issue #254). Once connected it shows the
+// with GitHub, that connection is the one GitHub piece (issue #254); a GitHub App source on but not set up shows, as needing setup (issue #1243). Once connected it shows the
 // repositories the app reaches on each account it is installed on, and asks to install it only where it is
 // installed nowhere (issue #253). Signed in with GitHub, that account is the sign-in: the panel offers
 // Sign out, never Disconnect; signed in another way, forgetting it says it keeps the sign-in (issue #322).
@@ -172,21 +172,21 @@ describe('Sources view: GitHub', () => {
     expect(document.querySelector('[aria-labelledby="sources-gitlab"]')).toBeNull();
   });
 
-  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; no unset GitHub App (#254)', async () => {
+  it('signed in with GitHub: the connection is the one GitHub piece, with its sync; an unset GitHub App that is on needs setup (#254, #1243)', async () => {
+    const setupProblem = { missing: ['appId', 'slug', 'GITHUB_APP_PRIVATE_KEY'], reason: 'appId, slug, GITHUB_APP_PRIVATE_KEY not set', help: 'github-app-setup' };
     await boot({
       '/api/sources': { sources: [
         source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' }),
-        source('github-app', 'github-app', 'ok', { mode: 'app', paused: 'no GitHub App configured' }),
+        { ...source('github-app', 'github-app', 'needs-setup', { mode: 'app', paused: 'no GitHub App configured' }), setupProblem },
       ] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'], installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1' }] }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
     await vi.waitFor(() => expect(panel()?.querySelector('[data-source-sync="github-account"]')).not.toBeNull());
-    expect(titles()).toEqual(['GitHub', 'GitHub account']);
+    expect(titles()).toEqual(['GitHub', 'GitHub account', 'github-app']);
     expect(document.querySelector('[data-github-summary]')?.textContent).toBe('Issues are read, and jobs work, through your GitHub connection, octo-user.');
     expect(panel()!.textContent).toContain('Connected as octo-user.');
-    expect(document.querySelectorAll('[data-source-use]')).toHaveLength(0);
-    expect(document.body.textContent).not.toContain('github-app');
+    expect([...document.querySelectorAll('[data-source-use]')].map((e) => e.getAttribute('data-source-use'))).toEqual(['needs-setup']);
   });
 
   const connected = (installations?: unknown[]) => ({
