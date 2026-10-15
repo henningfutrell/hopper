@@ -19701,6 +19701,32 @@ branch, one GraphQL read, shared in a sync pass), the open batch runs by `openPu
   marks only the issue nodes already in the graph. The graph makes no read of its own. Not taken: a job stage of its own
   for it; the job keeps its stage, as the ledger has its item.
 
+## A job that waits on its batch (issue #1356, 2026-10-15)
+
+**The problem.** A job's pull request ("Closes #N") merged into the landing branch while its job still acted on the item:
+the job then waited, `waiting_on` its issue's close, for the batch run to reach the tested branch. The batch run carried no
+closing keyword for it, because `batchClosingIssues` took only `done` items and the item read `waiting_outside`; and
+`promotedOpen` skipped it for the same reason. The ledger may also not link the item to the pull request at all (a job's
+pull request it never followed). Nothing closed the issue, so the job waited for ever.
+
+**The batch run reads its pull requests' own text** (`closingReferences`, `src/domain/landing-batches.ts`; the runner's
+`batchCloses`). As it starts, the runner reads each merged pull request of the batch and adds every issue its text closes
+with one of GitHub's closing keywords (`close`, `fix`, `resolve` and their forms, before `#N`, `owner/name#N` or the
+issue's URL) to the ledger's list, once each. "Part of #N" is no closing keyword, so a part closes nothing. A text that
+cannot be read is logged, and the batch run starts with the rest. The batch run's merge into the tested branch then closes
+them, as before: the hopper closes no issue itself here.
+
+**A whole merge counts while its job still acts** (`mergedWhole`, `src/domain/work-item-landing.ts`). The ledger keeps
+`wholeMerged` on an item when a merge is recorded as the whole item (`job.pull_request_merged`, not a `part`) while a job
+acts on it; a new job (`job.queued`) clears it. `batchClosingIssues` and `promotedOpen` take such an item in `queued`,
+`working`, `needs_you` or `waiting_outside` as they take a `done` one. Tenant migration 68 rebuilds the ledger.
+
+**The waiting job sees the close.** The fallback read also reads items in `waiting_outside` (`FALLBACK_READ_STATES`),
+so a close GitHub made with no delivery is recorded (`work_item.issue_closed`, `via: read`) and wakes a job that waits on
+that issue (`settledBy`). A wait that starts on something the ledger holds settled already — its issue closed, its pull
+request merged or closed (`settledAlready`, `src/domain/wait-on.ts`) — ends at once (`wait`, `src/engine/outcome.ts`), as
+the event would have ended it: no event comes for it any more.
+
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
 **The problem.** `stable` moved straight from `beta` to every stable install at once. A change that broke on a stable

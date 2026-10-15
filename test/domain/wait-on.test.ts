@@ -1,7 +1,7 @@
 // Issue #1245: a job's own wait always names what it waits on, typed — a pull request, a job, an item, a person's
 // question, an approval, a grant, its own command, or an outside event. A job never enters `waiting_on` without it. Pure.
 import { describe, expect, it } from 'vitest';
-import { settledBy, waitEntryProblem, waitOnLabel, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
+import { settledAlready, settledBy, waitEntryProblem, waitOnLabel, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 const since = '2026-10-15T00:00:00.000Z';
@@ -129,5 +129,29 @@ describe('the jobs each dependency\'s event wakes (issue #1245, part 2)', () => 
   it('other events wake nothing', () => {
     expect(settledBy({ type: 'job.queued', jobId: 'j1', data: {} })).toBeUndefined();
     expect(settledBy({ type: 'job.finished', data: {} })).toBeUndefined();
+  });
+});
+
+describe('a wait settled already as it starts (issue #1356)', () => {
+  const ledger = (issues: Record<string, string>, pulls: Record<string, 'open' | 'merged' | 'closed'>) => ({
+    get: (key: string) => (issues[key] ? { issueState: issues[key] } : undefined),
+    byPullRequest: (url: string) => (pulls[url] ? { pullRequest: url, pullRequestState: pulls[url] } : undefined),
+  });
+  const l = ledger({ 'https://github.com/o/r/issues/45': 'closed', 'https://github.com/o/r/issues/46': 'open' },
+    { 'https://github.com/o/r/pull/12': 'merged', 'https://github.com/o/r/pull/13': 'open' });
+
+  it('an issue the ledger holds closed, or a pull request it holds merged, settles it', () => {
+    expect(settledAlready({ kind: 'item', number: 45 }, 'o/r', l)).toEqual({ kind: 'item', repo: 'o/r', number: 45, note: 'https://github.com/o/r/issues/45 was closed' });
+    expect(settledAlready({ kind: 'pull_request', repo: 'o/r', number: 12, about: 'merge' }, 'x/y', l))
+      .toEqual({ kind: 'pull_request', repo: 'o/r', number: 12, note: 'https://github.com/o/r/pull/12 was merged' });
+  });
+
+  it('an open one, an unknown one, its checks or a review, or another kind of wait still waits', () => {
+    expect(settledAlready({ kind: 'item', number: 46 }, 'o/r', l)).toBeUndefined();
+    expect(settledAlready({ kind: 'item', number: 47 }, 'o/r', l)).toBeUndefined();
+    expect(settledAlready({ kind: 'item', number: 45 }, undefined, l)).toBeUndefined();
+    expect(settledAlready({ kind: 'pull_request', number: 13, about: 'merge' }, 'o/r', l)).toBeUndefined();
+    expect(settledAlready({ kind: 'pull_request', number: 12, about: 'checks' }, 'o/r', l)).toBeUndefined();
+    expect(settledAlready({ kind: 'outside', what: 'a release' }, 'o/r', l)).toBeUndefined();
   });
 });

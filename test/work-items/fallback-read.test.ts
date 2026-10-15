@@ -37,6 +37,11 @@ describe('which items the fallback read reads', () => {
     const items = [item(1, 'partly_done', OLD), item(2, 'dropped', OLD), item(3, 'needs_you', OLD), item(4, 'waiting_for_approval', OLD)];
     expect(fallbackReadPick(items, new Map(), NOW, { quietMs: QUIET, limit: 50 })).toEqual([url(1), url(2)]);
   });
+
+  it('an item whose job waits on something outside is read too (issue #1356): a batch run\'s merge may have closed its issue', () => {
+    const items = [item(1, 'waiting_outside', OLD), item(2, 'working', OLD)];
+    expect(fallbackReadPick(items, new Map(), NOW, { quietMs: QUIET, limit: 50 })).toEqual([url(1)]);
+  });
 });
 
 describe('the fallback read', () => {

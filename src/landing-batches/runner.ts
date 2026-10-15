@@ -7,7 +7,7 @@
 // a batch run starts when due (`batchDue`), its text closing the issues of its job pull requests (issue #1175). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
-  BATCH_BRANCH_PREFIX, batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
+  BATCH_BRANCH_PREFIX, batchBody, closingReferences, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
   type BatchCheckRun, type LandingBatchRepo, type LandingBatchRepoView, type LandingBatchSettings, type LandingBatchStuck, type RunningBatch,
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
@@ -166,7 +166,7 @@ export function createLandingBatches(o: {
     }
     const branch = batchBranch(cmp.tip);
     await gh.createBranch(repo, branch, cmp.tip);
-    const b = { landing, tested: cfg.tested, tip: cmp.tip, merges, closes: o.closingIssues?.(repo, merges) ?? [] };
+    const b = { landing, tested: cfg.tested, tip: cmp.tip, merges, closes: await batchCloses(gh, repo, merges) };
     const pr = await gh.openPullRequest(repo, { head: branch, base: cfg.tested, title: batchTitle(b), body: batchBody(b) });
     o.record({ type: 'landing_batch.started', data: { repo, landing, tested: cfg.tested, tip: cmp.tip, branch, pullRequest: pr.number, url: pr.url, merges, why: due.why } });
     note(repo, { why: due.why });
@@ -221,6 +221,24 @@ export function createLandingBatches(o: {
       now.recorded = true;
     }
     failing.set(repo, now);
+  }
+
+  /**
+   * The issues a batch run of `merges` closes: those the ledger knows its job pull requests did (issue #1175), then those
+   * each pull request's own text closes (issue #1356), whatever the ledger knows of its item — a job still at work or on
+   * its own wait, or an item the ledger never linked to it. A text that cannot be read is said, and the rest go on.
+   */
+  async function batchCloses(gh: LandingBatchGitHub, repo: string, merges: readonly number[]): Promise<string[]> {
+    const out = [...o.closingIssues?.(repo, merges) ?? []];
+    const has = (ref: string) => out.some((r) => r.toLowerCase() === ref.toLowerCase());
+    for (const n of merges) {
+      const body = await gh.pullRequest(repo, n).then((p) => p.body, (e: unknown) => {
+        o.log(`hopper: landing batches: the text of ${repo}#${n} was not read: ${(e as Error).message}`);
+        return '';
+      });
+      for (const ref of closingReferences(body, repo)) if (!has(ref)) out.push(ref);
+    }
+    return out;
   }
 
   async function runPass(): Promise<void> {

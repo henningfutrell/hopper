@@ -77,4 +77,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 67: The fields job and failure lists filter on, as generated columns (issue #1154): a filtered list makes Postgres
   // parse no body. Generated columns only: the build before names none of them, and Postgres keeps them at its writes too.
   JOB_FILTER_COLUMNS,
+  // 68: The work-item ledger, rebuilt (issue #1356): an item keeps a merge recorded as the whole item while its job still
+  // acts on it (`wholeMerged`), so a batch run closes the issue of an item whose job still waits. Rows only, a new field in each body:
+  // the build before ignores it.
+  (db) => { rebuildWorkItems(db); },
 ];

@@ -42,6 +42,8 @@ interface World {
   closeFails?: string;
   /** The error the compare throws. */
   compareFails?: string;
+  /** The pull requests whose text GitHub does not answer (issue #1356). */
+  unreadable?: Set<number>;
 }
 
 function world(): World {
@@ -70,8 +72,9 @@ function fake(w: World): LandingBatchGitHub {
       return { number: n, url: `https://github.test/${REPO}/pull/${n}` };
     },
     pullRequest: async (_repo, n) => {
-      const p = w.pulls.get(n)!;
-      return { state: p.state, merged: p.merged, mergeable: p.mergeable, headSha: p.headSha, base: p.base, url: p.url, body: '' };
+      if (w.unreadable?.has(n)) throw new Error(`GitHub answered 404 to ${REPO}#${n}`);
+      const p = w.pulls.get(n) ?? { state: 'closed' as const, merged: true, mergeable: null, headSha: '', base: 'main', url: '', body: '' };
+      return { state: p.state, merged: p.merged, mergeable: p.mergeable, headSha: p.headSha, base: p.base, url: p.url, body: p.body ?? '' };
     },
     checkRuns: async () => w.checks,
     merge: async (_repo, n, sha) => { const p = w.pulls.get(n)!; p.merged = true; p.state = 'closed'; w.calls.push(`merge #${n} ${sha}`); return { sha: 'merge-sha' }; },
@@ -131,6 +134,15 @@ describe('the batch runner (issue #1073)', () => {
     await r.pass();
     expect(asked).toEqual([[REPO, [12, 14]]]);
     expect(w.pulls.get(100)!.body).toMatch(/- #12\n- #14\n\nCloses #1\nCloses #2$/);
+  });
+
+  it('a batch run\'s pull request closes each issue its job pull requests\' own text closes, whatever the ledger knows (issue #1356)', async () => {
+    const w: World = { ...world(), unreadable: new Set([12]) };
+    w.pulls.set(14, { head: 'issue-2-b', base: 'main', state: 'closed', merged: true, mergeable: null, url: 'u14', headSha: 'h14', body: 'Closes #1\n\nFixes #1264\nPart of #3' });
+    const log: string[] = [];
+    await runner(w, { closingIssues: () => ['#1'], log }).r.pass();
+    expect(w.pulls.get(100)!.body).toMatch(/- #12\n- #14\n\nCloses #1\nCloses #1264$/);
+    expect(log).toEqual([`hopper: landing batches: the text of ${REPO}#12 was not read: GitHub answered 404 to ${REPO}#12`]);
   });
 
   it('nothing new: no branch, no pull request, no event', async () => {
