@@ -373,6 +373,18 @@ export function countStates(items: Iterable<Pick<WorkItem, 'state'>>): Record<Wo
 
 /** The waits of an open pull request that keep its item in flight (issue #1113): its checks run, a job fixes them, or the merge. */
 export const IN_FLIGHT_WAITS: readonly PullRequestWait[] = ['checks_running', 'fixing_checks', 'merge'];
+/** How long an item stays in PR open with no pull request to wait on before it is stuck work (issue #1231): an hour. */
+export const PR_OPEN_STUCK_MS = 60 * 60_000;
+
+/**
+ * Whether an item in PR open is stuck (issue #1231): an hour on, it names no open pull request, or no job follows one for
+ * it (`follows`), so no follow moves it. The follow moves one whose job's own part merged; what is left waits on a person.
+ */
+export function prOpenStuck(item: Pick<WorkItem, 'state' | 'stateSince' | 'pullRequest' | 'pullRequestState'>, follows: boolean, now: number): boolean {
+  if (item.state !== 'pr_open' || now - Date.parse(item.stateSince) < PR_OPEN_STUCK_MS) return false;
+  return item.pullRequest === undefined || item.pullRequestState !== 'open' || !follows;
+}
+
 /** The states an item in flight can be in: what the ledger reads to count them. */
 export const IN_FLIGHT_STATES: readonly WorkItemState[] = ['working', 'pr_open'];
 

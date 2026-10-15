@@ -4,8 +4,8 @@
 // each problem, failure and hand-off (issue #551), whether the daemon takes each action now and why not. The routes
 // refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
-import { DEFAULT_YOLO_MODE, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
-import { HANDOFF_WAIT } from '../domain/work-items.ts';
+import { DEFAULT_YOLO_MODE, following, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
+import { HANDOFF_WAIT, prOpenStuck } from '../domain/work-items.ts';
 import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
@@ -148,6 +148,12 @@ function pullRequestCards(store: Pick<UserStore, 'jobs' | 'settings'>, now: Date
   return view.repos.flatMap((g) => g.pullRequests);
 }
 
+/** The jobs of the items left in PR open with no pull request to wait on (issue #1231): stuck work. */
+function prOpenStale(store: Reads, now: Date): string[] {
+  const follows = (jobId: string | undefined): boolean => { const j = jobId ? store.jobs.get(jobId) : undefined; return j !== undefined && following(j); };
+  return store.workItems.list({ state: ['pr_open'] }).filter((i) => prOpenStuck(i, follows(i.jobId), now.getTime())).map((i) => i.jobId ?? i.key);
+}
+
 export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
@@ -171,7 +177,7 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
     // Work not pushed (issue #1010): ended jobs whose reap kept work, each with Push it and Discard.
     keptWork,
     // Stuck work (issue #1010): each item that waits on a person, by its cause, with one bulk action or what to do.
-    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['parked', 'waiting_on'] }) }),
+    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['parked', 'waiting_on'] }), prOpen: prOpenStale(store, now) }),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
     recent,
