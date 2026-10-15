@@ -1334,8 +1334,10 @@ What is different from Podman:
   ingress, and egress only to DNS (port 53), the hopper's pods on its port, and public addresses. A box cannot reach
   any other pod, Service or private address of the cluster or your network (`10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`, `100.64.0.0/10`, link-local and loopback). Your cluster's network plugin must enforce
-  NetworkPolicy, or the policy does nothing. A box still reaches any public host: an allowlist of hosts per template
-  is not built yet.
+  NetworkPolicy, or the policy does nothing. A box still reaches any public host, as a box on Podman does: an
+  allowlist of hosts per template is #849, for Podman and Kubernetes together. Kubernetes always lets a pod reach the
+  node it runs on: where that node also runs the cluster's API server (kind, a one-node cluster), a box reaches the
+  API server. It holds no token there. Run boxes on worker nodes where you can.
 - **No image is built.** A box with tools runs the tools image CI publishes for its box image, with every tool:
   `ghcr.io/henningfutrell/hopper:box-<agent>-tools`, or `…-tools-read-only` for a read-only template's boxes. A
   template with its own image and tools cannot start a box here; one with no tools can. The node pulls each image.

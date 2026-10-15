@@ -5388,8 +5388,12 @@ code over the API's WebSocket protocol, which that adapter does not do, so it ta
 - **Egress is a NetworkPolicy**, `hopper-sandbox`, applied before each pod so no box runs without it, over every pod
   the runtime makes (label `io.hopper.sandbox-pod`): no ingress; egress to DNS, the hopper's pods
   (`HOPPER_KUBERNETES_HOPPER_LABELS`, in the hopper's namespace) on its port, and public addresses only. A box reaches
-  no other pod and no private range, which a box on Podman can. It is not yet the template's allowlist: a
-  NetworkPolicy matches addresses, not host names, so an allowlist of hosts needs the allowlisting proxy of #849.
+  no other pod and no private range, which a box on Podman can. One exception, of Kubernetes itself: traffic between a
+  pod and the node it runs on is always allowed, so on a node that also runs the API server (kind, a one-node
+  cluster) a box reaches the API server, with no token. **Decision (owner, 2026-10-15): this policy is the
+  Kubernetes match of Podman, and no allowlist of hosts per template is built here.** A NetworkPolicy matches
+  addresses, not host names, so an allowlist needs an allowlisting proxy: #849 builds it for Podman and Kubernetes
+  together. No proxy pod runs with a box.
 - **Tools images are published, not built** (decision: one image per box image and kind, with every tool). CI
   (`.github/workflows/image.yml` `box-tools`) writes the Containerfile with the hopper's own `toolsImage`
   (`scripts/box-tools-containerfile.ts`) and publishes `box-<agent>…-tools` and `…-tools-read-only` beside each box
@@ -5408,8 +5412,17 @@ code over the API's WebSocket protocol, which that adapter does not do, so it ta
   makes the hopper's service account (unless one is named), a Role in the release's namespace with only the calls the
   runtime makes, and its RoleBinding; no ClusterRole. Only the hopper's pod mounts the token. The boxes start in the
   release's namespace: there the hopper's first LAN name, its Service's short name, resolves from a box.
-- **Not built yet** (carried on #1286): an allowlist of hosts per template (with #849's proxy); a live run on a
-  cluster with no socket (a sandbox step, a denied egress, the read-only probes).
+- **The live run** (2026-10-15, kind v0.30 on rootless Podman, Kubernetes v1.34, kindnet enforcing NetworkPolicy, no
+  container socket in the cluster). Through the runtime: a box of the read-only tools image (the Containerfile CI
+  writes) started, its start check passed, a box step with its files copied in ran to completion as `agent`; from the
+  box, the hopper's pod on its port answered, and its other port, another pod, that pod's Service, another private
+  address and `169.254.169.254` timed out; a public host answered; the root was read-only, `NoNewPrivs` 1, no
+  capability, no token; the read-only terraform wrapper refused `apply`. The read-only check (`runCheck`, the
+  hopper's own probes, a `view` service account's kubeconfig) gave the same result for each probe on Podman and on
+  Kubernetes. Through the chart (`helm install` with `sandbox.enabled=true`, the hopper's image built from this
+  change): `hopper sandbox launch` started `box-claude` as a pod, its start check passed, it joined and was online, its
+  record `ready`; from it the hopper's Service answered, and Postgres, OpenFGA and Solr timed out; a public host
+  answered. Not run: the AWS and terraform-workspace probes, which need an AWS account.
 
 Tests: `test/sandbox/kubernetes.test.ts` (the pod and its flags, the egress policy before it, one-shot, names, only its
 own pods, start, wait, the start check, exec, copy, claims, problem), `test/sandbox/kubernetes-images.test.ts`
