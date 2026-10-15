@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
@@ -13042,7 +13042,7 @@ every start of the job, so a restart or a renewal changes nothing on the machine
 hashed" — this one is not even kept.)
 
 **`hopper-gh`** (`src/github-proxy/script.ts`): POSIX sh and curl, nothing else, so it runs on any machine a job runs
-on. `issue create|comment|view|close`, `pr create|view|ready`, `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
+on. `issue create|comment|view|close`, `pr create|view|status|ready` (`pr status`, issue #1072, "Jobs ask the hopper, not GitHub"), `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
 place (no `eval`); `--body-file` is read by curl. It prints the hopper's JSON answer and exits 1 on a refusal or a
 GitHub failure, 2 on a bad call. Its `help` is the whole manual: the job is told one protocol line
 (`GITHUB_PROXY_LINE`, `src/job-rules/`) and reads the rest only when it needs it.
@@ -18100,7 +18100,7 @@ an answer larger than that is not kept. A job's own write through the proxy (`is
 drops every answer about that issue or pull request, so the job reads what it wrote. In memory: a restart reads each
 query once again. A connection that is gone answers 503 as before: nothing is served from the cache without one.
 
-**Each answer says where it came from**: `source` (`github` or `cache`) and `readAt`, when GitHub was read for it.
+**Each answer says where it came from**: `source` (`github` or `cache`; `hopper` for `pr status`, issue #1072) and `readAt`, when GitHub was read for it.
 Where the job's user's ledger holds the item — the issue by its key, a pull request by `byPullRequest` (its newest item)
 — the answer also carries `ledger`: the item's `key`, `state`, `since` and, as known, `pullRequestState`, `issueState`
 and `issueReason`. So a job sees GitHub's answer and the hopper's word on the work side by side. `github_proxy.done` of a
@@ -19145,3 +19145,47 @@ string that starts with `//`, or a ` * ` line that continues an expression, read
 waits for its checks. A docs-only change to a repository whose build reads its Markdown (a prompt, a page) merges with
 no person: name those files in the repository's `sensitive` list.
 
+## Jobs ask the hopper, not GitHub: pr status (issue #1072, 2026-10-13)
+
+The problem: a job read GitHub itself to learn where its pull request stood (`pr view`, its checks), and asked again
+while it waited. Each read spent the rate limit, and each job had its own view, which could be older than the hopper's
+and disagree with what the Pull requests list showed. This is the first part: one read, `pr status`, answered from the
+hopper's records.
+
+**`pr status`** (`sh "$HOPPER_GH" pr status N --repo OWNER/NAME`, op `pr.status`, `POST /job/github`): the pull
+request's `state` (`open`, `merged`, `closed`), `draft`, `mergeable` (`mergeable`, `conflicts`, `unknown`), `checks`
+(`passing`, `pending`, `failing`, `none`, `unknown`) and `failedChecks`, `base`, `head`, why the hopper has not merged
+it yet (`waits`, the Pull requests list's words), and its work item (`item`: its `key`, its ledger `state`, `waitingOn`).
+A read, like `pr view` (issue #1015): the hopper's own job asks it on any repository its connection sees; another user's
+job does not. A repo query (issue #1074, "Repo queries"): `source` says where the answer came from, in this order:
+
+1. `hopper` — the asking user's own records (`ProxyUser.pullRequest`, `src/users/github-proxy.ts`): the pull request's
+   card on the Pull requests list (`pullRequestList`, what following it last saw, `seen`), the same view a person reads;
+   or, with no card, a pull request the work-item ledger says merged or closed (`WorkItemLedger.byPullRequest`, whatever the URL's case). A card
+   not checked yet, or an open pull request only the ledger names, says nothing of its checks, so it is not answered
+   from here (`knownPullRequest`, `src/github-proxy/pr-status.ts`, pure). Neither the hopper's GitHub connection nor
+   the rate limits are asked.
+2. `cache` — the repo-query cache (`repo-query.ts`): a GitHub read of the same `pr.status` query kept less than
+   `REPO_QUERY_FRESH_MS` (30 s) ago, or of a merged pull request, with the item as the ledger says now. Counted against
+   the rate limits as every repo query.
+3. `github` — read now (`api.ts` `pullStatus`): the pull request (`GET /repos/{owner}/{repo}/pulls/{n}`), then its head
+   commit's check runs (`GET …/commits/{sha}/check-runs`): failing once one failed (`failure`, `timed_out`,
+   `startup_failure`), pending while one runs, none with no run, `unknown` when GitHub refuses them
+   (403, 404: the connection may not read checks, issue #855). Commit statuses are not read: the hopper's checks are
+   GitHub Actions check runs. Through the rate limits (`pr.status`: 120 an hour per job, 600 per machine) and the shared
+   rate limiter, as every proxy call; the answer is kept in the repo-query cache.
+
+**The measure.** Each answer is a `github_proxy.done` event on the job's timeline with `source`: how many of a job's
+reads reached GitHub is the count of `source: github`. The job rules' GitHub line (`GITHUB_PROXY_LINE`) tells a job to
+ask `pr status`, not GitHub, at most once a minute while it waits; `hopper-gh`'s help says the same.
+
+**Not yet (the next parts).** The other reads the issue names that no repo query answers yet — reviews, a file at a
+ref — as hopper reads. A pull request's diff, commits and checks are repo queries (issue #1074); a job reads a file and
+the history with git too, which already goes through the hopper (issue #652, "Git through the hopper"). A wait on checks as a
+subscription to the ledger's events on the job stream (issue #613) in place of a read once a minute. A count of GitHub
+calls per job in the UI.
+
+Tests: `test/github-proxy/pr-status.test.ts` (the status from a card and from the ledger, nothing known, the policy;
+the broker: from the hopper with GitHub not asked, from GitHub once, then from the repo-query cache while fresh),
+`test/integration/github-proxy.test.ts` (the real daemon and `hopper-gh`: a followed pull request answered as the Pull
+requests list shows it, with no GitHub call; one the hopper does not know read on GitHub, then from the cache).

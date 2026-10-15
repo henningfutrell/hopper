@@ -161,7 +161,7 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
     },
     get,
     byPullRequest(url) {
-      const r = db.get('SELECT body FROM work_items WHERE pull_request = ? ORDER BY state_since DESC LIMIT 1', url);
+      const r = db.get('SELECT body FROM work_items WHERE lower(pull_request) = lower(?) ORDER BY state_since DESC, key LIMIT 1', url);
       return r ? parse<WorkItem>(r.body) : undefined;
     },
     list(filter) {

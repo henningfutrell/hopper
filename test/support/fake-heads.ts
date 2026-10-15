@@ -12,7 +12,7 @@ export interface HeadsForge {
 
 /** The answer to a GET of a ref's commit in `repo`; undefined: `rest` is none. */
 export function headsRoute(forge: HeadsForge | undefined, method: string, repo: string, rest: string): { status: number; body: unknown } | undefined {
-  const m = /^commits\/(.+)$/.exec(rest);
+  const m = /^commits\/([^/]+)$/.exec(rest);
   if (method !== 'GET' || !m) return undefined;
   const sha = forge?.heads?.[`${repo}@${decodeURIComponent(m[1]!)}`];
   return sha ? { status: 200, body: { sha } } : { status: 404, body: { message: 'No commit found for SHA' } };

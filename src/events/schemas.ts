@@ -24,7 +24,7 @@ const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.
 const skillAsked = { requestId: z.string(), machine: z.string().optional(), template: z.string().optional(), asset: z.string().optional() };
 const proxyAsked = { requestId: z.string(), machine: z.string().optional(), own: z.boolean(), forUser: z.string().optional(), job: z.string().optional() };
 // Who answered a job's read (issue #1074): GitHub now, or the repo-query cache.
-const proxyOp = z.enum(PROXY_OPS), answerSource = z.enum(['github', 'cache']);
+const proxyOp = z.enum(PROXY_OPS), answerSource = z.enum(['github', 'cache', 'hopper']);
 /** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
@@ -359,7 +359,8 @@ export const EVENT_SCHEMAS = {
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
-  // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`.
+  // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
+  // (issue #1072, `pr.status`): the hopper's records answered it.
   'github_proxy.done': z.union([
     strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
