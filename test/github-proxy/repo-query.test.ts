@@ -56,6 +56,7 @@ describe('who may ask a repo query', () => {
   const queries: ProxyRequest[] = [
     { op: 'pr.diff', repo: 'else/where', number: 1 }, { op: 'pr.commits', repo: 'else/where', number: 1 },
     { op: 'pr.checks', repo: 'else/where', number: 1 }, { op: 'issue.comments', repo: 'else/where', number: 1 },
+    { op: 'pr.reviews', repo: 'else/where', number: 1 },
   ];
   it('the hopper\'s own job, on any repository its connection sees; another user\'s job, never', () => {
     for (const q of queries) expect(checkRequest(q, own, ['octo/tools'])).toEqual({ ok: true });

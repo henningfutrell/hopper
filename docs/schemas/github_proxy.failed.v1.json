@@ -32,6 +32,7 @@
             "pr.diff",
             "pr.commits",
             "pr.checks",
+            "pr.reviews",
             "pr.status",
             "pr.ready",
             "repo.view",

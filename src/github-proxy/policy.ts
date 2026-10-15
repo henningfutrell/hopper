@@ -20,7 +20,7 @@ import { z } from 'zod';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
-  'pr.status', 'pr.ready', 'repo.view', 'repo.fork', 'check.log',
+  'pr.reviews', 'pr.status', 'pr.ready', 'repo.view', 'repo.fork', 'check.log',
 ] as const;
 export type ProxyOp = (typeof PROXY_OPS)[number];
 
@@ -46,6 +46,8 @@ export const proxyRequest = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('pr.diff'), repo, number }),
   z.strictObject({ op: z.literal('pr.commits'), repo, number }),
   z.strictObject({ op: z.literal('pr.checks'), repo, number }),
+  // Its reviews (issue #1072): each review, and what the latest of each reviewer decides.
+  z.strictObject({ op: z.literal('pr.reviews'), repo, number }),
   // Where a pull request stands (issue #1072): answered from the hopper's records first, GitHub only for one it does not know.
   z.strictObject({ op: z.literal('pr.status'), repo, number }),
   z.strictObject({ op: z.literal('pr.ready'), repo, number }),
@@ -100,13 +102,13 @@ export interface ProxyAsker {
 export const CONTRIBUTION_OFF = 'contributing through a fork is off: a person turns it on in Settings → Contribution';
 
 /** What a job may ask on its fork: issues, and reads. Its pull request goes on the repository the fork is of. */
-const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.status', 'repo.view'];
+const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view'];
 
 /**
  * What only reads (issue #1015): the hopper's own job asks them on any repository its connection sees. Each is a **repo
  * query** (issue #1074): answered from the repo-query cache when it can be (repo-query.ts).
  */
-export const READS: readonly ProxyOp[] = ['issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.status', 'repo.view', 'check.log'];
+export const READS: readonly ProxyOp[] = ['issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view', 'check.log'];
 export const isRead = (op: ProxyOp): boolean => READS.includes(op);
 
 /** What a job of another user may ask: filing an issue. Everything else reads or writes as the hopper's user. */
