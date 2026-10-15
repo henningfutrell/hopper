@@ -12,6 +12,7 @@ import { PROMOTION_TABLE } from './promotions.ts';
 import { GITHUB_LISTING_TABLES } from './github-listings.ts';
 import { SOURCE_CALLS_TABLE } from './source-calls.ts';
 import { OUTBOUND_SEND_TABLE } from './outbound-sends.ts';
+import { GITHUB_OUTBOX_TABLE } from './github-outbox.ts';
 import { workItemLedger } from './work-items.ts';
 import { rebuildWorkItems } from './work-items.ts';
 
@@ -55,4 +56,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 61: The call log (issue #1264): the calls each job source's sync passes made, a row per source and minute. A table only:
   // the build before runs on it.
   SOURCE_CALLS_TABLE,
+  // 62: The GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent. A table only: the build
+  // before runs on it, and sends what it left there no more — its rows wait for the next start of this build.
+  GITHUB_OUTBOX_TABLE,
 ];

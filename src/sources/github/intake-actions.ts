@@ -1,13 +1,13 @@
 // The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve and Decline
 // (issue #1035) on a request card — on a reopened card (issue #1126) Approve also takes `hopper:done` off —, and Take off the backburner — each only on an item the source's last discover offered
 // it for. Decline writes nothing to GitHub. Take into Intake (issue #1176): only on an issue an untracked pull request the
-// last census listed closes, and that is no work item. Each GitHub write runs after the answer, its write-behind
-// (`write-behind.ts`, issue #1194), and its event is recorded once GitHub took it. Apart from source.ts for its size.
+// last census listed closes, and that is no work item. Each GitHub write is a row in the GitHub outbox (`outbox.ts`,
+// issue #1238), sent after the answer, and its event is recorded once GitHub took it. Apart from source.ts for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
-import type { GitHubApi } from './api.ts';
-import type { WriteBehind } from './write-behind.ts';
+import type { GitHubOutbox } from './outbox.ts';
+import type { OutboxChange, OutboxEvent } from '../../domain/github-outbox.ts';
 import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
@@ -22,23 +22,22 @@ const NO_ACCOUNT = 'no GitHub account connected';
 
 export interface IntakeActionContext {
   source: string;
-  api: GitHubApi;
   /** What the last discover listed. */
   offered: IntakeOutcome[];
   /** The labels of each issue the last discover listed, by URL: what a release removes. */
   listedLabels: Map<string, string[]>;
   assignee: string | undefined;
   intake: IntakeContext | undefined;
-  /** Approve a request card (issue #652): false when it is not the text the last sync showed. Its GitHub writes run after it (issue #1194). */
-  approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean>;
+  /** Approve a request card (issue #652): false when it is not the text the last sync showed. Its GitHub work is outbox rows (issue #1238). */
+  approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): boolean;
   /** Keeps a person's decline of a request card (issue #1035); the text a person approved (issue #1045). */
   trust: Pick<IntakeTrust, 'decline' | 'approvedText'>;
   /** The source's label: what Take into Intake gives an issue. */
   label: string;
   /** The issues the last census offers to Intake, each with the untracked pull request that closes it (issue #1176). */
   takeIn: Map<string, UntrackedPullRequest>;
-  /** The GitHub writes after the answer (issue #1194). */
-  writeBehind: WriteBehind;
+  /** The GitHub writes after the answer (issues #1194, #1238). */
+  outbox: GitHubOutbox;
 }
 
 /** Take into Intake (issue #1176): the source's label and an assignment to the connected account, a GitHub write the user makes. */
@@ -50,12 +49,11 @@ function takeIn(c: IntakeActionContext, keys: string[]): IntakeActionResult {
     if (!u) { failed[key] = NOT_OFFERED_TAKE_IN; continue; }
     const assignee = c.assignee;
     if (!assignee) { failed[key] = NO_ACCOUNT; continue; }
-    if (!c.writeBehind.sent('take_in', key)) {
-      c.writeBehind.run('take_in', key, async () => {
-        await c.api.addLabels(u.repo, numberOf(key), [c.label]);
-        await c.api.addAssignees(u.repo, numberOf(key), [assignee]);
-        c.intake?.record('source.issue_taken_in', { source: c.source, key, pullRequest: u.url, assignee });
-      });
+    if (!c.outbox.sent('take_in', key)) {
+      c.outbox.queue('take_in', key, u.repo, [
+        { change: { op: 'add_labels', labels: [c.label] } },
+        { change: { op: 'add_assignees', assignees: [assignee] }, event: { type: 'source.issue_taken_in', data: { source: c.source, key, pullRequest: u.url, assignee } } },
+      ]);
     }
     done.push(key);
   }
@@ -65,29 +63,20 @@ function takeIn(c: IntakeActionContext, keys: string[]): IntakeActionResult {
 /** Decline is offered where Approve is: on a request card. */
 const offeredAs = (kind: IntakeAction['kind']): IntakeAction['kind'] => (kind === 'decline' ? 'approve' : kind);
 
-const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
-
-/** Assign to me, Release claim or Take off the backburner on GitHub, with its event once GitHub took it; a string: refused now. */
-function gitHubWrite(c: IntakeActionContext, kind: IntakeAction['kind'], repo: string, key: string): (() => Promise<void>) | string {
-  const n = numberOf(key);
+/** Assign to me, Release claim or Take off the backburner on GitHub: its change, with its event once GitHub took it; a string: refused now. */
+function gitHubWrite(c: IntakeActionContext, kind: IntakeAction['kind'], key: string): { change: OutboxChange; event: OutboxEvent } | string {
   if (kind === 'assign') {
     const assignee = c.assignee;
     if (!assignee) return NO_ACCOUNT;
-    return async () => {
-      await c.api.addAssignees(repo, n, [assignee]);
-      c.intake?.record('source.issues_assigned', { source: c.source, keys: [key], assignee });
-    };
+    return { change: { op: 'add_assignees', assignees: [assignee] }, event: { type: 'source.issues_assigned', data: { source: c.source, keys: [key], assignee } } };
   }
   if (kind === 'unbackburner') {
-    return async () => {
-      await c.api.removeLabels(repo, n, [LABEL_BACKBURNER]);
-      c.intake?.record('source.backburner_lifted', { source: c.source, key });
-    };
+    return { change: { op: 'remove_labels', labels: [LABEL_BACKBURNER] }, event: { type: 'source.backburner_lifted', data: { source: c.source, key } } };
   }
   const holders = (c.listedLabels.get(key) ?? []).filter((l) => l.startsWith(HOLDER_PREFIX));
-  return async () => {
-    await c.api.removeLabels(repo, n, [LABEL_CLAIMED, ...holders]);
-    c.intake?.record('source.claim_released', { source: c.source, key, by: 'user', reason: 'released in Sources' });
+  return {
+    change: { op: 'remove_labels', labels: [LABEL_CLAIMED, ...holders] },
+    event: { type: 'source.claim_released', data: { source: c.source, key, by: 'user', reason: 'released in Sources' } },
   };
 }
 
@@ -110,15 +99,15 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
     try {
       if (a.kind === 'approve') {
         // A reopened card (issue #1126): the approve takes `hopper:done` off, after it (issue #1194), so the sync takes it again.
-        if (!await c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
+        if (!c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
       } else if (a.kind === 'decline') {
         // Only the text the person read, as the last sync showed it. Nothing on GitHub.
         if (!x.request || x.request.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
         c.trust.decline(c.source, key, x.request, a.acting);
-      } else if (!c.writeBehind.sent(a.kind, key)) {
-        const write = gitHubWrite(c, a.kind, x.repo, key);
+      } else if (!c.outbox.sent(a.kind, key)) {
+        const write = gitHubWrite(c, a.kind, key);
         if (typeof write === 'string') { failed[key] = write; continue; }
-        c.writeBehind.run(a.kind, key, write);
+        c.outbox.queue(a.kind, key, x.repo, [write]);
       }
       done.push(key);
     } catch (err) {

@@ -23,7 +23,8 @@
 // that source syncs once `DELIVERY_SYNC_MS` after the first delivery of a burst: a timed sync, before its timer.
 // A source not configured (issue #1243, `JobSource.setupProblem`) runs no sync pass while no job of its own needs one: its
 // status is `needs-setup` with the problem, never ok, and the log says it once, and once when it clears.
-
+// The GitHub outbox (issue #1238): an intake action answers and asks for no full sync. Its source's outbox sends its rows `OUTBOX_BATCH_MS`
+// after it (a burst in one batch), and every `OUTBOX_EVERY_MS` the rows due; each repository a send wrote to is made due, and the source syncs then, a timed sync. A sync never waits for the outbox.
 // Poll backoff (issue #1264, `poll-backoff.ts`): a configured source's timed syncs that find nothing changed come further
 // apart; each pass's calls go to the call log, and its status shows its poll interval and its calls in the last hour and day.
 import { SourceError } from '../domain/ports.ts';
@@ -41,7 +42,7 @@ import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
-import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts';
+import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -56,10 +57,9 @@ export interface SourceSyncOptions {
   jevFirst?: JevFirst;
   /** How often a round follows the pull requests in motion, and every one (issue #985), read at each sync. Absent: every sync follows every one. */
   followEvery?: () => FollowEvery;
-  /** Poll backoff (issue #1264): whether the source's timed syncs come further apart while they find nothing changed. Absent: never. */
-  backoff?: (sourceName: string) => boolean;
-  /** The call log (issue #1264): each pass's calls are kept there, and each status shows the last hour and day from it. */
-  calls?: SourceCallLog;
+  /** Poll backoff (issue #1264): whether the source's timed syncs come further apart while they find nothing changed (absent: never); the call log: each pass's calls, and each status shows the last hour and day from it. */
+  backoff?: (sourceName: string) => boolean; calls?: SourceCallLog;
+  outboxBatchMs?: number; // the outbox's batch window after an intake action (issue #1238); default OUTBOX_BATCH_MS
 }
 
 /** How long after a GitHub delivery its sources sync (issue #1079): GitHub sends opened, labeled and assigned at once. */
@@ -319,10 +319,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
    * for while one waits to start joins it (issue #1019): it starts after the ask, so it sees what the ask did, and ten
    * approvals in a row wait for one sync behind the running one, not for ten in a row.
    */
-  function runSync(slot: Slot, asked = false): Promise<void> {
+  function runSync(slot: Slot, asked = false, askedAt?: number): Promise<void> {
     clearTimeout(slot.timer);
-    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now.
-    const asks = syncAsks();
+    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now, or from when the act asked its outbox to send (issue #1238).
+    const asks = syncAsks(askedAt);
     const joining = joined(slot, asked, asks);
     if (joining) return joining;
     const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve(), asks };
@@ -333,6 +333,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     void slot.chain.finally(() => syncs.delete(slot.chain)).catch(() => undefined);
     return slot.chain;
   }
+
+  const outbox = outboxFlushes({ slots: () => slots.values(), running: () => running, sync: (slot, at) => { void runSync(slot, false, at); }, ...(o.outboxBatchMs === undefined ? {} : { batchMs: o.outboxBatchMs }),
+    refresh: (slot) => { slot.status.detail = detailOf(slot, slot.removed ? REMOVED : slot.source.paused?.(), jobsOf(slot).filter((j) => flagsOf(j).permanentErrors?.length).length); emit(slot); } });
 
   /** A status with each taken item's job as it is now (issue #798). */
   const live = (st: SourceStatus): SourceStatus => liveIntake(st, (key) => store.jobs.getBySourceKey(key));
@@ -351,10 +354,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(),
   });
 
-  const rerunning = createRerun({
-    host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id),
-    syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
-  });
+  const rerunning = createRerun({ host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id), syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); } });
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),
@@ -371,9 +371,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
       const result = await slot.source.intakeAction(action);
       withTakenStatus(result.failed, (key) => store.jobs.getBySourceKey(key));
-      // The answer does not wait for the sync (issue #1194): the action is recorded, and the sync it asks for takes the
-      // assigned, released or approved issues after, its status on the stream.
-      void withAct(action.kind, () => runSync(slot, true));
+      // The answer waits for no GitHub write and no sync (issues #1194, #1238): the outbox sends its rows after its batch window, then the source syncs, timed as the act's.
+      if (result.done.length > 0) withAct(action.kind, () => outbox.soon(slot));
       return { ok: true, result };
     },
     start() {
@@ -381,6 +380,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       running = true;
       unsubscribe = store.events.subscribe(onEvent);
       for (const slot of slots.values()) void runSync(slot, true);
+      outbox.start();
     },
     repoChanged(repo) {
       const named = running ? [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true) : [];
@@ -391,6 +391,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     async stop() {
       running = false;
       unsubscribe?.();
+      outbox.stop();
       for (const slot of slots.values()) { clearTimeout(slot.timer); clearTimeout(slot.delivered); delete slot.delivered; }
       await drain();
       await Promise.allSettled([...syncs]);

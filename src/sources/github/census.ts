@@ -4,7 +4,7 @@
 // Pull requests list. One on a base from before the landing branch, of an item the ledger holds, on a branch named for
 // its issue (a job's), is moved to the landing branch, said on it with the follow's note. A repository GitHub does not
 // answer for keeps what was last read of it; a move GitHub refuses is logged and tried at the next round.
-import { untrackedPullRequests, type CensusFacts, type UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
+import { takenIntoIntake, untrackedPullRequests, type CensusFacts, type UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import type { IntakeWriteBehind } from '../../domain/intake.ts';
 import type { GitHubApi } from './api.ts';
 import { namesIssue } from './completion.ts';
@@ -51,6 +51,10 @@ export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'r
       }
       byRepo = next;
       errors = nextErrors;
+    },
+    /** Take into Intake went through on GitHub for this issue (issue #1238): its pull request is offered no more. */
+    takenIn(issueUrl: string): void {
+      for (const [repo, us] of byRepo) byRepo.set(repo, us.map((u) => (u.issue?.url === issueUrl && u.offer === 'take_in' ? takenIntoIntake(u, landing(repo)) : u)));
     },
     /** The issues the last census offers to Intake (`take_in`), each with the untracked pull request that closes it, by URL. */
     takeIn: (): Map<string, UntrackedPullRequest> =>

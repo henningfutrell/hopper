@@ -26,6 +26,7 @@ import { ACCOUNT_CONNECTION, APP_CONNECTION, checksFallback } from './github/che
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
+import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
 import { githubLimiter } from '../github-limiter/limiter.ts';
 import type { FollowEvery } from './follow-rounds.ts';
 
@@ -83,6 +84,8 @@ export interface GitHubSourceDeps {
   gitMirrors?: GitMirrors;
   /** The user's listing cache (issue #985). Absent: kept in memory. */
   listings?: GitHubListingRepository;
+  /** The user's GitHub outbox (issue #1238). Absent: kept in memory. */
+  outbox?: GitHubOutboxRepository;
 }
 
 /** The in-motion cycle's intervals (issue #985), as the hopper's admin set them: the cycle, and every followed pull request each intake sync interval. */
@@ -91,9 +94,9 @@ export const followEvery = (): FollowEvery => {
   return { cycleMs: s.prCycleMinutes * 60_000, allMs: s.intakeSyncMinutes * 60_000 };
 };
 
-/** What both sources share of the listing (issue #985): the cache, and the intake sync interval the hopper's admin set. */
+/** What both sources share of the store (issues #985, #1238): the listing cache, the outbox, and the intake sync interval the hopper's admin set. */
 const listingOf = (o: GitHubSourceDeps) => ({
-  ...(o.listings ? { listings: o.listings } : {}), listingEveryMs: () => githubLimiter.settings().intakeSyncMinutes * 60_000,
+  ...(o.listings ? { listings: o.listings } : {}), ...(o.outbox ? { outbox: o.outbox } : {}), listingEveryMs: () => githubLimiter.settings().intakeSyncMinutes * 60_000,
 });
 
 /**
@@ -275,5 +278,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.intakeAction ? s.intakeAction(action) : Promise.reject(new SourceError(why(), false));
     },
+    // Unconnected, the outbox waits (issue #1238): its rows stay pending until a connection sends them.
+    flushOutbox: () => current()?.flushOutbox?.() ?? Promise.resolve({ due: 0, wrote: [] }),
   };
 }

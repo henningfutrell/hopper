@@ -82,8 +82,9 @@ describe('issues not taken, grouped and acted on (issue #798)', () => {
 
     const r = await a.ui('/ui/api/sources/github/intake', { kind: 'unbackburner', keys: [parked.url, assigned.url] }, { token });
     expect(r).toEqual({ status: 200, body: { done: [parked.url], failed: { [assigned.url]: 'not offered: not assigned to you' } } });
+    // The outbox takes the label off after the answer (issue #1238), and the sync after it takes the issue.
+    await waitFor(async () => (await jobsFor(a, parked.url)).length === 1, { what: 'the issue taken' });
     expect(gh.issue(REPO, parked.number).labels).not.toContain('hopper:backburner');
-    expect(await jobsFor(a, parked.url)).toHaveLength(1);
     expect((await a.events('types=source.backburner_lifted')).map((e) => e.data)).toEqual([{ source: 'github', key: parked.url }]);
     expect((await a.ui('/ui/api/sources/github/intake', { kind: 'unbackburner', keys: [parked.url] })).status).toBe(403);
   });

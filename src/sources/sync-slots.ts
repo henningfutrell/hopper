@@ -43,6 +43,8 @@ export interface Slot {
   unchanged?: number;
   answer?: string;
   answered?: string;
+  /** The outbox send an intake action asked for (issue #1238), once its batch window ends. */
+  outboxSoon?: NodeJS.Timeout;
 }
 
 /**
