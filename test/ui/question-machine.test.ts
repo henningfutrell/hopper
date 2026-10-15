@@ -7,6 +7,8 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LOGIN_SCREEN_MARK, NOT_SIGNED_IN } from '../../src/domain/types.ts';
+import { isNotSignedIn } from '../../ui/src/model/questions.ts';
 
 const DESK = { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-2' };
 const base = {
@@ -15,6 +17,9 @@ const base = {
 };
 const fromDesk = { ...base, id: 'q1', text: 'Which branch?', status: 'open', raisedBy: DESK };
 const unknown = { ...base, id: 'q2', text: 'Rebase or merge?', status: 'open' };
+// Issue #1128: a question of a Claude with no credential links to Accounts, where a person signs it in from the hopper.
+const signedOut = { ...base, id: 'q4', jobId: 'j4', text: `${NOT_SIGNED_IN}.\n\nPress Esc to go on.`, status: 'open', raisedBy: DESK };
+const loginScreen = { ...base, id: 'q5', jobId: 'j5', text: `${NOT_SIGNED_IN}.\n\n${LOGIN_SCREEN_MARK}\n1. Claude account`, status: 'open', raisedBy: DESK };
 const handled = { ...base, id: 'q3', text: 'Ship it?', status: 'answered', answer: 'yes', answeredBy: 'human', raisedBy: DESK };
 const askedEvent = { seq: 1, schemaVersion: 1, id: 'e1', type: 'question.asked', at: '2026-10-08T10:00:00.000Z', jobId: 'j1', laneId: 'desk/lane-2', machineId: 'desk', questionId: 'q1', data: { questionId: 'q1', text: 'Which branch?', detectedBy: 'marker', raisedBy: DESK } };
 const oldEvent = { ...askedEvent, seq: 2, id: 'e2', questionId: 'q2', laneId: undefined, machineId: undefined, data: { questionId: 'q2', text: 'Rebase or merge?', detectedBy: 'marker' } };
@@ -36,7 +41,7 @@ function fakeFetch() {
   return vi.fn(async (input: string) => {
     const [path, query = ''] = String(input).split('?') as [string, string?];
     if (path === '/ui/api/session') return json({ authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
-    if (path === '/api/questions') return json({ questions: new URLSearchParams(query).get('status') === 'all' ? [fromDesk, unknown, handled] : [fromDesk, unknown] });
+    if (path === '/api/questions') return json({ questions: new URLSearchParams(query).get('status') === 'all' ? [fromDesk, unknown, handled] : [fromDesk, unknown, signedOut, loginScreen] });
     if (path.startsWith('/ui/api/')) return json({});
     return json(routes[path] ?? {});
   });
@@ -112,5 +117,24 @@ describe('the raising machine in the UI (issue #485)', () => {
     await render((m) => createElement(m.DeviceCode as never, props), path);
     expect(document.querySelector('[data-device-code]')).not.toBeNull();
     expect(raised(document)).toBeNull();
+  });
+});
+
+describe('a not-signed-in question links to Accounts (issue #1128)', () => {
+  it('the card says to sign Claude in on its machine from Accounts; after a sign-in, a login-screen question still needs an answer', async () => {
+    await boot('#questions');
+    const card = await vi.waitFor(() => { const c = cardOf('Press Esc to go on.'); expect(c).not.toBeNull(); return c!; });
+    const link = card.querySelector<HTMLAnchorElement>('[data-slot="sign-in-link"] a')!;
+    expect(link.getAttribute('href')).toBe('#accounts');
+    expect(card.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('Desk tower');
+    expect(card.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('answers this question');
+    const screen = cardOf('1. Claude account')!;
+    expect(screen.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('then answer this question');
+    expect(cardOf('Which branch?')!.querySelector('[data-slot="sign-in-link"]')).toBeNull();
+  });
+
+  it('the UI knows the question by the text the executor writes', () => {
+    expect(isNotSignedIn(`${NOT_SIGNED_IN}.`)).toBe(true);
+    expect(isNotSignedIn('Which branch?')).toBe(false);
   });
 });
