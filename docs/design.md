@@ -20700,8 +20700,15 @@ nothing else") said only which routes were in flight; most stalls had none, so i
   changed); the newest job of each item comes from that list; only a tended job watches its base; and only a job held
   now or held before has its hold kept or dropped. A get of a job that did not change sends no body ("Database").
   Every store call is counted by its statement (`slowStoreCalls.count`), so a test says how many a piece of work sends.
-- **Not done here.** What the new log line names as holding the loop is the next thing to move: no hopper has yet run
-  the attribution through a stall.
+- **An idle hopper's store calls, measured** (part 6). With the test app's 50 ms tick and 40 ended jobs, an idle hopper
+  sends about 30 small store calls a tick: about ten reads of `jobs` (ids and versions; no bodies), six `settings` rows
+  by key, and three each of open `handoffs`, `questions` and `problems`. At the 2 s production tick that is about 15
+  calls a second, none of them a stall. Before part 5 a sync added about eight reads of `jobs` for each job.
+  `test/integration/idle-store-calls.test.ts` keeps the reads of `jobs` a tick bounded, whatever the job count.
+- **Not done here.** No cache of `settings`, `handoffs` or `questions`: their reads are small rows by key or by status,
+  and a cache would serve a value older than a write made past this process (the operator CLI). What a stall's log line
+  names as holding the loop, on a build with these parts, is the next thing to move: no hopper has yet run the
+  attribution through a stall.
 
 **Verification:** `test/store/slow-calls.test.ts`, `test/http/event-loop.test.ts` (the store's part named, none said,
 one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers what the scrub in place does),
@@ -20710,7 +20717,8 @@ one raised a minute), `test/engine/checkpoint-scrub.test.ts` (the worker answers
 `test/store/jobs-read.test.ts` (part 3: a list reads only the bodies that changed; part 5: nor does a get), `test/store/job-filter-columns.test.ts`
 (part 4: a filter sends no JSON cast, and answers as before on rows from before the migration and from the build before),
 `test/integration/sync-job-reads.test.ts` (part 5: a sync of a source with 40 ended jobs reads `jobs` fewer than 40
-times; it read it 332 times before).
+times; it read it 332 times before), `test/integration/idle-store-calls.test.ts` (part 6: an idle hopper with 40 ended
+jobs reads `jobs` fewer than 20 times a tick; 971 times in 2 s before part 5, about 420 after).
 
 ## A job source not configured says so (issue #1243, 2026-10-15)
 
