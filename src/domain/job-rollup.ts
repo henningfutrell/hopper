@@ -3,9 +3,9 @@
 // merged for every job that names it — a tend or a rework hands it to a newer job, which follows it to its end —, with no
 // checks or conflicts. Where a work item stands, and so whether a failure is still one, is the work-item ledger's alone
 // (issue #1067): the graph reads it — `stageInItem` settles a job's stage, `ITEM_STAGE` an issue's —, and nothing here
-// derives it.
+// derives it. When a job entered its stage (`stageSinceOf`), and an issue that waits on its batch (issue #1337, `awaitBatch`).
 import type { GraphNode } from './issue-graph.ts';
-import { pullRequestOf, stageAt, type JobGraphPullRequest, type JobStage } from './job-graph.ts';
+import { issueNodeId, pullRequestOf, stageAt, stageOf, type JobGraphNode, type JobGraphPullRequest, type JobStage } from './job-graph.ts';
 import type { Job } from './types.ts';
 import { isFailureOf, type WorkItem, type WorkItemState } from './work-items.ts';
 
@@ -82,4 +82,29 @@ export function stageInItem(job: Job, stage: JobStage, item: WorkItem | undefine
   if (isFailureOf(item, job.id)) return item.state === 'failed' ? 'failed' : 'waiting';
   if (item.jobId === job.id && item.state === 'dropped' && job.dismissedAt === undefined) return 'cancelled';
   return 'superseded';
+}
+
+/** When a job entered its stage, as near as its record tells: the moment its fields say, else its last change. */
+export function stageSinceOf(job: Job): string {
+  switch (stageOf(job)) {
+    case 'queued': return job.createdAt;
+    case 'running': return job.status === 'waiting_on' ? job.wait?.since ?? job.updatedAt : job.startedAt ?? job.updatedAt;
+    case 'waiting': return job.wait?.since ?? job.parked?.at ?? job.updatedAt;
+    default: return job.finishedAt ?? job.updatedAt;
+  }
+}
+
+const ISSUE_URL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)$/;
+
+/**
+ * The issues that wait on their batch (issue #1337), by URL, are done whatever their job's end or their item: their work
+ * merged into the landing branch, and their batch run's merge closes them. Only the issue nodes already in `nodes`.
+ */
+export function awaitBatch(nodes: Map<string, JobGraphNode>, urls: Iterable<string>): void {
+  for (const url of urls) {
+    const m = ISSUE_URL.exec(url);
+    const id = m ? issueNodeId(m[1]!, Number(m[2])) : undefined;
+    const before = id ? nodes.get(id) : undefined;
+    if (id && before) nodes.set(id, { ...before, stage: 'done', awaitsBatch: true });
+  }
 }

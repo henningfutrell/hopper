@@ -19663,6 +19663,12 @@ branch, one GraphQL read, shared in a sync pass), the open batch runs by `openPu
   ended, is "done: merged into the landing branch; its batch run closes the issue", in the pull request waiting group with
   no action. No request card, no reopened card, no job.
 - A read GitHub refuses leaves Intake as it was (said in the log); in the done-check it throws, and the check asks again.
+- **The job graph** (`GET /api/jobs/graph`, part 2): an issue node that waits on its batch is `done`, with
+  `awaitsBatch`, and says "Merged: waits on its batch run", whatever its job's end or its item. The route reads the issues
+  Intake's last sync said so (`awaitingBatchKeys`, `src/sources/intake-live.ts`: the reason above, from GitHub or from the
+  ledger) and the items of the graph's jobs the ledger has waiting (`awaitsBatch`); `awaitBatch` (`src/domain/job-rollup.ts`)
+  marks only the issue nodes already in the graph. The graph makes no read of its own. Not taken: a job stage of its own
+  for it; the job keeps its stage, as the ledger has its item.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
