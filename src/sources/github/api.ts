@@ -69,6 +69,8 @@ export interface OpenPullRequest {
   checks?: ChecksState;
   /** Why its checks are `unknown` (issue #1244): no read of them works with the connection, and what it lacks. Absent: known. */
   checksWhy?: string;
+  /** GitHub refused every read of its checks to the connection (issue #1244): a checks read problem, not a passing error. */
+  checksRefused?: true;
   /** The checks of its head commit that failed (issue #927); read only for one pull request by its number. Absent: none, or not read. */
   failedChecks?: FailedCheck[];
   /** Its head commit (issue #858: what the mirror merges); absent: GitHub did not say. */
@@ -168,6 +170,8 @@ export interface PullRequestState {
   checks?: ChecksState;
   /** Why its checks are `unknown` (issue #1244); absent: known. */
   checksWhy?: string;
+  /** GitHub refused every read of its checks to the connection (issue #1244). */
+  checksRefused?: true;
   body: string;
   issue?: { state: 'open' | 'closed'; stateReason?: string; updatedAt: string };
 }

@@ -25,8 +25,8 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
-import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
+import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksProblemText, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import type { ChecksProblem, LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
 import { act, actFor } from '@/store';
 import { intakeRefusal } from '@/store/intake';
 import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
@@ -169,7 +169,17 @@ function NoChecks({ r, onChanged }: { r: RepoChecks; onChanged: () => void }) {
   );
 }
 
-function RepoGroup({ group, checks, onChanged }: { group: PullRequestsView['repos'][number]; checks?: RepoChecks; onChanged: () => void }) {
+/** A checks read problem (issue #1244): said once for the repository, with the fix, not on each card alone. */
+function ChecksUnread({ p }: { p: ChecksProblem }) {
+  return (
+    <div role="alert" data-slot="repo-checks-unread" className="flex gap-2 border-b border-red-500/40 bg-red-500/10 px-4 py-2 text-xs">
+      <TriangleAlert className="size-4 shrink-0 text-bad" />
+      <p>{checksProblemText(p)}</p>
+    </div>
+  );
+}
+
+function RepoGroup({ group, checks, unread, onChanged }: { group: PullRequestsView['repos'][number]; checks?: RepoChecks; unread?: ChecksProblem; onChanged: () => void }) {
   return (
     <section data-repo={group.repo}>
       <Panel title={group.repo} icon={GitPullRequest} count={group.pullRequests.length || ''} bodyClassName="p-0"
@@ -180,6 +190,7 @@ function RepoGroup({ group, checks, onChanged }: { group: PullRequestsView['repo
         <p data-slot="yolo-note" className="border-b px-4 py-2 text-xs text-muted-foreground">
           {yoloNote(group.yolo)} <a data-slot="yolo-settings" href="#settings/yolo-mode" className="underline">Change it in Settings → Yolo mode</a>
         </p>
+        {unread && <ChecksUnread p={unread} />}
         {checks?.state === 'no checks' && <NoChecks r={checks} onChanged={onChanged} />}
         {group.pullRequests.length
           ? <ul className="divide-y">{group.pullRequests.map((c) => <Card key={c.jobId} c={c} onChanged={onChanged} />)}</ul>
@@ -304,7 +315,8 @@ export function PullRequests() {
       </Panel>
       {view.landing && view.landing.length > 0 && <Landing cards={view.landing} />}
       {view.untracked && view.untracked.length > 0 && <Untracked prs={view.untracked} reload={reload} />}
-      {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())} onChanged={reload} />)}
+      {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())}
+        unread={view.checksProblems?.find((p) => p.repo.toLowerCase() === g.repo.toLowerCase())} onChanged={reload} />)}
     </div>
   );
 }

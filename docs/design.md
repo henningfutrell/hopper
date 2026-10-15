@@ -14746,8 +14746,19 @@ sees and on the card): the connection (the GitHub App, or the connected GitHub a
 the fix. The card says `checks unknown: <why>`. Which read works is kept per repository in memory: a refused repository is
 not asked again for ten minutes (`UNREADABLE_KEEP_MS`), so a sync over many of its pull requests asks GitHub once, and a
 permission added is seen within ten minutes. A REST read that fails otherwise (a timeout, 5xx) keeps the checks `unknown`
-with GitHub's error, and is asked again at the next read. Not done yet (part 2): one problem per repository, and a Needs
-you row, when no read of its checks works.
+with GitHub's error, and is asked again at the next read.
+
+**Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
+`PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
+(`src/domain/pull-request-list.ts`) makes one **checks read problem** per repository of its open cards that wait on
+`checks unknown` with that mark — `checksProblems: { repo, why, pullRequests }[]` on `GET /api/pull-requests`, never one
+per pull request. Its `why` is the newest refusal's: the connection, the permissions it lacks, and the fix. The Pull
+requests view says it once at the top of the repository's group (`repo-checks-unread`, `checksProblemText`); each card
+still says `checks unknown: <why>`. Needs you has a **Checks** row (`checksProblemLines`), one line per repository with the
+fix, linked to Pull requests; the Pull requests nav badge adds it. Pure, from what the follow last saw: no new route, table
+or event. It is gone at the first sync after a permission is added (the fallback's cache keeps a refusal ten minutes). It
+is not a failure **problem** (`src/failures/`): those group failed jobs and hold new ones, and here no job failed and no
+job need wait — only the merge does.
 
 **A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
 newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
@@ -19944,6 +19955,37 @@ in PR open ("waiting on its pull request: checks and the merge") with no job, an
 the job began is not), `test/integration/pull-request-follow.test.ts` (the item leaves PR open for partly done, and the
 next part is queued), `test/domain/work-items.test.ts` (`prOpenStuck`), `test/domain/stuck.test.ts` (the cause),
 `test/sources/github-context.test.ts` (the done line).
+
+## A job source not configured says so (issue #1243, 2026-10-15)
+
+The problem: a `github-app` job source that was on with empty options (no `appId`, no `slug`, no private key) was paused
+and silent. Each sync still ran a pass: it asked GitHub nothing and logged `REST 0, GraphQL 0`, which reads as a healthy
+quiet source. The Sources view hid it ("an unset GitHub App is not shown", issue #254), so its intake was dead and nothing
+said why.
+
+- **A setup problem** (`JobSource.setupProblem`, `SetupProblem` in `src/domain/sources.ts`). The app source's names what of
+  its identity is not set (`loadGitHubApp` now returns `missing`), or that the key is no key, and its help page
+  (`github-app-setup`). It is read at each sync, as `paused` is.
+- **No empty pass** (`src/sources/sync.ts`). While a source has a setup problem and no job of its own needs a check or a
+  report, the sync loop runs no pass: no traffic line, no `lastOkAt`. Its status is `needs-setup` with `setupProblem`;
+  `itemsSeen` 0, and the UI shows *not configured* in place of each count. With jobs of its own to report, the pass runs
+  for them, as for a paused source, and the status still carries the setup problem.
+- **Said once.** The log says `hopper: source <name> not configured: <reason>` when the problem starts or changes, and
+  `hopper: source <name> configured` once when it clears. No event: the status and Needs you carry it.
+- **Asked for in place.** Sources shows the source as *needs setup*, with a setup card: what is missing, the steps (an
+  app already installed, or `scripts/create-github-app.sh`; its id and slug in Plugins; its key in the runtime), and a
+  link to the help page `help/github-app-setup.md`. Needs you has a **Setup** row (`#sources`), one line per source.
+- **Clears by itself.** Config completed later (the key given to the runtime, the id and slug saved) clears it at the
+  next sync, with no restart.
+- Why not a failure-assessor **problem**: a problem groups failed jobs and holds new ones of its scope. A source with
+  no config has no failed job, and must hold nothing else.
+- Not done here (later parts of issue #1243): pick an app already installed from the list of apps the connected account
+  can see, and keep the app's private key in the vault through a write-only field, not in the runtime.
+
+**Verification:** `test/sources/sync-setup.test.ts` (no pass, `needs-setup`, said once; cleared at the next sync; a pass
+still runs for its own jobs), `test/integration/github-app.test.ts` (an enabled app source with empty options, and with no
+key; the key given clears it without a restart), `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts` (the setup
+card), `test/ui/needs-you.test.ts` (the Setup row), `test/sources/app-config.test.ts` (`missing`).
 
 ## What holds the event loop (issue #1154, 2026-10-15)
 

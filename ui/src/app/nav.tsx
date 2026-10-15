@@ -102,6 +102,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const plans = n('plans');
   const unmarked = changesUnmarked(useOutOfBand());
   const gaveUp = n('pull-requests');
+  const unread = n('checks');
   const tagged = n('tagged');
   const signedOut = signedOutMachines(useToolAccounts()?.accounts ?? []);
   const badge: Partial<Record<View, NavBadge>> = {
@@ -112,7 +113,10 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     ...sections,
     infra: { n: plans + unmarked, cls: 'bg-warn text-background', title: [plans > 0 && `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for a person to approve`, unmarked > 0 && `${unmarked} out-of-band ${unmarked === 1 ? 'change waits' : 'changes wait'} to be marked`].filter(Boolean).join('; ') },
-    'pull-requests': { n: gaveUp, cls: 'bg-bad text-background', title: `the hopper gave up on ${gaveUp} ${gaveUp === 1 ? 'pull request' : 'pull requests'}` },
+    'pull-requests': { n: gaveUp + unread, cls: 'bg-bad text-background', title: [
+      gaveUp > 0 && `the hopper gave up on ${gaveUp} ${gaveUp === 1 ? 'pull request' : 'pull requests'}`,
+      unread > 0 && `the hopper cannot read the checks of ${unread} ${unread === 1 ? 'repository' : 'repositories'}`,
+    ].filter(Boolean).join('; ') },
     accounts: { n: signedOut, cls: 'bg-bad text-background', title: `${signedOut} ${signedOut === 1 ? 'machine is' : 'machines are'} signed in as nobody` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
