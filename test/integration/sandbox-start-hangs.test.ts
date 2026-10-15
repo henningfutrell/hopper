@@ -8,7 +8,7 @@
 //     Given a job's sandbox request waits for a person
 //     And the container runtime's image pull never ends
 //     When a person approves the request
-//     Then the approval answers in under 500 ms
+//     Then the approval answers within the latency budget (issue #1194)
 //     And the health, the queue and the vault's view answer in under 500 ms while the start hangs
 //     And another job's request is declined, and another job starts
 //     And at the start's time limit the request fails with the reason, an event on the job's timeline
@@ -23,6 +23,7 @@ import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { withinBudget } from '../support/latency.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const NEEDS = 'write/aws-account/123456789012';
@@ -83,7 +84,7 @@ describe('a box that does not start holds nothing else (issue #1002)', () => {
 
     const approved = await timed(() => a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve', id: stuck!.id }, { token }));
     expect(approved.status).toBe(200);
-    expect(approved.ms).toBeLessThan(500);
+    withinBudget(approved.ms);
     for (let i = 0; i < 50 && pulls === 0; i++) await new Promise((r) => setTimeout(r, 20));
     expect(pulls).toBe(1);
 
@@ -91,11 +92,11 @@ describe('a box that does not start holds nothing else (issue #1002)', () => {
     for (const path of ['/api/health', '/api/queue', '/api/vault']) {
       const r = await timed(() => a.api('GET', path, undefined, session));
       expect(r.status, path).toBe(200);
-      expect(r.ms, path).toBeLessThan(500);
+      withinBudget(r.ms, 500);
     }
     const declined = await timed(() => a.ui('/ui/api/sandbox-requests', { action: 'decline', id: other!.id, reason: 'not this one' }, { token }));
     expect(declined.status).toBe(200);
-    expect(declined.ms).toBeLessThan(500);
+    withinBudget(declined.ms, 500);
     const job = await a.pull({ op: 'sleep', ms: 60000 });
     await a.waitForStatus(job.id, 'running', 10000);
     expect((await view()).sandboxRequests!.find((r) => r.id === stuck!.id)).toMatchObject({ state: 'starting' });

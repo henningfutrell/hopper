@@ -1,6 +1,6 @@
 // Stuck work (issue #1010, design.md "Stuck work"): every item that waits on a person — an open hand-off, a failure, work
-// not pushed, a pull request the hopper gave up on, a parked job, a job stuck on its own wait — in exactly one stuck
-// cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
+// not pushed, a pull request the hopper gave up on, a parked job, a job stuck on its own wait, an item left in PR open
+// with no pull request to wait on (issue #1231) — in exactly one stuck cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
 // does. The Failures view shows them first; `POST /ui/api/failures/stuck/:cause` runs a cause's bulk action. Pure.
 // Re-exported from types.ts.
 import type { Allowed, FailureRecordView, HandoffResolutionAction, HandoffView } from './failures.ts';
@@ -11,7 +11,7 @@ import type { Job } from './types.ts';
 /** The causes, bulk ones first, in the order the view shows them. */
 export const STUCK_CAUSES = [
   'continue', 'run_again', 'wont_do', 'retry', 'push', 'tend',
-  'done_by_hand', 'taken_soon', 'kept_work', 'checks', 'tend_refused', 'parked', 'own_wait',
+  'done_by_hand', 'taken_soon', 'kept_work', 'checks', 'tend_refused', 'parked', 'own_wait', 'pr_open_stale',
 ] as const;
 export type StuckCauseId = typeof STUCK_CAUSES[number];
 
@@ -35,6 +35,8 @@ export interface StuckInputs {
   pullRequests: PullRequestCard[];
   /** Parked jobs and jobs on their own wait. */
   jobs: Job[];
+  /** The jobs of the items left in PR open with no pull request to wait on (issue #1231, `prOpenStuck`). */
+  prOpen: string[];
 }
 
 const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> = {
@@ -51,6 +53,7 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   tend_refused: { what: 'Pull requests the hopper cannot tend', todo: 'Read why on its card in Pull requests, and remove the block.' },
   parked: { what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' },
   own_wait: { what: 'Jobs stuck on their own wait', todo: 'End its wait or cancel it, on the job.' },
+  pr_open_stale: { what: 'Items in PR open with no pull request to wait on', todo: 'Look at its issue on GitHub. When work is left, press Run again on the job. Else close the issue.' },
 };
 
 /** An open hand-off's cause: its card's recommended resolution, or taken soon when that is refused for a short time. */
@@ -90,5 +93,6 @@ export function stuckOf(i: StuckInputs): StuckCause[] {
     if (j.status === 'parked') add('parked', j.id);
     else if (j.status === 'waiting_on' && j.wait?.stuckAt) add('own_wait', j.id);
   }
+  for (const id of i.prOpen) add('pr_open_stale', id);
   return STUCK_CAUSES.filter((c) => by.has(c)).map((cause) => ({ cause, ids: by.get(cause)!, ...TEXT[cause] }));
 }

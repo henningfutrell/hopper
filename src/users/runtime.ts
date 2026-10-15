@@ -28,7 +28,7 @@ import { createDetectionKit } from '../plugins/detect.ts';
 import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
-import { createFailures, type Failures } from '../failures/index.ts';
+import { checksRedOf, createFailures, type Failures } from '../failures/index.ts';
 import { createLogins, createSignIns, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
@@ -377,7 +377,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
     resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
-    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job),
+    // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source.
+    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs,
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };

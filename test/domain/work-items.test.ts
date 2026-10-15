@@ -3,7 +3,7 @@
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
 import {
-  applyEvent, applyRead, countStates, inFlightOf, inFlightPartOf, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
+  applyEvent, applyRead, countStates, inFlightOf, inFlightPartOf, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, prOpenStuck, PR_OPEN_STUCK_MS, pullRequestWaitOf, requestsWaitingOf,
   type LedgerJob, type WorkItem,
 } from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
@@ -286,5 +286,25 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
     expect(inFlightPartOf(pr('conflicts'))).toBeUndefined();
     expect(inFlightOf([running, own, outside, unseen, pr('merge'), pr('fixing_checks'), pr('draft')])).toEqual({ total: 4, running: 1, ownCommand: 1, pullRequests: 2 });
     expect(inFlightOf([])).toEqual({ total: 0, running: 0, ownCommand: 0, pullRequests: 0 });
+  });
+});
+
+describe('an item left in PR open (issue #1231)', () => {
+  const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }]])!;
+  const since = Date.parse(unseen.stateSince);
+  const named = { ...unseen, pullRequest: PR, pullRequestState: 'open' as const };
+
+  it('naming no pull request an hour on is stuck: no follow will move it', () => {
+    expect(prOpenStuck(unseen, true, since + PR_OPEN_STUCK_MS - 1)).toBe(false);
+    expect(prOpenStuck(unseen, true, since + PR_OPEN_STUCK_MS)).toBe(true);
+  });
+
+  it('naming an open pull request its job follows is not; one no job follows is', () => {
+    expect(prOpenStuck(named, true, since + PR_OPEN_STUCK_MS)).toBe(false);
+    expect(prOpenStuck(named, false, since + PR_OPEN_STUCK_MS)).toBe(true);
+  });
+
+  it('any other state is not', () => {
+    expect(prOpenStuck({ ...named, state: 'partly_done' }, false, since + PR_OPEN_STUCK_MS)).toBe(false);
   });
 });

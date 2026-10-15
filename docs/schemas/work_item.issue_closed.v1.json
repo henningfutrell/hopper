@@ -12,7 +12,8 @@
       "type": "string",
       "enum": [
         "delivery",
-        "read"
+        "read",
+        "landing"
       ]
     }
   },

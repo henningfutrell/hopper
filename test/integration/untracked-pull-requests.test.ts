@@ -77,4 +77,23 @@ describe('untracked pull requests (issue #1176)', () => {
     expect(src.detail?.intake?.find((x) => x.key === listed.issue!.url)?.group).toBe('request');
     expect((await untracked(app))?.find((u) => u.url === listed.url)?.reason).toBe('not_by_a_job');
   });
+
+  it('Take into Intake whose GitHub write fails: its Pull requests row says why, and offers it again (issue #1194)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const unlabelled = gh.createIssue({ repo: REPO, body: 'No label.' });
+    gh.openPullRequest(REPO, unlabelled.number, { createdAt: new Date().toISOString() });
+    await app.sync();
+    const listed = await waitFor(async () => (await untracked(app))?.find((u) => u.offer === 'take_in'), { what: 'an issue to take in' });
+    gh.failNext('addLabels', new Error('label refused'));
+    const token = await app.login();
+    const r = await app.ui('/ui/api/sources/github/intake', { kind: 'take_in', keys: [listed.issue!.url] }, { token });
+    expect(r.status).toBe(200);
+    const row = await waitFor(async () => {
+      const v = (await app.api<{ untracked?: UntrackedPullRequest[] }>('GET', '/api/pull-requests')).body;
+      const u = v.untracked?.find((x) => x.url === listed.url);
+      return u?.writeBehind?.state === 'failed' ? u : undefined;
+    }, { what: 'the write-behind failed on its row' });
+    expect(row).toMatchObject({ offer: 'take_in', writeBehind: { act: 'take_in', state: 'failed', error: expect.stringContaining('label refused') } });
+  });
 });

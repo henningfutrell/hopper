@@ -5,7 +5,7 @@ import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeActi
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
+  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
@@ -447,7 +447,8 @@ export type SourceSignal =
 export type SourceReport =
   | { kind: 'claimed'; job: Job }
   | { kind: 'finished'; job: Job }
-  | { kind: 'failed'; job: Job }
+  /** `fixing` (issue #1230): the hopper fixes it itself (Own PR checks red, its Continue pending): no failed mark. */
+  | { kind: 'failed'; job: Job; fixing?: boolean }
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
@@ -537,6 +538,13 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
    * job's liveness. Throws when it cannot tell now. Absent: the source cannot tell.
    */
   pullRequestOpen?(job: Job): Promise<boolean>;
+  /**
+   * Own PR checks red (issue #1230). `ownPullRequestChecks`: the job's own open pull request, ready but for its checks, and
+   * its checks' state; undefined: none; throws when it cannot tell now. `rerunChecks`: run the failed checks `failed` again
+   * once, each that is a GitHub Actions job: the names of the checks run again, and why the others were not (`refused`: no
+   * Actions job, no permission); a transient error throws. Absent: the source cannot.
+   */
+  ownPullRequestChecks?(job: Job): Promise<OwnPullRequestChecks | undefined>; rerunChecks?(failed: readonly FailedCheck[]): Promise<ChecksRerun>;
   /**
    * What became of every open item the last discover listed (issue #440): taken, or the one reason it was not.
    * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
@@ -636,7 +644,7 @@ export interface SourceHost extends AnswersFromThread {
  * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
  */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */
-export interface SourceRegistry extends GiveBackRegistry {
+export interface SourceRegistry extends GiveBackRegistry, AfterAnswerTimed {
   statuses(): SourceStatus[];
   onStatus(listener: (status: SourceStatus) => void): () => void;
   /**

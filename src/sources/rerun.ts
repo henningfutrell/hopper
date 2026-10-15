@@ -10,6 +10,7 @@
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import type { GiveBackAct, GiveBackAnswer, GiveBackChecked, GiveBackRun } from '../domain/give-back.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
+import { withAct } from './after-answer-timings.ts';
 import { sourceRef, withEdits } from './item-text.ts';
 import { following, PUSHABLE_ENDS, tendRetryAt, type ActingPerson, type Allowed, type ContinuedBy, type Job, type JobStatus, type Tended } from '../domain/types.ts';
 
@@ -119,7 +120,7 @@ export function createRerun(c: RerunContext) {
     const running = givingBack.get(jobId);
     if (running) return { ok: true, jobId, giveBack: running };
     givingBack.set(jobId, act);
-    void run().catch((e: unknown): GiveBackRun => ({ ok: false, message: message(e) })).then((r) => {
+    void withAct(act, run).catch((e: unknown): GiveBackRun => ({ ok: false, message: message(e) })).then((r) => {
       givingBack.delete(jobId);
       if (!r.ok) store.tx(() => store.events.append({ type: 'job.give_back_failed', jobId, data: { act, error: r.message, ...acting } }));
     }).catch((e: unknown) => console.warn(`hopper: the give-back of job ${jobId} ended, but could not be recorded: ${message(e)}`));

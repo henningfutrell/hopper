@@ -2026,7 +2026,9 @@ them is rebased); with failing checks, `fix_checks`; a draft free of both, `mark
 on in its own session (`Executor.resume`, in the same pane and work tree) told that step's **finish brief**
 (`finishBrief`, `src/domain/pull-requests.ts`): fixed text, no model call, recorded as `job.finish_briefed`. Its next end
 is judged again. At most `MAX_FINISH_BRIEFS` (3) per run; after them, or with no such pull request, an executor that
-cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before.
+cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before — except a job whose
+own pull request is there with red checks (issue #1230): its miss names that pull request and its failed checks
+(`PR #N: checks failed: <names>`), and the hopper finishes it ("Own PR checks red").
 
 **Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
 can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
@@ -2324,7 +2326,8 @@ only of an issue it has: another user's job (untrusted) does not change the hopp
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper closes one only after its
 own merge of a pull request with no closing keyword that is no part (issue #677, "Closing finishes the loop").
-A pull request the report could not name is followed only to its merge. A throw is a report retry, asked again next
+A pull request the report could not name is followed only to its merge; with none open, the job's own part merged since
+it began is named, so its merge ends as a part's ("A merged part moves its item on", issue #1231). A throw is a report retry, asked again next
 sync. **A job that failed only for want of a merge** — its error `not complete: …`, from before a pull request was
 done — and still waiting on a person in Needs a person is judged again at each sync of its source: done or partly done
 now, it is finished (`SourceHost.finishComplete`), its hand-off closes on `job.finished`, and its end is reported again,
@@ -3628,6 +3631,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LINK_GRACE_MS` | `600000` — issue #752: how long a running job is held once its machine's link drops, before it fails ("Link-lost hold") |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
+| `HOPPER_CHECKS_WAIT_MS` | `60000` — issue #1230: a job whose own pull request's checks were red: how long between looks at those checks while they run again, before the job is sent back to fix them ("Own PR checks red") |
 | `HOPPER_OWN_COMMAND_GRACE_MS` | `300000` — issue #1037: a job waiting on its own background command whose pane shows no background work this long, its agent not gone on, is nudged once; this long after the nudge it is flagged stuck ("A wait on its own command") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
@@ -10961,6 +10965,8 @@ a cause a person named for that signature first, then the built-in ones by their
 
 0. A job that **timed out** (the built-in cause `timed-out`) is decided by its **liveness** alone (issue #630,
    "A timed-out job" below): never grouped into a problem, nor joined to one.
+   A job whose own pull request's checks are red (the built-in cause `own-pr-checks-red`, issue #1230, "Own PR checks
+   red" below) goes on to fix them while under `maxAttempts`, then a person: never grouped, nor joined to a problem.
 1. The open **problem** of the signature whose scope covers the job's machine takes it: held, or redirected. Not a
    `job` cause's failure (issue #637): a done-check miss is its own job's, even when an older build grouped its
    signature into a problem.
@@ -11119,6 +11125,55 @@ A fact absent is not known. The rules (`timed-out.ts`, pure: liveness and the ch
 The chain (`chain.ts`) is read from the failure records: a continued run is the same job, so its earlier records
 count as well as its earlier jobs'. Only timed-out runs the assessor ran again count, newest first, back to the first
 that was not one. A person names no cause with `continue`: it needs a timeout's liveness.
+
+## Own PR checks red (issue #1230, 2026-10-15)
+
+A job opened its pull request (`Part of #1194`); one check went red on a timing assertion; the job ended done. The done
+check hid the pull request — a part whose checks failed was not counted — and said `no pull request … closes or references
+it`. The built-in cause **Not complete** matched, its decision `person`: a hand-off and `hopper:failed` on the first
+attempt, though the fix was the hopper's own work, and the queue sat idle for hours.
+
+**The miss says it.** `notComplete` (`src/sources/github/completion.ts`) asks for the job's own open pull request — opened
+by it, updated by it, or the one it reworks; closing its issue or shipping part of it; ready but for its checks (not a
+draft, no merge conflicts) — and its checks (`ownPullRequestChecks`, the failed ones read by its number). Red, the miss
+names it: `not complete: the issue <url> is open, and PR #1226: checks failed: test (node 24)`, never `no pull request`
+(`redChecksLine`). A pull request that closes the issue is still listed as found, `#N (open, checks failing)`.
+
+**Its own cause.** The built-in cause **Own PR checks red** (`own-pr-checks-red`, class `transient`, decision
+`continue`), matched before **Not complete** by that text (`OWN_PR_CHECKS_RED_TEXT`). The issue asked for decision `retry`;
+the act it describes — the same job goes on in its own session — is `continue`, so that is the decision. The rules
+(`assess.ts`): never grouped and never joined to a problem; while its chain was sent back for red checks fewer than
+`maxAttempts` times (`checksFixesOf`, `chain.ts`: the records of the cause whose Continue was made, across the job and the
+jobs a retry ran again before it), **Continue**; then a person, `retry limit reached: sent back N times for red checks`.
+
+**Its Continue** is pending on the record, and each sweep takes one step (`src/failures/checks-red.ts`), before the done
+check, from the pull request as the job's source reads it then:
+
+1. Checks running: wait `HOPPER_CHECKS_WAIT_MS` (default 60 s), at most `MAX_CHECKS_WAIT_MS` (60 min) from the assessment.
+   The done check does not run meanwhile: checks still running count as ready to it, and would end the job done.
+2. Red, and its failed checks not run again for this head commit: the hopper runs each failed check that is a GitHub
+   Actions job again (`JobSource.rerunChecks`; GitHub: `POST /repos/{owner}/{repo}/actions/jobs/{job}/rerun`, the port's
+   `rerunJob`), once per head commit — the flake guard —, records `job.checks_rerun` (the checks run again, and why any
+   were not: no Actions job, no permission), and waits as in 1.
+3. Passing, or no such pull request: the done check decides — done, the record `resolved` and the job finished.
+4. Red again, or not run again: the job goes on, its own agent session in its kept work tree when it can (`job.continued`
+   with `recordId`), else its item runs again (`job.rerun`, `by: "assessor"`). It is told the **checks-red brief**
+   (`checksRedBrief`, `src/domain/pull-requests.ts`): fixed text, the failed checks with their links, what they reported
+   and their logs' excerpts (`JobSource.checkLogs`), to fix them on the same branch, open no new pull request, and end
+   done; told the hopper ran them again already, or, when it could not, that it may once.
+
+**No `hopper:failed` while the hopper fixes it.** The sync loop reports such a failure only once it is assessed
+(`job.assessed` triggers the report). While its Continue is pending, the report says so (`SourceReport.fixing`): the
+GitHub source leaves the issue as it is, claimed, no label. When a person gets it — its retries spent, or its Continue
+refused, a hand-off opened — the end is told again (`src/sources/fixing-reports.ts`), as failed: `hopper:failed`.
+
+**Permission.** A run again needs the GitHub App's **Actions: write** permission. Without it GitHub refuses (403):
+`job.checks_rerun` says so in `refused`, and the job goes on at once, allowed to run the checks again itself, once, with an
+empty commit.
+
+**Scope.** Only a job's own pull request whose checks were red when it ended. A PR waiting job's pull request that goes
+red later is tended ("Tending a waiting pull request"); a landing batch's red run has its own path (bisect, revert, fix
+issue: "Landing batches"). Within a run, the finish brief `fix_checks` still comes first (`MAX_FINISH_BRIEFS`).
 
 ## Needs a person (issue #516, 2026-10-08)
 
@@ -11397,7 +11452,13 @@ the next read, never from a poll.
   (`job.pull_request_tended`). One that fails records `job.give_back_failed`, its `act` `retry`, `continue`, `fixed`,
   `push` or `tend`; a Retry whose work is done at its source finishes its job, and says so there. The same job's act sent
   again while one runs answers that one, whatever act it was. Done by hand and Won't do write nothing first and answer
-  as before. A stuck cause's bulk action still awaits each item, one after another.
+  as before.
+- **A stuck cause's bulk action** (`src/failures/stuck.ts` `actOnStuck`, part 6). It awaited each item's give-back, one
+  after another: two hand-offs took 16 s with GitHub slowed to 2 s a call. Now each item is checked and answered as its
+  own button is (`giveBackOf`, `src/http/ui/failures.ts`), and its give-back runs after, in the same runner, with the same
+  `job.give_back_failed` when it fails. The answer is `{ cause, done, refused }` as before: `done` the items answered, their
+  give-back running; `refused` the items a check refused now. Won't do writes nothing first, and is resolved before the
+  answer as before. The toast says how many move.
 - **Merge now and Close PR** (`src/sources/pull-request-acts.ts`, part 5). Merge now took 12 s with GitHub slowed to 2 s a
   call, and a merge GitHub refused 4 s: the route awaited the source's merge on the job's report chain — the pull request
   read, merged, the issue read, labelled and maybe closed. Now the checks the hopper can make itself (the job, its source
@@ -11423,18 +11484,49 @@ the next read, never from a poll.
   (`ui/src/store/pull-request-acts.ts`): from the click on, the button says Merging or Closing, and the card sends
   nothing more, until the stream's `job.pull_request_merged`, `job.pull_request_closed` or `job.pull_request_act_failed`
   for that job says how it ended — a toast says which, a failure with why —; the page reads its cards again then.
-- **Budget.** `test/integration/action-latency.test.ts`: with GitHub and the machine slowed to 2 s, Approve, Decline,
+  Take into Intake (Pull requests, Not tracked; part 6): its write-behind shows on its row too, as the untracked pull
+  request's `writeBehind` (`census.detail`, from the source's write-behind of its issue), since the issue is in no Intake
+  list yet. From the click on, the row says the issue is taken into Intake on GitHub and offers it no more, until a list
+  read after the click says how it ended: failed, with why, and offered again; or the issue in Intake.
+- **Budget.** `test/integration/action-latency.test.ts`: with GitHub held and the machine slowed to 2 s, Approve, Decline,
   Discard, Assign to me, Release claim, Take off the backburner, Run again, Rework, Queue order and the landing batches
   answer in under 200 ms, their decision recorded, and the slow work ends after;
   `test/integration/action-latency-give-back.test.ts` holds Retry, I fixed it, Push it and Tend again to the same;
+  `test/integration/action-latency-give-back.test.ts` holds a stuck cause's bulk action to it too;
   `test/integration/action-latency-pull-requests.test.ts` Merge now and Close PR; and
-  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. The bound is `test/support/latency.ts`:
-  200 ms on a developer machine; 1000 ms on CI (`CI` set), where a shared runner took 210 ms for an answer that takes
-  18 ms here. 1000 ms is still half of the 2 s seam delay, so an action that waits for GitHub or the machine fails on CI
-  too. `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one run, never above 1000 ms.
+  `test/integration/action-latency-local.test.ts` Answer, End wait and Pick up. **CI asserts the order, not the time**
+  (`test/support/latency.ts`): a clock on a shared runner is not reliable — one took 210 ms for an answer that takes
+  18 ms on a developer machine. So GitHub is **held** (`test/support/slow-github.ts`): each of its calls waits until the
+  test releases it. An action that waited for GitHub would never answer, and the test fails by its timeout; one that
+  answers first answers, and its GitHub work is recorded only after the release. The time of an answer is asserted
+  against the 200 ms target only off CI, or with `HOPPER_PERF=1`; `HOPPER_TEST_LATENCY_BUDGET_MS` sets the bound for one
+  run.
 
-Not yet so (issue #1194, later parts): a stuck cause's bulk action still awaits GitHub; Take into Intake's write-behind
-shows in the source's detail only, not on its Pull requests row; and no end-to-end check measures the card in a browser.
+- **Approve of a sandbox request** answers before the box starts, since issue #1002 ("Sandboxes jobs start"): the
+  approval is recorded, and the start runs after, in the background. `test/integration/sandbox-start-hangs.test.ts` holds
+  the answer to the budget (part 7).
+- **After-answer timings** (`src/sources/after-answer-timings.ts`, part 7). The work an act leaves after its answer runs
+  on a queue: the job's report chain (a give-back, Merge now, Close PR) or the source's sync chain (the sync an act asks
+  for). A slow act was either slow itself or stood behind other work: before this issue, an Approve waited up to 15 s for
+  a sync already running, then ran its own sync for 5 s. So each run is kept as its wait on the queue apart from its run,
+  per act. The act is named where it starts (`withAct`, an `AsyncLocalStorage`, so every await under it keeps the name):
+  a give-back act, `merge` or `close` on the job's report chain, and `sync:<act>` for each sync an act asks for — an
+  intake action's (`sync:approve`), or the sync after a Run again (`sync:rerun`). A sync that several acts asked for is
+  timed once for each, each wait from its own ask. Work no act started (a timer's sync, a report) is not timed. Kept in
+  memory, the last 100 runs of each act; `GET /api/sources` answers `afterAnswer`: per act, `count`, `waitMs` and `runMs`
+  (each `{ p50, p95, max }`) and `lastAt`. `test/integration/action-latency-after-answer.test.ts`: an Approve sent while
+  a sync runs answers within the budget, and its `sync:approve` shows the wait for the running sync apart from its own
+  run; `test/integration/action-latency-pull-requests.test.ts`: Merge now's `merge` wait and run together cover the time GitHub held it.
+
+- **Fixed waits on the action paths** (part 6, checked). `PR_LOOKUP_MS` (10 s, `src/failures/timeouts.ts`) bounds a
+  done-check's look at its source: on Retry it runs after the answer (part 4), never before it. `RECONCILE_MS` (10 s,
+  `src/sandbox/service.ts`) is how often the sandbox module checks its boxes; no action this section names waits for it.
+  The UI's 10 s tick (`ui/src/store/stream.ts`) reads the health and the update notice only; an action's result comes
+  from its answer and the stream.
+
+Not yet so (issue #1194, later parts): an outbox that batches and merges GitHub writes; the after-answer timings on a
+page of the UI, and of the write-behind's GitHub work, which runs inside the source; and no end-to-end check measures
+the card in a browser.
 
 ### Stuck work (issue #1010, 2026-10-13)
 
@@ -11449,12 +11541,13 @@ one press per cause where the hopper can move each item.
   failure that Run again takes and no open hand-off counts (`retry`); work not pushed, `push` when Push it is taken (its
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
-  tend its source refused (`tend_refused`); a parked job (`parked`); a job stuck on its own command wait (`own_wait`).
+  tend its source refused (`tend_refused`); a parked job (`parked`); a job stuck on its own command wait (`own_wait`); an
+  item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend` (else 400).
-  It reads the view at the press and runs the cause's action on each item, one after another, through the same path as
-  its own button, with who pressed it: the hand-off's resolution (Won't do with its card's why as the note, so the
+  It reads the view at the press and runs the cause's action on each item, through the same path as its own button, with
+  who pressed it, answered once each is checked, its give-back running after (issue #1194, "Actions answer at once"): the hand-off's resolution (Won't do with its card's why as the note, so the
   source is told why), the failure's Run again, Push it, Tend again. An item refused meanwhile is skipped and said with
   why (`refused`); the others go on. The answer: `{ cause, done, refused }`.
 - **The view** (`ui/src/views/stuck.tsx`). First in Failures, only when some work is stuck: the total, then each cause's
@@ -18781,7 +18874,41 @@ before it is failed too.
 
 Not taken: the hopper closing each issue itself after a promotion. That is a GitHub write of the hopper's own, and the
 rule is that the merge closes an issue, never the hopper ("GitHub text is neutral" in `AGENTS.md`). An issue closed
-before this change whose fix was reverted (the old path) is not reopened: its fix issue carries the work.
+before this change whose fix was reverted (the old path) is not reopened: its fix issue carries the work. Issue #1232
+takes it for the one case the batch run's text misses (below).
+
+## A promoted item is done (issue #1232, 2026-10-15)
+
+**The problem.** An item of three parts: its first part merged into the landing branch and was promoted with its batch.
+Its last pull request ("Closes #N") merged later, and at once Intake offered the issue as a reopened card, waiting for
+approval. Its batch run carried no closing keyword for it (the item was not `done` any more), so the issue stayed open
+after the promotion too, and the card stayed.
+
+**Why #1175 missed it.** The ledger kept one landing stage per item. The first part's `promoted` stayed on the item when its
+next pull request merged, so `awaitsBatch` read that pull request as promoted already, waiting on no batch. The next
+`landing_batch.pending` did not move it either: `pending` moves only an item with no stage or one `waiting`.
+
+**A landing stage is of one pull request.** `ItemLanding.pullRequest` names the pull request the stage is of; `applyLanding`
+sets it at each event. `landingOf` gives the item's stage only when it is of the item's pull request (a stage folded before,
+with no number, counts as the item's): `awaitsBatch`, `stateOf`, `batchClosingIssues` and the Landing list read it. A new
+merge thus has no stage until a landing event names it, and waits on its batch like any other. Tenant migration 60
+rebuilds the ledger, so every stage names its pull request.
+
+**A promoted item whose issue is still open is closed** (`promotedOpen`, `src/domain/work-item-landing.ts`; `closePromoted`,
+`src/sources/github/origin.ts`). At a sync, an open issue with `hopper:done` (the follow puts it on only for a merge that
+did the whole item, or every declared part) whose item's pull request its batch run promoted, while the ledger does not
+hold its issue closed, is closed by the hopper as completed, with no comment. The sync records the close
+(`work_item.issue_closed`, `via: landing`) and lists the item as "done: promoted to the tested branch with its batch; the
+issue is closed". It opens no reopened card, and a stale one is withdrawn (`source.request_withdrawn`), so the item reads
+`done` again: a withdrawn card with a merged pull request settles to `done`, not `dropped`. A close that fails is said on
+the item and asked again at the next sync, still with no card. The item's state may be `done` or `waiting_for_approval`
+(the stale card): no person's reopen gives it a promoted stage of its own pull request, because a reopen after a close
+ends the landing stage (`applyRead`), and an issue the ledger holds closed is never closed again. A reopen the hopper never
+saw (no delivery, no read between the close and the reopen) is taken for an open issue once: the hopper closes it, records
+it, and the next reopen is a reopened card.
+
+**A part.** An item whose last merge was a part (`partly_done`) has no `hopper:done`: the next sync takes its next part as
+before, and none of this applies.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
@@ -19692,3 +19819,32 @@ Accounts, and a CLI for the terminals.
 
 Tests: `test/ui/needs-you.test.ts`, `test/ui/needs-you-view.test.ts`, `test/ui/accounts-view.test.ts`,
 `test/ui/question-machine.test.ts`, `test/integration/machine-terminal.test.ts` (`hopper terminal`).
+
+## A merged part moves its item on (issue #1231, 2026-10-15)
+
+The problem: a job's part pull request (`Part of #N`) merged while the job still ran. The job's end was then judged
+done, not partly done: a merged pull request that only refers to the issue counts as done ("Done is a pull request").
+So the report put `hopper:pr-ready` on the issue and kept `follow: open` with no pull request named, as none open was
+left. The follow looks only for an open pull request: it found none each sync and returned nothing. The work item stayed
+in PR open ("waiting on its pull request: checks and the merge") with no job, and no next part ran. No view counted it.
+
+- **The follow names the merged part** (`src/sources/github/follow.ts` `mergedPartOf`). A followed job with no pull
+  request named, and none open, is given its own part merged since the job began: a pull request of its repository whose
+  body says `Part of #N`, merged at or after the job's `createdAt`. Its merge is then followed as any part's:
+  `job.pull_request_merged` with `part: true`, the item moves to partly done, `hopper:pr-ready` comes off, and the next
+  sync offers the issue again, so a new job takes the next part. An item already stuck this way moves on the next follow
+  round after the update: the follow is the reconcile pass, and nothing is migrated.
+- **The next part reads the earlier part.** The done line says: a merged pull request with `Part of #N` is an earlier
+  part; read its body first, and do the work it lists as left.
+- **What the follow cannot move is stuck work** (`src/domain/work-items.ts` `prOpenStuck`, `PR_OPEN_STUCK_MS`, an hour).
+  An item in PR open for an hour that names no open pull request, or whose job follows none (`following`), is in Stuck
+  work as `pr_open_stale`, by its job's id: "Items in PR open with no pull request to wait on". It has no bulk action: a
+  person looks at the issue, presses Run again when work is left, or closes the issue. The Failures view reads the
+  ledger's PR open items for it (`viewOf`).
+- Not changed: the done check still counts a merged pull request that refers to the issue as done. A part whose job ends
+  done is caught by the follow above, so the item never waits on nothing.
+
+**Verification:** `test/sources/github-follow.test.ts` (a merged own part named and followed as a part; one merged before
+the job began is not), `test/integration/pull-request-follow.test.ts` (the item leaves PR open for partly done, and the
+next part is queued), `test/domain/work-items.test.ts` (`prOpenStuck`), `test/domain/stuck.test.ts` (the cause),
+`test/sources/github-context.test.ts` (the done line).

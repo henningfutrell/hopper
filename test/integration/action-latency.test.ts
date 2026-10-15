@@ -1,6 +1,6 @@
-// The latency budget of a person's actions (issue #1194): with GitHub and the job's machine slow, an action records its
-// decision and answers within the budget; the slow work runs after the answer. Real daemon, real database; the fake
-// GitHub (slowed at its seam), the OpenFGA double and the fake herdr and its machine at their seams.
+// The latency budget of a person's actions (issue #1194): with GitHub held and the job's machine slow, an action records
+// its decision and answers (its time asserted off CI only, `test/support/latency.ts`); the slow work runs after the answer. Real daemon, real database; the fake
+// GitHub (held at its seam), the OpenFGA double and the fake herdr and its machine at their seams.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
 import type { FailuresView, Job, PullRequestsView } from '../../src/domain/types.ts';
@@ -8,7 +8,7 @@ import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
-import { BUDGET_MS, SLOW_MS } from '../support/latency.ts';
+import { SLOW_MS, withinBudget } from '../support/latency.ts';
 import { slowGitHub } from '../support/slow-github.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -49,24 +49,24 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
 
   it('Approve: the approval is recorded and answered at once; the comments, the sync and the job follow', { timeout: 30_000 }, async () => {
     const { a, slow, token, issue, hash } = await bootIntake();
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token }));
     expect(r).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     expect((await a.events('types=source.request_approved')).map((e) => e.data.key)).toEqual([issue.url]);
-    slow.delay.ms = 0;
+    slow.release();
     const job = await waitFor(async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === issue.url), { what: 'the approved job', timeoutMs: 10_000 });
     expect(job.source).toMatchObject({ origin: 'approved' });
   });
 
   it('Decline: recorded and answered at once', { timeout: 30_000 }, async () => {
     const { a, slow, token, issue, hash } = await bootIntake();
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui('/ui/api/sources/github/intake', { kind: 'decline', keys: [issue.url], hash }, { token }));
     expect(r).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     expect(await a.events('types=source.request_declined')).toHaveLength(1);
-    slow.delay.ms = 0;
+    slow.release();
   });
 
   it('Assign to me, Release claim and Take off the backburner: answered at once; the GitHub write follows, and the sync takes the issues', { timeout: 30_000 }, async () => {
@@ -75,13 +75,13 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
     const claimed = gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed', 'hopper:held-by:0f0f0f0f0f0f'] });
     const backburner = gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:backburner'] });
     await a.sync();
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     for (const [kind, issue] of [['assign', unassigned], ['release', claimed], ['unbackburner', backburner]] as const) {
       const { r, ms } = await timed(() => a.ui('/ui/api/sources/github/intake', { kind, keys: [issue.url] }, { token }));
       expect(r).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
-      expect(ms).toBeLessThan(BUDGET_MS);
+      withinBudget(ms);
     }
-    slow.delay.ms = 0;
+    slow.release();
     const jobs = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
     await waitFor(async () => {
       const keys = new Set((await jobs()).map((j) => j.source?.key));
@@ -113,15 +113,15 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
   it('Run again: answered at once, its give-back running; the issue is given back on GitHub after, and the new job follows', { timeout: 30_000 }, async () => {
     const { a, gh, slow, token, issue, ended } = await bootEnded('{"op":"fail","message":"boom"}');
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/jobs/${ended.id}/rerun`, {}, { token }));
     expect(r).toMatchObject({ status: 202, body: { jobId: ended.id, giveBack: 'rerun' } });
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     // The same act sent again while it runs (a second click, another tab) answers the same, and gives back nothing more.
     const again = await timed(() => a.ui(`/ui/api/jobs/${ended.id}/rerun`, {}, { token }));
     expect(again.r).toMatchObject({ status: 202, body: { jobId: ended.id, giveBack: 'rerun' } });
-    expect(again.ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(again.ms);
+    slow.release();
     const next = await newJobOf(a, ended.id);
     expect(gh.issue(REPO, issue.number).state).toBe('open');
     expect((await a.events('types=job.rerun')).map((e) => e.jobId)).toEqual([ended.id]);
@@ -132,11 +132,11 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
     const { a, gh, slow, token, issue, ended } = await bootEnded('{"op":"fail","message":"boom"}');
     gh.failNext('reopenIssue', new Error('issue locked'));
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/jobs/${ended.id}/rerun`, {}, { token }));
     expect(r.status).toBe(202);
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     const failed = await waitFor(async () => (await a.events('types=job.give_back_failed'))[0], { what: 'the give-back failed', timeoutMs: 10_000 });
     expect(failed).toMatchObject({ jobId: ended.id, data: { act: 'rerun', error: expect.stringContaining('issue locked'), person: expect.any(String), via: 'ui' } });
     expect((await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.rerunOf === ended.id)).toEqual([]);
@@ -152,11 +152,11 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
     });
     await a.sync();
     await waitFor(async () => (await a.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.flatMap((x) => x.pullRequests).find((p) => p.jobId === ended.id), { what: 'the pull request card' });
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const { r, ms } = await timed(() => a.ui(`/ui/api/jobs/${ended.id}/rework`, { notes: 'Rename the flag.' }, { token }));
     expect(r).toMatchObject({ status: 202, body: { jobId: ended.id, giveBack: 'rework' } });
-    expect(ms).toBeLessThan(BUDGET_MS);
-    slow.delay.ms = 0;
+    withinBudget(ms);
+    slow.release();
     const next = await newJobOf(a, ended.id);
     expect(next.rework).toMatchObject({ pullRequest: url, notes: 'Rename the flag.', via: 'ui' });
     expect(gh.calls.filter((c) => c.method === 'toDraft')).toHaveLength(1);
@@ -164,15 +164,15 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
 
   it('Queue order and the landing batches: recorded and answered at once, GitHub slow', { timeout: 30_000 }, async () => {
     const { a, slow, token } = await bootIntake();
-    slow.delay.ms = SLOW_MS;
+    slow.hold();
     const order = await timed(() => a.ui('/ui/api/queue/order', { jobIds: [] }, { token }));
     expect(order.r.status).toBe(200);
-    expect(order.ms).toBeLessThan(BUDGET_MS);
+    withinBudget(order.ms);
     const batches = await timed(() => a.ui('/ui/api/landing-batches', { repos: { [REPO]: { tested: 'dev' } } }, { token }));
     expect(batches.r.status).toBe(200);
-    expect(batches.ms).toBeLessThan(BUDGET_MS);
+    withinBudget(batches.ms);
     expect(await a.events('types=landing_batches.changed')).toHaveLength(1);
-    slow.delay.ms = 0;
+    slow.release();
   });
 
   it('Discard kept work: answered at once and shown removing; the work leaves the list once its machine removed it', { timeout: 30_000 }, async () => {
@@ -194,7 +194,7 @@ describe('a person\'s action answers within the budget, whatever is slow (issue 
 
     const { r, ms } = await timed(() => a.ui(`/ui/api/failures/kept-work/${job.id}/discard`, {}, { token }));
     expect(r.status).toBe(200);
-    expect(ms).toBeLessThan(BUDGET_MS);
+    withinBudget(ms);
     expect((await failures()).keptWork.find((k) => k.jobId === job.id)).toMatchObject({
       discarding: { state: 'removing' }, actions: { discard: { ok: false, why: 'its work is being removed on its machine' } },
     });

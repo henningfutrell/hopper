@@ -117,6 +117,8 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
     case 'finished':
       return finished(ctx, job, repo, number, state);
     case 'failed':
+      // The hopper fixes it itself (issue #1230): the issue stays as it is, claimed, never `hopper:failed` meanwhile.
+      if (r.fixing) return state;
       await settle(ctx, repo, number, [LABEL_FAILED]);
       return state;
     case 'cancelled':

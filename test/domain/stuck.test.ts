@@ -22,7 +22,7 @@ const kept = (jobId: string, push: Allowed, handoffId?: string): KeptWorkView =>
 const card = (jobId: string, over: Partial<PullRequestCard>): PullRequestCard => ({ jobId, repo: 'o/r', state: 'open', ...over }) as PullRequestCard;
 const job = (id: string, over: Partial<Job>): Job => ({ id, status: 'parked', ...over }) as Job;
 
-const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [] };
+const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [], prOpen: [] };
 
 describe('stuck work by cause (issue #1010)', () => {
   it('nothing stuck: no cause', () => {
@@ -90,6 +90,13 @@ describe('stuck work by cause (issue #1010)', () => {
     });
     expect(causes.map((c) => [c.cause, c.ids])).toEqual([['parked', ['j1']], ['own_wait', ['j2']]]);
     expect(causes.every((c) => c.act === undefined && c.todo)).toBe(true);
+  });
+
+  it('items left in PR open with no pull request to wait on (issue #1231): counted by their job, with what a person does', () => {
+    const causes = stuckOf({ ...empty, prOpen: ['j1', 'j2'] });
+    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['pr_open_stale', ['j1', 'j2']]]);
+    expect(causes[0]!.act).toBeUndefined();
+    expect(causes[0]!.todo).toMatch(/Run again/);
   });
 
   it('the bulk causes come first', () => {

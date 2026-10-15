@@ -25,7 +25,8 @@ import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, t
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
+import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
+import { rerunChecks } from './rerun-checks.ts';
 import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
@@ -42,7 +43,7 @@ import { createWriteBehind } from './write-behind.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { awaitingBatch, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
+import { awaitingBatch, closePromoted, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -262,7 +263,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...outside.detail(), ...tagged.detail(), ...census.detail(),
+        ...outside.detail(), ...tagged.detail(), ...census.detail(writeBehind.of),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
@@ -293,8 +294,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       });
       // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
       // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list. A merge
-      // on the landing branch waits on its batch run (issue #1175): done, and no reopened card.
-      let next = awaitingBatch(found.outcomes, intake);
+      // on the landing branch waits on its batch run (issue #1175): done, and no reopened card. One its batch run promoted
+      // with its issue still open (issue #1232): the issue is closed, once, and no reopened card.
+      let next = await closePromoted(api, found.seen, awaitingBatch(found.outcomes, intake), intake);
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
       if (listed.listed) await outside.read(repos, assignee); await tagged.read(repos, assignee, d?.due !== true);
@@ -381,5 +383,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     issueState: (job) => issueState(api, job),
     workState: (job) => workState(api, job),
     pullRequestOpen: (job) => ownPullRequestOpen(api, job),
+    ownPullRequestChecks: (job) => ownPullRequestChecks(api, job), rerunChecks: (failed) => rerunChecks(api, failed),
   };
 }

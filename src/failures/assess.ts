@@ -7,8 +7,10 @@
 // assessed keeps its decision but waits on a person — its work may be stale, and it is too old to hold others. A
 // timed-out job (issue #630) is decided by its liveness first (`timed-out.ts`): its own, never grouped with others'. A
 // failure it would hand to a person, of a job that reported a hopper bug about itself, is held on that report (issue #1147).
+// A job whose own pull request's checks are red (issue #1230) goes on to fix them while under the retry limit, never grouped.
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
 import { HOPPER_BUG_CAUSE } from './hopper-bug.ts';
+import { OWN_PR_CHECKS_RED } from './causes.ts';
 import { judgeTimeout, type LivenessFacts, type TimeoutKind } from './timed-out.ts';
 
 /** Another item's failure with the same signature, within the grouping window. */
@@ -41,6 +43,8 @@ export interface AssessInput {
    * and the open problem of its report, if any.
    */
   hopperBug?: { title: string; reason: string; open?: string };
+  /** A job whose own pull request's checks are red (issue #1230): how many times its chain was sent back for them already. */
+  checksFixes?: number;
 }
 
 /** A failure assessed longer than this after it failed takes no automatic action (issue #517). */
@@ -108,7 +112,7 @@ const RECOMMENDED: Record<FailureDecision, string> = { retry: 'Retry', hold: 'Ho
 
 function summaryOf(i: AssessInput, decision: FailureDecision, auto: boolean, title: string | undefined, retryInMs: number | undefined, lead?: string): string {
   lead ??= decision === 'retry' ? (auto ? `Runs again in ${duration(retryInMs ?? 0)}` : 'Retry recommended')
-    : decision === 'continue' ? (auto ? 'Continues: it was at work' : 'Continue recommended')
+    : decision === 'continue' ? (auto ? (i.cause?.id === OWN_PR_CHECKS_RED ? 'Continues: it fixes the red checks of its pull request' : 'Continues: it was at work') : 'Continue recommended')
     : decision === 'person' ? 'Needs a person'
       : !auto ? `Grouped: ${title}` : decision === 'redirect' ? `Redirected: ${title}` : `Held: ${title}`;
   const ran = `Ran ${i.attempt} ${i.attempt === 1 ? 'time' : 'times'}${i.job.machineId ? ` on ${i.job.machineId}` : ''}${i.ranMs !== undefined && i.attempt > 1 ? `, the last for ${duration(i.ranMs)}` : i.ranMs !== undefined && i.ranMs >= 1000 ? `, for ${duration(i.ranMs)}` : ''}`;
@@ -147,6 +151,16 @@ function judge(i: AssessInput): Assessment {
     };
   };
 
+  // Its own pull request's checks are red (issue #1230): its own work, never grouped; sent back while under the retry limit.
+  if (i.cause?.id === OWN_PR_CHECKS_RED) {
+    const fixes = i.checksFixes ?? 0;
+    if (fixes < s.maxAttempts) {
+      reasons.push(`its own pull request's checks are red: the failed checks run again once, then it goes on to fix them (${fixes + 1} of ${s.maxAttempts})`);
+      return done('transient', 'continue');
+    }
+    reasons.push(`retry limit reached: sent back ${fixes} ${fixes === 1 ? 'time' : 'times'} for red checks`);
+    return done('transient', 'person');
+  }
   if (i.cause?.id === 'timed-out') {
     const t = judgeTimeout(i.liveness ?? {}, i.earlierTimeouts ?? [], s);
     reasons.push(...t.reasons);

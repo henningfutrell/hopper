@@ -7,7 +7,8 @@
 // its repository, whatever its job's origin (issue #805; issue #652 merged only a job with one), the hopper merges it once it is ready: not a draft, no merge conflicts, and its checks passed — or it
 // has none, and none started within a grace window after its last push (issue #677; issue #652 had it wait for ever). A
 // refused merge is kept on it (`mergeError`) and asked again next sync: it never fails the job. A pull request the
-// report could not name is looked for again each sync, and named once found (issue #677). A merge marks the item done
+// report could not name is looked for again each sync, and named once found (issue #677); none open, the job's own part
+// merged since it began is named, so its merge is followed as a part's (issue #1231). A merge marks the item done
 // only when it closes the issue (issue #721): the issue is closed as completed, or the merged pull request's body closes it
 // with a closing keyword. Any other merge — a part, a mention, a pull request named for the issue only on its branch — is a
 // part: the issue is offered again — unless it makes every part the issue declares done (issue #729, parts.ts): then the
@@ -123,6 +124,18 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
   if (mention) return { url: mention.url, part: isPartOf(mention, repo, number) };
   const branch = newest((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
   return branch && { url: branch.url, part: false };
+}
+
+/**
+ * The job's own part ("Part of #N") merged since the job began (issue #1231): a part that merged before the job's end was
+ * reported, so the report named none. Followed, it ends as a merged part, and the next part is taken.
+ */
+async function mergedPartOf(api: GitHubApi, repo: string, number: number, job: Job): Promise<{ url: string; part: true } | undefined> {
+  const since = Date.parse(job.createdAt);
+  const merged = (await api.referencingPullRequests(repo, number))
+    .filter((pr) => pr.state === 'merged' && isPartOf(pr, repo, number) && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= since)
+    .sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+  return merged && { url: merged.url, part: true };
 }
 
 /** Where the named pull request is now; undefined: none is named, or a part names it no more. */
@@ -359,7 +372,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (rechecksMerge(job)) return await recheckMerge(ctx.api, repo, number, s);
     if (s.follow !== 'open') return undefined;
     if (!s.pullRequest) {
-      const found = await openPullRequestOf(ctx.api, repo, number);
+      const found = await openPullRequestOf(ctx.api, repo, number) ?? await mergedPartOf(ctx.api, repo, number, job);
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}) };
     }
     const batched = !act && s.pullRequest ? seenFromBatch(ctx, job, s, s.pullRequest) : undefined;

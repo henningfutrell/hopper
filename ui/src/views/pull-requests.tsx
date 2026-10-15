@@ -9,10 +9,10 @@
 // A card the hopper gave up on (its tend job ended failed, cancelled or rejected) has Tend again (issue #1010).
 // Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
 // moves it to the tested branch. Not tracked (issue #1176): each open pull request of a job repository the hopper does not
-// track, with why; one whose issue is not in Intake has Take into Intake.
+// track, with why; one whose issue is not in Intake has Take into Intake, which shows its GitHub write on the row (issue #1194).
 // Each card shows its change kind (issue #1076), why in its title. A card with a pull request, and a landing card — a batch's
 // culprit among them —, opens its diff in a code block (issue #1169).
-import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
+import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, Loader2, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
@@ -27,7 +27,8 @@ import { get } from '@/lib/api';
 import { ago } from '@/model/format';
 import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
-import { act } from '@/store';
+import { act, actFor } from '@/store';
+import { intakeRefusal } from '@/store/intake';
 import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { ACTING, actOnPullRequest, useActingOnPullRequest, type PullRequestAct } from '@/store/pull-request-acts';
 import { setPolled } from '@/store/polled';
@@ -222,12 +223,39 @@ const UNTRACKED_TONE: Record<UntrackedPullRequest['reason'], string> = {
 };
 
 /**
+ * Take into Intake on one row (issue #1194): the daemon answers before its GitHub write. From the click on, the row says
+ * the write runs and offers Take into Intake no more, until a list read after the click says how it ended: a failure, with
+ * why, offers it again; the issue in Intake offers it no more. A write the daemon says runs shows the same.
+ */
+function TakeIn({ u, reload }: { u: UntrackedPullRequest; reload: () => void }) {
+  const [sent, setSent] = useState<UntrackedPullRequest>();
+  const ended = sent !== undefined && u !== sent && (u.writeBehind?.state === 'failed' || u.offer !== 'take_in');
+  if (ended) setSent(undefined);
+  const running = (sent && !ended) || u.writeBehind?.state === 'running';
+  const failed = !running && u.writeBehind?.state === 'failed' ? u.writeBehind : undefined;
+  const takeIn = async () => {
+    setSent(u);
+    const key = u.issue!.url;
+    const r = await actFor(`/ui/api/sources/${encodeURIComponent(u.source!)}/intake`, { kind: 'take_in', keys: [key] }, `#${u.issue!.number}: taking into Intake`, intakeRefusal([key]));
+    if (!r.ok) setSent(undefined);
+    reload();
+  };
+  if (running) return <span data-write-behind="running" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />taking into Intake on GitHub</span>;
+  if (u.offer !== 'take_in' || !u.source || !u.issue) return null;
+  return (
+    <>
+      {failed && <span data-write-behind="failed" className="text-xs text-destructive">taking into Intake on GitHub failed: {failed.error}</span>}
+      <Button size="xs" variant="outline" title="Gives the issue the hopper label and assigns it to your GitHub account: Intake lists it as a request card for you to approve" onClick={() => void takeIn()}><Inbox />Take into Intake</Button>
+    </>
+  );
+}
+
+/**
  * Not tracked (issue #1176): each open pull request of a job repository that no job names and the ledger does not hold, with
  * why. One whose issue is not in Intake has Take into Intake for an operator: its source labels and assigns the issue.
  */
-function Untracked({ prs }: { prs: UntrackedPullRequest[] }) {
+function Untracked({ prs, reload }: { prs: UntrackedPullRequest[]; reload: () => void }) {
   const operator = useCanOperate();
-  const takeIn = (u: UntrackedPullRequest) => act(`/ui/api/sources/${encodeURIComponent(u.source!)}/intake`, { kind: 'take_in', keys: [u.issue!.url] }, `#${u.issue!.number} taken into Intake`);
   return (
     <section data-slot="untracked">
       <Panel title="Not tracked" icon={GitPullRequest} count={prs.length} bodyClassName="p-0">
@@ -240,9 +268,7 @@ function Untracked({ prs }: { prs: UntrackedPullRequest[] }) {
               <GhLink url={u.url} className="font-medium text-foreground">{u.repo}#{u.url.split('/').pop()}<ExternalLink className="size-3 opacity-60" /></GhLink>
               {u.title && <span className="text-muted-foreground">{u.title}</span>}
               <span data-slot="untracked-reason" className={`text-xs ${UNTRACKED_TONE[u.reason]}`}>{untrackedText(u)}</span>
-              {operator && u.offer === 'take_in' && u.source && u.issue && (
-                <Button size="xs" variant="outline" title="Gives the issue the hopper label and assigns it to your GitHub account: Intake lists it as a request card for you to approve" onClick={() => void takeIn(u)}><Inbox />Take into Intake</Button>
-              )}
+              {operator && <TakeIn u={u} reload={reload} />}
             </li>
           ))}
         </ul>
@@ -277,7 +303,7 @@ export function PullRequests() {
         </div>
       </Panel>
       {view.landing && view.landing.length > 0 && <Landing cards={view.landing} />}
-      {view.untracked && view.untracked.length > 0 && <Untracked prs={view.untracked} />}
+      {view.untracked && view.untracked.length > 0 && <Untracked prs={view.untracked} reload={reload} />}
       {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())} onChanged={reload} />)}
     </div>
   );

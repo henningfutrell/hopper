@@ -214,6 +214,19 @@ export interface FailedCheck {
   logError?: string;
 }
 
+/**
+ * The job's own open pull request, ready but for its checks, and those checks (issue #1230): its head commit, its checks'
+ * state (absent: it has none), and, failing, the checks that failed. What the assessor reads of a job whose own pull
+ * request's checks are red.
+ */
+export interface OwnPullRequestChecks { pullRequest: string; headOid?: string; checks?: ChecksState; failed: FailedCheck[] }
+
+/** The text of a done-check miss whose job's own pull request is there, only its checks red (issue #1230, `redChecksLine`). */
+export const OWN_PR_CHECKS_RED_TEXT = /^not complete:.*\bPR #\d+: checks failed: /i;
+
+/** A run again of failed checks (issue #1230): the checks run again, by name, and why none or not all were (`refused`). */
+export interface ChecksRerun { rerun: string[]; refused?: string }
+
 /** The most failed checks a follow keeps of one pull request (issue #927). */
 export const MAX_FAILED_CHECKS = 10;
 
@@ -339,6 +352,21 @@ export function tendBrief(pullRequest: string, step: TendStep, checks: TendCheck
 }
 
 /**
+ * What a job is told when the hopper sends it back because the checks of its own pull request failed (issue #1230, the
+ * cause Own PR checks red): fix them on the same branch. `resumes`: its own agent session, in its kept work tree; else a new
+ * job of its item. `checks.rerun`: the hopper could not run them again itself, so the job may, once. Fixed text, no model call.
+ */
+export function checksRedBrief(pullRequest: string, checks: TendChecks, resumes: boolean): string {
+  return [resumes
+    ? 'The hopper sends this job back to you in this same session and work tree: the checks of your pull request failed after you ended the job as done.'
+    : `The hopper runs this issue again: the checks of the earlier job's pull request ${pullRequest} failed. Look for its branch first.`,
+  `Work on the branch of ${pullRequest}.`, ...stepLines({ pullRequest, step: 'fix_checks' }), ...checkLines(checks),
+  'Do not open a new pull request.',
+  'If you cannot fix a check, end the job as failed. Say which checks, and why.',
+  'Then end the job as done.'].join('\n');
+}
+
+/**
  * What a rebase tend is told of its conflicts (issue #927): it resolves the small ones itself; only a design-level one goes to
  * a person, and its failure states the choice, which the Pull requests list and Needs you show.
  */
@@ -351,9 +379,9 @@ const REBASE_LINES = [
 /**
  * What a `fix_checks` tend is told of its checks (issue #927): the checks that failed, as the follow read them, and whether
  * it may run them again once (`rerun`: the first fix of a row) — a flaky check, not related to the change, gets one rerun
- * before anyone changes code for it.
+ * before anyone changes code for it. `rerunByHopper` (issue #1230): the hopper ran them again itself already.
  */
-export interface TendChecks { failed?: readonly FailedCheck[]; rerun?: boolean }
+export interface TendChecks { failed?: readonly FailedCheck[]; rerun?: boolean; rerunByHopper?: boolean }
 
 /** How a job reads a check's full log through the hopper (issue #993): the job is the last number of the check's link. */
 const CHECK_LOG_COMMAND = 'sh "$HOPPER_GH" check log JOB --repo OWNER/NAME, where JOB is the last number of the check\'s link';
@@ -376,10 +404,11 @@ function checkLine(c: FailedCheck): string[] {
     ...(job ? [`  The full log: sh "$HOPPER_GH" check log ${job.jobId} --repo ${job.repo}`] : [])];
 }
 
-function checkLines({ failed = [], rerun = false }: TendChecks): string[] {
+function checkLines({ failed = [], rerun = false, rerunByHopper = false }: TendChecks): string[] {
   const named = failed.length === 0 ? [] : ['The checks that failed:', ...failed.flatMap(checkLine)];
   const again = rerun
     ? ['If a check failed for a cause not related to this pull request (a flaky test, a runner or network failure), run the checks again once: push an empty commit (git commit --allow-empty) to the branch, change no code, and end the job as done.']
+    : rerunByHopper ? ['The hopper ran the failed checks again once, and they failed again. Do not run them again only to retry: fix the cause. A test that fails on time limits is a cause too: make it steady.']
     : ['A job tended these checks before. Do not run them again only to retry: fix the cause.'];
   return [...named, ...again];
 }

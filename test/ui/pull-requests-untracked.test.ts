@@ -5,7 +5,7 @@ import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { untrackedText } from '../../ui/src/model/pull-requests.ts';
 import type { UntrackedPullRequest } from '../../src/domain/types.ts';
-import { boot, fixture, text } from './pull-requests-view-harness.ts';
+import { boot, fixture, text, unmount } from './pull-requests-view-harness.ts';
 
 const pr = (n: number, over: Partial<UntrackedPullRequest>): UntrackedPullRequest =>
   ({ repo: 'owner/a', url: `https://github.com/owner/a/pull/${n}`, base: 'main', reason: 'not_by_a_job', ...over });
@@ -57,5 +57,27 @@ describe('Pull requests view: not tracked (issue #1176)', () => {
   it('none: no list', async () => {
     await boot(fixture);
     expect(document.querySelector('[data-slot="untracked"]')).toBeNull();
+  });
+
+  it('Take into Intake answers before its GitHub write (issue #1194): the row says so from the click on, and a failure says why', async () => {
+    const offered = pr(1115, { source: 'github', issue: issue(1114), reason: 'issue_not_in_intake', offer: 'take_in' });
+    const daemon = await boot({ ...fixture, untracked: [offered] });
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="untracked"]')).not.toBeNull());
+    const row = () => document.querySelector('[data-untracked$="/1115"]')!;
+    const take = () => [...row().querySelectorAll('button')].find((b) => b.textContent?.includes('Take into Intake'));
+    await act(async () => { take()!.click(); });
+    expect(row().querySelector('[data-write-behind="running"]')?.textContent).toContain('taking into Intake on GitHub');
+    expect(take()).toBeUndefined();
+    await vi.waitFor(() => expect(daemon.bodies).toHaveLength(1));
+    await unmount();
+    await boot({ ...fixture, untracked: [{ ...offered, writeBehind: { act: 'take_in', state: 'failed', error: 'label refused' } }] });
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="untracked"]')).not.toBeNull());
+    expect(row().querySelector('[data-write-behind="failed"]')?.textContent).toContain('label refused');
+    expect(take()).toBeDefined();
+    await unmount();
+    await boot({ ...fixture, untracked: [{ ...offered, writeBehind: { act: 'take_in', state: 'running' } }] });
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="untracked"]')).not.toBeNull());
+    expect(row().querySelector('[data-write-behind="running"]')).not.toBeNull();
+    expect(take()).toBeUndefined();
   });
 });

@@ -43,6 +43,10 @@ export interface FakeGitHub extends GitHubApi {
   setChecks(url: string, checks: ChecksState | undefined, failedChecks?: FailedCheck[]): void;
   /** The log of GitHub Actions job `jobId` of `repo` (issue #993): its text, or the error GitHub answers for it. */
   setJobLog(repo: string, jobId: number, log: string | Error): void;
+  /** The GitHub Actions jobs run again (issue #1230), `owner/name#job`, oldest first. */
+  jobReruns: string[];
+  /** What GitHub answers a rerun of any Actions job (issue #1230): an error, or undefined to run it. */
+  setRerunError(error: Error | undefined): void;
   /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */
   setConflicting(url: string, conflicting: boolean): void;
   /** Whether two pull requests conflict with each other, as git would say (issue #939); never set: git cannot say. */

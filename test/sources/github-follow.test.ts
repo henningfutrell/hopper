@@ -238,6 +238,7 @@ describe('a pull request the report could not name (issue #677)', () => {
     const { source } = withIssue();
     expect(await source.follow!(jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open' } } }))).toBeUndefined();
   });
+
 });
 
 describe('closing finishes the loop: the hopper\'s own merge closes the issue (issue #677)', () => {
