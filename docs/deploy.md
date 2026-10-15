@@ -855,7 +855,9 @@ Then `scripts/kind-sandbox-check.ts` (issue #1371) runs on the cluster `--keep` 
 dependencies (`npm ci`). As the hopper's own service account, it runs need boxes through this checkout's Kubernetes
 runtime. Each box succeeds, fails, times out or is cancelled. After each, no pod, claim or secret with its labels may
 stay. A later box must not see an earlier one's files, and two boxes at once must not see each other's. The runtime
-must refuse to remove the hopper's pod and the release's claims.
+must refuse to remove the hopper's pod and the release's claims. Last, the check kills the hopper's pod (scaled to 0,
+deleted with no grace), runs a need box of the hopper's instance while the hopper is down, and starts the hopper again:
+the hopper's first sweep must remove that box and its home claim.
 
 ```sh
 node scripts/kind-sandbox-check.ts --context kind-hopper-check   # --namespace NAME, --image IMAGE (sh, tar, base64)
