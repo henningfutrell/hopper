@@ -72,6 +72,11 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
+  /**
+   * GitHub: the apps installed on each organization (GET /orgs/{org}/installations, issue #1243), by organization; a number:
+   * GitHub refuses the list with that status (the person is no owner, or the token lacks the organization's Administration).
+   */
+  orgApps?: Record<string, { id: number; slug: string }[] | number>;
   /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
   issuesRefused?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
@@ -264,6 +269,15 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
         })), r.query);
         return tagged({ total_count: on.length, installations: page }); // with an ETag (issue #1250)
+      }
+      const oi = /^\/orgs\/([^/]+)\/installations$/.exec(path);
+      if (r.method === 'GET' && oi) {
+        const apps = forge?.orgApps?.[oi[1]!];
+        if (apps === undefined) return { status: 404, body: { message: 'Not Found' } };
+        if (typeof apps === 'number') return { status: apps, body: { message: 'Resource not accessible by integration' } };
+        return { status: 200, body: { total_count: apps.length, installations: pageOf(apps.map((a, i) => ({
+          id: 100 + i, app_id: a.id, app_slug: a.slug, account: { login: oi[1] }, html_url: `${base}/organizations/${oi[1]}/settings/installations/${100 + i}`,
+        })), r.query) } };
       }
       const ir = /^\/user\/installations\/(\d+)\/repositories$/.exec(path);
       if (r.method === 'GET' && ir) {
