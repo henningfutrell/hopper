@@ -8,6 +8,12 @@
 //     When a job runs `sh "$HOPPER_GH" pr status N --repo octo/tools`
 //     Then the hopper answers from its records (`source: hopper`), as the Pull requests list says, and GitHub is not asked
 //     And a pull request it does not know is read on GitHub once (`source: github`), then from the repo-query cache (`source: cache`)
+//   Scenario: a job waits on its pull request's checks on its job stream, not by asking again (part 2)
+//     Given a pull request the hopper follows, its checks running
+//     When a job runs `sh "$HOPPER_GH" pr wait N --repo octo/tools`
+//     Then the hopper opens a watch on the job's stream, and the job waits on it
+//     When the hopper sees the checks end
+//     Then the wait ends with the pull request's status, the job asked once, and GitHub was not asked
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -96,5 +102,34 @@ describe('pr status through the hopper (issue #1072)', () => {
     expect(json(await hopperGh(t.root, env, ['pr', 'status', opened, '--repo', 'octo/tools']))).toMatchObject({ source: 'cache', number: Number(opened) });
     expect(reads()).toBe(readsAfter);
     expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.done').filter((e) => e.data.op === 'pr.status').map((e) => e.data.source).reverse()).toEqual(['hopper', 'github', 'cache']);
+  });
+
+  it('pr wait: the job waits on its stream until the hopper sees the checks end; one ask, no GitHub read', async () => {
+    const t = await start();
+    const followed = await running(t, 'octo/tools', ADMIN_ID, 9);
+    t.held.get(followed.job.id)!.end();
+    await t.app.waitForStatus(followed.job.id, 'finished');
+    const pr10 = `${t.github.url}/octo/tools/pull/10`;
+    const following = (checks: 'pending' | 'passing') => ({ sourceState: { source: { pullRequest: pr10, follow: 'open', seen: {
+      draft: false, conflicting: false, checks, base: 'dev', headRef: 'issue-9',
+    } } } });
+    t.app.user().store.jobs.update(followed.job.id, following('pending'));
+    const { job, env } = await running(t);
+    const before = t.github.requests.length;
+
+    const waiting = hopperGh(t.root, env, ['pr', 'wait', '10', '--repo', 'octo/tools', '--timeout', '60']);
+    const watch = await waitFor(() => t.app.user().store.jobStream.openWatches(job.id)[0], { what: 'the watch on pull request 10' });
+    expect(watch.body).toEqual({ owner: 'github', repo: 'octo/tools', number: '10' });
+    // The hopper sees the checks pass: what following found, and its event.
+    t.app.user().store.jobs.update(followed.job.id, following('passing'));
+    t.app.user().store.events.append({ type: 'job.pull_request_seen', jobId: followed.job.id, data: { pullRequest: pr10, wait: 'merge' } });
+
+    const done = await waiting;
+    expect(done.code).toBe(0);
+    expect(json(done)).toMatchObject({ number: 10, url: pr10, state: 'open', checks: 'passing', head: 'issue-9' });
+    expect(t.github.requests.length).toBe(before);
+    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.done').filter((e) => e.jobId === job.id).map((e) => e.data.wait)).toEqual([watch.id]);
+    const stream = t.app.user().store.jobStream.since(job.id, 0, 100, watch.id).map((e) => e.type);
+    expect(stream).toEqual(['github.pr_waiting', 'github.pr_settled']);
   });
 });

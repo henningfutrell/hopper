@@ -53,6 +53,12 @@ export function knownPullRequest(number: number, url: string, o: { card?: PullRe
   return undefined;
 }
 
+/**
+ * Whether a wait on a pull request's checks (`pr wait`, issue #1072 part 2) is over: its checks ended (passing, failing,
+ * none, or checks the hopper may not read), or it is merged or closed. Only checks that run keep a job waiting.
+ */
+export const prSettled = (s: PullRequestStatus): boolean => s.state !== 'open' || s.checks !== 'pending';
+
 /** Whether `url` is pull request `number` of `repo`, whatever the web origin and the case. */
 export const isPullRequest = (url: string, repo: string, number: number): boolean =>
   url.toLowerCase().endsWith(`/${repo.toLowerCase()}/pull/${number}`);

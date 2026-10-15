@@ -57,6 +57,9 @@
             "cache",
             "hopper"
           ]
+        },
+        "wait": {
+          "type": "string"
         }
       },
       "required": [

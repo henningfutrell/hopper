@@ -15,15 +15,17 @@
 // (repo-query.ts), else read from GitHub and kept; the answer says which (`source`) and, where the work-item ledger holds
 // the item, what it says (`ledger`). A write drops what the cache kept of the issue or pull request it changed.
 // Where a pull request stands (`pr.status`, issue #1072) is answered from the asking user's records first — the Pull
-// requests list and the work-item ledger — (`source: hopper`); only else is it a repo query as above.
+// requests list and the work-item ledger — (`source: hopper`); only else is it a repo query as above. A wait on its checks
+// (`pr.wait`, issue #1072 part 2) is asked as `pr.status`: while the checks of a pull request the hopper follows run, it
+// opens a watch on the job's stream (`wait`, pr-waits.ts) and answers 202; the job is told there when they end.
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
-import type { KnownPullRequest } from './pr-status.ts';
+import { prSettled, type KnownPullRequest, type PullRequestStatus } from './pr-status.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -73,6 +75,11 @@ export interface GitHubProxyOptions {
   cache?: RepoQueryCache;
   /** Now, in ms: when an answer was read. */
   now?: () => number;
+  /**
+   * Opens a watch on the job's stream for a pull request whose checks run (issue #1072 part 2, `pr wait`), or answers the
+   * one open; `seconds`, the most to wait. Absent: no waits, and `pr wait` answers as `pr status`.
+   */
+  wait?(user: ProxyUser, jobId: string, pr: { repo: string; number: number; status: PullRequestStatus }, seconds?: number): { id: string; deadline: string } | undefined;
 }
 
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -115,7 +122,12 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       };
       const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
       const report = raw.op === REPORT_OP;
-      const parsed = report ? reportRequest.safeParse(body) : proxyRequest.safeParse(body);
+      // A wait on a pull request's checks is asked as `pr.status`, and remembers how long it may wait.
+      const waitParsed = raw.op === WAIT_OP ? waitRequest.safeParse(body) : undefined;
+      const waiting = waitParsed?.success ? { ...(waitParsed.data.timeout !== undefined ? { timeout: waitParsed.data.timeout } : {}) } : undefined;
+      const parsed = report ? reportRequest.safeParse(body)
+        : waitParsed?.success ? proxyRequest.safeParse({ op: 'pr.status', repo: waitParsed.data.repo, number: waitParsed.data.number })
+          : waitParsed ?? proxyRequest.safeParse(body);
       if (!parsed.success) {
         const why = parsed.error.issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ');
         return refuse(400, `not a request the hopper takes (${why}). sh "$HOPPER_GH" help`, { ...(typeof raw.op === 'string' ? { op: raw.op } : {}), ...(typeof raw.repo === 'string' ? { repo: raw.repo } : {}) });
@@ -159,10 +171,15 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       // Where a pull request stands (issue #1072): the hopper's records first; it costs GitHub nothing, so no limit.
       const knownPr = req.op === 'pr.status' ? user.pullRequest?.(req.repo, req.number) ?? {} : undefined;
       const prItem = knownPr?.item ? { item: knownPr.item } : {};
-      if (knownPr?.known) {
+      if (knownPr?.known && req.op === 'pr.status') {
         const at = now();
-        record('github_proxy.done', { op: req.op, repo: req.repo, number: knownPr.known.number, url: knownPr.known.url, source: 'hopper' });
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...knownPr.known, source: 'hopper', readAt: new Date(at).toISOString() } };
+        const known = knownPr.known;
+        // `pr wait` on checks that run: a watch, and the job is told on its stream; on checks that ended: answered now.
+        const w = waiting && o.wait && !prSettled(known) ? o.wait(user, job.id, { repo: req.repo, number: req.number, status: known }, waiting.timeout) : undefined;
+        const wait = !waiting ? {} : w ? { wait: 'open', waitId: w.id, until: w.deadline, waitSeconds: Math.max(0, Math.round((Date.parse(w.deadline) - at) / 1000)) }
+          : { wait: prSettled(known) ? 'settled' : 'none' };
+        record('github_proxy.done', { op: req.op, repo: req.repo, number: known.number, url: known.url, source: 'hopper', ...(waiting ? { wait: w ? w.id : wait.wait } : {}) });
+        return { status: w ? 202 : 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...known, source: 'hopper', readAt: new Date(at).toISOString(), ...wait } };
       }
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
@@ -184,7 +201,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         const ledger = ledgerOf(result.url);
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source });
         const seen = req.op === 'repo.view' ? { contribution } : {};
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}) } };
+        // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end.
+        const wait = waiting ? { wait: 'none' } : {};
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait } };
       };
       if (read) {
         const kept = cache.get(key);

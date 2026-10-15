@@ -9,10 +9,13 @@
 // The hopper acts with its oldest user's GitHub connection — the instance's first, as the plugin store reads
 // the oldest user's (src/users/runtimes.ts). A job's bug report (issue #694) is the one exception: Report a bug's own
 // path, with the job's own user's connection, so it is filed as that user.
+//
+// A wait on a pull request's checks (`pr wait`, issue #1072 part 2) answers 202 while the checks of a pull request the
+// hopper follows run: the watch it opens is on the job's stream (job-stream.ts), ended when the hopper sees them end.
 import type { FastifyInstance } from 'fastify';
 import { BugReportRefused, REPORT_REPO } from '../bug-reports/index.ts';
 import type { Clock, Updater } from '../domain/ports.ts';
-import { createGitHubProxy, createProxyLimiter, PROXY_PATH, REPORT_OP, type GitHubProxy, type ProxyAnswer, type ReportRequest } from '../github-proxy/index.ts';
+import { createGitHubProxy, createPrWaits, createProxyLimiter, PROXY_PATH, REPORT_OP, type GitHubProxy, type PrWaits, type ProxyAnswer, type ReportRequest } from '../github-proxy/index.ts';
 import type { Tenants } from './tenants.ts';
 import { bugReportsOf } from './ui/bug-reports.ts';
 
@@ -36,7 +39,33 @@ async function reportForJob(o: { tenants: Tenants; updater: Pick<Updater, 'statu
   }
 }
 
-export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clock: Clock; updater: Pick<Updater, 'status'> }): GitHubProxy {
+/** `pr wait`'s watches, over each user's job stream and records; an answer ends the job's own wait (HOPPER_WAITING). */
+function prWaitsOf(tenants: Tenants): PrWaits {
+  return createPrWaits({
+    user(id) {
+      const parts = tenants.user(id);
+      const pullRequest = parts?.githubProxy.user.pullRequest;
+      if (!parts || !pullRequest) return undefined;
+      return {
+        stream: parts.jobStream, subscribe: (l) => parts.store.events.subscribe(l), pullRequest,
+        endWait(jobId, answer) {
+          if (parts.store.jobs.get(jobId)?.status !== 'waiting_on') return;
+          try {
+            parts.engine.endWait(jobId, answer, 'hopper');
+          } catch (e) {
+            // Its agent went on by itself meanwhile: nothing waits any more.
+            console.warn(`hopper: GitHub proxy: ending the wait of job ${jobId} failed: ${(e as Error).message}`);
+          }
+        },
+      };
+    },
+    log: (line) => console.warn(line),
+  });
+}
+
+/** The routes; the proxy, and `pr wait`'s watches, for the job stream's route to answer again when a job subscribes. */
+export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clock: Clock; updater: Pick<Updater, 'status'> }): { proxy: GitHubProxy; prWaits: PrWaits } {
+  const prWaits = prWaitsOf(o.tenants);
   const proxy = createGitHubProxy({
     user: (id) => o.tenants.user(id)?.githubProxy.user,
     hopper: () => {
@@ -48,6 +77,7 @@ export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clo
     report: (user, job, req) => reportForJob(o, user.id, job.id, req),
     log: (line) => console.warn(line),
     now: () => o.clock.now().getTime(),
+    wait: (user, jobId, pr, seconds) => prWaits.open(user.id, jobId, pr, seconds),
   });
   void app.register(async (scope) => {
     // What curl's --data-urlencode sends; only on this route.
@@ -59,5 +89,5 @@ export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clo
       return reply.code(answer.status).send(answer.body);
     });
   });
-  return proxy;
+  return { proxy, prWaits };
 }
