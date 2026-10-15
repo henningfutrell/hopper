@@ -1,7 +1,8 @@
 // A job source's sync (issue #254): what it saw and made, when it last synced, and what is wrong with
 // it — on a source's card in Sources, and inside the GitHub connection's panel for that connection's source. A source on but
 // not configured (issue #1243) shows its setup card, and "not configured" in place of its counts. The GitHub App's card
-// takes the app's private key in a write-only field, kept in the vault.
+// offers the apps installed on the organizations to pick (source-installed-apps.tsx), and takes the app's private key in a
+// write-only field, kept in the vault.
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { GhLink } from '@/components/job';
@@ -14,6 +15,7 @@ import { actFor } from '@/store';
 import { intakeRefusal } from '@/store/intake';
 import { useCanOperate, useServerNow } from '@/store/selectors';
 import { SourceIntake } from './source-intake';
+import { InstalledAppPicker } from './source-installed-apps';
 
 const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
@@ -67,11 +69,12 @@ function SetupCard({ s, p }: { s: SourceStatus; p: SetupProblem }) {
       {p.missing.length > 0 && <div>Missing: {p.missing.map((m, i) => <span key={m}>{i > 0 && ', '}<code data-setup-missing className="font-mono">{m}</code></span>)}</div>}
       {s.kind === 'github-app' && (
         <ol className="list-decimal space-y-0.5 pl-4">
-          <li>Use a GitHub App that is already installed on your account or organization, or make one with <code className="font-mono">scripts/create-github-app.sh</code>.</li>
-          <li>Set its app id and slug on this job source in Plugins → Job sources.</li>
+          <li>Pick a GitHub App that is already installed on your organization below, or make one with <code className="font-mono">scripts/create-github-app.sh</code>.</li>
+          <li>Use this app sets its app id and slug on this job source. You can also set them in Plugins → Job sources.</li>
           <li>Paste its private key here. The hopper keeps it in its vault, never in a file or the environment.</li>
         </ol>
       )}
+      {s.kind === 'github-app' && p.missing.some((m) => m === 'appId' || m === 'slug') && <InstalledAppPicker source={s.name} />}
       {s.kind === 'github-app' && <AppKeyField />}
       <a href={`/help/${p.help}`} className="underline">Help: set it up step by step</a>
     </div>

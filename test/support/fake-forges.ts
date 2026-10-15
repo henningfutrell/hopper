@@ -24,7 +24,7 @@ import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsFor
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
-import { peopleRoute, type PeopleForge } from './fake-people.ts';
+import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
 import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
@@ -53,7 +53,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, JobLogsForge {
+export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, OrgAppsForge, JobLogsForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -72,11 +72,6 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
-  /**
-   * GitHub: the apps installed on each organization (GET /orgs/{org}/installations, issue #1243), by organization; a number:
-   * GitHub refuses the list with that status (the person is no owner, or the token lacks the organization's Administration).
-   */
-  orgApps?: Record<string, { id: number; slug: string }[] | number>;
   /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
   issuesRefused?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
@@ -255,7 +250,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
       // A repository listing (issue #985: first, it asks check rollups too); a repository's checks (issue #677); the accounts GitHub knows (issue #930).
-      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query);
+      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query) ?? orgAppsRoute(forge, base, r.method, path, r.query);
       if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
@@ -269,15 +264,6 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
         })), r.query);
         return tagged({ total_count: on.length, installations: page }); // with an ETag (issue #1250)
-      }
-      const oi = /^\/orgs\/([^/]+)\/installations$/.exec(path);
-      if (r.method === 'GET' && oi) {
-        const apps = forge?.orgApps?.[oi[1]!];
-        if (apps === undefined) return { status: 404, body: { message: 'Not Found' } };
-        if (typeof apps === 'number') return { status: apps, body: { message: 'Resource not accessible by integration' } };
-        return { status: 200, body: { total_count: apps.length, installations: pageOf(apps.map((a, i) => ({
-          id: 100 + i, app_id: a.id, app_slug: a.slug, account: { login: oi[1] }, html_url: `${base}/organizations/${oi[1]}/settings/installations/${100 + i}`,
-        })), r.query) } };
       }
       const ir = /^\/user\/installations\/(\d+)\/repositories$/.exec(path);
       if (r.method === 'GET' && ir) {
