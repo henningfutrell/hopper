@@ -123,8 +123,9 @@ export function untrackedText(u: UntrackedPullRequest): string {
   const moved = u.retargeted ? `; moved from ${u.retargeted.from} to ${u.retargeted.to}` : '';
   switch (u.reason) {
     case 'no_issue': return 'links no issue: no "Closes #N" or "Part of #N" in its text';
-    case 'issue_not_in_intake': return `${links}, which is not in Intake: give the issue the hopper label and assign it`;
+    case 'issue_not_in_intake': return `${links}, which is not in Intake: take it into Intake, or give it the hopper label and assign it`;
     case 'wrong_base': return `${links}, on ${u.base ?? 'another branch'}, not on the landing branch`;
+    case 'second_pull_request': return `${links}, whose job follows #${u.followed?.split('/').pop() ?? '?'}: close one of them${moved}`;
     case 'not_by_a_job': return `${links}, and no job of it made it or follows it${moved}`;
   }
 }

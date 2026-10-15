@@ -19140,6 +19140,9 @@ item's pull request (`WorkItemLedger.byPullRequest`). Every other open pull requ
   request card is one). The UI says what takes it in: the hopper label and an assignee.
 - `wrong_base`: its issue is a work item, the repository has landing batches, and its base is not the landing branch and is
   no other open pull request's head (a stack).
+- `second_pull_request` (part 2): its issue is a work item, and a job of the item follows another pull request
+  (`followed`, `CensusFacts.followedOf`, from the jobs of the source that follow one). One item, two pull requests: the
+  hopper tends only the one its job follows. The UI says which one, and to close one of them.
 - `not_by_a_job`: its issue is a work item, and no job of it made it or follows it — a person's, a second one, or one moved to
   the landing branch that no job follows yet.
 
@@ -19152,16 +19155,30 @@ branch (`GitHubApi.retarget`), with the follow's fixed note (`retargetNote`), an
 One on any other branch is a person's: it is listed, never moved. A move GitHub refuses is logged and tried at the next round.
 No event: no job holds it.
 
-**Not done here, for a later part.** A pull request that closes an untracked issue does not yet offer that issue to Intake from
-the list; a job's pull request on the wrong base that conflicts does not get a rebase job (a rebase is a tend, and a tend needs
-a job that follows the pull request); and one of an item whose newest job follows another pull request is not attached.
+**Take into Intake** (part 2). An untracked pull request whose issue is not in Intake carries `offer: take_in`, and the Not
+tracked list (`GET /api/pull-requests` `untracked`, each with its `source`) shows Take into Intake for an operator. It is the
+source's intake action `take_in` (`POST /ui/api/sources/:name/intake`, a box action as every intake action): only on an issue
+the last census offers so (`takeIn`, else `not offered: no untracked pull request closes it`), the source gives the issue its
+label and assigns it to the connected account, records `source.issue_taken_in { source, key, pullRequest, assignee }`, and
+syncs at once. The assignment counts as the user's act, as Assign to me does (`assignedHere`). The label is the hopper's
+app's act, so Intake lists the issue as a request card: a person approves its text before a job runs it, whoever wrote it.
+Then its pull request is `not_by_a_job`; the job the approval starts makes its own.
+
+**A rebase of a second pull request: not done, by decision** (part 2). A wrong base on a job's branch is moved (above); a job's
+pull request whose item no job follows is attached by reconciling, then tended as any. What stays is a second pull request of
+an item whose job follows another one. A rebase is a tend, and a tend runs the item again for the pull request its job follows:
+tending the second one would take the follow off the first. The list names both (`second_pull_request`), and a person closes
+one; issue #1208 carries the rest.
 
 Tests: `test/domain/untracked-pull-requests.test.ts` (each reason, a stack, no landing batches, the issue a text links),
 `test/sources/github-pr-census.test.ts` (the census, the move of a job's branch, a person's branch left),
 `test/sources/pr-census-cadence.test.ts` (once an hour, at once when asked, never paused; what is tracked),
 `test/integration/untracked-pull-requests.test.ts` (over the real daemon: the source's status and `GET /api/pull-requests`),
 `test/ui/pull-requests-view.test.ts` (the Not tracked list), `test/sources/github-graphql-pull-states.test.ts` (base and
-title in the batched read).
+title in the batched read). Part 2: `test/sources/github-take-in.test.ts` (Take into Intake, only on an issue the census
+offers), `test/ui/pull-requests-untracked.test.ts` (its button, a viewer's none, a second pull request's text), the second
+pull request in the domain, census and cadence tests, and Take into Intake over the real daemon in
+`test/integration/untracked-pull-requests.test.ts`.
 
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 

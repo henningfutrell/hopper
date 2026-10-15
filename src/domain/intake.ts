@@ -57,9 +57,11 @@ export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
  * take the item off the backburner (issue #798): remove its `hopper:backburner` label. `decline` (issue #1035): decline a
  * request card's text, offered with `approve`, the one key named, only while its text hashes as `hash`; nothing on GitHub.
  * `dismiss` (issue #1141): take **tagged items** the last sync listed off Tagged, for the reasons they have now; nothing on
- * GitHub.
+ * GitHub. `take_in` (issue #1176, Take into Intake): give an issue no work item, that an untracked pull request the last
+ * census listed closes, the source's label and assign it to the user's connected account, so the next sync lists it in
+ * Intake.
  */
-export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss';
+export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in';
 
 export interface IntakeAction {
   kind: IntakeActionKind;
@@ -97,7 +99,8 @@ export interface OutsideRepo {
 
 /** The events intake records (issue #440). */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
-  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn' | 'source.review_requested';
+  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn' | 'source.review_requested'
+  | 'source.issue_taken_in';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {

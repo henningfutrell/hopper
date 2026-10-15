@@ -26,7 +26,7 @@ export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'r
       return u;
     }
     await api.postComment(u.repo, numberOf(u.url), retargetNote(u.base, to)).catch(() => undefined);
-    return { ...u, base: to, reason: 'not_by_a_job', retargeted: { from: u.base, to } };
+    return { ...u, base: to, reason: u.followed ? 'second_pull_request' : 'not_by_a_job', retargeted: { from: u.base, to } };
   }
 
   return {
@@ -51,6 +51,9 @@ export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'r
       byRepo = next;
       errors = nextErrors;
     },
+    /** The issues the last census offers to Intake (`take_in`), each with the untracked pull request that closes it, by URL. */
+    takeIn: (): Map<string, UntrackedPullRequest> =>
+      new Map([...byRepo.values()].flat().flatMap((u) => (u.offer === 'take_in' && u.issue ? [[u.issue.url, u] as const] : []))),
     /** What `describe` shows: the untracked pull requests, by repository and number, and the repositories not read. */
     detail: () => {
       const all = [...byRepo.values()].flat();

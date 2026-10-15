@@ -20,6 +20,7 @@ export const INTAKE_EVENT_SCHEMAS = {
   }),
   'source.request_opened': strict({ source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(), why: z.array(z.string()) }),
   'source.backburner_lifted': strict({ source: z.string(), key: z.string() }),
+  'source.issue_taken_in': strict({ source: z.string(), key: z.string(), pullRequest: z.string(), assignee: z.string() }),
   'source.review_requested': strict({ source: z.string(), key: z.string(), author: z.string() }),
   'source.request_declined': strict({
     source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(),

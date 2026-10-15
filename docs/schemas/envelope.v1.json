@@ -93,6 +93,7 @@
         "job.origin_judged",
         "source.request_opened",
         "source.backburner_lifted",
+        "source.issue_taken_in",
         "source.request_declined",
         "source.request_withdrawn",
         "source.delivery_received",
