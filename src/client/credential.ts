@@ -13,15 +13,15 @@ export const CREDENTIAL_KEPT = 'hopper-credential-kept';
 // The content on stdin.
 const CREDENTIAL_SCRIPT = [
   'id=$1; d=$2; f=$3; mk=$4;',
-  'case $d in /*/.hopper-scratch/"$id"/credentials) ;; *) echo "not the job\'s credentials dir: $d" >&2; exit 2;; esac;',
+  'case $d in /*/.worktrees/@scratch/"$id"/credentials) ;; *) echo "not the job\'s credentials dir: $d" >&2; exit 2;; esac;',
   'case /$f/ in */../*|*/./*|//*) echo "not a file under it: $f" >&2; exit 2;; esac;',
-  'w=${d%/.hopper-scratch/*}; if [ ! -d "$w" ] && [ "$mk" != make ]; then echo "the work tree $w is not there" >&2; exit 3; fi;',
+  'w=${d%/.worktrees/@scratch/*}; if [ ! -d "$w" ] && [ "$mk" != make ]; then echo "the work tree $w is not there" >&2; exit 3; fi;',
   'umask 077; mkdir -p "$(dirname "$d/$f")" && cat > "$d/$f.new" && mv -f "$d/$f.new" "$d/$f" && printf "%s\\n" hopper-credential-kept',
 ].join(' ');
 
 /** A credentials dir a job's credential may be kept in: absolute, one line, and the job's own. */
 export const isCredentialsDirOf = (path: unknown, jobId: string): path is string =>
-  typeof path === 'string' && path.startsWith('/') && !/[\n\0]/.test(path) && path.endsWith(`/.hopper-scratch/${jobId}/credentials`);
+  typeof path === 'string' && path.startsWith('/') && !/[\n\0]/.test(path) && path.endsWith(`/.worktrees/@scratch/${jobId}/credentials`);
 
 /** A file under it: a relative path of plain names, no `.` or `..`. */
 export const isCredentialFile = (file: unknown): file is string =>

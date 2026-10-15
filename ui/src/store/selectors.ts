@@ -1,7 +1,8 @@
 // Derived reads over the store, memoised so a view re-renders only when what it derives from changes.
 import { useMemo } from 'react';
 import { useNow } from '@/hooks/use-now';
-import { jobBoard, type JobBoard } from '@/model/board';
+import { jobBoard, kpis, type JobBoard, type Kpis } from '@/model/board';
+import { cardTotals } from '@/model/header-badges';
 import { laneSpans, questionWaits, type LaneSpan, type QuestionWait } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
 import { loginsBadge } from '@/model/logins';
@@ -12,7 +13,7 @@ import { keptAlone, openHandoffs, openProblems } from '@/model/failures';
 import { highHandoffs, highQuestions, isHighJob } from '@/model/priority';
 import { awaitsOwner, notParked } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
-import type { Job, QuestionView, SectionKind } from '@/model/wire';
+import type { HeaderBadge, Job, QuestionView, SectionKind } from '@/model/wire';
 import { useHopper } from './index';
 
 /** Every job the UI currently knows, by id. */
@@ -26,6 +27,19 @@ export function useJobBoard(): JobBoard {
   const jobs = useHopper((s) => s.jobs);
   const order = useHopper((s) => s.waitingOrder);
   return useMemo(() => jobBoard(Object.values(jobs), order), [jobs, order]);
+}
+
+/** The Dashboard's KPI card numbers (issue #1181): the cards and the header badges read these, so they never disagree. */
+export function useKpis(): { k: Kpis; totals: Record<HeaderBadge, number> } {
+  const board = useJobBoard();
+  const machines = useHopper((s) => s.machines);
+  const items = useHopper((s) => s.items);
+  const effects = useHopper((s) => s.usage?.machines ?? null);
+  const inFlight = useHopper((s) => s.inFlight);
+  return useMemo(() => {
+    const k = kpis(board, machines, items, effects);
+    return { k, totals: cardTotals(k, inFlight) };
+  }, [board, machines, items, effects, inFlight]);
 }
 
 /** The lane spans since `since`, from the event log and the job store together. */

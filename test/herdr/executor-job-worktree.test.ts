@@ -6,14 +6,14 @@ import { CWD, JOB_ID, contextFor, jobWith, setup, until } from './support.ts';
 
 const DONE = { output: ['● Done.', '  HOPPER_DONE'] };
 const JOB_TREE = jobWorktreeOf(CWD, JOB_ID);
-const SCRATCH = `${CWD}/.hopper-scratch/${JOB_ID}`;
+const SCRATCH = `${CWD}/.worktrees/@scratch/${JOB_ID}`;
 
 const runs = (herdr: { calls: { method: string; args: unknown[] }[] }): string[] =>
   herdr.calls.filter((c) => c.method === 'runInPane').map((c) => c.args[1] as string);
 
 describe('herdr-claude executor: a job worktree for each job (issue #379)', () => {
   it('is in the work tree\'s workspace, beside its checkouts, named as the work tree is and for the job (issue #1103)', () => {
-    expect(JOB_TREE).toBe(`${CWD}/workspace/worktrees/jh-work-${JOB_ID}`);
+    expect(JOB_TREE).toBe(`${CWD}/.worktrees/jh-work/${JOB_ID}`);
     expect(JOB_TREE.startsWith(SCRATCH)).toBe(false);
   });
 
@@ -155,10 +155,10 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], deps: 'linked' }, { jobWorktrees: true, sharedDependencies: true });
     const { ctx, saved, progress } = contextFor(jobWith({ prompt: 'go' }));
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
-    const order = herdr.calls.map((c) => (c.method === 'runInPane' ? `run:${String(c.args[1]).includes('worktree add') ? 'worktree' : String(c.args[1]).includes('.hopper-scratch/deps') ? 'deps' : 'other'}` : c.method));
+    const order = herdr.calls.map((c) => (c.method === 'runInPane' ? `run:${String(c.args[1]).includes('worktree add') ? 'worktree' : String(c.args[1]).includes('.worktrees/@deps') ? 'deps' : 'other'}` : c.method));
     expect(order.indexOf('run:deps')).toBeGreaterThan(order.indexOf('run:worktree'));
     expect(order.indexOf('run:deps')).toBeLessThan(order.indexOf('startAgent'));
-    expect(runs(herdr).find((r) => r.includes('.hopper-scratch/deps'))).toContain(`'${CWD}' '${JOB_TREE}' 1440`);
+    expect(runs(herdr).find((r) => r.includes('.worktrees/@deps'))).toContain(`'${CWD}' '${JOB_TREE}' 1440`);
     expect(saved.at(-1)).toMatchObject({ sharedDependencies: true });
     expect(progress.map((p) => p.message)).toContain('dependencies: linked');
     expect(herdr.prompts[0]!.text).toContain('Its node_modules is a link to dependencies shared with the other jobs of this repository: read-only.');
@@ -178,10 +178,10 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
   it('off, or no job worktree: no dependencies command', async () => {
     const off = setup({ turns: [DONE], repositories: [CWD], deps: 'linked' }, { jobWorktrees: true, sharedDependencies: false });
     await off.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(runs(off.herdr).some((r) => r.includes('.hopper-scratch/deps'))).toBe(false);
+    expect(runs(off.herdr).some((r) => r.includes('.worktrees/@deps'))).toBe(false);
     const plain = setup({ turns: [DONE], deps: 'linked' }, { jobWorktrees: true, sharedDependencies: true });
     await plain.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(runs(plain.herdr).some((r) => r.includes('.hopper-scratch/deps'))).toBe(false);
+    expect(runs(plain.herdr).some((r) => r.includes('.worktrees/@deps'))).toBe(false);
   });
 
   // Issue #518: on two machines herdr's wait for the outcome answered within seconds, the worktree still being

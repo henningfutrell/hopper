@@ -46,6 +46,8 @@ function fakeDaemon() {
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
     '/api/usage': () => ({ readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }), '/api/accounts': () => ({ accounts: [] }),
+    // The in-flight badge is one the user chose (issue #1181): the default is the Lanes badge.
+    '/api/header-badges': () => ({ badges: ['inFlight'] }),
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string) => {

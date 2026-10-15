@@ -18,7 +18,7 @@ const LOCK = JSON.stringify({ name: 'app', lockfileVersion: 3, packages: { '': {
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'jh-deps-')));
   tree = join(root, 'tree');
-  mkdirSync(join(tree, '.hopper-scratch'), { recursive: true });
+  mkdirSync(join(tree, '.worktrees', '@scratch'), { recursive: true });
   const bin = join(root, 'bin');
   mkdirSync(bin);
   // npm ci: logs where it ran, takes a moment, and makes node_modules; NPM_FAIL fails it.
@@ -31,7 +31,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 /** A job worktree with this lockfile (and package.json). */
 function job(id: string, lock: string | null = LOCK, pkg = '{"name":"app"}'): string {
-  const w = join(tree, '.hopper-scratch', id, 'tree');
+  const w = join(tree, '.worktrees', '@scratch', id, 'tree');
   mkdirSync(w, { recursive: true });
   writeFileSync(join(w, 'package.json'), pkg);
   if (lock !== null) writeFileSync(join(w, 'package-lock.json'), lock);
@@ -55,7 +55,7 @@ describe('shared dependencies for job worktrees (issue #410)', () => {
     expect(installs()).toHaveLength(1);
     expect(lstatSync(join(a, 'node_modules')).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(b, 'node_modules'))).toBe(readlinkSync(join(a, 'node_modules')));
-    expect(readlinkSync(join(a, 'node_modules'))).toMatch(new RegExp(`^${tree}/\\.hopper-scratch/deps/[0-9a-f]{40}/node_modules$`));
+    expect(readlinkSync(join(a, 'node_modules'))).toMatch(new RegExp(`^${tree}/\\.worktrees/@deps/[0-9a-f]{40}/node_modules$`));
     expect(readFileSync(join(b, 'node_modules', 'left-pad', 'index.js'), 'utf8')).toBe('x\n');
   });
 
@@ -89,7 +89,7 @@ describe('shared dependencies for job worktrees (issue #410)', () => {
     const w = job('ws', LOCK, '{"name":"app","workspaces":["packages/*"]}');
     expect(await share(w)).toBe('own');
     expect(lstatSync(join(w, 'node_modules')).isDirectory()).toBe(true);
-    expect(existsSync(join(tree, '.hopper-scratch', 'deps'))).toBe(false);
+    expect(existsSync(join(tree, '.worktrees', '@deps'))).toBe(false);
   });
 
   it('npm failing: failed, nothing linked or left half-made', async () => {
@@ -105,7 +105,7 @@ describe('shared dependencies for job worktrees (issue #410)', () => {
     const a = job('a');
     await share(a);
     const used = readlinkSync(join(a, 'node_modules')).replace(/\/node_modules$/, '');
-    const stale = join(tree, '.hopper-scratch', 'deps', 'f'.repeat(40));
+    const stale = join(tree, '.worktrees', '@deps', 'f'.repeat(40));
     mkdirSync(join(stale, 'node_modules'), { recursive: true });
     const old = Date.now() / 1000 - 3 * 3600;
     utimesSync(stale, old, old);
@@ -116,7 +116,7 @@ describe('shared dependencies for job worktrees (issue #410)', () => {
   });
 
   it('never removes an entry a job worktree in the workspace links to (issue #1103)', async () => {
-    const a = join(tree, 'workspace', 'worktrees', 'tree-a');
+    const a = join(tree, '.worktrees', 'tree', 'a');
     mkdirSync(a, { recursive: true });
     writeFileSync(join(a, 'package.json'), '{"name":"app"}');
     writeFileSync(join(a, 'package-lock.json'), LOCK);
@@ -129,10 +129,10 @@ describe('shared dependencies for job worktrees (issue #410)', () => {
   });
 
   it('the command is one line any shell runs, its outcome never read from its own echo', () => {
-    const command = shareDepsCommand('/w/', '/w/.hopper-scratch/j/w', 24);
+    const command = shareDepsCommand('/w/', '/w/.worktrees/@scratch/j/w', 24);
     expect(command).not.toContain('\n');
     expect(command.startsWith("sh -c '")).toBe(true);
-    expect(command.endsWith("'/w' '/w/.hopper-scratch/j/w' 1440")).toBe(true);
+    expect(command.endsWith("'/w' '/w/.worktrees/@scratch/j/w' 1440")).toBe(true);
     expect(depsOutcome(`$ ${command}`)).toBeUndefined();
   });
 });
@@ -149,14 +149,14 @@ describe('the reap after shared dependencies (issue #410)', () => {
     git(tree, 'add', '.');
     git(tree, 'commit', '-q', '-m', 'a');
     git(tree, 'push', '-q', 'origin', 'main');
-    mkdirSync(join(tree, '.hopper-scratch', 'j1'), { recursive: true });
-    writeFileSync(join(tree, '.hopper-scratch', '.gitignore'), '*\n');
-    const w = join(tree, '.hopper-scratch', 'j1', 'tree');
+    mkdirSync(join(tree, '.worktrees', '@scratch', 'j1'), { recursive: true });
+    writeFileSync(join(tree, '.worktrees', '.gitignore'), '*\n');
+    const w = join(tree, '.worktrees', '@scratch', 'j1', 'tree');
     git(tree, 'worktree', 'add', '-q', '--detach', w, 'origin/main');
     expect(await share(w)).toBe('installed');
     const shared = readlinkSync(join(w, 'node_modules'));
     const { reapArgv, readReap } = await import('../../src/client/reap.ts');
-    const [file, ...args] = reapArgv('j1', join(tree, '.hopper-scratch', 'j1'));
+    const [file, ...args] = reapArgv('j1', join(tree, '.worktrees', '@scratch', 'j1'));
     expect(readReap(execFileSync(file!, args, { encoding: 'utf8' }))).toEqual({ kept: [] });
     expect(existsSync(w)).toBe(false);
     expect(existsSync(join(shared, 'left-pad', 'index.js'))).toBe(true);

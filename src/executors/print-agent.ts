@@ -14,7 +14,7 @@ import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter, waitFields } from './herdr/screen.ts';
-import { jobScratchOf, jobTmpOf, linkTmpCommand, scratchDirOf } from './herdr/start.ts';
+import { jobScratchOf, jobTmpOf, linkTmpCommand, mkScratchCommand } from './herdr/start.ts';
 import { localShell, sshShell } from './machine-shell.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
@@ -117,7 +117,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
-    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
+    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });

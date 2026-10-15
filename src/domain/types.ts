@@ -284,8 +284,11 @@ export interface Lane {
   state: 'idle' | 'busy' | 'draining';
   jobId?: JobId;
   openedAt: string;
-  /** Set when the lane last became idle; cleared when busy. */
-  idleSince?: string;
+  /**
+   * `idleSince`: set when the lane last became idle; cleared when busy. `pastCap`: a reattach opened it past the lane cap,
+   * no lane idle (issue #1181); it drains first, and is cleared when it goes idle.
+   */
+  idleSince?: string; pastCap?: true;
 }
 
 /** Point-in-time view of one machine, as polled by the engine. Its herdr and infra credentials: `MachineHerdr`, `MachineInfraCredentials` (src/domain/machines.ts). */
@@ -496,7 +499,7 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, typ
 
 export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
-export * from './usage-history.ts';
+export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts';
 export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
@@ -522,7 +525,7 @@ export * from './stuck.ts';
 export * from './yolo-mode.ts'; export * from './landing-batches.ts'; export * from './change-kinds.ts';
 export * from './contribution.ts'; export * from './shrink-guard.ts';
 export * from './pull-requests.ts';
-export * from './pull-request-list.ts';
+export * from './pull-request-list.ts'; export * from './untracked-pull-requests.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';

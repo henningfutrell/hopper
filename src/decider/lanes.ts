@@ -5,7 +5,8 @@ import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.t
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
  * priorities — the lowest-priority busy lane drains first, high-priority work last (issue #535). `elbowing`: the running
  * jobs that may elbow in, specialty and tend jobs — their lanes drain before any other, so the lanes they elbowed in close
- * when they end (issues #762, #967).
+ * when they end (issues #762, #967); so does a lane a reattach opened past the cap (`pastCap`, issue #1181). A draining
+ * lane holds its job until it ends: it counts in `occupied`, so no job starts in its place before it closes.
  */
 export function planLanes(
   s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number,
@@ -31,7 +32,7 @@ export function planLanes(
   // drains its own lanes (issue #140); then the machine drains what is still past its cap.
   const draining = mine.filter((l) => l.state === 'draining');
   const priority = (l: Lane): number => (l.jobId === undefined ? -Infinity : priorityOf.get(l.jobId) ?? -Infinity);
-  const elbow = (l: Lane): number => (l.jobId !== undefined && elbowing.has(l.jobId) ? 0 : 1);
+  const elbow = (l: Lane): number => (l.pastCap || (l.jobId !== undefined && elbowing.has(l.jobId)) ? 0 : 1);
   const busy = mine.filter((l) => l.state === 'busy')
     .sort((a, b) => elbow(a) - elbow(b) || priority(a) - priority(b) || b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
   const drained = new Set<string>();

@@ -30,6 +30,7 @@ import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPull
 import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
+import { pullRequestCensus } from './census.ts';
 import { followedBatch } from './followed-batch.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
@@ -140,6 +141,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   /** The pull requests the round's follows read first (issue #985). */
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
+  const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
   const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
@@ -269,7 +271,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...outside.detail(), ...tagged.detail(),
+        ...outside.detail(), ...tagged.detail(), ...census.detail(),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
@@ -377,15 +379,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return unfinishedPullRequest(api, job);
     },
     follow: (job, act) => followPullRequest(followContext(), job, act),
-    housekeepStrays: (strays) => housekeepStrays(followContext(), strays),
+    housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),
     issueState: (job) => issueState(api, job),
     workState: (job) => workState(api, job),
-    pullRequestOpen(job) {
-      return ownPullRequestOpen(api, job);
-    },
+    pullRequestOpen: (job) => ownPullRequestOpen(api, job),
   };
 }

@@ -10,6 +10,7 @@ import type { ActingPerson } from './failures.ts';
 import { handedToFollowOns } from './proposal-paths.ts';
 import type { Job } from './types.ts';
 import type { CrossReference } from './cross-references.ts';
+import type { CensusFacts } from './untracked-pull-requests.ts';
 import { actionsJobOf } from './check-logs.ts';
 import type { ChangeClass, ChangeKind } from './change-kinds.ts';
 
@@ -103,6 +104,12 @@ export interface FollowsPullRequests {
    * round. Absent: strays are left as they are.
    */
   housekeepStrays?(strays: Stray[]): Promise<StrayHousekept[]>;
+  /**
+   * The census of open pull requests (issue #1176, `untrackedPullRequests`): read the open pull requests of every job
+   * repository, keep the untracked ones with their reasons for `describe` (`untrackedPullRequests`), and move a job's one on
+   * a base from before to the landing branch. A throw is asked again at the next round. Absent: none is listed.
+   */
+  censusPullRequests?(facts: Omit<CensusFacts, 'landing'>): Promise<void>;
 }
 
 /**

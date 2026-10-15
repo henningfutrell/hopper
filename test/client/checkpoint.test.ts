@@ -29,7 +29,7 @@ const run = (argv: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<strin
 
 /** A clone of the remote in a job's scratch dir under `machine`, as a job worktree is placed. */
 function jobClone(machine: string): string {
-  const dir = join(root, machine, 'work', '.hopper-scratch', JOB, 'repo');
+  const dir = join(root, machine, 'work', '.worktrees', '@scratch', JOB, 'repo');
   mkdirSync(join(dir, '..'), { recursive: true });
   git(root, 'clone', '-q', remote, dir);
   return dir;
@@ -108,12 +108,12 @@ describe('taking a checkpoint', () => {
 
   it('is never asked of a path outside the job\'s scratch dir, nor with a session id that is not one', () => {
     expect(checkpointOf({ jobId: JOB, worktree: '/home/u/work/repo', session: SESSION })).toMatch(/scratch dir/);
-    expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/../../etc`, session: SESSION })).toMatch(/scratch dir/);
-    expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/repo`, session: '$(rm -rf ~)' })).toMatch(/session/);
-    expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/repo`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
-    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-${JOB}`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
-    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-${JOB}/../x`, session: SESSION })).toMatch(/worktree/);
-    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-other`, session: SESSION })).toMatch(/worktree/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/@scratch/${JOB}/../../etc`, session: SESSION })).toMatch(/scratch dir/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/@scratch/${JOB}/repo`, session: '$(rm -rf ~)' })).toMatch(/session/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/@scratch/${JOB}/repo`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/repo/${JOB}`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/repo/${JOB}/../x`, session: SESSION })).toMatch(/worktree/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/repo/other`, session: SESSION })).toMatch(/worktree/);
   });
 });
 

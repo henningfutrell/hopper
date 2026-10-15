@@ -6,7 +6,7 @@
 //   answer, or led by an operator): stopped;
 // - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24), or at once while its
 //   work was kept (job.work_kept): removed unless it still holds work not pushed. Its job worktree in the work tree's
-//   workspace (issue #1103) goes or stays with it, and one whose scratch dir is gone is reaped by that dir all the same. Work kept that the sweep
+//   `.worktrees` (issue #1188) goes or stays with it, and one whose scratch dir is gone is reaped by that dir all the same. Work kept that the sweep
 //   then removes is recorded as job.work_removed; work it keeps for the first time, as job.work_kept.
 // A job id the hopper does not know is never touched: it may be another hopper's, or a test's.
 // Work kept is logged once, when first kept; the next passes keep it quietly (issue #1010). A person may discard it
@@ -27,6 +27,7 @@
 import type { ActingPerson, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { discardReasonOf, hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -45,11 +46,15 @@ const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'wa
 /** One reap the sweep asks of a machine. */
 export interface SweepReap { jobId: string; scratch?: string }
 
-const TREES = '/workspace/worktrees/';
-
-/** The known job a job worktree `<name>-<job id>` is of (issue #1103): its name may hold `-` too, so each split is tried. */
+/**
+ * The known job a job worktree is of: `<job id>` its name (issue #1188), or `<name>-<job id>` in the layout before, whose
+ * name may hold `-` too, so each split is tried.
+ */
 function treeJob(path: string, jobOf: (id: string) => Job | undefined): Job | undefined {
-  const name = path.slice(path.lastIndexOf('/') + 1);
+  const tree = worktreeParts(path);
+  if (!tree) return undefined;
+  const name = tree.name;
+  if (!tree.old) return jobOf(name);
   for (let at = name.indexOf('-'); at >= 0; at = name.indexOf('-', at + 1)) {
     const job = jobOf(name.slice(at + 1));
     if (job) return job;
@@ -76,8 +81,8 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   for (const tree of found.trees ?? []) {
     const job = treeJob(tree.path, jobOf);
     if (!job || !TERMINAL_STATUSES.includes(job.status) || plan.get(job.id)?.scratch) continue;
-    const root = tree.path.slice(0, tree.path.lastIndexOf(TREES));
-    if (tree.ageMs >= maxAgeMs || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: `${root}/.hopper-scratch/${job.id}` });
+    const root = worktreeParts(tree.path)!.workTree;
+    if (tree.ageMs >= maxAgeMs || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: jobScratchOf(root, job.id) });
   }
   return [...plan.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
@@ -100,7 +105,8 @@ export function goneKept(found: Survey, kept: readonly KeptWork[], jobOf: (id: s
     const job = jobOf(k.jobId);
     if (!job || there.has(job.id) || !TERMINAL_STATUSES.includes(job.status) || machineRanOn(job) !== machineId) continue;
     const scratch = keptScratchOf(k, job);
-    if (scratch && roots.has(scratch.slice(0, scratch.lastIndexOf('/.hopper-scratch/')))) out.push({ jobId: job.id, scratch });
+    const root = scratch ? scratchParts(scratch)?.workTree : undefined;
+    if (scratch && root && roots.has(root)) out.push({ jobId: job.id, scratch });
   }
   return out.sort((a, b) => a.jobId.localeCompare(b.jobId));
 }

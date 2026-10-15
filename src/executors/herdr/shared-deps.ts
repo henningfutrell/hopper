@@ -1,7 +1,7 @@
 // Dependencies shared by a repository's job worktrees (issue #410, design.md "Work tree" → "Shared
 // dependencies"): each job ran its own `npm ci`, about 400 MB, for as long as it ran. After the job
-// worktree is made (in `<work tree>/workspace/worktrees`, issue #1103), the pane's shell links its node_modules to the dependencies installed for its
-// lockfile, `<work tree>/.hopper-scratch/deps/<lockfile's git hash>/node_modules`, installing them there
+// worktree is made (in `<work tree>/.worktrees`, issue #1188), the pane's shell links its node_modules to the dependencies installed for its
+// lockfile, `<work tree>/.worktrees/@deps/<lockfile's git hash>/node_modules`, installing them there
 // first when no job has: `npm ci --prefer-offline` in the job's worktree, then moved into place, under a
 // lock per work tree, so concurrent jobs with one lockfile install once. A lockfile no job has had gets
 // its own entry: one in use never changes under a job. An entry no job worktree links to, unused for the
@@ -9,6 +9,7 @@
 // their own. The reap removes the link, never what it points to (src/client/server.ts).
 
 import { shellQuote } from '../ssh.ts';
+import { DEPS_AREA, SCRATCH_AREA, WORKTREES_DIR } from '../../domain/job-layout.ts';
 
 /** What the command prints, followed by its outcome. */
 export const DEPS_MARK = 'hopper-deps-';
@@ -31,7 +32,7 @@ const SCRIPT = [
   '[ -e "$w/node_modules" ] && { say kept; exit 0; };',
   'if grep -q \'"workspaces"\' "$w/package.json" 2>/dev/null; then if ci; then say own; else say failed; fi; exit 0; fi;',
   'h=$(git hash-object "$w/package-lock.json") || { say failed; exit 0; };',
-  'deps="$t/.hopper-scratch/deps"; d="$deps/$h"; mkdir -p "$deps" || { say failed; exit 0; };',
+  `j="$t/${WORKTREES_DIR}"; deps="$t/${WORKTREES_DIR}/${DEPS_AREA}"; d="$deps/$h"; mkdir -p "$deps" || { say failed; exit 0; };`,
   'exec 9>"$deps/.lock"; command -v flock >/dev/null 2>&1 && flock 9;',
   'how=linked;',
   'if [ ! -d "$d/node_modules" ]; then',
@@ -43,9 +44,9 @@ const SCRIPT = [
   // Entries no job worktree links to, unused for the scratch age.
   'for o in "$deps"/*; do',
   '  [ -d "$o" ] && [ "$o" != "$d" ] || continue;',
-  '  [ -n "$(find "$t/workspace/worktrees" -mindepth 2 -maxdepth 2 -name node_modules -type l -lname "$o/*" 2>/dev/null | head -n 1)" ] && continue;',
-  // Worktrees an older release made in the scratch dirs (issue #1103) may link to them too, while they are kept.
-  '  [ -n "$(find "$t/.hopper-scratch" -mindepth 3 -maxdepth 3 -name node_modules -type l -lname "$o/*" 2>/dev/null | head -n 1)" ] && continue;',
+  // A job worktree `.worktrees/<name>/<job id>`, or a clone in a scratch dir `.worktrees/@scratch/<job id>/<name>`.
+  '  [ -n "$(find "$j" -mindepth 3 -maxdepth 3 -name node_modules -type l -lname "$o/*" 2>/dev/null | head -n 1)" ] && continue;',
+  `  [ -n "$(find "$j/${SCRATCH_AREA}" -mindepth 3 -maxdepth 3 -name node_modules -type l -lname "$o/*" 2>/dev/null | head -n 1)" ] && continue;`,
   '  [ -n "$(find "$o" -maxdepth 0 -mmin "+$age" 2>/dev/null)" ] && rm -rf "$o";',
   'done;',
   'say "$how"',

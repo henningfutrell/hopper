@@ -21,6 +21,9 @@ function queueOf(jobs: Job[], failedItems: number, inFlight = { total: 0, runnin
   return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [], items, inFlight };
 }
 
+/** What /api/header-badges answers (issue #1181); undefined: not read, as before the user's choice is known. */
+let headerBadges: { badges: string[] } | undefined;
+
 function fakeDaemon(initial: Job[], failedItems: number, inFlight?: ReturnType<typeof queueOf>['inFlight']) {
   let jobs = initial;
   const routes = (): Record<string, unknown> => ({
@@ -32,6 +35,7 @@ function fakeDaemon(initial: Job[], failedItems: number, inFlight?: ReturnType<t
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
+    ...(headerBadges ? { '/api/header-badges': headerBadges } : {}),
   });
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   const fetch = vi.fn(async (input: string) => {
@@ -90,6 +94,7 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
   streams.length = 0;
+  headerBadges = undefined;
   vi.unstubAllGlobals();
 });
 
@@ -143,5 +148,32 @@ describe('Dashboard cards and lists', () => {
     expect(document.querySelector('[data-kpi="waiting"]')!.textContent).toContain('1 parked');
     const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent);
     expect(buttons.filter((t) => t === 'Park' || t === 'Re-queue')).toEqual([]);
+  });
+});
+
+describe('header badges (issue #1181)', () => {
+  const badge = (b: string) => document.querySelector<HTMLElement>(`header [data-badge="${b}"]`);
+  const badgeN = (b: string) => Number(badge(b)?.querySelector('.num')?.textContent);
+
+  it('one Lanes badge by default: the lanes holding a job, the Lanes card\'s number, never the ledger\'s in flight', async () => {
+    await boot([job('r1', 'running', { laneId: 'm1/lane-1', startedAt: hoursAgo(1) })], 0, { total: 3, running: 1, ownCommand: 0, pullRequests: 2 });
+    await vi.waitFor(() => expect(badge('lanes')).not.toBeNull());
+    expect(badgeN('lanes')).toBe(card('lanes'));
+    expect(badgeN('lanes')).toBe(1);
+    expect(badge('inFlight')).toBeNull();
+    expect(card('in-flight')).toBe(3);
+    expect(document.querySelector('[data-kpi="lanes"]')!.textContent).toContain('1/2');
+  });
+
+  it('each badge the user chose shows its card\'s number, in the cards\' order', async () => {
+    headerBadges = { badges: ['inFlight', 'lanes', 'waiting', 'waitingAnswer', 'finished', 'failed'] };
+    await boot([
+      job('w1', 'queued'), job('q1', 'waiting_answer', { questionId: 'qq' }), job('r1', 'running', { laneId: 'm1/lane-1', startedAt: hoursAgo(1) }),
+      job('f1', 'finished', { finishedAt: hoursAgo(3) }), job('x1', 'failed', { finishedAt: hoursAgo(4), error: 'boom' }),
+    ], 1, { total: 4, running: 1, ownCommand: 0, pullRequests: 3 });
+    await vi.waitFor(() => expect(badge('failed')).not.toBeNull());
+    const kpiOf: Record<string, string> = { inFlight: 'in-flight', lanes: 'lanes', waiting: 'waiting', waitingAnswer: 'waitingAnswer', finished: 'finished', failed: 'failed' };
+    for (const b of headerBadges.badges) expect([b, badgeN(b)]).toEqual([b, card(kpiOf[b]!)]);
+    expect([...document.querySelectorAll<HTMLElement>('header [data-badge]')].map((e) => e.dataset.badge)).toEqual(headerBadges.badges);
   });
 });

@@ -1,7 +1,7 @@
 // Each job its own git worktree (issue #379): jobs on one machine share its work tree, so two jobs in one
-// repository stepped on each other (branches, the index lock, uncommitted files, builds). The job's worktree is in the
-// work tree's **workspace**, `<work tree>/workspace/worktrees/<name>-<job id>`, the layout workflow repos tend (issue
-// #1103): never inside the repository it is of, never a copy in the scratch dir. When the work tree is the top of the job's
+// repository stepped on each other (branches, the index lock, uncommitted files, builds). The job's worktree is
+// `<work tree>/.worktrees/<name>/<job id>` (issue #1188, src/domain/job-layout.ts): never inside the checkout it is of,
+// never a copy in the scratch dir. When the work tree is the top of the job's
 // git repository, the pane's shell makes the job a worktree of it, and Claude starts there. When it is not (a machine's
 // work tree is a plain directory, the jobs directory by default, or another repository's top, issue #431), the job's
 // worktree is made of the repository's **checkout** in that workspace, `<work tree>/workspace/<name>`: the one the
@@ -15,8 +15,9 @@
 import { posix } from 'node:path';
 import { shellQuote } from '../ssh.ts';
 import { githubTraffic } from '../../github-limiter/traffic.ts';
+import { jobWorktreeAt } from '../../domain/job-layout.ts';
 
-/** The work tree's workspace (issue #1103): its repositories' checkouts, and `worktrees`, the job worktrees made of them. */
+/** The work tree's workspace (issue #1103): its repositories' checkouts. */
 export const WORKSPACE_DIR = 'workspace';
 
 /** What the job worktree command prints, followed by its outcome. */
@@ -33,13 +34,11 @@ const trimmed = (path: string): string => path.replace(/(.)\/+$/, '$1');
 const nameOf = (repo: string): string => repo.slice(repo.lastIndexOf('/') + 1);
 
 /**
- * The job's worktree (issue #1103): `<work tree>/workspace/worktrees/<name>-<job id>`, beside the checkouts there, named
- * for its repository (`owner/name`; the work tree's own name when it is of the work tree) and for the job.
+ * The job's worktree (issue #1188): `<work tree>/.worktrees/<name>/<job id>`, named for its repository (`owner/name`; the
+ * work tree's own name when it is of the work tree) and for the job.
  */
-export function jobWorktreeOf(workTree: string, jobId: string, repo?: string): string {
-  const tree = trimmed(workTree);
-  return `${tree}/${WORKSPACE_DIR}/worktrees/${repo ? nameOf(repo) : posix.basename(tree)}-${jobId}`;
-}
+export const jobWorktreeOf = (workTree: string, jobId: string, repo?: string): string =>
+  jobWorktreeAt(workTree, repo ?? posix.basename(trimmed(workTree)), jobId);
 
 /**
  * The checkout of the job's repository (`owner/name`) in a work tree that is no repository of it: `<work
@@ -75,8 +74,8 @@ export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
  * at a time. A fetch moves only the remote's branches: the checkout's own branch and files are left as they are. The
  * checkout is `checkoutOf` when the work tree is no repository's top, or the top of one whose origin is not the job's
  * (matched in any case); its origin must be the repository. A missing one is cloned beside it and moved in, so two jobs
- * cloning at once leave one. A workspace the hopper makes ignores itself (`.gitignore` of `*`), as `worktrees` in any
- * workspace does. With job worktrees off, only the checkout is made, and the job runs in the work tree. Git reaches
+ * cloning at once leave one. A workspace the hopper makes ignores itself (`.gitignore` of `*`), as `.worktrees` always
+ * does. With job worktrees off, only the checkout is made, and the job runs in the work tree. Git reaches
  * GitHub through the hopper, by the variables the job runs with (issue #652): no GitHub token is on the machine or a
  * command line. One line (issue #518): an interactive shell whose start-up files were busy lost or mangled a command of
  * many lines typed into it, so every statement ends in `;` or a keyword.
@@ -95,15 +94,15 @@ const SCRIPT = [
   `lock() { k=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/${JOB_WORKTREE_LOCK} i=0; until mkdir "$k" 2>/dev/null; do q=$(cat "$k/pid" 2>/dev/null); if [ -n "$q" ] && ! kill -0 "$q" 2>/dev/null && [ "$(cat "$k/pid" 2>/dev/null)" = "$q" ] || [ "$i" -ge ${LOCK_WAIT_S} ]; then mv "$k" "$k.stale-$$" 2>/dev/null && { echo "hopper: took over the start lock $k" >&2; rm -rf "$k.stale-$$"; }; i=0; continue; fi; i=$((i+1)); sleep 1; done; l=$k; echo $$ > "$l/pid"; };`,
   'unlock() { [ -z "$l" ] || rm -rf "$l"; l=; };',
   "trap unlock EXIT; trap 'unlock; exit 1' HUP INT TERM;",
-  // The workspace (issue #1103), in the work tree: one the hopper makes ignores itself; its worktrees dir always does.
+  // The workspace (issue #1103), in the work tree: one the hopper makes ignores itself. `.worktrees` (issue #1188) always does.
   `ws() { [ -d ${WORKSPACE_DIR} ] || { mkdir ${WORKSPACE_DIR} && printf "*\\n" > ${WORKSPACE_DIR}/.gitignore; }; };`,
-  'worktree() { p=$1; w=${p%/*}; [ -e "$p/.git" ] || { mkdir -p "$w" && { [ -e "$w/.gitignore" ] || printf "*\\n" > "$w/.gitignore"; } || return 1; lock; if [ "$f" = 1 ]; then refresh 2>/dev/null; fi; g worktree prune && g worktree add --quiet --detach "$p" "$(base)"; s=$?; unlock; return $s; }; };',
+  'worktree() { p=$1; w=${p%/*}; v=${w%/*}; [ -e "$p/.git" ] || { mkdir -p "$w" && { [ -e "$v/.gitignore" ] || printf "*\\n" > "$v/.gitignore"; } || return 1; lock; if [ "$f" = 1 ]; then refresh 2>/dev/null; fi; g worktree prune && g worktree add --quiet --detach "$p" "$(base)"; s=$?; unlock; return $s; }; };',
   'lc() { printf %s "$1" | tr "[:upper:]" "[:lower:]"; };',
   'of() { o=$(lc "$(git -C "$1" remote get-url origin 2>/dev/null)"); l=$(lc "$r"); case "$o" in *[:/]"$l"|*[:/]"$l".git|*[:/]"$l"/) return 0;; esac; return 1; };',
   'take() { n=$1; [ -e "$n" ] && return 0; t="$n.hopper-clone-$$"; git clone --quiet "$url" "$t" || { rm -rf "$t"; return 1; }; f=0; if [ -e "$n" ]; then rm -rf "$t"; else mv "$t" "$n"; fi; };',
   'if [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ]; then',
   '  [ "$on" = 1 ] || { echo none; exit 0; };',
-  '  if [ -z "$r" ] || of .; then if ws && worktree "$a"; then echo made; else echo unmade; fi; exit 0; fi;',
+  '  if [ -z "$r" ] || of .; then if worktree "$a"; then echo made; else echo unmade; fi; exit 0; fi;',
   'fi;',
   '[ -n "$r" ] || { echo none; exit 0; };',
   `n=${WORKSPACE_DIR}/\${r##*/}; ws && take "$n" || { echo unmade; exit 0; };`,

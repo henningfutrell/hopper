@@ -1,10 +1,16 @@
 // Customize (issue #73): the viewer's dashboard layout — each dashboard panel shown or hidden, moved,
 // sized in thirds of the row — and each panel's settings. A row dragged onto another takes its place
-// (issue #86). Every change applies at once and is kept by this browser; Reset forgets it.
+// (issue #86). Every change applies at once and is kept by this browser; Reset forgets it. The header badges (issue #1181)
+// are chosen here too: which cards show their total in the header, kept in the user's settings on the hopper, not here.
 import { ArrowDown, ArrowUp, GripVertical, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
+import { post } from '@/lib/api';
+import { BADGES, shownBadges, toggleBadge } from '@/model/header-badges';
+import type { HeaderBadge, HeaderBadgeSettings } from '@/model/wire';
+import { HEADER_BADGES_PATH, setPolled, useHeaderBadges } from '@/store/polled';
+import { toast } from 'sonner';
 import { useDragToPlace } from '@/hooks/use-drag-to-place';
 import { resetDashboardLayout, setDashboardLayout } from '@/hooks/use-dashboard-layout';
 import {
@@ -66,6 +72,33 @@ function PanelRow({ p, i, layout, drag }: { p: PanelPlacement; i: number; layout
   );
 }
 
+/** Which cards show their total in the header (issue #1181): saved for the user at once. */
+function HeaderBadgeChoice() {
+  const shown = shownBadges(useHeaderBadges());
+  const choose = (b: HeaderBadge, on: boolean) => {
+    const badges = toggleBadge(shown, b, on);
+    setPolled(HEADER_BADGES_PATH, { badges });
+    post<HeaderBadgeSettings>('/ui/api/header-badges', { badges }).then(
+      (saved) => setPolled(HEADER_BADGES_PATH, saved),
+      (e: unknown) => { setPolled(HEADER_BADGES_PATH, { badges: [...shown] }); toast.error(`Header badges not saved: ${e instanceof Error ? e.message : String(e)}`); },
+    );
+  };
+  return (
+    <section data-slot="header-badges-choice" className="space-y-2 border-b px-4 py-3">
+      <div className="text-sm font-medium">Header badges</div>
+      <p className="text-xs text-muted-foreground">Cards whose total shows in the header, on every screen. Each badge shows its card's number. Kept for you on the hopper.</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-2">
+        {(Object.keys(BADGES) as HeaderBadge[]).map((b) => (
+          <label key={b} className="flex items-center gap-2 text-sm">
+            <Switch data-badge={b} checked={shown.includes(b)} aria-label={`Show ${BADGES[b].title} in the header`} onCheckedChange={(on) => choose(b, on)} />
+            {BADGES[b].title}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Customize({ layout, children }: { layout: DashboardLayout; children: React.ReactNode }) {
   const { props: drag } = useDragToPlace<PanelId>((id, at) => setDashboardLayout(placePanel(layout, id, at)));
   return (
@@ -76,6 +109,7 @@ export function Customize({ layout, children }: { layout: DashboardLayout; child
           <SheetTitle>Customize the dashboard</SheetTitle>
           <SheetDescription>Which panels show, in what order and how wide. Drag a row to move it. Kept by this browser only.</SheetDescription>
         </SheetHeader>
+        <HeaderBadgeChoice />
         <ol className="min-w-0 flex-1 divide-y overflow-x-hidden overflow-y-auto">
           {layout.panels.map((p, i) => <PanelRow key={p.id} p={p} i={i} layout={layout} drag={drag(p.id)} />)}
         </ol>

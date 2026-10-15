@@ -15,7 +15,7 @@ export const git = (cwd: string, ...args: string[]): string => execFileSync('git
 export function sh(cwd: string, command: string, after = ''): string {
   // What the scratch command did first: the job's scratch dir, the scratch dirs ignored.
   mkdirSync(jobScratchOf(cwd, ID), { recursive: true });
-  writeFileSync(join(cwd, '.hopper-scratch', '.gitignore'), '*\n');
+  writeFileSync(join(cwd, '.worktrees', '.gitignore'), '*\n');
   const r = spawnSync('sh', ['-c', `${command}${after ? `\n${after}` : ''}`], { cwd, env: GIT_ENV, encoding: 'utf8' });
   return `${r.stdout}${r.stderr}`;
 }

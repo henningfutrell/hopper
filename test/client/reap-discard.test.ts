@@ -33,7 +33,7 @@ function cloneAt(dir: string): string {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'jh-reap-'));
-  scratch = join(root, 'work', '.hopper-scratch', JOB);
+  scratch = join(root, 'work', '.worktrees', '@scratch', JOB);
   mkdirSync(scratch, { recursive: true });
 });
 

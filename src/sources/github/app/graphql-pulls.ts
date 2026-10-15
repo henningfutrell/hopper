@@ -18,14 +18,14 @@ export const PULLS_MAX = 50;
 export const OPEN_PULLS_REPOS_MAX = 25;
 
 const PULL = 'state isDraft mergeable createdAt body headRefName headRefOid baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
-const OPEN_PULL = 'url createdAt isDraft mergeable body headRefName';
+const OPEN_PULL = 'url title createdAt isDraft mergeable body headRefName baseRefName';
 
 interface GqlPull {
   state?: string; isDraft?: boolean; mergeable?: string; createdAt?: string; body?: string; headRefName?: string; headRefOid?: string; baseRefName?: string;
   commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: { state?: string } | null } | null } | null)[] } | null;
 }
 interface GqlIssue { state?: string; stateReason?: string | null; updatedAt?: string }
-interface GqlOpenPull { url?: string; createdAt?: string; isDraft?: boolean; mergeable?: string; body?: string; headRefName?: string }
+interface GqlOpenPull { url?: string; title?: string; baseRefName?: string; createdAt?: string; isDraft?: boolean; mergeable?: string; body?: string; headRefName?: string }
 interface GqlError { message?: string; type?: string; path?: (string | number)[] }
 interface GqlBody<T> { data?: Record<string, T | null> | null; errors?: GqlError[] }
 
@@ -103,7 +103,8 @@ export async function openPullRequestsIn(req: Request, token: string, repos: str
       const answer = data[alias];
       if (failed || !answer) { out.repoErrors.set(repo, failed?.message ?? 'not answered'); return; }
       out.repos.set(repo, (answer.pullRequests?.nodes ?? []).flatMap((n): BranchPullRequest[] => (n?.url && n.createdAt && n.headRefName
-        ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, body: n.body ?? '' }] : [])));
+        ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, body: n.body ?? '',
+          ...(n.baseRefName ? { base: n.baseRefName } : {}), ...(n.title ? { title: n.title } : {}) }] : [])));
     });
   }
   return out;
