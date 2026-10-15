@@ -5,6 +5,12 @@
 {{- $ns := .Release.Namespace -}}
 {{- $keyFile := include "hopper.masterKeyFromFile" . -}}
 {{- $account := include "hopper.serviceAccount" . -}}
+{{- $replicas := .Values.replicas | int -}}
+{{- if or (lt $replicas 0) (gt $replicas 1) }}{{ fail "replicas is 0 or 1: one hopper writes its database" }}{{ end -}}
+{{- $serviceType := .Values.service.type -}}
+{{- if not (has $serviceType (list "ClusterIP" "LoadBalancer" "NodePort")) }}{{ fail "service.type is ClusterIP, LoadBalancer or NodePort" }}{{ end -}}
+{{- $lanNames := list (printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $name $name $ns $name $ns $name $ns .Values.clusterDomain) -}}
+{{- range splitList "," (.Values.lanNames | toString) }}{{ if trim . }}{{ $lanNames = append $lanNames (trim .) }}{{ end }}{{ end -}}
 {{- $health := printf "fetch('http://127.0.0.1:%d/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" $port -}}
 apiVersion: v1
 kind: Service
@@ -13,6 +19,7 @@ metadata:
   labels:
     {{- include "hopper.labels" $sel | nindent 4 }}
 spec:
+  type: {{ $serviceType }}
   selector:
     {{- include "hopper.selector" $sel | nindent 4 }}
   ports:
@@ -42,8 +49,9 @@ metadata:
   labels:
     {{- include "hopper.labels" $sel | nindent 4 }}
 spec:
-  # One hopper: one writer of its database and its home. An update stops the old pod before the new one starts.
-  replicas: 1
+  # One hopper: one writer of its database and its home. An update stops the old pod before the new one starts. 0 while
+  # a compose install's data moves in (scripts/hopper-cluster.sh migrate, issue #1373).
+  replicas: {{ $replicas }}
   strategy:
     type: Recreate
   selector:
@@ -136,9 +144,10 @@ spec:
             - name: HOPPER_SOLR_URL
               value: {{ printf "http://%s-solr:8983/solr/hopper" $name | quote }}
             {{- end }}
-            # The names the cluster reaches it by; the first is the one in question links.
+            # The names the cluster reaches it by; the first is the one in question links. Then lanNames: the names machines
+            # outside the cluster reach it by.
             - name: HOPPER_LAN_NAMES
-              value: {{ printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $name $name $ns $name $ns $name $ns .Values.clusterDomain | quote }}
+              value: {{ join "," $lanNames | quote }}
             - name: HOPPER_LAN_PEERS
               value: {{ .Values.lanPeers | quote }}
             {{- if .Values.sandbox.enabled }}

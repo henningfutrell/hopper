@@ -22,6 +22,7 @@
 //                                                     the proposals' paths on the running daemon (issue #651, cli-operator.ts)
 //   hopper master-key status [--url <hopper URL>]     the master key's source and fingerprint, never the key (issue #685, cli-operator.ts)
 //   hopper master-key rotate [--url <hopper URL>]     a new master key, every secret sealed again under it; prints it once (issue #659)
+//   hopper cluster script                             the host's cluster script: bootstrap, migrate, rollback (issue #1373)
 //   hopper lanes plan|tune …                          lane recommendations and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
 //   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
 //   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)
@@ -80,6 +81,9 @@ ${OPERATOR_USAGE}
 ${UPDATE_USAGE}
   hopper service script                              print the host's user-service script (scripts/hopper-service.sh): it
                                                      puts a Podman compose stack under a user service. No daemon needed
+  hopper cluster script                              print the host's cluster script (scripts/hopper-cluster.sh): it makes a
+                                                     cluster on this host and moves the compose install onto it
+                                                     (docs/kubernetes.md). No daemon needed
   hopper help                                        this text
 
 With ${REFRESH_TOKEN_FILE} set, the operator actions (job … search) open no database: they act with the grant whose
@@ -270,8 +274,9 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
   // `update drift` reads the running daemon (issue #1017); every other `update` command needs no database.
   if (command === 'update' && rest[0] !== 'drift') return runUpdate(rest, io);
-  // The host's master-key script (issue #1296) and user-service script (issue #1320) are files of the build: no database.
-  if ((command === 'master-key' || command === 'service') && rest[0] === 'script') return printHostScript(command, rest.slice(1), io);
+  // The host's master-key script (issue #1296), user-service script (issue #1320) and cluster script (issue #1373) are files
+  // of the build: no database.
+  if ((command === 'master-key' || command === 'service' || command === 'cluster') && rest[0] === 'script') return printHostScript(command, rest.slice(1), io);
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;

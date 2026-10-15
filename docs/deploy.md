@@ -741,6 +741,11 @@ read -rs KEY && kubectl --namespace hopper create secret generic hopper-master-k
 kubectl --namespace hopper rollout restart deployment/hopper
 ```
 
+**Move a compose install here** (issue #1373): `docs/kubernetes.md`. `hopper-cluster.sh bootstrap` makes a small
+cluster on this host (k3s, rootless, beside Podman), and `hopper-cluster.sh migrate` moves the database, the master key
+and the hopper's own settings into the chart's release, then stops the compose stack (not removed). `hopper-cluster.sh
+rollback` starts compose again.
+
 To give a key from the first start, make that Secret before `helm install`. A rotation puts the old key under
 `previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`).
 
@@ -797,6 +802,9 @@ vault then runs in the hopper, under the master key.
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
 | `sandbox.enabled` | sandbox boxes the hopper starts as pods in the release's namespace ("Sandbox boxes on Kubernetes"). Default off |
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
+| `replicas` | `1`, or `0` while nothing may write the database (`hopper-cluster.sh migrate` moves data in so). Never more |
+| `service.type` | `ClusterIP` (the default), `LoadBalancer` or `NodePort`: the hopper's Service, at `port` |
+| `lanNames` | more names the hopper answers to (comma-separated), after its Service's names: the names machines outside the cluster reach it by |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
 The chart makes the database password and the preshared keys of OpenFGA and the vault pod at the first install, in the

@@ -11,6 +11,16 @@ image:
 # The port the hopper answers on, the same inside the pod and on its Service: the Host a browser sends names it.
 port: 4790
 
+# How many hoppers run: 1, or 0 while nothing may write the database (scripts/hopper-cluster.sh migrate moves a compose
+# install's data in so, issue #1373). Never more than one: one hopper writes its database and its home.
+replicas: 1
+
+# The hopper's Service. ClusterIP: only in the cluster (reach it with `kubectl port-forward svc/hopper 4790`, or through
+# the ingress). LoadBalancer: on the cluster's load balancer, at `port`; on a cluster `hopper-cluster.sh bootstrap` made,
+# that is this host's port, so machines that joined a compose hopper at that port dial in to this one (issue #1373).
+service:
+  type: ClusterIP
+
 # The master key (docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it. The chart never
 # makes it. The first start makes one and shows it once, in the UI. Keep it in a password manager, then put it in this
 # Secret, under `master-key` (and the key before a rotation under `previous`), and restart the hopper:
@@ -81,6 +91,10 @@ serviceAccount:
 # The pod network the hopper takes LAN requests from: the ingress controller and the kubelet's probes reach it from
 # there (docs/design.md "Reaching the UI across the LAN"). A LAN request reads the API only with a UI session.
 lanPeers: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+# More names the hopper answers to, comma-separated, after its Service's names: the names machines outside the cluster
+# reach it by (this host's name, with service.type LoadBalancer). hopper-cluster.sh migrate carries the compose install's
+# names here, so machines that joined it dial in to this hopper (issue #1373).
+lanNames: ""
 # The cluster's DNS domain: the hopper answers to its Service's names in it.
 clusterDomain: cluster.local
 
