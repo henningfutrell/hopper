@@ -12,6 +12,9 @@
 //   Scenario: a cluster hopper that is not healthy rolls back: the cluster hopper to 0, the compose stack started again
 //   Scenario: rollback after a migration starts the compose stack again
 //   Scenario: an install with the local KMS is refused
+//   Scenario: with the owner's own Secret (--master-key-secret), the script never reads the key: a pod of the cluster
+//             checks its fingerprint, and a Secret that is not there or holds another key stops the move before compose
+//   Scenario: with an outside store, the filled Secret is checked the same way: the script never reads it
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -68,6 +71,10 @@ case "$*" in *"create secret generic"*|*"apply -f -"*|*" exec -i "*) in="$(cat)"
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
 case "$*" in
   *"create secret generic hopper-master-key --from-file=master-key=/dev/stdin"*) [ "$in" = "$STUB_KEY" ] && echo key-matched >> "$STUB_LOG"; touch "$STUB_DIR/secret" ;;
+  *"get secret owner-key -o go-template="*) [ -z "\${STUB_OWNER_SECRET:-}" ] || printf yes ;;
+  *"get secret hopper-master-key -o go-template="*) printf yes ;;
+  *"run hopper-key-check "*) printf '%s' "\${STUB_SECRET_FP:-${FP}}" ;;
+  *"get deployment/hopper -o jsonpath={.spec.template.spec.containers[?(@.name==\\"hopper\\")].image}"*) printf ghcr.io/henningfutrell/hopper:beta ;;
   *"get secret hopper-master-key"*) [ -f "$STUB_DIR/secret" ] && printf '%s' "$STUB_KEY" | base64 -w0 ;;
   *"create secret generic hopper-carried-env"*) printf 'carried: %s\\n' "$(printf '%s' "$in" | tr '\\n' ' ')" >> "$STUB_LOG"; echo 'kind: Secret' ;;
   version*) [ -z "\${STUB_NO_CLUSTER:-}" ] || exit 1 ;;
@@ -338,6 +345,50 @@ describe('hopper-cluster.sh migrate', () => {
     expect(r.status).toBe(1);
     expect(r.err).toContain('runs the local KMS');
     expect(h.calls().filter((c) => /^podman stop|^helm install/.test(c))).toEqual([]);
+  });
+
+  it('with the owner\'s own Secret, never reads the master key: a cluster pod checks its fingerprint before compose stops', () => {
+    const h = host({ unit: true });
+    const r = h.run(['migrate', '--chart', h.chart, '--master-key-secret', 'owner-key'], { STUB_OWNER_SECRET: '1' });
+    expect(r.status, r.err).toBe(0);
+    const calls = h.calls();
+    // No launch source is read, no Secret value is read or written, the key reaches no node in compose.
+    for (const c of calls) expect(c).not.toMatch(/master-key=\/dev\/stdin|\{\.data\.master-key\}|^podman exec -i hopperid node/);
+    expect(calls).not.toContain('key-matched');
+    expect(r.err).toContain(`the Secret owner-key holds the running hopper's master key (fingerprint ${FP})`);
+    // The check: a pod of the hopper's image with the Secret mounted, once the release is in, before compose stops.
+    const check = calls.findIndex((c) => c.startsWith('kubectl --namespace hopper run hopper-key-check '));
+    expect(check).toBeGreaterThan(calls.findIndex((c) => c.startsWith('helm install')));
+    expect(check).toBeLessThan(calls.indexOf('podman stop hopperid'));
+    expect(calls[check]).toContain('"secretName":"owner-key"');
+    expect(calls[check]).toContain('"image":"ghcr.io/henningfutrell/hopper:beta"');
+    expect(calls[check]).toContain('--rm');
+    const values = JSON.parse(readFileSync(join(h.home, 'values.json'), 'utf8')) as Record<string, unknown>;
+    expect(values).toMatchObject({ masterKey: { existingSecret: 'owner-key' } });
+  });
+
+  it('with the owner\'s own Secret, stops before anything changes when it is not there, and before compose stops when it holds another key', () => {
+    const missing = host();
+    const m = missing.run(['migrate', '--chart', missing.chart, '--master-key-secret', 'owner-key']);
+    expect(m.status).toBe(1);
+    expect(m.err).toContain('no Secret owner-key with a master-key');
+    expect(missing.calls().filter((c) => /^podman stop|^helm install/.test(c))).toEqual([]);
+
+    const other = host();
+    const o = other.run(['migrate', '--chart', other.chart, '--master-key-secret', 'owner-key'], { STUB_OWNER_SECRET: '1', STUB_SECRET_FP: '0000000000000000' });
+    expect(o.status).toBe(1);
+    expect(o.err).toContain(`the Secret owner-key holds the master key of fingerprint 0000000000000000, the running hopper ${FP}`);
+    expect(other.calls().filter((c) => /^podman stop/.test(c))).toEqual([]);
+  });
+
+  it('with an outside store, checks the filled Secret in a cluster pod: the script never reads it', () => {
+    const h = host();
+    const r = h.run(['migrate', '--chart', h.chart, '--external-secret-store', 'vault', '--external-secret-key', 'hopper/master'], { STUB_LAUNCH_KEY: KEY });
+    expect(r.status, r.err).toBe(0);
+    const calls = h.calls();
+    for (const c of calls) expect(c).not.toMatch(/master-key=\/dev\/stdin|\{\.data\.master-key\}/);
+    expect(calls.some((c) => c.startsWith('kubectl --namespace hopper run hopper-key-check ') && c.includes('"secretName":"hopper-master-key"'))).toBe(true);
+    expect(r.err).toContain("the Secret hopper-master-key from vault holds the running hopper's master key");
   });
 
   it('refuses when no cluster answers, and when the compose hopper does not run', () => {
