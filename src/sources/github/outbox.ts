@@ -9,13 +9,16 @@
 // with the `attempt` and `error` of the try before while a failed call waits its backoff (issue #1194 part 8). The detail
 // says how many rows are not sent (`writeBehindPending`) and when the last went through (`lastWriteBehindAt`); each row's
 // act is timed for `afterAnswer` (`after-answer-timings.ts`): its wait in the outbox apart from its call.
-import type { IntakeActionKind, IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
+// A person's resolution of a hand-off (issue #551) is rows too (act `resolve`, `resolution`): its end labels and its one
+// comment. Each failed row is listed (`outboxFailed`), and a person's Retry (`retry`) sends it again.
+import type { IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
 import type { Clock } from '../../domain/ports.ts';
+import type { ResolutionWrite } from '../../domain/types.ts';
 import type { AfterAnswerTiming } from '../../domain/types.ts';
 import { createAfterAnswerTimings } from '../after-answer-timings.ts';
 import {
   OUTBOX_ATTEMPTS, coalesce, outboxBackoffMs,
-  type GitHubOutboxRepository, type OutboxChange, type OutboxInput, type OutboxRow,
+  type GitHubOutboxRepository, type OutboxAct, type OutboxChange, type OutboxInput, type OutboxRow,
 } from '../../domain/github-outbox.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
 
@@ -28,6 +31,10 @@ export type OutboxSend = (repo: string, key: string, change: OutboxChange) => Pr
 const KEEP_SENT_MS = 7 * 24 * 60 * 60_000;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+
+/** A failed row on Sources, one per item and act: what a person's Retry sends again. */
+export interface OutboxFailed { key: string; repo: string; act: OutboxAct; error: string; attempts: number }
 
 export interface GitHubOutboxOptions {
   source: string;
@@ -42,7 +49,7 @@ export interface GitHubOutboxOptions {
 export function createGitHubOutbox(o: GitHubOutboxOptions) {
   const { rows, clock } = o;
   /** The act sent for each item and the discover it was sent in, until a later discover listed it: a second click writes nothing more. */
-  const recent = new Map<string, { act: IntakeActionKind; tag: string; round: number }>();
+  const recent = new Map<string, { act: OutboxAct; tag: string; round: number }>();
   let round = 0;
   let recovered = false;
   let flushing: Promise<{ due: number; wrote: string[] }> | undefined;
@@ -51,10 +58,11 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   const now = () => clock.now().toISOString();
   const openOf = (key: string) => rows.open(o.source).filter((r) => r.key === key);
 
-  /** Each item's marker from its rows not sent: failed when a row failed, else running, with its next attempt while it waits its backoff. */
+  /** Each item's marker from its intake action's rows not sent: failed when a row failed, else running, with its next attempt while it waits its backoff. */
   const markers = (): Map<string, IntakeWriteBehind> => {
     const out = new Map<string, IntakeWriteBehind>();
     for (const r of rows.open(o.source)) {
+      if (r.act === 'resolve') continue;
       if (out.get(r.key)?.state === 'failed') continue;
       if (r.state === 'failed') out.set(r.key, { act: r.act, state: 'failed', error: r.lastError ?? 'failed' });
       else if (r.lastError !== undefined) out.set(r.key, { act: r.act, state: 'running', attempt: r.attempts + 1, error: r.lastError });
@@ -120,7 +128,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 
   return {
     /** True: this act, with this tag, has rows on their way, or went through since a discover last listed the item: nothing more to do. */
-    sent(act: IntakeActionKind, key: string, tag = ''): boolean {
+    sent(act: OutboxAct, key: string, tag = ''): boolean {
       if (openOf(key).some((r) => r.act === act && r.tag === tag && r.lastError === undefined)) return true;
       const r = recent.get(key);
       return r?.act === act && r.tag === tag;
@@ -129,7 +137,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
      * Keeps `changes` for the item, with `local` — the action's own local change — in the same transaction. The same act's
      * rows that failed are sent again instead, from their first attempt.
      */
-    queue(act: IntakeActionKind, key: string, repo: string, changes: Pick<OutboxInput, 'change' | 'event' | 'createdBy'>[], opts: { tag?: string; local?: () => void } = {}): void {
+    queue(act: OutboxAct, key: string, repo: string, changes: Pick<OutboxInput, 'change' | 'event' | 'createdBy'>[], opts: { tag?: string; local?: () => void } = {}): void {
       const tag = opts.tag ?? '';
       rows.tx(() => {
         opts.local?.();
@@ -145,6 +153,25 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       flushing ??= sendDue(send).finally(() => { flushing = undefined; });
       return flushing;
     },
+    /** A person's Retry: the item's failed rows are sent again, from their first attempt. Answers how many. */
+    retry(key: string): number {
+      const failedRows = openOf(key).filter((r) => r.state === 'failed');
+      if (failedRows.length) revive(failedRows);
+      return failedRows.length;
+    },
+    /**
+     * Where the rows of a hand-off's resolution (`resolve`, tagged `tag`) stand: undefined when it has none (never queued,
+     * or pruned), else `written`, `failed` with why, or `pending` with the error of the try before.
+     */
+    resolution(key: string, tag: string): ResolutionWrite | undefined {
+      const mine = rows.of(o.source, key).filter((r) => r.act === 'resolve' && r.tag === tag);
+      if (!mine.length) return undefined;
+      const failedRow = mine.find((r) => r.state === 'failed');
+      if (failedRow) return { state: 'failed', error: failedRow.lastError ?? 'failed' };
+      if (mine.every((r) => r.state === 'sent')) return { state: 'written' };
+      const error = mine.find((r) => r.lastError !== undefined)?.lastError;
+      return { state: 'pending', ...(error !== undefined ? { error } : {}) };
+    },
     /** An item with rows not sent: a discover does not take it until they are. */
     held: (key: string): boolean => openOf(key).some((r) => r.state !== 'failed'),
     /** At a discover's start: its round. Never waits for the outbox. */
@@ -159,12 +186,17 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       return xs.map((x) => { const f = m.get(x.key); return f ? { ...x, writeBehind: f } : { ...x }; });
     },
     detail(): Record<string, unknown> {
-      const pending = rows.open(o.source).filter((r) => r.state !== 'failed').length;
-      const errors = [...markers()].flatMap(([key, f]) => (f.state === 'failed' ? [[key, `${f.act}: ${f.error}`] as const] : []));
+      const open = rows.open(o.source);
+      const pending = open.filter((r) => r.state !== 'failed').length;
+      const failedRows = new Map<string, OutboxFailed>();
+      for (const r of open) {
+        if (r.state === 'failed' && !failedRows.has(`${r.key}\n${r.act}`)) failedRows.set(`${r.key}\n${r.act}`, { key: r.key, repo: r.repo, act: r.act, error: r.lastError ?? 'failed', attempts: r.attempts });
+      }
+      const errors = [...failedRows.values()].map((f) => [f.key, `${f.act}: ${f.error}`] as const);
       return {
         ...(pending ? { writeBehindPending: pending } : {}),
         ...(lastSentAt ? { lastWriteBehindAt: lastSentAt } : {}),
-        ...(errors.length ? { writeBehindErrors: Object.fromEntries(errors) } : {}),
+        ...(errors.length ? { writeBehindErrors: Object.fromEntries(errors), outboxFailed: [...failedRows.values()] } : {}),
       };
     },
     /** Each act's rows, timed: their wait in the outbox apart from their call. */
@@ -172,13 +204,18 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   };
 }
 
-/** Each coalesced change on GitHub; Approve's comment read through `readComments`. */
-export function outboxSend(api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees'>, readComments: (repo: string, key: string) => Promise<void>): OutboxSend {
+/** Each coalesced change on GitHub; Approve's comment read through `readComments`; the hopper's labels made first, with `ensureLabels`, before an add. */
+export function outboxSend(
+  api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment'>,
+  readComments: (repo: string, key: string) => Promise<void>,
+  ensureLabels: (repo: string) => Promise<void> = async () => {},
+): OutboxSend {
   return async (repo, key, change) => {
     const n = Number(key.slice(key.lastIndexOf('/') + 1));
-    if (change.op === 'add_labels') await api.addLabels(repo, n, change.labels);
+    if (change.op === 'add_labels') { await ensureLabels(repo); await api.addLabels(repo, n, change.labels); }
     else if (change.op === 'remove_labels') await api.removeLabels(repo, n, change.labels);
     else if (change.op === 'add_assignees') await api.addAssignees(repo, n, change.assignees);
+    else if (change.op === 'comment') await api.postComment(repo, n, change.body);
     else await readComments(repo, key);
   };
 }
@@ -192,6 +229,7 @@ export function memoryGitHubOutbox(): GitHubOutboxRepository {
     tx: (fn) => fn(),
     add(input, at) { for (const r of input) { const id = next++; kept.set(id, { ...structuredClone(r), id, state: 'pending', attempts: 0, nextAt: at, createdAt: at }); } },
     open: (source) => list((r) => r.source === source && r.state !== 'sent'),
+    of: (source, key) => list((r) => r.source === source && r.key === key),
     due: (source, at) => list((r) => r.source === source && r.state === 'pending' && r.nextAt <= at),
     update(ids, patch) {
       for (const id of ids) {

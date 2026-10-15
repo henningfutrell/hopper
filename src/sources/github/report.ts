@@ -11,20 +11,22 @@
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
 // Run again (`takeBack`, issues #313, #354) is one other issue write: an issue no longer assigned to the connected account
 // is assigned to it (issue #1010), a closed issue is reopened, the end labels go and the source label comes back, so the new job runs and finishes against it. A person's resolution
-// of a hand-off (`writeResolution`, issue #551) is the other, and the hopper's only comment: one short comment saying
+// of a hand-off (`resolutionChanges`, issue #551; rows of the GitHub outbox, issue #1238) is the other, and the hopper's only comment: one short comment saying
 // what was done, with the person's note and link, naming no person, and the end label it leaves the issue with. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
 import { SourceError } from '../../domain/ports.ts';
 import type { SourceReport } from '../../domain/ports.ts';
-import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job } from '../../domain/types.ts';
+import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job, type ResolutionWrite } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import { isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
+import type { OutboxChange } from '../../domain/github-outbox.ts';
+import type { GitHubOutbox } from './outbox.ts';
 
 export interface ReportContext {
   api: GitHubApi;
@@ -178,18 +180,31 @@ export function resolutionComment(r: HandoffResolution): string {
 
 /**
  * Tell the issue a person's resolution of its job's hand-off (issue #551): Done by hand leaves it `hopper:done`, Won't
- * do `hopper:rejected` — either way not taken again —, in place of `hopper:failed`; Continue and I fixed it took it back
- * already (`takeBack`). Then the comment.
+ * do `hopper:rejected` — either way not taken again —, in place of `hopper:failed` and the claim; Continue and I fixed it
+ * took it back already (`takeBack`). Then the comment. The changes, as rows of the GitHub outbox (issue #1238).
  */
-export async function writeResolution(ctx: ReportContext, job: Job, r: HandoffResolution): Promise<void> {
+export function resolutionChanges(r: HandoffResolution, holder?: string): OutboxChange[] {
+  const end = r.action === 'done_by_hand' ? LABEL_DONE : r.action === 'wont_do' ? LABEL_REJECTED : undefined;
+  const labels: OutboxChange[] = end ? [{ op: 'remove_labels', labels: [...claimLabels(holder), LABEL_FAILED] }, { op: 'add_labels', labels: [end] }] : [];
+  return [...labels, { op: 'comment', body: resolutionComment(r) }];
+}
+
+/**
+ * A resolution kept in the source's GitHub outbox (issue #1238), once, tagged with the job and the resolution's time;
+ * asked again, where its rows stand. One that failed before its rows were kept is not sent again by itself: no comment twice.
+ */
+export function keepResolution(outbox: GitHubOutbox, job: Job, r: HandoffResolution, holder?: string): Promise<ResolutionWrite> {
   try {
-    const { repo, number } = issueOf(job);
-    if (r.action === 'done_by_hand') await settle(ctx, repo, number, [LABEL_DONE]);
-    if (r.action === 'wont_do') await settle(ctx, repo, number, [LABEL_REJECTED]);
-    if (r.action === 'done_by_hand' || r.action === 'wont_do') await ctx.api.removeLabels(repo, number, [LABEL_FAILED]);
-    await ctx.api.postComment(repo, number, resolutionComment(r));
+    const { repo } = issueOf(job);
+    const key = job.source!.key;
+    const tag = `${job.id}@${r.at}`;
+    const now = outbox.resolution(key, tag);
+    if (now) return Promise.resolve(now);
+    if (r.writeBack === 'failed') return Promise.resolve({ state: 'failed', error: r.writeBackError ?? 'failed' });
+    outbox.queue('resolve', key, repo, resolutionChanges(r, holder).map((change) => ({ change })), { tag });
+    return Promise.resolve({ state: 'pending' });
   } catch (err) {
-    throw sourceError(err);
+    return Promise.reject(sourceError(err));
   }
 }
 

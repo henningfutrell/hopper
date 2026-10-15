@@ -1,0 +1,1 @@
+- When you resolve a hand-off in Needs a person, the comment and label on GitHub are now kept until GitHub has them, so a restart no longer loses them. On Sources, each GitHub change that failed shows a Retry button.

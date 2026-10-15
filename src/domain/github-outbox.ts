@@ -3,12 +3,19 @@
 // coalescing of the rows due for one issue into the fewest calls (pure).
 import type { IntakeActionKind } from './intake.ts';
 
-/** One change on one issue. `read_comments` is Approve's read of the assignee's comments, kept in the approved snapshot. */
+/**
+ * One change on one issue. `read_comments` is Approve's read of the assignee's comments, kept in the approved snapshot.
+ * `comment` posts one comment: a hand-off's resolution (issue #551).
+ */
 export type OutboxChange =
   | { op: 'add_labels'; labels: string[] }
   | { op: 'remove_labels'; labels: string[] }
   | { op: 'add_assignees'; assignees: string[] }
-  | { op: 'read_comments' };
+  | { op: 'read_comments' }
+  | { op: 'comment'; body: string };
+
+/** The act that asked for a row: a person's intake action, or `resolve`, a person's resolution of a hand-off told to its item. */
+export type OutboxAct = IntakeActionKind | 'resolve';
 
 export type OutboxState = 'pending' | 'sending' | 'sent' | 'failed';
 
@@ -21,8 +28,8 @@ export interface OutboxInput {
   repo: string;
   /** The issue's URL: the item's key. */
   key: string;
-  /** The person's act that asked for it, and its tag (Approve's hash). */
-  act: IntakeActionKind;
+  /** The person's act that asked for it, and its tag (Approve's hash; a resolution's job and time). */
+  act: OutboxAct;
   tag: string;
   change: OutboxChange;
   event?: OutboxEvent;
@@ -52,6 +59,8 @@ export interface GitHubOutboxRepository {
   /** The source's pending rows due at `at`, oldest first. */
   due(source: string, at: string): OutboxRow[];
   update(ids: number[], patch: OutboxPatch): void;
+  /** The source's rows of one item, sent ones too (until pruned), oldest first. */
+  of(source: string, key: string): OutboxRow[];
   /** Rows a stopped process left `sending` go back to `pending`: their calls are sent again (labels and assignees are idempotent). */
   recover(source: string): number;
   /** Sent rows sent before `before` go. */
@@ -74,8 +83,8 @@ export interface OutboxPlan {
 
 /**
  * The rows due for one issue, coalesced: an add and a remove of the same label cancel out; the labels left go in one
- * add call and one remove call; the assignees in one call; Approve's comment reads in one. The newest row of a label
- * says what it ends as. Removes go first, then adds, assignments and the read.
+ * add call and one remove call; the assignees in one call; Approve's comment reads in one; the same comment once. The
+ * newest row of a label says what it ends as. Removes go first, then adds, assignments, the read and the comments.
  */
 export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
   const byIssue = new Map<string, OutboxRow[]>();
@@ -86,11 +95,13 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     const labels = new Map<string, { op: 'add' | 'remove'; row: number }[]>();
     const assignees = new Map<string, number[]>();
     const reads: number[] = [];
+    const comments = new Map<string, number[]>();
     const cancelled: number[] = [];
     for (const r of issueRows) {
       const c = r.change;
       if (c.op === 'add_assignees') for (const a of c.assignees) assignees.set(a, [...(assignees.get(a) ?? []), r.id]);
       else if (c.op === 'read_comments') reads.push(r.id);
+      else if (c.op === 'comment') comments.set(c.body, [...(comments.get(c.body) ?? []), r.id]);
       else {
         const op = c.op === 'add_labels' ? 'add' : 'remove';
         for (const l of c.labels) {
@@ -110,6 +121,7 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     if (adds.length) calls.push({ change: { op: 'add_labels', labels: adds.map(([l]) => l) }, rows: rowsOf(adds.map(([, o]) => o)) });
     if (assignees.size) calls.push({ change: { op: 'add_assignees', assignees: [...assignees.keys()] }, rows: [...new Set([...assignees.values()].flat())] });
     if (reads.length) calls.push({ change: { op: 'read_comments' }, rows: reads });
+    for (const [body, ids] of comments) calls.push({ change: { op: 'comment', body }, rows: ids });
     // A row whose every label cancelled sends nothing; one with a label left is sent with that call.
     const inCalls = new Set(calls.flatMap((c) => c.rows));
     return { repo, key, calls, cancelled: [...new Set(cancelled)].filter((id) => !inCalls.has(id)) };

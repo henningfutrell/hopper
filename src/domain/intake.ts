@@ -69,9 +69,9 @@ export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
  * `dismiss` (issue #1141): take **tagged items** the last sync listed off Tagged, for the reasons they have now; nothing on
  * GitHub. `take_in` (issue #1176, Take into Intake): give an issue no work item, that an untracked pull request the last
  * census listed closes, the source's label and assign it to the user's connected account, so the next sync lists it in
- * Intake.
+ * Intake. `retry_outbox` (issue #1238, a Retry on Sources): send the item's failed rows of the GitHub outbox again.
  */
-export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in';
+export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in' | 'retry_outbox';
 
 export interface IntakeAction {
   kind: IntakeActionKind;

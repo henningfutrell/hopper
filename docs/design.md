@@ -11658,9 +11658,23 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   reads the outbox: `writeBehindPending` (rows not sent, not failed), `lastWriteBehindAt` (when the last row went through),
   `writeBehindErrors` (each item whose rows failed). Each row sent or failed for good is timed as an after-answer timing of
   its source (`afterAnswer` with `source`): its wait in the outbox, from its row to its call, apart from the call.
-- **Not in the outbox yet** (the issue's later parts): Merge now and Close PR, the give-backs, and the hand-off
-  resolutions' write-backs keep their own paths (the job's report chain, `writeBack: pending` retried at each sync);
-  a list of failed rows with a Retry of its own.
+- **Hand-off resolutions** (part 2). A person's resolution of a hand-off (issue #551) is rows too, act `resolve`, tagged
+  `<job id>@<resolution time>`: for Done by hand and Won't do, the claim labels and `hopper:failed` removed and the end
+  label added, then for every action the one `comment` (`resolutionChanges`, `src/sources/github/report.ts`). The
+  write-back (`src/sources/write-back.ts`) keeps them once, still on the job's report chain after the job's end is
+  reported, and asks the source at each sync where they stand (`JobSource.resolved` answers a `ResolutionWrite`):
+  `written` once GitHub took each row, `pending` with the error of the try before, `failed` for good. The hand-off's
+  `writeBack` follows it. At the hand-off's close its source sends after the batch window; a sync that asks again never
+  asks for a send, so a resolution still pending never starts sync after sync. A resolution that failed before part 2 has
+  no rows and is not sent again by itself, so no comment is posted twice. Comments coalesce too: the same body on one issue
+  is one call; comments go after the labels. An `add_labels` call makes the hopper's labels on the repository first.
+- **Failed rows on Sources** (part 2). The detail lists them as `outboxFailed`, one per item and act (`key`, `repo`,
+  `act`, `error`, `attempts`), and Sources shows each with a **Retry**: the intake action `retry_outbox` sends the item's
+  failed rows again from their first attempt, then the source sends after the batch window. A resolution's hand-off
+  failed meanwhile goes back to `pending`, then `written`, at the syncs after. `writeBehindErrors` stays for the item
+  markers.
+- **Not in the outbox yet** (the issue's later parts): Merge now and Close PR and the give-backs (reopen, assign, labels
+  before a new job) keep their own paths on the job's report chain, with their state in memory.
 ### Stuck work (issue #1010, 2026-10-13)
 
 Failures, Parked and Pull requests each showed their own part of what waits on a person, one card at a time. With 169

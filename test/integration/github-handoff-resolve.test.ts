@@ -110,8 +110,8 @@ describe('a resolution is written back to its GitHub issue', () => {
     expect(pending.resolution!.writeBackError).toContain('502');
     // The GitHub outbox sends it again after its backoff (issue #1238).
     await waitFor(() => gh.commentsOn(REPO, issue.number).length === 1, { what: 'written on a later try', timeoutMs: 15_000 });
-    await waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.id === h.id)?.resolution?.writeBack === 'written', { what: 'written' });
-  });
+    await waitFor(async () => (await failuresOf(a)).handoffs.find((x) => x.id === h.id)?.resolution?.writeBack === 'written', { what: 'written', timeoutMs: 15_000 });
+  }, 40_000);
 
   it('a resolution is kept in the GitHub outbox: with GitHub\'s writes held it answers, and a restart sends its comment once (issue #1238)', async () => {
     const db = tempDbPath();
@@ -149,5 +149,5 @@ describe('a resolution is written back to its GitHub issue', () => {
     await waitFor(async () => (await failuresOf(again)).handoffs.find((x) => x.id === h.id)?.resolution?.writeBack === 'written', { what: 'written' });
     await again.sync();
     expect(gh.commentsOn(REPO, issue.number)).toHaveLength(1);
-  });
+  }, 40_000);
 });

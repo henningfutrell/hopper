@@ -19,6 +19,7 @@ export const ALREADY_TAKEN = 'already taken, no approval needed';
 /** Take into Intake on an issue the last census did not offer (issue #1176). */
 export const NOT_OFFERED_TAKE_IN = 'not offered: no untracked pull request closes it';
 const NO_ACCOUNT = 'no GitHub account connected';
+const NOTHING_FAILED = 'no GitHub write of this item failed';
 
 export interface IntakeActionContext {
   source: string;
@@ -80,8 +81,17 @@ function gitHubWrite(c: IntakeActionContext, kind: IntakeAction['kind'], key: st
   };
 }
 
+/** A person's Retry on Sources (issue #1238): each item's failed outbox rows are sent again. */
+function retryOutbox(c: IntakeActionContext, keys: string[]): IntakeActionResult {
+  const done: string[] = [];
+  const failed: Record<string, string> = {};
+  for (const key of new Set(keys)) if (c.outbox.retry(key) > 0) done.push(key); else failed[key] = NOTHING_FAILED;
+  return { done, failed };
+}
+
 export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promise<IntakeActionResult> {
   if (a.kind === 'take_in') return takeIn(c, a.keys);
+  if (a.kind === 'retry_outbox') return retryOutbox(c, a.keys);
   const offered = new Map(c.offered.map((x) => [x.key, x]));
   const done: string[] = [];
   const failed: Record<string, string> = {};

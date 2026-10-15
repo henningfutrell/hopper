@@ -4,7 +4,10 @@
 import { GhLink } from '@/components/job';
 import { ago, countdown, duration } from '@/model/format';
 import type { SetupProblem, SourceStatus } from '@/model/wire';
-import { useServerNow } from '@/store/selectors';
+import { Button } from '@/components/ui/button';
+import { actFor } from '@/store';
+import { intakeRefusal } from '@/store/intake';
+import { useCanOperate, useServerNow } from '@/store/selectors';
 import { SourceIntake } from './source-intake';
 
 const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
@@ -33,21 +36,40 @@ function SetupCard({ s, p }: { s: SourceStatus; p: SetupProblem }) {
   );
 }
 
+/** A failed row of the GitHub outbox (issue #1238), one per item and act: a person's Retry sends it again. */
+interface OutboxFailed { key: string; repo: string; act: string; error: string; attempts: number }
+
+/** What a failed row's act did, in plain words. */
+const ACT: Record<string, string> = {
+  assign: 'Assign to me', release: 'Release claim', approve: 'Approve', unbackburner: 'Take off the backburner',
+  take_in: 'Take into Intake', resolve: 'Hand-off resolution',
+};
+
 /**
- * The GitHub writes a person's intake actions left after their answer (issue #1194): how many are under way, when the last
- * went through, and each that failed, offered again on its item. None when no write ever ran.
+ * The GitHub writes a person's acts left after their answer, in the GitHub outbox (issues #1194, #1238): how many are under
+ * way, when the last went through, and each that failed, with a Retry. None when no write ever ran.
  */
 function WriteBehind({ s, now }: { s: SourceStatus; now: number }) {
+  const canOperate = useCanOperate();
   const d = s.detail ?? {};
   const pending = typeof d.writeBehindPending === 'number' ? d.writeBehindPending : 0;
   const last = str(d.lastWriteBehindAt);
+  const failed = Array.isArray(d.outboxFailed) ? (d.outboxFailed as OutboxFailed[]) : [];
   const errors = d.writeBehindErrors && typeof d.writeBehindErrors === 'object' ? Object.entries(d.writeBehindErrors as Record<string, string>) : [];
-  if (!pending && !last && !errors.length) return null;
+  if (!pending && !last && !errors.length && !failed.length) return null;
+  const retry = (key: string) => actFor(`/ui/api/sources/${encodeURIComponent(s.name)}/intake`, { kind: 'retry_outbox', keys: [key] }, 'Sending it again', intakeRefusal([key]));
   return (
     <div data-write-behind={s.name} className="space-y-0.5 text-xs text-muted-foreground">
       <div>GitHub writes: {pending ? <span className="text-foreground/80">{pending} under way</span> : 'none under way'}
         {last && <> · last went through <span title={last}>{ago(last, now)}</span></>}</div>
-      {errors.map(([key, why]) => <div key={key} data-write-behind-error className="text-bad"><GhLink url={key}>{key}</GhLink>: {why}</div>)}
+      {failed.length > 0
+        ? failed.map((f) => (
+          <div key={`${f.key} ${f.act}`} data-outbox-failed={f.key} className="flex flex-wrap items-center gap-x-2 text-bad">
+            <span><GhLink url={f.key}>{f.key}</GhLink>: {ACT[f.act] ?? f.act} failed: {f.error}</span>
+            {canOperate && <Button data-outbox-retry size="xs" variant="outline" title="Sends this GitHub write again" onClick={() => void retry(f.key)}>Retry</Button>}
+          </div>
+        ))
+        : errors.map(([key, why]) => <div key={key} data-write-behind-error className="text-bad"><GhLink url={key}>{key}</GhLink>: {why}</div>)}
     </div>
   );
 }

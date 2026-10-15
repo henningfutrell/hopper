@@ -255,6 +255,9 @@ export interface HandoffResolution {
   writeBackError?: string;
 }
 
+/** Where a hand-off's resolution stands at its source (issue #1238): `written`, `failed` for good with why, else `pending`, with the error of the try before. */
+export type ResolutionWrite = { state: 'pending'; error?: string } | { state: 'written' } | { state: 'failed'; error: string };
+
 /**
  * Where a job's item is at its source (issue #621): `open`; `done` — closed as completed, by any means; `closed` —
  * closed any other way (not planned, a duplicate); `gone` — deleted, or no longer there.
