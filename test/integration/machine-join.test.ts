@@ -112,15 +112,12 @@ describe('adding a machine with one line', () => {
     expect((await machinesOf(a)).map((m) => m.id)).toEqual(['studio']);
   });
 
-  it('a native Windows client is refused with the WSL way, and its join code stays good (issue #704)', async () => {
+  it('a native Windows client joins as any machine does (issue #1348)', async () => {
     const { a, session } = await boot();
     const line = `${a.url}#${await joinCode(a, session)}`;
-    await expect(joinHopper({ line, name: 'pc', dir: machineDir(), platform: 'win32' }))
-      .rejects.toThrow("Windows isn't supported natively. Run the client inside WSL.");
-    expect(await machinesOf(a)).toEqual([]);
-    // The refusal comes before the code is spent: the same line joins from WSL.
-    const link = await joinHopper({ line, name: 'pc', dir: machineDir(), platform: 'linux' });
+    const link = await joinHopper({ line, name: 'pc', dir: machineDir(), platform: 'win32' });
     expect(link.machine).toBe('pc');
+    expect((await machinesOf(a)).map((m) => m.id)).toEqual(['pc']);
   });
 
   it('a join code is minted only through an admin\'s UI session', async () => {
