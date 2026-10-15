@@ -134,7 +134,8 @@ export interface PostedComment { id: number; url: string }
  * check of an issue's origin reads.
  */
 export interface IssueEvent {
-  event: 'labeled' | 'assigned';
+  /** `reopened` (issue #1268): who reopened the issue, for a reopened card's auto-approval. */
+  event: 'labeled' | 'assigned' | 'reopened';
   at: string;
   /** Who did it; empty when GitHub did not say. */
   actor: string;

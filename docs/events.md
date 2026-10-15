@@ -1420,6 +1420,43 @@ Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a 
 }
 ```
 
+## `source.request_auto_approved`
+
+Version 1 (`docs/schemas/source.request_auto_approved.v1.json`). The hopper approved a request card a rule of the user's auto-approval matched (issue #1268), as a person's approval does: its text is the item's snapshot (`approved`), the next sync takes it, and its job runs that text. `rule`: `reopened` (a trusted actor or a listed app reopened the issue after its job was done), `author` (a trusted actor wrote it), `app` (a listed app or bot wrote it) or `high-label` (a trusted actor or a listed app added `hopper:high`); `actor`: who did that act. `actors`: who wrote, labelled and assigned it, as on `source.request_approved`. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `author` | string | yes |
+| `rule` | `reopened` \| `author` \| `app` \| `high-label` | yes |
+| `actor` | string | yes |
+| `actors` | object[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "author": "stranger",
+  "rule": "high-label",
+  "actor": "octocat",
+  "actors": [
+    {
+      "role": "author",
+      "login": "stranger",
+      "trusted": false
+    },
+    {
+      "role": "labelled",
+      "login": "octocat",
+      "trusted": true
+    }
+  ]
+}
+```
+
 ## `intake.actors_changed`
 
 Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted actors changed in Settings → Intake (issue #652): the GitHub logins whose issues, labels and assignments start the user's jobs. `from` and `to` the logins named (empty: the connected login only), `by` who changed them.
@@ -1437,6 +1474,32 @@ Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted act
     "octocat",
     "teammate"
   ],
+  "by": "octocat"
+}
+```
+
+## `intake.auto_approval_changed`
+
+Version 1 (`docs/schemas/intake.auto_approval_changed.v1.json`). An admin changed the user's auto-approval in Settings → Intake (issue #1268): `on`, whether the hopper approves the request cards a rule matches, and `apps`, the apps and bots trusted to act for the user. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": true,
+    "apps": []
+  },
+  "to": {
+    "on": true,
+    "apps": [
+      "octo-helper"
+    ]
+  },
   "by": "octocat"
 }
 ```

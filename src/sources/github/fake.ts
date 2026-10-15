@@ -42,7 +42,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const edits = new Map<string, ItemEdit[]>();
   const events = new Map<string, IssueEvent[]>();
   /** Record a label or an assignment on the issue by `by` (issue #652). */
-  const happened = (k: string, e: { event: 'labeled'; label: string } | { event: 'assigned'; assignee: string }, by: FakeActor, at: string): void => {
+  const happened = (k: string, e: { event: 'labeled'; label: string } | { event: 'assigned'; assignee: string } | { event: 'reopened' }, by: FakeActor, at: string): void => {
     const who: Exclude<FakeActor, string> = typeof by === 'string' ? { login: by } : by;
     events.set(k, [...(events.get(k) ?? []), { ...e, at, actor: who.login, ...('id' in who && who.id !== undefined ? { actorId: who.id } : {}), actorType: who.type ?? (/\[bot\]$/.test(who.login) ? 'Bot' : 'User'), ...(who.viaApp ? { viaApp: who.viaApp } : {}) }]);
   };
@@ -193,6 +193,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       i.state = 'open';
       delete i.closedBy; delete i.closedAt; delete i.stateReason; touch(i);
+      happened(key(repo, n), { event: 'reopened' }, self, i.updatedAt);
     },
     closingPullRequest: async (repo, n) => { enter('closingPullRequest', [repo, n]); find(repo, n); const pr = closers.get(key(repo, n)); return pr ? { ...pr } : undefined; },
     async openClosingPullRequests(repo, n) {
@@ -267,6 +268,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
       return { ...c };
     },
+    reopenedBy(repo, n, by) { happened(key(repo, n), { event: 'reopened' }, by, stamp()); },
     editIssue(repo, n, change, editor, at = new Date().toISOString()) {
       const i = find(repo, n);
       const made: ItemEdit[] = [];

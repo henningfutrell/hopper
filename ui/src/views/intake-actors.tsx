@@ -1,7 +1,8 @@
 // Settings → Intake (issues #652, #930), an admin's: the trusted actors — the GitHub accounts whose issues, labels and
 // assignments start the user's jobs. Picked from real accounts GitHub shows — the candidates, or one looked up by login —
 // and kept by GitHub user id, so no login that does not exist is ever kept. None named: the connected login, trusted by
-// default. Any other issue is a request card in Intake. A list kept before ids is looked up again, ready to save.
+// default. Any other issue is a request card in Intake. A list kept before ids is looked up again, ready to save. Below
+// it, auto-approval (issue #1268).
 import { UserCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -11,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { useHopper } from '@/store';
 import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView } from '@/model/wire';
+import { IntakeAutoApproval } from '@/views/intake-auto-approval';
 
 const FROM_TEXT: Record<CandidateFrom, string> = {
   connected: 'connected account', collaborator: 'collaborator', member: 'org member', author: 'issue author', 'hopper-user': 'hopper user', 'api-token': 'API token',
@@ -154,10 +156,13 @@ export function IntakeActors() {
   const [view, setView] = useState<IntakeActorsView | null>(null);
   useEffect(() => { get<IntakeActorsView>('/api/intake-actors').then((v) => { if (Array.isArray(v?.accounts)) setView(v); }, () => {}); }, []);
   return (
-    <Panel title="Intake: trusted actors" icon={UserCheck} className="max-w-3xl">
-      {view
-        ? <Picker key={`${idsOf(view.accounts)}|${view.unresolved.join(',')}`} view={view} onSaved={setView} />
-        : <p className="text-sm text-muted-foreground">Loading…</p>}
-    </Panel>
+    <div className="space-y-4">
+      <Panel title="Intake: trusted actors" icon={UserCheck} className="max-w-3xl">
+        {view
+          ? <Picker key={`${idsOf(view.accounts)}|${view.unresolved.join(',')}`} view={view} onSaved={setView} />
+          : <p className="text-sm text-muted-foreground">Loading…</p>}
+      </Panel>
+      <IntakeAutoApproval />
+    </div>
   );
 }

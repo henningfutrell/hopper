@@ -10,6 +10,7 @@
 import type { ItemText } from './item-snapshots.ts';
 import type { AccessAnswer } from './access.ts';
 import type { ActorRef, IntakeRequest, ItemHistory } from './intake-origin.ts';
+import type { AutoApproval, IntakeAutoApproval } from './intake-auto-approve.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
 import type { TaggedRecord } from './tagged.ts';
@@ -151,7 +152,7 @@ export interface IntakeContext {
  * and so does a reopened item's card of a text approved before.
  */
 export function requestOpenedSince(events: readonly { type: string; data: Record<string, unknown> }[], hash: string): boolean {
-  const from = events.findLastIndex((e) => e.type === 'source.request_withdrawn' || e.type === 'source.request_approved') + 1;
+  const from = events.findLastIndex((e) => e.type === 'source.request_withdrawn' || e.type === 'source.request_approved' || e.type === 'source.request_auto_approved') + 1;
   return events.slice(from).some((e) => e.type === 'source.request_opened' && e.data.hash === hash);
 }
 
@@ -185,6 +186,15 @@ export interface IntakeTrust {
   approvedText(key: string): { title: string; body: string } | undefined;
   /** Record a person's approval of a source's request card: the item's snapshot is its text, and `source.request_approved`. */
   approve(source: string, key: string, text: ItemText, request: IntakeRequest, acting: ActingPerson | undefined): void;
+  /** The user's auto-approval setting (issue #1268); absent: off. */
+  autoApproval?(): IntakeAutoApproval;
+  /**
+   * Record the hopper's approval of a request card a rule matched (issue #1268): the item's snapshot is its text, as a
+   * person's approval keeps it, and `source.request_auto_approved` names the rule and the actor.
+   */
+  autoApprove?(source: string, key: string, text: ItemText, request: IntakeRequest, approval: AutoApproval): void;
+  /** Whether a person took the item into Intake (issue #1176): it stays a request card, never auto-approved (issue #1268). */
+  takenIn?(key: string): boolean;
   /**
    * The comments the job would see, read after the approval (issue #1194), added to the item's approved snapshot; nothing
    * when its snapshot is no longer the approved one.

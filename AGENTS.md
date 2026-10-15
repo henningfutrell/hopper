@@ -118,7 +118,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Jobs come only from a trusted origin** (issue #652, `docs/design.md` "Trusted origin and request cards"): an issue
   becomes a job only when the user's trusted actors — Access decides (OpenFGA `intake#can_start_jobs`) — wrote, labelled
   and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
-  its job runs the approved text. Approve is a person's act through the UI session, never a job's. The origin gates the job,
+  its job runs the approved text. Approve is a person's act through the UI session, never a job's. One exception, the
+  user's own setting: **auto-approval** (issue #1268, `docs/design.md` "Auto-approval", on by default) approves a card a
+  trusted actor reopened, wrote or labelled `hopper:high`, or a listed app wrote, and records it as an approval; a card a
+  job filed, that someone else edited, or that a person took into Intake still waits. The origin gates the job,
   not its merge: yolo mode merges a job's ready pull request whatever its origin (issue #805). No OpenFGA trusts nobody.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
