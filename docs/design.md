@@ -18359,7 +18359,7 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
   repository, kind, number, URL, the comment's id, the artifact revisions linked, who promoted it and when, the revoke.
   Never the text: GitHub has it. `direct_job.promoted` (`id`, `repo`, `kind`, `number`, `url`, `by`, `artifacts`, `update`;
   on the job's timeline) and `direct_job.promotion_revoked` — never the text.
-- **UI.** On a direct job's row (`ui/src/views/direct-job-promotion.tsx`, `ui/src/model/promotions.ts`): the offer, the
+- **UI.** On a direct job's row (`ui/src/views/direct-job-batch-wait.tsx`, `ui/src/model/promotions.ts`): the offer, the
   promotion with its link, **stale** and **Revoke** (confirmed), and **Promote to GitHub** (operator or admin): the
   repository and the target, **Name the requester**, then **Preview**; the preview's title, text, labels and artifact
   ticks are editable, the footer and the notes are shown, and **Confirm and post** waits for **Post to this public
@@ -18389,7 +18389,7 @@ committed to a branch", big or private ones linked. GitHub's API takes no attach
   say so. `direct_job.promoted` is unchanged (version 1): it counts the linked artifacts, never the text.
 - **Promote from the job view** (issue #935). A job whose source is `direct` (`directJobOf`, `ui/src/model/promotions.ts`)
   shows, under its facts on `#job/<id>`, its direct job's title with a link to Direct jobs and the same promotion part
-  (`JobPromotion`, `ui/src/views/direct-job-promotion.tsx`, reading `GET /api/direct-jobs/:id`): the offer, the
+  (`JobPromotion`, `ui/src/views/direct-job-batch-wait.tsx`, reading `GET /api/direct-jobs/:id`): the offer, the
   promotion, **Revoke** and **Promote to GitHub**. A job from anything else reads no direct job.
 
 Tests: `test/promotions/promotion.test.ts` (what may be committed, the branch and path, the footer's lines),
@@ -19637,6 +19637,32 @@ it, and the next reopen is a reopened card.
 
 **A part.** An item whose last merge was a part (`partly_done`) has no `hopper:done`: the next sync takes its next part as
 before, and none of this applies.
+
+## Waits on its batch, read from GitHub (issue #1337, 2026-10-15)
+
+**The problem.** A job pull request merged into the landing branch (`main`) while the default branch is `dev`. GitHub
+closes an issue only on a merge into the default branch, so the issue stayed open until the batch run's merge. In that
+window the done-check said "no pull request closes or references it" (the issue's timeline showed no cross-reference of
+the merge, and a job made after the merge did not count an older merge), and the job went to Needs a person. Intake offered
+such issues again as requests, and their approval ran jobs that found nothing to do.
+
+**Why #1175 and #1232 missed it.** Both read the work-item ledger (`awaitsBatch`, `promotedOpen`). The ledger knows the
+merge only when the hopper saw it: a merge it missed, or an item a failed done-check left not `done`, waits on nothing.
+
+**One rule, read from GitHub** (`waitsOnBatch`, `src/sources/github/batch-wait.ts`). An open issue of a
+repository with a landing branch **waits on its batch** when an open batch run (`hopper-batch/…`) closes it in
+its text, or a pull request merged into the landing branch that closes it (a closing keyword) is listed in an open batch
+run's text, or merged after the newest open batch run was opened and within `BATCH_WAIT_MS` (three hours). An older
+merge that no open batch run lists went out with an earlier batch run: the issue is open for another reason, as when a
+person reopened it. The landing branch is read by `mergedPullRequestsInto` (the newest 50 merged pull requests into a
+branch, one GraphQL read, shared in a sync pass), the open batch runs by `openPullRequests`.
+
+- **The done-check** (`notComplete`): an open issue that waits on its batch is done; a merge into the landing branch
+  at or after the job was created counts at any age. The batch run's merge closes the issue; nothing more is needed.
+- **Intake** (`waitingOnBatch`): an issue with `hopper:done`, and an issue it would take with no job here or one that
+  ended, is "done: merged into the landing branch; its batch run closes the issue", in the pull request waiting group with
+  no action. No request card, no reopened card, no job.
+- A read GitHub refuses leaves Intake as it was (said in the log); in the done-check it throws, and the check asks again.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 

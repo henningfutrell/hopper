@@ -114,7 +114,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; def
   const heads = fakeHeadChecks((m, a) => enter(m, a), (repo, ref) => pulls.find((p) => p.repo === repo && p.headRef === ref)?.url);
 
   const api: GitHubApi = {
-    listRepos: listing.listRepos, issuesChangedSince: listing.issuesChangedSince, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn,
+    listRepos: listing.listRepos, issuesChangedSince: listing.issuesChangedSince, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn, mergedPullRequestsInto: batched.mergedPullRequestsInto,
     async getIssue(repo, n) { enter('getIssue', [repo, n]); return copy(find(repo, n)); },
     async subIssues(repo, n) {
       enter('subIssues', [repo, n]);
@@ -217,10 +217,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; def
     async openPullRequests(repo) {
       enter('openPullRequests', [repo]);
       return pulls.filter((p) => p.repo === repo && p.state === 'open').reverse().map((p): BranchPullRequest => ({ ...shown(p), headRef: p.headRef, body: p.body }));
-    },
-    async mergedPullRequestsInto(repo, base) {
-      enter('mergedPullRequestsInto', [repo, base]);
-      return pulls.filter((p) => p.repo === repo && p.base === base && p.state === 'merged').reverse().map((p) => ({ url: p.url, number: Number(p.url.split('/').pop()), createdAt: p.createdAt, mergedAt: p.mergedAt!, body: p.body }));
     },
     async merge(repo, n) {
       enter('merge', [repo, n]);
