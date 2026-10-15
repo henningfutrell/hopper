@@ -7084,6 +7084,36 @@ that the hopper sets up remote access itself. Remote access stays optional and o
   and run no agent; starting a container from the UI would need the container runtime's socket in the hopper, which is
   more exposure than an idle loop.
 
+### The update checks compose.override.yaml before the stack goes down (issue #1246, 2026-10-15)
+
+The issue: an update put the Podman socket mount in `compose.yaml` (issue #1157) while the install's own
+`compose.override.yaml` mounted the same target. podman-compose adds an override's volumes and ports to `compose.yaml`'s,
+so the merged stack had the target twice; `up -d` failed after `down`, and the hopper stayed down until a person fixed
+the override. The update script's check before it knew only the shipped `compose.sandboxes.yaml` by its text.
+
+- **The merge, checked first** (`src/update/compose-conflicts.ts` `composeConflicts`). `hopper update check`, `carry` and
+  `fix-override` take `--with-override`: stdin is `compose.yaml`, a line `#--- hopper update: compose.override.yaml`
+  (`OVERRIDE_MARK`), then the override. The override goes on stdin, as `compose.yaml` does: the update container mounts
+  no file of the host and reads no environment of it. Per service, in the order compose reads the files: a volume
+  target mounted twice and a host port published twice on clashing addresses (the same, or every one) **refuse**; an
+  override setting with another value than a fixed one (no variable) of `compose.yaml` **warns**, because compose starts
+  with it and the override's value wins. A setting `compose.yaml` takes from a variable is the install's to override.
+- **Typed, and exit 4** (`CONFLICT_EXIT`; 1 is a failure, 2 a refusal, 3 drift). `check` prints `{ok, conflicts}` as JSON,
+  each conflict with `kind` (`duplicate-mount`, `duplicate-port`, `conflicting-env`), `file`, `service`, `key`, `value`,
+  `detail`, `resolution`, `refuse` and `fixable`; every command says each one on stderr as
+  `conflict: <file>: services.<service>.<key>: <value>: …`. `carry` prints no `compose.yaml` while one refuses.
+- **The redundant entry, dropped only when accepted.** A conflict is `fixable` when the override repeats a target or port
+  `compose.yaml` gives: `fix-override` prints the override without those entries (`dropRedundant`, comments kept, an
+  empty list or service removed). The script asks on the terminal, or takes `HOPPER_UPDATE_FIX_OVERRIDE=1` with no
+  person, keeps `compose.override.yaml.bak`, and checks again in `carry`. Else it stops: nothing changed.
+- **Never down for a start that fails.** The check runs after the pull and before any file or container changes. A
+  failed pull puts the old files back with the stack untouched. A failed `up -d` puts back `compose.yaml` and the
+  override, tags the image the hopper ran before with the reference the old `compose.yaml` names (the pull moved that tag
+  when the channel stayed the same), and starts the old stack.
+- **Residual risk, stated.** The check knows volumes, ports and environment only; another key compose cannot merge
+  still fails at `up -d`, and the rollback catches it. The merge is podman-compose's (lists added); docker compose merges
+  volumes by target, so it would start some stacks the check refuses.
+
 ### One update command, which checks its result (issue #1104, 2026-10-14)
 
 Supersedes in part issue #970 (below): the commands to run one at a time are gone; the update is one command.
