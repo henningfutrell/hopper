@@ -4,7 +4,8 @@
 import type { UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import type { LivenessFacts, TimeoutKind } from './timed-out.ts';
-import type { RecentFailure } from './assess.ts';
+import type { AssessInput, RecentFailure } from './assess.ts';
+import { OWN_PR_CHECKS_RED } from './causes.ts';
 
 type Reads = Pick<UserStore, 'jobs' | 'failures'>;
 
@@ -45,6 +46,24 @@ export function earlierTimeoutsOf(store: Reads, job: Job): TimeoutKind[] {
     }
   }
   return out;
+}
+
+/**
+ * How many times its chain was sent back for the red checks of its own pull request (issue #1230): each record of the job,
+ * and of the jobs a retry ran again before it, of that cause, whose Continue was made. A continued run is the same job.
+ */
+export function checksFixesOf(store: Reads, job: Job): number {
+  let n = 0;
+  for (let cur: Job | undefined = job; cur; cur = cur.rerunOf ? store.jobs.get(cur.rerunOf) : undefined) {
+    n += store.failures.list({ jobId: cur.id }).filter((r) => r.causeId === OWN_PR_CHECKS_RED && r.outcome === 'retried').length;
+  }
+  return n;
+}
+
+/** What the rules read of a failure's chain for its cause: a timed-out job's (issue #630), a red-checks one's (issue #1230). */
+export function causeInputOf(store: Reads, job: Job, causeId: string | undefined): Partial<Pick<AssessInput, 'earlierTimeouts' | 'liveness' | 'checksFixes'>> {
+  if (causeId === 'timed-out') return timeoutInputOf(store, job);
+  return causeId === OWN_PR_CHECKS_RED ? { checksFixes: checksFixesOf(store, job) } : {};
 }
 
 /** A timed-out job's liveness as the rules read it (issue #630): its output's age at its timeout. */

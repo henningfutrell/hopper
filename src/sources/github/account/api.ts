@@ -84,6 +84,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, (t) => rest.retargetPullRequest(req, t, repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, (t) => rest.jobLog(req, t, repo, jobId)),
+    rerunJob: (repo, jobId) => call(`rerun of Actions job ${jobId} of ${repo}`, (t) => rest.rerunJob(req, t, repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (t) => ({ url: `${webOriginOf(o.apiUrl)}/${repo}.git`, token: t })),
   };
 }

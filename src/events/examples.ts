@@ -138,7 +138,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.pull_request_merged': { pullRequest: 'https://github.com/owner/repo/pull/12', part: false },
   'job.pull_request_closed': { pullRequest: 'https://github.com/owner/repo/pull/13', part: true },
   'job.pull_request_abandoned': { pullRequest: 'https://github.com/owner/repo/pull/13', part: false },
-  'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
+  'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' }, 'job.checks_rerun': { recordId: 'f-1', pullRequest: 'https://github.com/owner/repo/pull/14', head: '4e4e68e4', checks: ['test (node 24)'] },
   'job.pull_request_tended': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase', nextJobId: 'j2' },
   'job.pull_request_base_merged': { pullRequest: 'https://github.com/owner/repo/pull/14', commit: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', resolved: ['WHATS-NEW.md'] }, 'job.pull_request_retargeted': { pullRequest: 'https://github.com/owner/repo/pull/15', from: 'dev', to: 'main' },
   'job.pull_request_followed': { pullRequest: 'https://github.com/owner/repo/pull/14', part: false }, 'job.pull_request_seen': { pullRequest: 'https://github.com/owner/repo/pull/14', wait: 'checks_running' }, 'work_item.issue_closed': { key: 'https://github.com/owner/repo/issues/9', reason: 'completed', via: 'delivery' }, 'work_item.issue_reopened': { key: 'https://github.com/owner/repo/issues/9', via: 'read' }, 'source.request_withdrawn': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/8' },

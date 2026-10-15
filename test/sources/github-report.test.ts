@@ -75,6 +75,17 @@ describe('GitHub source report', () => {
     expect(state).toEqual(claimed);
   });
 
+  it('failed while the hopper fixes it (issue #1230: its own pull request\'s checks red): the issue stays as it is, claimed, never hopper:failed', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'failed', error: 'not complete: the issue is open, and PR #7: checks failed: test' });
+    const claimed = await source.report({ kind: 'claimed', job });
+    const labels = gh.issue(REPO, 1).labels;
+    gh.calls.length = 0;
+    expect(await source.report({ kind: 'failed', job: { ...job, sourceState: { source: claimed } }, fixing: true })).toEqual(claimed);
+    expect(gh.issue(REPO, 1).labels).toEqual(labels);
+    expect(gh.calls).toEqual([]);
+  });
+
   it('rerun: the end labels go and the issue comes back as an item for the new job, at once; no comment (issues #313, #354)', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed', error: 'scratch dir timed out' });

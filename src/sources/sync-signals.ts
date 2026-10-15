@@ -9,6 +9,8 @@ import type { Job } from '../domain/types.ts';
 export interface SyncFlags {
   claimReported?: boolean;
   finalReported?: boolean;
+  /** Its failure was told as one the hopper fixes itself (issue #1230): told again once a person has it. */
+  fixingReported?: boolean;
   cancelReason?: string;
   /** Set while a started job's item is not assigned to the account it was taken for (issue #387). */
   unassignedAt?: string;

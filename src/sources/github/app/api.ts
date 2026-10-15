@@ -221,6 +221,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, async (l) => rest.retargetPullRequest(req, await tokenFor(l, repo), repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, async (l) => rest.convertToDraft(req, await tokenFor(l, repo), repo, number)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, async (l) => rest.jobLog(req, await tokenFor(l, repo), repo, jobId)),
+    rerunJob: (repo, jobId) => call(`rerun of Actions job ${jobId} of ${repo}`, async (l) => rest.rerunJob(req, await tokenFor(l, repo), repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (l) => ({ url: `${webOriginOf(o.baseUrl ?? 'https://api.github.com')}/${repo}.git`, token: await tokenFor(l, repo) })),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, async (l) => {
       if (!l.accounts) await listInstallations(l);

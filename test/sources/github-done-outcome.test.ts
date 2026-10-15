@@ -4,6 +4,7 @@
 // names, each of them free of merge conflicts or merged, pushed to or not. A miss says what was looked at.
 import { describe, expect, it } from 'vitest';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
+import { GitHubApiError } from '../../src/sources/github/api.ts';
 
 const BEFORE = '2026-10-01T09:00:00.000Z';
 const AFTER = '2026-10-02T11:00:00.000Z';
@@ -155,5 +156,54 @@ describe('a pull request that names the issue only in its branch name (issue #63
     expect(await source.notComplete!(job)).toMatch(/no pull request in .* closes or references it$/);
     const draft = gh.openUnlinkedPullRequest(REPO, { createdAt: BEFORE, headRef: 'issue-1-wip', isDraft: true });
     expect(await source.notComplete!(job)).toContain(`#${draft.url.split('/').at(-1)} (open, draft)`);
+  });
+});
+
+describe('the job\'s own pull request with red checks (issue #1230)', () => {
+  const failed = [{ name: 'test (node 24)', url: `https://github.com/${REPO}/actions/runs/7/job/71` }, { name: 'lint' }];
+
+  it('a part of the issue with red checks: the miss names the pull request and its failed checks, never "no pull request"', async () => {
+    const { gh, source, job } = withIssue();
+    const part = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER });
+    gh.setChecks(part.url, 'failing', failed);
+    const n = /\/pull\/(\d+)/.exec(part.url)![1];
+    const why = await source.notComplete!(job);
+    expect(why).toBe(`the issue https://github.com/${REPO}/issues/1 is open, and PR #${n}: checks failed: test (node 24), lint`);
+    expect(await source.ownPullRequestChecks!(job)).toEqual({ pullRequest: part.url, checks: 'failing', failed });
+  });
+
+  it('a pull request that closes the issue with red checks: named with its failed checks, and listed as found', async () => {
+    const { gh, source, job } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER });
+    gh.setChecks(pr.url, 'failing', failed);
+    const n = /\/pull\/(\d+)/.exec(pr.url)![1];
+    expect(await source.notComplete!(job)).toBe(`the issue https://github.com/${REPO}/issues/1 is open, and PR #${n}: checks failed: test (node 24), lint, and no pull request in ${REPO} that closes or references it is ready for review or merged since the job began: #${n} (open, checks failing)`);
+  });
+
+  it('an older pull request the job did not open or push to is not its own: no checks line', async () => {
+    const { gh, source, job } = withIssue();
+    const part = gh.openPartPullRequest(REPO, 1, { createdAt: BEFORE });
+    gh.setChecks(part.url, 'failing', failed);
+    expect(await source.notComplete!(job)).not.toMatch(/checks failed/);
+    expect(await source.ownPullRequestChecks!(job)).toBeUndefined();
+  });
+
+  it('checks still running: its own pull request, pending, no failed checks', async () => {
+    const { gh, source, job } = withIssue();
+    const part = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER });
+    gh.setChecks(part.url, 'pending');
+    expect(await source.ownPullRequestChecks!(job)).toEqual({ pullRequest: part.url, checks: 'pending', failed: [] });
+  });
+
+  it('runs each failed GitHub Actions check again; a check that is no Actions job is said so', async () => {
+    const { gh, source } = withIssue();
+    expect(await source.rerunChecks!(failed)).toEqual({ rerun: ['test (node 24)'], refused: 'lint: not a GitHub Actions job' });
+    expect(gh.jobReruns).toEqual([`${REPO}#71`]);
+  });
+
+  it('GitHub refuses the run again (no Actions write permission): said so, nothing run', async () => {
+    const { gh, source } = withIssue();
+    gh.setRerunError(new GitHubApiError('Resource not accessible by integration (HTTP 403)', true, 403));
+    expect(await source.rerunChecks!(failed.slice(0, 1))).toEqual({ rerun: [], refused: 'test (node 24): GitHub refused it: the hopper\'s GitHub App needs the Actions write permission' });
   });
 });
