@@ -491,7 +491,7 @@ export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER,
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
-export type { AfterAnswerTimed, AfterAnswerTiming, SetupProblem, SourceCallLog, SourceCalls, SourceStatus, TimingSpread } from './sources.ts';
+export type { AfterAnswerTimed, AfterAnswerTiming, GitHubAppKeyView, SetupProblem, SourceCallLog, SourceCalls, SourceStatus, TimingSpread } from './sources.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 

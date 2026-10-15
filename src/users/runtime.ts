@@ -32,14 +32,14 @@ import { checksRedOf, createFailures, type Failures } from '../failures/index.ts
 import { createLastAccounts, createLogins, createSignIns, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
-import { userTypesafeKey } from './typesafe-key.ts';
+import { userTypesafeKey } from './typesafe-key.ts'; import { userGitHubAppKey } from './github-app-key.ts';
 import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
 import { withSystemScope } from '../vault/system-view.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
+import { createSourceSync, followEvery, withFixedStatuses, type GitHubAppKey, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
@@ -148,7 +148,7 @@ export interface UserRuntime {
   /** Decider calls, Jev first (issue #550). */
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): kept in the vault's system scope, set on the Jev page. */
-  typesafeKey: TypesafeKey;
+  typesafeKey: TypesafeKey; githubAppKey: GitHubAppKey;
   /** The TL;DR of every long card (issue #569): its sweep. */
   tldrs: Tldrs;
   dispatcher: WebhookDispatcher; executors: ExecutorRegistry; outbound: Outbound; // the user's outbound sends (issue #1014)
@@ -190,14 +190,13 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const linkBase = (): string => o.linkBase(store.artifacts.settings().linkBase), uiUrl = (hash: string): string => `${linkBase()}/#${hash}`; // a person's links (issue #712)
   // The plugins config is the one truth: the built-in instances are written on the start that finds none.
   ensurePluginsConfig({ config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, userId: user.id, logger });
-  // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
-  // hopper's own (issue #657), kept in the vault's system scope.
+  // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key and the
+  // GitHub App's private key, the hopper's own (issues #657, #1243), kept in the vault's system scope.
   // The hopper's own secrets are in the vault's system scope (issue #658): the old copies moved in at this start.
   const { system, keys, readBackends } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
-  const { jev, typesafeKey, secret } = userTypesafeKey({
-    user, store, env: o.env, runtime: userSecrets(o.env, user), system,
-    ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
-  });
+  const runtime = userSecrets(o.env, user);
+  const { jev, typesafeKey, secret: withTypesafe } = userTypesafeKey({ user, store, env: o.env, runtime, system, ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger });
+  const { githubAppKey, secret } = userGitHubAppKey({ user, store, runtime, secret: withTypesafe, system, clock, logger }); // answered to the app source by its old variable's name
   const dataDir = userWorkDir(config.workDir, user);
   mkdirSync(dataDir, { recursive: true, mode: 0o700 }); const outbound = createOutbound({ guard: o.outboundGuard, clock, log: store.outboundSends }); // deliveries and notifier posts, into the send log (issue #1014)
   // The CLIs' logins of a user added later are their own (GH_CONFIG_DIR, CLAUDE_CONFIG_DIR in their work dir).
@@ -400,7 +399,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, githubAppKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

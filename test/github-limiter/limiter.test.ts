@@ -195,9 +195,9 @@ describe('the shared rate limiter (issue #436)', () => {
 
   it('a rate-limit refusal or deferral reads as when the next try is, and is transient (issue #822)', async () => {
     const { poll, pollDeferring } = await setup({ remaining: 0 });
-    const refused = toApiError(await poll(1).catch((e: unknown) => e), 'get o/r#1', 'KEY');
+    const refused = toApiError(await poll(1).catch((e: unknown) => e), 'get o/r#1');
     expect(refused).toMatchObject({ permanent: false, retryAt: RESET_MS, message: 'get o/r#1: GitHub rate-limited the hopper: next retry at 00:10 UTC' });
-    const deferred = toApiError(await pollDeferring(1).catch((e: unknown) => e), 'get o/r#1', 'KEY');
+    const deferred = toApiError(await pollDeferring(1).catch((e: unknown) => e), 'get o/r#1');
     expect(deferred).toMatchObject({ permanent: false, retryAt: RESET_MS, message: 'get o/r#1: GitHub rate-limited the hopper: next retry at 00:10 UTC' });
   });
 

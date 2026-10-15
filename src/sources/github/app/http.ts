@@ -62,7 +62,7 @@ export async function paginate<T>(
  * An Octokit RequestError (or anything else) as a GitHubApiError. A 401 is the app's credentials
  * being refused (wrong or revoked key, wrong app id): permanent, and the message names the file.
  */
-export function toApiError(err: unknown, what: string, keyEnv: string): GitHubApiError {
+export function toApiError(err: unknown, what: string): GitHubApiError {
   if (err instanceof GitHubApiError) return err;
   const limited = rateLimitedError(err, what);
   if (limited) return limited;
@@ -70,7 +70,7 @@ export function toApiError(err: unknown, what: string, keyEnv: string): GitHubAp
   const status = typeof e.status === 'number' ? e.status : undefined;
   const message = typeof e.message === 'string' ? e.message : String(err);
   if (status === 401) {
-    return new GitHubApiError(`${what}: GitHub rejected the app's credentials (401: ${message}); check the app id and ${keyEnv}`, true, 401);
+    return new GitHubApiError(`${what}: GitHub rejected the app's credentials (401: ${message}); check the app id and the private key`, true, 401);
   }
   return new GitHubApiError(`${what}: ${message}`, isPermanent(status, message), status);
 }

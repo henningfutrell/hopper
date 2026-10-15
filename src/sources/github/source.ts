@@ -106,7 +106,7 @@ export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to ta
 
 
 export const CONFIG_URL = 'https://github.com/settings/installations';
-export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its key in GITHUB_APP_PRIVATE_KEY';
+export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its private key on the setup card in Sources';
 
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const { config } = o;

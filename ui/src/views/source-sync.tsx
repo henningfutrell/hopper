@@ -1,10 +1,15 @@
 // A job source's sync (issue #254): what it saw and made, when it last synced, and what is wrong with
 // it — on a source's card in Sources, and inside the GitHub connection's panel for that connection's source. A source on but
-// not configured (issue #1243) shows its setup card, and "not configured" in place of its counts.
+// not configured (issue #1243) shows its setup card, and "not configured" in place of its counts. The GitHub App's card
+// takes the app's private key in a write-only field, kept in the vault.
+import { useState } from 'react';
+import { toast } from 'sonner';
 import { GhLink } from '@/components/job';
 import { ago, countdown, duration } from '@/model/format';
-import type { SetupProblem, SourceStatus } from '@/model/wire';
+import type { GitHubAppKeyView, SetupProblem, SourceStatus } from '@/model/wire';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { post } from '@/lib/api';
 import { actFor } from '@/store';
 import { intakeRefusal } from '@/store/intake';
 import { useCanOperate, useServerNow } from '@/store/selectors';
@@ -18,6 +23,42 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div data-stat className="num text-lg font-semibold">{value}</div></div>;
 }
 
+/**
+ * The GitHub App's private key (issue #1243): write-only. The value pasted is sent once, kept in the vault, and cleared; it
+ * is never shown, and no stored key is ever read back. The source checks it at its next sync.
+ */
+function AppKeyField() {
+  const canAct = useCanOperate();
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [failed, setFailed] = useState<string | undefined>();
+  if (!canAct) return null;
+  const save = async () => {
+    setBusy(true);
+    setFailed(undefined);
+    try {
+      await post<GitHubAppKeyView>('/ui/api/github-app-key', { action: 'set', value });
+      setValue('');
+      setSaved(true);
+      toast.success("GitHub App's private key saved in the vault");
+    } catch (e) {
+      setFailed((e as Error).message);
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="space-y-1">
+      <Textarea data-app-key-field autoComplete="off" spellCheck={false} aria-label="GitHub App private key" rows={3}
+        className="font-mono text-xs [-webkit-text-security:disc]" placeholder="Paste the app's private key (-----BEGIN RSA PRIVATE KEY----- …)"
+        value={value} disabled={busy} onChange={(e) => { setValue(e.target.value); setSaved(false); }} />
+      <Button size="sm" disabled={busy || !value.trim()} onClick={() => void save()}>Save the key</Button>
+      {saved && <div data-app-key-saved>Saved in the vault. The source checks it at its next sync.</div>}
+      {failed && <div data-app-key-failed className="text-bad">{failed}</div>}
+    </div>
+  );
+}
+
 /** A source on but not configured (issue #1243): what it lacks, and how to set it up in place, with its help page. */
 function SetupCard({ s, p }: { s: SourceStatus; p: SetupProblem }) {
   return (
@@ -28,9 +69,10 @@ function SetupCard({ s, p }: { s: SourceStatus; p: SetupProblem }) {
         <ol className="list-decimal space-y-0.5 pl-4">
           <li>Use a GitHub App that is already installed on your account or organization, or make one with <code className="font-mono">scripts/create-github-app.sh</code>.</li>
           <li>Set its app id and slug on this job source in Plugins → Job sources.</li>
-          <li>Give its private key to the hopper in the variable that <code className="font-mono">privateKeyEnv</code> names.</li>
+          <li>Paste its private key here. The hopper keeps it in its vault, never in a file or the environment.</li>
         </ol>
       )}
+      {s.kind === 'github-app' && <AppKeyField />}
       <a href={`/help/${p.help}`} className="underline">Help: set it up step by step</a>
     </div>
   );

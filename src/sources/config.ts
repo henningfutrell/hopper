@@ -17,9 +17,6 @@ const projectSchema = z.object({
   map: z.record(z.string(), z.number()).optional(),
 }).strict().refine((p) => p.mode !== 'field' || p.field !== undefined, { message: 'mode field needs a field name', path: ['field'] });
 
-/** Where the App's private key is, by default (design.md "Secrets"). */
-export const DEFAULT_APP_KEY_ENV = 'GITHUB_APP_PRIVATE_KEY';
-
 /** Keys both GitHub sources share. A working directory is command-bearing. */
 const sharedKeys = {
   pollSeconds: z.number().int().positive().default(60),
@@ -38,21 +35,22 @@ const sharedKeys = {
     .meta({ description: 'the issue graph: how many minutes an issue\'s place is kept before it is read again, unchanged; 0 reads it at every sync' }),
 };
 
-/** Options as stored before issue #387 may carry `authors`, before issue #579 `completion`: dropped, not refused. */
+/**
+ * Options as stored before issue #387 may carry `authors`, before issue #579 `completion`, before issue #1243
+ * `privateKeyEnv` (the key is in the vault now): dropped, not refused.
+ */
 function withoutGone(raw: unknown): unknown {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw || 'completion' in raw)) return raw;
-  const { authors: _authors, completion: _completion, ...rest } = raw as Record<string, unknown>;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw || 'completion' in raw || 'privateKeyEnv' in raw)) return raw;
+  const { authors: _authors, completion: _completion, privateKeyEnv: _privateKeyEnv, ...rest } = raw as Record<string, unknown>;
   return rest;
 }
 
 /** github-app: the App source, posting as the app's bot, taking issues assigned to the user's connected account. */
 export const githubAppOptions = z.preprocess(withoutGone, z.object({
   enabled: z.boolean().default(true),
-  // The identity the source acts as, and where its key comes from: command-bearing.
+  // The identity the source acts as: command-bearing. Its private key is in the vault (issue #1243), set on the setup card.
   appId: z.number().int().positive().optional().meta({ commandBearing: true, description: "the GitHub App's id" }),
   slug: z.string().min(1).optional().meta({ commandBearing: true, description: "the GitHub App's slug; its bot is <slug>[bot]" }),
-  privateKeyEnv: z.string().min(1).default(DEFAULT_APP_KEY_ENV)
-    .meta({ commandBearing: true, description: "environment variable holding the app's private key (PEM; \\n escapes allowed)" }),
   // Where the app's tokens are sent: command-bearing, so a UI session can never redirect them.
   apiUrl: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional()
     .meta({ commandBearing: true, description: 'GitHub API base; unset: https://api.github.com' }),
