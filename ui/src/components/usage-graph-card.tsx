@@ -5,8 +5,10 @@
 // besides. The Dashboard's shows the user's own accounts and saves the preset for them; Settings → Users
 // shows the instance admin the lines summed over every user. The resource graphs (issue #560) use it too, with
 // their own lines (`linesOf`), redrawn as the stream tells of new machine samples (SSE machine.recorded); so does the
-// stack's (issue #947), read again once a minute only.
-import { useCallback, useMemo, useState } from 'react';
+// stack's (issue #947), read again once a minute only. A read fails after its time (issue #1182): the card then says
+// so with a Retry and keeps the last graph. A new range or zoom cancels the read before it; a stream tick while a read
+// of the same stretch is out reads once more after it, never one read per tick.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -61,16 +63,38 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, s
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
   const recorded = useHopper((s) => (recordedBy ? s.recorded[recordedBy] : 0));
 
+  // The read out now, and whether something asked to read its stretch again while it was out.
+  const inFlight = useRef<{ query: string; ctrl: AbortController; again: boolean } | null>(null);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+  // The view the first read answered: taking it rebuilds `load`, and that read is already its answer.
+  const adopted = useRef(false);
   const load = useCallback(async () => {
+    if (adopted.current) { adopted.current = false; return; }
+    const query = queryOf(path, view, zoom);
+    const out = inFlight.current;
+    if (out && out.query === query) { out.again = true; return; }
+    out?.ctrl.abort();
+    const read = { query, ctrl: new AbortController(), again: false };
+    inFlight.current = read;
     try {
-      const h = await get<T>(queryOf(path, view, zoom));
+      const h = await get<T>(query, { signal: read.ctrl.signal });
       setData(h);
       setError(null);
-      if (!view) setView(h.view);
-    } catch (e) { setError((e as Error).message); }
+      if (!view) { adopted.current = true; setView(h.view); }
+    } catch (e) {
+      if (!read.ctrl.signal.aborted) setError((e as Error).message);
+    } finally {
+      if (inFlight.current === read) {
+        inFlight.current = null;
+        if (read.again) void loadRef.current();
+      }
+    }
     // A new sample told by the stream (`recorded`) reads again, as a new view does.
   }, [path, view, zoom, recorded]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadRef.current = load; }, [load]);
   usePoll(load, 60_000);
+  useEffect(() => () => { inFlight.current?.ctrl.abort(); inFlight.current = null; }, []);
+  const retry = () => { inFlight.current?.ctrl.abort(); inFlight.current = null; void load(); };
 
   const lines = useMemo(() => (!data ? [] : linesOf ? linesOf(data) : graphLines(seriesOf!(data))), [data, seriesOf, linesOf]);
   const hidden = useMemo(() => hiddenLines(lines, toggled), [lines, toggled]);
@@ -101,7 +125,18 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, s
           {data && <span data-slot="usage-graph-step" className="text-muted-foreground">{stepText(data.stepMs)}</span>}
         </div>
       )}
-      {error && !data ? <Empty>{what} unavailable: {error}</Empty>
+      {error && data && (
+        <div data-slot="usage-graph-error" className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{what} unavailable: {error}</span>
+          <Button type="button" size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={retry}>Retry</Button>
+        </div>
+      )}
+      {error && !data ? (
+        <Empty>
+          <span data-slot="usage-graph-error">{what} unavailable: {error}</span>{' '}
+          <Button type="button" size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={retry}>Retry</Button>
+        </Empty>
+      )
         : !data || !shown ? <Empty>reading the {what}…</Empty>
           : !lines.length ? <Empty>{empty}</Empty>
             : <>
