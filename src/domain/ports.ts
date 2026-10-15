@@ -5,7 +5,7 @@ import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeActi
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
+  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
@@ -508,10 +508,11 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, H
   /**
    * Tell the item what a person did about the job's hand-off (issue #551): on GitHub one short comment — what was
    * done, the note and the link, naming no person — and the end label (done by hand `hopper:done`, won't do
-   * `hopper:rejected`; Continue and I fixed it took the item back already). Throws SourceError; the sync loop tries it
-   * again. Absent: the source takes no resolution.
+   * `hopper:rejected`; Continue and I fixed it took the item back already). On GitHub they are rows of the GitHub outbox
+   * (issue #1238), kept the first time and sent after: asked again, it answers where they stand and keeps nothing more.
+   * Throws SourceError; the sync loop asks again at each sync. Absent: the source takes no resolution.
    */
-  resolved?(job: Job, resolution: HandoffResolution): Promise<void>;
+  resolved?(job: Job, resolution: HandoffResolution): Promise<ResolutionWrite>;
   /**
    * Why a job that ended done is not complete (its work did not reach the item's completion, e.g. a
    * merged or an open pull request), or undefined when it is (issues #171, #187). Asked before the

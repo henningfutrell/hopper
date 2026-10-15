@@ -33,6 +33,7 @@ export function createGitHubOutboxRepository(c: StoreContext): GitHubOutboxRepos
       });
     },
     open: (source) => c.db.all("SELECT id, body FROM github_outbox WHERE source = ? AND state <> 'sent' ORDER BY id", source).map(rowOf),
+    of: (source, key) => c.db.all('SELECT id, body FROM github_outbox WHERE source = ? ORDER BY id', source).map(rowOf).filter((r) => r.key === key),
     due: (source, at) => c.db.all("SELECT id, body FROM github_outbox WHERE source = ? AND state = 'pending' AND next_at <= ? ORDER BY id", source, at).map(rowOf),
     update(ids, patch) {
       c.tx(() => {

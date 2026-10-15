@@ -2,6 +2,7 @@
 // Issue #1194, part 8: Sources shows the GitHub work a person's acts left after their answer — on a source's card, how many
 // GitHub writes are under way, when the last went through, and each that failed; and, for the whole hopper, how long the
 // work after each act waited on its queue apart from its run (`afterAnswer` of GET /api/sources).
+import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { boot, source, unmount } from './sources-daemon.ts';
 import { afterAnswerRows, ms } from '../../ui/src/model/after-answer.ts';
@@ -20,6 +21,18 @@ describe('Sources: the GitHub writes after an act (issue #1194)', () => {
     await vi.waitFor(() => expect(text('[data-write-behind="github-app"]')).toContain('2 under way'));
     expect(text('[data-write-behind="github-app"]')).toMatch(/last went through 1m ago/);
     expect(text('[data-write-behind-error]')).toContain('assign: GitHub is down');
+  });
+
+  it('each failed row of the GitHub outbox is listed with a Retry, which sends it again (issue #1238)', async () => {
+    const detail = { mode: 'app', lastWriteBehindAt: AT, writeBehindErrors: { [KEY]: 'resolve: not allowed' },
+      outboxFailed: [{ key: KEY, repo: 'owner/repo', act: 'resolve', error: 'not allowed', attempts: 1 }] };
+    await boot({ '/api/sources': { sources: [source('github-app', 'github-app', 'ok', detail)] }, '/ui/api/sources/github-app/intake': { done: [KEY], failed: {} } });
+    const row = await vi.waitFor(() => { const r = document.querySelector('[data-outbox-failed]'); expect(r).not.toBeNull(); return r!; });
+    expect(row.textContent).toContain('not allowed');
+    const button = row.querySelector<HTMLButtonElement>('[data-outbox-retry]')!;
+    await act(async () => { button.click(); });
+    const posts = vi.mocked(fetch).mock.calls.filter(([path, init]) => String(path) === '/ui/api/sources/github-app/intake' && init?.method === 'POST');
+    expect(posts.map(([, init]) => JSON.parse(String(init!.body)))).toEqual([{ kind: 'retry_outbox', keys: [KEY] }]);
   });
 
   it('no line when no GitHub write ever ran', async () => {

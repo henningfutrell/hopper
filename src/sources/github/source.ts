@@ -46,7 +46,7 @@ import { priorityOf, readProjects } from './priority.ts';
 import { awaitingBatch, closePromoted, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
-import { reportToGitHub, takeBack, writeResolution } from './report.ts';
+import { ensureLabels, keepResolution, reportToGitHub, takeBack } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
@@ -143,6 +143,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
   const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
+  const reportContext = () => ({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) });
   const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
@@ -252,7 +253,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     name: o.name,
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: () => outbox.flush(outboxSend(api, approvals.readComments)),
+    intake: () => outbox.on(outcomes), afterAnswerTimings: outbox.timings, flushOutbox: () => outbox.flush(outboxSend(api, approvals.readComments, (repo) => ensureLabels(reportContext(), repo))),
     intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, label: config.label, takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
@@ -343,16 +344,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return r.signals;
     }),
     report(r) {
-      return reportToGitHub({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, r);
+      return reportToGitHub(reportContext(), r);
     },
     async rerun(job) {
-      const issue = await takeBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job, o.assignee());
+      const issue = await takeBack(reportContext(), config.label, job, o.assignee());
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
     },
     async rework(job) {
-      const back = await sendBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job, o.assignee());
+      const back = await sendBack(reportContext(), config.label, job, o.assignee());
       const bot = await botLogin();
       const projects = await readProjects(api, config, [back.issue]);
       const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), bot, o.assignee());
@@ -365,9 +366,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (!api.issueEdits || item.repo === undefined || item.number === undefined) return [];
       return (await api.issueEdits(item.repo, item.number)).filter((e) => e.at > since);
     },
-    resolved(job, resolution) {
-      return writeResolution({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, job, resolution);
-    },
+    resolved: (job, resolution) => keepResolution(outbox, job, resolution, o.intake?.holder),
     notComplete(job) {
       return notComplete(api, job, o.jobArtifacts);
     },

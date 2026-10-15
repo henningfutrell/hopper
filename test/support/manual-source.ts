@@ -51,7 +51,7 @@ export function createManualSource(name = 'manual'): ManualSource {
     kind: 'manual',
     reports,
     resolutions,
-    async resolved(job, resolution) { resolutions.push({ jobId: job.id, resolution }); },
+    async resolved(job, resolution) { resolutions.push({ jobId: job.id, resolution }); return { state: 'written' }; },
     describe: () => ({ items: items.size }),
     add(item) { items.set(item.key, item); },
     remove(key) { items.delete(key); },

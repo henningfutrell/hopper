@@ -64,7 +64,10 @@ describe('the write-behind tries a write again (issue #1194)', () => {
     }
     expect(f.s.calls).toBe(OUTBOX_ATTEMPTS);
     expect(outbox.of(KEY)).toEqual({ act: 'release', state: 'failed', error: 'still down' });
-    expect(outbox.detail()).toEqual({ writeBehindErrors: { [KEY]: 'release: still down' } });
+    expect(outbox.detail()).toEqual({
+      writeBehindErrors: { [KEY]: 'release: still down' },
+      outboxFailed: [{ key: KEY, repo: REPO, act: 'release', error: 'still down', attempts: OUTBOX_ATTEMPTS }],
+    });
   });
 
   it('a write GitHub refuses for good fails at once, with no second try', async () => {
