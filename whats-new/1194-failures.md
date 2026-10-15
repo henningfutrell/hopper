@@ -1,0 +1,1 @@
+- Retry, Continue, I fixed it, Push it and Tend again now answer at once. The button shows that GitHub is being updated, the job goes on when that is done, and a message says why if it fails, so you can try again.

@@ -1,0 +1,1 @@
+- Merge now and Close PR on the Pull requests page now answer at once. The button says Merging or Closing while GitHub does it, and a message says when it is done, or why it failed, so you can try again.
