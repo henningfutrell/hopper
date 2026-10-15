@@ -59,3 +59,8 @@ storageClassName: {{ . | quote }}
 {{- .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{/* The lane pool key's Secret (issue #1284): the hopper and the lane pods' join step read it. */}}
+{{- define "hopper.lanePoolSecret" -}}
+{{- printf "%s-lane-pool" (include "hopper.fullname" .) -}}
+{{- end -}}

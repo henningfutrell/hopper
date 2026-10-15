@@ -16,3 +16,8 @@ The first start makes the master key and shows it once, in the UI. Keep it in a 
   kubectl --namespace {{ .Release.Namespace }} create secret generic {{ include "hopper.masterKeySecret" . }} --from-literal=master-key=<the key>
   kubectl --namespace {{ .Release.Namespace }} rollout restart deployment/{{ include "hopper.fullname" . }}
 {{- end }}
+{{- if gt (.Values.lanes.replicas | int) 0 }}
+
+{{ .Values.lanes.replicas }} lane pods join as machines of the first person who signed in. Sign each pod's agent in once:
+  kubectl --namespace {{ .Release.Namespace }} exec -it {{ include "hopper.fullname" . }}-lanes-0 -c lane -- claude
+{{- end }}
