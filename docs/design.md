@@ -19158,8 +19158,8 @@ The registry's files import `cn` from a package named `cn`; the vendored copies 
   work (`claimed`, `running`) is `running` and shimmers; a `queued` or `held` job shows its wait as a `pending`
   line on top. Each step is a button that opens to its event's data, as JSON, in a small `CodeBlock`. Each line
   says its state to a screen reader.
-- **Logs** (`ui/src/components/log-block.tsx`): the job's terminal screen (numbered lines) and the event
-  stream are a `CodeBlock` with a header: a title, a wrap toggle and Copy. Copy of the event stream copies one
+- **Logs** (`ui/src/components/log-block.tsx`): a pane's terminal screen (numbered lines; the job's terminal
+  and the machine's share it, `ui/src/views/pane-terminal.tsx`) and the event stream are a `CodeBlock` with a header: a title, a wrap toggle and Copy. Copy of the event stream copies one
   plain line per event.
 - **Diffs**: a changed item's body (`BodyDiff`, `ui/src/components/text-change.tsx`, also on a request card)
   is a `CodeBlock` in diff mode, one line each, `added` or `removed`.
