@@ -8,7 +8,7 @@
 #                         a small cluster on this host: k3s, rootless, under the user unit hopper-k3s.service. It has its
 #                         own container store: no Podman container, image or volume is touched. Prints the kubeconfig. A
 #                         cluster there is already stops it, unless --use-existing: then it prints that cluster's kubeconfig
-#   bash hopper-cluster.sh migrate [--namespace NS] [--release NAME] [--chart DIR]
+#   bash hopper-cluster.sh migrate [--namespace NS] [--release NAME] [--chart DIR] [--master-key-secret NAME]
 #                         [--external-secret-store NAME --external-secret-key KEY [--external-secret-kind KIND]]
 #                         [--set key=value]...
 #                         the compose install into the chart's release, then the cutover: see migrate() below
@@ -17,8 +17,10 @@
 #
 # The master key is never written to a file here: it is read from the install's launch source (the key sealed to this
 # host, the hopper container's launch environment, HOPPER_MASTER_KEY, else asked on the terminal), held in this process,
-# and handed on a pipe to the chart's Secret. With --external-secret-store, the person's own store holds it (the External
-# Secrets Operator fills the Secret), and this script only checks it. Either way its fingerprint must match the running
+# and handed on a pipe to the chart's Secret. With --master-key-secret, the person made that Secret in the namespace
+# (key master-key), and with --external-secret-store their own store holds it (the External Secrets Operator fills the
+# Secret): then this script never reads the key, from the launch source or from the Secret. A pod of the hopper's image,
+# with the Secret mounted, works its fingerprint out in the cluster. Every way, the fingerprint must match the running
 # hopper's before anything stops.
 #
 #   HOPPER_CLUSTER_DIR   where bootstrap keeps the cluster (bin/, data/, kubeconfig.yaml) and migrate its state
@@ -48,7 +50,7 @@ main() {
   esac
 }
 
-usage() { fail 'usage: bash hopper-cluster.sh bootstrap [--use-existing] | migrate [--namespace NS] [--release NAME] [--chart DIR] [--external-secret-store NAME --external-secret-key KEY [--external-secret-kind KIND]] [--set key=value]... | rollback'; }
+usage() { fail 'usage: bash hopper-cluster.sh bootstrap [--use-existing] | migrate [--namespace NS] [--release NAME] [--chart DIR] [--master-key-secret NAME] [--external-secret-store NAME --external-secret-key KEY [--external-secret-kind KIND]] [--set key=value]... | rollback'; }
 
 # ---- bootstrap ----
 
@@ -222,7 +224,7 @@ wait_for_node() {
 #      key from the launch source, and its fingerprint against the running hopper's
 #   2. the namespace; the master key Secret (unless an outside store fills it); the carried runtime settings
 #   3. helm install, the hopper at 0 replicas: its Postgres, OpenFGA and Solr come up empty
-#   4. with an outside store: the Secret it filled, checked against the fingerprint
+#   4. with the person's own Secret or an outside store: that Secret, checked against the fingerprint in a pod
 #   5. the compose watchdog off, and the compose hopper stopped: nothing writes its database any more
 #   6. the database (and with it OpenFGA's store, schema openfga) dumped from compose's Postgres into the chart's. Solr
 #      builds its index again from it
@@ -230,12 +232,13 @@ wait_for_node() {
 #   8. the cluster's hopper: healthy, the same fingerprint, GitHub reachable; then its home (the claude sign-in) copied in
 #   9. the compose stack stopped, never removed: its containers, images and volumes stay
 migrate() {
-  local namespace=hopper release=hopper chart='' store='' store_key='' store_kind=ClusterSecretStore sets=()
+  local namespace=hopper release=hopper chart='' given='' store='' store_key='' store_kind=ClusterSecretStore sets=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --namespace) namespace="${2:?--namespace NS}"; shift ;;
       --release) release="${2:?--release NAME}"; shift ;;
       --chart) chart="${2:?--chart DIR}"; shift ;;
+      --master-key-secret) given="${2:?--master-key-secret NAME}"; shift ;;
       --external-secret-store) store="${2:?--external-secret-store NAME}"; shift ;;
       --external-secret-key) store_key="${2:?--external-secret-key KEY}"; shift ;;
       --external-secret-kind) store_kind="${2:?--external-secret-kind KIND}"; shift ;;
@@ -270,20 +273,27 @@ migrate() {
   [ -n "$chart" ] || chart="$(chart_from_image "$image")"
   [ -f "$chart/Chart.yaml" ] || fail "no Helm chart at $chart. Nothing changed"
   local port; port="$(value_of HOPPER_PORT "$env")"; port="${port:-4790}"
-  master_key
-  local key=$MASTER_KEY
-  MASTER_KEY=''
   local want; want="$(compose_fingerprint)"
-  local have; have="$(fingerprint_of "$key")"
-  [ "$have" = "$want" ] || fail "the master key from $KEY_SOURCE has the fingerprint $have, the running hopper $want: give the right one (HOPPER_MASTER_KEY, or bash master-key.sh seal). Nothing changed"
-  say "the master key from $KEY_SOURCE matches the running hopper (fingerprint $want)"
+  local secret="${given:-$FULL-master-key}" key=''
+  if [ -z "$given" ] && [ -z "$store" ]; then
+    master_key
+    key=$MASTER_KEY
+    MASTER_KEY=''
+    local have; have="$(fingerprint_of "$key")"
+    [ "$have" = "$want" ] || fail "the master key from $KEY_SOURCE has the fingerprint $have, the running hopper $want: give the right one (HOPPER_MASTER_KEY, or bash master-key.sh seal). Nothing changed"
+    say "the master key from $KEY_SOURCE matches the running hopper (fingerprint $want)"
+  fi
+  if [ -n "$given" ] && [ -z "$store" ]; then
+    secret_has_key "$secret" \
+      || fail "no Secret $secret with a master-key in the namespace $namespace: make it first (docs/kubernetes.md \"The master key\"). Nothing changed"
+  fi
 
   # 2. The namespace, the master key Secret and the carried settings.
   kubectl get namespace "$namespace" >/dev/null 2>&1 || kubectl create namespace "$namespace" >/dev/null
-  local secret="$FULL-master-key"
-  if [ -z "$store" ]; then
+  if [ -n "$key" ]; then
     put_master_key "$secret" "$key"
   fi
+  key=''
   local carried="$FULL-carried-env"
   local values; values="$(helm_values "$env" "$repository" "$tag" "$port" "$profiles" "$secret" "$store" "$store_key" "$store_kind" "$carried")"
   put_carried "$carried" "$env"
@@ -293,14 +303,15 @@ migrate() {
   printf '%s' "$values" | helm install "$release" "$chart" --namespace "$namespace" -f - "${sets[@]}" --wait --wait-for-jobs --timeout 15m >&2 \
     || fail "helm install failed (above). The compose stack runs on as before. Remove the release: helm uninstall $release --namespace $namespace"
 
-  # 4. An outside store's Secret, checked.
-  if [ -n "$store" ]; then
-    local filled; filled="$(store_key_value "$secret")"
-    [ "$(fingerprint_of "$filled")" = "$want" ] \
-      || fail "the Secret $secret the External Secrets Operator filled from $store does not hold the running hopper's master key (fingerprint $want). The compose stack runs on as before"
-    say "the Secret $secret from $store holds the running hopper's master key"
+  # 4. The person's own Secret, or the one an outside store filled, checked in the cluster: this script never reads it.
+  if [ -n "$given" ] || [ -n "$store" ]; then
+    [ -z "$store" ] || wait_filled "$secret" "$store"
+    local found; found="$(secret_fingerprint "$secret")" \
+      || fail "the key check pod did not run (above): the Secret $secret is not checked. The compose stack runs on as before. Remove the release: helm uninstall $release --namespace $namespace"
+    [ "$found" = "$want" ] \
+      || fail "the Secret $secret holds the master key of fingerprint ${found:-none}, the running hopper $want. The compose stack runs on as before. Put the right key in it, then: helm uninstall $release --namespace $namespace, and migrate again"
+    say "the Secret $secret${store:+ from $store} holds the running hopper's master key (fingerprint $want)"
   fi
-  key=''
 
   # 5-8. The cutover. Each step says why it stopped; any of them rolls back.
   write_state
@@ -412,8 +423,11 @@ master_key() {
 
 # The short fingerprint of a key, as the hopper shows it (src/secrets/master-key.ts fingerprintOf, token-box.ts decodeKey):
 # HMAC-SHA256 under the key of a fixed label, its first 16 hex digits. Worked out by node in the compose hopper, any
-# version of it, from the key on stdin: never an argument, never a file.
-FINGERPRINT_JS='let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>{const k=t.trim();const b=/^[0-9a-fA-F]{64}$/.test(k)?Buffer.from(k,"hex"):/^[A-Za-z0-9+/_-]+={0,2}$/.test(k)?Buffer.from(k,k.includes("-")||k.includes("_")?"base64url":"base64"):undefined;if(!b||b.length!==32)process.exit(2);process.stdout.write(require("node:crypto").createHmac("sha256",b).update("hopper master key fingerprint v1").digest("hex").slice(0,16))})'
+# version of it, from the key on stdin (FINGERPRINT_JS), or in a pod from the mounted Secret's file (FINGERPRINT_FILE_JS):
+# never an argument.
+FINGERPRINT_OF='(t)=>{const k=t.trim();const b=/^[0-9a-fA-F]{64}$/.test(k)?Buffer.from(k,"hex"):/^[A-Za-z0-9+/_-]+={0,2}$/.test(k)?Buffer.from(k,k.includes("-")||k.includes("_")?"base64url":"base64"):undefined;if(!b||b.length!==32)process.exit(2);process.stdout.write(require("node:crypto").createHmac("sha256",b).update("hopper master key fingerprint v1").digest("hex").slice(0,16))}'
+FINGERPRINT_JS="let t=\"\";process.stdin.on(\"data\",(d)=>t+=d).on(\"end\",()=>($FINGERPRINT_OF)(t))"
+FINGERPRINT_FILE_JS="($FINGERPRINT_OF)(require(\"node:fs\").readFileSync(\"/run/hopper-master-key/master-key\",\"utf8\"))"
 
 fingerprint_of() {
   printf '%s' "$1" | "$RUNTIME" exec -i "$HOPPER_ID" node -e "$FINGERPRINT_JS" 2>/dev/null || printf 'none (no master key)'
@@ -438,15 +452,33 @@ put_master_key() {
   say "put the master key in the Secret $name (from a pipe: no file holds it)"
 }
 
-# The Secret an outside store filled: its master key, waited for up to 5 minutes.
-store_key_value() {
-  local name=$1 waited=0 there
-  until there="$(kubectl --namespace "$NS" get secret "$name" -o 'jsonpath={.data.master-key}' 2>/dev/null)" && [ -n "$there" ]; do
-    [ "$waited" -lt 300 ] || fail "the External Secrets Operator did not fill the Secret $name in 5 minutes: see kubectl --namespace $NS describe externalsecret. The compose stack runs on as before"
+# Whether the Secret $1 has a master-key: only that it is there is answered, never its value.
+secret_has_key() {
+  [ "$(kubectl --namespace "$NS" get secret "$1" -o 'go-template={{if index .data "master-key"}}yes{{end}}' 2>/dev/null)" = yes ]
+}
+
+# The Secret an outside store fills, waited for up to 5 minutes.
+wait_filled() {
+  local name=$1 store=$2 waited=0
+  until secret_has_key "$name"; do
+    [ "$waited" -lt 300 ] || fail "the External Secrets Operator did not fill the Secret $name from $store in 5 minutes: see kubectl --namespace $NS describe externalsecret. The compose stack runs on as before"
     sleep 5
     waited=$((waited + 5))
   done
-  printf '%s' "$there" | base64 -d
+}
+
+# The fingerprint of the master key in the Secret $1, worked out in a one-off pod of the release's hopper image with the
+# Secret mounted as the chart mounts it. Only the fingerprint comes out; the pod is removed after.
+secret_fingerprint() {
+  local name=$1 image pod="$FULL-key-check"
+  image="$(kubectl --namespace "$NS" get "deployment/$FULL" -o 'jsonpath={.spec.template.spec.containers[?(@.name=="hopper")].image}')" || return 1
+  local spec
+  spec="{\"apiVersion\":\"v1\",\"spec\":{\"automountServiceAccountToken\":false,\"enableServiceLinks\":false,\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":1000,\"runAsGroup\":1000,\"fsGroup\":1000},"
+  spec+="\"containers\":[{\"name\":$(json "$pod"),\"image\":$(json "$image"),\"command\":[\"node\",\"-e\",$(json "$FINGERPRINT_FILE_JS")],"
+  spec+="\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},"
+  spec+="\"volumeMounts\":[{\"name\":\"master-key\",\"mountPath\":\"/run/hopper-master-key\",\"readOnly\":true}]}],"
+  spec+="\"volumes\":[{\"name\":\"master-key\",\"secret\":{\"secretName\":$(json "$name"),\"defaultMode\":288}}]}}"
+  kubectl --namespace "$NS" run "$pod" --rm --attach --quiet --restart=Never --pod-running-timeout=5m --image "$image" --overrides "$spec" </dev/null
 }
 
 # The names this script never carries: the chart and compose set them for their own parts.
