@@ -82,6 +82,8 @@ export interface FakeHerdrOptions {
   waitAnswersEarly?: 'matched' | 'timeout';
   /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
   reapKeeps?: string[];
+  /** How long a discard's reap takes on the machine, in ms (issue #1194: a slow machine). Default none. */
+  discardMs?: number;
   /** What the reap says was pushed (issue #630): repositories whose branch is on a remote beyond the default branch. Default none. */
   reapPushes?: string[];
   /** The machine cannot be reached for the reap or the survey (issue #410): both reject. */

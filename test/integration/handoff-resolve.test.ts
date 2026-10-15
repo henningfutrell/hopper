@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, Handoff, HandoffView, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -169,7 +170,7 @@ describe('Done by hand and Won\'t do', () => {
     const job = await a.pull({ op: 'fail', message: 'HOPPER_FAILED the tests do not pass', ms: 0 });
     const h = await handoffOf(a, job.id);
     // Its item ran again by another way: Continue and I fixed it are refused, with the reason.
-    expect((await a.ui(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).status).toBe(200);
+    expect((await runAgain(a, job.id, token)).status).toBe(200);
     const closed = await waitFor(async () => { const v = await viewOf(a, h.id); return v.status === 'closed' ? v : undefined; }, { what: 'closed by the run again' });
     expect(closed.actions.continue.ok).toBe(false);
     expect(closed.actions.fixed).toEqual({ ok: false, why: expect.stringMatching(/already closed/) });

@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -41,7 +42,7 @@ describe('Run again on a GitHub job', () => {
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     const [first] = await jobsFor();
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first!.id, token);
     expect(r.status).toBe(200);
     // The answer is the new job, already in the hopper: no later sync is needed to create it.
     expect(r.body).toMatchObject({ rerunOf: first!.id, source: { key: issue.url } });
@@ -57,7 +58,7 @@ describe('Run again on a GitHub job', () => {
     expect(await jobsFor()).toHaveLength(2);
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed again' });
     // Only the newest job of an item runs again: the first one is history now.
-    expect((await a.ui(`/ui/api/jobs/${first!.id}/rerun`, {}, { token })).status).toBe(409);
+    expect((await runAgain(a, first!.id, token)).status).toBe(409);
   });
 
   it('Run again on a failed job whose issue is closed reopens the issue and runs the new job against it (issue #354)', async () => {
@@ -71,7 +72,7 @@ describe('Run again on a GitHub job', () => {
     const [first] = await jobsFor();
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first!.id, token);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ rerunOf: first!.id });
     expect(gh.issue(REPO, issue.number).state).toBe('open');
@@ -95,7 +96,7 @@ describe('Run again on a GitHub job', () => {
     gh.unassign(REPO, issue.number, 'owner');
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first!.id, token);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ rerunOf: first!.id });
     // The hopper took the step a person had to take in Sources: the issue is the connected account's again, and open.

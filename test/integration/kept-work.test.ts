@@ -78,8 +78,9 @@ describe('Work not pushed (issue #1010)', () => {
 
     const r = await a.ui<{ jobId: string; paths: string[] }>(`/ui/api/failures/kept-work/${job.id}/discard`, {}, { token });
     expect(r.status).toBe(200);
+    // The removal on the machine runs after the answer (issue #1194).
+    const removed = await waitFor(async () => { const es = (await a.events('types=job.work_removed')).filter((e) => e.jobId === job.id); return es.length ? es : undefined; }, { what: 'its work removed' });
     expect(herdr.reaps.at(-1)).toEqual({ jobId: job.id, scratch, discard: true });
-    const removed = (await a.events('types=job.work_removed')).filter((e) => e.jobId === job.id);
     expect(removed).toEqual([expect.objectContaining({ data: expect.objectContaining({ paths: [scratch], discarded: true, via: 'ui' }) })]);
     expect((await failuresOf(a)).keptWork.find((k) => k.jobId === job.id)).toBeUndefined();
     // Nothing kept now: a second discard is refused, and says why.

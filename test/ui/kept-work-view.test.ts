@@ -63,4 +63,22 @@ describe('Work not pushed (issue #1010)', () => {
     expect(buttonsIn(row())).not.toContain('Push it');
     expect(buttonsIn(row())).not.toContain('Discard');
   });
+
+  it('a discard shows removing from the click on; the daemon\'s view says how the removal goes, and a failure with why (issue #1194)', async () => {
+    const removing = 'its work is being removed on its machine';
+    const d = { failures: view({ problems: [], keptWork: [kept()] }) };
+    await boot('#failures', d);
+    await click(button(row(), 'Discard'));
+    // The daemon answers before the removal; the view it answers next says the removal is under way.
+    d.failures = view({ problems: [], keptWork: [kept({ discarding: { state: 'removing' }, actions: { push: { ok: false, why: removing }, discard: { ok: false, why: removing } } })] });
+    await click(button(document, 'Discard'));
+    expect(daemon.posts).toContain('POST /ui/api/failures/kept-work/j7/discard');
+    expect(row()?.querySelector('[data-slot="kept-work-removing"]')?.textContent).toBe('Discarded: removing the work tree on its machine');
+    expect(buttonsIn(row())).not.toContain('Discard');
+    expect(buttonsIn(row())).not.toContain('Push it');
+    await unmount();
+    await boot('#failures', { failures: view({ problems: [], keptWork: [kept({ discarding: { state: 'failed', error: 'its machine desk is out of reach' } })] }) });
+    expect(row()?.querySelector('[data-slot="kept-work-discard-failed"]')?.textContent).toBe('The discard failed: its machine desk is out of reach. The work is still kept.');
+    expect(buttonsIn(row())).toContain('Discard');
+  });
 });

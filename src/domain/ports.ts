@@ -1,7 +1,7 @@
 // Seams. Everything the engine talks to that is not pure domain logic sits behind one of
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
-import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
+import type { GiveBackAnswer } from './give-back.ts'; import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
@@ -657,14 +657,17 @@ export interface SourceRegistry {
    */
   takesBack(jobId: JobId): Allowed;
   /**
-   * Send a done job's open pull request back for rework (issue #724): its source makes the pull request a draft and gives
-   * the item back, and a new job is queued at once, told `notes`. Only a finished job that follows an open pull request,
-   * the newest of its item, once its end was reported to the source.
+   * A person's Run again (`rerun`), or Rework (`rework`, issue #724: a done job's open pull request sent back, made a draft
+   * by its source, the new job told `notes`), answered at once (issue #1194): the checks the hopper can make now — the job
+   * the newest of its item, its end reported to its source, for Rework finished and following an open pull request —,
+   * then the answer. Its source gives the item back after, on the job's report chain, and the new job follows
+   * (`job.rerun`, `job.rework_requested`); a give-back that fails records `job.give_back_failed` and makes no job. The same
+   * act sent again while one runs answers that one.
    */
-  rework(jobId: JobId, notes: string, acting?: ActingPerson): Promise<RerunResult>;
+  giveBack(jobId: JobId, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }, acting?: ActingPerson): GiveBackAnswer;
   /**
-   * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
-   * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
+   * The user's act on items a source listed (Assign to me, Release claim; issue #440), answered once the act is recorded;
+   * a sync of that source runs after, not awaited (issue #1194), and its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
    */
   intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
   /**

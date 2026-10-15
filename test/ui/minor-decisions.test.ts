@@ -1,7 +1,7 @@
 // The decider calls in the UI (issue #550), pure: the agreement rate as a percent, a pick in plain words — what Jev
 // picked, how sure, whether it was applied and why not, what was decided —, the mode names, and a pick's event line.
 import { describe, expect, it } from 'vitest';
-import { environmentNote, keyStatus, MODE_TEXT, pickDecided, pickSummary, pickedEventDetail, rate } from '../../ui/src/model/minor-decisions.ts';
+import { environmentNote, keyStatus, MODE_TEXT, pickAgreement, pickSummary, pickedEventDetail, rate } from '../../ui/src/model/minor-decisions.ts';
 
 const base = {
   pickId: 'p1', at: '2026-10-09T10:00:00.000Z', point: 'failure-assessment' as const, options: [{ id: '1', label: 'ledger' }, { id: '2', label: 'journal' }],
@@ -27,11 +27,12 @@ describe('decider calls model', () => {
       .toBe('a real risk (real) (credentials, ci) at 90% — recorded only');
   });
 
-  it('pickDecided: what was decided, by whom, and whether Jev agreed', () => {
-    expect(pickDecided({ ...base, pick: '1' })).toBe('');
-    expect(pickDecided({ ...base, pick: '1', actual: '1', decidedBy: 'level-1', agreed: true })).toBe('level-1 decided ledger (1): agreed');
-    expect(pickDecided({ ...base, pick: '1', actual: '2', decidedBy: 'override', agreed: false, overridden: true })).toBe('overridden: journal (2)');
-    expect(pickDecided({ ...base, pick: '1', actual: 'something typed', decidedBy: 'human', agreed: false })).toBe('human decided something typed: differed');
+  // Who decided is the question form's marker (issue #1169, answer-source.test.ts); this line says only whether Jev agreed.
+  it('pickAgreement: whether Jev agreed with what was decided later', () => {
+    expect(pickAgreement({ ...base, pick: '1' })).toBe('');
+    expect(pickAgreement({ ...base, pick: '1', actual: '1', decidedBy: 'level-1', agreed: true })).toBe('Jev agreed');
+    expect(pickAgreement({ ...base, pick: '1', actual: '2', decidedBy: 'override', agreed: false, overridden: true })).toBe('');
+    expect(pickAgreement({ ...base, pick: '1', actual: 'something typed', decidedBy: 'human', agreed: false })).toBe('Jev differed');
   });
 
   it('mode names in plain words', () => {

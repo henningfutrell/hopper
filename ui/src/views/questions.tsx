@@ -17,17 +17,19 @@
 // first, the rest behind Show all (issue #569).
 // Why it came to a person (issue #679): one sentence at the top of the card, with what the level recommends, and the
 // list filters by that reason, each with its count. Use answer names whose answer it uses.
+// The answer box is the one question form (issue #1169): a Questionnaire, its title Your answer, Send answer its submit.
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
 import { CardText, Markdown } from '@/components/markdown';
+import { LogBlock } from '@/components/log-block';
 import { Empty, Panel } from '@/components/panel';
+import { QuestionForm } from '@/components/question-form';
 import { RaisedOn } from '@/components/raised-by';
 import { ThreadState } from '@/components/thread-ask';
 import { StatusBadge } from '@/components/status';
@@ -143,32 +145,33 @@ function QuestionCard({ q }: { q: QuestionView }) {
         <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />recent output ({Math.min(40, lines.length)} of {lines.length} lines)
         </CollapsibleTrigger>
-        <CollapsibleContent><pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{lines.slice(-40).join('\n')}</pre></CollapsibleContent>
+        <CollapsibleContent>
+          <LogBlock title="Recent output" copy={lines.slice(-40).join('\n')} lineNumbers className="mt-2" contentClassName="max-h-80 text-[11px]">{lines.slice(-40).join('\n')}</LogBlock>
+        </CollapsibleContent>
       </Collapsible>
       {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} busy={sending} onUse={canAnswer && q.tier === 'human' && a.role !== 'human' && a.answer ? (answer) => void submit(answer) : undefined} />)}</div>}
       {canAnswer && (
         <div className="space-y-2">
-          <Textarea rows={3} value={draft} disabled={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"
-            onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } }} />
-          {sent && (
-            <div data-slot="answer-result" className={`flex flex-wrap items-center gap-2 text-sm ${sent.error ? 'text-bad' : 'text-ok'}`}>
-              {sent.error
-                ? <>Not sent: {sent.error}<Button size="sm" variant="outline" disabled={sending} onClick={() => void submit(sent.answer)}><RotateCw />Retry</Button></>
-                : <><Check className="size-4" />Answer sent</>}
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void send()} disabled={sending || !draft.trim()}><Send />{sending ? 'Sending…' : 'Send answer'}</Button>
-            <Confirm title="Close this question without answering?" description="The job continues on its own judgement, or fails."
-              action="Close question" onConfirm={() => void end('close')}>
-              <Button variant="outline" disabled={sending} title="End the question without answering"><X />Close</Button>
-            </Confirm>
-            <Confirm title="Dismiss this question?" description="It needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled."
-              action="Dismiss question" onConfirm={() => void end('dismiss')}>
-              <Button variant="ghost" disabled={sending} title="Drop a question that needs no action"><Archive />Dismiss</Button>
-            </Confirm>
-            <span className="ml-auto self-center"><ReportBugButton jobId={q.jobId} /></span>
-          </div>
+          <QuestionForm name="answer" title="Your answer" text={draft} onText={setDraft} busy={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"
+            submit={<><Send />{sending ? 'Sending…' : 'Send answer'}</>} canSubmit={!!draft.trim()} onSubmit={() => void send()}
+            result={sent && (
+              <div data-slot="answer-result" className={`flex flex-wrap items-center gap-2 text-sm ${sent.error ? 'text-bad' : 'text-ok'}`}>
+                {sent.error
+                  ? <>Not sent: {sent.error}<Button type="button" size="sm" variant="outline" disabled={sending} onClick={() => void submit(sent.answer)}><RotateCw />Retry</Button></>
+                  : <><Check className="size-4" />Answer sent</>}
+              </div>
+            )}
+            actions={<>
+              <Confirm title="Close this question without answering?" description="The job continues on its own judgement, or fails."
+                action="Close question" onConfirm={() => void end('close')}>
+                <Button type="button" size="sm" variant="outline" disabled={sending} title="End the question without answering"><X />Close</Button>
+              </Confirm>
+              <Confirm title="Dismiss this question?" description="It needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled."
+                action="Dismiss question" onConfirm={() => void end('dismiss')}>
+                <Button type="button" size="sm" variant="ghost" disabled={sending} title="Drop a question that needs no action"><Archive />Dismiss</Button>
+              </Confirm>
+              <span className="ml-auto self-center"><ReportBugButton jobId={q.jobId} /></span>
+            </>} />
           {!movedOn && <ShiftActions q={q} busy={sending} />}
         </div>
       )}

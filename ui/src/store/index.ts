@@ -7,7 +7,6 @@ import { create } from 'zustand';
 import { get, onSessionEnded, post, SessionRejected, clearToken, readSession } from '@/lib/api';
 import { beginSignIn, signInThroughGateway, signInWithoutCredential, wantsGatewaySignIn, wantsNoSignIn } from '@/lib/login';
 import { reauthFor, rememberReturn, takeReturn } from '@/lib/reauth';
-import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
@@ -166,7 +165,8 @@ export async function refreshFailures() {
 /** A Failures action (issue #509): the daemon's answer, then the failures read again. Failures toast, as `act`. */
 export async function failureAct(path: string, body: unknown, done: string): Promise<boolean> {
   const r = await actFor(path, body, done);
-  refreshFailures().catch(() => {});
+  // Read again before the act ends, so the entry shows the act's result, never what it was before (issue #1194).
+  await refreshFailures().catch(() => {});
   return r.ok;
 }
 /** POST /ui/api/failures/settings (admin). Failures toast; a rejected session drops to the landing page. */
@@ -228,7 +228,7 @@ const refreshQuestionsSoon = debounced(refreshQuestions);
 const refreshLoginsSoon = debounced(refreshLogins);
 const refreshFailuresSoon = debounced(refreshFailures);
 /** What the assessor writes, and what changes what it shows (a job run again, a job failed). */
-const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'handoff.checked', 'job.rerun', 'job.failed', 'job.dismissed', 'job.work_kept', 'job.work_removed', 'job.continued']);
+const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'handoff.checked', 'job.rerun', 'job.failed', 'job.dismissed', 'job.work_kept', 'job.work_removed', 'job.work_discard_failed', 'job.continued']);
 
 export async function checkSession() {
   try {
@@ -297,18 +297,6 @@ export async function actFor(path: string, body: unknown = {}, done?: string, re
     if (e instanceof SessionRejected) set({ authed: false, user: null });
     toast.error((e as Error).message);
     return { ok: false, error: (e as Error).message };
-  }
-}
-
-/** Run again (issue #354): the answer is the new job, already queued; its toast says where it is. Failures toast their reason. */
-export async function rerun(jobId: string): Promise<void> {
-  try {
-    const out = rerunOutcome(await post<Job>(`/ui/api/jobs/${jobId}/rerun`, {}));
-    if (out.ok) toast.success(out.message); else toast.error(out.message);
-    refreshLiveSoon();
-  } catch (e) {
-    if (e instanceof SessionRejected) set({ authed: false, user: null });
-    toast.error((e as Error).message);
   }
 }
 

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { TEXT_CHANGED } from '../../src/decider/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -55,7 +56,7 @@ describe('Item snapshots (issue #662)', () => {
     expect(recorded).toHaveLength(1);
     expect(recorded[0]).toMatchObject({ jobId: first.id, data: { key: issue.url, reason: 'intake', hash: expect.stringMatching(/^[0-9a-f]{64}$/) } });
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first.id, token);
     expect(r.status).toBe(200);
     expect(r.body.textChange).toBeUndefined();
     const second = await a.waitForStatus(r.body.id, 'failed');
@@ -72,7 +73,7 @@ describe('Item snapshots (issue #662)', () => {
     const { issue, first, jobsFor } = await failedOnce(gh, a);
     gh.addComment(REPO, issue.number, 'owner', 'Status ping.');
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first.id, token);
     expect(r.status).toBe(200);
     expect(r.body.textChange).toBeUndefined();
     const second = await a.waitForStatus(r.body.id, 'failed');
@@ -96,7 +97,7 @@ describe('Item snapshots (issue #662)', () => {
     gh.editIssue(REPO, issue.number, { title: 'Do another thing', body: EDITED }, 'someone-else');
     gh.addComment(REPO, issue.number, 'owner', 'Also do this.');
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first.id, token);
     expect(r.status).toBe(200);
     const held = await waitFor(async () => { const j = await job(a, r.body.id); return j.holdReason === TEXT_CHANGED ? j : undefined; }, { what: 'held for the change' });
     expect(held.status).toBe('held');
@@ -129,7 +130,7 @@ describe('Item snapshots (issue #662)', () => {
     const token = await a.login();
     const { issue, first } = await failedOnce(gh, a);
     gh.editIssue(REPO, issue.number, { body: EDITED }, 'owner');
-    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first.id, token);
     await waitFor(async () => (await job(a, r.body.id)).textChange, { what: 'held for the change' });
 
     const accepted = await a.ui<Job>(`/ui/api/jobs/${r.body.id}/accept-new-text`, {}, { token });
@@ -147,7 +148,7 @@ describe('Item snapshots (issue #662)', () => {
     // The accepted text is the snapshot now: Run again runs it at once.
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed again' });
     await a.sync();
-    const again = await a.ui<Job>(`/ui/api/jobs/${r.body.id}/rerun`, {}, { token });
+    const again = await runAgain(a, r.body.id, token);
     expect(again.status).toBe(200);
     expect(again.body.textChange).toBeUndefined();
     expect(again.body.spec.payload.body).toBe(EDITED);
@@ -161,7 +162,7 @@ describe('Item snapshots (issue #662)', () => {
     const { issue, first } = await failedOnce(gh, a);
     server.reachable = false;
     gh.editIssue(REPO, issue.number, { body: EDITED }, 'someone-else');
-    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    const r = await runAgain(a, first.id, token);
     await waitFor(async () => (await job(a, r.body.id)).textChange, { what: 'held for the change' });
 
     const refused = await a.ui<{ error: string }>(`/ui/api/jobs/${r.body.id}/accept-new-text`, {}, { token });

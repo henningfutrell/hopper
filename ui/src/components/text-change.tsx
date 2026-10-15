@@ -5,24 +5,30 @@ import { diffLines } from 'diff';
 import { Check, RotateCcw } from 'lucide-react';
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block';
 import { newCommentsOf } from '@/model/text-change';
 import { act } from '@/store';
 import { useCanOperate } from '@/store/selectors';
 import type { Job } from '@/model/wire';
 import { Since } from './job';
 
-/** The body's change, line by line: removed lines, then added ones, in place. */
+/** The body's change, line by line, in a code block in diff mode: removed lines, then added ones, in place. */
 export function BodyDiff({ from, to }: { from: string; to: string }) {
   const parts = useMemo(() => diffLines(from, to), [from, to]);
+  const lines = parts.flatMap((p) => p.value.replace(/\n$/, '').split('\n').map((text) => ({ text, change: p.added ? 'added' as const : p.removed ? 'removed' as const : 'same' as const })));
   return (
-    <pre data-slot="body-diff" className="max-h-64 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">
-      {parts.map((p, i) => (
-        <span key={i} data-change={p.added ? 'added' : p.removed ? 'removed' : 'same'}
-          className={p.added ? 'bg-ok/15 text-ok' : p.removed ? 'bg-bad/15 text-bad line-through' : 'text-muted-foreground'}>
-          {p.value}
-        </span>
-      ))}
-    </pre>
+    <div data-slot="body-diff">
+      <CodeBlock size="sm">
+        <CodeBlockContent wrap aria-label="What changed in the text" className="max-h-64">
+          {lines.map((l, i) => (
+            <CodeBlockLine key={i} data-change={l.change} variant={l.change === 'same' ? 'default' : l.change}
+              className={l.change === 'same' ? 'text-muted-foreground' : undefined}>
+              {l.text}
+            </CodeBlockLine>
+          ))}
+        </CodeBlockContent>
+      </CodeBlock>
+    </div>
   );
 }
 

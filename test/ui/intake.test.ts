@@ -145,8 +145,10 @@ describe('Intake: what intake did with each labelled issue (issues #440, #897)',
     await vi.waitFor(() => expect(intake()).not.toBeNull());
     const card = row(url(8)).querySelector<HTMLElement>('[data-slot="request-card"]')!;
     const diff = card.querySelector('[data-slot="body-diff"]')!;
-    expect([...diff.querySelectorAll('[data-change="removed"]')].map((e) => e.textContent)).toEqual(['two\n']);
-    expect([...diff.querySelectorAll('[data-change="added"]')].map((e) => e.textContent)).toEqual(['three\n']);
+    // Issue #1169: a code block in diff mode, one line each, marked as removed or added.
+    expect(diff.getAttribute('data-slot') === 'code-block' || diff.querySelector('[data-slot="code-block"]') !== null).toBe(true);
+    expect([...diff.querySelectorAll('[data-change="removed"]')].map((e) => [e.getAttribute('data-variant'), e.textContent])).toEqual([['removed', 'two']]);
+    expect([...diff.querySelectorAll('[data-change="added"]')].map((e) => [e.getAttribute('data-variant'), e.textContent])).toEqual([['added', 'three']]);
     expect(card.querySelector('[data-slot="request-actors"]')!.textContent).toContain('labelled by helper[bot] (helper[bot])');
     expect(button(card, 'Approve the new text')).toBeDefined();
   });

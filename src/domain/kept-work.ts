@@ -36,6 +36,12 @@ export function discardReasonOf(job: Job, itemDone: boolean, newest: Job | undef
 /** One ended job's kept work: the repositories holding it, and when it was kept. */
 export interface KeptWork { jobId: string; paths: string[]; at: string }
 
+/**
+ * A discard a person asked for (issue #1194): answered at once, its removal on the machine after — under way, or failed
+ * with why (`job.work_discard_failed`). Kept in memory: after a restart the work shows kept, as it is.
+ */
+export type Discarding = { state: 'removing' } | { state: 'failed'; error: string };
+
 /** Kept work as the Failures view shows it: its job, its machine, and whether each way out is taken now and why not. */
 export interface KeptWorkView extends KeptWork {
   status: JobStatus;
@@ -45,6 +51,8 @@ export interface KeptWorkView extends KeptWork {
   machineId?: string;
   /** Its open hand-off: Push it resolves it as Continue. */
   handoffId?: string;
+  /** Its discard, while it is removed on the machine or once that failed (issue #1194). */
+  discarding?: Discarding;
   actions: { push: Allowed; discard: Allowed };
 }
 

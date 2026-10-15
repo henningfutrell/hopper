@@ -1,8 +1,10 @@
 // A question's place on its issue thread (issue #435), on its card and its Parked row: held for review, with Approve for
-// a person who operates; approved; or asked, with the link to the comment.
+// a person who operates; approved; or asked, with the link to the comment. A Marker, as who answered is (issue #1169).
 import { MessagesSquare, Send } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
+import { cn } from '@/lib/utils';
 import { awaitsThreadReview, threadLine } from '@/model/thread-ask';
 import type { QuestionView } from '@/model/wire';
 import { act, refreshQuestions } from '@/store';
@@ -20,11 +22,11 @@ export function ThreadState({ q, className }: { q: QuestionView; className?: str
     refreshQuestions().catch(() => {});
   };
   return (
-    <div data-slot="thread-state" className={`flex flex-wrap items-center gap-2 text-xs text-muted-foreground ${className ?? ''}`}>
-      <MessagesSquare className="size-3.5" />
-      <span>{line}</span>
-      {q.thread?.url && <a className="underline" href={q.thread.url} target="_blank" rel="noreferrer">See the comment</a>}
+    <Marker data-thread-state className={cn('flex-wrap text-xs', className)}>
+      <MarkerIcon><MessagesSquare className="size-3.5" /></MarkerIcon>
+      <MarkerContent>{line}</MarkerContent>
+      {q.thread?.url && <a href={q.thread.url} target="_blank" rel="noreferrer">See the comment</a>}
       {canOperate && awaitsThreadReview(q) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void approve()}><Send />Post on the issue</Button>}
-    </div>
+    </Marker>
   );
 }

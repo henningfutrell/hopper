@@ -7,6 +7,7 @@
 // Part 2: its cost and usage (its job runs, as the job cost profiles read them), its pushes through the hopper, every
 // commit of its pull request and the files it changes (as the hopper's mirror last said, kept on the followed pull
 // request), the help pages and What's new lines among them, and its place in the merge order (what holds it).
+// Its GitHub calls (issue #1072): what the hopper did on GitHub for it, and the reads it answered with no call.
 import type { Artifact } from './artifacts.ts';
 import type { JobRun } from './job-costs.ts';
 import type { PullRequestSeen } from './pull-requests.ts';
@@ -144,6 +145,24 @@ function usage(runs: readonly JobRun[]): BomPart | undefined {
   return {
     id: 'usage', group: 'work', kind: 'usage', label: windows.length ? `Usage: ${windows.join(', ')}` : 'Usage: not measured', status: 'recorded', href: '#machines',
     detail: `${plural(runs.length, 'run')}, ${samples ? plural(samples, 'sample') : 'no samples'}${used.length ? `: ${used.join('; ')}` : ''}`,
+  };
+}
+
+/**
+ * Its GitHub calls (issue #1072, design.md "Jobs ask the hopper, not GitHub"), as the GitHub proxy recorded them: each
+ * read the hopper did on GitHub for the job (`source: github`), each write and push, and the reads its records or the
+ * repo-query cache answered (`hopper`, `cache`) with no call. Undefined: the job asked the hopper nothing.
+ */
+function githubCalls(events: readonly DomainEvent[]): BomPart | undefined {
+  const done = events.filter((e) => e.type === 'github_proxy.done').map((e) => e.data as Data);
+  if (!done.length) return undefined;
+  const reads = done.filter((d) => d.source === 'github').length;
+  const answered = done.filter((d) => d.source === 'hopper' || d.source === 'cache').length;
+  const writes = done.length - reads - answered;
+  const calls = reads + writes;
+  return {
+    id: 'github', group: 'work', kind: 'github_calls', label: calls ? plural(calls, 'GitHub call') : 'No GitHub calls', status: 'recorded',
+    detail: `${plural(reads, 'read')} of GitHub, ${plural(writes, 'write')}; ${plural(answered, 'read')} answered by the hopper with no GitHub call`,
   };
 }
 
@@ -306,7 +325,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
-    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? [])].filter((p) => p !== undefined), ...code(job, own), ...outputs(job, own, input.artifacts),
+    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))

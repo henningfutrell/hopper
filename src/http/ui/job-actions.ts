@@ -13,7 +13,7 @@ import { actingOf } from './sessions.ts';
 import type { Operation } from '../openapi-operation.ts';
 
 const idParams = z.object({ id: z.string() });
-const RERUN_STATUS = { not_found: 404, conflict: 409, source: 502 } as const;
+const GIVE_BACK_STATUS = { not_found: 404, conflict: 409 } as const;
 
 export function registerJobActionRoutes(app: FastifyInstance, o: {
   operator: { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
@@ -34,18 +34,15 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   app.post('/ui/api/jobs/:id/approve', o.operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/operator-led', o.operator, async (req) => o.tenant(req).engine.claimByOperator(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/reject', o.operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id, parseWith(rejectBody, req.body ?? {}).reason));
-  app.post('/ui/api/jobs/:id/rerun', o.operator, async (req) => {
-    const r = await o.tenant(req).registry.rerun(parseWith(idParams, req.params).id);
-    if (r.ok) return r.job;
-    throw new HttpError(RERUN_STATUS[r.reason], r.message);
-  });
-  app.post('/ui/api/jobs/:id/rework', o.operator, async (req) => {
-    const { notes } = parseWith(reworkBody, req.body ?? {});
+  // Run again and Rework answer once their checks pass (issue #1194): 202, the give-back running; the new job follows.
+  const giveBack = (req: FastifyRequest, reply: FastifyReply, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }) => {
     const s = signedInOf(req);
-    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s) : undefined);
-    if (r.ok) return r.job;
-    throw new HttpError(RERUN_STATUS[r.reason], r.message);
-  });
+    const r = o.tenant(req).registry.giveBack(parseWith(idParams, req.params).id, act, s ? actingOf(s) : undefined);
+    if (!r.ok) throw new HttpError(GIVE_BACK_STATUS[r.reason], r.message);
+    return reply.code(202).send({ jobId: r.jobId, giveBack: r.giveBack });
+  };
+  app.post('/ui/api/jobs/:id/rerun', o.operator, async (req, reply) => giveBack(req, reply, { kind: 'rerun' }));
+  app.post('/ui/api/jobs/:id/rework', o.operator, async (req, reply) => giveBack(req, reply, { kind: 'rework', notes: parseWith(reworkBody, req.body ?? {}).notes }));
   app.post('/ui/api/jobs/:id/park', o.operator, async (req) => o.tenant(req).engine.park(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, parseWith(requeueBody, req.body ?? {})));
   app.post('/ui/api/jobs/:id/end-wait', o.operator, async (req) => {

@@ -10,6 +10,7 @@
 import { Check, Loader2, X } from 'lucide-react';
 import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
 import { Button } from '@/components/ui/button';
+import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block';
 import { approveRequest, declineRequest, useApprovals, waitsForDaemon } from '@/store/intake';
 import { BodyDiff } from './text-change';
 
@@ -44,7 +45,7 @@ export function RequestCard({ request, source, itemKey, canOperate }: { request:
       <div className="font-medium" data-slot="request-title">{request.title}</div>
       {request.approved
         ? <BodyDiff from={request.approved.body} to={request.body} />
-        : <pre data-slot="request-body" className="max-h-64 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">{request.body}</pre>}
+        : <div data-slot="request-body"><CodeBlock size="sm"><CodeBlockContent wrap aria-label="The request's text" className="max-h-64">{request.body}</CodeBlockContent></CodeBlock></div>}
       {approval?.state === 'refused' && <div data-slot="request-error" role="alert" className="text-bad">Not done: {approval.error}</div>}
       <div className="flex flex-wrap items-center gap-2">
         {approval?.state === 'approved' && <span data-slot="request-approved" className="text-ok">Approved: no job yet. The source makes one at its sync</span>}
@@ -52,10 +53,10 @@ export function RequestCard({ request, source, itemKey, canOperate }: { request:
         {approval?.state !== 'approved' && approval?.state !== 'declined' && canOperate && (
           <>
             <Button size="xs" data-slot="request-approve" disabled={waits} aria-busy={pending}
-              title="Approves this title and body: the source syncs at once and makes a job, and the job runs this text. A later edit shows the card again."
+              title="Approves this title and body: the source then syncs and makes a job, and the job runs this text. A later edit shows the card again."
               onClick={() => void approveRequest(source, itemKey, request.hash)}>
               {pending
-                ? <><Loader2 className="animate-spin motion-reduce:animate-none" />Approving: the source syncs now</>
+                ? <><Loader2 className="animate-spin motion-reduce:animate-none" />Approving</>
                 : <><Check />{request.approved ? 'Approve the new text' : 'Approve'}</>}
             </Button>
             <Button size="xs" variant="outline" data-slot="request-decline" disabled={waits} aria-busy={approval?.state === 'declining'}

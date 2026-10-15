@@ -7,6 +7,7 @@ import type { DomainEvent } from '@/model/wire';
 import { announceCredentialAsked } from './vault';
 import { ARTIFACTS_REREAD_MS, refreshArtifacts, refreshArtifactsSoon } from './artifacts';
 import { refreshLineage, refreshLineageSoon } from './lineage';
+import { onGiveBackEvent } from './give-back';
 import { onDelivery, onDomainEvent, onRecorded, onSource, refreshFailures, refreshHealth, refreshLive, refreshLogins, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
 
 export function connect(): () => void {
@@ -30,7 +31,7 @@ export function connect(): () => void {
   es.addEventListener('source.updated', (m) => onSource(JSON.parse(m.data)));
   es.addEventListener('usage.recorded', () => onRecorded('usage'));
   es.addEventListener('machine.recorded', () => onRecorded('machine'));
-  for (const t of EVENT_TYPES) es.addEventListener(t, (m) => onDomainEvent(JSON.parse(m.data) as DomainEvent));
+  for (const t of EVENT_TYPES) es.addEventListener(t, (m) => { const e = JSON.parse(m.data) as DomainEvent; onDomainEvent(e); onGiveBackEvent(e); });
   // A job asks the user for a credential (issue #583): said as it comes, never on a replay of what the page holds.
   es.addEventListener('vault.credential_asked', (m) => { const e = JSON.parse(m.data) as DomainEvent; if (e.seq > after) announceCredentialAsked(e); });
   // Artifacts (issue #624): made, shared, revoked or removed — read again; and before their content URLs run out.

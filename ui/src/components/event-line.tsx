@@ -1,5 +1,6 @@
 // One event as one line: time, type (coloured by what ended or started), and its subject. An event about a job links to
-// its job view (issue #433); one with no job has no link.
+// its job view (issue #433); one with no job has no link. Live activity shows EventLine; the event stream EventText, in a
+// code block; the job timeline, a Trace, takes its tone and detail (issue #1169).
 import { clock } from '@/model/format';
 import { subjectOf } from '@/model/board';
 import { jobHref } from '@/model/job';
@@ -93,7 +94,38 @@ export function detailOf(e: DomainEvent): string {
   return '';
 }
 
-export function EventLine({ e, nameOf, machines, className }: { e: DomainEvent; nameOf: (jobId: string) => string; machines: readonly Pick<MachineView, 'id' | 'label'>[]; className?: string }) {
+type Machines = readonly Pick<MachineView, 'id' | 'label'>[];
+
+/** The event's subject, a link to its job when it has one, then its detail. */
+function Subject({ e, nameOf, machines }: { e: DomainEvent; nameOf: (jobId: string) => string; machines: Machines }) {
+  const detail = detailOf(e);
+  const subject = subjectOf(e, nameOf, machines);
+  return (
+    <>
+      {e.jobId ? <a href={jobHref(e.jobId)} className="underline-offset-4 hover:underline">{subject}</a> : subject}
+      {detail && <span className="text-muted-foreground"> — {detail}</span>}
+    </>
+  );
+}
+
+/** One event as plain text, for a copy of a log: seq, time, type, subject and detail. */
+export function eventLineText(e: DomainEvent, nameOf: (jobId: string) => string, machines: Machines): string {
+  const detail = detailOf(e);
+  return `#${e.seq} ${e.at} ${e.type} ${subjectOf(e, nameOf, machines)}${detail ? ` — ${detail}` : ''}`;
+}
+
+/** One event as a line of text in a log (issue #1169): time, type (coloured by what ended or started), subject. */
+export function EventText({ e, nameOf, machines }: { e: DomainEvent; nameOf: (jobId: string) => string; machines: Machines }) {
+  return (
+    <>
+      <span className="num text-muted-foreground/80" title={e.at}>{clock(e.at)}</span>{' '}
+      <span className={cn('font-medium', TEXT[eventTone(e.type)])}>{e.type}</span>{' '}
+      <Subject e={e} nameOf={nameOf} machines={machines} />
+    </>
+  );
+}
+
+export function EventLine({ e, nameOf, machines, className }: { e: DomainEvent; nameOf: (jobId: string) => string; machines: Machines; className?: string }) {
   const detail = detailOf(e);
   const subject = subjectOf(e, nameOf, machines);
   return (
@@ -101,8 +133,7 @@ export function EventLine({ e, nameOf, machines, className }: { e: DomainEvent; 
       <span className="num font-mono text-muted-foreground/80" title={e.at}>{clock(e.at)}</span>
       <span className={cn('truncate font-mono font-medium', TEXT[eventTone(e.type)])}>{e.type}</span>
       <span className="min-w-0 truncate" title={detail ? `${subject} — ${detail}` : subject}>
-        {e.jobId ? <a href={jobHref(e.jobId)} className="underline-offset-4 hover:underline">{subject}</a> : subject}
-        {detail && <span className="text-muted-foreground"> — {detail}</span>}
+        <Subject e={e} nameOf={nameOf} machines={machines} />
       </span>
     </div>
   );

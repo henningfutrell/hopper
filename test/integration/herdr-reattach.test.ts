@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_FAILURE_SETTINGS, type Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
+import { runAgain } from '../support/give-back.ts';
 import { openAdminStore } from '../support/files.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -222,7 +223,7 @@ describe('herdr-claude job across a daemon restart', () => {
 
     const token = await second.login();
     await waitFor(async () => (await second.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
-    const rerun = (await second.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).body;
+    const rerun = (await runAgain(second, job.id, token)).body;
     const held = await waitFor(async () => { const j = await second.job(rerun.id); return j.status === 'held' ? j : undefined; }, { what: 'the rerun held' });
     expect(held.holdReason).toContain(job.id);
     expect(herdr.agentStarts).toHaveLength(1); // the rerun never ran beside the live pane
@@ -247,7 +248,7 @@ describe('herdr-claude job across a daemon restart', () => {
     await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });
     const token = await second.login();
     await waitFor(async () => (await second.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
-    const rerun = (await second.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).body;
+    const rerun = (await runAgain(second, job.id, token)).body;
     await waitFor(async () => (await second.job(rerun.id)).status === 'held', { what: 'the rerun held' });
 
     const marked = await waitFor(async () => { const r = await second.ui<Job>(`/ui/api/jobs/${job.id}/cleaned-up`, {}, { token }); return r.status === 200 ? r : undefined; }, { what: 'Mark closed accepted' });
