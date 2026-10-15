@@ -18,6 +18,7 @@ import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 import type { LandingCard } from './work-item-landing.ts';
 import { changeRuleFor, mergesOnReady, type ChangeClass, type ChangeRule } from './change-kinds.ts';
+import type { UntrackedPullRequest } from './untracked-pull-requests.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
 export * from './repo-checks.ts';
@@ -100,6 +101,8 @@ export interface PullRequestsView {
   repos: { repo: string; yolo: boolean; pullRequests: PullRequestCard[] }[];
   /** Job pull requests merged into the landing branch, on their way to the tested branch (issue #1073); absent: none. */
   landing?: LandingCard[];
+  /** The open pull requests of the job repositories the hopper does not track, each with why (issue #1176); absent: none. */
+  untracked?: UntrackedPullRequest[];
 }
 
 interface Followed extends Holds { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; tended?: Tended }

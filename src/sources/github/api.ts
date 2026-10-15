@@ -97,6 +97,8 @@ export interface BranchPullRequest extends OpenPullRequest {
   /** Its head branch's name. */
   headRef: string;
   body: string;
+  /** Its title (issue #1176: the untracked pull requests list shows it); absent: not read. */
+  title?: string;
 }
 
 /** A pull request that mentions the issue (its timeline's cross-references), in any state: what a part is told by (issue #579). */
