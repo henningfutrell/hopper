@@ -10,8 +10,8 @@ export const LEDGER_JOBS = 'ledger-jobs';
 export const LANES_JOBS = 'lanes-jobs';
 
 /**
- * The ledger states a job's status gives its item while the job is not over. A question keeps the item `working` until it
- * reaches a person; a job's own background command keeps it `working`. Absent (`operator_led`): worked by hand, no check.
+ * The ledger states a job's status gives its item while the job is not over. A question, a proposal or a research report keeps the
+ * item `working` until it reaches a person (issue #1174); a job's own background command keeps it `working`. Absent (`operator_led`): worked by hand, no check.
  */
 const LEDGER_FOR: Partial<Record<JobStatus, readonly WorkItemState[]>> = {
   queued: ['queued'], held: ['queued'], claimed: ['working'], running: ['working'],

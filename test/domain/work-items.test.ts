@@ -66,6 +66,18 @@ describe('the work-item reducer', () => {
     expect(fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'the build', ownCommand: true }]])).toMatchObject({ state: 'working', waitingOn: 'the build' });
   });
 
+  it('a proposal or a research report at a person needs you, never working (issue #1174); the decision moves it on', () => {
+    const proposal = fold([['job.queued'], ['job.started'], ['proposal.submitted', { proposalId: 'p1' }], ['proposal.escalated_to_human', { proposalId: 'p1', reason: 'no reviewer levels configured' }]]);
+    expect(proposal).toMatchObject({ state: 'needs_you', waitingOn: 'a proposal' });
+    expect(inFlightOf([proposal!]).total).toBe(0);
+    expect(countStates([proposal!]).needs_you).toBe(1);
+    expect(fold([['job.queued'], ['job.started'], ['research.escalated_to_human', { researchId: 'r1' }]])).toMatchObject({ state: 'needs_you', waitingOn: 'a research report' });
+    expect(fold([['job.queued'], ['job.started'], ['proposal.escalated_to_human'], ['job.requeued', { from: 'waiting_answer', reason: 'proposal sent back' }]])?.state).toBe('queued');
+    expect(fold([['job.queued'], ['job.started'], ['proposal.escalated_to_human'], ['job.finished', { result: { proposal: { id: 'p1', decision: 'accept' } } }]])?.state).not.toBe('needs_you');
+    // An older job's proposal moves nothing once a newer job holds the item.
+    expect(fold([['job.queued'], ['job.queued', {}, j2], ['job.started', {}, j2], ['proposal.escalated_to_human', {}, j1]])?.state).toBe('working');
+  });
+
   it('a stray pull request closed (issue #1143 part 4) moves nothing: its item waits as it did', () => {
     const other = 'https://github.com/o/r/pull/3';
     const handoff = fold([['job.queued'], ['job.failed', { error: 'x' }], ['handoff.opened', {}], ['job.pull_request_closed', { pullRequest: other, part: false, superseded: 'why', stray: true }]]);

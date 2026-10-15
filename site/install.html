@@ -246,8 +246,12 @@ and password. Every command below runs in that Ubuntu window, not in PowerShell,
 must not say <code>System has not been booted with systemd</code>.</p></li>
 <li><p>Install Podman in Ubuntu:</p>
 <div class="cmd"><pre>sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose">Copy</button></div></li>
-<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu, to its last step,
-<strong>Keep it running after a reboot</strong>. The sign-in link opens in
+<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu. After you get the compose file, and
+before the first <code>podman compose up -d</code>, run this in the same folder. Windows tries <code>::1</code> first for
+<code>localhost</code>, so it publishes the hopper on <code>::1</code> too, when Ubuntu has it. It writes
+<code>compose.override.yaml</code>. Nothing listens on your network:</p>
+<div class="cmd"><pre>grep -q '^0\{31\}1 ' /proc/net/if_inet6 &amp;&amp; printf 'services:\n  hopper:\n    ports:\n      - "[::1]:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"\n' &gt; compose.override.yaml</pre><button type="button" data-copy="grep -q &#x27;^0\{31\}1 &#x27; /proc/net/if_inet6 &amp;&amp; printf &#x27;services:\n  hopper:\n    ports:\n      - &quot;[::1]:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}&quot;\n&#x27; &gt; compose.override.yaml">Copy</button></div>
+<p>Then go on to its last step, <strong>Keep it running after a reboot</strong>. The sign-in link opens in
 your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows. Do not skip the last step. It makes
 the hopper's containers start each time Ubuntu starts:</p>
 <div class="cmd"><pre>sudo loginctl enable-linger "$USER"

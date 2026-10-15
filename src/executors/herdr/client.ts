@@ -16,6 +16,18 @@ export interface AgentInfo {
 
 export type ReadSource = 'visible' | 'recent' | 'recent-unwrapped';
 
+/** A pane of the herdr session (issue #1128, the machine's terminal): what `herdr pane list` says of it, no path. */
+export interface HerdrPane {
+  paneId: string;
+  tabId: string;
+  workspaceId: string;
+  /** The terminal's title, as the program in it set it. */
+  title?: string;
+  /** The agent herdr knows runs in it (`claude`). */
+  agent?: string;
+  agentStatus: AgentStatus;
+}
+
 /** `notReady`: Claude blocked at startup. `paneBusy`: the pane is not at its shell prompt yet (just spawned); retry. */
 export type StartAgentResult = { ok: true } | { ok: false; notReady: true } | { ok: false; paneBusy: true };
 
@@ -52,6 +64,8 @@ export interface HerdrClient extends MachineShell {
   runInPane(paneId: string, command: string): Promise<void>;
   /** True once the pane's recent output holds `text`; false when `timeoutMs` passes first. */
   waitOutput(paneId: string, text: string, timeoutMs: number): Promise<boolean>;
+  /** Every pane of the session (issue #1128): the ones no job holds too. */
+  listPanes(): Promise<HerdrPane[]>;
   /** Rejects `pane_not_found` for a pane already gone. */
   closePane(paneId: string): Promise<void>;
   /** True while the machine's link is down (issue #752): a client target not dialled in. Absent: the machine has no link. */

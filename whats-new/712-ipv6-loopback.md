@@ -1,0 +1,1 @@
+- On Windows, the install steps now make the hopper in WSL open at localhost too, not only at 127.0.0.1. It still listens on this computer only.

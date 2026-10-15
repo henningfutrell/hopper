@@ -16,6 +16,12 @@
         "api"
       ]
     },
+    "machineId": {
+      "type": "string"
+    },
+    "paneId": {
+      "type": "string"
+    },
     "chars": {
       "type": "integer",
       "exclusiveMinimum": 0,

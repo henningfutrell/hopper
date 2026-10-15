@@ -53,6 +53,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/tool-accounts/sign-in', kind: 'change work on a machine' },
   { route: '/ui/api/logins/:id/code', kind: 'change work on a machine' },
   { route: '/ui/api/jobs/:id/terminal/input', kind: 'change work on a machine' }, // issue #1128: typed into a job's pane
+  { route: '/ui/api/machines/:id/terminal/input', kind: 'change work on a machine' }, // issue #1128: typed into a pane on a machine
   { route: '/ui/api/machines', kind: 'change work on a machine' },
   { route: '/ui/api/machines/join', kind: 'change work on a machine' },
   { route: '/ui/api/machines/sandbox', kind: 'change work on a machine' },

@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659) | http, decider |
@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
@@ -880,6 +880,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   stays in the job's scope, so it is stopped: the container goes on unmonitored (no restart policy, no
   `--rm`). A service meant to outlive the job is started outside it, e.g. `env -u HOPPER_JOB_ID
   systemd-run --user …`, or through a socket's daemon (`docker compose` against a podman socket).
+  A **job container** (issue #1120, "Hopper's own disk use" → "Part 3"): a container or a volume labelled
+  `hopper.job=<job id>` is the job's, whichever way it was started. The reap removes each one in each container
+  runtime there (`docker`, `podman`), a container with its anonymous volumes (`rm -f -v`), and prints
+  `hopper-removed-container <id>` and `hopper-removed-volume <name>`; `Reaped.removed` carries them, and the engine records
+  `job.containers_removed { containers, volumes }`. Asked with `keep` it removes none, nor does a client's isolation
+  stop: neither is the job's end.
 - **The sweep** (issue #410, `src/engine/sweep.ts`). The reap runs when a pane closes; a hopper that
   crashed, a lost pane, a machine that rebooted or could not be reached left nothing to run it. So at
   startup, after recovery and the reap of each job it ended, and then on each machine every
@@ -900,6 +906,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder;
   - over the disk budget (issue #1120, "Hopper's own disk use"): every ended job's scratch dir at once, whatever its
     age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
+  - an ended job with a **job container** still there (issue #1120, the survey's `hopper-container <job id>`, read
+    through the `hopper.job` label of each container and volume): reaped at once, whatever its age, which removes it
+    (`job.containers_removed`).
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
@@ -978,7 +987,7 @@ If your work overlaps another job's, sort it out yourself. Either state the assu
 [hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
-When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, inside the standing rules, and need no person, the hopper continues with that path at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.
+When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, or a combination of paths that go together, inside the standing rules, and need no person, the hopper continues with them at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue.
 Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
 When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends.
@@ -7608,7 +7617,9 @@ marker, which every process of the run inherits. Its teardown kills every proces
 containers and removes the run root. Setup and teardown both sweep what a dead run left
 (`test/support/sweep.ts`): run roots whose pid is dead, containers named `jh-<kind>-<pid>` (a test's
 container names end in its pid) and containers labelled `hopper.test-pid=<pid>` (the Postgres) whose
-pid is dead. A live pid's are never touched: they belong to a run still going. Older leftovers in the
+pid is dead, each with its anonymous volumes. A live pid's are never touched: they belong to a run still going. A run
+in a hopper job (`HOPPER_JOB_ID` set) also labels each container it starts `hopper.job=<job id>`
+(`containerLabels`, issue #1120), so the job's reap removes it when the job ends. Older leftovers in the
 tmpdir (`jh-test-home-*`, …) are not swept by name; another suite may own them. A unix socket path is
 capped at 108 bytes, so a test that listens on a socket makes its dir in `/tmp`, not under the run root.
 
@@ -11769,7 +11780,11 @@ go to a person — no reviewer levels, or the levels passed it up without signin
 (`src/review/service.ts`) signs it off itself, at the stage `hopper` (`AUTO_CONTINUE`), with that one path selected, and
 the path continues as a follow-on job as a person's selection would ("Proposals: a set of paths"):
 `proposal.accepted { stage: "hopper", selected }`, notes "the hopper continued with the recommended path N: no rule needs a
-person to decide". It goes to a person instead (`proposal.escalated_to_human`), the reason naming the first that holds:
+person to decide". A combination it continues with the same way (issue #1174): each recommended path selected, each a
+follow-on, notes "the hopper continued with the recommended paths 2, 4: …". The protocol's `Recommended:` names a path or
+the paths of a combination, so several paths named there are paths that combine; the job's `Needs a person:` line is how it
+says they do not. It goes to a person instead (`proposal.escalated_to_human`; its work item then `needs_you`, waiting on
+`a proposal`), the reason naming the first that holds:
 
 | hold | reason |
 |---|---|
@@ -11777,9 +11792,9 @@ person to decide". It goes to a person instead (`proposal.escalated_to_human`), 
 | a reviewer level escalated this version | `a reviewer level escalated it: <level>: <notes>` |
 | the structural pre-check finds a gap (it runs here even with no reviewer levels) | `the proposal has gaps: …` |
 | no viable path | `the proposal has no path to continue with: a person decides` |
+| a recommended path a reviewer level found not viable (issue #1174) | `a recommended path is not viable: <id> (<why>)` |
 | none recommended | `no viable path is recommended: a person selects` |
-| a combination recommended | `the proposal recommends a combination of paths (1, 3): a person selects` |
-| a risk rule (`src/questions/risk.ts`) matches the recommended path's title or summary | `a risk rule matches the recommended path: <rules>` |
+| a risk rule (`src/questions/risk.ts`) matches a recommended path's title or summary | `a risk rule matches the recommended path: <rules>`; of a combination, `… path <id>: <rules>` |
 
 Off (`POST /ui/api/proposals/settings` `{ autoContinue: false }`, admin; Proposals → settings), every such proposal goes
 to a person as before. Research has no such setting (400). A saved setting row without the field reads as on; no stored
@@ -12893,6 +12908,13 @@ cannot see which. A client in the same distro can, so it tests the link:
   (`localhost`, `127.x.x.x`, `[::1]`) is on the same PC as the hopper. Any other client tests nothing. In the
   background, at most every 5 minutes, and at its first `/release` after a start; a result older than 15 minutes is
   dropped.
+- **The `[::1]` port** (the path "Publish the port on IPv6 loopback too"). Windows tries `::1` first for `localhost`,
+  and WSL passes it through only to a port the distro publishes on `::1`. So on Windows the install page writes a
+  `compose.override.yaml` that publishes the UI on `[::1]` beside `127.0.0.1`, only when the distro has IPv6 loopback
+  (`/proc/net/if_inet6` lists `::1`): a distro without it cannot bind `::1`, and the start would fail. Not in
+  `compose.yaml` itself: compose cannot add a port on a condition, and a Linux host gains nothing from it. A request on
+  `::1` reaches the daemon from the compose network, as one on `127.0.0.1` does; nothing listens on a LAN interface
+  (`docs/deploy.md` "Open it at localhost from Windows").
 - **The test** (`src/client/windows-link.ts`). `wslinfo --networking-mode` gives the **mode** (`nat`, `mirrored`).
   `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on the
   **address check** (`/job/address`, issue #698: 204 to anyone the Host guard lets in, with no session; `/api/health`
@@ -17884,7 +17906,8 @@ clears what GitHub said before. An older job's end moves nothing; an older job's
 request to a newer job). A job's own run status stays on the job: the item's lifecycle is only the ledger's.
 
 **The states.** `waiting_for_approval` (a request card), `queued`, `working` (its own background command too),
-`needs_you` (a question escalated to a person, a hand-off, a parked job), `waiting_outside` (a named outside wait),
+`needs_you` (a question, a proposal or a research report escalated to a person — issue #1174: `waitingOn` `a proposal`,
+`a research report` —, a hand-off, a parked job), `waiting_outside` (a named outside wait),
 `pr_open` (a finished job's pull request, on its way to the merge: there is no "ready for review"), `partly_done`
 (a part merged, the next part runs), `done`, `failed` (the newest attempt failed, nothing replaced it, nobody dismissed
 it: the only failure any count may count) and `dropped` (dismissed, declined, cancelled, rejected, a pull request
@@ -18707,15 +18730,32 @@ runs and the one it ran before (read from the hopper's container before the stac
   `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Kept
   in memory, as the memory alert: a machine still over after a restart is told again.
 
-**Left for later parts:** a record of each resource the hopper makes (job containers, volumes, logs, bundles) with its
-owner, removed as an event when the owner ends; a periodic reconcile of orphans and of images the hopper's boxes left, with a
-retention for backups and update logs; the shared checkouts (`workspace/<name>`) and the shared dependencies in the disk
-use; and the Grok Bot routine posting the disk budget's events.
+**Part 3: a job's containers and volumes** (`src/client/reap.ts` `JOB_LABEL`; `src/engine/sweep.ts`; `src/engine/cleanup.ts`).
+The exited per-job database containers and the orphaned volumes came from jobs' own test runs: a job killed at its end
+left its test container, and the test sweep removed a dead run's containers without their anonymous volumes.
+- **The owner is a label.** A container or a volume labelled `hopper.job=<job id>` is that job's (a **job container**).
+  The hopper's own tests label every container they start so when they run in a job (`HOPPER_JOB_ID`;
+  `test/support/sweep.ts` `containerLabels`), and their sweep of a dead run's containers now removes their anonymous
+  volumes too (`rm -f -v`).
+- **The reap removes them at the job's end**, in each container runtime on the machine, and the engine records
+  `job.containers_removed` with each one (the cleanup's reap, the sweep's, a discard's). Not with `keep` (a timed-out
+  job's), nor at a client's isolation stop: the job may go on.
+- **The sweep removes orphans**: the survey names each job with a job container there, and the sweep reaps an ended one
+  at once, whatever its age. A job the hopper does not know, or one not ended (parked too), is never touched.
+- Each runtime call is cut off at 30 s by `timeout` where it is, and only ids a runtime gave are passed on, never one
+  that starts with `-`. A machine with no runtime, or one whose runtime cannot be reached, removes and names none.
+
+**Left for later parts:** a container a job starts without the label (the job's own tooling outside the hopper's tests);
+the images the hopper's boxes left; a retention for database backups and update logs (the update keeps one backup,
+`hopper-backup.dump`, and one build log, each replaced, so neither grows now); the shared checkouts (`workspace/<name>`)
+and the shared dependencies in the disk use; and the Grok Bot routine posting the disk budget's events.
 
 **Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone", "the hopper's own disk use"),
 `test/client/survey-roots.test.ts` (the survey for real, its measure too), `test/scripts/update.test.ts` (the older images
 removed, none on a failed update), `test/integration/disk-budget.test.ts` (the setting through the daemon),
-`test/ui/hopper-disk.test.ts` (the card's text and the budget form).
+`test/ui/hopper-disk.test.ts` (the card's text and the budget form). Part 3: `test/client/job-containers.test.ts` (the reap and the
+survey for real, with a fake container runtime), `test/engine/sweep.test.ts` ("a job's containers and volumes"),
+`test/integration/work-kept.test.ts` (the event at a job's end), `test/support-run.test.ts` (the tests' labels).
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
@@ -18810,8 +18850,8 @@ the panes the hopper's jobs run in: the **job's terminal** (glossary).
   `paneScreen(job, lines)` and `typeInPane(job, {text} | {keys})` (`src/domain/terminal.ts`, optional, present together); the
   herdr-claude executor reads and writes the pane on the herdr it lives on, the same way it runs the job (`herdrOn`: this machine,
   an ssh target, or a client target through its client's signed `POST /herdr`). No new route on the client, no new port: what
-  the hopper can do to a job's pane already goes this way. Panes no job holds (a person's own herdr tabs) are not reached:
-  that needs a pane listing on the machine, a follow-up.
+  the hopper can do to a job's pane already goes this way. Panes no job holds are reached by the **machine's terminal**
+  (below).
 - **Which jobs.** `running`, `waiting_answer` and `waiting_on`: a job holds its pane at work and while it waits with it. Any other
   status, or an executor with no terminal (a print-mode agent, `command`), is 409. A machine that does not answer is 502.
 - **Reads.** `POST /ui/api/jobs/:id/terminal/screen {lines?}` → `{ jobId, sessionId, screen, at }`: herdr's `recent` source, the
@@ -18985,3 +19025,78 @@ connection's problem (403), as before.
 hopper; that is a separate change.
 
 Tests: `test/integration/git-proxy.test.ts` ("pushes to the job's own repository when it is no job repository, forced too").
+
+## Tagged items (issue #1141, 2026-10-14)
+
+Owner request: the hopper should show the pull requests and issues the user is tagged in — a review requested from the
+user, an @mention, an assignment — across the job repositories, each with why, age and checks, cleared once handled, and
+notify on new review requests.
+
+**As built:**
+- **Read with the sync.** A connected account's GitHub source reads its **tagged items** at its discover: each intake sync
+  interval, and at once on a sync a person asked for (`tagged.ts`, apart from the listing's timer). One read is GitHub's
+  issue search over GraphQL (`taggedItems`, `app/graphql-tagged.ts`): per why one search — `is:open archived:false` and
+  `is:pr review-requested:<login>`, `mentions:<login>` or `assignee:<login>` —, scoped by `repo:` qualifiers to the job
+  repositories, grouped so each query stays within GitHub's 256 characters, at most ten searches to a request, the first 50
+  hits each. Through the intake reserve, as the listing. A request that fails keeps the last list and says why
+  (`taggedError`). The App adapter reads none: an installation token has no user.
+- **Not intake's, not the user's own.** An item with the source's label is intake's (Intake, Jobs), and a pull request the
+  user wrote is the user's own work (Pull requests): neither is tagged. A hit outside the job repositories is dropped.
+- **Cleared by GitHub.** Each read replaces the list. A review given drops the request (GitHub's own `review-requested`), a
+  merged or closed item is no longer open: the row leaves at the next read, with no state of the hopper's own.
+- **Dismiss.** `dismiss`, an intake action on `POST /ui/api/sources/:name/intake` (operator), takes items the last read
+  listed off the list for the whys they have now (`dismissTagged`, `src/domain/tagged.ts`). A new why shows the item again;
+  a why the item lost ends that part of the dismissal (`taggedRead`), so a review requested again after a review shows.
+  Nothing is written to GitHub. The source then syncs at once, as after every intake action.
+- **Notify.** A pull request that newly asks for the user's review records `source.review_requested { source, key, author }`,
+  once while the request stands; webhook subscribers get it like any event. Never the title.
+- **Kept across restarts.** The review requests last seen and the dismissals are the user's setting `tagged:<source>`
+  (`TaggedRecord`, `src/store/tagged-settings.ts`): a key-value row, no schema change. A restart records no request twice.
+- **UI.** Tagged (`#tagged`, nav group *Waiting on you*, `ui/src/views/tagged.tsx`) lists each source's items: repository and
+  number (a link), title, author, why, opened when, checks, and Dismiss. Needs you has a Tagged row, and the nav entry a
+  badge, both the count across the sources (`taggedWaiting`, `ui/src/model/tagged.ts`). `/api/sources` carries them
+  (`detail.tagged`, `taggedDismissed`, `taggedAt`, `taggedError`).
+
+**Not done, by decision:** pagination past the first 50 hits of a search, and team review requests apart from the user's own
+(GitHub's `review-requested` includes the user's teams). Age is since the item was opened: when the review was requested
+needs a timeline read per item.
+
+Tests: `test/domain/tagged.test.ts`, `test/sources/github-graphql-tagged.test.ts`, `test/sources/github-tagged.test.ts`,
+`test/ui/tagged.test.ts`, `test/ui/needs-you.test.ts`.
+
+## The machine's terminal (issue #1128, 2026-10-14, part 6)
+
+Owner request, part 4 of the issue, the rest of it: open a machine's herdr session through the hopper, not only a running job's
+pane. The **machine's terminal** (glossary) lists every pane of the hopper's herdr session on a machine — the ones no job holds
+too: a sign-in a person started by hand, a shell left open, a job's pane after its job ended — and gives each the job's
+terminal's view and input.
+
+- **What it reaches.** The hopper's own herdr session on the machine, the one its jobs run in (`MachineHerdr.session`): this
+  machine's, an ssh target's, or a client target's (the client serves only its own session). Never herdr's `default` session: the
+  hopper never names it (`sessionProblem`), so a person's own herdr tabs outside the hopper's session stay theirs. To reach a pane
+  from the hopper, open it in the hopper's session.
+- **The port.** `HerdrClient.listPanes()` (`herdr pane list`: pane, tab, workspace, the terminal's title, the agent and its
+  state, never the working directory) and the executor port's `paneSession(machine)` (`src/domain/terminal.ts`): the panes, a
+  pane's read and its input by pane id, on the herdr the executor reaches the machine by (`herdrAt`, as `machineShell`). The
+  engine (`src/engine/machine-terminal.ts`) asks the first of the machine's executors that gives one, as the sweep does.
+- **Routes.** `POST /ui/api/machines/:id/terminal/panes` → `{ machineId, panes }`, each pane with `jobId` when a job at work or
+  waiting holds it (its lane on that machine, its executor state's pane). `…/screen {paneId, lines?}` →
+  `{ machineId, paneId, sessionId, screen, at }`. `…/input {paneId, text} | {paneId, keys}`, a box action. The limits are the
+  job's terminal's. 404: no such machine. 409: no executor reaches a herdr session there, or no such pane in it. 502: the
+  machine does not answer.
+- **Who.** An **admin**, not an operator: a pane no job holds may be a shell on the machine, and typing there is running
+  commands as the hopper's user there. Then Access: OpenFGA's `machine_terminal#can_attach` (new type `machine_terminal`,
+  `owner: [user]`, `can_attach: owner`), the machine's user told as its owner at each check; fail closed as every Access check
+  (`machineTerminalGaps`). Over the API, a token whose scopes name the routes (the Machines section of the scope registry) and,
+  for the input, a box grant.
+- **Audit.** The job's terminal's sessions (`terminalSessions`), keyed by machine and pane too: `terminal.opened` and
+  `terminal.typed` carry `machineId` and `paneId`, and land on the job's timeline when a job holds the pane. Never the text.
+- **UI.** Machines → a machine card → Terminal (admin, machine online, with a herdr session): the panes as buttons — the title,
+  else the agent, else the pane id, and the job that holds it —; a pick shows the pane terminal the job view uses
+  (`ui/src/views/pane-terminal.tsx`, shared).
+- **Residual risk.** This is a remote shell on every machine with a hopper herdr session, from anywhere the UI reaches, for an
+  admin who passes Access. The control is the role, Access, the box grant over the API, and the audit; the hopper keeps no text.
+
+Tests: `test/integration/machine-terminal.test.ts` (list, view and type through the daemon over the fake herdr, the job's pane
+named, the events without the text, an unknown machine or pane, a bad input, an operator, Access down),
+`test/ui/machine-terminal-view.test.ts`, `test/herdr/cli-client.test.ts` (`listPanes`), `test/authz/model.test.ts`.

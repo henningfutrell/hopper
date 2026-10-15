@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "containers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "volumes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "containers",
+    "volumes"
+  ],
+  "additionalProperties": false
+}

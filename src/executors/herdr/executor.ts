@@ -2,7 +2,7 @@
 // protocol. docs/design.md "Phase 2" → "herdr-claude executor".
 
 import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from '../../domain/ports.ts';
-import type { Job, LaneId } from '../../domain/types.ts';
+import type { Job, LaneId, MachineSnapshot } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import { afterStatusNote, nudgeGapMs } from './nudge.ts';
@@ -11,7 +11,7 @@ import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './screen.ts';
-import { ownCommandProbes, readPaneAnswer, terminalProbes } from './pane-answer.ts';
+import { ownCommandProbes, paneSessionOn, readPaneAnswer, terminalProbes } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
 import { paneEnds } from './pane-ends.ts';
@@ -82,6 +82,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     if (!o.remote || !p.session) throw new Error(`cannot reach attached machine ${p.ssh}: no herdr there`);
     return o.remote({ ssh: p.ssh, session: p.session });
   }
+
+  /** The herdr the machine is reached by; undefined when it cannot be reached. */
+  const herdrAt = (machine: MachineSnapshot): HerdrClient | undefined => { try { return herdrOn(whereOn(machine)); } catch { return undefined; } };
 
   const depsOn = (where: Where): StartDeps => ({
     herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false, unattended: o.unattended ?? false,
@@ -402,12 +405,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       return said;
     },
 
-    machineShell(machine) {
-      try {
-        return herdrOn(whereOn(machine));
-      } catch {
-        return undefined;
-      }
+    machineShell: (machine) => herdrAt(machine),
+    // The machine's terminal (issue #1128): the hopper's herdr session there, every pane of it.
+    paneSession(machine) {
+      const herdr = herdrAt(machine);
+      return herdr ? paneSessionOn(herdr) : undefined;
     },
   };
 }

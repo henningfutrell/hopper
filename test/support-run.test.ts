@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { gone, killMarked, sweepContainers, sweepRunRoots, type Docker } from './support/sweep.ts';
+import { containerLabels, gone, killMarked, sweepContainers, sweepRunRoots, type Docker } from './support/sweep.ts';
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'jh-sweep-')); });
@@ -85,6 +85,13 @@ describe('the stale sweep of containers', () => {
     const d = fake(['jh-it-sshd-43'], []);
     expect(sweepContainers(d, () => true)).toEqual([]);
     expect(d.removed).toEqual([]);
+  });
+});
+
+describe('the labels of a container a test starts (issue #1120)', () => {
+  it('the run\'s pid; in a hopper job, its job id too, so the job\'s reap removes the container', () => {
+    expect(containerLabels({}, 42)).toEqual({ 'hopper.test-pid': '42' });
+    expect(containerLabels({ HOPPER_JOB_ID: 'j-1' }, 42)).toEqual({ 'hopper.test-pid': '42', 'hopper.job': 'j-1' });
   });
 });
 

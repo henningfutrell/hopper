@@ -1,0 +1,1 @@
+- When a job ends, the hopper now removes the test containers and volumes the job left behind, and removes any it finds later from jobs that ended.

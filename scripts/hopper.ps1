@@ -206,7 +206,8 @@ function Invoke-Doctor {
   }
   if ($atLoopback) {
     Write-Warn "Windows opens $loopback/job/address, but not http://localhost:$port/job/address" @(
-      "Windows tries ::1 first for localhost: open $loopback in place of localhost.")
+      "Windows tries ::1 first for localhost: open $loopback in place of localhost.",
+      'Or publish the hopper on ::1 too: https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md#open-it-at-localhost-from-windows')
   } else {
     Write-Check "Windows opens http://localhost:$port/job/address" $atLocalhost (@('If the hopper does not run, run podman compose up -d in its folder in WSL.') + $linkFix)
   }

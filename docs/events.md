@@ -886,6 +886,26 @@ Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or 
 }
 ```
 
+## `job.containers_removed`
+
+Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.
+
+| field | type | required |
+|---|---|---|
+| `containers` | string[] | yes |
+| `volumes` | string[] | yes |
+
+```json
+{
+  "containers": [
+    "3f2a9c1b7d4e"
+  ],
+  "volumes": [
+    "hopper-test-db"
+  ]
+}
+```
+
 ## `job.cleanup_deferred`
 
 Version 1 (`docs/schemas/job.cleanup_deferred.v1.json`). The job ended, but its cleanup could not reach its machine (`error`), so its pane and agent may still run there. Recorded once per deferral; the cleanup is tried again on every tick, and a waiting job of the same item is held until it goes through.
@@ -1102,13 +1122,15 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
 
 ## `terminal.opened`
 
-Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened the job's terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/screen`): the first read of its herdr pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
+Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/screen`), or the machine's (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
 
 | field | type | required |
 |---|---|---|
 | `sessionId` | string | yes |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
+| `machineId` | string | no |
+| `paneId` | string | no |
 
 ```json
 {
@@ -1120,13 +1142,15 @@ Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened the job's te
 
 ## `terminal.typed`
 
-Version 1 (`docs/schemas/terminal.typed.v1.json`). A person typed into the job's terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/input`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.
+Version 1 (`docs/schemas/terminal.typed.v1.json`). A person typed into a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/input`) or the machine's (`POST /ui/api/machines/:id/terminal/input`, with `machineId` and `paneId`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.
 
 | field | type | required |
 |---|---|---|
 | `sessionId` | string | yes |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
+| `machineId` | string | no |
+| `paneId` | string | no |
 | `chars` | integer | no |
 | `keys` | string[] | no |
 
@@ -1472,6 +1496,24 @@ Version 1 (`docs/schemas/source.delivery_received.v1.json`). GitHub sent the hop
   "action": "labeled",
   "repo": "octocat/hello",
   "number": 7
+}
+```
+
+## `source.review_requested`
+
+Version 1 (`docs/schemas/source.review_requested.v1.json`). A pull request in a job repository newly asks for the user's review (issue #1141): a **tagged item** for the reason `review`. `key` is its URL, `author` who wrote it. Recorded once while the request stands: after the user reviews it, a new request records it again. Never the text. It shows on Tagged; webhook subscribers get it like any event.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `author` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/pull/12",
+  "author": "hubot"
 }
 ```
 

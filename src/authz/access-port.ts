@@ -34,6 +34,12 @@ export interface Access extends TemplateApprovals {
    */
   decideTerminal(userId: string, terminal: { ownerId: string; jobId: string }): Promise<AccessAnswer>;
   /**
+   * Whether the user may attach to a machine's terminal (issue #1128): list, view and type into the panes of the hopper's
+   * herdr session there. OpenFGA's `machine_terminal#can_attach`, the machine's owner told at the check. Not recorded: the
+   * terminal's own events are. Denied, marked `unavailable`, when OpenFGA cannot be asked.
+   */
+  decideMachineTerminal(userId: string, terminal: { ownerId: string; machineId: string }): Promise<AccessAnswer>;
+  /**
    * Whether the user may see a search hit (issue #945): OpenFGA's `search_hit#can_view`, its owner told at the check and,
    * unless it is private (a direct job's), every user as a reader. Not recorded. Denied, marked `unavailable`, when
    * OpenFGA cannot be asked.

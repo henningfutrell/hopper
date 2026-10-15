@@ -7,43 +7,14 @@ import { fakeMachineShell } from './fake-machine.ts';
 import { seedSays, shellSays, type FakeClaudeConfig } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
+import { listedPanes, newPane, type Pane } from './fake-panes.ts';
 import type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-options.ts';
-import { WINDOWS_SHELLS, enterGoesOn, paneScreen, startupScreen, startupScreens, wrap, type StartupScreen } from './fake-screens.ts';
+import { WINDOWS_SHELLS, enterGoesOn, paneScreen, startupScreen, startupScreens, wrap } from './fake-screens.ts';
 
 export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn };
 
 export { CTRL_END };
 
-interface Pane {
-  id: string;
-  lines: string[];
-  closed: boolean;
-  agent?: string;
-  status: AgentStatus;
-  seq: number;
-  mode: 'none' | StartupScreen | 'startup' | 'late';
-  /** Startup screens still to come once the one on screen is answered. */
-  dialogs?: StartupScreen[];
-  /** Lines the shell prints after `lag` more waits (FakeHerdrOptions.worktreeLag). */
-  pending?: { lines: string[]; lag: number };
-  turn?: FakeTurn;
-  step: number;
-  ctrlC: number;
-  sawDown: boolean;
-  hidden?: string[];
-  /** Text pasted into the input box, not submitted. */
-  input?: string;
-  /** Lines at the end of `lines` that are the dialog on screen (FakeTurn.dialog), removed when it closes. */
-  dialogLines?: number;
-  /** The shell runs in the job's scope (issue #410). */
-  scoped?: boolean;
-  /** Looks left before Claude draws over its echoed launch line (FakeHerdrOptions.startupEcho). */
-  echoPolls?: number;
-  /** Looks left before the late dialog shows (FakeHerdrOptions.lateDialog). */
-  lateIn?: number;
-  /** Background work the last turn started, still running (FakeTurn.background). */
-  background?: { work: string; polls: number; wakes?: boolean; prints?: string[] };
-}
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
   const turns = [...(o.turns ?? [])];
@@ -175,6 +146,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     setUnreachable(on) { unreachable = on; },
     linkDown: () => unreachable,
     screen: (id) => paneScreen(panes.get(id), signedIn),
+    openPane({ title, lines }) {
+      n++;
+      const id = `w1:p${n}`;
+      panes.set(id, newPane(id, `w1:t${n}`, lines, title));
+      return id;
+    },
 
     async ensureWorkspace(label, cwd) {
       record('ensureWorkspace', label, cwd);
@@ -185,7 +162,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('createTab', args);
       n++;
       const id = `${args.workspaceId}:p${n}`;
-      panes.set(id, { id, lines: ['$ '], closed: false, status: 'unknown', seq: 0, mode: 'none', step: 0, ctrlC: 0, sawDown: false });
+      panes.set(id, newPane(id, `${args.workspaceId}:t${n}`, ['$ ']));
       return { tabId: `${args.workspaceId}:t${n}`, paneId: id };
     },
     async startAgent(args) {
@@ -315,6 +292,10 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       return fake.screen(paneId).includes(text);
     },
     ...fakeMachineShell(o, () => fake, onMachine),
+    async listPanes() {
+      record('listPanes');
+      return listedPanes(panes.values());
+    },
     async closePane(paneId) {
       record('closePane', paneId);
       const p = livePane(paneId);

@@ -242,20 +242,22 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
       if (!p || p.status !== 'open') return;
       const reason = reviewers.length === 0 ? 'no reviewer levels configured' : why;
       if (kind !== 'proposal' || !s.autoContinue) return void toHuman(p, reason);
-      // Where a person would decide, the hopper continues with the one recommended path, unless a rule does not settle it (issue #1059).
+      // Where a person would decide, the hopper continues with the recommended paths, unless a rule does not settle it (issues #1059, #1174).
       const held = autoContinueHold(p);
       if (typeof held === 'string') return void toHuman(p, held);
       const now = items.update(p.id, { stage: AUTO_CONTINUE });
-      signOff(now, 'accept', AUTO_CONTINUE, `the hopper continued with the recommended path ${held.id}: no rule needs a person to decide`, undefined, undefined, [held]);
+      const which = held.length === 1 ? `path ${held[0]!.id}` : `paths ${held.map((x) => x.id).join(', ')}`;
+      signOff(now, 'accept', AUTO_CONTINUE, `the hopper continued with the recommended ${which}: no rule needs a person to decide`, undefined, undefined, held);
     });
   }
 
   /**
-   * Inside a tx. Why a person decides on a proposal the hopper would continue with (issue #1059) — the job says a person
-   * must, a reviewer level escalated it, it has gaps, no one viable path is recommended, or a risk rule matches that
-   * path —, else the path it continues with.
+   * Inside a tx. Why a person decides on a proposal the hopper would continue with (issues #1059, #1174) — the job says a
+   * person must, a reviewer level escalated it, it has gaps, no viable path is recommended, a recommended path is not
+   * viable, or a risk rule matches a recommended path —, else the paths it continues with: the one recommended, or each
+   * of a recommended combination.
    */
-  function autoContinueHold(p: ReviewItem): string | SelectedPath {
+  function autoContinueHold(p: ReviewItem): string | SelectedPath[] {
     const v = p.versions.at(-1)!;
     const asked = needsAPerson(v.text);
     if (asked) return `the job says a person must decide: ${asked}`;
@@ -263,15 +265,17 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     if (escalated) return `a reviewer level escalated it: ${escalated.stage}: ${escalated.notes}`;
     const gaps = preCheck(kind, p.versions);
     if (gaps.length > 0) return `the proposal has gaps: ${gaps.join(' ')}`;
-    const viable = viablePaths(pathsOf(v));
-    const recommended = viable.filter((x) => x.recommended);
-    if (viable.length === 0) return 'the proposal has no path to continue with: a person decides';
+    const set = pathsOf(v);
+    if (viablePaths(set).length === 0) return 'the proposal has no path to continue with: a person decides';
+    const recommended = set.paths.filter((x) => x.recommended);
+    const dropped = recommended.filter((x) => x.notViable);
+    if (dropped.length > 0) return `a recommended path is not viable: ${dropped.map((x) => `${x.id} (${x.notViable!.why})`).join(', ')}`;
     if (recommended.length === 0) return 'no viable path is recommended: a person selects';
-    if (recommended.length > 1) return `the proposal recommends a combination of paths (${recommended.map((x) => x.id).join(', ')}): a person selects`;
-    const path = recommended[0]!;
-    const risks = riskRules(`${path.title}\n${path.summary ?? ''}`);
-    if (risks.length > 0) return `a risk rule matches the recommended path: ${risks.join(', ')}`;
-    return { id: path.id, title: path.title };
+    for (const path of recommended) {
+      const risks = riskRules(`${path.title}\n${path.summary ?? ''}`);
+      if (risks.length > 0) return `a risk rule matches the recommended path${recommended.length > 1 ? ` ${path.id}` : ''}: ${risks.join(', ')}`;
+    }
+    return recommended.map((x) => ({ id: x.id, title: x.title }));
   }
 
   function start(id: string, reason: string) {
