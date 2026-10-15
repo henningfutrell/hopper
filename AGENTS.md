@@ -187,8 +187,8 @@ hopper's note naming the job and the request by id only, and gets no label or as
   `POST /ui/api/*` on the running daemon, and drops it after.
 - **A job's containers are its own** (issue #1295, `docs/design.md` "Each job its own container runtime"): a job's shell
   gets a podman runtime of its own (`src/client/job-runtime.ts`) — its runtime dir, storage and socket —, never the user's
-  runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime. Claude runs
-  in the **job's sandbox** (`src/client/job-sandbox.ts`, bubblewrap): the kernel hides the user's runtime dir but for the
+  runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime. Claude, and a print-mode agent's turn,
+  runs in the **job's sandbox** (`src/client/job-sandbox.ts`, bubblewrap): the kernel hides the user's runtime dir but for the
   job's own, the user's bus and container storage, the host's container sockets, herdr's sockets and the host's processes;
   with no bubblewrap that runs there, none.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
