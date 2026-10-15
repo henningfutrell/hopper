@@ -162,13 +162,25 @@ describe('the guards: podman and docker in a job use only its own runtime (issue
     ]);
   });
 
-  it('anything else runs on the job\'s runtime, whatever the caller set, with its arguments as they are', () => {
+  it('podman\'s health check timers run on the job\'s runtime: its systemd-run gives them the job\'s variables; any other call is as it was', () => {
+    writeFileSync(join(fake, 'systemd-run'), '#!/bin/sh\nprintf "systemd-run %s\\n" "$*" >> "$FAKE/calls"\n', { mode: 0o755 });
+    const r = inJobShell('systemd-run --property LogLevelMax=notice --user --unit abc /usr/bin/podman --root /s healthcheck run --ignore-result abc'
+      + ' && systemd-run --scope --user -p Delegate=yes kind create cluster', env({ PATH: `${fake}${delimiter}/usr/bin${delimiter}/bin` }));
+    expect(r.status).toBe(0);
+    expect(calls()).toEqual([
+      `systemd-run --setenv=XDG_RUNTIME_DIR=${own()} --setenv=CONTAINERS_CONF_OVERRIDE=${containers()}/containers.conf --setenv=CONTAINERS_STORAGE_CONF=${containers()}/storage.conf`
+        + ` --setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=${own()}/bus --property LogLevelMax=notice --user --unit abc /usr/bin/podman --root /s healthcheck run --ignore-result abc`,
+      'systemd-run --scope --user -p Delegate=yes kind create cluster',
+    ]);
+  });
+
+  it('anything else runs on the job\'s runtime, whatever the caller set, with its arguments as they are but for the job label', () => {
     const r = inJobShell(`XDG_RUNTIME_DIR=${host} DOCKER_HOST=unix://${host}/podman/podman.sock CONTAINER_HOST=x podman ps -a && podman run --rm img system reset && docker ps`);
     expect(r.status).toBe(0);
     const sock = `unix://${own()}/podman/podman.sock`;
     expect(calls()).toEqual([
       `podman ps -a | XDG_RUNTIME_DIR=${own()} DOCKER_HOST=${sock} CONTAINER_HOST=unset`,
-      `podman run --rm img system reset | XDG_RUNTIME_DIR=${own()} DOCKER_HOST=${sock} CONTAINER_HOST=unset`,
+      `podman run --label hopper.job=${JOB} --rm img system reset | XDG_RUNTIME_DIR=${own()} DOCKER_HOST=${sock} CONTAINER_HOST=unset`,
       `docker ps | XDG_RUNTIME_DIR=${own()} DOCKER_HOST=${sock} CONTAINER_HOST=unset`,
     ]);
   });
