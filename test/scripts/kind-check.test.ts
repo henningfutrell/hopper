@@ -80,7 +80,7 @@ describe('scripts/kind-check.ts', () => {
     expect(r.status, r.stdout + r.stderr).toBe(0);
     expect(r.calls[0]).toBe('kind create cluster --name hopper-check --wait 180s');
     const install = r.calls.find((c) => c.startsWith('helm '));
-    expect(install).toBe(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --create-namespace --wait --timeout 15m --set image.tag=dev --set sandbox.enabled=true`);
+    expect(install).toBe(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --create-namespace --wait --timeout 15m --set image.tag=dev`);
     expect(r.calls).toContain('kubectl --context kind-hopper-check --namespace hopper exec deploy/hopper -c hopper -- node -e '
       + "fetch('http://127.0.0.1:4790/api/health').then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 1); }, () => process.exit(1))");
     expect(r.calls).toContain('kubectl --context kind-hopper-check get pods --all-namespaces -o json');
@@ -135,7 +135,7 @@ describe('.github/workflows/kind.yml, the kind check on a pull request', () => {
     expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['deploy/helm/**', 'scripts/kind-check.ts']));
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(text).not.toMatch(/secrets\./);
-    expect(text).not.toMatch(/pull_request_target/);
+    expect(Object.keys(workflow.on)).toEqual(['pull_request']);
   });
 
   it('runs the kind check with the dev channel\'s image', () => {

@@ -730,9 +730,26 @@ the StatefulSets' volumes stay too: the database keeps the password it was made 
 Update: `helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values` with the chart of the new version.
 The hopper stops before the new one starts (one writer of its database).
 
-Not in the chart yet (issue #1281 has the parts): remote access (`tunnel`, `cloudflared`: use the Ingress), the
-optional services, and an update and drift check that know Kubernetes — the hopper's drift check reads a compose stack,
-and in the cluster it says compose services are not running.
+In the cluster the hopper updates by `helm upgrade` and checks drift on its image, not on a compose stack (issue #1285):
+its update notice gives the command. Not in the chart yet: remote access (`tunnel`, `cloudflared`: use the Ingress) and
+the optional services.
+
+### Check the chart on kind
+
+`scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
+alone brings up the hopper; its health answers ok in its pod; and no pod anywhere in the cluster
+has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose. Then it
+deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
+Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
+
+```sh
+node scripts/kind-check.ts --tag dev          # --cluster NAME, --set key=value, --keep
+```
+
+A pull request that changes the chart runs it (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
+runs to a merged pull request needs a GitHub sign-in, which no check has: with `--keep`, port-forward the hopper
+(`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in with GitHub, add a
+`kubernetes-cluster` machine for the kubernetes executor (`docs/design.md` "Job pods on Kubernetes"), and queue a job on an issue of a test repository.
 
 ## Access: OpenFGA
 
