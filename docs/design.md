@@ -92,6 +92,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — and `install.html`, the install page; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/`; of `ui/` only `index.css` and `app/story.ts`; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
+| `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, the same images as `compose.yaml`; tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
@@ -7811,8 +7812,13 @@ sends nothing, and its card, its test event and its deliveries say the stored se
 
 Issue #659. The hopper runs in ephemeral containers, and a persistent volume cannot be assumed: a key kept in
 a volume beside the container (the compose `secrets` volume's `token_key`, before) is lost with it, and every
-secret it sealed with it. So the master key comes from the launch alone, as the variable `HOPPER_MASTER_KEY` —
-never a file (`HOPPER_MASTER_KEY_FILE` is refused, naming the variable), never a volume. `src/secrets/master-key.ts`
+secret it sealed with it. So the master key comes from the launch alone, as the variable `HOPPER_MASTER_KEY` or the
+file `HOPPER_MASTER_KEY_FILE` names — never a volume of the hopper's own. The file is for a Secret an orchestrator
+mounts (issue #1288: a Kubernetes Secret, which an External Secrets Operator `ExternalSecret` can fill from an outside
+store): its key lives in the cluster, not beside the container. A key file named but not there, unreadable or empty
+stops the start; the variable and its file both set are refused. `HOPPER_MASTER_KEY_PREVIOUS_FILE` gives the previous
+keys the same way, and a previous-keys file that is not there gives none (a Secret with no `previous`). The files are
+read once, at start: a rotation in the Secret takes effect at the next restart. `src/secrets/master-key.ts`
 resolves it once, at start, before any user's runtime; the parts read it through `withMasterKey` — each sealer reads
 the key at each call (`liveSealer`), so a rotation changes it in the running hopper —, and no child
 process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HOPPER_TOKEN_KEY*` variable).
@@ -13947,11 +13953,21 @@ the KMS is always optional. So the KMS is a second key provider, chosen by one r
 - **The KMS built**: local-kms (`docker.io/nsmithuk/local-kms`, AWS KMS's API, keys in its `/data` volume), the
   compose profile `kms`. The key is `HOPPER_KMS_KEY` (default `alias/hopper-vault`), made with its alias at the first
   ask when the KMS has none. The client is AWS's own (`@aws-sdk/client-kms`), with fixed placeholder credentials:
-  local-kms checks none. A KMS that checks credentials (AWS) is not supported yet. Residual risk: local-kms keeps its key
+  local-kms checks none. Residual risk: local-kms keeps its key
   material in clear in its volume; it parts the key from the database (a dump holds no usable value), not from the host.
+- **AWS KMS** (issue #1288). `HOPPER_KMS_REGION` names the region; then the KMS is AWS KMS, at the region's own endpoint
+  or at `HOPPER_KMS_URL` when set (a VPC endpoint). The client takes AWS's own credential chain: in a cluster the
+  service account's role (IRSA or EKS Pod Identity), else the instance's role or the `AWS_*` variables. The hopper never
+  makes a key in AWS: `HOPPER_KMS_KEY` names one an operator made (the Helm chart requires it), and a key that is not
+  there is the KMS's error, so the vault fails closed. The role needs `kms:GenerateDataKey` and `kms:Decrypt` on that
+  key, with the encryption context above. The master key is not needed to open the data key: with no master key the
+  vault still seals and opens under it (the master key, when given, stays a previous key only). What the hopper owns
+  itself (the system scope, the shared secrets) is still sealed under the master key. Vault transit (HashiCorp) as a
+  third provider is not built: AWS KMS is the one a cluster on AWS has, and a second provider waits for a second need.
 
 Tests: `test/vault/kms-keys.test.ts` (a fake KMS at the `KeyService` port: wrap once, open again, seal again, fail
-closed), `test/vault/local-kms.test.ts` (the adapter against a real local-kms, when `HOPPER_TEST_KMS_URL` names one).
+closed, no master key needed; which KMS the settings name), `test/vault/local-kms.test.ts` (both adapters against a
+real local-kms, when `HOPPER_TEST_KMS_URL` names one: the AWS adapter at its endpoint makes no key).
 
 ### The vault in a container of its own (issue #586, 2026-10-09)
 

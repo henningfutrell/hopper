@@ -1,0 +1,205 @@
+{{- $name := include "hopper.fullname" . -}}
+{{- $sel := dict "ctx" . "component" "hopper" -}}
+{{- $image := printf "%s:%s" .Values.image.repository (.Values.image.tag | toString) -}}
+{{- $port := .Values.port | int -}}
+{{- $ns := .Release.Namespace -}}
+{{- $keyFile := include "hopper.masterKeyFromFile" . -}}
+{{- $account := include "hopper.serviceAccount" . -}}
+{{- $health := printf "fetch('http://127.0.0.1:%d/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" $port -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  selector:
+    {{- include "hopper.selector" $sel | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $port }}
+      targetPort: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-home
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "hopper.storageClass" .Values.home.storageClass | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ .Values.home.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  # One hopper: one writer of its database and its home. An update stops the old pod before the new one starts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      {{- if $account }}
+      # Its AWS role (IRSA or EKS Pod Identity), for AWS KMS: the webhook mounts its own token.
+      serviceAccountName: {{ $account }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
+      enableServiceLinks: false
+      # The image's node user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # The hopper stops when it cannot reach its database: it starts once Postgres takes connections.
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image }}
+          command: [sh, -c, {{ printf "until pg_isready -q -h %s-postgres -U hopper -d hopper; do sleep 2; done" $name | quote }}]
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+      containers:
+        - name: hopper
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: HOPPER_DATABASE_URL_FILE
+              value: /run/hopper-secrets/database_url
+            {{- if $keyFile }}
+            # The master key from the mounted Secret: a start without its file is refused.
+            - name: HOPPER_MASTER_KEY_FILE
+              value: /run/hopper-master-key/master-key
+            - name: HOPPER_MASTER_KEY_PREVIOUS_FILE
+              value: /run/hopper-master-key/previous
+            {{- else }}
+            - name: HOPPER_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hopper.masterKeySecret" . }}
+                  key: master-key
+                  optional: true
+            - name: HOPPER_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hopper.masterKeySecret" . }}
+                  key: previous
+                  optional: true
+            {{- end }}
+            {{- with .Values.kms.aws }}
+            {{- if .region }}
+            - name: HOPPER_KMS_REGION
+              value: {{ .region | quote }}
+            - name: HOPPER_KMS_KEY
+              value: {{ required "kms.aws.key: the AWS KMS key that wraps the vault's data key (the hopper never makes one in AWS)" .key | quote }}
+            {{- if .endpoint }}
+            - name: HOPPER_KMS_URL
+              value: {{ .endpoint | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            - name: HOPPER_PORT
+              value: {{ $port | quote }}
+            - name: HOPPER_OPENFGA_URL
+              value: {{ printf "http://%s-openfga:8080" $name | quote }}
+            - name: HOPPER_OPENFGA_KEY_FILE
+              value: /run/hopper-secrets/openfga_key
+            {{- if .Values.solr.enabled }}
+            - name: HOPPER_SOLR_URL
+              value: {{ printf "http://%s-solr:8983/solr/hopper" $name | quote }}
+            {{- end }}
+            # The names the cluster reaches it by; the first is the one in question links.
+            - name: HOPPER_LAN_NAMES
+              value: {{ printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $name $name $ns $name $ns $name $ns .Values.clusterDomain | quote }}
+            - name: HOPPER_LAN_PEERS
+              value: {{ .Values.lanPeers | quote }}
+            {{- if .Values.ingress.enabled }}
+            - name: HOPPER_PUBLIC_URL
+              value: {{ .Values.ingress.publicUrl | default (printf "https://%s" (required "ingress.host: the host name the Ingress publishes the hopper on" .Values.ingress.host)) | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $port }}
+          # Asked on the pod's loopback, as the image's own check: a probe from the node would be a LAN request.
+          startupProbe:
+            exec:
+              command: [node, -e, {{ $health | quote }}]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            exec:
+              command: [node, -e, {{ $health | quote }}]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: [node, -e, {{ $health | quote }}]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/hopper-secrets
+              readOnly: true
+            # Its home: the claude sign-in.
+            - name: home
+              mountPath: /home/node
+            {{- if $keyFile }}
+            - name: master-key
+              mountPath: /run/hopper-master-key
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "hopper.runtimeSecret" . }}
+            defaultMode: 0440
+            items:
+              - key: database_url
+                path: database_url
+              - key: openfga_key
+                path: openfga_key
+        - name: home
+          persistentVolumeClaim:
+            claimName: {{ $name }}-home
+        {{- if $keyFile }}
+        # Optional: with no Secret the hopper starts and refuses, saying the key file is missing.
+        - name: master-key
+          secret:
+            secretName: {{ include "hopper.masterKeySecret" . }}
+            defaultMode: 0440
+            optional: true
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

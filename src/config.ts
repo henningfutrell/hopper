@@ -10,7 +10,7 @@ import type { UsagePacing } from './domain/types.ts';
 import { MASTER_KEY_VARIABLES } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
-import { DEFAULT_KMS_KEY } from './vault/wire.ts';
+import { AWS_REGION_PATTERN, DEFAULT_KMS_KEY, type KmsSettings } from './vault/wire.ts';
 
 export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
@@ -81,8 +81,8 @@ export interface Config {
   solrUrl?: string;
   /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
   vaultUrl?: string;
-  /** The KMS the vault's data key is wrapped by (issue #586); unset: the vault seals under the master key. */
-  kms?: { url: string; key: string };
+  /** The KMS the vault's data key is wrapped by (issues #586, #1288); unset: the vault seals under the master key. */
+  kms?: KmsSettings;
   /** The rootless Podman API socket the hopper starts sandbox boxes through (issue #603); unset: it starts none. */
   podmanSocket?: string;
   /** The rootless Docker Engine API socket (issue #708): used when Podman is not given or not reached, or chosen. */
@@ -152,6 +152,7 @@ const schema = z.object({
   HOPPER_VAULT_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
+  HOPPER_KMS_REGION: z.string().regex(AWS_REGION_PATTERN, 'must be an AWS region, as eu-west-1').optional(),
   HOPPER_PODMAN_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Podman API socket').optional(),
   HOPPER_SANDBOX_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be a Podman network name, or host').optional(),
   HOPPER_DOCKER_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Docker Engine API socket').optional(),
@@ -209,7 +210,8 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_SOLR_URL: 'the Solr core search keeps its index in (http://solr:8983/solr/hopper, the compose service `solr`). Unset: no search',
   HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
-  HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
+  HOPPER_KMS_KEY: 'the KMS key, by id, ARN or alias, that wraps the vault\'s data key; an alias a local KMS lacks is made, never one in AWS',
+  HOPPER_KMS_REGION: 'AWS KMS in this region wraps the vault\'s data key, with the AWS credentials of where the vault runs (an EKS service account\'s role); HOPPER_KMS_URL is then its endpoint, if set. Unset: HOPPER_KMS_URL names a local KMS',
   HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
   HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
   HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
@@ -248,11 +250,12 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_GITHUB_CLIENT_SECRET             the GitHub App's client secret: Sign in with GitHub goes to GitHub and
                                           back in the browser on the sign-in origin. Unset: the device code only
   HOPPER_MASTER_KEY                       the master key every secret the hopper keeps is sealed under in the database
-                                          (32 bytes, openssl rand -hex 32). Given at launch, never read from a file:
-                                          keep it in a password manager. Unset on a fresh database: one is made and
-                                          shown once; unset on one that keeps secrets: the hopper starts limited
-  HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line: they still open what they sealed, and what they
-                                          sealed is sealed again under HOPPER_MASTER_KEY at start
+                                          (32 bytes, openssl rand -hex 32). Given at launch, or as the file _FILE names
+                                          (a mounted Secret; a file named but not there stops the start): keep it in
+                                          a password manager. Unset on a fresh database: one is made and shown once;
+                                          unset on one that keeps secrets: the hopper starts limited
+  HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line (also _FILE): they still open what they sealed,
+                                          and what they sealed is sealed again under HOPPER_MASTER_KEY at start
   HOPPER_TOKEN_KEY                        the old token key (also _FILE: the compose secrets volume's token_key): read
                                           only while HOPPER_MASTER_KEY is unset, to move an install to it
   HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at
@@ -355,7 +358,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}),
     ...(e.HOPPER_SOLR_URL ? { solrUrl: e.HOPPER_SOLR_URL } : {}),
     ...(e.HOPPER_VAULT_URL ? { vaultUrl: e.HOPPER_VAULT_URL } : {}),
-    ...(e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
+    ...(e.HOPPER_KMS_REGION ? { kms: { region: e.HOPPER_KMS_REGION, key: e.HOPPER_KMS_KEY, ...(e.HOPPER_KMS_URL ? { url: e.HOPPER_KMS_URL } : {}) } }
+      : e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
     ...(e.HOPPER_PODMAN_SOCKET ? { podmanSocket: e.HOPPER_PODMAN_SOCKET } : {}),
     ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
     ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),

@@ -9,11 +9,13 @@
 //   Scenario: a secret sealed under the master key is sealed again under the data key
 //   Scenario: a KMS that gives no data key: the vault says why, and nothing is stored
 //   Scenario: no KMS: the local key provider, under the master key
+//   Scenario: with a KMS, no master key is needed to open the data key (issue #1288)
+//   Scenario: HOPPER_KMS_REGION names AWS KMS; HOPPER_KMS_URL alone names a local KMS (issue #1288)
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import { runtimeSecrets } from '../../src/secrets/runtime.ts';
-import type { KeyService } from '../../src/vault/kms.ts';
+import { kmsOf, type KeyService } from '../../src/vault/kms.ts';
 import { vaultKeys } from '../../src/vault/keys.ts';
 import { createVaultService, vaultContext } from '../../src/vault/service.ts';
 import type { VaultSecret } from '../../src/domain/vault.ts';
@@ -131,5 +133,32 @@ describe('the KMS as the vault\'s key provider (issue #586)', () => {
     expect(keys.sealer!.keyId).toBe(createSealer(TOKEN_KEY).keyId);
     expect(m.dataKey()).toBeUndefined();
     expect((await vaultKeys({ secret: runtimeSecrets({}), store: m.store.vault })).problem).toContain('HOPPER_MASTER_KEY');
+  });
+
+  it('with a KMS, no master key is needed: the data key opens, and what it sealed opens at the next start (issue #1288)', async () => {
+    const m = memoryStore();
+    const kms = fakeKms();
+    const none = runtimeSecrets({});
+    const first = await vaultKeys({ secret: none, kms, store: m.store.vault });
+    expect(first.problem).toBeUndefined();
+    expect(vaultOver(m, first).set({ name: 'KUBE_TOKEN', value: 'v-no-master' }, 'Ada')).toEqual({ ok: true });
+    const again = await vaultKeys({ secret: none, kms, store: m.store.vault });
+    expect(again.sealer!.open(m.rows.get('id-1')!.sealed, vaultContext('id-1'))).toBe('v-no-master');
+  });
+});
+
+describe('which KMS the vault asks (issue #1288)', () => {
+  it('HOPPER_KMS_REGION: AWS KMS in that region, at its own endpoint unless HOPPER_KMS_URL names one', () => {
+    expect(kmsOf({ HOPPER_KMS_REGION: 'eu-west-1', HOPPER_KMS_KEY: 'alias/hopper' })?.url).toBe('https://kms.eu-west-1.amazonaws.com');
+    expect(kmsOf({ HOPPER_KMS_REGION: 'eu-west-1', HOPPER_KMS_URL: 'https://vpce-1.kms.eu-west-1.vpce.amazonaws.com' })?.url).toBe('https://vpce-1.kms.eu-west-1.vpce.amazonaws.com');
+  });
+
+  it('HOPPER_KMS_URL alone: the local KMS; neither: none', () => {
+    expect(kmsOf({ HOPPER_KMS_URL: 'http://kms:8080' })?.url).toBe('http://kms:8080');
+    expect(kmsOf({})).toBeUndefined();
+  });
+
+  it('a region that is no AWS region: refused', () => {
+    expect(() => kmsOf({ HOPPER_KMS_REGION: 'not a region' })).toThrow('HOPPER_KMS_REGION');
   });
 });

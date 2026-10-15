@@ -1,0 +1,76 @@
+{{- if .Values.solr.enabled -}}
+{{- $name := printf "%s-solr" (include "hopper.fullname" .) -}}
+{{- $sel := dict "ctx" . "component" "solr" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  selector:
+    {{- include "hopper.selector" $sel | nindent 4 }}
+  ports:
+    - name: http
+      port: 8983
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
+      enableServiceLinks: false
+      # The image's solr user.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 8983
+        runAsGroup: 8983
+        fsGroup: 8983
+      containers:
+        - name: solr
+          image: {{ .Values.solr.image }}
+          # One core, made from Solr's default config at the first start; the hopper puts its own fields in.
+          args: [solr-precreate, hopper]
+          env:
+            - name: SOLR_HEAP
+              value: {{ .Values.solr.heap | quote }}
+          ports:
+            - name: http
+              containerPort: 8983
+          readinessProbe:
+            httpGet:
+              path: /solr/hopper/admin/ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.solr.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/solr
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "hopper.storageClass" .Values.solr.storageClass | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.solr.size }}
+{{- end }}

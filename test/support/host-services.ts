@@ -21,12 +21,13 @@ export const HOST_SERVICE_TESTS = [
   'test/scripts/docker-proxy.test.ts',
 ] as const;
 
-/** The tests, beyond HOST_SERVICE_TESTS, that start a container of their own (testcontainers: Solr, a HashiCorp Vault). */
+/** The tests, beyond HOST_SERVICE_TESTS, that start a container of their own (testcontainers: Solr, a HashiCorp Vault; Helm's image). */
 export const CONTAINER_TESTS = [
   'test/adapters/solr-index.test.ts',
   'test/adapters/solr-meter.test.ts',
   'test/integration/search.test.ts',
   'test/integration/system-backends.test.ts',
+  'test/scripts/helm-chart.test.ts',
 ] as const;
 
 export interface Machine {

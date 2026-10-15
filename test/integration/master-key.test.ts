@@ -6,6 +6,7 @@
 //   Scenario: a first start with no key makes one and shows it once in the UI, never in the log; a second start without it is limited, and makes no new secret
 //   Scenario: a wrong key stops the start, saying the key does not match; nothing in the database changes
 //   Scenario: the old token key is moved: every secret stays readable, and once HOPPER_MASTER_KEY is set the old key can go
+//   Scenario: the key from a mounted Secret file (issue #1288): a start with no file there is refused; a new key in the file with the old one as previous seals everything again on restart, and the old data still opens
 //   Scenario: `hopper master-key status` says the source, the fingerprint and whether a previous key is set, never a key (issue #685)
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -178,6 +179,35 @@ describe('the master key (issue #659)', () => {
     expect(await keyView(set)).toMatchObject({ source: 'given', saved: true });
     expect(logged.some((l) => l.includes('can be removed'))).toBe(true);
     expect(logged.join('\n')).not.toContain(KEY);
+  });
+
+  it('from a mounted Secret file (issue #1288): a missing file stops the start; a rotation in the Secret seals again on restart', async () => {
+    const dbPath = freshDb();
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-master-key-secret-'));
+    const keyFile = join(dir, 'master-key');
+    const previousFile = join(dir, 'previous');
+    const files = { HOPPER_MASTER_KEY_FILE: keyFile, HOPPER_MASTER_KEY_PREVIOUS_FILE: previousFile };
+
+    await expect(startTestApp({ dbPath, secrets: { HOPPER_MASTER_KEY: undefined, ...files } })).rejects.toThrow('HOPPER_MASTER_KEY_FILE: cannot read');
+
+    writeFileSync(keyFile, `${KEY}\n`);
+    const { a, session } = await boot(dbPath, files);
+    expect((await setSecret(a, session)).status).toBe(200);
+    expect(await keyView(a)).toMatchObject({ source: 'given', fingerprint: fingerprintOf(KEY).slice(0, 16) });
+    expect(await opened(a, KEY)).toBe(VALUE);
+
+    // The rotation, as an operator does it in the Secret: the new key under master-key, the old one under previous.
+    writeFileSync(keyFile, `${NEW_KEY}\n`);
+    writeFileSync(previousFile, `${KEY}\n`);
+    const { a: rotated } = await boot(dbPath, files);
+    expect(await keyView(rotated)).toMatchObject({ source: 'given', fingerprint: fingerprintOf(NEW_KEY).slice(0, 16), previous: true });
+    expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(NEW_KEY));
+    expect(await opened(rotated, NEW_KEY)).toBe(VALUE);
+    expect(() => createSealer(KEY).open(String(vaultRows(dbPath)[0]!.sealed), `vault:${String(vaultRows(dbPath)[0]!.id)}/value`)).toThrow();
+    for (const text of [logged.join('\n')]) {
+      expect(text).not.toContain(KEY);
+      expect(text).not.toContain(NEW_KEY);
+    }
   });
 
   it('hopper master-key status: the source, the fingerprint and whether a previous key is set, as JSON; never a key (issue #685)', async () => {

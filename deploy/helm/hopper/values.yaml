@@ -1,0 +1,120 @@
+# The hopper on Kubernetes (issue #1281, docs/deploy.md "On Kubernetes, with Helm"). `helm install hopper deploy/helm/hopper`
+# with no values brings up the hopper, its Postgres, OpenFGA and Solr, as compose.yaml does. No container runtime socket,
+# no host path and no settings: sign-in, GitHub and every other setting are set in the UI, as in compose.
+
+# The hopper's image. The update channel is the tag: latest (the same image as stable), stable, beta, canary or dev.
+image:
+  repository: ghcr.io/henningfutrell/hopper
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# The port the hopper answers on, the same inside the pod and on its Service: the Host a browser sends names it.
+port: 4790
+
+# The master key (docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it. The chart never
+# makes it. The first start makes one and shows it once, in the UI. Keep it in a password manager, then put it in this
+# Secret, under `master-key` (and the key before a rotation under `previous`), and restart the hopper:
+#   kubectl create secret generic hopper-master-key --from-literal=master-key=<64 hex digits>
+#   kubectl rollout restart deployment/hopper
+# Unset: the Secret named <release>-master-key, read as variables, and a start without it, once secrets are kept, is
+# limited.
+masterKey:
+  # Set: that Secret is mounted as files and the hopper reads the key from its `master-key` file. A start without that
+  # file is refused. To rotate, put the new key under `master-key` and the old one under `previous`, then restart:
+  # every secret is sealed again under the new key.
+  existingSecret: ""
+  # The External Secrets Operator (https://external-secrets.io) fills the master key Secret (existingSecret, else
+  # <release>-master-key) from an outside store, and it is mounted as files as above. The operator and the store are
+  # yours: the chart makes only the ExternalSecret.
+  externalSecret:
+    enabled: false
+    refreshInterval: 1h
+    secretStoreRef:
+      name: ""
+      kind: ClusterSecretStore
+    # The remote key (and property, if the store keeps a map) of the master key.
+    masterKey:
+      key: ""
+      property: ""
+    # The key before a rotation; empty: none.
+    previous:
+      key: ""
+      property: ""
+
+# A key management service wraps the vault's data key (docs/deploy.md "On Kubernetes, with Helm"). Then the master key is not needed to
+# open the vault's secrets. Empty region: no KMS, and the vault seals under the master key.
+kms:
+  aws:
+    # AWS KMS in this region (HOPPER_KMS_REGION). The pod uses the AWS credentials of its service account's role (IRSA
+    # or EKS Pod Identity): see serviceAccount. The role needs kms:GenerateDataKey and kms:Decrypt on the key.
+    region: ""
+    # The KMS key: its id, ARN or alias. Required with a region: the hopper never makes a key in AWS.
+    key: ""
+    # An endpoint other than the region's own (a VPC endpoint); empty: the region's own.
+    endpoint: ""
+
+# The hopper's service account. Unset: the namespace's default. For AWS KMS, make one with the role's annotation, as
+# eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>.
+serviceAccount:
+  create: false
+  # The name; empty: <release> when create is true, else the default.
+  name: ""
+  annotations: {}
+
+# The pod network the hopper takes LAN requests from: the ingress controller and the kubelet's probes reach it from
+# there (docs/design.md "Reaching the UI across the LAN"). A LAN request reads the API only with a UI session.
+lanPeers: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+# The cluster's DNS domain: the hopper answers to its Service's names in it.
+clusterDomain: cluster.local
+
+# Publish the UI on a host name through the cluster's ingress controller. That host is the hopper's public URL
+# (HOPPER_PUBLIC_URL): a request through it is a public request. Off: reach it with `kubectl port-forward svc/hopper 4790`.
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+  # The Secret with the host's certificate; empty: TLS ends at the ingress controller's default certificate.
+  tlsSecretName: ""
+  # The public URL; empty: https://<host>.
+  publicUrl: ""
+
+# More environment for the hopper, as a list of EnvVar (docs/deploy.md "What every deploy needs").
+extraEnv: []
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# The hopper's home: the claude sign-in.
+home:
+  size: 5Gi
+  storageClass: ""
+
+postgres:
+  image: postgres:17-alpine
+  size: 10Gi
+  storageClass: ""
+  resources: {}
+
+# OpenFGA (docs/deploy.md "Access: OpenFGA"): access asks it before every credential a job is given. Its tables are the
+# `openfga` schema of the hopper's Postgres.
+openfga:
+  image: docker.io/openfga/openfga:v1.22.0
+  resources: {}
+
+# Search (docs/deploy.md "Search"): one Solr core. Off: the hopper has no search. Its index is built again from Postgres
+# when lost.
+solr:
+  enabled: true
+  image: docker.io/library/solr:9.11.0-slim
+  heap: 512m
+  size: 5Gi
+  storageClass: ""
+  resources: {}
+
+# NetworkPolicies: only the hopper and OpenFGA reach Postgres, only the hopper reaches OpenFGA and Solr. They take effect
+# only where the cluster's network plugin enforces them.
+networkPolicy:
+  enabled: true
