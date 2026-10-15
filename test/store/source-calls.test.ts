@@ -8,7 +8,8 @@ const at = (iso: string) => new Date(iso).toISOString();
 
 describe('the call log', () => {
   it('adds the calls of passes in the same minute, and sums the last hour and the last day per source', () => {
-    const store = t.open(t.url());
+    const url = t.url();
+    const store = t.open(url);
     const now = '2026-10-15T12:00:30.000Z';
     expect(store.sourceCalls.volume('github-account', now)).toEqual({ lastHour: 0, lastDay: 0 });
     store.sourceCalls.record('github-account', at('2026-10-15T12:00:05Z'), 3);
@@ -20,7 +21,7 @@ describe('the call log', () => {
     expect(store.sourceCalls.volume('github-account', now)).toEqual({ lastHour: 15, lastDay: 115 });
     expect(store.sourceCalls.volume('gh-2', now)).toEqual({ lastHour: 7, lastDay: 7 });
     store.close();
-    const again = t.open(t.url());
+    const again = t.open(url);
     expect(again.sourceCalls.volume('github-account', now)).toEqual({ lastHour: 15, lastDay: 115 });
     again.close();
   });

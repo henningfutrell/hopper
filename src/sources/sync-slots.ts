@@ -39,6 +39,10 @@ export interface Slot {
   delivered?: NodeJS.Timeout;
   /** The setup problem last logged (issue #1243), so each is said once, and once when it clears. */
   setupSaid?: string;
+  /** Poll backoff (issue #1264): the syncs in a row that found nothing changed; what its discover answered now, and in the sync before. */
+  unchanged?: number;
+  answer?: string;
+  answered?: string;
 }
 
 /**

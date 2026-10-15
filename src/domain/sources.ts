@@ -39,6 +39,27 @@ export interface SourceStatus {
   activeJobs: number;
   /** Source-specific facts for the UI, e.g. { owners, repos, authors, label }. */
   detail: Record<string, unknown>;
+  /** The interval between its timed syncs as configured, in ms (issue #1264). */
+  pollMs?: number;
+  /** The interval to its next timed sync, in ms: its poll interval, or longer while its syncs find nothing changed (issue #1264). */
+  nextPollMs?: number;
+  /** The calls to its service its sync passes made in the last hour and day, from the call log (issue #1264). */
+  calls?: SourceCalls;
+  /** The configured job source this one takes the same work as (issue #1264): a duplicate, to remove. */
+  duplicateOf?: string;
+}
+
+/** A job source's calls to its service in the last hour and the last day (issue #1264). */
+export interface SourceCalls { lastHour: number; lastDay: number }
+
+/**
+ * The call log (issue #1264): the calls each job source's sync passes made, kept in the database a day, so Sources shows
+ * each source's call volume, after a restart too. `at`: ISO time of the pass.
+ */
+export interface SourceCallLog {
+  record(source: string, at: string, calls: number): void;
+  /** Its calls in the hour and the day before `now` (ISO). */
+  volume(source: string, now: string): SourceCalls;
 }
 
 /** p50, p95 and max of a set of times, in ms. */

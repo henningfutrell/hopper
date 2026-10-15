@@ -3,7 +3,7 @@
 // its next timed sync, and the calls its passes made in the last hour and day, as the hopper's database keeps them.
 // Asserted on the intervals the loop computes, not on wall-clock time.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { SourceCallLog } from '../../src/domain/ports.ts';
+import type { SourceCallLog } from '../../src/domain/sources.ts';
 import { backedOffMs, MAX_BACKOFF_FACTOR } from '../../src/sources/poll-backoff.ts';
 import { createSourceSync } from '../../src/sources/sync.ts';
 import { createFakeSource, createWorld, item, settle } from './sync-support.ts';
