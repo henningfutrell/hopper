@@ -117,6 +117,33 @@ describe('scripts/master-key.sh (issue #1296)', () => {
     expect(r.err).toMatch(/does not unseal on this host\. Seal it again from your password manager/);
   });
 
+  it('a rotation is asked only once a key seals here: when the seal does not work, the hopper is not asked and nothing changes', () => {
+    const f = folder();
+    expect(f.run(['seal'], { HOPPER_MASTER_KEY: KEY }).status).toBe(0);
+    const podman = `#!/bin/sh
+printf 'podman %s\\n' "$*" >> "$STUB_LOG"
+case "$1" in
+  ps) echo 0123456789ab ;;
+  exec) printf '{"key": "%s", "fingerprint": "00112233445566778899aabbccddeeff"}' "$(printf 'e%.0s' $(seq 64))" ;;
+esac
+`;
+    writeFileSync(join(f.dir, '.bin', 'podman'), podman);
+    chmodSync(join(f.dir, '.bin', 'podman'), 0o755);
+    const before = readFileSync(join(f.dir, 'hopper-master-key.cred'), 'utf8');
+
+    const refused = f.run(['rotate'], { STUB_CREDS: 'fail' });
+    expect(refused.status).not.toBe(0);
+    expect(refused.err).toMatch(/a key does not seal with systemd-creds on this host now: the rotation is not asked/);
+    expect(f.calls().some((c) => c.startsWith('podman exec'))).toBe(false);
+    expect(readFileSync(join(f.dir, 'hopper-master-key.cred'), 'utf8')).toBe(before);
+
+    const rotated = f.run(['rotate']);
+    expect(rotated.status, rotated.err).toBe(0);
+    expect(f.calls().filter((c) => c.startsWith('podman exec'))).toEqual(['podman exec 0123456789ab hopper master-key rotate --host-seals']);
+    expect(JSON.parse(f.run(['run', process.execPath, '-e', env]).out)).toEqual(['e'.repeat(64), 'systemd-creds']);
+    expect(`${rotated.out}${rotated.err}`).not.toContain('e'.repeat(64));
+  });
+
   it('hopper master-key script prints this build\'s script, with no database', () => {
     const r = spawnSync(process.execPath, [join(ROOT, 'src', 'cli.ts'), 'master-key', 'script'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: tmpdir() } });
     expect(r.status, r.stderr).toBe(0);

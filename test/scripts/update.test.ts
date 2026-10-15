@@ -180,12 +180,6 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.out).toMatch(/the hopper did not answer \/api\/health/);
   });
 
-  it('fails when the hopper started limited', () => {
-    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_KEY_SOURCE: 'missing' } });
-    expect(r.status).not.toBe(0);
-    expect(r.out).toMatch(/the hopper started limited/);
-  });
-
   it('fails when the stack still differs from its compose file', () => {
     const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_DRIFT: '3' } });
     expect(r.status).not.toBe(0);

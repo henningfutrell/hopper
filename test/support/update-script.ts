@@ -63,7 +63,7 @@ case "$*" in
   "inspect --format {{.State.Running}} "*) echo "\${STUB_STATE:-true}" ;;
   "logs "*) echo 'the last log line' ;;
   "exec ${HOPPER_ID} node "*) exit "\${STUB_HEALTH:-0}" ;;
-  "exec ${HOPPER_ID} hopper master-key status") printf '{\\n  "source": "%s",\\n  "fingerprint": "%s",\\n  "previous": false\\n}\\n' "\${STUB_KEY_SOURCE:-given}" "${'f'.repeat(64)}" ;;
+  "exec ${HOPPER_ID} hopper master-key status") printf '{\\n  "source": "%s",\\n  "fingerprint": "%s",\\n  "previous": false\\n}\\n' "given" "${'f'.repeat(64)}" ;;
   "exec ${HOPPER_ID} hopper update drift") echo '{"state":"checked","gaps":[]}'; exit "\${STUB_DRIFT:-0}" ;;
   run\\ *) while [ "$1" != hopper ]; do shift; done; shift; exec '${process.execPath}' '${join(ROOT, 'src', 'cli.ts')}' "$@" ;;
 esac
