@@ -89,6 +89,9 @@ function numericUser(user: string): { uid: number; gid: number } {
   return { uid, gid };
 }
 
+/** What a box's pod asks the node for (issue #1371): its limits are a ceiling, not a reservation. */
+const REQUEST_FLOOR = { cpus: 0.1, memoryMb: 256 } as const;
+
 /**
  * The Kubernetes pod of a box (issue #1286): the sandbox flags as its security context — every capability dropped, no
  * privilege escalation, a read-only root, `/tmp` an empty dir, the home its claim, a non-root user by number — with no
@@ -97,7 +100,13 @@ function numericUser(user: string): { uid: number; gid: number } {
  */
 export function kubernetesPodBody(spec: ContainerSpec, o: { name: string; claim: string; labels: Record<string, string>; annotations: Record<string, string> }): Record<string, unknown> {
   const { uid, gid } = numericUser(spec.user);
-  const limits = { ...(spec.limits.cpus > 0 ? { cpu: String(spec.limits.cpus) } : {}), ...(spec.limits.memoryMb > 0 ? { memory: `${spec.limits.memoryMb}Mi` } : {}) };
+  const { cpus, memoryMb } = spec.limits;
+  const limits = { ...(cpus > 0 ? { cpu: String(cpus) } : {}), ...(memoryMb > 0 ? { memory: `${memoryMb}Mi` } : {}) };
+  // A limit is a ceiling, as Podman's `--cpus` is: the node holds only a small floor, never the limit, for the box.
+  const requests = {
+    ...(cpus > 0 ? { cpu: cpus < REQUEST_FLOOR.cpus ? String(cpus) : `${REQUEST_FLOOR.cpus * 1000}m` } : {}),
+    ...(memoryMb > 0 ? { memory: `${Math.min(memoryMb, REQUEST_FLOOR.memoryMb)}Mi` } : {}),
+  };
   return {
     apiVersion: 'v1', kind: 'Pod',
     metadata: { name: o.name, labels: o.labels, annotations: o.annotations },
@@ -111,7 +120,7 @@ export function kubernetesPodBody(spec: ContainerSpec, o: { name: string; claim:
         env: Object.entries(spec.env).map(([name, value]) => ({ name, value })),
         ...(spec.script !== undefined ? { command: ['/bin/sh', '-c', spec.script] } : {}),
         securityContext: { allowPrivilegeEscalation: false, privileged: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-        ...(Object.keys(limits).length ? { resources: { limits } } : {}),
+        ...(Object.keys(limits).length ? { resources: { limits, requests } } : {}),
         volumeMounts: [{ name: 'home', mountPath: HOME }, { name: 'tmp', mountPath: '/tmp' }],
       }],
       volumes: [{ name: 'home', persistentVolumeClaim: { claimName: o.claim } }, { name: 'tmp', emptyDir: {} }],

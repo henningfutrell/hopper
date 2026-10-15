@@ -1401,6 +1401,9 @@ What is different from Podman:
   escalation, a read-only root, `/tmp` an empty dir, no service account token, no service links, nothing of the node.
   It runs as uid and gid 1000 (the box image's `agent` user), whatever user its image names, and the kubelet refuses
   root. Its home is a PersistentVolumeClaim `<name>-home` of 5 GiB, of the cluster's default storage class.
+- **Limits are a ceiling, not a reservation.** A box's CPU and memory limits are its pod's limits. The pod asks the
+  node for only 0.1 CPU and 256 MiB (less when its limits are less), as Podman reserves nothing for its `--cpus`. So a
+  box of 4 CPUs starts on a node with fewer free; it shares the node's CPU with the other pods.
 - **Egress.** Before each pod, the hopper applies one NetworkPolicy, `hopper-sandbox`, to every pod it starts: no
   ingress, and egress only to DNS (port 53), the hopper's pods on its port, and public addresses. A box cannot reach
   any other pod, Service or private address of the cluster or your network (`10.0.0.0/8`, `172.16.0.0/12`,

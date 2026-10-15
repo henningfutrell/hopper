@@ -1,0 +1,1 @@
+- On Kubernetes, sandbox boxes now start on smaller nodes: their CPU and memory limits are a ceiling, and the node no longer holds the whole limit for each box.
