@@ -41,7 +41,10 @@ async function runtimeDir(): Promise<string> {
 
 // The stack (STUB_STACK) was started by podman-compose or docker-compose, or there is none. `podman compose` runs the
 // provider PODMAN_COMPOSE_PROVIDER names, else docker-compose (it runs docker-compose when it finds it); a compose tool sees
-// only the stack its own kind started.
+// only the stack its own kind started. The openfga-migrate one-shot (issue #1247) is the file .migrate in the install's
+// folder, its exit code in it: podman-compose's `up -d` makes it, its `down` leaves it, and its `up -d` exits 125 while it
+// is there (the container name is in use); `podman rm -f` removes it.
+const MIGRATE_ID = '9999999999ab';
 const PODMAN = `#!/bin/sh
 printf 'podman %s | HOPPER_IMAGE=%s\\n' "$*" "\${HOPPER_IMAGE:-}" >> "$STUB_LOG"
 compose() {
@@ -61,6 +64,10 @@ case "$*" in
   "inspect --format {{.Image}} "*) if grep -q 'up -d' "$STUB_LOG"; then echo "\${STUB_RUNNING_IMAGE:-${NEW_ID}}"; else echo "\${STUB_BEFORE_IMAGE:-}"; fi ;;
   "images -q --no-trunc --filter label=org.opencontainers.image.title=hopper") printf '%s\\n' \${STUB_IMAGES:-} ;;
   "rmi "*) [ "$2" != "\${STUB_IN_USE:-}" ]; exit $? ;;
+  "ps -aq --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=openfga-migrate") [ -f .migrate ] && echo ${MIGRATE_ID} ;;
+  "inspect --format {{.State.Status}} {{.State.ExitCode}} ${MIGRATE_ID}") read code < .migrate; echo "exited $code" ;;
+  "rm -f ${MIGRATE_ID}") rm -f .migrate ;;
+  "logs --tail 20 ${MIGRATE_ID}") echo 'openfga-migrate: the last migrate log line' ;;
   "inspect --format {{.State.Running}} "*) echo "\${STUB_STATE:-true}" ;;
   "logs "*) echo 'the last log line' ;;
   "exec ${HOPPER_ID} node "*) exit "\${STUB_HEALTH:-0}" ;;
@@ -73,21 +80,27 @@ exit 0
 const PODMAN_COMPOSE = `#!/bin/sh
 printf 'podman-compose %s | HOPPER_IMAGE=%s\\n' "$*" "\${HOPPER_IMAGE:-}" >> "$STUB_LOG"
 case "$*" in
-  *"up -d") [ -n "\${HOPPER_IMAGE:-}" ] && exit "\${STUB_UP:-0}" ;;
+  *"up -d")
+    if [ -f .migrate ]; then echo 'Error: creating container storage: the container name "hopper_openfga-migrate_1" is already in use' >&2; exit 125; fi
+    [ -n "\${HOPPER_IMAGE:-}" ] && [ "\${STUB_UP:-0}" != 0 ] && exit "$STUB_UP"
+    echo "\${STUB_MIGRATE_EXIT:-0}" > .migrate ;;
   *"ps -q") [ "$STUB_STACK" = podman-compose ] && echo 0123456789abcdef ;;
   *"exec -T postgres pg_dump"*) echo DUMP ;;
 esac
 exit 0
 `;
 
-interface Run { masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string }
+interface Run { dir?: string; masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string }
 
+/** One update run; `o.dir` runs it again in the folder of an earlier run, with what that run left there. */
 function update(o: Run = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'jh-update-sh-'));
-  dirs.push(dir);
-  writeFileSync(join(dir, 'compose.yaml'), SHIPPED.replace('${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}', `\${HOPPER_IMAGE:-${IMAGE}}`));
+  const again = o.dir !== undefined;
+  const dir = o.dir ?? mkdtempSync(join(tmpdir(), 'jh-update-sh-'));
+  if (!again) dirs.push(dir);
+  if (!again) writeFileSync(join(dir, 'compose.yaml'), SHIPPED.replace('${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}', `\${HOPPER_IMAGE:-${IMAGE}}`));
   if (o.override !== undefined) writeFileSync(join(dir, 'compose.override.yaml'), o.override);
   const bin = join(dir, '.bin');
+  rmSync(bin, { recursive: true, force: true });
   mkdirSync(bin);
   writeFileSync(join(bin, 'podman'), PODMAN);
   chmodSync(join(bin, 'podman'), 0o755);
@@ -205,6 +218,36 @@ describe('scripts/update.sh (issue #1104)', () => {
       'podman-compose -p hopper down | HOPPER_IMAGE=',
       'podman-compose -p hopper up -d | HOPPER_IMAGE=',
     ]);
+  });
+
+  it('runs the update twice in a row with the openfga-migrate one-shot left from the first: both exit 0 (issue #1247)', () => {
+    const first = update({ masterKey: KEY, stack: 'podman-compose' });
+    expect(first.status, first.out).toBe(0);
+    expect(first.calls).toContain(`podman rm -f ${MIGRATE_ID} | HOPPER_IMAGE=${IMAGE}`);
+    expect(first.out).toMatch(/openfga-migrate brought OpenFGA's tables up to date/);
+    // A run that left it behind all the same (an update of a build before this one).
+    writeFileSync(join(first.dir, '.migrate'), '0\n');
+    const second = update({ dir: first.dir, masterKey: KEY, stack: 'podman-compose' });
+    expect(second.status, second.out).toBe(0);
+    expect(second.out).not.toMatch(/did not start/);
+    expect(second.out).toMatch(/hopper update: done: /);
+  });
+
+  it('fails the update, with the last log lines, when the openfga-migrate run exits non-zero (issue #1247)', () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_MIGRATE_EXIT: '1' } });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('openfga-migrate: the last migrate log line');
+    expect(r.out).toMatch(/hopper update: openfga-migrate failed \(exit 1\)/);
+    expect(r.out).not.toMatch(/hopper update: done: /);
+  });
+
+  it('removes a failed openfga-migrate container left from before, shows its log lines, and goes on (issue #1247)', () => {
+    const first = update({ masterKey: KEY, stack: 'podman-compose' });
+    writeFileSync(join(first.dir, '.migrate'), '1\n');
+    const r = update({ dir: first.dir, masterKey: KEY, stack: 'podman-compose' });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toMatch(/the openfga-migrate run before this update failed \(exit 1\)/);
+    expect(r.out).toContain('openfga-migrate: the last migrate log line');
   });
 
   it('fails when the hopper does not run the image it pulled', () => {

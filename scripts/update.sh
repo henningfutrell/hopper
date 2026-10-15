@@ -16,8 +16,9 @@
 #   4. backs up the database (hopper-backup.dump), puts in the compose.yaml of the image with the install's own settings
 #      (`hopper update carry`; the old one stays as compose.yaml.bak), pulls, stops the stack and starts it on the image,
 #      so every container is made again (when it does not start: back to the old compose.yaml and stack);
-#   5. checks that the hopper runs the image pulled, answers /api/health, has its master key and that the stack has no
-#      drift (`hopper update drift`), and says the result. It exits 1 when one of these fails;
+#   5. checks that the hopper runs the image pulled, answers /api/health, has its master key, that the openfga-migrate
+#      one-shot exited 0 (then removes its container, issue #1247), and that the stack has no drift (`hopper update
+#      drift`), and says the result. It exits 1 when one of these fails;
 #   6. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
 #      before, to go back to. An image a container still uses is not removed.
 #
@@ -134,12 +135,14 @@ main() {
   # stops (its volumes stay), and the new one starts.
   say 'stop the stack (its volumes and data stay), and start it on the new image'
   "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
+  clear_one_shot "$runtime"
   if ! "${compose[@]}" up -d </dev/null >&2; then
     say 'the stack did not start: back to the old compose.yaml and image'
     unset HOPPER_IMAGE
     "${compose[@]}" down </dev/null >/dev/null 2>&1 || true
     cp compose.yaml.bak compose.yaml
     [ "$sandboxes" = 0 ] || mv compose.override.yaml.bak compose.override.yaml
+    clear_one_shot "$runtime"
     "${compose[@]}" up -d </dev/null >&2 || true
     fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again; the database backup is hopper-backup.dump"
   fi
@@ -194,10 +197,57 @@ check() {
   fi
   local fingerprint; fingerprint="$(printf '%s' "$status" | sed -n 's/.*"fingerprint": *"\([0-9a-f]*\)".*/\1/p')"
 
+  one_shot "$runtime" "$wait"
+
   local drift
   drift="$("$runtime" exec "$id" hopper update drift </dev/null)" \
     || fail "the stack differs from the compose file of this version: $drift"
   say "done: the hopper runs $image (${want:0:12}), it is healthy, its master key is given (fingerprint ${fingerprint:0:16}), and the stack is whole"
+}
+
+# The openfga-migrate one-shot (issue #1247): its container stays after it exits, and podman-compose's `down` can leave it,
+# so the next `up -d` exits 125 (the container name is in use) though the rest of the stack starts.
+ONE_SHOT=openfga-migrate
+one_shot_ids() {
+  "$1" ps -aq --filter label=com.docker.compose.project=hopper --filter "label=com.docker.compose.service=$ONE_SHOT" 2>/dev/null || true
+}
+
+# Before a start: removes the one-shot's container left from before. One that failed shows its last log lines first.
+clear_one_shot() {
+  local runtime=$1 id state
+  for id in $(one_shot_ids "$runtime"); do
+    state="$("$runtime" inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$id" 2>/dev/null || true)"
+    if [ "${state#* }" != 0 ] && [ "${state%% *}" = exited ]; then
+      say "the $ONE_SHOT run before this update failed (exit ${state#* }): its last log lines are below. It runs again now"
+      "$runtime" logs --tail 20 "$id" >&2 2>&1 || true
+    fi
+    "$runtime" rm -f "$id" >/dev/null 2>&1 || true
+  done
+}
+
+# After the start: waits until the one-shot exited 0, then removes its container, so the next `up -d` makes it again. It
+# retries until postgres has made the schema (restart: on-failure): a non-zero exit fails the update only when it lasts.
+one_shot() {
+  local runtime=$1 wait=$2 id state=''
+  id="$(one_shot_ids "$runtime" | head -n 1)"
+  [ -n "$id" ] || return 0
+  local deadline=$((SECONDS + wait))
+  while :; do
+    state="$("$runtime" inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$id" 2>/dev/null || true)"
+    if [ "$state" = 'exited 0' ]; then
+      "$runtime" rm -f "$id" >/dev/null 2>&1 || true
+      say "$ONE_SHOT brought OpenFGA's tables up to date; its container is removed"
+      return 0
+    fi
+    [ "$SECONDS" -lt "$deadline" ] || break
+    sleep 2
+  done
+  "$runtime" logs --tail 20 "$id" >&2 2>&1 || true
+  local code="${state#* }"
+  if [ -n "$state" ] && [ "$code" != 0 ]; then
+    fail "$ONE_SHOT failed (exit $code): its last log lines are above. OpenFGA's tables are not up to date, so access checks deny every credential. Fix the cause, then run the update again"
+  fi
+  fail "$ONE_SHOT did not end in ${wait} s (${state:-no state}): its last log lines are above. Run the update again"
 }
 
 # compose.sandboxes.yaml (issue #603) as it was shipped, without its comments and blank lines.

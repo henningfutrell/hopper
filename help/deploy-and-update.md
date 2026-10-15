@@ -18,7 +18,7 @@ The `compose.yaml` has required services and optional services.
 | `postgres` | yes | The database. Everything the hopper keeps is in it. |
 | `hopper` | yes | The daemon and the UI. |
 | `openfga` | yes | Access checks. The hopper asks it before it gives a job a credential. |
-| `openfga-migrate` | yes | Brings OpenFGA's tables up to date, then stops. |
+| `openfga-migrate` | yes | Brings OpenFGA's tables up to date, then stops. The update removes it after that. |
 | `hopper-vault` | no (profile `hopper-vault`) | The vault in a container of its own. |
 | `kms` | no (profile `kms`) | A local KMS that wraps the vault's data key. |
 | `tunnel` | yes | Remote access through ngrok. It runs no ngrok until you turn remote access on with ngrok. See [Remote access](remote-access.md). |
