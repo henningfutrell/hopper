@@ -128,7 +128,7 @@ describe('a not-signed-in question links to Accounts (issue #1128)', () => {
     expect(link.getAttribute('href')).toBe('#accounts');
     expect(card.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('Desk tower');
     expect(card.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('answers this question');
-    const screen = cardOf('1. Claude account')!;
+    const screen = cardOf(LOGIN_SCREEN_MARK)!;
     expect(screen.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('then answer this question');
     expect(cardOf('Which branch?')!.querySelector('[data-slot="sign-in-link"]')).toBeNull();
   });
