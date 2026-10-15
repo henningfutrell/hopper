@@ -3,7 +3,8 @@
 // STALL_MS is a stall: it is logged with the requests that were in flight while it lasted (their routes, never their
 // URLs), and `/api/health` shows the last one for STALL_SHOWN_MS. The stack of the code that held the loop cannot be
 // read from the loop once it is free again; the routes say which handler it was. A store call blocks the loop while it
-// lasts (src/store/db.ts): the slow ones that ran during a stall are named with it, by statement (issue #1154). A stall is
+// lasts (src/store/db.ts): the store calls that ran during a stall are named with it, by statement (issue #1154) — all of
+// them, from the store's totals read at each tick, so many fast calls are named as well as one slow one (issue #1383). A stall is
 // also raised as `hopper.event_loop_stalled`, at most one each RAISE_EVERY_MS, so a person is told, not only the log.
 // Issue #1383: a worker thread reads where the loop runs while it is held (event-loop-held.ts), so a stall with no store
 // call in it names its code too (`held`); a stall says the process's memory (`memory`); and the time the loop was held
@@ -11,7 +12,7 @@
 // memory is logged each time its resident size grows past another GiB.
 import type { FastifyInstance } from 'fastify';
 import type { HeldSample, HeldWatch } from './event-loop-held.ts';
-import type { SlowCall } from '../store/slow-calls.ts';
+import type { StoreTotal } from '../store/slow-calls.ts';
 
 /** A timer this late is a stall. */
 export const STALL_MS = 2000;
@@ -40,22 +41,16 @@ export interface StallHeld { afterMs: number; frames: string[] }
 export interface StallMemory { rssMb: number; heapMb: number }
 
 /**
- * A stall of the event loop: when it ended, how long it was, the requests in flight during it, the slow store calls
+ * A stall of the event loop: when it ended, how long it was, the requests in flight during it, the store calls
  * that ran in it (absent: none), where the loop ran while it was held (absent: not read), and the memory.
  */
 export interface EventLoopStall { at: string; ms: number; during: string[]; store?: StallStoreCalls; held?: StallHeld[]; memory?: StallMemory }
 
-/** The store calls of `calls` within [from, to], by statement, longest first. */
-export function storeCallsIn(calls: readonly SlowCall[], from: number, to: number): StallStoreCalls | undefined {
-  const by = new Map<string, { ms: number; count: number }>();
-  for (const c of calls) {
-    const ms = Math.min(c.to, to) - Math.max(c.from, from);
-    if (ms <= 0) continue;
-    const b = by.get(c.what) ?? { ms: 0, count: 0 };
-    by.set(c.what, { ms: b.ms + ms, count: b.count + 1 });
-  }
-  if (!by.size) return undefined;
-  const all = [...by].map(([what, b]) => ({ what, ms: Math.round(b.ms), count: b.count })).sort((a, b) => b.ms - a.ms);
+/** The store calls between two totals (src/store/slow-calls.ts), by statement, longest first. */
+export function storeCallsBetween(before: ReadonlyMap<string, StoreTotal>, after: ReadonlyMap<string, StoreTotal>): StallStoreCalls | undefined {
+  const all = [...after].map(([what, t]) => ({ what, ms: Math.round(t.ms - (before.get(what)?.ms ?? 0)), count: t.count - (before.get(what)?.count ?? 0) }))
+    .filter((c) => c.count > 0).sort((a, b) => b.ms - a.ms);
+  if (!all.length) return undefined;
   return { ms: all.reduce((n, c) => n + c.ms, 0), calls: all.slice(0, STATEMENTS_NAMED) };
 }
 
@@ -63,7 +58,7 @@ const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
 const storeLine = (s: StallStoreCalls | undefined): string => (s
   ? `; store calls in it: ${seconds(s.ms)} (${s.calls.map((c) => `${c.what} ${seconds(c.ms)}${c.count > 1 ? ` ×${c.count}` : ''}`).join(', ')})`
-  : '; no slow store call in it');
+  : '; no store call in it');
 
 const heldLine = (h: StallHeld[] | undefined): string => (h?.length
   ? `; it ran ${h.map((r) => `at ${seconds(r.afterMs)}: ${r.frames.slice(0, 3).join(' ← ') || 'no JavaScript'}`).join('; ')}`
@@ -86,8 +81,8 @@ interface Span { route: string; from: number; to?: number }
 export interface WatchOptions {
   clock: { now(): Date };
   warn(line: string): void;
-  /** The slow store calls that ended at or after a time (`performance.now()`): src/store/slow-calls.ts. Absent: not named. */
-  storeCalls?: (from: number) => readonly SlowCall[];
+  /** The store's totals by statement now (src/store/slow-calls.ts). Absent: the store calls are not named. */
+  storeCalls?: () => ReadonlyMap<string, StoreTotal>;
   /** A stall to tell a person: at most one each `raiseEveryMs`; `skipped`, the stalls since the last one raised. */
   raise?: (stall: EventLoopStall & { skipped: number }) => void;
   /** The thread that reads where the loop is held (event-loop-held.ts). Absent: a stall does not say. */
@@ -112,27 +107,37 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
   const stalls: { from: number; to: number }[] = [];
   let beat = o.held?.beat() ?? Date.now();
   let rssStep = 0, memoryAt = performance.now();
+  /** The store's totals at the last tick: a stall's store calls are the difference at its end. */
+  let storeAt = o.storeCalls?.();
 
-  app.addHook('onRequest', async (req) => { open.set(req.id, { route: `${req.method} ${req.routeOptions.url ?? '(no route)'}`, from: performance.now() }); });
-  app.addHook('onResponse', async (req) => {
-    const s = open.get(req.id);
+  const end = (id: string): void => {
+    const s = open.get(id);
     if (!s) return;
-    open.delete(req.id);
+    open.delete(id);
     ended.push({ ...s, to: performance.now() });
     if (ended.length > ENDED_KEPT) ended.shift();
+  };
+  app.addHook('onRequest', async (req, reply) => {
+    open.set(req.id, { route: `${req.method} ${req.routeOptions.url ?? '(no route)'}`, from: performance.now() });
+    // A response that never finishes — an event stream its reader closed, a request the client dropped — gets no
+    // onResponse: it ends when its socket closes (issue #1383), or it stays in flight in every stall, and in memory.
+    reply.raw.once('close', () => { end(req.id); });
   });
+  app.addHook('onResponse', async (req) => { end(req.id); });
 
   let at = performance.now();
   const timer = setInterval(() => {
     const now = performance.now(), late = now - at - tickMs, since = beat, wall = Date.now();
     at = now;
     beat = o.held?.beat() ?? wall;
+    const storeBefore = storeAt;
+    storeAt = o.storeCalls?.();
     if (now - memoryAt >= memoryEveryMs) { memoryAt = now; watchMemory(); }
     if (late < stallMs) return;
     stalls.push({ from: wall - late, to: wall });
     while (stalls.length && stalls[0]!.to < wall - STALLS_KEPT_MS) stalls.shift();
     // The held thread's last read is a message still in the queue: read it after the queue's turn.
-    setImmediate(() => { stalled(now, late, o.held?.of(since) ?? []); });
+    setImmediate(() => { stalled(now, late, o.held?.of(since) ?? [], storeBefore && storeAt ? storeCallsBetween(storeBefore, storeAt) : undefined); });
   }, tickMs);
   const watchMemory = (): void => {
     const rss = memory().rss, step = Math.floor(rss / GIB);
@@ -140,10 +145,9 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     rssStep = step;
     o.warn(`hopper: the process's resident memory grew past ${step} GiB (${mib(rss)} MiB)`);
   };
-  const stalled = (now: number, late: number, reads: HeldSample[]): void => {
+  const stalled = (now: number, late: number, reads: HeldSample[], store: StallStoreCalls | undefined): void => {
     const from = now - late;
     const during = [...new Set([...ended.filter((s) => s.to! >= from), ...open.values()].filter((s) => s.from <= now).map((s) => s.route))];
-    const store = o.storeCalls ? storeCallsIn(o.storeCalls(from), from, now) : undefined;
     const held = reads.map((r) => ({ afterMs: Math.round(r.heldMs), frames: r.frames }));
     const m = memory();
     const stall: EventLoopStall = {
