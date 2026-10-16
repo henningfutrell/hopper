@@ -295,33 +295,14 @@ function JobUserFix({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const newCreds = currentCreds.filter((c) => !acceptedCreds.includes(c));
   const showUseAnyway = ctx.authed && !ctx.busy && !accepted;
   const showRevoke = ctx.authed && !ctx.busy && accepted;
-  
-  const accept = async () => {
-    if (!m.infraCredentials) return;
-    await post('/ui/api/machines/' + m.id + '/credentials/accept', { machineKey: m.id, credentials: m.infraCredentials });
-    toast.success('Accepted');
-    await refreshLive();
-  };
-  
-  const revoke = async () => {
-    await post('/ui/api/machines/' + m.id + '/credentials/revoke', { machineKey: m.id });
-    toast.success('Revoked');
-    await refreshLive();
-  };
+  const accept = async () => { if (!m.infraCredentials) return; await post('/ui/api/machines/' + m.id + '/credentials/accept', { machineKey: m.id, credentials: m.infraCredentials }); toast.success('Accepted'); await refreshLive(); };
+  const revoke = async () => { await post('/ui/api/machines/' + m.id + '/credentials/revoke', { machineKey: m.id }); toast.success('Revoked'); await refreshLive(); };
   
   return (
     <div role="alert" data-slot="infra-credentials" className="grid gap-1.5 text-sm">
       <p className={accepted ? 'text-warn' : 'text-warn font-semibold'}>{infraCredentialsText(m)}</p>
-      {accepted && (
-        <p className="text-xs text-muted-foreground">
-          Accepted by admin on {new Date(m.credentialAcceptance!.acceptedAt).toLocaleString()}. {newCreds.length > 0 ? `New credentials found: ${newCreds.join(', ')}.` : ''} This machine takes jobs despite the blast-radius risk.
-        </p>
-      )}
-      {revoked && (
-        <p className="text-xs text-destructive">
-          Acceptance was revoked on {new Date(m.credentialAcceptance!.revokedAt!).toLocaleString()}. This machine takes no jobs.
-        </p>
-      )}
+      {accepted && <p className="text-xs text-muted-foreground">Accepted by admin on {new Date(m.credentialAcceptance!.acceptedAt).toLocaleString()}. {newCreds.length > 0 ? `New credentials found: ${newCreds.join(', ')}.` : ''} This machine takes jobs despite the blast-radius risk.</p>}
+      {revoked && <p className="text-xs text-destructive">Acceptance was revoked on {new Date(m.credentialAcceptance!.revokedAt!).toLocaleString()}. This machine takes no jobs.</p>}
       {fix && (
         <>
           <p className="text-xs text-muted-foreground">To set up a dedicated job user, run these on that machine as an admin:</p>
@@ -332,18 +313,8 @@ function JobUserFix({ m, ctx }: { m: MachineView; ctx: Ctx }) {
           <p className="text-xs text-muted-foreground">{fix.then}</p>
         </>
       )}
-      {showUseAnyway && (
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant="destructive" onClick={() => void accept()}>Use anyway</Button>
-          <span className="text-xs text-muted-foreground self-center">Accept the blast-radius risk and let this machine take jobs</span>
-        </div>
-      )}
-      {showRevoke && (
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => void revoke()}>Revoke acceptance</Button>
-          <span className="text-xs text-muted-foreground self-center">Stop this machine from taking jobs</span>
-        </div>
-      )}
+      {showUseAnyway && <div className="flex gap-2"><Button type="button" size="sm" variant="destructive" onClick={() => void accept()}>Use anyway</Button><span className="text-xs text-muted-foreground self-center">Accept the blast-radius risk and let this machine take jobs</span></div>}
+      {showRevoke && <div className="flex gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void revoke()}>Revoke acceptance</Button><span className="text-xs text-muted-foreground self-center">Stop this machine from taking jobs</span></div>}
     </div>
   );
 }

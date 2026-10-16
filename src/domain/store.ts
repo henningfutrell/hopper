@@ -479,19 +479,13 @@ export interface UserStore {
   decisions: DecisionRepository;
   events: EventLog;
   webhooks: WebhookRepository;
-  /** The vault (issue #558). */
-  vault: VaultRepository;
-  /** The job stream's events and watches (issue #613). */
-  jobStream: JobStreamRepository;
-  /** The artifacts jobs make for a person to see, and their shares (issue #624). */
-  artifacts: ArtifactRepository;
-  /** The infra plans jobs record, and their approvals (issue #870). */
-  infraPlans: import('./infra-plans.ts').InfraPlanRepository;
-  /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */
-  outOfBand: import('./out-of-band.ts').OutOfBandRepository;
+  /** The vault (issue #558). */ vault: VaultRepository;
+  /** The job stream's events and watches (issue #613). */ jobStream: JobStreamRepository;
+  /** The artifacts jobs make for a person to see, and their shares (issue #624). */ artifacts: ArtifactRepository;
+  /** The infra plans jobs record, and their approvals (issue #870). */ infraPlans: import('./infra-plans.ts').InfraPlanRepository;
+  /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */ outOfBand: import('./out-of-band.ts').OutOfBandRepository;
   questions: QuestionRepository;
-  /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
-  reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
+  /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */ reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
   logins: LoginRepository; lastAccounts: import('./logins.ts').LastAccountRepository; // the last accounts (issue #1269)
   failures: FailureRepository;
   problems: ProblemRepository;
@@ -499,75 +493,48 @@ export interface UserStore {
   itemSnapshots: ItemSnapshotRepository;
   vaultGrants: VaultGrantRepository;
   bugReports: BugReportRepository;
-  /** The issue graph (issue #437): store only, nothing reads it yet. */
-  issueGraph: import('./issue-graph.ts').IssueGraphRepository; workItems: import('./work-items.ts').WorkItemLedger; // the work-item ledger (issue #1067)
-  /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */
-  pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
-  /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing; the GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent; the repositories' checks as last read (issue #1250), with their answers' ETags. */
-  githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; githubOutbox: import('./github-outbox.ts').GitHubOutboxRepository; repoChecks: import('./repo-checks.ts').RepoChecksReadRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
-  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
-  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
+  /** The issue graph (issue #437): store only, nothing reads it yet. */ issueGraph: import('./issue-graph.ts').IssueGraphRepository; workItems: import('./work-items.ts').WorkItemLedger; // the work-item ledger (issue #1067)
+  /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */ pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
+  /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing; the GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent; the repositories' checks as last read (issue #1250), with their answers' ETags. */ githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; githubOutbox: import('./github-outbox.ts').GitHubOutboxRepository; repoChecks: import('./repo-checks.ts').RepoChecksReadRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
+  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */ checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
   settings: UserSettingsRepository;
-  /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
-  connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
+  /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */ connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
   usageHistory: UsageHistoryRepository;
   machineHistory: MachineHistoryRepository;
-  /** `plugins`, `rules` and `job-rules`. */
-  config: ConfigRecords<UserConfigName>;
-  /** Machine credential acceptances (issue #1459): the admin's acceptance of a machine despite its infra credentials. */
-  credentialAcceptances: import('./machine-credentials.ts').CredentialAcceptanceRepository;
-  /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
-  tx<T>(fn: () => T): T;
+  /** `plugins`, `rules` and `job-rules`. */ config: ConfigRecords<UserConfigName>;
+  /** Machine credential acceptances (issue #1459): the admin's acceptance of a machine despite its infra credentials. */ credentialAcceptances: import('./machine-credentials.ts').CredentialAcceptanceRepository;
+  /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */ tx<T>(fn: () => T): T;
   close(): void;
 }
 
-/** The instance store: the instance schema (design.md "Users: one hopper, separate users"). */
-/** What every user's schema keeps sealed under the master key (issue #659): the sealed values' key ids, and the sealed tokens. */
+/** The instance store: the instance schema (design.md "Users: one hopper, separate users"). */ /** What every user's schema keeps sealed under the master key (issue #659): the sealed values' key ids, and the sealed tokens. */
 export interface KeptSecrets {
   keyIds: readonly string[];
   tokens: readonly string[];
 }
 
-/** What a master key rotation sealed again, and how many values an old key sealed that do not open (left as they were). */
-export interface MasterKeyResealed {
+/** What a master key rotation sealed again, and how many values an old key sealed that do not open (left as they were). */ export interface MasterKeyResealed {
   resealed: number;
   unreadable: number;
 }
 
 export interface InstanceStore {
   users: UserRepository;
-  /** The identity links; the local accounts (issue #1380): the hopper's own email and password sign-in. */
-  identities: IdentityLinks; localAccounts: import('./local-accounts.ts').LocalAccountRepository;
-  /** The local accounts' passkeys (issue #1380). */
-  localAccountPasskeys: import('./local-accounts.ts').LocalAccountPasskeyRepository;
-  /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
-  uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
+  /** The identity links; the local accounts (issue #1380): the hopper's own email and password sign-in. */ identities: IdentityLinks; localAccounts: import('./local-accounts.ts').LocalAccountRepository;
+  /** The local accounts' passkeys (issue #1380). */ localAccountPasskeys: import('./local-accounts.ts').LocalAccountPasskeyRepository;
+  /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */ uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
-  /** The sandbox records (issue #708). */
-  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
-  /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
-  config: ConfigRecords<InstanceConfigName>;
-  /** The sign-in config: the `sign-in` record with the password accounts. */
-  signInConfig: SignInConfigRepository;
+  /** The sandbox records (issue #708). */ sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
+  /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */ config: ConfigRecords<InstanceConfigName>;
+  /** The sign-in config: the `sign-in` record with the password accounts. */ signInConfig: SignInConfigRepository;
   settings: InstanceSettingsRepository;
-  /** Access (issue #559): the models, the approvals pushed to OpenFGA, the mint decisions. */
-  access: AccessRepository;
-  /** The instance's vault (issue #658): the system secrets of the whole hopper — its sign-in realms' secrets. The hopper's
-   * Postgres as Postgres itself says (issue #947): connections, size, cache, locks, transactions, statements; the stack samples. */
-  vault: InstanceVault; databaseStats: import('./stack-resources.ts').DatabaseStats; stackHistory: import('./stack-resources.ts').StackHistoryRepository;
-  /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
-  userStore(user: User): UserStore;
-  /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */
-  keptSecrets(): KeptSecrets;
-  /**
-   * The master key rotation (issue #659): in one transaction, every value `from` sealed, in every schema, sealed again
-   * under `to`, its new fingerprint recorded, and the rotation. A value no `from` key sealed is left; one that does not
-   * open is counted, and left. Throws, and changes nothing, when a write fails.
-   */
-  rotateMasterKey(o: { from: { key: string; previous: readonly string[] }; to: string }): MasterKeyResealed;
-  /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
-  holdDaemonLock(): boolean;
+  /** Access (issue #559): the models, the approvals pushed to OpenFGA, the mint decisions. */ access: AccessRepository;
+  /** The instance's vault (issue #658): the system secrets of the whole hopper — its sign-in realms' secrets. The hopper's Postgres as Postgres itself says (issue #947): connections, size, cache, locks, transactions, statements; the stack samples. */ vault: InstanceVault; databaseStats: import('./stack-resources.ts').DatabaseStats; stackHistory: import('./stack-resources.ts').StackHistoryRepository;
+  /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */ userStore(user: User): UserStore;
+  /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */ keptSecrets(): KeptSecrets;
+  /** The master key rotation (issue #659): in one transaction, every value `from` sealed, in every schema, sealed again under `to`, its new fingerprint recorded, and the rotation. A value no `from` key sealed is left; one that does not open is counted, and left. Throws, and changes nothing, when a write fails. */ rotateMasterKey(o: { from: { key: string; previous: readonly string[] }; to: string }): MasterKeyResealed;
+  /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */ holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;
   close(): void;
 }

@@ -39,22 +39,25 @@ describe('machine credential acceptance', () => {
     const { a } = await start();
     // The machine has credentials
     const ms = await machines(a);
-    expect(ms[0].infraCredentials).toEqual(['.kube', '.config/gh/hosts.yml']);
+    expect(ms.length).toBeGreaterThan(0);
+    expect(ms[0]?.infraCredentials).toEqual(['.kube', '.config/gh/hosts.yml']);
     
     // Queue a job
-    const job = await a.pull('test', {});
-    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0].status === 'held'));
+    await a.pull({ op: 'echo' });
+    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0]?.status === 'held'));
     
     const j = await jobs(a);
-    expect(j[0].status).toBe('held');
-    expect(j[0].holdReason).toContain('not ready');
-    expect(j[0].holdReason).toContain('.kube');
+    expect(j.length).toBeGreaterThan(0);
+    expect(j[0]?.status).toBe('held');
+    expect(j[0]?.holdReason).toContain('not ready');
+    expect(j[0]?.holdReason).toContain('.kube');
   });
 
   it('after accepting the credentials, the machine takes jobs', async () => {
     const { a, token } = await start();
     const ms = await machines(a);
-    const machineId = ms[0].id;
+    expect(ms.length).toBeGreaterThan(0);
+    const machineId = ms[0]!.id;
     
     // Accept the credentials
     await a.ui('/ui/api/machines/' + machineId + '/credentials/accept', {
@@ -63,17 +66,19 @@ describe('machine credential acceptance', () => {
     }, { token });
     
     // Queue a job
-    await a.pull('test', {});
-    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0].status === 'claimed'));
+    await a.pull({ op: 'echo' });
+    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0]?.status === 'claimed'));
     
     const j = await jobs(a);
-    expect(j[0].status).toBe('claimed');
+    expect(j.length).toBeGreaterThan(0);
+    expect(j[0]?.status).toBe('claimed');
   });
 
   it('after revoking acceptance, the machine is held again', async () => {
     const { a, token } = await start();
     const ms = await machines(a);
-    const machineId = ms[0].id;
+    expect(ms.length).toBeGreaterThan(0);
+    const machineId = ms[0]!.id;
     
     // Accept the credentials
     await a.ui('/ui/api/machines/' + machineId + '/credentials/accept', {
@@ -82,12 +87,8 @@ describe('machine credential acceptance', () => {
     }, { token });
     
     // Queue and claim a job
-    const job1 = await a.pull('test', {});
-    await a.waitForStatus(job1.id, 'claimed');
-    
-    // End the job
-    a.scripted.end(job1.id);
-    await a.waitForStatus(job1.id, 'done');
+    const job1 = await a.pull({ op: 'echo' });
+    await a.waitForStatus(job1.id, 'finished');
     
     // Revoke the acceptance
     await a.ui('/ui/api/machines/' + machineId + '/credentials/revoke', {
@@ -95,7 +96,7 @@ describe('machine credential acceptance', () => {
     }, { token });
     
     // Queue another job
-    const job2 = await a.pull('test', {});
+    const job2 = await a.pull({ op: 'echo' });
     await waitFor(() => jobs(a).then((j) => j.some((jj) => jj.id === job2.id && jj.status === 'held')));
     
     const j = await a.job(job2.id);
@@ -116,7 +117,8 @@ describe('machine credential acceptance', () => {
     });
     const token = await t.login();
     const ms = await machines(t);
-    const machineId = ms[0].id;
+    expect(ms.length).toBeGreaterThan(0);
+    const machineId = ms[0]!.id;
     
     await t.ui('/ui/api/machines/' + machineId + '/credentials/accept', {
       machineKey: machineId,
@@ -134,12 +136,13 @@ describe('machine credential acceptance', () => {
     
     // The acceptance persisted
     const ms2 = await machines(t);
-    expect(ms2[0].credentialAcceptance).toBeDefined();
-    expect(ms2[0].credentialAcceptance!.credentials).toEqual(['.kube']);
-    expect(ms2[0].credentialAcceptance!.revokedAt).toBeUndefined();
+    expect(ms2.length).toBeGreaterThan(0);
+    expect(ms2[0]?.credentialAcceptance).toBeDefined();
+    expect(ms2[0]?.credentialAcceptance?.credentials).toEqual(['.kube']);
+    expect(ms2[0]?.credentialAcceptance?.revokedAt).toBeUndefined();
     
     // The machine takes jobs
-    const job = await t.pull('test', {});
+    const job = await t.pull({ op: 'echo' });
     await t.waitForStatus(job.id, 'claimed');
     
     const j = await t.job(job.id);
