@@ -27,7 +27,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, herdrText, infraCredentialsText, jobUserFix, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
@@ -39,6 +39,7 @@ import { useCanAdmin } from '@/store/selectors';
 import { JoinMachineForm } from './machine-join';
 import { PriorityLanesPanel } from './priority-lanes';
 import { BlastRadiusPanel } from './blast-radius';
+import { CredentialBadge, CredentialCheck, CredentialCheckPanel } from './machine-credentials';
 import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
@@ -113,7 +114,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.leaving && <StatusBadge status="leaving" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{infraCredentialsText(m) && <StatusBadge status="not ready" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.leaving && <StatusBadge status="leaving" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<CredentialBadge m={m} />{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
@@ -156,7 +157,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
-      {infraCredentialsText(m) && <JobUserFix m={m} ctx={ctx} />}
+      <CredentialCheck m={m} authed={ctx.authed} busy={ctx.busy} />
       {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
@@ -280,41 +281,7 @@ export function Machines() {
       {machines.length > 0 && <JobCostsPanel />}
       {machines.length > 0 && <PriorityLanesPanel />}
       {machines.length > 0 && <BlastRadiusPanel />}
-    </div>
-  );
-}
-
-/** A machine not ready for its credentials (issue #1248): what its job user holds, and the guided fix with its commands; or its acceptance (issue #1459). */
-function JobUserFix({ m, ctx }: { m: MachineView; ctx: Ctx }) {
-  const fix = jobUserFix(m);
-  const commands = fix?.commands.join('\n') ?? '';
-  const accepted = m.credentialAcceptance !== undefined && m.credentialAcceptance.revokedAt === undefined;
-  const revoked = m.credentialAcceptance !== undefined && m.credentialAcceptance.revokedAt !== undefined;
-  const acceptedCreds = accepted ? m.credentialAcceptance!.credentials : [];
-  const currentCreds = m.infraCredentials ?? [];
-  const newCreds = currentCreds.filter((c) => !acceptedCreds.includes(c));
-  const showUseAnyway = ctx.authed && !ctx.busy && !accepted;
-  const showRevoke = ctx.authed && !ctx.busy && accepted;
-  const accept = async () => { if (!m.infraCredentials) return; await post('/ui/api/machines/' + m.id + '/credentials/accept', { machineKey: m.id, credentials: m.infraCredentials }); toast.success('Accepted'); await refreshLive(); };
-  const revoke = async () => { await post('/ui/api/machines/' + m.id + '/credentials/revoke', { machineKey: m.id }); toast.success('Revoked'); await refreshLive(); };
-  
-  return (
-    <div role="alert" data-slot="infra-credentials" className="grid gap-1.5 text-sm">
-      <p className={accepted ? 'text-warn' : 'text-warn font-semibold'}>{infraCredentialsText(m)}</p>
-      {accepted && <p className="text-xs text-muted-foreground">Accepted by admin on {new Date(m.credentialAcceptance!.acceptedAt).toLocaleString()}. {newCreds.length > 0 ? `New credentials found: ${newCreds.join(', ')}.` : ''} This machine takes jobs despite the blast-radius risk.</p>}
-      {revoked && <p className="text-xs text-destructive">Acceptance was revoked on {new Date(m.credentialAcceptance!.revokedAt!).toLocaleString()}. This machine takes no jobs.</p>}
-      {fix && (
-        <>
-          <p className="text-xs text-muted-foreground">To set up a dedicated job user, run these on that machine as an admin:</p>
-          <div className="flex flex-wrap items-start gap-2 text-xs">
-            <code data-slot="job-user-commands" className="min-w-0 flex-1 rounded-md border bg-muted/40 p-2 font-mono break-all whitespace-pre-wrap">{commands}</code>
-            <Button type="button" size="sm" variant="outline" className="min-h-9" onClick={() => void navigator.clipboard?.writeText(commands).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'))}>Copy</Button>
-          </div>
-          <p className="text-xs text-muted-foreground">{fix.then}</p>
-        </>
-      )}
-      {showUseAnyway && <div className="flex gap-2"><Button type="button" size="sm" variant="destructive" onClick={() => void accept()}>Use anyway</Button><span className="text-xs text-muted-foreground self-center">Accept the blast-radius risk and let this machine take jobs</span></div>}
-      {showRevoke && <div className="flex gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void revoke()}>Revoke acceptance</Button><span className="text-xs text-muted-foreground self-center">Stop this machine from taking jobs</span></div>}
+      {authed && machines.length > 0 && <CredentialCheckPanel />}
     </div>
   );
 }

@@ -61,6 +61,10 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/sandbox-requests', kind: 'change work on a machine' }, // issue #991: approving one lets the job's box steps run
   // Issue #731: where a job's Windows sandbox steps run, with the hopper's own ssh key.
   { route: '/ui/api/windows-hosts', kind: 'change work on a machine' },
+  // Issue #1467: the credential check — a machine used anyway or acknowledged, a machine stopped, strict mode.
+  { route: '/ui/api/machines/:id/credentials/accept', kind: 'change work on a machine' },
+  { route: '/ui/api/machines/:id/credentials/revoke', kind: 'change work on a machine' },
+  { route: '/ui/api/credential-check', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/apply', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/undo', kind: 'change work on a machine' },
   { route: '/ui/api/failures/kept-work/:id/discard', kind: 'change work on a machine' }, // issue #1010: removes work not pushed

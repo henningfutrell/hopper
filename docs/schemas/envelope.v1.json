@@ -256,6 +256,7 @@
         "job.child_issue_filed",
         "contribution.changed",
         "shrink_guard.changed",
+        "credential_check.changed",
         "pointed_job.created",
         "pointed_job.status_changed",
         "github_watch.changed",

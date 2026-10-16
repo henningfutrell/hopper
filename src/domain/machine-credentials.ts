@@ -1,9 +1,10 @@
-// Machine credential acceptances (issue #1459): when an admin accepts the blast-radius risk of running jobs on a machine
-// whose job user holds infra credentials. Persisted in machine_credential_acceptances; the decider (src/decider/assign.ts)
-// and lane listing (src/engine/lane-calls.ts) treat an accepted machine as ready. A machine with no row, or a revoked
-// row (`revokedAt` is set), takes no jobs.
+// The credential check (issues #1248, #1459, #1467): a machine whose job user holds infra credentials takes jobs with a
+// warning. It is held only when an admin stopped it, or when strict mode is on and no admin used it anyway. An admin's
+// acknowledgement is kept in machine_credential_acceptances: an active row (no `revokedAt`) is the acknowledgement, with
+// the credentials it named; a row with `revokedAt` set is a stop. The decider (src/decider/assign.ts), the placement
+// picks (src/engine/lane-calls.ts) and the Machines view all read `credentialHeld`, so they never disagree. Pure.
 
-/** One machine's acceptance: the admin who accepted it, when, and which credentials were accepted. */
+/** One machine's acknowledgement: the admin who acted, when, and which credentials it named; or a stop (`revokedAt`). */
 export interface CredentialAcceptance {
   machineKey: string;
   credentials: readonly string[];
@@ -12,23 +13,46 @@ export interface CredentialAcceptance {
   revokedAt?: string;
 }
 
-/** Issue #1459: persist and retrieve credential acceptances for machines. */
+/** The credential check's settings (issue #1467): strict mode holds every machine with credentials no admin acknowledged. */
+export interface CredentialCheckSettings {
+  strict: boolean;
+}
+
+export const DEFAULT_CREDENTIAL_CHECK: CredentialCheckSettings = { strict: false };
+
+/** Issue #1459: persist and retrieve the acknowledgements and stops of machines, and the check's settings (issue #1467). */
 export interface CredentialAcceptanceRepository {
-  /**
-   * Accept a machine's infra credentials: create or update the acceptance. When `revokedAt` is set, clears it.
-   * The machine takes jobs again.
-   */
+  /** Acknowledge a machine's infra credentials (Use anyway, or Acknowledge): create or update the row, and clear a stop. */
   accept(machineKey: string, credentials: readonly string[], acceptedBy: string, acceptedAt: string): void;
-  /**
-   * Revoke an acceptance: set `revokedAt`. The machine takes no jobs. No-op when the machine has no acceptance.
-   */
-  revoke(machineKey: string, revokedAt: string): void;
-  /**
-   * Get the acceptance for a machine; undefined when the machine has no acceptance or it is revoked.
-   */
+  /** Stop a machine from taking jobs for its credentials (issue #1467): create or update the row with `revokedAt` set. */
+  revoke(machineKey: string, revokedBy: string, revokedAt: string): void;
+  /** A machine's acknowledgement; undefined when it has none or it is stopped. */
   get(machineKey: string): CredentialAcceptance | undefined;
-  /**
-   * List all acceptances, revoked or not.
-   */
+  /** Every row, stopped or not. */
   list(): CredentialAcceptance[];
+  /** The check's settings; the default when never set. */
+  settings(): CredentialCheckSettings;
+  setSettings(settings: CredentialCheckSettings): void;
+}
+
+/**
+ * Issue #1467: whether the credential check holds a machine. Only a machine whose job user holds credentials; then when an
+ * admin stopped it, or when strict mode is on and no admin acknowledged it.
+ */
+export function credentialHeld(credentials: readonly string[] | undefined, row: CredentialAcceptance | undefined, strict: boolean): boolean {
+  if (!credentials?.length) return false;
+  if (row?.revokedAt !== undefined) return true;
+  return strict && row === undefined;
+}
+
+/** The credentials a machine's job user holds now that its acknowledgement did not name (issue #1467): they raise the warning again. */
+export function newCredentials(credentials: readonly string[] | undefined, row: CredentialAcceptance | undefined): string[] {
+  const named = row && row.revokedAt === undefined ? row.credentials : [];
+  return (credentials ?? []).filter((c) => !named.includes(c));
+}
+
+/** The machine ids the credential check holds, of `machines` (issue #1467). */
+export function credentialHeldIds(machines: readonly { id: string; infraCredentials?: readonly string[] }[], rows: readonly CredentialAcceptance[], strict: boolean): string[] {
+  const byKey = new Map(rows.map((r) => [r.machineKey, r]));
+  return machines.filter((m) => credentialHeld(m.infraCredentials, byKey.get(m.id), strict)).map((m) => m.id);
 }

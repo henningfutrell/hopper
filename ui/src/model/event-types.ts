@@ -52,7 +52,7 @@ const ALL: Record<EventType, true> = {
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
   'lanes.recommended': true, 'lanes.tuning_changed': true, 'lanes.applied': true, 'lanes.undone': true, 'lanes.dismissed': true,
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
-  'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true, 'shrink_guard.changed': true,
+  'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true, 'shrink_guard.changed': true, 'credential_check.changed': true,
   'pointed_job.created': true, 'pointed_job.status_changed': true, 'github_watch.changed': true, 'github_watch.settings_changed': true, 'drift.found': true, 'drift.cleared': true, 'drift.issue_filed': true, 'drift.issue_updated': true, 'component_watchers.settings_changed': true, 'direct_job.submitted': true, 'direct_job.promoted': true, 'direct_job.promotion_revoked': true,
   'infra.plan_recorded': true, 'infra.plan_approved': true, 'infra.out_of_band_recorded': true, 'infra.out_of_band_marked': true, 'infra.controllers_changed': true, 'infra.settings_changed': true, 'infra.watchers_changed': true,
   'approval.confirmation_asked': true,

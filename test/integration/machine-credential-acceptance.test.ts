@@ -1,151 +1,98 @@
-// Machine credential acceptance (issue #1459): an admin accepts that a machine whose job user holds infra credentials
-// can take jobs anyway, despite the blast-radius risk. The acceptance is persisted; the decider and lane listing treat
-// an accepted machine as ready. Real database, seeded infra credentials on the machine.
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import type { Job } from '../../src/domain/types.ts';
+// The credential check (issues #1459, #1467): a machine whose job user holds infra credentials takes jobs with a warning by
+// default. Strict mode holds it until an admin uses it anyway; an admin's stop holds it whatever strict mode says. The
+// Machines answer carries `credentialHeld` from the decider's own rule, and an acknowledgement survives a restart. Real
+// database; this machine's job user holds the credentials, made in the test's throwaway HOME (test/support/isolate.ts).
+import { mkdirSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-beforeEach(() => {
-  //
-});
+const CREDS = ['.kube', '.terraform.d'];
+
+beforeEach(() => { for (const c of CREDS) mkdirSync(join(homedir(), c), { recursive: true }); });
 
 afterEach(async () => {
   await t?.stop();
   t = undefined;
   cleanup?.();
+  for (const c of CREDS) rmSync(join(homedir(), c), { recursive: true, force: true });
 });
 
-async function start(): Promise<{ a: TestApp; token: string }> {
-  const db = tempDbPath();
-  cleanup = db.cleanup;
-  t = await startTestApp({
-    dbPath: db.dbPath,
-    seams: {
-      machineProbe: async () => ({ online: true, infraCredentials: ['.kube', '.config/gh/hosts.yml'] }),
-    },
-  });
-  return { a: t, token: await t.login() };
-}
-
-const jobs = async (a: TestApp): Promise<Job[]> => (await a.api('GET', '/api/jobs')).body.queue.waiting;
-const machines = async (a: TestApp) => (await a.api('GET', '/api/machines')).body.machines;
-
-describe('machine credential acceptance', () => {
-  it('a machine with infra credentials is held and takes no jobs', async () => {
-    const { a } = await start();
-    // The machine has credentials
-    const ms = await machines(a);
-    expect(ms.length).toBeGreaterThan(0);
-    expect(ms[0]?.infraCredentials).toEqual(['.kube', '.config/gh/hosts.yml']);
-    
-    // Queue a job
-    await a.pull({ op: 'echo' });
-    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0]?.status === 'held'));
-    
-    const j = await jobs(a);
-    expect(j.length).toBeGreaterThan(0);
-    expect(j[0]?.status).toBe('held');
-    expect(j[0]?.holdReason).toContain('not ready');
-    expect(j[0]?.holdReason).toContain('.kube');
-  });
-
-  it('after accepting the credentials, the machine takes jobs', async () => {
-    const { a, token } = await start();
-    const ms = await machines(a);
-    expect(ms.length).toBeGreaterThan(0);
-    const machineId = ms[0]!.id;
-    
-    // Accept the credentials
-    await a.ui('/ui/api/machines/' + machineId + '/credentials/accept', {
-      machineKey: machineId,
-      credentials: ['.kube', '.config/gh/hosts.yml'],
-    }, { token });
-    
-    // Queue a job
-    await a.pull({ op: 'echo' });
-    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0]?.status === 'claimed'));
-    
-    const j = await jobs(a);
-    expect(j.length).toBeGreaterThan(0);
-    expect(j[0]?.status).toBe('claimed');
-  });
-
-  it('after revoking acceptance, the machine is held again', async () => {
-    const { a, token } = await start();
-    const ms = await machines(a);
-    expect(ms.length).toBeGreaterThan(0);
-    const machineId = ms[0]!.id;
-    
-    // Accept the credentials
-    await a.ui('/ui/api/machines/' + machineId + '/credentials/accept', {
-      machineKey: machineId,
-      credentials: ['.kube', '.config/gh/hosts.yml'],
-    }, { token });
-    
-    // Queue and claim a job
-    const job1 = await a.pull({ op: 'echo' });
-    await a.waitForStatus(job1.id, 'finished');
-    
-    // Revoke the acceptance
-    await a.ui('/ui/api/machines/' + machineId + '/credentials/revoke', {
-      machineKey: machineId,
-    }, { token });
-    
-    // Queue another job
-    const job2 = await a.pull({ op: 'echo' });
-    await waitFor(() => jobs(a).then((j) => j.some((jj) => jj.id === job2.id && jj.status === 'held')));
-    
-    const j = await a.job(job2.id);
-    expect(j.status).toBe('held');
-    expect(j.holdReason).toContain('not ready');
-  });
-
-  it('acceptance survives restart', async () => {
+async function start(dbPath?: string): Promise<{ a: TestApp; token: string; id: string }> {
+  if (!dbPath) {
     const db = tempDbPath();
     cleanup = db.cleanup;
-    
-    // Start the app, accept the machine
-    t = await startTestApp({
-      dbPath: db.dbPath,
-      seams: {
-        machineProbe: async () => ({ online: true, infraCredentials: ['.kube'] }),
-      },
-    });
-    const token = await t.login();
-    const ms = await machines(t);
-    expect(ms.length).toBeGreaterThan(0);
-    const machineId = ms[0]!.id;
-    
-    await t.ui('/ui/api/machines/' + machineId + '/credentials/accept', {
-      machineKey: machineId,
-      credentials: ['.kube'],
-    }, { token });
-    
-    // Stop and restart
-    await t.stop();
-    t = await startTestApp({
-      dbPath: db.dbPath,
-      seams: {
-        machineProbe: async () => ({ online: true, infraCredentials: ['.kube'] }),
-      },
-    });
-    
-    // The acceptance persisted
-    const ms2 = await machines(t);
-    expect(ms2.length).toBeGreaterThan(0);
-    expect(ms2[0]?.credentialAcceptance).toBeDefined();
-    expect(ms2[0]?.credentialAcceptance?.credentials).toEqual(['.kube']);
-    expect(ms2[0]?.credentialAcceptance?.revokedAt).toBeUndefined();
-    
-    // The machine takes jobs
-    const job = await t.pull({ op: 'echo' });
-    await t.waitForStatus(job.id, 'claimed');
-    
-    const j = await t.job(job.id);
-    expect(j.status).toBe('claimed');
+    dbPath = db.dbPath;
+  }
+  t = await startTestApp({ dbPath });
+  const token = await t.login();
+  const ms = await machines(t);
+  expect(ms[0]?.infraCredentials).toEqual(CREDS);
+  return { a: t, token, id: ms[0]!.id };
+}
+
+type MachineRow = { id: string; infraCredentials?: string[]; credentialHeld?: boolean; credentialAcceptance?: { credentials: string[]; revokedAt?: string } };
+const machines = async (a: TestApp): Promise<MachineRow[]> => (await a.api('GET', '/api/machines')).body.machines;
+const strict = (a: TestApp, token: string, on: boolean) => a.ui('/ui/api/credential-check', { strict: on }, { token });
+const accept = (a: TestApp, token: string, id: string) => a.ui(`/ui/api/machines/${id}/credentials/accept`, { machineKey: id, credentials: CREDS }, { token });
+const stop = (a: TestApp, token: string, id: string) => a.ui(`/ui/api/machines/${id}/credentials/revoke`, { machineKey: id }, { token });
+
+describe('the credential check', () => {
+  it('by default a machine with credentials takes jobs, and the Machines answer says it is not held', async () => {
+    const { a } = await start();
+    expect((await a.api('GET', '/api/credential-check')).body).toEqual({ strict: false });
+    expect((await machines(a))[0]?.credentialHeld).toBeUndefined();
+    const job = await a.pull({ op: 'echo' });
+    await a.waitForStatus(job.id, 'finished');
+  });
+
+  it('strict mode on: the same machine is held; Use anyway lets it take jobs', async () => {
+    const { a, token, id } = await start();
+    expect((await strict(a, token, true)).body).toEqual({ strict: true });
+    expect((await machines(a))[0]?.credentialHeld).toBe(true);
+    const job = await a.pull({ op: 'echo' });
+    await waitFor(() => a.job(job.id).then((j) => j.status === 'held'));
+    const held = await a.job(job.id);
+    expect(held.holdReason).toContain('not ready');
+    expect(held.holdReason).toContain('.kube');
+
+    await accept(a, token, id);
+    expect((await machines(a))[0]?.credentialHeld).toBeUndefined();
+    await a.waitForStatus(job.id, 'finished');
+  });
+
+  it('an admin\'s stop holds the machine with strict mode off; Use anyway clears it', async () => {
+    const { a, token, id } = await start();
+    await stop(a, token, id);
+    const [m] = await machines(a);
+    expect(m?.credentialHeld).toBe(true);
+    expect(m?.credentialAcceptance?.revokedAt).toBeDefined();
+    const job = await a.pull({ op: 'echo' });
+    await waitFor(() => a.job(job.id).then((j) => j.status === 'held'));
+
+    await accept(a, token, id);
+    await a.waitForStatus(job.id, 'finished');
+  });
+
+  it('an acknowledgement survives a restart, and the machine takes jobs in strict mode', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const first = await start(db.dbPath);
+    await strict(first.a, first.token, true);
+    await accept(first.a, first.token, first.id);
+    await first.a.stop();
+
+    const { a } = await start(db.dbPath);
+    const [m] = await machines(a);
+    expect(m?.credentialAcceptance?.credentials).toEqual(CREDS);
+    expect(m?.credentialAcceptance?.revokedAt).toBeUndefined();
+    expect(m?.credentialHeld).toBeUndefined();
+    const job = await a.pull({ op: 'echo' });
+    await a.waitForStatus(job.id, 'finished');
   });
 });

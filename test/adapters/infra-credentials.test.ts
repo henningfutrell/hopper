@@ -1,6 +1,7 @@
 // Issues #1128 part 7, #1248 (design.md "Infra credentials on machines"): each machine's snapshot carries the infra credentials
 // its job user's context holds, as its last read found them — this machine at every list, an ssh target in its probe, a client
-// target in its client's `/release` answer. Only the names. A machine holding any is not ready and takes no new job.
+// target in its client's `/release` answer. Only the names. A machine holding any takes jobs with a warning, or, held by the
+// credential check (issue #1467), takes no new job.
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,8 @@ import { createAttachedMachineSource, createClientReleaseKeeper, createLocalMach
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { testSshAuth } from '../support/ssh.ts';
 import { decide } from '../../src/decider/index.ts';
+import { credentialHeldIds } from '../../src/domain/machine-credentials.ts';
+import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { inputs, job } from '../decider/support.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -81,9 +84,9 @@ describe('infra credential folders on machines (issue #1128)', () => {
   });
 });
 
-// Issue #1248: a machine whose job user holds credentials is not ready; once its probe finds none, it takes jobs again,
-// with no restart: each probe says afresh.
-describe('a machine not ready for its credentials (issue #1248)', () => {
+// Issues #1248, #1467: in strict mode a machine whose job user holds credentials is not ready; once its probe finds none, it
+// takes jobs again, with no restart: each probe says afresh.
+describe('a machine not ready for its credentials (issues #1248, #1467)', () => {
   it('takes no job while its probe finds credentials, and takes one once the next probe finds none', async () => {
     let answer: MachineProbe = { online: true, home: '/home/job', infraCredentials: ['.kube', '.aws'] };
     let t = 0;
@@ -92,12 +95,15 @@ describe('a machine not ready for its credentials (issue #1248)', () => {
       clock: { now: () => new Date(t) }, probeEveryMs: 30000, probe: async () => answer,
     });
     await src.list(); await flush();
-    const before = decide(inputs({ machines: await src.list(), waiting: [job('a')] }), 'd1');
+    const held = (ms: MachineSnapshot[]) => credentialHeldIds(ms, [], true);
+    const listed = await src.list();
+    const before = decide(inputs({ machines: listed, waiting: [job('a')], credentialHeld: held(listed) }), 'd1');
     expect(before.start).toEqual([]);
     expect(before.hold).toEqual([{ jobId: 'a', reason: expect.stringContaining('wsl is not ready: its job user holds credentials a job could use (.kube, .aws)') }]);
     answer = { online: true, home: '/home/job', infraCredentials: [] };
     t += 30000; await src.list(); await flush();
-    const after = decide(inputs({ machines: await src.list(), waiting: [job('a')] }), 'd2');
+    const relisted = await src.list();
+    const after = decide(inputs({ machines: relisted, waiting: [job('a')], credentialHeld: held(relisted) }), 'd2');
     expect(after.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'wsl' })]);
   });
 });
