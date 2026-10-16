@@ -181,6 +181,11 @@ solr:
 # public addresses only. The network plugin must enforce NetworkPolicy. Off: the hopper starts no sandbox boxes.
 sandbox:
   enabled: false
+  # The most each box gets: its CPU and memory limits, which are its requests too. A box that goes over its memory is
+  # killed, and its step says so. 0: what the box asks for (a need box 4 CPUs and 8192 MiB).
+  limits:
+    cpus: 0
+    memoryMb: 0
   # The sandbox playground (docs/deploy.md "The sandbox playground"): how many playground sandboxes run at once, all users
   # together and per user. Over it, a create is refused with 429, naming the limit.
   maxConcurrent: 20

@@ -9,11 +9,14 @@
 // no container of it, and it stops and removes only its own pods and claims (issue #1371). A name Kubernetes does not take (a template name with `_` or `.`, one too long) is made DNS-safe,
 // and the hopper's name is kept on the pod, so the runtime answers it as given; a label value Kubernetes does not take
 // is selected by its hash, and answered as given too.
+//
+// The chart may cap what each box gets (issue #1422, `sandbox.limits`): a box asks for no more CPU or memory than that.
+// A box Kubernetes killed for its memory says so at the end of its log, so the step that ran in it reads why.
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { V1Pod } from '@kubernetes/client-node';
-import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import type { ContainerInfo, ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
 import { KUBERNETES_USER, kubernetesPodBody, STOP_S } from './flags.ts';
 import { notASandbox } from './owned.ts';
 
@@ -132,9 +135,24 @@ function pendingWhy(p: V1Pod): string {
   return unscheduled?.message ?? 'it is pending';
 }
 
+/** Why Kubernetes killed a box that went over its memory limit: the last line of its log. */
+function oomLine(p: V1Pod | undefined): string | undefined {
+  if (p?.status?.containerStatuses?.[0]?.state?.terminated?.reason !== 'OOMKilled') return undefined;
+  const limit = p.spec?.containers[0]?.resources?.limits?.memory;
+  return `hopper: Kubernetes killed the box: it went over its memory limit (${limit ? `${limit}, ` : ''}OOMKilled)\n`;
+}
+
 /** `priorityClass`: every pod's PriorityClass (issue #1410), so a ResourceQuota scoped to it holds them alone. */
-export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; priorityClass?: string; pollMs?: number; startMs?: number }): ContainerRuntime {
+export function createKubernetesRuntime(o: {
+  api: KubeApi; hopper: HopperPods; priorityClass?: string; pollMs?: number; startMs?: number;
+  /** The most CPU and memory a box gets (the chart's `sandbox.limits`); absent: what each box asks for. */
+  most?: Partial<ResourceLimits>;
+}): ContainerRuntime {
   const { api } = o;
+  const capped = (l: ResourceLimits): ResourceLimits => ({
+    cpus: o.most?.cpus !== undefined && (l.cpus <= 0 || l.cpus > o.most.cpus) ? o.most.cpus : l.cpus,
+    memoryMb: o.most?.memoryMb !== undefined && (l.memoryMb <= 0 || l.memoryMb > o.most.memoryMb) ? o.most.memoryMb : l.memoryMb,
+  });
   const sleep = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, o.pollMs ?? 1_000));
   /** The pod, by its id or the hopper's name for it; undefined: none of the runtime's. */
   const read = async (id: string): Promise<V1Pod | undefined> => {
@@ -192,7 +210,7 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
     async create(spec) {
       const name = kubeName(spec.name);
       const annotations = { [NAME_ANNOTATION]: spec.name, [LABELS_ANNOTATION]: JSON.stringify(spec.labels) };
-      const body = kubernetesPodBody(spec, { name, claim: kubeName(spec.volume), labels: { ...selectable(spec.labels), [POD_LABEL]: 'true' }, annotations, ...(o.priorityClass !== undefined ? { priorityClass: o.priorityClass } : {}) });
+      const body = kubernetesPodBody({ ...spec, limits: capped(spec.limits) }, { name, claim: kubeName(spec.volume), labels: { ...selectable(spec.labels), [POD_LABEL]: 'true' }, annotations, ...(o.priorityClass !== undefined ? { priorityClass: o.priorityClass } : {}) });
       // Before the pod: no box of the hopper's runs a moment without its egress policy.
       await api.applyNetworkPolicy(egressPolicy(o.hopper));
       await api.createPod(body);
@@ -224,7 +242,11 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
       }
     },
 
-    logs: (id) => api.podLog(id),
+    async logs(id) {
+      const log = await api.podLog(id);
+      const oom = oomLine(await read(id).catch(() => undefined));
+      return oom ? `${log}${log === '' || log.endsWith('\n') ? '' : '\n'}${oom}` : log;
+    },
 
     async inspect(id) {
       const p = await read(id);
