@@ -16,6 +16,7 @@
 //     claim of the hopper's Postgres (issue #1371)
 //   Scenario: an API it cannot reach is its problem
 //   Scenario: the image's user is the box image's agent user, by number, and nothing is built
+//   Scenario: every pod gets the PriorityClass the runtime is given, for the sandbox quota (issue #1410)
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -231,5 +232,13 @@ describe('the Kubernetes container runtime', () => {
     expect(rt.kind).toBe('kubernetes');
     expect(await rt.pull('ghcr.io/henningfutrell/hopper:box-claude')).toEqual({ user: '1000:1000' });
     expect(rt.build).toBeUndefined();
+  });
+
+  it('every pod gets the PriorityClass the runtime is given, for the sandbox quota (issue #1410)', async () => {
+    const api = createFakeKubeApi();
+    await createKubernetesRuntime({ api, hopper, priorityClass: 'hopper-sandbox', pollMs: 1, startMs: 50 }).create(spec());
+    expect(podOf(api, 'hopper-sandbox-infra').spec?.priorityClassName).toBe('hopper-sandbox');
+    await runtime(api).create(spec({ name: 'other' }));
+    expect(podOf(api, 'other').spec?.priorityClassName).toBeUndefined();
   });
 });
