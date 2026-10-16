@@ -311,5 +311,6 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     getHostLinkBase: () => read('hostLinkBase') ?? '', setHostLinkBase: (base) => write('hostLinkBase', base),
     getAllowedHosts() { const text = read('allowedHosts'); return text === undefined ? [] : JSON.parse(text) as string[]; },
     setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])),
+    getSourceEmailMatch: () => read('sourceEmailMatch') !== 'off', setSourceEmailMatch: (on) => write('sourceEmailMatch', on ? 'on' : 'off'),
   };
 }

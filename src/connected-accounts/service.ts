@@ -24,6 +24,10 @@
 // Where the app is installed (issue #1250, installations.ts) is kept in the database and read from GitHub only on Refresh,
 // on its schedule and when an account is connected: the status never reads GitHub.
 //
+// The source email match (issue #1380, email-match.ts): with it on, an account connected from Sources must have the email its
+// person signed in with verified at GitHub; the account keeps that email (`matchEmail`), and each renewal checks it again.
+// One that lost it ends as an expired sign-in does: its source asks to connect again, and the person stays signed in.
+//
 // A connection's health (issue #647): a GitHub sign-in made while the connection is healthy never replaces it quietly:
 // its grant is held (a **held grant**, held.ts) until the person takes it or drops it. No job holds a token of it (issue
 // #652): a job's GitHub goes through the hopper, which asks for the token as it is at each call.
@@ -36,6 +40,7 @@ import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 import type { Renewal } from './renewal.ts';
 import { createHeldGrants } from './held.ts';
+import { connectRefusal, normalEmail, renewalRefusal } from './email-match.ts';
 import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
 import { createRenewer, type Live } from './renewer.ts';
 
@@ -47,7 +52,8 @@ export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_
 /** What an account whose sign-in ended says, on its source and where its token is asked for (issue #358). */
 export const expired = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]}'s sign-in expired: Sources → Connect ${PROVIDER_NAME[provider]} again`;
 
-interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController }
+/** `email`: the email the person who connects signed in with (issue #1380). */
+interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController; email?: string }
 
 
 export interface ConnectedAccountsOptions {
@@ -84,6 +90,8 @@ export interface ConnectedAccountsOptions {
   secrets: SystemSecrets;
   /** How often the renewer looks; default RENEW_EVERY_MS. */
   renewEveryMs?: number;
+  /** Whether the source email match is on (issue #1380): the instance's setting, read at each check. Absent: on. */
+  sourceEmailMatch?(): boolean;
 }
 
 export type { Renewal };
@@ -104,6 +112,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   const held = createHeldGrants(o);
   const atRest = createAtRest(o.store, o.secrets);
   const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= o.clock.now().getTime();
+  const matching = (): boolean => o.sourceEmailMatch?.() ?? true;
 
   /** Why the account's sign-in ended, or undefined while it lives: GitHub refused it, or it expired with nothing to renew it. */
   const endOf = (a: ConnectedAccount): string | undefined => {
@@ -155,7 +164,25 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     ...(o.onRenewed ? { onRenewed: o.onRenewed } : {}),
     ...(o.onRenewalFailed ? { onRenewalFailed: o.onRenewalFailed } : {}),
     ...(o.renewEveryMs ? { renewEveryMs: o.renewEveryMs } : {}),
+    afterRenewal: (provider, renewed) => recheck(provider, renewed),
   });
+
+  /**
+   * The source email match again, after a renewal (issue #1380): an account that lost the email it was connected for ends,
+   * told once. GitHub not answering ends nothing.
+   */
+  async function recheck(provider: ConnectedAccountProvider, a: ConnectedAccount): Promise<void> {
+    if (!a.matchEmail || !matching()) return;
+    let refused: string | undefined;
+    try {
+      refused = renewalRefusal(provider, a.account, a.matchEmail, (await o.whoIs(provider, a.accessToken)).verifiedEmails);
+    } catch (err) {
+      o.logger.warn(`hopper: could not check the verified emails of the ${PROVIDER_NAME[provider]} account ${a.account}: ${(err as Error).message}`);
+      return;
+    }
+    const stored = o.store.connectedAccounts.get(provider);
+    if (refused && stored) throw end({ ...stored, accessToken: a.accessToken }, refused);
+  }
 
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
     const base = { provider, via: CONNECTED_VIA } as const;
@@ -184,6 +211,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         ...(next ? { nextRenewalAt: next } : {}),
         ...(lastError ? { lastError } : {}),
         ...(h ? { held: { account: h.who.account, at: h.at } } : {}),
+        ...(a.matchEmail ? { matchEmail: a.matchEmail } : {}),
       };
     }
     const error = failed.get(provider);
@@ -218,7 +246,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     write();
   });
 
-  const keep = async (provider: ConnectedAccountProvider, who: Pick<AccountIdentity, 'subject' | 'account'>, g: Grant, connectedAt: string, connectedBy: 'sources' | 'sign-in'): Promise<void> => {
+  const keep = async (provider: ConnectedAccountProvider, who: Pick<AccountIdentity, 'subject' | 'account'>, g: Grant, connectedAt: string, connectedBy: 'sources' | 'sign-in', matchEmail?: string): Promise<void> => {
     // Check the new token at GitHub before it is kept (issue #597): one GitHub refuses is kept as ended, so the
     // UI says to connect again (and a GitHub sign-in's session ends, issue #513) instead of failing quietly later.
     let refused: string | undefined;
@@ -228,7 +256,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       refused = `${PROVIDER_NAME[provider]} refused the new token: ${(err as Error).message}`;
     }
     await replace(provider, g.accessToken, () => {
-      atRest.put({ ...recordOf(provider, who, g, connectedAt), connectedBy, ...(refused ? { ended: refused } : {}) });
+      atRest.put({ ...recordOf(provider, who, g, connectedAt), connectedBy, ...(matchEmail ? { matchEmail } : {}), ...(refused ? { ended: refused } : {}) });
       renewer.clear(provider);
     });
     if (refused) {
@@ -258,7 +286,16 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         const g = await grant(w.abort.signal);
         const who = await o.whoIs(provider, g.accessToken);
         if (waiting.get(provider) !== w) return;
-        await keep(provider, who, g, o.clock.now().toISOString(), 'sources');
+        // The source email match (issue #1380): a refused account is never kept, and its new grant is deleted at GitHub.
+        const matchEmail = w.email !== undefined && matching() ? normalEmail(w.email) : undefined;
+        const refused = matchEmail === undefined ? undefined : connectRefusal(provider, who.account, matchEmail, who.verifiedEmails);
+        if (refused) {
+          failed.set(provider, refused);
+          o.logger.warn(`hopper: connecting ${PROVIDER_NAME[provider]} refused: ${refused}`);
+          await o.deleteToken?.(provider, g.accessToken).catch(() => undefined);
+          return;
+        }
+        await keep(provider, who, g, o.clock.now().toISOString(), 'sources', matchEmail);
         await held.release(provider, false);
         await installations.refresh(provider); // while it still reads as waiting: connected, it shows where the app is installed
         failed.delete(provider);
@@ -275,7 +312,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     })();
   }
 
-  async function begin(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus> {
+  async function begin(provider: ConnectedAccountProvider, email: string | undefined): Promise<ConnectedAccountStatus> {
     failed.delete(provider);
     if (!atRest.keeps) { failed.set(provider, NO_KEY); return status(provider); }
     if (!o.apps[provider].clientId) {
@@ -284,7 +321,10 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     }
     try {
       const pending = await flow(provider).start();
-      const w: Waiting = { userCode: pending.userCode, verificationUri: pending.verificationUri, expiresAt: pending.expiresAt.toISOString(), abort: new AbortController() };
+      const w: Waiting = {
+        userCode: pending.userCode, verificationUri: pending.verificationUri, expiresAt: pending.expiresAt.toISOString(), abort: new AbortController(),
+        ...(email !== undefined ? { email } : {}),
+      };
       waiting.set(provider, w);
       o.logger.info(`hopper: connecting ${PROVIDER_NAME[provider]}: waiting for the device code to be approved`);
       follow(provider, w, (s) => pending.grant(s));
@@ -338,11 +378,11 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       if (await held.release(provider, false)) o.logger.info(`hopper: the held ${PROVIDER_NAME[provider]} sign-in was dropped; the connection stays`);
       return withInstallations(status(provider));
     },
-    connect(provider) {
+    connect(provider, by) {
       if (waiting.has(provider)) return Promise.resolve(status(provider));
       let s = starting.get(provider);
       if (!s) {
-        s = begin(provider).finally(() => starting.delete(provider));
+        s = begin(provider, by?.email).finally(() => starting.delete(provider));
         starting.set(provider, s);
       }
       return s;

@@ -145,6 +145,7 @@ export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
   'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, credential: z.enum(['set', 'removed']).optional(), by: z.string() }),
   'allowed_hosts.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
 };
 
 // Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.

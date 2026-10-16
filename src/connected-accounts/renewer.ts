@@ -70,6 +70,11 @@ export interface RenewerOptions {
   onRenewed?(provider: ConnectedAccountProvider, renewed: { account: string; expiresAt?: string }): void;
   /** A renewal failed (issue #647): GitHub's error code, or what kept it from answering; never a token. */
   onRenewalFailed?(provider: ConnectedAccountProvider, failed: { account: string; code: string }): void;
+  /**
+   * Checks the renewed account (issue #1380, the source email match), once its new pair is kept: what it throws, the
+   * renewal throws, so nothing is given the token.
+   */
+  afterRenewal?(provider: ConnectedAccountProvider, renewed: ConnectedAccount): Promise<void>;
   renewEveryMs?: number;
 }
 
@@ -204,12 +209,16 @@ export function createRenewer(o: RenewerOptions): Renewer {
       return failed(provider, a, refused, why, err);
     }
     // Kept at once, before anything else awaits: GitHub has already invalidated the pair it was given.
-    const kept = { ...recordOf(provider, a, g, a.connectedAt), ...(a.connectedBy ? { connectedBy: a.connectedBy } : {}), renewedAt: o.clock.now().toISOString() };
+    const kept = {
+      ...recordOf(provider, a, g, a.connectedAt), ...(a.connectedBy ? { connectedBy: a.connectedBy } : {}), ...(a.matchEmail ? { matchEmail: a.matchEmail } : {}),
+      renewedAt: o.clock.now().toISOString(),
+    };
     // Through the vault, the row locked (issue #658): kept only while `used` is still the stored refresh token.
     if (!o.atRest.swap(provider, used, kept)) return o.live(provider).account.accessToken;
     troubles.delete(provider);
     o.logger.info(`hopper: ${PROVIDER_NAME[provider]} token of ${a.account} renewed`);
     o.onRenewed?.(provider, { account: a.account, ...(kept.expiresAt ? { expiresAt: kept.expiresAt } : {}) });
+    await o.afterRenewal?.(provider, kept);
     return g.accessToken;
   }
 

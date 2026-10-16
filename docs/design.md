@@ -59,7 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -21951,3 +21951,51 @@ failed step, a remove that failed and the next sweep, a box left by a hopper tha
 boxes launched before are burned, with their homes and records; a box it cannot burn is shown until it goes),
 `test/integration/sandbox-remote.test.ts` (the burn on a client target, through its client; away, then dialled in; the
 client makes no sandbox box), `test/client/runtime.test.ts`, `test/ui/template-limits-view.test.ts`.
+
+## The source email match (issue #1380, part 4, 2026-10-15)
+
+Owner decision 4 on issue #1380: every source identity a user attaches must have a verified email equal to the user's
+SSO or realm email; a GitHub source whose verified emails do not include it is refused with a clear message; the match is
+checked again on token refresh; a setting, on by default, that an admin can turn off. Acceptance test: attaching a source
+whose verified emails do not match is refused with a clear message; with the setting off, it is allowed.
+
+**The check** (`src/connected-accounts/email-match.ts`, `service.ts`):
+- **At the connect from Sources.** `POST /ui/api/connected-accounts` `connect` hands the service the email of the
+  session's identity (`Identity.email`: only an address the realm vouches for). Once the device code is approved, the
+  service reads who the token belongs to (`identity.ts` `whoIs`, now with `verifiedEmails`: every email `GET
+  /user/emails` says is verified). None equal to the session's email (both trimmed, lowercase), or no emails shown: the
+  account is not kept, its new grant is deleted at GitHub (best effort, as for a replaced grant, issue #514), and the
+  status is `failed` with the reason. A match is kept on the account as `matchEmail`.
+- **At each renewal.** The renewer, once the new pair is kept, asks the service (`afterRenewal`): an account with a
+  `matchEmail`, while the setting is on, is read again; one that lost the email ends as an expired sign-in does
+  (`end`: `ended`, `connected_account.expired`, its source paused, the owner told once), and the renewal throws, so no
+  token is given. The session stays (part 3). GitHub not answering the read ends nothing: it is logged.
+- **Not checked.** A sign-in with GitHub (`adopt`) and a held grant taken from Sources: the account is the person's own
+  identity there. A session whose identity gave no email (no sign-in, a login code): nothing to match. An account kept
+  before this change has no `matchEmail`, so its renewals do not check it until it is connected again.
+
+**The setting** (`src/http/source-email-match.ts`, `src/http/ui/source-email-match.ts`): the instance's settings key
+`sourceEmailMatch` (`on`/`off`; never set: on), read at each check, so a change applies at once. `GET
+/api/source-email-match` (an instance read), `POST /ui/api/source-email-match` `{ on }` (the instance admin), each
+change `source_email_match.changed`. UI: Settings → Sign-in → Source email match; Sources shows the email an account was
+connected for.
+
+**Decisions:**
+- **Emails GitHub does not show refuse the connect.** The owner's rule needs a verified email; with none to read, the
+  hopper cannot say it matches. The message says so and names the setting.
+- **At a renewal, emails GitHub does not show end nothing.** `whoIs` cannot tell a refused email read from GitHub not
+  answering it, and ending a working connection on a network fault would cost the person a reconnect.
+- **The email checked again is the one kept at the connect,** not the email of a later session: the user model keeps no
+  email of its own yet (identity keyed by email is a later part of issue #1380).
+- **No migration.** `matchEmail` is a new optional field of the `connected_accounts` row's JSON body; the build before reads
+  the row and ignores it.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+GitHub by OAuth or a personal access token, with no GitHub App required; the acting identity shown per job; the migration
+of GitHub-signed-in users to hopper users with GitHub attached as a source; Kubernetes and service-account tokens.
+
+**Verification:** `test/connected-accounts/source-email-match.test.ts`: an account with the session's email connects and
+keeps it; one without it, or whose emails GitHub does not show, is refused with the message and nothing is kept; with the
+setting off it connects; a session with no email connects; a renewal ends an account that lost the email, keeps one that
+has it, and checks nothing with the setting off or when GitHub does not answer; `whoIs` lists every verified email.
+`test/integration/source-email-match.test.ts`: the setting's routes, its default, the instance admin's alone, and its event.

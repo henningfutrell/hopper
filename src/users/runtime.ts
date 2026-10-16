@@ -104,6 +104,8 @@ export interface UserRuntimeOptions {
   reach?: () => string | undefined; search?: SearchWiring; stack?: () => Promise<import('../domain/stack-resources.ts').StackResources>; // the stack resources: the oldest user's stack-health watcher reads them (issue #1077)
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
+  /** Whether the source email match is on (issue #1380): the instance's setting, read at each check. Absent: on. */
+  sourceEmailMatch?(): boolean;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
   otherUsersKnow?(keys: string[]): Set<string>;
   /**
@@ -255,7 +257,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     installations: (token, answers) => installations(config.hopperApps.github, token, answers),
     // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
     ...accountEvents(store.events),
-    ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
+    ...(o.linkIdentity ? { link: o.linkIdentity } : {}), ...(o.sourceEmailMatch ? { sourceEmailMatch: o.sourceEmailMatch } : {}),
     // Reached only after `sync` exists: a connection is made long after the runtime starts.
     onChange: (provider) => {
       for (const s of sync.statuses().filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);

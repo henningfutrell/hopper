@@ -308,6 +308,25 @@ tries them first, while there is one, then each LDAP realm that is on.
 anyone who reaches the UI: 20 attempts a minute per client (see "Rate limit" above); add a limit at the
 proxy for a public URL. There is no second factor yet (a passkey is planned, issue #1380).
 
+## The source email match
+
+A GitHub account that a person connects from Sources must have, among its verified emails, the email they
+signed in with (issue #1380). This setting is on by default.
+
+- **At the connect.** The hopper reads the account's verified emails from GitHub after the device code is
+  approved. When none of them is the email of the person's sign-in, the hopper keeps nothing, deletes the new
+  grant at GitHub when it can, and Sources shows why. When GitHub does not show the account's emails, the
+  hopper cannot check them, and it refuses the account too.
+- **At each renewal.** The account keeps the email it was connected for. Each renewal of its token reads
+  the verified emails again. An account that lost the email stops: Sources asks to connect it again, and its
+  source pauses. The person stays signed in. GitHub not answering this read stops nothing.
+- **What it does not check.** A sign-in with GitHub itself (the account is the person's identity), a held
+  sign-in taken from Sources, and a sign-in that gave no email (no sign-in, a login code). An account
+  connected before this setting existed is not checked until it is connected again.
+- **Turn it off** in Settings → Sign-in → Source email match (the instance admin), or with
+  `POST /ui/api/source-email-match` `{ "on": false }`. It applies at once, to the next connect and the
+  next renewal. Each change is recorded (`source_email_match.changed`).
+
 ## LDAP realm
 
 People sign in on the same username and password form with their directory account. The hopper
@@ -1008,6 +1027,9 @@ The same for every realm, no sign-in and the login code:
 | LDAP: "sign-in could not be checked: <realm>: …" | The directory did not answer, or the search account's bind failed: check `url`, the certificate (`NODE_EXTRA_CA_CERTS`), `bindDn` and its password. |
 | LDAP: "wrong email, username or password" for a real account | `userFilter` under `userBase` finds no entry, or finds two. Try the filter with `ldapsearch -H <url> -D <bindDn> -W -b <userBase> '<filter>'`. |
 | LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |
+| Sources: "the GitHub account … has no verified email …, the email you signed in with" | The source email match is on, and the account does not have that email verified at GitHub. Add and verify the email at https://github.com/settings/emails, then connect again. Or the instance admin turns the match off in Settings → Sign-in. |
+| Sources: "GitHub did not show the verified emails of …" | The hopper's app cannot read the account's email addresses. Approve the app's email permission at GitHub, or the instance admin turns the source email match off. |
+| Sources: GitHub "sign-in expired", and the last error says it "no longer has the verified email" | The account lost the email it was connected for (the source email match, checked at each renewal). Verify the email at GitHub again, then connect again. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |
 | The identity provider says the redirect URI does not match | Register exactly `<origin>/ui/auth/<name>/callback`; check `HOPPER_PUBLIC_URL`. |
