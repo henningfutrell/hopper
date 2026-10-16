@@ -12,6 +12,7 @@
 //   hopper user add <name>                            add a user
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
+//   hopper pool-key [--user <id>] [--revoke]          a lane pool key for lane pods of another release (issue #1454)
 //   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
 //   hopper ledger rebuild [--user <id>]               the work-item ledger replayed from every event (issue #1067)
 //   hopper local-account list|add|password|remove     the local accounts, a password on stdin (issue #1380, cli-local-accounts.ts)
@@ -53,6 +54,7 @@ import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { mintJoinCode } from './machines/join-code.ts';
+import { issueLanePoolKey } from './machines/lane-pool.ts';
 import { launchKey, withMasterKey } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { OPERATOR_COMMANDS, OPERATOR_USAGE, REFRESH_TOKEN_FILE, runOperatorAction, runOperatorActionWithGrant } from './cli-operator.ts';
@@ -80,6 +82,9 @@ usage:
                                                      The daemon must be stopped; refused when <to> holds work of its own
   hopper join-code                                   a one-time join code (10 minutes) for a script that adds machines:
                                                      the machine joins with <hopper URL>#<code>, as Add machine's line does
+  hopper pool-key [--revoke]                         a new lane pool key, in place of the one before, for lane pods of a
+                                                     chart release outside this hopper (Add machine's Pod / Kubernetes);
+                                                     --revoke: no pod joins with it any more. No restart either way
   hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
                                                      authorized_keys takes (scripts/agent-boxes.sh asks it)
   hopper ledger rebuild                              the work-item ledger replayed from every event and the issue graph,
@@ -245,6 +250,22 @@ function joinCode(instance: InstanceStore, args: string[], io: CliIo): void {
   io.err(`a join code for ${user.name}, once, until ${expiresAt}: the machine joins with <hopper URL>#<code>\n`);
 }
 
+/**
+ * `hopper pool-key [--user <id>] [--revoke]` (issue #1454): a new lane pool key for that user (default the one user) on
+ * stdout, in place of the one it had, for lane pods of a chart release outside this hopper; `--revoke`: none any more.
+ */
+function poolKey(instance: InstanceStore, args: string[], io: CliIo): void {
+  const { values } = parseArgs({ args, options: { user: { type: 'string' }, revoke: { type: 'boolean' } } });
+  const user = userOf(instance, values.user);
+  if (values.revoke) {
+    io.err(instance.lanePoolKeys.remove(user.id) ? `the lane pool key of ${user.name} is revoked: no pod joins with it any more\n` : `${user.name} has no lane pool key\n`);
+    return;
+  }
+  const { key } = issueLanePoolKey(instance, { now: () => new Date() }, user.id);
+  io.out(`${key}\n`);
+  io.err(`a lane pool key for ${user.name}, in place of any before: lane pods join with <hopper URL>#<key> (docs/deploy.md "Lane pods of another release")\n`);
+}
+
 /** `hopper ssh-key`: the public half of the user's ssh key (issue #293), never its private half. */
 function sshKey(instance: InstanceStore, args: string[], io: CliIo): void {
   const { values } = parseArgs({ args, options: { user: { type: 'string' } } });
@@ -272,7 +293,7 @@ function ledger(instance: InstanceStore, args: string[], io: CliIo): void {
   }
 }
 
-const COMMANDS: readonly string[] = ['config', 'users', 'user', 'local-account', 'join-code', 'ssh-key', 'ledger', 'update', ...OPERATOR_COMMANDS];
+const COMMANDS: readonly string[] = ['config', 'users', 'user', 'local-account', 'join-code', 'pool-key', 'ssh-key', 'ledger', 'update', ...OPERATOR_COMMANDS];
 
 /** Run one command; the exit code. */
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
@@ -321,6 +342,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);
+    else if (command === 'pool-key') poolKey(store, rest, io);
     else if (command === 'ssh-key') sshKey(store, rest, io);
     else if (command === 'ledger') ledger(store, rest, io);
     else if (command === 'config') config(store, rest, io);

@@ -1,3 +1,4 @@
+{{- if .Values.hopper.enabled }}
 {{- if .Values.kms.local.enabled -}}
 {{- /*
 A local KMS (local-kms, the compose profile `kms`, issue #586), which speaks AWS KMS's API. The vault asks it for a data
@@ -72,4 +73,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.kms.local.size }}
+{{- end }}
 {{- end }}

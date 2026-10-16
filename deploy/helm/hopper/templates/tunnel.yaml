@@ -91,10 +91,10 @@ spec:
             name: {{ $name }}-script
 {{- end -}}
 {{- $parts := list -}}
-{{- if .Values.tunnel.ngrok.enabled -}}
+{{- if and .Values.hopper.enabled .Values.tunnel.ngrok.enabled -}}
 {{- $parts = append $parts (dict "root" . "component" "tunnel" "image" .Values.tunnel.ngrok.image "script" "files/tunnel.sh" "apiPort" 4040 "uid" 1000 "gid" 100) -}}
 {{- end -}}
-{{- if .Values.tunnel.cloudflared.enabled -}}
+{{- if and .Values.hopper.enabled .Values.tunnel.cloudflared.enabled -}}
 {{- $parts = append $parts (dict "root" . "component" "cloudflared" "image" (printf "%s:%s" .Values.image.repository (.Values.image.tag | toString)) "script" "files/cloudflared.sh" "apiPort" 2000 "uid" 1000 "gid" 1000) -}}
 {{- end -}}
 {{- range $i, $p := $parts }}

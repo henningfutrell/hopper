@@ -2,15 +2,20 @@
 Lane pods (issue #1284, docs/design.md "Lane pods", docs/deploy.md "Lane pods on Kubernetes"): long-lived machines that
 join the hopper by dialling out, one machine per pod under its pod's name. No sshd, no inbound port, no Service for them.
 They join with the lane pool key, made here at the first install and kept at each upgrade (read back from the Secret).
+Runner-only (issue #1454, docs/deploy.md "Lane pods of another release"): with hopper.enabled=false the release is these
+pods alone, joining the hopper lanes.hopperUrl names with the key the hopper issued, in lanes.existingSecret.
 */ -}}
+{{- if and (not .Values.hopper.enabled) (not .Values.lanes.existingSecret) }}{{ fail "hopper.enabled=false (a runner-only release) needs lanes.existingSecret: the Secret with the lane pool key the hopper issued (Add machine, Pod / Kubernetes), under `key`" }}{{ end -}}
 {{- $name := include "hopper.fullname" . -}}
 {{- $sel := dict "ctx" . "component" "lanes" -}}
 {{- $channel := .Values.image.tag | toString -}}
 {{- $box := printf "box-%s" .Values.lanes.agent -}}
 {{- $tag := .Values.lanes.imageTag | default (ternary $box (printf "%s-%s" $box $channel) (has $channel (list "latest" "stable"))) -}}
 {{- $image := printf "%s:%s" .Values.image.repository $tag -}}
+{{- $url := include "hopper.lanesHopperUrl" . -}}
+{{- if not .Values.lanes.existingSecret }}
 {{- $old := (lookup "v1" "Secret" .Release.Namespace (include "hopper.lanePoolSecret" .)).data | default dict -}}
-{{- $key := get $old "key" | b64dec | default (randAlphaNum 64 | sha256sum) -}}
+{{- $key := get $old "key" | b64dec | default (randAlphaNum 64 | sha256sum) }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -23,6 +28,7 @@ type: Opaque
 stringData:
   key: {{ $key | quote }}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -72,7 +78,7 @@ spec:
               join "$HOPPER_URL#$(cat /run/lane-pool/key)" "$POD_NAME"; do sleep 10; done
           env:
             - name: HOPPER_URL
-              value: {{ printf "http://%s:%d" $name (.Values.port | int) | quote }}
+              value: {{ $url | quote }}
             - name: POD_NAME
               valueFrom:
                 fieldRef:

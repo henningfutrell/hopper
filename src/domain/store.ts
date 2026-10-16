@@ -570,7 +570,7 @@ export interface InstanceStore {
   /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
   uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
-  joinCodes: JoinCodeRepository;
+  joinCodes: JoinCodeRepository; lanePoolKeys: import('./lane-pool-keys.ts').LanePoolKeyRepository; // the lane pool keys the hopper issued (issue #1454)
   /** The sandbox records (issue #708). */
   sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; needSteps: import('./need-steps.ts').NeedStepRepository; windowsSteps: import('./windows-steps.ts').WindowsStepRepository; sagas: import('./sagas.ts').SagaRepository; sweepLeases: import('./leases.ts').SweepLeaseRepository; outboundKeys: import('./outbound.ts').OutboundKeyRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sandbox steps: each need or box step from the job's ask to its result (issue #1568); the Windows steps, likewise, with each host's hold (issue #1611); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524); the sweep leases and the outbound dedupe keys: what makes two hosts on one database run each sweep and send each send once (issue #1627)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
