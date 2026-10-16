@@ -22505,7 +22505,7 @@ password.
 again. WebAuthn needs a secure context: a browser on plain HTTP at a LAN name offers no passkey (loopback and the HTTPS
 public URL do).
 
-**Left for later** (a follow-up issue): more than one GitHub source per user, and sources from other forges (GitLab).
+**Left for later** (issue #1448): more than one GitHub source per user, and sources from other forges (GitLab).
 The issue named them as later work.
 
 **Verification:** `test/auth/passkeys.test.ts` (the relying party; the options; add, then sign in; the counter; a challenge
