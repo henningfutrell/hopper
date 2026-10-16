@@ -80,12 +80,17 @@ describe('the Helm chart, installed with no values', () => {
     expect(pod(hopper).volumes?.find((v) => v.secret)?.secret?.secretName).toBe('hopper-runtime');
   });
 
-  it('takes the master key from a Secret the admin makes, and starts without it: the first start makes one', () => {
-    const key = env(daemon, 'HOPPER_MASTER_KEY')?.valueFrom?.secretKeyRef;
-    expect(key).toEqual({ name: 'hopper-master-key', key: 'master-key', optional: true });
-    expect(rs.find((r) => r.kind === 'Secret' && r.metadata.name === 'hopper-master-key')).toBeUndefined();
-    const previous = env(daemon, 'HOPPER_MASTER_KEY_PREVIOUS')?.valueFrom?.secretKeyRef;
-    expect(previous).toEqual({ name: 'hopper-master-key', key: 'previous', optional: true });
+  // Issue #1406: `helm install` alone keeps the master key. The chart makes the key in the Secret <release>-master-key,
+  // kept across upgrades and an uninstall, and the hopper reads it from its file: a pod restart opens the same secrets.
+  it('makes the master key in a Secret of its own, kept across an uninstall, and the hopper reads it from its file', () => {
+    const secret = find(rs, 'Secret', 'hopper-master-key');
+    expect(secret.metadata.annotations?.['helm.sh/resource-policy']).toBe('keep');
+    expect(Object.keys(secret.stringData ?? {})).toEqual(['master-key']);
+    expect(secret.stringData?.['master-key']).toMatch(/^[0-9a-f]{64}$/);
+    expect(env(daemon, 'HOPPER_MASTER_KEY')).toBeUndefined();
+    expect(env(daemon, 'HOPPER_MASTER_KEY_FILE')?.value).toBe('/run/hopper-master-key/master-key');
+    const mount = daemon.volumeMounts?.find((m) => m.mountPath === '/run/hopper-master-key');
+    expect(pod(hopper).volumes?.find((v) => v.name === mount?.name)?.secret?.secretName).toBe('hopper-master-key');
   });
 
   it('reaches OpenFGA and Solr by their Services, and answers on the same port inside and out', () => {
@@ -170,6 +175,37 @@ describe('the Helm chart, with values', () => {
 
   it('mounts the master key Secret it is given, and the hopper reads the key from its file', () => {
     keyFromFiles(render('masterKey.existingSecret=my-key'), 'my-key');
+    expect(render('masterKey.existingSecret=my-key').filter((r) => r.kind === 'Secret' && r.metadata.name.includes('master-key'))).toEqual([]);
+  });
+
+  // Issue #1406: a key the person brings, through values.
+  it('puts the key masterKey.value gives in its Secret', () => {
+    const key = 'ab'.repeat(32);
+    const rs = render(`masterKey.value=${key}`);
+    keyFromFiles(rs, 'hopper-master-key');
+    expect(find(rs, 'Secret', 'hopper-master-key').stringData).toEqual({ 'master-key': key });
+    const base64 = Buffer.alloc(32, 7).toString('base64');
+    expect(find(render(`masterKey.value=${base64}`), 'Secret', 'hopper-master-key').stringData).toEqual({ 'master-key': base64 });
+  });
+
+  it('refuses a masterKey.value that is no master key, and one beside masterKey.existingSecret', () => {
+    const short = helm(['template', 'hopper', '/chart', '--set', 'masterKey.value=abc']);
+    expect(short.status).not.toBe(0);
+    expect(short.stderr).toMatch(/masterKey\.value: .*64 hex digits/);
+    const both = helm(['template', 'hopper', '/chart', '--set', `masterKey.value=${'ab'.repeat(32)}`, '--set', 'masterKey.existingSecret=my-key']);
+    expect(both.status).not.toBe(0);
+    expect(both.stderr).toMatch(/masterKey\.value/);
+  });
+
+  // An upgrade of a release with no master key Secret: its hopper made its key at the first start and holds it only in
+  // memory. A new key now would lose the key that seals every secret it keeps, so the upgrade stops before any pod does.
+  it('refuses an upgrade that finds no master key Secret, unless masterKey.value gives the key', () => {
+    const out = helm(['template', 'hopper', '/chart', '--is-upgrade']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/no Secret hopper-master-key/);
+    expect(out.stderr).toMatch(/masterKey\.value/);
+    expect(helm(['template', 'hopper', '/chart', '--is-upgrade', '--set', `masterKey.value=${'ab'.repeat(32)}`]).status).toBe(0);
+    expect(helm(['template', 'hopper', '/chart', '--is-upgrade', '--set', 'masterKey.existingSecret=my-key']).status).toBe(0);
   });
 
   it('fills the master key Secret from an outside store through an External Secrets Operator ExternalSecret', () => {
@@ -178,6 +214,7 @@ describe('the Helm chart, with values', () => {
       'masterKey.externalSecret.masterKey.key=hopper/master-key', 'masterKey.externalSecret.previous.key=hopper/master-key-previous',
     );
     keyFromFiles(rs, 'hopper-master-key');
+    expect(rs.filter((r) => r.kind === 'Secret' && r.metadata.name === 'hopper-master-key')).toEqual([]);
     const es = rs.find((r) => r.kind === 'ExternalSecret') as unknown as ExternalSecret;
     expect(es.metadata.name).toBe('hopper-master-key');
     expect(es.spec.secretStoreRef).toEqual({ name: 'vault-store', kind: 'ClusterSecretStore' });

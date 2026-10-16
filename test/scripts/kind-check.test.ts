@@ -8,8 +8,11 @@
 //   Scenario: a pod with a Docker socket, a Podman image or a socket variable fails the check, and names the pod
 //   Scenario: a hopper that is not healthy fails the check
 //   Scenario: an upgrade with the same values that runs the OpenFGA migration again fails the check (issue #1282)
-//   Scenario: then the machines come up as pods (sandbox boxes, a lane pod), on a fresh install given a master key, the
-//             hopper stays healthy, and still no pod has a container runtime socket
+//   Scenario: the hopper's pod deleted, the new one runs on the master key of the same fingerprint, the key the chart
+//             made (issue #1406)
+//   Scenario: a new pod on another key fails the check
+//   Scenario: then the machines come up as pods (sandbox boxes, a lane pod) by an upgrade of the same release, the hopper
+//             stays healthy on the same key, and still no pod has a container runtime socket
 //   Scenario: a lane pod that does not come up fails the check
 //   Scenario: with --keep the cluster stays
 //   Scenario: a pull request that changes the chart runs the check, with no secret
@@ -49,14 +52,20 @@ function tool(name: string, script: string): void {
   chmodSync(join(bin, name), 0o755);
 }
 
-function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1']): void {
+const FINGERPRINT = 'a1b2c3d4e5f60718';
+const status = (fingerprint: string, source = 'given'): string => JSON.stringify({ source, fingerprint, previous: false });
+
+function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1'], keys = [status(FINGERPRINT)]): void {
   writeFileSync(join(dir, 'jobs'), migrations.join('\n') + '\n');
+  // Each ask for the master key's status answers the next line; the last one stays.
+  writeFileSync(join(dir, 'keys'), keys.join('\n') + '\n');
   writeFileSync(join(dir, 'pods.json'), JSON.stringify({ items: pods }));
   writeFileSync(join(dir, 'health.json'), health);
   tool('kind', 'exit 0');
   tool('helm', 'exit 0');
   tool('kubectl', [
     'case "$*" in',
+    `  *"master-key status"*) head -n 1 "${join(dir, 'keys')}"; [ "$(wc -l < "${join(dir, 'keys')}")" -gt 1 ] && sed -i 1d "${join(dir, 'keys')}" ;;`,
     `  *" exec "*) cat "${join(dir, 'health.json')}" ;;`,
     `  *"get pods --all-namespaces -o json"*) cat "${join(dir, 'pods.json')}" ;;`,
     // Each ask for the migration Jobs answers the next line: before the upgrade, then after.
@@ -108,25 +117,47 @@ describe('scripts/kind-check.ts', () => {
       return i;
     };
     const migration = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 10m`);
-    // A new pod would not start on the first install's database: its master key was made at the first start, and shown
-    // only in the UI (issue #1296). So the machines come up on a fresh install, given a master key as a person keeps it.
-    const removed = at('kubectl --context kind-hopper-check delete namespace hopper --wait=true --timeout=5m');
-    const namespace = at('kubectl --context kind-hopper-check create namespace hopper');
-    const key = r.calls.findIndex((c) => /^kubectl --context kind-hopper-check --namespace hopper create secret generic hopper-master-key --from-literal=master-key=[0-9a-f]{64}$/.test(c));
-    expect(key, r.calls.join('\n')).toBeGreaterThan(-1);
-    const sandbox = at(`helm install hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --wait --wait-for-jobs --timeout 15m --set image.tag=dev --set sandbox.enabled=true`);
+    // The key the chart made is kept (issue #1406): a new pod of the same release starts on it, so no fresh install.
+    const restarted = at('kubectl --context kind-hopper-check --namespace hopper delete pod -l app.kubernetes.io/instance=hopper,app.kubernetes.io/component=hopper --wait=true --timeout=5m');
+    expect(r.calls.some((c) => c.includes('create secret') || c.includes('delete namespace'))).toBe(false);
+    const sandbox = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 15m --set sandbox.enabled=true`);
     // No --wait: a lane pod is ready only once a person signed in, and its spec is what the check reads.
     const lanes = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --set lanes.replicas=1`);
     const created = at('kubectl --context kind-hopper-check --namespace hopper wait --for=create pod/hopper-lanes-0 --timeout=180s');
-    expect(migration).toBeLessThan(removed);
-    expect(removed).toBeLessThan(namespace);
-    expect(namespace).toBeLessThan(key);
-    expect(key).toBeLessThan(sandbox);
+    expect(migration).toBeLessThan(restarted);
+    expect(restarted).toBeLessThan(sandbox);
     expect(sandbox).toBeLessThan(lanes);
     expect(lanes).toBeLessThan(created);
-    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper '))).toHaveLength(2);
+    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper ') && c.includes('/api/health'))).toHaveLength(3);
+    expect(r.calls.filter((c) => c.endsWith('exec deploy/hopper -c hopper -- hopper master-key status'))).toHaveLength(3);
+    expect(r.stdout).toContain(`a new hopper pod runs on the same master key (fingerprint ${FINGERPRINT})`);
     expect(r.calls.slice(created).some((c) => c === 'kubectl --context kind-hopper-check get pods --all-namespaces -o json')).toBe(true);
     expect(r.stdout).toContain('machines as pods: sandbox boxes on, lane pod hopper-lanes-0');
+  });
+
+  it('waits for the new hopper pod after the delete, then asks its health and its key', () => {
+    fakes(clean);
+    const r = run();
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const deleted = r.calls.findIndex((c) => c.includes(' delete pod -l '));
+    const rollout = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout status deployment/hopper --timeout=5m');
+    expect(deleted).toBeGreaterThan(-1);
+    expect(rollout).toBeGreaterThan(deleted);
+  });
+
+  it('fails when the new hopper pod runs on another master key', () => {
+    fakes(clean, undefined, undefined, [status(FINGERPRINT), status('ffffffffffffffff')]);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`the new hopper pod runs on the master key of fingerprint ffffffffffffffff, not ${FINGERPRINT}`);
+    expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
+  });
+
+  it('fails when the hopper made its own key: the chart gave it none', () => {
+    fakes(clean, undefined, undefined, [status(FINGERPRINT, 'generated')]);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('the hopper\'s master key is not given at launch (source generated)');
   });
 
   it('fails when the lane pod does not come up', () => {

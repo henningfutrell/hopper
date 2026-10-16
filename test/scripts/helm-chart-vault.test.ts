@@ -45,8 +45,10 @@ describe('the Helm chart\'s vault pod', () => {
 
   it('gives the vault the database and the master key as it gives the hopper', () => {
     expect(env(v, 'HOPPER_DATABASE_URL_FILE')?.value).toBe('/run/hopper-secrets/database_url');
-    expect(env(v, 'HOPPER_MASTER_KEY')?.valueFrom?.secretKeyRef).toEqual({ name: 'hopper-master-key', key: 'master-key', optional: true });
-    expect(env(v, 'HOPPER_MASTER_KEY_PREVIOUS')?.valueFrom?.secretKeyRef).toEqual({ name: 'hopper-master-key', key: 'previous', optional: true });
+    expect(env(v, 'HOPPER_MASTER_KEY')).toBeUndefined();
+    expect(env(v, 'HOPPER_MASTER_KEY_FILE')?.value).toBe('/run/hopper-master-key/master-key');
+    const mount = container(vault, 'hopper-vault').volumeMounts?.find((m) => m.mountPath === '/run/hopper-master-key');
+    expect(pod(vault).volumes?.find((x) => x.name === mount?.name)?.secret?.secretName).toBe('hopper-master-key');
   });
 
   it('reads the master key from its mounted Secret when the hopper does', () => {
