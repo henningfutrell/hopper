@@ -50,7 +50,7 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   grants: import('./api-grants.ts').ApiGrants; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
   signIn: SignIn;
   /** Settings → Sign-in: the sign-in config's realms (issue #185), and the local accounts (issue #1380). */
-  realms: RealmsAdmin; localAccounts: import('../local-accounts.ts').LocalAccountsAdmin;
+  realms: RealmsAdmin; localAccounts: import('../local-accounts.ts').LocalAccountsAdmin; passkeys: import('../../auth/passkeys.ts').Passkeys;
   pluginStore: PluginStoreView;
   /** The bound port (known only after listen). */
   port: () => number;
@@ -181,7 +181,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
     const offer = {
-      local: signIn.local, none: signIn.none, password: signIn.password, gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), devices: signIn.devices(), required: o.instance.users.list().length > 1,
+      local: signIn.local, none: signIn.none, password: signIn.password, passkeys: o.passkeys.any(), gateway: signIn.gateway, origin: signIn.origin(), realms: signIn.realms(), devices: signIn.devices(), required: o.instance.users.list().length > 1,
     };
     if (s) return { authenticated: true, expiresAt: s.expiresAt, user: sessionUser(s, userName(s), isSuperAdmin(signIn.config(), s.identity), o.instanceAdmin(s)), signIn: offer };
     const id = userIdOf(req);
@@ -190,7 +190,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerSignInRoutes(app, {
-    sessions, signIn, refuse, caller: o.caller, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
+    sessions, signIn, refuse, caller: o.caller, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin), passkeys: o.passkeys,
     userFor: (who) => o.tenants.signInAs(who),
     connect: (userId, connection) => o.tenants.user(userId)?.connectedAccounts.adopt(connection),
     userName: (id) => o.instance.users.get(id)?.name ?? id,
@@ -403,7 +403,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // Answers the new GET /api/realms view.
   app.post('/ui/api/realms', instance, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, sessionOf(req)!.identity));
   // Local accounts (issue #1380, design.md "Local accounts"): add, change or remove one; an account's own password change.
-  registerLocalAccountRoutes(app, { instance, viewer: allow('viewer'), localAccounts: o.localAccounts, sessionOf });
+  registerLocalAccountRoutes(app, { instance, viewer: allow('viewer'), localAccounts: o.localAccounts, passkeys: o.passkeys, sessionOf, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin) });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     sessions.drop(sessionOf(req)!.token, 'logout');
