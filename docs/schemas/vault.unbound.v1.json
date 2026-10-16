@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "box": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "credential": {
+      "type": "string"
+    },
+    "namespace": {
+      "type": "string"
+    },
+    "secret": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "box",
+    "credential",
+    "namespace",
+    "secret"
+  ],
+  "additionalProperties": false
+}

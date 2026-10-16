@@ -16,7 +16,8 @@ import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type 
 import { mintsForProblem } from '../domain/minting.ts';
 import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
 import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
-import { createMinting, mintHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
+import { createMinting, mintHere, unbindHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
+import { mintBindings, type MintReleases } from './bindings.ts';
 import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
 import { stepDelivery, type StepDelivery } from './step-delivery.ts';
@@ -33,7 +34,7 @@ export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery, NeedMinting {
+export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery, NeedMinting, MintReleases {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -177,6 +178,8 @@ export function createVaultService(o: {
   }
 
   const mintFrom = mintHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) });
+  // A sandbox's tokens end with it (issue #1371): bound for the need box or check box, released at its end.
+  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger });
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,
@@ -374,9 +377,8 @@ export function createVaultService(o: {
     },
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
-    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
-
-    ...templateChecks(o.store, { access: o.access, mintFrom }), ...needMinting(o.store, { access: o.access, mintFrom, ...(o.plans ? { plans: o.plans } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
+    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom), unbindFrom, releaseMints: (box, from) => bindings.release(box, from), reconcileMints: (from) => bindings.reconcile(from),
+    ...templateChecks(o.store, { access: o.access, mintFrom, bindings }), ...needMinting(o.store, { access: o.access, mintFrom, bindings, ...(o.plans ? { plans: o.plans } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }

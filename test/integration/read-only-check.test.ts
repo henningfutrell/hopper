@@ -75,7 +75,17 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(runtime.volumes.size).toBe(0);
 
     // The vault minted a read session and a read token for the check box (issue #797), after Access allowed each.
-    expect(kube.seen.map((r) => [r.method, r.url, r.authorization])).toEqual([['POST', '/api/v1/namespaces/hopper/serviceaccounts/hopper-read/token', `Bearer ${KUBE_MINTING_TOKEN}`]]);
+    // The token is bound to a Secret of its own, which the end of the check box deletes (issue #1371).
+    const secret = /^hopper-mint-[0-9a-f-]{36}$/;
+    expect(kube.seen.map((r) => [r.method, r.url.replace(/hopper-mint-[0-9a-f-]{36}/, 'hopper-mint-<uuid>'), r.authorization])).toEqual([
+      ['POST', '/api/v1/namespaces/hopper/secrets', `Bearer ${KUBE_MINTING_TOKEN}`],
+      ['POST', '/api/v1/namespaces/hopper/serviceaccounts/hopper-read/token', `Bearer ${KUBE_MINTING_TOKEN}`],
+      ['DELETE', '/api/v1/namespaces/hopper/secrets/hopper-mint-<uuid>', `Bearer ${KUBE_MINTING_TOKEN}`],
+    ]);
+    const made = (JSON.parse(kube.seen[0]!.body) as { metadata: { name: string } }).metadata.name;
+    expect(made).toMatch(secret);
+    expect(kube.seen[2]!.url).toBe(`/api/v1/namespaces/hopper/secrets/${made}`);
+    expect(JSON.parse(kube.seen[1]!.body)).toMatchObject({ spec: { boundObjectRef: { kind: 'Secret', name: made } } });
     expect(sts.seen).toHaveLength(1);
     expect(decodeURIComponent(sts.seen[0]!.body)).toContain(`RoleArn=arn:aws:iam::${ACCOUNT}:role/readonly`);
     expect(decodeURIComponent(sts.seen[0]!.body)).toContain('RoleSessionName=hopper-read-only-check');
@@ -260,7 +270,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     await skill(a, creds, NEEDS);
     await a.app.sandboxes.check();
     expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
-    expect(kube.seen).toHaveLength(1);
+    expect(kube.seen.map((r) => r.method)).toEqual(['POST', 'POST', 'DELETE']);
     expect(sts.seen).toHaveLength(1);
     const env = JSON.stringify([...runtime.ran.values()][0]!.env);
     for (const minted of [MINTED_AWS.SessionToken, MINTED_KUBE_TOKEN, kube.url, sts.url]) expect(env).toContain(minted);

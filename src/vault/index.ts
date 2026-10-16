@@ -21,6 +21,7 @@ import type { MintingOptions } from './mint.ts';
 
 export { clientTargets } from './service.ts';
 export { vaultView, type Vault } from './vault.ts';
+export { reconcilePass } from './bindings.ts';
 export { approvalWait } from '../domain/vault.ts';
 
 export async function openUserVault(o: {

@@ -193,6 +193,7 @@
         "vault.mint_tested",
         "vault.check_minted",
         "vault.check_mint_refused",
+        "vault.unbound",
         "vault.credential_asked",
         "vault.credential_given",
         "vault.agent_credential_given",

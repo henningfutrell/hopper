@@ -14,6 +14,7 @@ import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintEks } from './eks.ts';
 import { mintPrincipal } from '../domain/out-of-band.ts';
+import type { UnbindFrom } from './bindings.ts';
 
 /** `plan` (issue #870): the plan an operation that changes infrastructure applies. */
 export interface MintAsk { mint: MintKind; operation: string; asset: string; plan?: string; token: string }
@@ -27,7 +28,11 @@ export interface MintAsk { mint: MintKind; operation: string; asset: string; pla
  * says the minting credential's value.
  */
 export type MintFrom = (name: string, target: MintTarget, jobId: string, identify?: boolean) => Promise<MintedFrom | { refused: string }>;
-export interface MintedFrom { minted: Minted; reach: MintReach; roleArn?: string; sessionName?: string; identity?: CallerIdentity; cluster?: ClusterIdentity }
+export interface MintedFrom {
+  minted: Minted; reach: MintReach; roleArn?: string; sessionName?: string; identity?: CallerIdentity; cluster?: ClusterIdentity;
+  /** The Secret the token is bound to (issue #1371), when the target asked for one (`bindTo`) and the credential could: a `token` one, not EKS. */
+  bound?: { namespace: string; secret: string };
+}
 
 export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
@@ -131,6 +136,29 @@ export function principalOf(target: MintTarget, made: Pick<MintedFrom, 'roleArn'
 }
 
 /**
+ * Unbinds here (issue #1371): deletes the Secret a sandbox's token is bound to, with the minting credential that made it
+ * (opened, or read in its vault backend). Never says its value.
+ */
+export function unbindHere(o: Parameters<typeof mintHere>[0]): UnbindFrom {
+  return async (b) => {
+    const credential = o.vault.get(b.credential);
+    if (!credential?.mints) return { refused: `the vault holds no minting credential ${b.credential}` };
+    if (!o.minter) return { refused: 'this vault has no minter' };
+    const read = await o.valueOf(credential);
+    if ('refused' in read) return { refused: `the minting credential ${b.credential}: ${read.refused}` };
+    const c = mintingCredentialOf('kube', read.value);
+    if (typeof c === 'string') return { refused: `the minting credential ${b.credential}: ${c}` };
+    if (c.type !== 'token') return { refused: `the minting credential ${b.credential} binds no token` };
+    try {
+      await o.minter.kubeUnbind(c, { namespace: b.namespace, secret: b.secret });
+      return { ok: true };
+    } catch (e) {
+      return { refused: (e as Error).message };
+    }
+  };
+}
+
+/**
  * Mints here from the minting credential `name` (opened, or read in its vault backend): never says its value. A cluster's
  * `eks` credential (issue #854) reads the AWS minting credential of its role's account too.
  */
@@ -155,8 +183,9 @@ export function mintHere(o: { vault: Pick<VaultRepository, 'get' | 'list'>; mint
       if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
       if (c.type === 'eks') return await mintEks({ vault: o.vault, minter, valueOf: o.valueOf }, name, c, jobId, identify);
       const reach = { kind: 'kube' as const, server: c.server, ...(c.certificateAuthorityData ? { certificateAuthorityData: c.certificateAuthorityData } : {}) };
-      const minted = await minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds });
-      return { minted, reach, ...(identify ? { cluster: await minter.kubeIdentity(reach, minted.token) } : {}) };
+      const minted = await minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds, ...(target.bindTo ? { bindTo: target.bindTo } : {}) });
+      const bound = target.bindTo ? { bound: { namespace: target.namespace, secret: target.bindTo } } : {};
+      return { minted, reach, ...bound, ...(identify ? { cluster: await minter.kubeIdentity(reach, minted.token) } : {}) };
     } catch (e) {
       return { refused: `minting from ${name} failed: ${(e as Error).message}` };
     }

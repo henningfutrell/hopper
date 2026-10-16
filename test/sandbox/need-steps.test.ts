@@ -125,3 +125,61 @@ describe('a box step (issue #1349)', () => {
     expect(events.map((e) => e.type)).toEqual(['step.refused', 'step.refused', 'step.refused']);
   });
 });
+
+// Issue #1371 (decision #1394): a step's credentials end with its sandbox. Each way a step ends — it exits, fails, its
+// box run throws, it times out or is cancelled, a later mint is refused, or the job drops it before it runs — releases
+// the sandbox's bindings, so each Kubernetes token minted for it stops working.
+describe('a step\'s credentials end with its sandbox (issue #1371)', () => {
+  const KUBE: OperationProfile = { operation: 'read', asset: { kind: 'namespace', name: 'lab/web' } };
+  const KUBE_TEMPLATE = { name: 'kube', image: 'img', profiles: [KUBE, WRITE] } as unknown as TemplateView;
+
+  function releasing(run: () => Promise<{ exit: number; problem?: string; stopped?: 'timed-out' | 'cancelled' }>, refuse?: OperationProfile) {
+    const dir = mkdtempSync(join(tmpdir(), 'need-steps-'));
+    dirs.push(dir);
+    const released: string[] = [];
+    const minted: string[] = [];
+    const s = createNeedSteps({
+      templates: () => [KUBE_TEMPLATE], dir, record: () => {}, log: () => {}, planFile: () => undefined,
+      mint: async ({ step, profile }) => {
+        minted.push(step);
+        if (profile === refuse) return { refused: 'Access denied it' };
+        return { minted: { kind: 'kube', token: 'token', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://lab:6443' } };
+      },
+      run: async () => run(),
+      release: async (box) => { released.push(box); },
+    });
+    return { s, released, minted };
+  }
+  const io = () => ({ inputsBytes: 0, log: () => {}, signal: new AbortController().signal });
+
+  it.each([
+    ['succeeds', async () => ({ exit: 0 })],
+    ['fails', async () => ({ exit: 3 })],
+    ['times out', async () => ({ exit: 124, problem: 'the need box did not end in 5 s', stopped: 'timed-out' as const })],
+    ['is cancelled', async () => ({ exit: 130, problem: 'the job stopped waiting', stopped: 'cancelled' as const })],
+    ['throws', async (): Promise<{ exit: number }> => { throw new Error('the runtime went away'); }],
+  ])('a step that %s releases its sandbox\'s bindings after it', async (_, run) => {
+    const { s, released, minted } = releasing(run);
+    const started = await s.start(JOB, { template: KUBE_TEMPLATE, needs: [KUBE], command: 'kubectl get pods', outputs: [] });
+    if ('no' in started) throw new Error(started.no);
+    expect(released).toEqual([]);
+    await started.run(io());
+    expect(released).toEqual([minted[0]]);
+  });
+
+  it('a step whose later mint is refused releases what was minted for it before', async () => {
+    const { s, released, minted } = releasing(async () => ({ exit: 0 }), WRITE);
+    const r = await s.start(JOB, { template: KUBE_TEMPLATE, needs: [KUBE, WRITE], command: 'kubectl apply', outputs: [] });
+    expect(r).toMatchObject({ status: 403 });
+    expect(released).toEqual([minted[0]]);
+  });
+
+  it('a step the job drops before it runs releases its sandbox\'s bindings', async () => {
+    const { s, released, minted } = releasing(async () => ({ exit: 0 }));
+    const started = await s.start(JOB, { template: KUBE_TEMPLATE, needs: [KUBE], command: 'kubectl get pods', outputs: [] });
+    if ('no' in started) throw new Error(started.no);
+    started.drop('the inputs were too big');
+    await new Promise((r) => setImmediate(r));
+    expect(released).toEqual([minted[0]]);
+  });
+});
