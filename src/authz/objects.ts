@@ -8,6 +8,19 @@ import {
 
 export const templateObject = (template: string): string => `template:${template}`;
 export const userObject = (userId: string): string => `user:${userId}`;
+/** A person by the verified email their user is known by (issue #1380): OpenFGA takes no space, `:` or `#` in an id, so each is escaped, and `%` too, so two emails never meet. */
+export const emailSubject = (email: string): string => `user:${email.replace(/[\s:#%]/g, (c) => encodeURIComponent(c))}`;
+/**
+ * Tuples as OpenFGA is given them (issue #1380, owner decision 1: identity keyed by email): each `user:<id>` names the
+ * email the user is known by. A user with no email yet keeps its id, which holds no `@`, so it never names an email.
+ */
+export function keyedByEmail(emails: ReadonlyMap<string, string>): (t: RelationshipTuple) => RelationshipTuple {
+  const key = (s: string): string => {
+    const email = s.startsWith('user:') ? emails.get(s.slice('user:'.length)) : undefined;
+    return email === undefined ? s : emailSubject(email);
+  };
+  return (t) => ({ subject: key(t.subject), relation: t.relation, object: key(t.object) });
+}
 export const jobObject = (job: { userId: string; jobId: string }): string => `job:${job.userId}/${job.jobId}`;
 /** OpenFGA takes no space, `:` or `#` in an id, and a machine's name may hold one: it is escaped. */
 export const machineObject = (m: { userId: string; machine: string }): string => `machine:${m.userId}/${encodeURIComponent(m.machine)}`;

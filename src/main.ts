@@ -202,6 +202,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         ownerId: rt.user.id, artifactId: s.artifactId, shareId: s.id, ...(s.kind === 'user' && s.userId !== undefined ? { userId: s.userId } : {}),
       })));
     },
+    // A person in OpenFGA is the email their user is known by (issue #1380); a user with none yet, its id.
+    emails: () => new Map(instance.users.list().flatMap((u) => (u.email === undefined ? [] : [[u.id, u.email] as const]))),
   });
   // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. The
   // tunnel watch (issue #795, remoteAccess below): whether the remote access URL is up, so each user's Grok Bot routine is

@@ -13566,7 +13566,7 @@ the job's prompt. The skill broker (issue #582) asks it for the job.
 | asset | `cluster`, `namespace` (`<cluster>/<namespace>`), `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role` (`<account>/<role>`), and a name (`ASSET_NAME`: OpenFGA takes no `:`, `@`, `#` or space in an id, so not an ARN) | `asset:cluster/x` |
 | operation profile | an operation on an asset | `operation_profile:read/cluster/x` |
 | job | one run of a job: the issue's *session* (*UI session* is taken, glossary) | `job:<user>/<job>` |
-| user | a person the hopper works for (issue #581) | `user:<user>` |
+| user | a person the hopper works for (issue #581); by the verified email their user is known by, else by its id (issue #1380, "OpenFGA subjects keyed by email") | `user:<email>` |
 | machine | a machine jobs run on, of one user; its name escaped (`encodeURIComponent`: OpenFGA takes no space, `:` or `#`) | `machine:<user>/<name>` |
 
 The issue's *target* is an **asset** here: *target* is an attached machine (glossary).
@@ -22282,7 +22282,7 @@ with a local account or SSO of the same email got a second, empty user, and thei
 - **Every realm's vouched email links.** The owner made external SSO trusted, and the admin chose each realm. A realm
   with `trustUnverifiedEmail` vouches for emails its provider did not verify: an admin turns that on only for a provider
   they trust to name people.
-- **OpenFGA subjects, audit and attribution still name the user id.** The id is stable and every tuple and event names it;
+- **OpenFGA subjects, audit and attribution still name the user id** (OpenFGA subjects: replaced by part 9). The id is stable and every tuple and event names it;
   a user's email is now one lookup away. Keying those by email is a larger change with its own migration of tuples.
 - **No migration of the old build.** `users.email` is a new column; the build before reads `SELECT *` and ignores it, and
   adds its users with none.
@@ -22339,3 +22339,45 @@ GitHub source per user, and sources from other forges.
 **Verification:** `test/integration/grants-without-github.test.ts`; `test/scripts/kind-check.test.ts` (with fake
 `kind`, `helm` and `kubectl`: the step's order, the password on stdin and in no argument, and each failure); the kind
 check itself (`.github/workflows/kind.yml`, which runs on a change to `scripts/kind-check.ts`).
+
+## OpenFGA subjects keyed by email (issue #1380, part 9, 2026-10-15)
+
+Owner decision 1 on issue #1380: user records, OpenFGA subjects, audit and attribution use the verified email, never a
+username. Part 7 gave each user its email. OpenFGA still named a person `user:<id>`, and a user's id is a slug of its name
+(`User.id`): a username in every subject.
+
+**What was found.** OpenFGA holds no state of its own here. Each push writes what the hopper's rows say and deletes the
+rest ("Access: OpenFGA decides each mint"), and every check sends its tuple and contextual tuples at the time of the ask.
+So a new way to name a person needs no migration of tuples: the next push moves them.
+
+**The change.**
+- **A person in OpenFGA is `user:<email>`** (`src/authz/objects.ts` `emailSubject`, `keyedByEmail`). OpenFGA takes no space,
+  `:` or `#` in an id, so each is escaped (`encodeURIComponent`), and `%` too, so two emails never give one subject. `@`, `.`
+  and `+` stay as they are.
+- **Access keys tuples at the boundary** (`src/authz/service.ts`). The hopper still builds tuples by user id. Each push,
+  each check and its contextual tuples, and the check of who is live are keyed by email just before they go to OpenFGA.
+  `AccessOptions.emails` gives each user's email; `src/main.ts` reads it from the instance's users at each use. A user who
+  takes an email at a sign-in is moved at the next ask: who is live, keyed, changed, so the push runs first.
+- **A user with no email yet keeps `user:<id>`.** A GitHub-signed-in user from before part 7 has none until their next
+  GitHub sign-in. An id holds no `@`, so it never names an email.
+- **The access records name the email.** A decision's path, a check's reason (`user:<email> may …`), a mint's reason
+  (`user <email> is not approved …`) and Settings → Access's permission matrix name the email.
+
+**Decisions:**
+- **Key at the boundary, not in each object.** The objects that hold a user id (`job:<user>/<job>`, `machine:<user>/…`,
+  `artifact:<user>/…` and the like) name the place the work is kept, not a person, and the user id is that place (the user
+  schema, the work dir). Only `user:` subjects and objects are people. One mapping at the OpenFGA seam keeps every caller
+  and every builder of tuples as it was.
+- **No stored tuple changes.** The approvals Access keeps name templates and operation profiles, never a person.
+- **The email escaped, not hashed.** An admin reads tuples in OpenFGA's own tools; an email reads as the person.
+- **The user's id stays in the decision record's requester.** It names the user schema the job ran in; the reason and the
+  path beside it name the email.
+
+**Left for later parts of issue #1380:** audit and attribution keyed by email (the `by` of events and settings, now the
+name the realm gave: a change must keep email addresses out of every text the hopper sends to GitHub); passkeys; more
+than one GitHub source per user, and sources from other forges.
+
+**Verification:** `test/authz/email-subjects.test.ts` (the tuples pushed name a user by its email, a user with none by
+its id; a check asks as the email, the owner told by email; a user who takes an email is moved at the next ask; a
+decision's path and reason, and the matrix, name the email; escaping); `test/authz/openfga-real.test.ts` (opt-in, a real
+OpenFGA: a subject of an email, and of an escaped one, is stored and checked).

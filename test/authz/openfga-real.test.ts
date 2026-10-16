@@ -1,11 +1,12 @@
 // Issue #559, opt-in: the OpenFGA adapter and the default access model against a real OpenFGA server.
 // HOPPER_TEST_OPENFGA_URL names it (http://127.0.0.1:<port>), HOPPER_TEST_OPENFGA_KEY its preshared key when it
 // has one. Each run makes a store of its own. Issue #581: the requester tuples, and a check from a job, a box and a user.
+// Issue #1380: a person keyed by their email, escaped where OpenFGA takes no character, is stored and checked as given.
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createOpenFgaServer } from '../../src/authz/openfga.ts';
 import { compileAccessModel, DEFAULT_ACCESS_MODEL } from '../../src/authz/model.ts';
-import { approvalTuples, requesterTuples } from '../../src/authz/objects.ts';
+import { approvalTuples, keyedByEmail, requesterTuples } from '../../src/authz/objects.ts';
 
 const URL_ = process.env.HOPPER_TEST_OPENFGA_URL;
 
@@ -55,6 +56,23 @@ describe.skipIf(!URL_)('OpenFGA, for real (opt-in)', () => {
     expect(await ask('job:admin/j1')).toBe(false);
     expect(await ask('user:admin')).toBe(false);
     expect(await ask('machine:admin/kbox')).toBe(true);
+  });
+
+  it('takes a person keyed by their email, an escaped one too, and checks as that email', async () => {
+    const server = createOpenFgaServer({ url: URL_!, key: () => process.env.HOPPER_TEST_OPENFGA_KEY });
+    const storeId = await server.store(undefined, `hopper-test-${randomUUID()}`);
+    const modelId = await server.writeModel(storeId, compileAccessModel(DEFAULT_ACCESS_MODEL));
+    const read = approvalTuples('kube', { operation: 'read', asset: { kind: 'cluster', name: 'prod' } });
+    const key = keyedByEmail(new Map([['ada', 'ada.l+ops@example.com'], ['bob', 'b#o:b w%@example.com']]));
+    const who = requesterTuples([
+      { userId: 'ada', jobs: [{ jobId: 'j1', machine: 'kbox' }], boxes: [{ machine: 'kbox', template: 'kube' }] },
+      { userId: 'bob', jobs: [{ jobId: 'j2', machine: 'bbox' }], boxes: [{ machine: 'bbox', template: 'kube' }] },
+    ]).map(key);
+    await server.write(storeId, modelId, { writes: [read.grant, read.approval, ...who], deletes: [] });
+    const ask = (subject: string) => server.check(storeId, modelId, { subject, relation: 'can_read', object: read.grant.object }, []);
+    expect(await ask('user:ada.l+ops@example.com')).toBe(true);
+    expect(await ask('user:b%23o%3Ab%20w%25@example.com')).toBe(true);
+    expect(await ask('user:ada')).toBe(false);
   });
 
   it('reports a server it cannot reach as unreachable, not refused', async () => {
