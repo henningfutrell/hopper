@@ -48,7 +48,7 @@ import { installations, tokenRepositories, whoIs } from '../connected-accounts/i
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts'; import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts'; import { createOutbound, type Outbound, type OutboundGuard } from '../outbound/index.ts';
-import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
+import { approvalWait, clientTargets as vaultTargets, openUserVault, reconcilePass, type Vault } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
 import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
@@ -396,7 +396,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Steps: Windows (issue #731, over ssh), box steps (issue #1004, in a job's own box), need steps (issue #1007, one-shot need boxes).
-  const sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) }); const needStepRun = o.sandboxes?.needStep, needSteps = createNeedSteps({ templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), ...(needStepRun ? { run: (box, io, run) => needStepRun(user.id, box, io, run) } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349)
+  const mintReconcile = reconcilePass(() => vault.reconcileMints(), logger), sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) }); const needStepRun = o.sandboxes?.needStep, needSteps = createNeedSteps({ templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), release: (box) => vault.releaseMints(box), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), ...(needStepRun ? { run: (box, io, run) => needStepRun(user.id, box, io, run) } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349)
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
@@ -414,14 +414,14 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
       history.start(); minorDecisions.start(); tldrs.start(); failures.start();
-      connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
+      connectedAccounts.start(); mintReconcile.start(); // the renewer (issue #441); the sandboxes' tokens a hopper that stopped left bound, unbound at start, then every 5 minutes (issue #1371): a token that expired while the hopper was down renews at once
       jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); proxy.githubProxy.componentWatchers.start(); proxy.githubProxy.landingBatches.start(); proxy.githubProxy.ledgerFallbackRead.start(); proxy.githubProxy.repoChecks.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427), the component watchers (issue #1077), the landing batches (issue #1073), the ledger's fallback read (issue #1067), the repositories' checks' schedule (issue #1250)
 
     },
     stop() {
       stopped ??= (async () => {
         await search.stop(); jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop(); await proxy.githubProxy.repoChecks.stop();
-        await failures.stop(); signIns.stop();
+        await failures.stop(); signIns.stop(); await mintReconcile.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
         history.stop(); connectedAccounts.stop();

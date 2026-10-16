@@ -15,6 +15,7 @@
 //     Then each step runs in a new sandbox of T with the minted session, and its output, exit code and outputs come back
 //     And no container, volume or machine is left; each sandbox run is in the ledger with its job, step, template,
 //       outcome and when it was destroyed
+//     And the machines, their lanes and their lane caps are as before the steps (issue #1371): a sandbox takes no lane
 //   Scenario: a template this job has no approved sandbox of, or a --secret, is refused
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -85,6 +86,11 @@ describe('box steps, each in a sandbox of its own (issues #1004, #1349)', () => 
     expect(b.runtime.boxes.size).toBe(0);
     expect(b.a.app.instance.sandboxes.list()).toEqual([]);
 
+    // The machines, the jobs on their lanes and their lane caps (issue #1371): what the steps must leave as it is.
+    const fleet = async () => (await b.a.api<{ machines: { id: string; maxLanes: number; reservedLanes?: number; configuredLanes?: number; lanes: { id: string; state: string; jobId?: string }[] }[] }>('GET', '/api/machines')).body.machines
+      .map((m) => ({ id: m.id, maxLanes: m.maxLanes, reservedLanes: m.reservedLanes, configuredLanes: m.configuredLanes, busy: m.lanes.filter((l) => l.state !== 'idle').map((l) => l.jobId).sort() }));
+    const before = await fleet();
+    expect(before.length).toBeGreaterThan(0);
     const hosts = await step(b, creds, ['hosts']);
     expect(hosts.code, hosts.stderr).toBe(0);
     expect(hosts.stdout).toMatch(new RegExp(`^box ${template}  template ${template}$`, 'm'));
@@ -112,6 +118,8 @@ describe('box steps, each in a sandbox of its own (issues #1004, #1349)', () => 
     expect(b.runtime.volumes.size).toBe(0);
     const machines = (await b.a.api<{ machines: { id: string }[] }>('GET', '/api/machines')).body.machines;
     expect(machines.map((m) => m.id).filter((id) => id.startsWith('hopper-'))).toEqual([]);
+    // No sandbox took a lane or changed a machine's lane cap (issue #1371).
+    expect(await fleet()).toEqual(before);
 
     // The ledger: each sandbox run with its job, step, template, outcome, and when it was destroyed.
     const events = await ofJob(b, jobId);

@@ -1,7 +1,9 @@
 // An STS and a Kubernetes API faked on loopback (issue #797): what the vault's real minting adapters call. STS answers
 // every AssumeRole with the session `MINTED_AWS`; the Kubernetes API answers every TokenRequest with `MINTED_KUBE_TOKEN`,
-// and (issue #854, a mint test) a SelfSubjectReview with `KUBE_USER` and a namespace list with `KUBE_NAMESPACES`.
+// and (issue #854, a mint test) a SelfSubjectReview with `KUBE_USER` and a namespace list with `KUBE_NAMESPACES`; it makes
+// and deletes the Secret a sandbox's token is bound to (issue #1371), with a uid.
 // Each keeps every request it got, so a test sees what was asked, or that nothing was.
+import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 
 export const MINTED_AWS = { AccessKeyId: 'ASIAMINTEDCHECK', SecretAccessKey: 'minted-check-secret', SessionToken: 'minted-check-session' };
@@ -30,16 +32,32 @@ async function fakeServer(answer: (r: Seen) => { status: number; type: string; b
   return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, seen, close: () => { server.close(); } };
 }
 
-/** A Kubernetes API server that answers every TokenRequest, `kubectl auth whoami` and `kubectl get ns`; `forbid`: these two 403. */
-export const fakeKubeApi = (o: { forbid?: boolean } = {}): Promise<FakeApi> => fakeServer((r) => {
-  const json = (status: number, body: unknown) => ({ status, type: 'application/json', body: JSON.stringify(body) });
-  const read = r.url === '/apis/authentication.k8s.io/v1/selfsubjectreviews' || r.url === '/api/v1/namespaces';
-  if (read && o.forbid) return json(403, { kind: 'Status', status: 'Failure', reason: 'Forbidden', message: 'namespaces is forbidden: User "anonymous" cannot list resource "namespaces"' });
-  if (r.url === '/apis/authentication.k8s.io/v1/selfsubjectreviews') return json(201, { kind: 'SelfSubjectReview', status: { userInfo: KUBE_USER } });
-  if (r.url === '/api/v1/namespaces') return json(200, { kind: 'NamespaceList', items: KUBE_NAMESPACES.map((name) => ({ metadata: { name } })) });
-  const spec = (JSON.parse(r.body || '{}') as { spec?: unknown }).spec;
-  return { status: 201, type: 'application/json', body: JSON.stringify({ kind: 'TokenRequest', apiVersion: 'authentication.k8s.io/v1', spec, status: { token: MINTED_KUBE_TOKEN, expirationTimestamp: EXPIRES } }) };
-});
+/**
+ * A Kubernetes API server that answers every TokenRequest, `kubectl auth whoami` and `kubectl get ns`, and makes and
+ * deletes Secrets (a mint binding's); `forbid`: whoami and the namespace list 403.
+ */
+export const fakeKubeApi = (o: { forbid?: boolean } = {}): Promise<FakeApi> => {
+  const secrets = new Set<string>();
+  return fakeServer((r) => {
+    const json = (status: number, body: unknown) => ({ status, type: 'application/json', body: JSON.stringify(body) });
+    const secret = /^\/api\/v1\/namespaces\/([^/]+)\/secrets(?:\/([^/]+))?$/.exec(r.url);
+    if (secret && r.method === 'POST') {
+      const name = (JSON.parse(r.body || '{}') as { metadata?: { name?: string } }).metadata?.name ?? '';
+      secrets.add(`${secret[1]}/${name}`);
+      return json(201, { kind: 'Secret', metadata: { name, namespace: secret[1], uid: randomUUID() } });
+    }
+    if (secret && r.method === 'DELETE') {
+      const key = `${secret[1]}/${decodeURIComponent(secret[2] ?? '')}`;
+      return secrets.delete(key) ? json(200, { kind: 'Status', status: 'Success' }) : json(404, { kind: 'Status', status: 'Failure', reason: 'NotFound' });
+    }
+    const read = r.url === '/apis/authentication.k8s.io/v1/selfsubjectreviews' || r.url === '/api/v1/namespaces';
+    if (read && o.forbid) return json(403, { kind: 'Status', status: 'Failure', reason: 'Forbidden', message: 'namespaces is forbidden: User "anonymous" cannot list resource "namespaces"' });
+    if (r.url === '/apis/authentication.k8s.io/v1/selfsubjectreviews') return json(201, { kind: 'SelfSubjectReview', status: { userInfo: KUBE_USER } });
+    if (r.url === '/api/v1/namespaces') return json(200, { kind: 'NamespaceList', items: KUBE_NAMESPACES.map((name) => ({ metadata: { name } })) });
+    const spec = (JSON.parse(r.body || '{}') as { spec?: unknown }).spec;
+    return { status: 201, type: 'application/json', body: JSON.stringify({ kind: 'TokenRequest', apiVersion: 'authentication.k8s.io/v1', spec, status: { token: MINTED_KUBE_TOKEN, expirationTimestamp: EXPIRES } }) };
+  });
+};
 
 /** STS: AssumeRole answered, in the query protocol's XML. */
 export const fakeSts = (account: string): Promise<FakeApi> => fakeServer(() => ({

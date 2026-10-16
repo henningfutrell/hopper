@@ -2075,7 +2075,12 @@ At most `MAX_TENDS` (3) `fix_checks` tends in a row of one pull request (`tendsI
 person, as before tending, its card on the Pull requests list saying `checks failing`. A `rebase` is never capped (issue
 #786): each is made needed by a new merge on the base, not by the tend before it, and a rebase that fails ends the row by
 itself — the tend job ends failed and waits on a person. With a cap, a busy base left pull requests conflicting after
-three good rebases, and nothing tended them again. A refusal because a newer job of
+three good rebases, and nothing tended them again. **A tend starts only on an open pull request** (issue #1456): a tend
+works from what was last seen, and the tended job follows its pull request no more, so a pull request closed or merged
+on GitHub after its tend job failed was rebased again at each move of its base, and shown open. Before each tend the
+source reads whether it ended (`JobSource.endedPullRequests`); ended, no tend starts, the job follows it again at once, and
+that follow records its end (`job.pull_request_closed` or `job.pull_request_merged`) and its labels, as any follow does. A
+read that fails tends it as before. A refusal because a newer job of
 the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
 it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
@@ -12607,6 +12612,29 @@ section's decisions; zero paths shows the reason with Accept, Ask for more paths
 proposals list each path of the signed-off version: a selected one links to its follow-on with its live status, the
 others greyed out and kept.
 
+## The delivery path (issue #1458, 2026-10-16)
+
+Owner requirement: a job knows how its change is delivered. A job whose change spanned another repository asked a person
+to pick a delivery path — file a child issue, have a person apply a patch, or let the job push there — because nothing told
+it the path. A question is fine; one about a path the rules already settle is not.
+
+**The delivery line** (`DELIVERY_LINE`, `src/job-rules/`): a fixed protocol line, after the review sections' lines, so every
+job is told it whatever its job rules. It says:
+
+- **Where the change lands.** In the job's own repository, through its pull request.
+- **A change another repository needs** is a **required child** ("Issue lineage"): the job files it on that repository
+  with `hopper-gh issue create --repo OWNER/NAME --required`, a job of that repository delivers it, and the job follows
+  it, since its issue is not done while the child is open. A job with no issue of its own (a direct job) files it with no
+  `--required` (the proxy refuses a required child there) and names it in its result. Never a patch for a person to apply.
+- **What delivered means.** Merged on the repository's landing branch, its checks passed there, and moved through the next
+  stages the repository names (a deploy to a test environment, for example). A pull request, a patch or an artifact is not
+  delivered. The branch and the stages are the repository's to name, in its own rules and documents: the line names none.
+  The job's own done stays its done line (`doneLine`, `src/sources/github/context.ts`).
+- **Production** waits for a person's approval; nothing short of it releases, and a job never releases to production.
+- **No question about the path itself**: only a real decision, as the decisions line says.
+
+**Verification.** `test/job-rules/delivery-path.test.ts`.
+
 ## Decide and proceed (issue #1059, 2026-10-13)
 
 Owner requirement: a job for well-scoped work does not stop to write a proposal or ask a question when a recommended path
@@ -18944,7 +18972,44 @@ Tests: `test/sandbox/need-box.test.ts` (a step past its limit is stopped and rem
 waiting for, as cancelled), `test/sandbox/sandbox-runs.test.ts` (the ledger's `timed-out` and `cancelled` runs, burned;
 at start, a run a stopped hopper left ends as `interrupted` and its box and home are gone).
 
-What is still open is listed in the issue's pull request: credentials that die with their sandbox (a decision, #1394).
+**Part 7 (2026-10-16): a sandbox's credentials end with it** (decision #1394). The acceptance asks that a credential
+issued to a sandbox no longer works once that sandbox is destroyed. Before, a Kubernetes TokenRequest token was bound to
+nothing and worked to its expiry (10 minutes), and an AWS session to its own (15 minutes).
+
+- **Kubernetes: each token is bound to a Secret of its own** (`src/vault/bindings.ts`, a **mint binding**). For a need
+  box (`need-mint.ts`) and a check box (`checks.ts`), the vault names a Secret (`hopper-mint-<uuid>`) in the mint target
+  (`bindTo`). The minter (`minter.ts`) makes it, empty and labelled `io.hopper.mint`, in the service account's namespace,
+  then asks for the token with `boundObjectRef` to it. When the cluster refuses the token, the Secret is deleted at once.
+  The mint's event records the binding (`bound` on `vault.minted` and `vault.check_minted`), and the vault holds it for
+  the sandbox.
+- **The sandbox's end deletes it.** A need step releases its sandbox's bindings (`releaseMints`) after its box is burned,
+  whatever the outcome — it succeeded, failed, timed out, was cancelled, or its run threw —, and also when a later mint
+  of the step is refused or the job drops the step before it runs. The check pass releases a check box's bindings after
+  the box is removed. The minter deletes each Secret (a 404 is no error), the API server refuses the token at once, and
+  `vault.unbound` records it. Through the vault's own container (#586), the delete crosses as the op `unbind`: only that
+  container holds the minting credential.
+- **Reconcile.** An unbind that fails (the cluster is not reachable) is logged and waits. The reconcile pass
+  (`reconcilePass`, each user's runtime) runs at start and every 5 minutes. It reads the last 7 days of mint events and
+  unbinds each binding that no sandbox holds now and no `vault.unbound` ended: one a hopper that stopped mid-step left,
+  or one whose unbind failed.
+- **The minting credential needs more rights.** Its identity needs `create` and `delete` on `secrets` in each namespace
+  where it mints (`docs/deploy.md` "Minting short-lived credentials"). Without them, a sandbox's mint fails and says so.
+  It is no fallback to an unbound token, because that token would outlive its sandbox. Only `create` and `delete`: the
+  hopper names each Secret it made, so it needs no `list` or `get`.
+- **Residual risk: AWS and EKS keep their floor.** STS cannot end one session by itself. The way to do it is a deny
+  policy on `aws:TokenIssueTime` for the role, which needs `iam:PutRolePolicy` and also ends the sessions of other
+  sandboxes that still run. The owner chose not to do that (#1394). So an AWS session minted for a sandbox works for up
+  to 15 minutes after the sandbox is destroyed, and an EKS token (signed with such a session) for up to 14. Both stay at
+  their minimum: `AWS_SESSION_SECONDS` (900, STS's floor) and `EKS_TOKEN_SECONDS` (840).
+- A box job's mint on a machine (`mint.ts`, `createMinting`) and a person's mint test are no sandbox: they bind nothing.
+
+Tests: `test/vault/bound-tokens.test.ts` (against a Kubernetes API double: the token is bound to a labelled Secret, works
+until the Secret is deleted and is refused at once after; a token the cluster refuses leaves no Secret),
+`test/vault/mint-bindings.test.ts` (a release unbinds each of its sandbox's bindings and records it; a failed unbind
+never rejects and the reconcile pass unbinds it; after a restart, the pass unbinds each binding no unbound event ended and
+leaves the bindings of sandboxes that run now; a need step's Kubernetes token is bound, an AWS session is not), and
+`test/sandbox/need-steps.test.ts` (a step that succeeds, fails, times out, is cancelled or throws, a step whose later
+mint is refused, and one the job drops all release their bindings).
 
 ## Kubernetes sandboxes, end to end on kind (issue #1422, 2026-10-15)
 
@@ -20412,7 +20477,8 @@ Tests: `test/client/infra-credentials.test.ts` (the read, the ssh command, a cli
 The case: an attached machine could not reach the hopper and was still offered work; it ran jobs as the host's own login
 user, whose home held cloud and cluster credentials (AWS, kube). A job there could use them, which breaks #652's rule: a job
 holds no owner credentials. Requirement: a machine takes jobs only as a credential-free job user that reaches the hopper;
-until then it is **not ready** (glossary), takes no job, and says why on its Machines row and in Needs you.
+until then it is **not ready** (glossary), takes no job, and says why on its Machines row and in Needs you. Issue #1467
+below makes the credentials a warning by default, and a hold only in strict mode or after an admin's stop.
 
 **Credentials hold the machine.** This reverses "Flag, never hold" above. The read is the same one, wider
 (`src/client/infra-credentials.ts`, **infra credentials**): folders and files under the home — cloud CLI config (`.aws`,
@@ -20427,11 +20493,29 @@ home and environment, which its herdr session and so its jobs inherit; an ssh ta
 read or printed: a variable is tested with `printenv` into a command substitution that is never echoed, a git config only
 for a `helper =` line.
 
-The decider's `credentialHolds` (`src/decider/assign.ts`) holds a machine with any: a job is held with `no machine running
+The decider's `credentialHolds` (`src/decider/assign.ts`) holds a machine with any that the credential check holds (#1467): a job is held with `no machine running
 executor <x> is ready: <m> is not ready: its job user holds credentials a job could use (<names>). Run its jobs as a
 dedicated user that holds none`, or `pinned machine <m> is not ready: …`, never failed there. Its order among the holds:
 after the address hold, before herdr. A job resuming there returns to the pane it holds. The placement picks
 (`src/engine/lane-calls.ts`) leave out such a machine and an off-network one too.
+
+**A warning, not a gate, by default** (issue #1467, 2026-10-16). Holding every machine with credentials stopped all work on a
+local single-user install, where the owner's own login is the only one there. So the credentials are a warning: the machine
+stays ready and takes jobs, and its card says what its job user holds, with the guided fix folded under Reduce risk. The
+decider holds it only when the **credential check** holds it (`credentialHeld`, `src/domain/machine-credentials.ts`): an admin
+stopped it (Stop taking jobs), or **strict mode** is on (an admin's setting, `POST /ui/api/credential-check`, off by default,
+for a shared or hosted hopper) and no admin acknowledged it. The engine gives the decider the ids it holds
+(`DecisionInputs.credentialHeld`), the placement picks ask the same rule, and `GET /api/machines` carries `credentialHeld` per
+machine, so the card's state is the decider's and they cannot disagree. Each machine has one row in
+`machine_credential_acceptances` (issue #1459): an active row is a **credential acceptance** — Use anyway on a held machine, or
+Acknowledge on a warning, which folds it — with the credentials it named; a row with `revoked_at` set is a stop. A credential
+found later that the acknowledgement did not name raises the warning again; the machine keeps taking jobs. The rows from
+#1459 keep their meaning: an accepted one takes jobs, a revoked one is held. The card shows one state: **Taking jobs** with
+the one-line warning, Acknowledge and Stop taking jobs; **Taking jobs** acknowledged, the warning folded; or **Not taking
+jobs** with why (strict mode, or an admin's stop), the fix steps first, and Use anyway. Needs you lists each held machine
+and each warning no admin acknowledged. Tests: `test/decider/infra-credentials.test.ts` (the rule, held and not held),
+`test/ui/machine-infra-credentials.test.ts` (each card state), `test/ui/machine-credential-card.test.ts` (each state rendered,
+no contradicting text), `test/integration/machine-credential-acceptance.test.ts` (default, strict, stop, restart).
 
 **Reach is the address hold.** An ssh target's probe already asks which of the hopper's addresses it reaches (#698); one
 that reaches none has an address problem and takes no new job. A client target reaches the hopper through its door, at the

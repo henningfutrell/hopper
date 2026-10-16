@@ -1,0 +1,1 @@
+- A Kubernetes credential given to a sandbox now stops working as soon as the sandbox ends. The cluster login that makes these credentials must now be allowed to create and delete secrets in the same namespace.

@@ -3695,7 +3695,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. `bound` (issue #1371): the Secret a need box's Kubernetes token is bound to; deleting it (`vault.unbound`) ends the token. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -3711,6 +3711,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | `renewal` | boolean | yes |
 | `plan` | string | no |
 | `principal` | string | no |
+| `bound` | object | no |
 
 ```json
 {
@@ -3727,7 +3728,11 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
   "decision": "6c1d2e3f-0000-4000-8000-000000000002",
   "expiresAt": "2026-10-09T12:10:00.000Z",
   "renewal": false,
-  "principal": "system:serviceaccount:web:hopper-read"
+  "principal": "system:serviceaccount:web:hopper-read",
+  "bound": {
+    "namespace": "web",
+    "secret": "hopper-mint-0b1c2d3e-0000-4000-8000-000000000004"
+  }
 }
 ```
 
@@ -3793,7 +3798,7 @@ Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting 
 
 ## `vault.check_minted`
 
-Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Settings → Access). The check runs no job; `check` is its check box. Never the credential.
+Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Settings → Access). The check runs no job; `check` is its check box. `bound` (issue #1371): the Secret a Kubernetes token is bound to, deleted when the check box ends (`vault.unbound`). Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -3805,6 +3810,7 @@ Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-
 | `credential` | string | yes |
 | `decision` | string | yes |
 | `expiresAt` | string | yes |
+| `bound` | object | no |
 
 ```json
 {
@@ -3848,6 +3854,28 @@ Version 1 (`docs/schemas/vault.check_mint_refused.v1.json`). A read-only check b
   "check": "hopper-check-asked-0afb8cc6-mgk2x0",
   "reason": "no minting credential mints for cluster lab: a person adds one on Settings → Vault",
   "decision": "6c1d2e3f-0000-4000-8000-000000000005"
+}
+```
+
+## `vault.unbound`
+
+Version 1 (`docs/schemas/vault.unbound.v1.json`). A sandbox ended, and the Secret its Kubernetes token was bound to was deleted (issue #1371): the API server refuses that token at once. `box` is the need box or check box, `job` the job it served (none for a check box), `credential` the minting credential that made the token. Its end does it, whatever the outcome; the reconcile pass, at start and every 5 minutes, does it for a binding a hopper that stopped, or an unbind that failed, left. Never the token.
+
+| field | type | required |
+|---|---|---|
+| `box` | string | yes |
+| `job` | string | no |
+| `credential` | string | yes |
+| `namespace` | string | yes |
+| `secret` | string | yes |
+
+```json
+{
+  "box": "hopper-need-kube-1a2b3c4d",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "credential": "KUBE_LAB",
+  "namespace": "web",
+  "secret": "hopper-mint-0b1c2d3e-0000-4000-8000-000000000004"
 }
 ```
 
@@ -5186,6 +5214,28 @@ Version 1 (`docs/schemas/shrink_guard.changed.v1.json`). An admin changed the sh
   },
   "to": {
     "percent": 30
+  },
+  "by": "owner"
+}
+```
+
+## `credential_check.changed`
+
+Version 1 (`docs/schemas/credential_check.changed.v1.json`). An admin turned strict mode of the credential check on or off (issue #1467): on, a machine whose job user holds infra credentials takes no job until an admin uses it anyway; off, it takes jobs with a warning. `from` and `to` (`strict`), and `by`, who. It applies at the next decision.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "strict": false
+  },
+  "to": {
+    "strict": true
   },
   "by": "owner"
 }

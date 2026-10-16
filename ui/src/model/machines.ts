@@ -96,10 +96,49 @@ function herdrSide(what: string, side: { version?: string; protocol?: number; bi
   return `${what}${side.version ? ` ${side.version}` : ''}${said ? ` (${said})` : ''}`;
 }
 
-/** What its job user holds, and that it takes no new job (issues #1128 part 7, #1248). None, or not read: null. */
+/** What its job user holds (issues #1128 part 7, #1248, #1467): a warning, and a hold only when `credentialHeld`. None, or not read: null. */
 export function infraCredentialsText(m: MachineSnapshot): string | null {
   if (!m.infraCredentials?.length) return null;
-  return `Not ready, takes no new job: its job user holds credentials a job could use: ${m.infraCredentials.join(', ')}. Its jobs wait for another machine. Run its jobs as a dedicated user that holds none; a job that needs a credential gets it from the vault, through a grant.`;
+  return `Its job user holds credentials a job could use: ${m.infraCredentials.join(', ')}.`;
+}
+
+/** A machine as the credential check reads it (issue #1467): what the daemon says of it, from the decider's own rule. */
+export type CredentialChecked = MachineSnapshot & { credentialHeld?: boolean; credentialAcceptance?: { credentials: readonly string[]; acceptedAt: string; revokedAt?: string } };
+
+/**
+ * The credential part of a Machines card (issue #1467): one state, the one the decider acts on. `held`: it takes no new job,
+ * the reason and the guided fix shown first, and Use anyway. `warning`: it takes jobs, the warning shown, the guided fix
+ * folded, and Acknowledge or Stop taking jobs. `acknowledged`: it takes jobs, an admin acknowledged every credential it
+ * holds, the warning folded. A credential the acknowledgement did not name makes it `warning` again. Null: it holds none.
+ */
+export interface CredentialCard {
+  state: 'held' | 'warning' | 'acknowledged';
+  /** The card's badge. */
+  badge: string;
+  headline: string;
+  /** What its job user holds, and for a hold why it is held. */
+  detail: string;
+  /** Credentials found since the acknowledgement. */
+  added: string[];
+  /** Whether the guided fix shows open. */
+  fixOpen: boolean;
+}
+
+export const HELD_HEADLINE = 'Not taking jobs';
+export const TAKING_HEADLINE = 'Taking jobs';
+
+export function credentialCard(m: CredentialChecked): CredentialCard | null {
+  const text = infraCredentialsText(m);
+  if (!text) return null;
+  const a = m.credentialAcceptance;
+  if (m.credentialHeld) {
+    const why = a?.revokedAt !== undefined ? 'An admin stopped it from taking jobs.' : 'Strict mode is on, and no admin chose to use it anyway.';
+    return { state: 'held', badge: 'not taking jobs', headline: HELD_HEADLINE, detail: `${why} ${text} Its jobs wait for another machine. Run its jobs as a dedicated user that holds none; a job that needs a credential gets it from the vault, through a grant.`, added: [], fixOpen: true };
+  }
+  const named = a && a.revokedAt === undefined ? a.credentials : null;
+  const added = named ? (m.infraCredentials ?? []).filter((c) => !named.includes(c)) : [];
+  if (named && added.length === 0) return { state: 'acknowledged', badge: 'credentials acknowledged', headline: TAKING_HEADLINE, detail: text, added, fixOpen: false };
+  return { state: 'warning', badge: 'credentials', headline: TAKING_HEADLINE, detail: text, added, fixOpen: false };
 }
 
 /** The dedicated job user the guided fix makes (issue #1248). */
@@ -122,11 +161,18 @@ export function jobUserFix(m: MachineSnapshot): { commands: string[]; then: stri
   return { commands: [...make, `sudo loginctl enable-linger ${JOB_USER}`], then: `This is the hopper's own machine: remove the credentials from the hopper's user, or set its lanes to 0 and add this computer as a client target as that user. ${client}` };
 }
 
-/** Needs you's lines (issue #1248): each online machine that is not ready, and why. */
-export function notReadyLines(machines: readonly MachineSnapshot[]): string[] {
+/**
+ * Needs you's lines (issues #1248, #1467): each online machine not taking jobs, and why; and each one that takes jobs with a
+ * credential warning no admin acknowledged.
+ */
+export function notReadyLines(machines: readonly CredentialChecked[]): string[] {
   return machines.filter((m) => m.online).flatMap((m) => {
-    const why = m.infraCredentials?.length ? `its job user holds ${m.infraCredentials.join(', ')}` : m.addressProblem;
-    return why ? [`${m.label || m.id}: not ready — ${why}`] : [];
+    const name = m.label || m.id;
+    const card = credentialCard(m);
+    const holds = m.infraCredentials?.join(', ');
+    if (card?.state === 'held') return [`${name}: not taking jobs — its job user holds ${holds}`];
+    if (m.addressProblem) return [`${name}: not ready — ${m.addressProblem}`];
+    return card?.state === 'warning' ? [`${name}: takes jobs, but its job user holds ${holds}`] : [];
   });
 }
 

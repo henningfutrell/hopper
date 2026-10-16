@@ -16,6 +16,7 @@ import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type Min
 import { currentCheck, failedProbes, probeMarksProblem, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import { PROBES } from '../sandbox/probes.ts';
 import type { MintFrom } from './mint.ts';
+import type { MintBindings } from './bindings.ts';
 
 /**
  * A template's probe marks at a save (issue #916): the `given` ones, which replace the ones it `had`, or those when none
@@ -44,9 +45,9 @@ export interface CheckMintAsk { template: string; check: string; profile: Operat
 /** The minted credential and where it is used, or why there is none. */
 export type CheckMintAnswer = { minted: Minted; reach: MintReach } | { refused: string };
 
-export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom }): TemplateChecks {
+export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; bindings?: MintBindings }): TemplateChecks {
   const { vault, events } = store;
-  const checkMint = createCheckMinting({ store, ...(o.access ? { access: o.access } : {}) });
+  const checkMint = createCheckMinting({ store, ...(o.access ? { access: o.access } : {}), ...(o.bindings ? { bindings: o.bindings } : {}) });
   return {
     mintForCheck: (ask, from) => checkMint(ask, from ?? o.mintFrom),
     recordCheck(name, check) {
@@ -75,7 +76,7 @@ export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx'>
   };
 }
 
-function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; access?: VaultAccess }): (ask: CheckMintAsk, from: MintFrom) => Promise<CheckMintAnswer> {
+function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; access?: VaultAccess; bindings?: MintBindings }): (ask: CheckMintAsk, from: MintFrom) => Promise<CheckMintAnswer> {
   const { vault, events } = o.store;
   return async ({ template, check, profile }, from) => {
     const kind = mintKindFor(profile.asset.kind);
@@ -87,8 +88,10 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; acc
       return { refused: reason };
     };
     if (!kind) return refuse(`the vault mints a credential for ${profile.operation} on an aws-role, a cluster or a namespace only`);
-    const target = mintTarget(kind, profile);
-    if (typeof target === 'string') return refuse(target);
+    const named = mintTarget(kind, profile);
+    if (typeof named === 'string') return refuse(named);
+    // A check box's token ends with it (issue #1371): bound to a Secret the check's end deletes.
+    const target = named.kind === 'kube' && o.bindings ? { ...named, bindTo: o.bindings.name() } : named;
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
     const decision = await o.access.decideCheckMint({ template, check, operation: profile.operation, asset: profile.asset });
     if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
@@ -97,9 +100,10 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; acc
     if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
     const made = await from(credential.name, target, CHECK_MINT_ID);
     if ('refused' in made) return refuse(made.refused, decision.id);
+    if (made.bound) o.bindings?.hold(check, { credential: credential.name, ...made.bound });
     events.append({
       type: 'vault.check_minted',
-      data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: credential.name, decision: decision.id, expiresAt: expiryOf(made.minted) },
+      data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: credential.name, decision: decision.id, expiresAt: expiryOf(made.minted), ...(made.bound ? { bound: made.bound } : {}) },
     });
     return { minted: made.minted, reach: made.reach };
   };

@@ -142,7 +142,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.pull_request_tended': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase', nextJobId: 'j2' },
   'job.pull_request_base_merged': { pullRequest: 'https://github.com/owner/repo/pull/14', commit: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', resolved: ['WHATS-NEW.md'] }, 'job.pull_request_retargeted': { pullRequest: 'https://github.com/owner/repo/pull/15', from: 'dev', to: 'main' },
   'job.pull_request_followed': { pullRequest: 'https://github.com/owner/repo/pull/14', part: false }, 'job.pull_request_seen': { pullRequest: 'https://github.com/owner/repo/pull/14', wait: 'checks_running' }, 'work_item.issue_closed': { key: 'https://github.com/owner/repo/issues/9', reason: 'completed', via: 'delivery' }, 'work_item.issue_reopened': { key: 'https://github.com/owner/repo/issues/9', via: 'read' }, 'source.request_withdrawn': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/8' },
-  'contribution.changed': { from: { on: false }, to: { on: true }, by: 'owner' }, 'shrink_guard.changed': { from: { percent: 50 }, to: { percent: 30 }, by: 'owner' },
+  'contribution.changed': { from: { on: false }, to: { on: true }, by: 'owner' }, 'shrink_guard.changed': { from: { percent: 50 }, to: { percent: 30 }, by: 'owner' }, 'credential_check.changed': { from: { strict: false }, to: { strict: true }, by: 'owner' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high', holdHighPriority: false }, to: { enabled: true, threshold: 'medium', holdHighPriority: false }, by: 'admin' },
   'remote_access.changed': { from: { enabled: false, provider: 'cloudflare' }, to: { enabled: true, provider: 'cloudflare', provisioned: { provider: 'cloudflare', domain: 'hopper.example.com', accountId: 'a1b2', zoneId: 'z3c4', tunnelId: 'f1e2d3c4-0000-4000-8000-000000000000', dnsRecordId: 'r5d6' } }, credential: 'set', by: 'admin' },
@@ -193,8 +193,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.minted': {
     kind: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'lab/web' }, template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
     credential: 'KUBE_LAB', decision: '6c1d2e3f-0000-4000-8000-000000000002', expiresAt: '2026-10-09T12:10:00.000Z', renewal: false,
-    principal: 'system:serviceaccount:web:hopper-read',
-  },
+    principal: 'system:serviceaccount:web:hopper-read', bound: { namespace: 'web', secret: 'hopper-mint-0b1c2d3e-0000-4000-8000-000000000004' } },
+  'vault.unbound': { box: 'hopper-need-kube-1a2b3c4d', job: 'f3b1c2d4-0000-4000-8000-000000000001', credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-0b1c2d3e-0000-4000-8000-000000000004' },
   'vault.mint_refused': {
     mint: { kind: 'kube', operation: 'write', asset: { kind: 'namespace', name: 'lab/web' } }, machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
     reason: 'Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person\'s approval on Access requests (the first-time gate)',
