@@ -23,6 +23,10 @@ service:
   # The node port of the Service, with type NodePort or LoadBalancer. Empty: Kubernetes picks one. Set it to reach the
   # hopper at a fixed port on each node, as kind's extraPortMappings needs (docs/deploy.md "On kind, at a host port").
   nodePort: ""
+  # The load balancer's address, with type LoadBalancer, where the load balancer lets you ask for one. Set: the Service
+  # asks for it, and the hopper answers to it, as to a name in allowedHosts. Empty: the load balancer picks one; put it in
+  # allowedHosts to reach the hopper at it.
+  loadBalancerIP: ""
 
 # The master key (docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it. Unset: the chart
 # makes it at the first install, a new random key in the Secret <release>-master-key, and keeps it at each upgrade and at
@@ -96,10 +100,12 @@ serviceAccount:
 # The pod network the hopper takes LAN requests from: the ingress controller and the kubelet's probes reach it from
 # there (docs/design.md "Reaching the UI across the LAN"). A LAN request reads the API only with a UI session.
 lanPeers: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-# More names the hopper answers to, comma-separated, after its Service's names: the names machines outside the cluster
-# reach it by (this host's name, with service.type LoadBalancer). hopper-cluster.sh migrate carries the compose install's
-# names here, so machines that joined it dial in to this hopper (issue #1373).
-lanNames: ""
+# More names the hopper answers to (LAN names), after its Service's names: the names and addresses machines outside the
+# cluster reach it by, through a port-forward, a node port or a load balancer (this host's name or address). Another Host
+# gets 421 (issue #1421). `--set allowedHosts={box.lan,192.0.2.7}`. The ingress host needs no entry: it is the public
+# URL. hopper-cluster.sh migrate carries the compose install's names here, so machines that joined it dial in to this
+# hopper (issue #1373).
+allowedHosts: []
 # The cluster's DNS domain: the hopper answers to its Service's names in it.
 clusterDomain: cluster.local
 

@@ -21583,7 +21583,7 @@ and `hopper-service.sh` are. The steps are in `docs/kubernetes.md`; here, why th
   then be in this script's memory, which is what this path exists to avoid.
 - **Machines keep their lanes.** Their link keys are in the database. On a cluster bootstrap made, the Service is a
   `LoadBalancer` at compose's port, which k3s's load balancer takes on the host: a machine dials the address it joined.
-  The names it dialled (compose's `HOPPER_LAN_NAMES`, the host's names, its tailnet name) go to the chart's `lanNames`.
+  The names it dialled (compose's `HOPPER_LAN_NAMES`, the host's names, its tailnet name) go to the chart's `allowedHosts` (issue #1421).
 - **The hopper's own launch settings** are carried in `extraEnv`: each variable the compose hopper was started with that
   its image does not set and compose's plumbing does not name. A secret one goes to a Secret of its own.
 - **Rollback is compose again.** The cutover rolls back by itself when a step fails: the cluster hopper to 0, the
@@ -21598,7 +21598,7 @@ sign-in, which no check has).
 
 **Verification:** `test/scripts/hopper-cluster.test.ts` (stubs for podman, kubectl, helm, systemctl and curl: the order
 of the cutover, the key never in an argument or a file, the rollback, the refusals),
-`test/scripts/helm-chart.test.ts` (`replicas`, `service.type`, `lanNames`, the chart in the image),
+`test/scripts/helm-chart.test.ts` (`replicas`, `service.type`, `allowedHosts`, the chart in the image),
 `test/scripts/kind-migrate-check.test.ts`, and `scripts/kind-migrate-check.ts` on kind.
 
 ## Reading the held event loop (issue #1383, 2026-10-15)
