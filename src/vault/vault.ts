@@ -33,6 +33,10 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   mintForCheck(ask: CheckMintAsk): Promise<CheckMintAnswer>;
   /** A need step's credential for one need (issue #1007), after Access and the apply gate, minted where the minting credential is. */
   mintForNeedStep(ask: NeedMintAsk): Promise<NeedMintAnswer>;
+  /** A need box or a check box ended (issue #1371): each Kubernetes token minted for it stops working. Never rejects. */
+  releaseMints(box: string): Promise<void>;
+  /** Unbinds each token a sandbox that ended left bound (issue #1371): at start, then every few minutes. */
+  reconcileMints(): Promise<void>;
   /**
    * A job on a box loaded a skill whose credential its template does not give (issue #583, the skill broker proved who
    * asks): a person is asked — a credential request, opened or joined — or the job is told they declined.
@@ -73,6 +77,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   testMint: (asset, by) => v.testMint(asset, by),
   mintForCheck: (ask) => v.mintForCheck(ask),
   mintForNeedStep: (ask) => v.mintForNeedStep(ask),
+  releaseMints: (box) => v.releaseMints(box), reconcileMints: () => v.reconcileMints(),
   saveTemplate: (t, by) => v.saveTemplate(t, by),
   removeTemplate: (name, by) => v.removeTemplate(name, by),
   approveTemplate: (name, by) => v.approveTemplate(name, by),

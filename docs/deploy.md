@@ -992,9 +992,12 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 - **Kubernetes.** In the cluster, make a service account `hopper-<operation>` (`hopper-read`, `hopper-write`) in
   each namespace a template may reach, and in the namespace `hopper` for a whole cluster; bind each to the role you
   want for that operation (for `hopper-read`, the `view` cluster role). Make an identity whose token may only
-  `create` on `serviceaccounts/token` for those service accounts. In Settings → Vault, set a secret with *Mints for*
+  `create` on `serviceaccounts/token` for those service accounts, and `create` and `delete` on `secrets` in the same
+  namespaces (issue #1371): each token a sandbox gets is bound to an empty Secret the hopper makes, labelled
+  `io.hopper.mint`, and deleting that Secret when the sandbox ends stops the token at once. Without these rights, a
+  sandbox gets no Kubernetes token. In Settings → Vault, set a secret with *Mints for*
   `cluster/<name>` and the value `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`.
-  Each token the hopper mints lives 10 minutes. For read on a whole cluster, this sets up both service accounts in the
+  Each token the hopper mints lives 10 minutes at most, and a sandbox's token ends with its sandbox. For read on a whole cluster, this sets up both service accounts in the
   namespace `hopper` (for a namespace, put `hopper-read` and its binding in that namespace, and let the role below
   reach it there):
 
@@ -1020,7 +1023,9 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   apiVersion: rbac.authorization.k8s.io/v1
   kind: Role
   metadata: { name: hopper-minter, namespace: hopper }
-  rules: [{ apiGroups: [""], resources: [serviceaccounts/token], resourceNames: [hopper-read], verbs: [create] }]
+  rules:
+    - { apiGroups: [""], resources: [serviceaccounts/token], resourceNames: [hopper-read], verbs: [create] }
+    - { apiGroups: [""], resources: [secrets], verbs: [create, delete] }
   ---
   apiVersion: rbac.authorization.k8s.io/v1
   kind: RoleBinding

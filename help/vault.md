@@ -123,6 +123,8 @@ The vault can mint a short-lived credential for one job and one operation profil
 | Kubernetes | `namespace/<cluster>/<ns>` | a TokenRequest token for the service account `hopper-<operation>` in that namespace | 10 minutes |
 | Kubernetes | `cluster/<name>` | the same, in the namespace `hopper` | 10 minutes |
 
+A Kubernetes token minted for a sandbox (a need step, a box step or a read-only check) stops working when its sandbox ends, whatever the outcome. An AWS session cannot be stopped one by one: it works for up to its 15 minutes after its sandbox ends.
+
 The hopper decides *whether* a job gets the credential. The role's IAM policy or the cluster's RBAC decides *what* it can do.
 
 ### Set up a minting credential
@@ -131,7 +133,7 @@ The hopper decides *whether* a job gets the credential. The role's IAM policy or
 2. In **Mints for**, type `aws-account/<account id>` or `cluster/<name>`.
 3. Type the value as JSON:
    - AWS: `{"AccessKeyId": "…", "SecretAccessKey": "…"}`. Optional: `SessionToken`, `Region`, `Endpoint` (an STS other than AWS's), and `SessionName` or `SessionNamePrefix` (below).
-   - Kubernetes: `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`. The token needs only `create` on `serviceaccounts/token`.
+   - Kubernetes: `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`. The token needs `create` on `serviceaccounts/token`, and `create` and `delete` on `secrets` in the same namespace: each token a sandbox gets is bound to a Secret the hopper deletes when the sandbox ends, so the token stops working at once.
 4. In a template, add the operation profile, for example `read` on `aws-role` `123456789012/diag`. Approve it (see [Sandboxes](sandboxes.md)).
 
 A minting credential is never given to a box. No template can list it in its scope.

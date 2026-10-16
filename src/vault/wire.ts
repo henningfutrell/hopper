@@ -67,12 +67,14 @@ export const vaultOps = {
     credential: name,
     target: z.discriminatedUnion('kind', [
       z.strictObject({ kind: z.literal('aws'), mintsFor: mintsFor, roleArn: z.string().max(300), policyArns: z.array(z.string().max(300)).max(10), policy: z.string().max(2048).optional(), durationSeconds: z.number().int().min(900).max(43200) }),
-      z.strictObject({ kind: z.literal('kube'), mintsFor: mintsFor, namespace: z.string().max(253), serviceAccount: z.string().max(253), expirationSeconds: z.number().int().min(600).max(86400) }),
+      z.strictObject({ kind: z.literal('kube'), mintsFor: mintsFor, namespace: z.string().max(253), serviceAccount: z.string().max(253), expirationSeconds: z.number().int().min(600).max(86400), bindTo: z.string().max(253).optional() }),
     ]),
     jobId: z.string().max(64),
     /** A mint test (issue #781): ask STS who the minted session is, at the minting credential's STS. */
     identify: z.boolean().optional(),
   }),
+  /** A sandbox ended (issue #1371): the vault deletes the Secret its token is bound to, with the minting credential that made it. */
+  unbind: z.strictObject({ user, binding: z.strictObject({ credential: name, namespace: z.string().max(253), secret: z.string().max(253) }) }),
   /** A launch's agent credential (issue #708, part 10): the template's checks run here too, then the value crosses back. */
   'agent-credential': z.strictObject({ user, ask: z.strictObject({ template: name, secrets: z.array(name).max(256), box: z.string().max(200) }) }),
   /** A job pod's agent credential (issue #1287): the user's own secret, checked here, then the value crosses back. */

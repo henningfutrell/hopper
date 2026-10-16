@@ -38,6 +38,8 @@ export interface CheckTemplates {
   record(userId: string, name: string, check: ReadOnlyCheck): Promise<void>;
   /** The read credential the check box `check` gets for one read need of the template (issue #797): minted after Access, or why not. */
   credential(userId: string, template: string, check: string, profile: OperationProfile): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
+  /** The check box `check` ended (issue #1371): each token minted for it stops working. Never rejects. */
+  release?(userId: string, check: string): Promise<void>;
   /** Keeps an ended check's report as an artifact (issue #715): its id; undefined when no job asked for the template. */
   report(userId: string, t: Template, check: ReadOnlyCheck): Promise<string | undefined>;
 }
@@ -199,6 +201,8 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
         await templates.record(userId, t.name, artifact ? { ...check, artifact } : check);
         c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}${at.runtime === c.local ? '' : ` on ${at.machine}`}`);
       } finally {
+        // The check box is removed by now, or never started: its credentials end with it (issue #1371).
+        await templates.release?.(userId, name).catch(() => {});
         holds.delete(name);
       }
     }
@@ -213,6 +217,7 @@ interface UserVault {
   vault: {
     recordCheck(name: string, check: ReadOnlyCheck): boolean;
     mintForCheck(ask: { template: string; check: string; profile: OperationProfile }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
+    releaseMints(box: string): Promise<void>;
   };
 }
 
@@ -224,6 +229,7 @@ export const usersTemplates = (all: () => readonly UserVault[]): CheckTemplates 
     const rt = all().find((x) => x.user.id === userId);
     return rt ? rt.vault.mintForCheck({ template, check, profile }) : { refused: `no user ${userId}` };
   },
+  release: async (userId, check) => { await all().find((x) => x.user.id === userId)?.vault.releaseMints(check); },
   report: async (userId, t, check) => {
     const rt = all().find((x) => x.user.id === userId);
     return rt ? keepReport({ artifacts: rt.artifacts, jobs: rt.store.jobs }, t, check) : undefined;

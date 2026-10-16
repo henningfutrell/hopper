@@ -18944,7 +18944,44 @@ Tests: `test/sandbox/need-box.test.ts` (a step past its limit is stopped and rem
 waiting for, as cancelled), `test/sandbox/sandbox-runs.test.ts` (the ledger's `timed-out` and `cancelled` runs, burned;
 at start, a run a stopped hopper left ends as `interrupted` and its box and home are gone).
 
-What is still open is listed in the issue's pull request: credentials that die with their sandbox (a decision, #1394).
+**Part 7 (2026-10-16): a sandbox's credentials end with it** (decision #1394). The acceptance asks that a credential
+issued to a sandbox no longer works once that sandbox is destroyed. Before, a Kubernetes TokenRequest token was bound to
+nothing and worked to its expiry (10 minutes), and an AWS session to its own (15 minutes).
+
+- **Kubernetes: each token is bound to a Secret of its own** (`src/vault/bindings.ts`, a **mint binding**). For a need
+  box (`need-mint.ts`) and a check box (`checks.ts`), the vault names a Secret (`hopper-mint-<uuid>`) in the mint target
+  (`bindTo`). The minter (`minter.ts`) makes it, empty and labelled `io.hopper.mint`, in the service account's namespace,
+  then asks for the token with `boundObjectRef` to it. When the cluster refuses the token, the Secret is deleted at once.
+  The mint's event records the binding (`bound` on `vault.minted` and `vault.check_minted`), and the vault holds it for
+  the sandbox.
+- **The sandbox's end deletes it.** A need step releases its sandbox's bindings (`releaseMints`) after its box is burned,
+  whatever the outcome — it succeeded, failed, timed out, was cancelled, or its run threw —, and also when a later mint
+  of the step is refused or the job drops the step before it runs. The check pass releases a check box's bindings after
+  the box is removed. The minter deletes each Secret (a 404 is no error), the API server refuses the token at once, and
+  `vault.unbound` records it. Through the vault's own container (#586), the delete crosses as the op `unbind`: only that
+  container holds the minting credential.
+- **Reconcile.** An unbind that fails (the cluster is not reachable) is logged and waits. The reconcile pass
+  (`reconcilePass`, each user's runtime) runs at start and every 5 minutes. It reads the last 7 days of mint events and
+  unbinds each binding that no sandbox holds now and no `vault.unbound` ended: one a hopper that stopped mid-step left,
+  or one whose unbind failed.
+- **The minting credential needs more rights.** Its identity needs `create` and `delete` on `secrets` in each namespace
+  where it mints (`docs/deploy.md` "Minting short-lived credentials"). Without them, a sandbox's mint fails and says so.
+  It is no fallback to an unbound token, because that token would outlive its sandbox. Only `create` and `delete`: the
+  hopper names each Secret it made, so it needs no `list` or `get`.
+- **Residual risk: AWS and EKS keep their floor.** STS cannot end one session by itself. The way to do it is a deny
+  policy on `aws:TokenIssueTime` for the role, which needs `iam:PutRolePolicy` and also ends the sessions of other
+  sandboxes that still run. The owner chose not to do that (#1394). So an AWS session minted for a sandbox works for up
+  to 15 minutes after the sandbox is destroyed, and an EKS token (signed with such a session) for up to 14. Both stay at
+  their minimum: `AWS_SESSION_SECONDS` (900, STS's floor) and `EKS_TOKEN_SECONDS` (840).
+- A box job's mint on a machine (`mint.ts`, `createMinting`) and a person's mint test are no sandbox: they bind nothing.
+
+Tests: `test/vault/bound-tokens.test.ts` (against a Kubernetes API double: the token is bound to a labelled Secret, works
+until the Secret is deleted and is refused at once after; a token the cluster refuses leaves no Secret),
+`test/vault/mint-bindings.test.ts` (a release unbinds each of its sandbox's bindings and records it; a failed unbind
+never rejects and the reconcile pass unbinds it; after a restart, the pass unbinds each binding no unbound event ended and
+leaves the bindings of sandboxes that run now; a need step's Kubernetes token is bound, an AWS session is not), and
+`test/sandbox/need-steps.test.ts` (a step that succeeds, fails, times out, is cancelled or throws, a step whose later
+mint is refused, and one the job drops all release their bindings).
 
 ## Kubernetes sandboxes, end to end on kind (issue #1422, 2026-10-15)
 

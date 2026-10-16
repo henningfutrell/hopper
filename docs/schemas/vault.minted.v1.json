@@ -68,6 +68,22 @@
     },
     "principal": {
       "type": "string"
+    },
+    "bound": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "namespace",
+        "secret"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

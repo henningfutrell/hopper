@@ -4,12 +4,14 @@
 // mint (checks.ts): Access is asked as a live job of the template (`decideCheckMint`, recorded with the need box as the
 // check), so only a profile a person or a policy approved for the template is minted. An operation but read goes through
 // the apply gate too (issue #870): no change without an approved, current plan. Each mint is `vault.minted` (the need box
-// as its machine), each refusal `vault.mint_refused`; never a credential.
+// as its machine), each refusal `vault.mint_refused`; never a credential. A Kubernetes token is bound to a Secret of its
+// own (issue #1371), held for the need box until its step ends (bindings.ts).
 import type { UserStore } from '../domain/ports.ts';
 import type { OperationProfile, VaultAccess } from '../domain/access.ts';
 import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
 import { AT_WORK } from './box.ts';
 import { principalOf, type MintFrom, type MintingOptions } from './mint.ts';
+import type { MintBindings } from './bindings.ts';
 
 /** A need box `step` of `template`, run for the job `job`, asks for the credential of one need; `plan`: the approved plan a change applies. */
 export interface NeedMintAsk { template: string; step: string; job: string; profile: OperationProfile; plan?: string }
@@ -22,7 +24,7 @@ export interface NeedMinting {
   mintForNeedStep(ask: NeedMintAsk, from?: MintFrom): Promise<NeedMintAnswer>;
 }
 
-export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; plans?: MintingOptions['plans'] }): NeedMinting {
+export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; plans?: MintingOptions['plans']; bindings?: MintBindings }): NeedMinting {
   const { vault, events } = store;
   return {
     async mintForNeedStep({ template, step, job, profile, plan }, from = o.mintFrom) {
@@ -38,8 +40,10 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       };
       const atWork = (): boolean => AT_WORK.includes(store.jobs.get(job)?.status ?? '');
       if (!atWork()) return refuse('the job is not at work: the vault mints for a step only while its job runs');
-      const target = mintTarget(kind, profile);
-      if (typeof target === 'string') return refuse(target);
+      const named = mintTarget(kind, profile);
+      if (typeof named === 'string') return refuse(named);
+      // A need box's token ends with it (issue #1371): bound to a Secret its step's end deletes.
+      const target = named.kind === 'kube' && o.bindings ? { ...named, bindTo: o.bindings.name() } : named;
       if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
       const decision = await o.access.decideCheckMint({ template, check: step, operation: profile.operation, asset: profile.asset });
       if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
@@ -51,6 +55,8 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
       const made = await from(credential.name, target, job);
       if ('refused' in made) return refuse(made.refused, decision.id);
+      // Held before anything else can end the step: its end releases it, whatever the outcome.
+      if (made.bound) o.bindings?.hold(step, { credential: credential.name, ...made.bound }, job);
       // The minting credential's own service took a while: the job must still be at work.
       if (!atWork()) return refuse('the job is not at work: the vault mints for a step only while its job runs', decision.id);
       const principal = principalOf(target, made);
@@ -63,6 +69,7 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
           data: {
             kind, operation: profile.operation, asset: profile.asset, template, machine: step, job, credential: credential.name, decision: decision.id,
             expiresAt: expiryOf(made.minted), renewal: false, ...(profile.operation !== 'read' && plan ? { plan } : {}), ...(principal ? { principal } : {}),
+            ...(made.bound ? { bound: made.bound } : {}),
           },
         });
       });

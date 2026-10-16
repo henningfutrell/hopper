@@ -16,7 +16,9 @@
 //
 // Recorded on the job's timeline as a Windows step is (`step.started`, `step.finished`, `step.refused`), the need box
 // as its `box`; the result and the outputs are kept an hour for the job to fetch, then swept. The sandbox module keeps
-// each need box in the sandbox runs ledger (issue #1349).
+// each need box in the sandbox runs ledger (issue #1349). However the step ends — it runs, fails, times out or is
+// cancelled, a mint is refused, or the job drops it — its credentials are released then (issue #1371): each Kubernetes
+// token minted for its need box stops working.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -55,6 +57,8 @@ export interface NeedStepsOptions {
   planFile(id: string): Buffer | undefined;
   /** Runs the need box (the sandbox module's `needStep`), `run` naming its job and step for the ledger; absent: this hopper runs no need box. */
   run?: (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal }, run: { jobId: string; step: string; template: string }) => Promise<NeedBoxResult>;
+  /** The step's need box ended (issue #1371): each token minted for it stops working (the vault's `releaseMints`). Never rejects. */
+  release?: (box: string) => Promise<void>;
   /** Where each step's own directory goes on this machine: the hopper's work dir (scratch). */
   dir: string;
   record(event: NewEvent): void;
@@ -94,6 +98,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
   const keepMs = o.keepMs ?? STEP_KEEP_MS;
   const results = new Map<string, { jobId: string; result: StepResult; at: number }>();
   const dirOf = (id: string) => join(o.dir, id);
+  const release = (box: string): Promise<void> => (o.release ? o.release(box).catch((e: unknown) => o.log(`hopper: the credentials of ${box} were not released: ${(e as Error).message}`)) : Promise.resolve());
 
   const refuse = (job: Job, status: number, no: string, box?: string) => {
     o.record({ type: 'step.refused', jobId: job.id, data: { reason: no, ...(box ? { box } : {}) } });
@@ -124,7 +129,10 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     const credentials: NeedCredential[] = [];
     for (const profile of needs) {
       const r = await o.mint({ template: t.name, step: box, job: job.id, profile, ...(fields.plan ? { plan: fields.plan } : {}) });
-      if ('refused' in r) return refuse(job, 403, `${keyOf(profile)}: ${r.refused}`, box);
+      if ('refused' in r) {
+        await release(box);
+        return refuse(job, 403, `${keyOf(profile)}: ${r.refused}`, box);
+      }
       credentials.push({ profile, minted: r.minted, reach: r.reach });
     }
     const dir = dirOf(id);
@@ -136,6 +144,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       id, request, inputsFile: join(dir, 'inputs.tar'),
       drop(reason) {
         credentials.length = 0;
+        void release(box);
         rmSync(dir, { recursive: true, force: true });
         refuse(job, 400, reason, box);
       },
@@ -163,6 +172,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
           masked.end();
           credentials.length = 0;
           rmSync(join(dir, 'inputs.tar'), { force: true });
+          // The need box is burned by now: its credentials end with it.
+          await release(box);
         }
         if (/timed out|did not end/.test(result.problem ?? '')) result = { ...result, problem: `timed out after ${request.timeoutSeconds} s` };
         o.record({ type: 'step.finished', jobId: job.id, data: {

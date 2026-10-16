@@ -11,6 +11,7 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Minted, NewEvent } from '../domain/types.ts';
 import type { CallerIdentity, MintReach } from '../domain/minting.ts';
 import type { MintFrom } from './mint.ts';
+import type { UnbindFrom } from './bindings.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
 import type { ClientTarget, VaultResult, VaultService } from './service.ts';
@@ -66,6 +67,13 @@ export function remoteVault(o: {
     return 'problem' in r ? { refused: r.problem } : r.result;
   };
 
+  // An unbind (issue #1371) crosses the same way: the vault that holds the minting credential deletes the Secret.
+  const unbindFrom: UnbindFrom = async (b) => {
+    if (o.local.view().secrets.find((s) => s.name === b.credential)?.backend) return o.local.unbindFrom(b);
+    const r = await call<{ ok: true } | { refused: string }>('unbind', { binding: b });
+    return 'problem' in r ? { refused: r.problem } : r.result;
+  };
+
   return {
     view: () => {
       const { problem: _noKeyHere, ...view } = o.local.view();
@@ -105,6 +113,7 @@ export function remoteVault(o: {
     testMint: (asset, by) => o.local.testMint(asset, by, mintFrom),
     mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
     mintForNeedStep: (ask) => o.local.mintForNeedStep(ask, mintFrom),
+    releaseMints: (box) => o.local.releaseMints(box, unbindFrom), reconcileMints: () => o.local.reconcileMints(unbindFrom),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),

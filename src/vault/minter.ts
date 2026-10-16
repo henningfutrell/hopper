@@ -2,27 +2,37 @@
 // AssumeRole (and, for a mint test, issue #781, GetCallerIdentity) through the AWS SDK (@aws-sdk/client-sts), the EKS
 // token (issue #854) presigned by the AWS SDK's own signer (@smithy/signature-v4), and the Kubernetes API — a
 // TokenRequest, and for a mint test a SelfSubjectReview and the namespace list —, each one call sent with node's own
-// https and the cluster's CA, since a Kubernetes client library would cost more than the calls. Called only after
-// Access allowed the mint. An error says what the outside service answered, never the minting credential.
+// https and the cluster's CA, since a Kubernetes client library would cost more than the calls. A sandbox's token
+// (issue #1371) is bound to a Secret the minter makes for it, and deleting that Secret ends the token at once. Called
+// only after Access allowed the mint. An error says what the outside service answered, never the minting credential.
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { HttpRequest } from '@smithy/core/protocols';
 import { Hash } from '@smithy/core/serde';
 import { SignatureV4 } from '@smithy/signature-v4';
-import { awsRegionOf, EKS_TOKEN_SECONDS, type AwsMintingCredential } from '../domain/minting.ts';
+import { awsRegionOf, EKS_TOKEN_SECONDS, MINT_BINDING_LABEL, type AwsMintingCredential, type KubeTokenCredential } from '../domain/minting.ts';
 import type { CredentialMinter } from '../domain/ports.ts';
 
 const TIMEOUT_MS = 15_000;
 const ANSWER_MAX = 256 * 1024;
 
-/** Sends `body` (none: a GET) as JSON to `url` with a bearer token; the parsed answer, or an error naming the status. */
-function callJson(url: URL, token: string, body: unknown, ca: string | undefined): Promise<unknown> {
+/** What the Kubernetes API answered when it was not a success: its status, for a caller that takes a 404 as gone. */
+class KubeApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Sends `body` (none: a GET, or `method`) as JSON to `url` with a bearer token; the parsed answer, or an error naming the status. */
+function callJson(url: URL, token: string, body: unknown, ca: string | undefined, method?: 'DELETE'): Promise<unknown> {
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
   const payload = body === undefined ? '' : JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = send(url, {
-      method: body === undefined ? 'GET' : 'POST', timeout: TIMEOUT_MS, ...(ca ? { ca } : {}),
+      method: method ?? (body === undefined ? 'GET' : 'POST'), timeout: TIMEOUT_MS, ...(ca ? { ca } : {}),
       headers: {
         authorization: `Bearer ${token}`, accept: 'application/json',
         ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }),
@@ -37,7 +47,7 @@ function callJson(url: URL, token: string, body: unknown, ca: string | undefined
         const status = res.statusCode ?? 0;
         if (status >= 200 && status < 300 && parsed !== undefined) return resolve(parsed);
         const message = (parsed as { message?: unknown } | undefined)?.message;
-        reject(new Error(`the Kubernetes API answered ${status}${typeof message === 'string' ? `: ${message.slice(0, 300)}` : ''}`));
+        reject(new KubeApiError(`the Kubernetes API answered ${status}${typeof message === 'string' ? `: ${message.slice(0, 300)}` : ''}`, status));
       });
     });
     req.on('timeout', () => req.destroy(new Error(`the Kubernetes API did not answer in ${TIMEOUT_MS / 1000} s`)));
@@ -48,6 +58,25 @@ function callJson(url: URL, token: string, body: unknown, ca: string | undefined
 
 /** A base64 CA as PEM, for node's https. */
 const pemOf = (ca: string | undefined): string | undefined => (ca ? Buffer.from(ca, 'base64').toString('utf8') : undefined);
+
+/** Makes the Secret `name` a sandbox's token is bound to (issue #1371): labelled, empty, and only the hopper's. Its uid. */
+async function makeBinding(credential: KubeTokenCredential, namespace: string, name: string, ca: string | undefined): Promise<{ name: string; uid: string }> {
+  const url = new URL(`/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets`, credential.server);
+  const answer = await callJson(url, credential.token, { apiVersion: 'v1', kind: 'Secret', type: 'Opaque', metadata: { name, labels: { [MINT_BINDING_LABEL]: 'true' } } }, ca)
+    .catch((e: unknown) => { throw new Error(`the Secret ${namespace}/${name} to bind the token to (the minting credential needs create and delete on secrets in ${namespace}): ${(e as Error).message}`, { cause: e }); });
+  const uid = (answer as { metadata?: { uid?: unknown } }).metadata?.uid;
+  if (typeof uid !== 'string') throw new Error(`the Kubernetes API answered no uid for the Secret ${namespace}/${name}`);
+  return { name, uid };
+}
+
+/** Deletes the Secret `name`; one already gone (404) is no error. */
+async function deleteSecret(credential: KubeTokenCredential, namespace: string, name: string, ca: string | undefined): Promise<void> {
+  const url = new URL(`/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets/${encodeURIComponent(name)}`, credential.server);
+  await callJson(url, credential.token, undefined, ca, 'DELETE').catch((e: unknown) => {
+    if (e instanceof KubeApiError && e.status === 404) return;
+    throw e;
+  });
+}
 
 /** STS's host in the region: the China partition has its own domain. */
 const stsHost = (region: string): string => `sts.${region}.${region.startsWith('cn-') ? 'amazonaws.com.cn' : 'amazonaws.com'}`;
@@ -113,12 +142,27 @@ export function createCredentialMinter(): CredentialMinter {
     },
 
     async kubeToken(credential, r) {
+      const ca = pemOf(credential.certificateAuthorityData);
+      // A sandbox's token (issue #1371): bound to a Secret of its own in the service account's namespace.
+      const bound = r.bindTo ? await makeBinding(credential, r.namespace, r.bindTo, ca) : undefined;
       const url = new URL(`/api/v1/namespaces/${encodeURIComponent(r.namespace)}/serviceaccounts/${encodeURIComponent(r.serviceAccount)}/token`, credential.server);
-      const answer = await callJson(url, credential.token, { apiVersion: 'authentication.k8s.io/v1', kind: 'TokenRequest', spec: { expirationSeconds: r.expirationSeconds } }, pemOf(credential.certificateAuthorityData))
-        .catch((e: unknown) => { throw new Error(`a token for ${r.namespace}/${r.serviceAccount}: ${(e as Error).message}`, { cause: e }); });
-      const status = (answer as { status?: { token?: unknown; expirationTimestamp?: unknown } }).status;
-      if (typeof status?.token !== 'string' || typeof status.expirationTimestamp !== 'string') throw new Error(`the Kubernetes API answered no token for ${r.namespace}/${r.serviceAccount}`);
-      return { kind: 'kube', token: status.token, expirationTimestamp: status.expirationTimestamp };
+      const spec = { expirationSeconds: r.expirationSeconds, ...(bound ? { boundObjectRef: { apiVersion: 'v1', kind: 'Secret', name: bound.name, uid: bound.uid } } : {}) };
+      try {
+        const answer = await callJson(url, credential.token, { apiVersion: 'authentication.k8s.io/v1', kind: 'TokenRequest', spec }, ca)
+          .catch((e: unknown) => { throw new Error(`a token for ${r.namespace}/${r.serviceAccount}: ${(e as Error).message}`, { cause: e }); });
+        const status = (answer as { status?: { token?: unknown; expirationTimestamp?: unknown } }).status;
+        if (typeof status?.token !== 'string' || typeof status.expirationTimestamp !== 'string') throw new Error(`the Kubernetes API answered no token for ${r.namespace}/${r.serviceAccount}`);
+        return { kind: 'kube', token: status.token, expirationTimestamp: status.expirationTimestamp };
+      } catch (e) {
+        // No token: its Secret goes too, so no binding is left that nothing records.
+        if (bound) await deleteSecret(credential, r.namespace, bound.name, ca).catch(() => {});
+        throw e;
+      }
+    },
+
+    async kubeUnbind(credential, r) {
+      await deleteSecret(credential, r.namespace, r.secret, pemOf(credential.certificateAuthorityData))
+        .catch((e: unknown) => { throw new Error(`the Secret ${r.namespace}/${r.secret} a token is bound to: ${(e as Error).message}`, { cause: e }); });
     },
 
     eksToken,
