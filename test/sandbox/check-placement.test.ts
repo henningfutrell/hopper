@@ -32,7 +32,7 @@ const clients: ClientTargets = Object.assign(
     if (machine === 'studio') return { relay: relay({ kind: 'podman' }) };
     return undefined;
   },
-  { dialledIn: (userId: string) => (userId === 'u' ? ['away', 'studio'] : []) },
+  { dialledIn: (userId: string) => (userId === 'u' ? ['away', 'studio'] : []), allDialledIn: () => [{ userId: 'u', machine: 'away' }, { userId: 'u', machine: 'studio' }] },
 );
 
 describe('where the read-only check runs (issue #708)', () => {

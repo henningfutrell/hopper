@@ -18882,7 +18882,7 @@ runtime through a machine's relay had no `listVolumes`, so the check pass's home
   name alone is no proof the hopper made it; one already gone answers 404, as before.
 - **Left.** The need box sweep (`sweepSteps`, `service.ts`) still runs only beside the hopper: a need box a client
   target leaked stays there until a later step on that machine. Issue #1349 (#1368) rewrites that sweep and its ledger;
-  the sweep of client targets goes with it.
+  the sweep of client targets goes with it. (Done by #1349 part 3: "Sandboxes are burned after each step".)
 
 Tests: `test/client/runtime.test.ts` (a need box carried under its own label and name, with a wrong name refused; the
 volumes of a label listed; a volume with a home's name and no sandbox label not removed), `test/adapters/remote-runtime.test.ts`
@@ -21949,9 +21949,24 @@ does. The template name is the box a step names, as the step no longer has a con
   box had one. A machine joined as a template's instance gets what the template gives, as before.
 - `GET /api/sandboxes` answers `runs` and `problems` only.
 
-**Not built.** The sweep and the ledger see need boxes beside the hopper; one on a client target is burned by its step
-and noted when that runtime says it is gone, and not swept. A launched box on a client target with no sandbox record is
-not found. A template's `ttlMinutes` and `keepHome` limits are still saved and shown, but no box reads them now.
+**Part 3: the sweeps reach client targets.** Before, the sweep and the burn pass looked beside the hopper, and the burn
+pass also at a client target a sandbox record named: a need box a client target leaked stayed there, its run stayed open,
+and a box an older build launched there with no record was never found.
+
+- **Every client target dialled in** (`ClientTargets.allDialledIn`, `src/users/sandbox-boxes.ts`): each user's client
+  targets whose link is up now. The burn pass looks on each of them and on each one a sandbox record names; the sweep on
+  each of them and on each one an open sandbox run names.
+- **The sweep on a client target** (`sweepPlaces`, `sweepSteps`, `src/sandbox/service.ts`) burns there, through its
+  client, each need box of this hopper and of that target's user that no step holds, with its home, as beside the hopper.
+  Each open run of that user on that target whose box is gone is marked destroyed; one whose step never ended ends as
+  `swept`. It lists only that user's boxes (`io.hopper.user`): another user's client on the same runtime keeps theirs.
+  The sweep of homes (`sweepHomes`) runs there too, for need boxes and for boxes an older build launched.
+- **A target that is away** keeps its boxes, and its runs stay open, until it dials in again; the next sweep then burns
+  them. A run on a client target that is removed for good stays open.
+
+**Not built.** A template's `ttlMinutes` and `keepHome` limits are still saved and shown, but no box reads them now.
+The jobs that wait on template checks or approvals of `asked-…` templates are not changed here. A run on a client target
+removed for good is never closed.
 
 Tests: `test/sandbox/requests.test.ts` (an approval starts nothing), `test/sandbox/need-steps.test.ts` (a box step:
 reads minted, changes with a plan, refusals), `test/sandbox/sandbox-runs.test.ts` (the ledger from start to destroy, a
@@ -21961,7 +21976,9 @@ failed step, a remove that failed and the next sweep, a box left by a hopper tha
 `test/integration/skill-wait-wakes-job.test.ts`. Part 2: `test/integration/launched-boxes.test.ts` (Add machine starts no box;
 boxes launched before are burned, with their homes and records; a box it cannot burn is shown until it goes),
 `test/integration/sandbox-remote.test.ts` (the burn on a client target, through its client; away, then dialled in; the
-client makes no sandbox box), `test/client/runtime.test.ts`, `test/ui/template-limits-view.test.ts`.
+client makes no sandbox box), `test/client/runtime.test.ts`, `test/ui/template-limits-view.test.ts`. Part 3: `test/sandbox/sweep-remote.test.ts` (a need
+box left on a client target burned with its home and its run swept; another user's box stays; away, then dialled in; a
+launched box with no record burned), `test/integration/sandbox-remote.test.ts` (the same through a real client).
 
 ## The source email match (issue #1380, part 4, 2026-10-15)
 

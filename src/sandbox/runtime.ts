@@ -69,6 +69,8 @@ export interface ClientTargets {
   (userId: string, machine: string): { relay: RuntimeRelay } | undefined;
   /** The names of the user's client targets dialled in now. */
   dialledIn(userId: string): string[];
+  /** Every user's client targets dialled in now (issue #1349): where the sweeps look for boxes left there. */
+  allDialledIn(): { userId: string; machine: string }[];
 }
 
 export interface Placements {
