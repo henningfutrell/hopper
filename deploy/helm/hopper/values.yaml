@@ -20,6 +20,9 @@ replicas: 1
 # that is this host's port, so machines that joined a compose hopper at that port dial in to this one (issue #1373).
 service:
   type: ClusterIP
+  # The node port of the Service, with type NodePort or LoadBalancer. Empty: Kubernetes picks one. Set it to reach the
+  # hopper at a fixed port on each node, as kind's extraPortMappings needs (docs/deploy.md "On kind, at a host port").
+  nodePort: ""
 
 # The master key (docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it. The chart never
 # makes it. The first start makes one and shows it once, in the UI. Keep it in a password manager, then put it in this
