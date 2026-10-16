@@ -92,6 +92,21 @@ describe('the work-item reducer', () => {
     expect(own).toMatchObject({ state: 'needs_you' });
   });
 
+  it('a stray pull request merged or closed on GitHub (issue #1420) marks only its own state: its item waits as it did', () => {
+    const handedOff: Parameters<typeof fold>[0] = [['job.queued'], ['job.finished', {}], ['job.pull_request_followed', { pullRequest: PR, part: false }], ['job.queued', {}, j2],
+      ['job.failed', { error: 'tend failed' }, j2], ['handoff.opened', {}, j2]];
+    const merged = fold([...handedOff, ['job.pull_request_merged', { pullRequest: PR, part: false, stray: true }]]);
+    expect(merged).toMatchObject({ state: 'needs_you', waitingOn: 'a hand-off' });
+    expect(merged?.wholeMerged).toBeUndefined();
+    // The item's own pull request: only its state is marked; the item settles as GitHub has it — merged, done; closed, as it was.
+    const followed: Parameters<typeof fold>[0] = [['job.queued'], ['job.finished', {}], ['job.pull_request_followed', { pullRequest: PR, part: false }]];
+    const ownMerged = fold([...followed, ['job.pull_request_merged', { pullRequest: PR, part: false, stray: true }]]);
+    expect(ownMerged).toMatchObject({ state: 'done', pullRequest: PR, pullRequestState: 'merged' });
+    expect(ownMerged?.wholeMerged).toBeUndefined();
+    const ownClosed = fold([...followed, ['job.pull_request_closed', { pullRequest: PR, part: false, stray: true }]]);
+    expect(ownClosed).toMatchObject({ state: fold(followed)?.state, pullRequest: PR, pullRequestState: 'closed' });
+  });
+
   it('a request card waits for approval; declined it is dropped', () => {
     const opened = applyEvent(undefined, ev('source.request_opened', { key: KEY }), KEY);
     expect(opened?.state).toBe('waiting_for_approval');
