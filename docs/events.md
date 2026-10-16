@@ -4214,13 +4214,14 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
 
 ## `job.pull_request_merged`
 
-Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. A part that makes every part the item declares done marks the item done (issue #729). `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI.
+Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. A part that makes every part the item declares done marks the item done (issue #729). `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI. `stray` (issue #1420): no job followed it — a job named it, and no job of its item worked on it — and it was merged on GitHub; it moves no work item, only marks its own pull request merged.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
 | `part` | boolean | yes |
 | `byHopper` | boolean | no |
+| `stray` | boolean | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -4233,7 +4234,7 @@ Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pul
 
 ## `job.pull_request_closed`
 
-Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI. `superseded` (issue #1143): the hopper closed it itself, as nothing was left to land, and why: its issue was closed as completed by another pull request (the item is done, `hopper:done`), or its base branch already has every commit of it. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it —; the close ends no wait of its item.
+Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI. `superseded` (issue #1143): the hopper closed it itself, as nothing was left to land, and why: its issue was closed as completed by another pull request (the item is done, `hopper:done`), or its base branch already has every commit of it. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it —; the close ends no wait of its item. A stray closed on GitHub, with no `superseded`, is recorded too (issue #1420).
 
 | field | type | required |
 |---|---|---|

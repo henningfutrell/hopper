@@ -20491,15 +20491,21 @@ only the batch runner's move from the tested branch reached it.
 
 - In a round of every follow (the reconcile interval), after reconciling, the sync loop gives the source its strays, each
   held by the newest job that names it, once that job's end is reported (`JobSource.housekeepStrays`). The source reads the
-  open pull requests of their repositories in one batch (`openPullRequestsIn`, as reconciling does); one not open is left.
-  For each open one: its item closed as not planned, it is left as it is (as an abandoned follow leaves it); else it is
+  open pull requests of their repositories in one batch (`openPullRequestsIn`, as reconciling does). One not open is read
+  once by its number (issue #1420): merged or closed without a merge on GitHub, it has **ended** (`ended`); open after all
+  (a repository with more open pull requests than one read lists), it is left. For each open one: its item closed as not planned, it is left as it is (as an abandoned follow leaves it); else it is
   closed as superseded by the pull request that closed its issue (never a part), or gets the follow's housekeeping
   (`housekeep` in `follow.ts`, shared with the follow): moved to the landing branch, or closed with its changes on its base.
   Each act says so on the pull request, with the same notes.
 - What the source did is recorded on the job that holds it, with `stray: true`: `job.pull_request_retargeted`, or
-  `job.pull_request_closed` with `superseded`, and that job's `follow: closed`, so it is a stray no more.
+  `job.pull_request_closed` with `superseded`, and that job's `follow: closed`, so it is a stray no more. One that ended on
+  GitHub (issue #1420) is recorded as it ended: `job.pull_request_closed` with no `superseded`, or
+  `job.pull_request_merged`, and that job's `follow: closed` or `follow: merged`. Before, a stray closed on GitHub was left
+  as it was: the job that holds it kept `follow: tended`, and the job graph, which counts a tended pull request as open,
+  showed it open, with merge conflicts and tended, for ever, while Rework said the job follows no open pull request. Now
+  both read the one `follow`, and a stray that ended before is corrected at the first round of every follow after a start.
 - **A stray's close moves no work item.** No job followed it, so its close ends no wait of its item: a hand-off stays a
-  hand-off. Only the item's own pull request's state is marked closed.
+  hand-off. Only the item's own pull request's state is marked closed — or merged, for a stray merged on GitHub.
 - **A stray is never tended.** Each way to a stray is a decision that stands: a person cancelled or rejected the newer job,
   the hopper gave up after a failed tend (part 3 retries a rebase once its base moves), or the cap of retries was used.
   Tending it again would undo that. A person's Tend again, or Run again, still works.
@@ -20515,8 +20521,9 @@ Tests: `test/sources/github-pr-housekeeping.test.ts` (retarget, a stack, no land
 superseded both ways, a part), `test/integration/pull-request-housekeeping.test.ts` (the events and the comments over the
 real daemon, and a rebase held an hour), `test/landing-batches/runner.test.ts` (the batch runner's move and its note),
 `test/store/jobs-lanes.test.ts` (`namesPullRequest`), `test/domain/stray-pull-requests.test.ts` (part 4: which pull
-requests are strays, and which job holds each), `test/domain/work-items.test.ts` (a stray's close moves no item), the strays
-in `test/integration/pull-request-housekeeping.test.ts`, `test/integration/pull-request-retend.test.ts` (part 3: a failed
+requests are strays, and which job holds each), `test/domain/work-items.test.ts` (a stray's close or merge moves no item), the strays
+in `test/integration/pull-request-housekeeping.test.ts` (with issue #1420's: closed or merged on GitHub, and the job graph and
+Rework agree), `test/integration/pull-request-retend.test.ts` (part 3: a failed
 rebase tended again once its base moves, at most three in a row; no mirror, no retry), `test/domain/tend-retries.test.ts`
 (`tendOf`, `tendRetryAt` with a moved base), `test/git-mirror/mirrors.test.ts` (`baseTip`).
 
