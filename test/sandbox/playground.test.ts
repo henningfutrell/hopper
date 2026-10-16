@@ -10,6 +10,7 @@
 //   Scenario: none fits: the create is refused with 429, naming the limit; maxPerUser holds one user only
 //   Scenario: a size over the hopper's max or the template's is refused with 400, and nothing starts
 //   Scenario: a sandbox that does not start leaves nothing, and is shown failed; it holds no room
+//   Scenario: a home volume that is there already is not used, and stays as it is
 //   Scenario: destroy takes one or a selection, and only the user's own
 //   Scenario: a playground sandbox gets no join code: it runs idle, with no secret
 //   Scenario: the sweep never touches a box that is not the playground's
@@ -172,6 +173,20 @@ describe('the sandbox playground', () => {
     expect(p.create('u1', { count: 1, agent: 'claude', size: {} }).started).toHaveLength(1);
     await settled(p);
     expect(rt.boxes.size).toBe(1);
+  });
+
+  it('a home volume that is there already is not used, and stays as it is', async () => {
+    const rt = createFakeContainerRuntime();
+    const id = '0123456789ab-cdef';
+    const fixed = createPlayground({ runtime: rt, noRuntime: 'no runtime', instanceId: 'inst1', network: 'n', limits: PLAYGROUND_LIMITS, clock: { now: () => new Date() }, logger, newId: () => id });
+    await rt.createVolume('hopper-playground-0123456789ab-home', { other: 'x' });
+    fixed.create('u1', { count: 1, agent: 'claude', size: {} });
+    await settled(fixed);
+    const [s] = (await fixed.view('u1')).sandboxes;
+    expect(s).toMatchObject({ state: 'failed' });
+    expect(s!.problem).toMatch(/is there already/);
+    expect([...rt.volumes]).toEqual(['hopper-playground-0123456789ab-home']);
+    expect(rt.boxes.size).toBe(0);
   });
 
   it('destroy takes one or a selection, and only the user\'s own', async () => {
