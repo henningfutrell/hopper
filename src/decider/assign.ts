@@ -394,7 +394,8 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
   const ahead = pl ? ordered.map((c) => c.job).filter((j) => isHigh(j, pl)) : [];
-  const checked: MachineStateWithCredentialHold[] = states.map((s) => ({ ...s, credentialHeld: credentialHeld?.includes(s.machine.id) ?? false }));
+  // The same state objects, not copies: placing a job counts its lane on them, and the lane plan reads them after.
+  const checked: MachineStateWithCredentialHold[] = states.map((s) => Object.assign(s, { credentialHeld: credentialHeld?.includes(s.machine.id) ?? false }));
   for (const { job, effectivePriority, note } of ordered) {
     const ex = job.spec.executor;
     holdFor(checked, ahead, job);
