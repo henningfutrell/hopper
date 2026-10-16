@@ -23,7 +23,7 @@ import { mutationRefusal, sessionIn } from './guard.ts';
 import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
 import { isBoxAction } from './box-actions.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
-import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerHeaderBadgeRoutes } from './header-badges.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts'; import { registerDiskBudgetRoutes } from './disk-budget.ts'; import { registerWindowsLinkRoutes } from './windows-link.ts';
+import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerSandboxPlaygroundRoutes } from './sandbox-playground.ts'; import { registerHeaderBadgeRoutes } from './header-badges.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts'; import { registerDiskBudgetRoutes } from './disk-budget.ts'; import { registerWindowsLinkRoutes } from './windows-link.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
@@ -65,7 +65,8 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   access: Access;
   /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
   artifacts: ArtifactEdge;
-  /** The sandbox boxes the hopper starts (issue #603). */
+  /** The sandbox playground (issue #1410). */
+  playground: Parameters<typeof registerSandboxPlaygroundRoutes>[1]['playground'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -339,7 +340,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
-  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerSandboxPlaygroundRoutes(app, { admin, tenant: o.tenant, playground: o.playground }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the sandbox playground (issue #1410), the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {

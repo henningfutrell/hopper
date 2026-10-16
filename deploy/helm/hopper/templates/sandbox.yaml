@@ -1,6 +1,8 @@
 {{- /*
 Sandbox boxes as pods (issue #1286, docs/deploy.md "Sandbox boxes on Kubernetes"): the Role the Kubernetes runtime
-needs in the release's namespace, and nothing more, bound to the hopper's service account. No ClusterRole.
+needs in the release's namespace, and nothing more, bound to the hopper's service account. No ClusterRole. With
+sandbox.quota.enabled (issue #1410): a PriorityClass every sandbox pod gets, and a ResourceQuota that counts only pods of
+it, so the quota holds the sandbox pods and nothing else of the namespace.
 */ -}}
 {{- if .Values.sandbox.enabled }}
 {{- $name := include "hopper.fullname" . -}}
@@ -32,4 +34,32 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "hopper.serviceAccount" . }}
     namespace: {{ .Release.Namespace }}
+{{- if .Values.sandbox.quota.enabled }}
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ $name }}-sandbox
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+value: 0
+preemptionPolicy: Never
+globalDefault: false
+description: The sandbox pods the hopper starts; the ResourceQuota {{ $name }}-sandbox counts only these.
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ $name }}-sandbox
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  hard:
+    pods: {{ .Values.sandbox.quota.pods | quote }}
+    limits.cpu: {{ .Values.sandbox.quota.cpu | quote }}
+    limits.memory: {{ .Values.sandbox.quota.memory | quote }}
+  scopeSelector:
+    matchExpressions:
+      - { scopeName: PriorityClass, operator: In, values: [{{ printf "%s-sandbox" $name }}] }
+{{- end }}
 {{- end }}

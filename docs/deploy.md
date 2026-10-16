@@ -817,6 +817,7 @@ vault then runs in the hopper, under the master key.
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
 | `sandbox.enabled` | sandbox boxes the hopper starts as pods in the release's namespace ("Sandbox boxes on Kubernetes"). Default off |
+| `sandbox.maxConcurrent`, `sandbox.maxPerUser`, `sandbox.defaults.*`, `sandbox.max.*`, `sandbox.quota.*` | the sandbox playground's limits, and an optional quota on the sandbox pods ("The sandbox playground") |
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `replicas` | `1`, or `0` while nothing may write the database (`hopper-cluster.sh migrate` moves data in so). Never more |
 | `service.type` | `ClusterIP` (the default), `LoadBalancer` or `NodePort`: the hopper's Service, at `port` |
@@ -1402,6 +1403,7 @@ cluster: the kubeconfig).
 |---|---|
 | `HOPPER_KUBERNETES_NAMESPACE` | The namespace the boxes start in. Unset: the hopper's own namespace. |
 | `HOPPER_KUBERNETES_HOPPER_LABELS` | The labels of the hopper's pods, `key=value`, comma-separated. Default `app.kubernetes.io/name=hopper`. A box may reach only pods with these labels in the hopper's namespace, on the hopper's port. |
+| `HOPPER_KUBERNETES_PRIORITY_CLASS` | The PriorityClass every sandbox pod gets, so a ResourceQuota scoped to it holds the sandbox pods alone ("The sandbox playground"). Unset: none. |
 | `HOPPER_LAN_NAMES` | Its first name is the address a box dials: the name of the hopper's Service in that namespace (for example `hopper`). The box's start check proves it from inside the box. |
 
 **With the Helm chart**, set `sandbox.enabled=true`. The chart sets these settings, makes the Role below in the
@@ -1448,6 +1450,45 @@ What is different from Podman:
 - **Steps and copies** go through the API's exec: the box image needs `tar` for a copy (the published one has it).
 
 Leftover box builds are not removed here: the hopper builds none.
+
+### The sandbox playground
+
+The sandbox playground (Machines → **Sandbox playground**, issue #1410) starts many sandboxes at once, on Podman, Docker
+or Kubernetes, beside the hopper. A playground sandbox runs its image idle, with a fresh home, no secret and no join
+code: it is not a machine and takes no lane. It is destroyed with its home (on Kubernetes its pod and its claim) when a
+person destroys it, when its time limit passes, and at the hopper's next start (after a restart or a crash). These
+settings limit it; with the Helm chart set the values (they need `sandbox.enabled=true`), with compose the variables:
+
+| Helm value | Variable | Default | What it does |
+|---|---|---|---|
+| `sandbox.maxConcurrent` | `HOPPER_SANDBOX_MAX_CONCURRENT` | `20` | How many run at once, all users together. Over it a create is refused with 429, naming the limit. `0`: none start |
+| `sandbox.maxPerUser` | `HOPPER_SANDBOX_MAX_PER_USER` | `10` | How many one user runs at once. Over it: 429, naming the limit |
+| `sandbox.defaults.cpus` | `HOPPER_SANDBOX_DEFAULT_CPUS` | `1` | The CPUs of a sandbox when the create and its template name none |
+| `sandbox.defaults.memoryMb` | `HOPPER_SANDBOX_DEFAULT_MEMORY_MB` | `2048` | Its memory, in MiB |
+| `sandbox.defaults.ttlMinutes` | `HOPPER_SANDBOX_DEFAULT_TTL_MINUTES` | `60` | Its time limit, in minutes |
+| `sandbox.max.cpus` | `HOPPER_SANDBOX_MAX_CPUS` | `4` | The most CPUs a create may ask for. More: 400 |
+| `sandbox.max.memoryMb` | `HOPPER_SANDBOX_MAX_MEMORY_MB` | `8192` | The most memory, in MiB |
+| `sandbox.max.ttlMinutes` | `HOPPER_SANDBOX_MAX_TTL_MINUTES` | `1440` | The longest time limit, in minutes |
+| `sandbox.quota.enabled` | `HOPPER_KUBERNETES_PRIORITY_CLASS` | off | A ResourceQuota on the sandbox pods alone (below) |
+| `sandbox.quota.pods`, `.cpu`, `.memory` | | `30`, `"40"`, `80Gi` | The quota's `pods`, `limits.cpu` and `limits.memory` |
+
+A default above its max stops the hopper at start, with the setting named. A template's own limits also hold: a create
+over them is refused with 400.
+
+**The quota** counts every sandbox pod the hopper starts (need boxes, check boxes and playground sandboxes), and nothing else of the
+namespace. A ResourceQuota holds a whole namespace, so the chart makes a PriorityClass, `<release>-sandbox` (value 0, it
+never preempts a pod), the hopper gives it to every sandbox pod, and the quota counts only pods of that class. To make the
+PriorityClass, the account that runs `helm install` needs the right to make one (it is cluster-wide). There is no
+LimitRange: it would also set limits on the hopper, Postgres, OpenFGA and Solr. The hopper sets CPU and memory limits on
+every sandbox pod itself.
+
+```sh
+helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values \
+  --set sandbox.enabled=true --set sandbox.maxConcurrent=50 --set sandbox.maxPerUser=50 \
+  --set sandbox.quota.enabled=true --set sandbox.quota.pods=60
+```
+
+The runtime's NetworkPolicy, `hopper-sandbox`, is one for every sandbox pod, so it stays when the last sandbox goes.
 
 ## Lane pods on Kubernetes
 

@@ -22158,3 +22158,54 @@ vault, not the row; its repositories are read in place of the installations; a r
 keep nothing and delete nothing at GitHub; a token is never deleted at GitHub when replaced or at a disconnect; a 401 ends
 only the connection; GitHub's repository list, every page, grouped by owner) and `test/ui/personal-access-token-view.test.ts`
 (the token field connects and is cleared; a token connection lists the repositories the token reaches, with no app link).
+
+## The sandbox playground (issue #1410, 2026-10-15)
+
+Owner direction: a hopper, on Kubernetes (kind and the Helm chart) or on Podman, is a playground where a person starts
+many sandboxes at once. Before, the only direct path was Add machine → a sandbox box: one box per click, and each box
+joined as a machine, against issue #1371 (a sandbox is no machine and takes no lane). Issue #1349 removed that path. And
+nothing limited how many ran at once.
+
+- **The playground** (`src/sandbox/playground.ts`). One create starts `count` **playground sandboxes**: the published box
+  image of an agent, or the approved image of a template (its read-only check passed, its tools added as for a box), on
+  the runtime the hopper selected, beside the hopper only. Each runs its image idle (`exec sleep infinity`, a one-shot
+  container, never restarted), with the sandbox flags, on a fresh home made for it (`staleHome` refuses one that is there),
+  with no secret, no join code and no start check. No join code is minted, so it never joins: it is no client target,
+  takes no lane, gets no job, and `GET /api/machines` does not list it.
+- **Limits** are the hopper's settings, and the chart's values (`sandbox.maxConcurrent`, `sandbox.maxPerUser`,
+  `sandbox.defaults.*`, `sandbox.max.*`): `HOPPER_SANDBOX_MAX_CONCURRENT` (all users together, default 20),
+  `HOPPER_SANDBOX_MAX_PER_USER` (default 10), and the default and most CPUs, memory and time limit of one
+  (`HOPPER_SANDBOX_DEFAULT_*`, `HOPPER_SANDBOX_MAX_*`; defaults 1 CPU, 2048 MiB, 60 minutes; most 4, 8192, 1440). A
+  default above its max stops the daemon at start. A size is the create's, else its template's default, else the
+  hopper's; over the hopper's max or the template's it is refused with 400, naming the limit. A count over the room the
+  two counts leave starts what fits and answers `refused: { count, limit, setting, reason }`; none fits: 429 with
+  `limit` and `setting`. The room is counted and taken in one synchronous step before any start, so two creates at once
+  never pass a limit. A sandbox that failed holds no room.
+- **Nothing is left, nothing is reused.** The playground keeps its sandboxes in memory only. A start that fails, or a
+  destroy while one starts, removes what the start made (container, then home), and only then forgets it; a remove that
+  fails keeps it `destroying`, with why, and the pass every 10 s tries again. The pass also destroys each sandbox past
+  its time limit, and removes every container and volume with the playground label of this instance
+  (`io.hopper.playground=<instance id>`, a **sandbox label**, so the adapters' own label check lets it go) that no
+  sandbox in memory holds. At start the hopper runs the pass first: whatever a restart or a crash left goes then. On
+  Kubernetes a sandbox is a pod and a claim; the runtime's one NetworkPolicy (`hopper-sandbox`) holds every sandbox pod
+  and is shared, so it stays: deleting it while another box starts would leave that box a moment with no egress policy.
+- **A quota for the sandbox pods only** (chart: `sandbox.quota.enabled`). A ResourceQuota is the namespace's, and the
+  hopper's own pods are in the same namespace. So the chart makes a PriorityClass `<release>-sandbox` (value 0, never
+  preempts), gives its name to the hopper (`HOPPER_KUBERNETES_PRIORITY_CLASS`), the Kubernetes runtime sets it on every
+  sandbox pod (need and check boxes, playground sandboxes), and the ResourceQuota counts only pods of that
+  class (`scopeSelector`): `pods`, `limits.cpu`, `limits.memory`. Every sandbox pod has CPU and memory limits, so the
+  quota admits it. No LimitRange: it cannot be scoped, so it would also set limits on the hopper, Postgres, OpenFGA and
+  Solr.
+- **Routes.** `GET /api/sandbox-playground` (the user's sandboxes, how many run, the limits), `POST
+  /ui/api/sandbox-playground` (admin, a box action: it starts containers), `POST /ui/api/sandbox-playground/destroy`
+  (admin; `ids` or `all: true`, only the user's own). The UI: the **Sandbox playground** panel on Machines.
+
+Residual risk: the playground starts containers on the hopper's runtime, as a job's box step does; a person with the admin
+role can start up to the limits. A sandbox on Podman joins the hopper's network, as a need box does.
+
+Tests: `test/sandbox/playground.test.ts` (50 with `maxConcurrent` 20 start 20 and refuse 30 naming the limit, destroy-all
+leaves no pod or claim; the time limit; a restart removes what was left, and nothing else; the limits per user; sizes;
+a failed start leaves nothing), `test/integration/sandbox-playground.test.ts` (over the API: 429 naming the limit; none is
+in the machines list or its config, and no join code waits; a restart), `test/scripts/helm-chart-sandbox.test.ts` (the
+values and the quota), `test/integration/config.test.ts`, `test/sandbox/kubernetes.test.ts` (the PriorityClass),
+`test/ui/sandbox-playground.test.ts`.

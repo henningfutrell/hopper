@@ -226,3 +226,6 @@ export interface JobMachineLink {
    */
   linkLost?: { machine: string; since: string; failsAt: string };
 }
+
+/** The sandbox playground's shapes (issue #1410): no machine, but shown on Machines. */
+export type { PlaygroundLimits, PlaygroundSandbox, PlaygroundSize, PlaygroundState, PlaygroundView } from './sandbox-playground.ts';
