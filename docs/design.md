@@ -21654,9 +21654,19 @@ said what did not hold the loop, never what did.
   resolution: `mean`, `p50`, `p99`, `max` in ms) and its use (`eventLoopUtilization`, 0..1). The minute going on is
   answered in place of the last one when it held the loop longer, so a stall shows at once. Memory growth and a slow
   loop show here before they are a stall, with no container runtime to ask (`podman stats`).
+- **The heap-growth check** (`test/reliability/heap-growth.test.ts`, part 5). It runs locally, never as a pull request
+  check: it takes minutes, and a heap bound is a reading of the machine. `HOPPER_HEAP_CHECK=1` runs it; the file is
+  skipped without it. It drives one real hopper idle for 30 s, then busy: 3 rounds of warm-up and 12 measured rounds
+  (`HOPPER_HEAP_CHECK_ROUNDS`, `HOPPER_HEAP_CHECK_IDLE_MS`), each a GitHub sync, an intake action the outbox sends, 10
+  jobs to their end, 5 event-stream readers that come and go, and 5 checkpoints that fail (`git could not read the work
+  tree`). It reads the heap used after a forced garbage collection (`gc`, exposed in the test process only) and checks
+  it grows less than 8 MiB idle and 24 MiB busy after the warm-up. Each reading is logged (`heap check: …`). First run
+  (2026-10-15): idle 139.2 → 140.8 MiB; busy 144.7 → 145.8 MiB over 12 rounds, with no growth trend. So none of the
+  activity it drives holds memory with no bound. The same run stalled the loop for 3 to 9 s from about 150 jobs, each
+  stall hundreds of `SELECT jobs` calls: issue #1411.
 - **Not done here.** No other code is moved off the loop: the cause found (the waits, part 3) was in the loop's own work,
-  not code that needs a thread. A heap-growth check run locally (an idle and a busy hopper driven for a time, the heap
-  read after a forced garbage collection) and the smaller collections with no bound (issue #1402) are left.
+  not code that needs a thread. Left: the smaller collections with no bound (issue #1402) and the reads of `jobs` in a
+  busy hopper (issue #1411).
 
 **Verification:** `test/http/event-loop.test.ts` (a stall names the code the loop ran while held, from the real worker;
 `heldSince`, a stall going on included; the memory line once per GiB; `frameOf` never an absolute path),
@@ -21668,7 +21678,8 @@ stream its reader closed is no longer in flight), `test/github-proxy/pr-wait.tes
 hear a user's event log once, however often they are answered again), `test/http/event-loop.test.ts` part 4 (the health
 port answers 200 while the beat is fresh and 503 with the held time while another process asks it with this one held; a
 host that is not loopback 421, another path 404; no port, no listener; the process reading's memory and loop delay, and a
-held loop in its `max`), `test/integration/config.test.ts` (`HOPPER_HEALTH_PORT`).
+held loop in its `max`), `test/integration/config.test.ts` (`HOPPER_HEALTH_PORT`), `test/reliability/heap-growth.test.ts`
+(part 5, local only: the heap of an idle and a busy hopper stays in a bound).
 
 ## Local accounts (issue #1380, part 1, 2026-10-15)
 
