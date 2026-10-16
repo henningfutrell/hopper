@@ -30,7 +30,9 @@ beforeAll(() => {
   // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
   delete process.env.HOPPER_URL;
 });
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+// A process a test started (the stand-in podman's socket service, a fake agent) can still write in dir as it ends:
+// retry a removal that finds the dir not empty (ENOTEMPTY).
+afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 beforeEach(() => {
   delete process.env.FAKE_CURSOR_MODE;
   delete process.env.FAKE_CURSOR_REPLIES;
