@@ -5,6 +5,9 @@
 //   POST /ui/auth/none                    → a no-sign-in session (exact UI Origin)
 //   POST /ui/auth/password                ← { username, password }, tried against the local accounts, then the
 //                                           LDAP realms in order → a session (exact UI Origin)
+//   POST /ui/auth/passkey/options         → { flow, options }: a passkey sign-in's challenge (issue #1380)
+//   POST /ui/auth/passkey                 ← { flow, response }: the passkey's answer, checked → a session of its local
+//                                           account (exact UI Origin)
 //   POST /ui/auth/gateway                 ← the token an auth gateway forwards, checked by the gateway
 //                                           realms in order → a session (exact UI Origin)
 //   POST /ui/auth/<name>/device           ← { binding }: a GitHub realm's device code (issue #214)
@@ -19,6 +22,8 @@
 import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { accountIdentity } from '../../auth/local-accounts.ts';
+import { relyingParty, type Passkeys } from '../../auth/passkeys.ts';
 import { isSuperAdmin, LOCAL_IDENTITY, NO_SIGN_IN_IDENTITY, SignInRefused, type SignIn } from '../../auth/index.ts';
 import type { Clock, Connection, InstanceStore } from '../../domain/ports.ts';
 import type { Identity, UiRole, User } from '../../domain/types.ts';
@@ -42,6 +47,7 @@ export const startQuery = z.object({ binding: z.string().optional() });
 export const completeBody = z.object({ ticket: z.string(), binding: z.string() });
 export const loginBody = z.object({ code: z.string() });
 export const passwordBody = z.object({ username: z.string().max(320), password: z.string().max(1024) });
+export const passkeySignInBody = z.object({ flow: z.string().max(128), response: z.record(z.string(), z.unknown()) });
 export const deviceStartBody = z.object({ binding: z.string().max(128) });
 export const devicePollBody = z.object({ flow: z.string().max(128), binding: z.string().max(128) });
 
@@ -102,6 +108,8 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   isUiOrigin: (origin: string) => boolean;
   refuse: (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => unknown;
   caller: CallerOf;
+  /** The local accounts' passkeys (issue #1380). */
+  passkeys: Passkeys;
 }): void {
   parent.register(async (app) => {
     await app.register(rateLimit, signInLimit(o.caller));
@@ -159,6 +167,23 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
       return reply.code(r.status).send({ error: r.error });
     }
     return started(reply, r.who, r.role);
+  });
+
+  // A passkey (issue #1380, design.md "Passkeys for local accounts"): the challenge for this UI origin's host name, then
+  // the passkey's answer to it. Its account signs in, with the account's role now. The exact Origin is the one the
+  // passkey signed, so no other site gets the answer checked here.
+  app.post('/ui/auth/passkey/options', async (req, reply) => {
+    if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
+    if (!o.passkeys.any()) return o.refuse(req, reply, 'no local account has a passkey');
+    return reply.header('cache-control', 'no-store').send(await o.passkeys.signInOptions(relyingParty(req.headers.origin!.toLowerCase())));
+  });
+
+  app.post('/ui/auth/passkey', async (req, reply) => {
+    if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
+    const { flow, response } = parseWith(passkeySignInBody, req.body);
+    const r = await o.passkeys.signIn(flow, relyingParty(req.headers.origin!.toLowerCase()), response);
+    if (!r.ok) return o.refuse(req, reply, r.error);
+    return started(reply, accountIdentity(r.account), r.account.role);
   });
 
   // The credential is the token the auth gateway adds to the request; the exact Origin keeps another site

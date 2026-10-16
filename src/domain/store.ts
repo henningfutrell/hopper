@@ -536,6 +536,8 @@ export interface InstanceStore {
   users: UserRepository;
   /** The identity links; the local accounts (issue #1380): the hopper's own email and password sign-in. */
   identities: IdentityLinks; localAccounts: import('./local-accounts.ts').LocalAccountRepository;
+  /** The local accounts' passkeys (issue #1380). */
+  localAccountPasskeys: import('./local-accounts.ts').LocalAccountPasskeyRepository;
   /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
   uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;

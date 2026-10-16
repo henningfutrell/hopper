@@ -210,9 +210,15 @@ export type RealmsEdit = { version: string } & (
 
 /**
  * One local account as Settings → Sign-in shows it (GET /api/local-accounts, issue #1380): never its hash. `user`: the
- * user it signs in as, once it has signed in.
+ * user it signs in as, once it has signed in; `passkeys`: how many passkeys it has.
  */
-export interface LocalAccountView { email: string; role: UiRole; createdAt: string; user?: string }
+export interface LocalAccountView { email: string; role: UiRole; createdAt: string; user?: string; passkeys: number }
+
+/** One of your passkeys (GET /api/local-accounts/passkeys, issue #1380): never its key. `rpId`: the host name it signs in at. */
+export interface PasskeyView { id: string; name: string; rpId: string; createdAt: string; lastUsedAt?: string }
+
+/** GET /api/local-accounts/passkeys: the passkeys of the local account the session signed in with. */
+export interface PasskeysView { passkeys: PasskeyView[] }
 
 /** GET /api/local-accounts (instance admin): every local account, by email. */
 export interface LocalAccountsView { accounts: LocalAccountView[] }
@@ -237,6 +243,8 @@ export interface SessionView {
     none: UiRole | null;
     /** Password sign-in (POST /ui/auth/password) is on: an LDAP realm is. */
     password: boolean;
+    /** A local account has a passkey (issue #1380): POST /ui/auth/passkey/options, then POST /ui/auth/passkey. */
+    passkeys: boolean;
     /** A gateway realm is on: POST /ui/auth/gateway turns the token the auth gateway forwards into a session. */
     gateway: boolean;
     /** The origin an OIDC, GitHub or SAML sign-in starts and ends on (HOPPER_PUBLIC_URL, else http://localhost:<port>). */

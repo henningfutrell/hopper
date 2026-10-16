@@ -28,7 +28,7 @@ export interface LocalAccountsAdmin {
 const NOT_YOURS = 'signs in as another user: only that user sets its password (an admin runs the hopper, never another user\'s work)';
 
 export function createLocalAccountsAdmin(o: {
-  instance: Pick<InstanceStore, 'localAccounts' | 'identities' | 'users'>;
+  instance: Pick<InstanceStore, 'localAccounts' | 'localAccountPasskeys' | 'identities' | 'users'>;
   signIn: Pick<SignIn, 'roleOf'>; sessions: UiSessions; grants: Pick<ApiGrants, 'reconcile'>; clock: Clock;
 }): LocalAccountsAdmin {
   const accounts = o.instance.localAccounts;
@@ -38,7 +38,7 @@ export function createLocalAccountsAdmin(o: {
     accounts: accounts.list().map((a) => {
       const id = userOf(a.email);
       const user = id === undefined ? undefined : o.instance.users.get(id)?.name ?? id;
-      return { email: a.email, role: a.role, createdAt: a.createdAt, ...(user ? { user } : {}) };
+      return { email: a.email, role: a.role, createdAt: a.createdAt, ...(user ? { user } : {}), passkeys: o.instance.localAccountPasskeys.list(a.email).length };
     }),
   });
   const own = (actor: Identity, email: string): boolean => actor.realm === LOCAL_ACCOUNTS_REALM && actor.subject === email;

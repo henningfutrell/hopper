@@ -22451,3 +22451,67 @@ name; an address cut to its local part), `test/promotions/promotion.test.ts` (a 
 without it), `test/direct-jobs/item.test.ts` (the job is told its submitter without an email), and
 `test/integration/email-attribution.test.ts` (a setting changed by an OIDC user is recorded by their verified email; one
 whose email the realm does not vouch for, by the name it gave).
+
+## Passkeys for local accounts (issue #1380, part 11, 2026-10-16)
+
+Owner decision 3 on issue #1380: local users sign in with an email and a password **or a passkey**. Part 1 built the
+password. This part adds the passkey: a WebAuthn credential a local account adds, which then signs it in in place of its
+password.
+
+**The change.**
+- **The WebAuthn checks are an established library's** (`@simplewebauthn/server`, its browser half
+  `@simplewebauthn/browser` in the UI): the challenge, the origin, the RP ID hash, user presence and user verification,
+  the attestation and the assertion's signature. `src/auth/passkeys.ts` keeps only the ceremonies and the rules around
+  them. No hand-rolled WebAuthn code (AGENTS.md "Sign-in fails closed").
+- **The relying party is the UI origin's host name.** The browser's Origin must be a UI origin (loopback, a LAN name, the
+  public URL); its host name is the RP ID. A passkey keeps the host name it was added at (`rp_id`) and signs in there
+  only: browsers bind a passkey to it anyway, and the check makes the rule the hopper's too. A passkey added at
+  `localhost` does not sign in at the public URL; the person adds one there as well.
+- **Each challenge is used once, by its own ceremony.** A registration's challenge is the session's (keyed by its
+  token); a sign-in's is the `flow` id its options answered. Both are kept in memory for 5 minutes, at most 1000 at a
+  time, and taken out at the first answer whether it holds or not. A restart drops them: the person starts again.
+- **User verification is required and the credential is discoverable.** The passkey stands in for the password, so the
+  device must prove the person (a PIN or a biometric), not only a touch. The sign-in asks for no email: the passkey names
+  its account, and the hopper looks it up by its credential id.
+- **What is kept**: `local_account_passkeys` (instance migration 44): the credential id, the account's email (a foreign
+  key: removing the account removes its passkeys), the RP ID, the COSE public key, the signature counter, the
+  transports, a name, when it was added and last used. No secret: a public key verifies, it cannot sign.
+- **The role is the account's own, now.** A passkey sign-in is the account's sign-in: the identity `local-accounts` /
+  the email, as the password's, so the same user, the same role, and every rule of part 1 (a removed account signs
+  nobody in; a role change applies at once).
+- **Routes.** `POST /ui/auth/passkey/options` and `POST /ui/auth/passkey` (the sign-in routes' rate limit, an exact UI
+  Origin); `GET /api/local-accounts/passkeys`, `POST /ui/api/local-accounts/passkeys/options`,
+  `POST /ui/api/local-accounts/passkeys` and `POST /ui/api/local-accounts/passkeys/remove` (a session of a local account,
+  role viewer, its own passkeys only: 409 for a session of another realm). The session view's `signIn.passkeys` says
+  whether any account has one: the landing page offers "Sign in with a passkey" then.
+- **UI.** The landing page: "Sign in with a passkey" under the password form. Settings → Sign-in → Your passkeys: the
+  session's passkeys (name, host name, added, last used), Add passkey with a name, and Remove. Settings → Sign-in →
+  Local accounts shows each account's passkey count.
+
+**Decisions:**
+- **`@simplewebauthn/server`**: the WebAuthn library for Node with the longest release history and active upkeep; it
+  needs no native code. Writing the checks here would mean owning CBOR, COSE and attestation parsing alone.
+- **Attestation `none`.** The hopper trusts the person who signed in to add a passkey, not a device maker; an
+  attestation check would refuse common authenticators and add nothing for a personal hopper.
+- **Only the account's own session adds or removes its passkeys.** An admin never gets a way into another user's work
+  (issue #221): an admin cannot add a passkey to another account. An admin who removes the account removes its passkeys.
+- **A passkey is an addition, not a replacement.** The account keeps its password. A password change does not remove
+  passkeys, and a passkey change ends no session.
+- **The landing page offers a passkey only while one exists** (`signIn.passkeys`). It says one bit — some account has a
+  passkey — to whoever reaches the landing page, the same reach as the password form.
+
+**Residual risk.** The ceremonies are kept in memory: someone who reaches the sign-in routes can start up to the rate limit
+(20 a minute per caller) of them; the cap of 1000 drops the oldest first, so a flood can make a person's own sign-in start
+again. WebAuthn needs a secure context: a browser on plain HTTP at a LAN name offers no passkey (loopback and the HTTPS
+public URL do).
+
+**Left for later** (a follow-up issue): more than one GitHub source per user, and sources from other forges (GitLab).
+The issue named them as later work.
+
+**Verification:** `test/auth/passkeys.test.ts` (the relying party; the options; add, then sign in; the counter; a challenge
+used once; another origin, another RP ID, no user verification or another challenge refused; another host name refused;
+an unknown, removed, or removed account's passkey refused; a registration challenge is its session's, and a passkey is not
+added twice) with a fake authenticator (`test/support/fake-authenticator.ts`, an EC P-256 key);
+`test/integration/passkeys.test.ts` (a realm-only hopper end to end; another origin refused; an account's own passkeys
+only; the account's removal removes them; a session of another realm adds none; the role now);
+`test/ui/passkeys-panel.test.ts` (Settings and the landing page).

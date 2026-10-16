@@ -83,8 +83,8 @@ describe('a realm-only hopper: no GitHub, no identity provider (issue #1380)', (
     expect(o.app.app.instance.users.list()).toHaveLength(2);
     const view = await accounts(o, admin);
     expect(view.accounts).toEqual([
-      { email: 'ada@example.com', role: 'admin', createdAt: expect.any(String), user: expect.any(String) },
-      { email: 'bea@example.com', role: 'operator', createdAt: expect.any(String), user: expect.any(String) },
+      { email: 'ada@example.com', role: 'admin', createdAt: expect.any(String), user: expect.any(String), passkeys: 0 },
+      { email: 'bea@example.com', role: 'operator', createdAt: expect.any(String), user: expect.any(String), passkeys: 0 },
     ]);
     expect(JSON.stringify(view)).not.toMatch(/scrypt|passwordHash/);
     // Not for a viewer or operator: the instance admin's only.

@@ -20,7 +20,7 @@ import { createApiGrantRepository } from './api-grants.ts';
 import { createUiSessionRepository } from './ui-sessions.ts';
 import { openUserStore, schemaUrl } from './user-store.ts';
 import { createIdentityLinks, createUserRepository } from './users.ts';
-import { createLocalAccountRepository } from './local-accounts.ts';
+import { createLocalAccountPasskeyRepository, createLocalAccountRepository } from './local-accounts.ts';
 import { createVaultRepository } from './vault.ts';
 import { createDatabaseStats } from './database-stats.ts';
 import { createStackHistoryRepository } from './stack-history.ts';
@@ -52,6 +52,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     users: createUserRepository(ctx, (user) => userStore(user).close(), schemaOf),
     identities: createIdentityLinks(ctx),
     localAccounts: createLocalAccountRepository(ctx),
+    localAccountPasskeys: createLocalAccountPasskeyRepository(ctx),
     uiSessions: createUiSessionRepository(ctx),
     apiGrants: createApiGrantRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),

@@ -1,0 +1,1 @@
+- A local account can now sign in with a passkey in place of its password: add one in Settings → Sign-in → Your passkeys, then use Sign in with a passkey.

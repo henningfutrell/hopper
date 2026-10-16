@@ -1,5 +1,5 @@
 // Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per GitHub realm, per OIDC or SAML realm (the sign-in config), an email or
-// username and password form while there is a local account (issue #1380) or an LDAP realm is on, and continuing without sign-in while `none` is on. The
+// username and password form while there is a local account (issue #1380) or an LDAP realm is on, a passkey while a local account has one, and continuing without sign-in while `none` is on. The
 // login code is not offered here (issue #247): its device link signs a browser in by itself (main.tsx).
 // GitHub (issues #214, #258): to GitHub and back in this browser when the hopper can (`redirect`, on the
 // sign-in origin), else the device code; the code stays a link away. The sign-in card over a backdrop
@@ -9,14 +9,14 @@
 // Design: design.md "Sign-in: realms", "Reaching
 // the UI across the LAN". Nothing of the app — navigation, views, notices — and no read but the
 // session's until someone signs in (issues #167, #213).
-import { AlertTriangle, ArrowRight, KeyRound, LogIn } from 'lucide-react';
+import { AlertTriangle, ArrowRight, FingerprintPattern, KeyRound, LogIn } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { DeviceCode } from '@/components/device-code';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { beginDeviceSignIn, beginSignIn, pollDeviceSignIn, signInThroughGateway, signInWithPassword, signInWithoutCredential, type DeviceSignIn } from '@/lib/login';
+import { beginDeviceSignIn, beginSignIn, pollDeviceSignIn, signInThroughGateway, signInWithPasskey, signInWithPassword, signInWithoutCredential, type DeviceSignIn } from '@/lib/login';
 import type { SessionView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { Backdrop, HEADLINE, KICKER, LEAD, StorySteps } from './story.ts';
@@ -36,6 +36,15 @@ const GitHubMark = () => (
     <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.37A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
   </svg>
 );
+
+/** A local account's passkey (issue #1380): no email asked, the passkey names its account. */
+function PasskeySignIn() {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button variant="outline" className="h-10 w-full" disabled={busy}
+      onClick={() => { setBusy(true); void signInWithPasskey().then((e) => { setBusy(false); finish(e); }); }}><FingerprintPattern />Sign in with a passkey</Button>
+  );
+}
 
 function PasswordSignIn() {
   const [username, setUsername] = useState('');
@@ -131,7 +140,7 @@ function SignInOptions({ signIn, onCode }: { signIn: Offer; onCode: (realm: Devi
       </div>,
     );
   }
-  if (signIn.password) groups.push(<PasswordSignIn key="password" />);
+  if (signIn.password) groups.push(<div key="password" className="flex w-full flex-col gap-2"><PasswordSignIn />{signIn.passkeys && <PasskeySignIn />}</div>);
   if (signIn.none) {
     groups.push(<Button key="none" variant="ghost" className="h-10 w-full" onClick={() => void signInWithoutCredential().then(finish)}>Continue as {signIn.none}<ArrowRight /></Button>);
   }
