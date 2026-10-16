@@ -18945,14 +18945,16 @@ when it restarts. It asserts behaviour and order only; no timing budget runs on 
   master key again (`scripts/kind-check.ts`, issue #1406).
 - **The sandbox check adds three cases** (`scripts/kind-sandbox-cases.ts`, run by `scripts/kind-sandbox-check.ts`
   before the kill and restart of #1371): the limits, as the box's cgroup holds them, and a box over its memory killed
-  and reported; isolation, a box that reaches the hopper alone of another box and every Service of the release, with
+  and reported; isolation, a box that reaches the hopper and not another box, a Service of the release, its node or the API server, with
   no service account token and its credential only in its file; and many at once, dozens of need steps through the
   sandbox module (`createSandboxes`, as the hopper runs them), more than the nodes have room for, so some wait for
   the scheduler, each with its own output, then nothing left, no open run in the ledger, no problem, no box a lane pod
   or with a client's link. A box's CPU and memory limits are its requests too, so "queued, not failed" is the
   scheduler's: a pod with no room is pending until room comes, within the 15 minutes `start` waits.
-- **What is not asserted.** A pod always reaches its own node, and on kind the API server runs there: the check prints
-  what a box reaches of the node and the API server, and asserts only that it holds no token. The hopper's memory
+- **The node and the API server too.** On kind a box reaches neither its node nor the API server on it: kind's network
+  plugin holds a pod off its node, and the check asserts it. Not every plugin does ("Egress" in docs/deploy.md), so
+  `--node-reach` makes those two probes said, not asserted, on such a cluster.
+- **What is not asserted.** The hopper's memory
   before and after the burst is printed, never asserted: load numbers run locally. The steps run through the sandbox
   module in the check's own process, not through a job of the hopper: a job needs a GitHub sign-in, which no check has.
 - **The workflow runs on every sandbox change**: `src/sandbox/**`, `src/domain/sandboxes.ts`,

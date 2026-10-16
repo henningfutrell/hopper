@@ -16,10 +16,11 @@
 // module's ledger holds no open run after. The hopper's memory before and after the burst is printed, never asserted:
 // load numbers run locally.
 //
-//   node scripts/kind-sandbox-check.ts [--context CONTEXT] [--namespace NAMESPACE] [--image IMAGE]
+//   node scripts/kind-sandbox-check.ts [--context CONTEXT] [--namespace NAMESPACE] [--image IMAGE] [--node-reach]
 //
 // --context names the kube context (default kind-hopper-check), --namespace the release's (default hopper), --image the
-// boxes' image (default busybox: any image with sh, tar and base64). Exit 0 when the check passes, 1 when not.
+// boxes' image (default busybox: any image with sh, tar and base64), and --node-reach, on a cluster whose network
+// plugin lets a pod reach its own node, says what a box reaches there and the API server instead of failing on it. Exit 0 when the check passes, 1 when not.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -91,7 +92,7 @@ async function oneBox(o: { runtime: ContainerRuntime; k: Kubectl; image: string;
 const exits = (code: number) => (r: NeedBoxResult): string | null => (r.exit === code && !r.problem ? null : `it should end with exit ${code}`);
 const problem = (text: string) => (r: NeedBoxResult): string | null => (r.exit === 125 && r.problem?.includes(text) ? null : `it should end with "${text}"`);
 /** The check. Answers what failed, or null. */
-export async function check(context: string, namespace: string, image: string): Promise<string | null> {
+export async function check(context: string, namespace: string, image: string, nodeReach = false): Promise<string | null> {
   const k: Kubectl = (args) => kubectl(context, ['--namespace', namespace, ...args]);
   const deployment = JSON.parse(must(k, ['get', 'deployment', 'hopper', '-o', 'json'])) as {
     spec: { selector: { matchLabels: Record<string, string> }; template: { spec: { serviceAccountName?: string; containers: { name: string; env?: { name: string; value?: string }[] }[] } } };
@@ -143,7 +144,7 @@ export async function check(context: string, namespace: string, image: string): 
     const together = pair.find((f) => f !== null);
     if (together) return together;
 
-    const reach = await isolation({ ...box, namespace, hopperService: 'hopper' });
+    const reach = await isolation({ ...box, namespace, hopperService: 'hopper', nodeReach });
     if (reach) return reach;
     const many = await burst({ ...box, limits, context, namespace });
     if (many) return many;
@@ -226,11 +227,12 @@ if (import.meta.main) {
       context: { type: 'string', default: 'kind-hopper-check' },
       namespace: { type: 'string', default: 'hopper' },
       image: { type: 'string', default: 'docker.io/library/busybox:1.37' },
+      'node-reach': { type: 'boolean', default: false },
     },
   });
   let failure: string | null;
   try {
-    failure = await check(opts.context, opts.namespace, opts.image);
+    failure = await check(opts.context, opts.namespace, opts.image, opts['node-reach']);
   } catch (e) {
     failure = (e as Error).message;
   }

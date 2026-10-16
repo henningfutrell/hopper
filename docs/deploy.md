@@ -913,8 +913,9 @@ stay. A later box must not see an earlier one's files, and two boxes at once mus
   memory ends with exit 137, and its log says `OOMKilled`.
 - **Isolation.** A box reaches the hopper on its port, and not another box, any other Service of the release (its
   Postgres, OpenFGA, …). It holds no service account token, and the credential its step was given only in its file,
-  never in its environment. What it reaches of its node and the Kubernetes API is printed, not checked: see "Egress"
-  in "Sandbox boxes on Kubernetes".
+  never in its environment. It does not reach its node or the Kubernetes API either: kind's network plugin holds a pod
+  off its own node. On a cluster whose plugin does not (see "Egress" in "Sandbox boxes on Kubernetes"),
+  `--node-reach` says what a box reaches there instead of failing on it.
 - **Many at once.** Dozens of need steps start together through the sandbox module (`src/sandbox/service.ts`), more
   than the nodes have room for: the ones with no room wait for the scheduler, and none fails. Each gives back its own
   output. After them nothing with their labels stays, the module's ledger holds no open run and no problem, no box

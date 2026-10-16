@@ -125,11 +125,11 @@ export interface Box { runtime: ContainerRuntime; k: Kubectl; image: string; ins
  * Isolation (issue #1422): a box reaches the hopper and nothing else. Another box listens on 8080; a second box asks it
  * and every Service of the release but the hopper's (its database, OpenFGA, …), each by what it answers or not. It holds
  * no service account token, and its step's credential only in its file, never in its environment. Its node and the
- * Kubernetes API are asked too, and what they answer is printed, not asserted: Kubernetes lets a pod reach its own node,
- * and on kind the API server runs there (docs/deploy.md "Sandbox boxes on Kubernetes"); the box holds no token for it.
+ * Kubernetes API are asked too: kind's network plugin holds a pod off its own node, which not every plugin does
+ * (docs/deploy.md "Sandbox boxes on Kubernetes", Egress), so `--node-reach` makes those two said, not asserted.
  * Answers what failed, or null.
  */
-export async function isolation(o: Box & { namespace: string; hopperService: string }): Promise<string | null> {
+export async function isolation(o: Box & { namespace: string; hopperService: string; nodeReach?: boolean }): Promise<string | null> {
   const k = o.k;
   const listener = `hopper-need-kind-listener-${randomBytes(3).toString('hex')}`;
   const stop = new AbortController();
@@ -181,14 +181,14 @@ export async function isolation(o: Box & { namespace: string; hopperService: str
     const got = readProbes(log);
     const missing = probes.filter((p) => got[p.name] === undefined).map((p) => p.name);
     if (missing.length > 0) return `isolation: no answer for ${missing.join(', ')}; log: ${log.trim()}`;
-    const known = ['the Kubernetes API', 'its node'];
+    const known = o.nodeReach ? ['the Kubernetes API', 'its node'] : [];
     const reach = isolated(got, 'hopper', known);
     if (reach) return `isolation: ${reach}; log: ${log.trim()}`;
     const held = [...log.matchAll(/^SECRET (.*?)\r?$/gm)].map((m) => m[1]);
     if (held.length > 0) return `isolation: the box holds ${held.join('; ')}`;
     if (log.includes(token)) return 'isolation: the box\'s log shows its credential';
-    console.log(`isolation: a box reached the hopper alone of ${probes.filter((p) => !known.includes(p.name)).map((p) => p.name).join(', ')}; no token, its credential only in its file`);
-    console.log(`isolation, known reach on one node: ${known.map((n) => `${n} ${got[n] ?? 'not asked'}`).join(', ')}`);
+    console.log(`isolation: a box reached the hopper, and not ${probes.filter((p) => p.name !== 'hopper' && !known.includes(p.name)).map((p) => p.name).join(', ')}; no token, its credential only in its file`);
+    if (known.length > 0) console.log(`isolation, said only: ${known.map((n) => `${n} ${got[n] ?? 'not asked'}`).join(', ')}`);
   } finally {
     stop.abort();
     await listening;
