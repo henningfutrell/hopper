@@ -6,6 +6,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import { inHopper } from '../../scripts/kind-migrate-check.ts';
 
 const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'kind-migrate-check.ts');
 const dirs: string[] = [];
@@ -27,4 +28,18 @@ it('refuses where a compose project hopper is there already, and starts, moves a
   expect(r.status).toBe(2);
   expect(r.stderr).toContain('a compose project hopper is there already');
   expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['docker ps -aq --filter label=com.docker.compose.project=hopper']);
+});
+
+// The check runs the dev channel's image, whose CLI may stop on a previous-keys file the chart names and a Secret with no
+// previous key does not hold: the command in the pod drops that name when the file is not there, as the daemon reads it.
+it('runs a command in the cluster hopper with no previous-keys file name when the file is not there', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jh-kind-migrate-'));
+  dirs.push(dir);
+  const show = ['sh', '-c', 'printf "%s|%s" "${HOPPER_MASTER_KEY_PREVIOUS_FILE-unset}" "$1"', 'sh', 'users'];
+  const [command, ...args] = inHopper(show);
+  const missing = spawnSync(command!, args, { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOPPER_MASTER_KEY_PREVIOUS_FILE: join(dir, 'previous') } });
+  expect(missing.stdout).toBe('unset|users');
+  writeFileSync(join(dir, 'previous'), 'k');
+  const there = spawnSync(command!, args, { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOPPER_MASTER_KEY_PREVIOUS_FILE: join(dir, 'previous') } });
+  expect(there.stdout).toBe(`${join(dir, 'previous')}|users`);
 });
