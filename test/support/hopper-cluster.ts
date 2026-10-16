@@ -60,6 +60,7 @@ case "$*" in
   *"get secret owner-key -o go-template="*) [ -z "\${STUB_OWNER_SECRET:-}" ] || printf yes ;;
   *"get secret hopper-master-key -o go-template="*) printf yes ;;
   *"run hopper-key-check "*) printf '%s' "\${STUB_SECRET_FP:-${FP}}" ;;
+  *"get statefulset,deployment -l app.kubernetes.io/instance=hopper -o name"*) printf 'statefulset.apps/hopper-postgres\\ndeployment.apps/hopper-openfga\\ndeployment.apps/hopper\\n' ;;
   *"get deployment/hopper -o jsonpath={.spec.template.spec.containers[?(@.name==\\"hopper\\")].image}"*) printf ghcr.io/henningfutrell/hopper:beta ;;
   *"get secret hopper-master-key"*) [ -f "$STUB_DIR/secret" ] && printf '%s' "$STUB_KEY" | base64 -w0 ;;
   *"create secret generic hopper-carried-env"*) printf 'carried: %s\\n' "$(printf '%s' "$in" | tr '\\n' ' ')" >> "$STUB_LOG"; echo 'kind: Secret' ;;
@@ -69,7 +70,10 @@ case "$*" in
   *"exec -i hopper-postgres-0 -c postgres -- pg_restore"*) [ "$in" = DUMP ] && echo restored-dump >> "$STUB_LOG" ;;
   *"get deployment/hopper -o"*) printf 4790 ;;
   *"exec deployment/hopper -c hopper -- node -e fetch('http://127.0.0.1"*) [ -z "\${STUB_UNHEALTHY:-}" ] || exit 1; printf '{"ok":true}' ;;
-  *"exec deployment/hopper -c hopper -- hopper master-key status"*) printf '{ "fingerprint": "${FP}" }' ;;
+  # The chart names a previous-keys file a Secret with no previous key does not hold: an image built before the CLI read
+  # it as the daemon does stops on it, so the status must drop the name of a file that is not there (issue #1373).
+  *"exec deployment/hopper -c hopper -- sh -c "*"|| unset HOPPER_MASTER_KEY_PREVIOUS_FILE; exec hopper master-key status"*) printf '{ "fingerprint": "${FP}" }' ;;
+  *"exec deployment/hopper -c hopper -- hopper master-key status"*) echo 'hopper: HOPPER_MASTER_KEY_PREVIOUS_FILE: cannot read /run/hopper-master-key/previous: ENOENT' >&2; exit 1 ;;
   *"exec -i deployment/hopper -c hopper -- tar"*) [ -n "$in" ] && echo home-copied >> "$STUB_LOG" ;;
 esac
 exit 0

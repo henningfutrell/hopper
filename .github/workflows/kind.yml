@@ -2,7 +2,9 @@
 # cluster, `helm install` alone brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket,
 # or runs Podman, Docker or compose. Then the sandbox check (issue #1371, scripts/kind-sandbox-check.ts) runs need boxes
 # through this checkout's Kubernetes runtime on the cluster the kind check kept, and nothing with their labels may stay.
-# Only on a pull request that changes the chart, the checks or the Kubernetes runtime: it takes about fifteen minutes.
+# Then the cluster migration check (issue #1373, scripts/kind-migrate-check.ts) moves a compose install onto a kind
+# cluster of its own. Only on a pull request that changes the chart, the checks, the cluster script or the Kubernetes
+# runtime: it takes about twenty-five minutes.
 # The hopper's image is the dev channel's: a pull request's own code is not built into an image. Read-only and with no
 # secrets: `pull_request`, never `pull_request_target`. kind, helm and kubectl are the runner image's own.
 name: kind
@@ -14,6 +16,8 @@ on:
       - deploy/helm/**
       - scripts/kind-check.ts
       - scripts/kind-sandbox-check.ts
+      - scripts/kind-migrate-check.ts
+      - scripts/hopper-cluster.sh
       - src/sandbox/kubernetes.ts
       - src/sandbox/kubernetes-api.ts
       - src/sandbox/need-box.ts
@@ -30,7 +34,7 @@ concurrency:
 jobs:
   kind:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -42,3 +46,4 @@ jobs:
       - run: node scripts/kind-sandbox-check.ts --context kind-hopper-check
       - if: always()
         run: kind delete cluster --name hopper-check
+      - run: node scripts/kind-migrate-check.ts --tag dev
