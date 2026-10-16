@@ -3,10 +3,10 @@
 // pull request that closed its issue is closed, and the close is recorded with why. In-memory fake GitHub at the GitHubApi
 // seam; issues carry a scripted-executor op as their first body line. A rebase held behind other heads for an hour is tended
 // anyway (`MAX_HELD_MS`), as new heads keep coming. A stray pull request (part 4: a job named it, no job follows it, and no
-// job of its item works on it) gets the same housekeeping, recorded with `stray`.
+// job of its item works on it) gets the same housekeeping, recorded with `stray`; one closed or merged on GitHub is recorded as ended (issue #1420).
 import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_HELD_MS } from '../../src/domain/tending-queue.ts';
-import type { Job } from '../../src/domain/types.ts';
+import type { Job, JobGraph } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -159,6 +159,54 @@ describe('pull request housekeeping (issue #1143)', () => {
     // On the landing branch now: a later sync does not move it again.
     await app.sync();
     expect(await app.events('types=job.pull_request_retargeted')).toHaveLength(1);
+  });
+
+  /** The job graph's view of the job and of its pull request (issue #1420). */
+  async function graphOf(app: TestApp, jobId: string, url: string) {
+    const graph = (await app.api<JobGraph>('GET', '/api/jobs/graph')).body;
+    const node = (id: string) => graph.nodes.find((n) => n.id === id);
+    return { job: node(`job:${jobId}`), pullRequest: node(`pr:${url}`) };
+  }
+
+  it('a stray pull request closed on GitHub without a merge: recorded closed, and the graph and Rework agree (issue #1420)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { job, url } = await pullRequestWaiting(gh, app, () => undefined);
+    stray(app, job.id);
+    gh.setConflicting(url, true);
+    gh.closePullRequest(url);
+    await app.sync();
+    await waitFor(async () => (await app.events('types=job.pull_request_closed')).length > 0, { what: 'job.pull_request_closed' });
+    expect((await app.events('types=job.pull_request_closed')).map((e) => [e.jobId, e.data]))
+      .toEqual([[job.id, { pullRequest: url, part: false, stray: true }]]);
+    expect((await app.job(job.id)).sourceState?.source).toMatchObject({ follow: 'closed', pullRequest: url });
+    // The one record: the graph shows it closed, not open, conflicting or tended, and Rework finds no open pull request.
+    const g = await graphOf(app, job.id, url);
+    expect(g.job?.stage).toBe('done');
+    expect(g.job?.pullRequest).toEqual({ url, state: 'closed' });
+    expect(g.pullRequest?.stage).toBe('cancelled');
+    const r = await app.ui(`/ui/api/jobs/${job.id}/rework`, { notes: 'Again.' }, { token: await app.login() });
+    expect(r.status).toBe(409);
+    expect(gh.pullRequestComments(url)).toEqual([]);
+    // Closed, it is no stray: a later sync does nothing more.
+    await app.sync();
+    expect(await app.events('types=job.pull_request_closed')).toHaveLength(1);
+  });
+
+  it('a stray pull request merged on GitHub: recorded merged, as a stray (issue #1420)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { job, url } = await pullRequestWaiting(gh, app, () => undefined);
+    stray(app, job.id);
+    gh.mergePullRequest(url);
+    await app.sync();
+    await waitFor(async () => (await app.events('types=job.pull_request_merged')).length > 0, { what: 'job.pull_request_merged' });
+    expect((await app.events('types=job.pull_request_merged')).map((e) => [e.jobId, e.data]))
+      .toEqual([[job.id, { pullRequest: url, part: false, stray: true }]]);
+    expect((await app.job(job.id)).sourceState?.source).toMatchObject({ follow: 'merged', pullRequest: url });
+    expect((await graphOf(app, job.id, url)).pullRequest?.stage).toBe('done');
+    await app.sync();
+    expect(await app.events('types=job.pull_request_merged')).toHaveLength(1);
   });
 
   it('a stray pull request with work left to land, on the landing branch: left as it is', async () => {

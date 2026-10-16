@@ -219,6 +219,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     return (current || pr === base.pullRequest) && base.changeKind !== kind ? mark({ changeKind: kind }) : undefined;
   }
   if (event.type === 'job.pull_request_merged') {
+    // A stray's merge on GitHub (issue #1420): as a stray's close, it moves no item; only its own pull request's state.
+    if (d.stray === true) return pr !== undefined && pr === base.pullRequest ? mark({ pullRequestState: 'merged' as const, pullRequestWait: undefined }) : undefined;
     const change = { pullRequest: pr, pullRequestState: 'merged' as const, ...(d.part === true ? {} : { wholeMerged: true as const }), pullRequestWait: undefined, waitingOn: undefined };
     if (isActive(base.eventState)) return mark(change);
     return d.part === true ? move('partly_done', { ...change, waitingOn: 'the next part' }) : move('done', change);

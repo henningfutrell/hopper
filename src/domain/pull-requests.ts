@@ -100,8 +100,9 @@ export interface FollowsPullRequests {
   /**
    * Housekeeping of stray pull requests (issue #1143 part 4, `strayPullRequests`): of `strays`, each one still open is moved
    * to its repository's landing branch, or closed as superseded, and the source says so on it, as the follow does for a
-   * followed one. What it did with each; one it left as it is is not in the answer. A throw is asked again at the next
-   * round. Absent: strays are left as they are.
+   * followed one. One no longer open is said `ended`, as GitHub has it (issue #1420): merged, or closed without a merge.
+   * What it did with each; one it left as it is is not in the answer. A throw is asked again at the next round. Absent:
+   * strays are left as they are.
    */
   housekeepStrays?(strays: Stray[]): Promise<StrayHousekept[]>;
   /**
@@ -125,8 +126,11 @@ export interface FoundPullRequest { jobId: string; pullRequest: string; part: bo
 /** A stray pull request (issue #1143 part 4) and the job that holds it: the newest job that names it. */
 export interface Stray { job: Job; pullRequest: string; part: boolean }
 
-/** What housekeeping did with a stray pull request (issue #1143 part 4): moved it to the landing branch, or closed it as superseded, and why. */
-export type StrayHousekept = FoundPullRequest & ({ retargeted: { from: string; to: string } } | { superseded: string });
+/**
+ * What housekeeping did with a stray pull request (issue #1143 part 4): moved it to the landing branch, or closed it as
+ * superseded, and why; or found it `ended` on GitHub (issue #1420), merged or closed without a merge by someone else.
+ */
+export type StrayHousekept = FoundPullRequest & ({ retargeted: { from: string; to: string } } | { superseded: string } | { ended: 'merged' | 'closed' });
 
 /** The follows after which a job's pull request is no longer open: nothing is left to do with it. */
 const ENDED_FOLLOWS: ReadonlySet<unknown> = new Set(['merged', 'closed', 'abandoned']);
