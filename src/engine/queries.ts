@@ -90,9 +90,12 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
       const lanes = c.store.lanes.list();
+      const acceptances = c.store.credentialAcceptances.list();
+      const acceptanceMap = new Map(acceptances.map((a) => [a.machineKey, a]));
       return machines.map((m) => {
         const hopperDisk = diskOf(m.id);
-        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}) };
+        const acceptance = acceptanceMap.get(m.id);
+        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}) };
       });
     },
     getUsage,

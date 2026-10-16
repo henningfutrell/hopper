@@ -514,6 +514,8 @@ export interface UserStore {
   machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
+  /** Machine credential acceptances (issue #1459): the admin's acceptance of a machine despite its infra credentials. */
+  credentialAcceptances: import('./machine-credentials.ts').CredentialAcceptanceRepository;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
   close(): void;

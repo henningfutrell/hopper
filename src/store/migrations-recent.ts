@@ -39,4 +39,10 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // added at and its signature counter; an account's removal removes its passkeys. A table only: the build before never
   // reads it, and signs nobody in with it.
   'CREATE TABLE IF NOT EXISTS local_account_passkeys (id TEXT PRIMARY KEY, email TEXT NOT NULL REFERENCES local_accounts (email) ON DELETE CASCADE, rp_id TEXT NOT NULL, public_key TEXT NOT NULL, counter BIGINT NOT NULL, transports TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT); CREATE INDEX IF NOT EXISTS local_account_passkeys_email ON local_account_passkeys (email);',
+  // 45: machine credential acceptances (issue #1459): when an admin accepts that a machine whose job user holds infra
+  // credentials can take jobs anyway, despite the blast-radius risk. A row per machine with its user_id (the key), the
+  // credentials accepted, who accepted it and when. A machine with no row or a revoked row takes no jobs. The decider
+  // (src/decider/assign.ts) and lane listing (src/engine/lane-calls.ts) treat an accepted machine as ready. A table only:
+  // the build before never reads it, and blocks such machines.
+  'CREATE TABLE IF NOT EXISTS machine_credential_acceptances (user_id TEXT NOT NULL, machine_key TEXT NOT NULL, credentials TEXT NOT NULL, accepted_by TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT, PRIMARY KEY (user_id, machine_key));',
 ];
