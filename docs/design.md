@@ -22177,7 +22177,7 @@ nothing limited how many ran at once.
   `HOPPER_SANDBOX_MAX_PER_USER` (default 10), and the default and most CPUs, memory and time limit of one
   (`HOPPER_SANDBOX_DEFAULT_*`, `HOPPER_SANDBOX_MAX_*`; defaults 1 CPU, 2048 MiB, 60 minutes; most 4, 8192, 1440). A
   default above its max stops the daemon at start. A size is the create's, else its template's default, else the
-  hopper's; over the hopper's max or the template's it is refused with 400, naming the limit. A count over the room the
+  hopper's (a template has no time limit since issue #1349: only the hopper's holds); over the hopper's max or the template's it is refused with 400, naming the limit. A count over the room the
   two counts leave starts what fits and answers `refused: { count, limit, setting, reason }`; none fits: 429 with
   `limit` and `setting`. The room is counted and taken in one synchronous step before any start, so two creates at once
   never pass a limit. A sandbox that failed holds no room.

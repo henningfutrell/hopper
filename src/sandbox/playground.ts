@@ -204,14 +204,18 @@ export function createPlayground(o: {
     .catch((err: unknown) => o.logger.warn(`hopper: the playground pass failed: ${say(err)}`))
     .finally(() => { sweeping = undefined; }));
 
-  /** The size asked for, the template's and the hopper's defaults filling the rest, each within both maximums. */
+  /**
+   * The size asked for, the template's and the hopper's defaults filling the rest, each within both maximums. A template
+   * has no time limit (issue #1349): the hopper's alone holds it.
+   */
   const sizeOf = (ask: PlaygroundAsk): PlaygroundSize => {
-    const t = ask.template?.limits;
+    const tl = ask.template?.limits;
     const pick = (k: keyof PlaygroundSize): number => {
-      const v = ask.size[k] ?? t?.[k]?.default ?? o.limits.defaults[k];
+      const t = k === 'ttlMinutes' ? undefined : tl?.[k];
+      const v = ask.size[k] ?? t?.default ?? o.limits.defaults[k];
       if (!(v > 0)) throw new PlaygroundRefused(400, `${k} must be more than 0`);
       if (v > o.limits.max[k]) throw new PlaygroundRefused(400, `${k} ${v} is more than the hopper allows a playground sandbox (${LIMIT_SETTINGS[k]}): at most ${o.limits.max[k]}`);
-      const tmax = t?.[k]?.max;
+      const tmax = t?.max;
       if (tmax !== undefined && v > tmax) throw new PlaygroundRefused(400, `${k} ${v} is more than the template ${ask.template!.name} allows: at most ${tmax}`);
       return v;
     };
