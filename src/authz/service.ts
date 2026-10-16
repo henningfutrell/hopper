@@ -14,7 +14,7 @@ import {
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
 import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, vaultGrantGaps, type ModelJson } from './model.ts';
-import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, relationshipPath, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject } from './objects.ts';
+import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, relationshipPath, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -52,11 +52,11 @@ export interface AccessOptions {
   templates?: () => { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Every user's live artifact shares (issue #624): written to OpenFGA as viewers. */
   shares?: () => LiveShare[];
+  /** The verified email each user is known by, by user id (issue #1380): OpenFGA names a person by it. */
+  emails?: () => ReadonlyMap<string, string>;
 }
 
-const KEY_STORE = 'storeId';
-const KEY_PUSHED = 'pushedModel';
-const SYSTEM = 'hopper';
+const KEY_STORE = 'storeId', KEY_PUSHED = 'pushedModel', SYSTEM = 'hopper';
 
 const tupleKey = (t: RelationshipTuple) => `${t.subject} ${t.relation} ${t.object}`;
 const plain = (t: StoredTuple): RelationshipTuple => ({ subject: t.subject, relation: t.relation, object: t.object });
@@ -114,8 +114,10 @@ export function createAccess(o: AccessOptions): Access {
 
   /** The live shares as tuples, when the model has what they need; else none (a share is then denied, never a mint). */
   const liveShareTuples = (): RelationshipTuple[] => (o.shares && artifactGapsOf(model().dsl).length === 0 ? shareTuples(o.shares()) : []);
+  /** Tuples as OpenFGA is given them: a person by their email (issue #1380). Asked once per use, so a user who takes an email is moved at the next. */
+  const emailKeyed = (): ((t: RelationshipTuple) => RelationshipTuple) => keyedByEmail(o.emails?.() ?? new Map());
   /** Who is live and what is shared, as written: a check asks OpenFGA only once it holds both as they are now. */
-  const liveKey = (): string => keyOf([...requesterTuples(o.requesters()), ...liveShareTuples()]);
+  const liveKey = (): string => keyOf([...requesterTuples(o.requesters()), ...liveShareTuples()].map(emailKeyed()));
 
   const push = async (server: AuthorizationServer): Promise<void> => {
     const storeId = await server.store(o.repo.state(KEY_STORE), STORE_NAME);
@@ -129,8 +131,8 @@ export function createAccess(o: AccessOptions): Access {
       pushed = { storeId, version: m.version, modelId };
       o.repo.setState(KEY_PUSHED, JSON.stringify(pushed));
     }
-    const who = [...requesterTuples(o.requesters()), ...liveShareTuples()];
-    const want = new Map([...o.repo.liveTuples().map(plain), ...who].map((t) => [tupleKey(t), t]));
+    const key = emailKeyed(), who = [...requesterTuples(o.requesters()), ...liveShareTuples()].map(key);
+    const want = new Map([...o.repo.liveTuples().map(plain).map(key), ...who].map((t) => [tupleKey(t), t]));
     const have = new Map((await server.tuples(storeId)).map((t) => [tupleKey(t), t]));
     const writes = [...want].filter(([k]) => !have.has(k)).map(([, t]) => t);
     const deletes = [...have].filter(([k]) => !want.has(k)).map(([, t]) => t);
@@ -177,11 +179,11 @@ export function createAccess(o: AccessOptions): Access {
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
     const pushed = pushedModel()!;
-    const profile = { operation: r.operation, asset: r.asset };
+    const profile = { operation: r.operation, asset: r.asset }, key = emailKeyed();
     try {
-      const allowed = await server.check(pushed.storeId, pushed.modelId, { subject, relation: `can_${r.operation}`, object: assetObject(r.asset) }, contextual);
+      const allowed = await server.check(pushed.storeId, pushed.modelId, key({ subject, relation: `can_${r.operation}`, object: assetObject(r.asset) }), contextual.map(key));
       if (!allowed) return { allowed, modelId: pushed.modelId, reason: `${who} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };
-      const path = relationshipPath([...o.repo.liveTuples().map(plain), ...requesterTuples(o.requesters()), ...contextual], subject, profile);
+      const path = relationshipPath([...o.repo.liveTuples().map(plain), ...requesterTuples(o.requesters()), ...contextual], subject, profile)?.map(key);
       const through = templateOnPath(path);
       return { allowed, modelId: pushed.modelId, reason: `${through === undefined ? who : `template ${through}`} is approved to ${r.operation} on ${describeAsset(r.asset)}`, ...(path ? { path } : {}) };
     } catch (e) {
@@ -214,9 +216,9 @@ export function createAccess(o: AccessOptions): Access {
     if (liveKey() !== pushedRequesters) dirty = true;
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}`, unavailable: true };
-    const pushed = pushedModel()!;
+    const pushed = pushedModel()!, key = emailKeyed();
     try {
-      const allowed = await server.check(pushed.storeId, pushed.modelId, tuple, contextual);
+      const allowed = await server.check(pushed.storeId, pushed.modelId, key(tuple), contextual.map(key));
       return { allowed, reason: why(allowed) };
     } catch (e) {
       dirty = true;
@@ -227,7 +229,7 @@ export function createAccess(o: AccessOptions): Access {
 
   /** One check whose reason reads `<subject> may (not) <doing>`, against what the model lacks for it. */
   const may = (what: string, gapsOf: (dsl: string) => string[], c: { tuple: RelationshipTuple; contextual: RelationshipTuple[] }, doing: (t: RelationshipTuple) => string): Promise<AccessAnswer> =>
-    checkOnce(what, gapsOf(model().dsl), c.tuple, c.contextual, (allowed) => `${c.tuple.subject} may${allowed ? '' : ' not'} ${doing(c.tuple)}`);
+    checkOnce(what, gapsOf(model().dsl), c.tuple, c.contextual, (allowed) => `${emailKeyed()(c.tuple).subject} may${allowed ? '' : ' not'} ${doing(c.tuple)}`);
 
   return {
     decideView: (viewer, artifact) => checkOnce('artifacts', artifactGapsOf(model().dsl), {
@@ -266,7 +268,7 @@ export function createAccess(o: AccessOptions): Access {
       const asks = standing(o.requesters(), requester, o.jobStatus);
       if ('problem' in asks) return record({ ...base, allowed: false, reason: asks.problem });
       const at = asks.template === undefined ? {} : { template: asks.template };
-      return record({ ...base, ...at, ...await ask(requesterObject(requester), [], request, requesterText(requester, asks.template)) });
+      return record({ ...base, ...at, ...await ask(requesterObject(requester), [], request, requesterText(requester, asks.template, o.emails?.().get(requester.userId))) });
     },
     async decideCheckMint({ check, template, operation, asset }) {
       const problem = requestProblem({ template, operation, asset });
@@ -315,7 +317,7 @@ export function createAccess(o: AccessOptions): Access {
     sync: async () => { await running; await sync(); },
     status: () => status,
     view() {
-      const live = o.requesters();
+      const live = o.requesters(), key = emailKeyed();
       const tuples = [...o.repo.liveTuples().map(plain), ...requesterTuples(live)];
       const all = approvals();
       const scopes = o.templates?.() ?? [];
@@ -327,7 +329,7 @@ export function createAccess(o: AccessOptions): Access {
         const a = approvalOf(t);
         return a ? [{ ...a, revokedBy: t.revokedBy!, revokedAt: t.revokedAt! }] : [];
       });
-      const requesters = requesterRows(live, tuples, all.map((a) => a.profile));
+      const requesters = requesterRows(live, tuples, all.map((a) => a.profile), key);
       return { status, model: model(), templates, revoked, requesters, decisions: o.repo.decisions(DECISIONS_SHOWN) };
     },
     start() {
