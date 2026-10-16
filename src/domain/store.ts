@@ -428,8 +428,12 @@ export interface ConnectedAccount {
   /** Why the sign-in ended — GitHub refused the token and its renewal (issue #358): the account is expired, until connected again. */
   ended?: string;
   connectedAt: string;
-  /** How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant without; absent: kept before #441. */
-  grantedBy?: 'device' | 'web';
+  /**
+   * How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant
+   * without; absent: kept before #441. `token`: a personal access token the person gave (issue #1380): no app granted it, nothing
+   * renews it, and the hopper never deletes it at GitHub.
+   */
+  grantedBy?: 'device' | 'web' | 'token';
   /** How the person made the connection (issue #647): connected from Sources, or signed in with GitHub; absent: kept before #647. */
   connectedBy?: 'sources' | 'sign-in';
   /**

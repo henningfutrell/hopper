@@ -57,7 +57,7 @@ function process_(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixe
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
-    installations: async () => [],
+    installations: async () => [], tokenRepositories: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => o.secret)(refresh, grantedBy),
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
     onRenewed: (p) => { renewed.push(p); },
@@ -326,7 +326,7 @@ function optionsOf(github: FakeForge, s: UserStore, clock: ReturnType<typeof fix
   return {
     store: s, apps: hopperApps({ github: { clientId: 'gh-client-id', url: github.url } }), clock,
     logger: { info: () => undefined, warn: () => undefined },
-    whoIs: async () => ({ subject: '1', account: 'octo-user' }), installations: async () => [],
+    whoIs: async () => ({ subject: '1', account: 'octo-user' }), installations: async () => [], tokenRepositories: async () => [],
     refresh: async () => { throw new Error('unused'); },
     secrets: systemOf(s),
   };

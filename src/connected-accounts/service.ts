@@ -28,6 +28,12 @@
 // person signed in with verified at GitHub; the account keeps that email (`matchEmail`), and each renewal checks it again.
 // One that lost it ends as an expired sign-in does: its source asks to connect again, and the person stays signed in.
 //
+// A personal access token (issue #1380, design.md "A personal access token"): a person may connect with a token of their own
+// instead (`connectToken`), with no GitHub App. GitHub must take it, and the source email match applies as for a device
+// code. It is kept as the access token, with no refresh token: nothing renews it, a 401 ends it, and the hopper never deletes
+// it at GitHub — it is the person's, not a grant of the app. Its repositories are the ones the token reaches (GitHub's list
+// for its user), read as the installations are, never where the app is installed.
+//
 // A connection's health (issue #647): a GitHub sign-in made while the connection is healthy never replaces it quietly:
 // its grant is held (a **held grant**, held.ts) until the person takes it or drops it. No job holds a token of it (issue
 // #652): a job's GitHub goes through the hopper, which asks for the token as it is at each call.
@@ -41,7 +47,7 @@ import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './ho
 import type { Renewal } from './renewal.ts';
 import { createHeldGrants } from './held.ts'; import { createEmailMatch } from './email-match.ts';
 import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
-import { createRenewer, type Live } from './renewer.ts';
+import { createRenewer, type Live } from './renewer.ts'; import { createTokenConnect } from './token-connect.ts';
 
 export { PROVIDER_NAME };
 export { RENEW_AHEAD_MS, RENEW_EVERY_MS, RETRY_MS } from './renewer.ts';
@@ -64,7 +70,8 @@ export interface ConnectedAccountsOptions {
    * GitHub: the installations of the hopper's GitHub App that the token's user sees, with the repositories each reaches;
    * each GET through `answers` (issue #1250). Asked only on Refresh, on the schedule and when an account is connected.
    */
-  installations(token: string, answers: ConditionalAnswers): Promise<AppInstallation[]>;
+  /** `tokenRepositories`: the repositories a personal access token reaches, one entry per owner (issue #1380), read in their place for a token's connection. */
+  installations(token: string, answers: ConditionalAnswers): Promise<AppInstallation[]>; tokenRepositories(token: string, answers: ConditionalAnswers): Promise<AppInstallation[]>;
   /** Called once an account is connected from Sources: a later sign-in with it lands in this user. */
   link?(provider: ConnectedAccountProvider, subject: string): void;
   clock: { now(): Date };
@@ -172,15 +179,14 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     if (c?.ended) return { ...base, state: 'expired', account: c.account.account, connectedAt: c.account.connectedAt, error: c.ended };
     const a = c?.account;
     if (a) {
-      const install = installUrl(o.apps[provider]);
+      const app = a.grantedBy === 'token' ? undefined : o.apps[provider], install = app && installUrl(app); // a personal access token goes through no app
       const trouble = renewer.trouble(provider);
       const next = renewer.next(a);
       const lastError = renewer.lastError(provider);
       const h = held.get(provider);
       return {
         ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, jobRepositories: o.store.settings.getJobRepositories(provider),
-        configUrl: configUrl(o.apps[provider]),
-        ...(install ? { installUrl: install } : {}),
+        ...(app ? { configUrl: configUrl(app) } : {}), ...(install ? { installUrl: install } : {}),
         ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}),
         ...(trouble ? { renewal: trouble } : {}),
         ...(a.expiresAt && !a.refreshToken ? { unrenewable: `${PROVIDER_NAME[provider]} gave this connection no refresh token, so its token cannot be renewed` } : {}),
@@ -200,7 +206,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
    * Where the app is installed, as last read (issue #1250): kept in the database, never read here. A read GitHub did not
    * answer says why (never that it is not installed), with the installations read before it.
    */
-  const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => o.installations(await token(p), answers),
+  const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => (live(p).account.grantedBy === 'token' ? o.tokenRepositories : o.installations)(await token(p), answers),
     now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line) });
   const withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account) } : s);
 
@@ -213,7 +219,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   const replace = (provider: ConnectedAccountProvider, keeping: string | undefined, write: () => void): Promise<void> => renewer.exclusive(provider, async () => {
     const c = current(provider);
     if (c && 'unreadable' in c) o.logger.warn(`hopper: the ${PROVIDER_NAME[provider]} grant of ${c.stored.account} was not deleted: its tokens cannot be opened`);
-    else if (c && !c.ended && o.deleteToken && c.account.accessToken !== keeping) {
+    else if (c && !c.ended && o.deleteToken && c.account.accessToken !== keeping && c.account.grantedBy !== 'token') { // a personal access token is the person's: never deleted
       try {
         await o.deleteToken(provider, c.account.accessToken);
         o.logger.info(`hopper: the ${PROVIDER_NAME[provider]} access token of ${c.account.account} deleted at GitHub`);
@@ -303,6 +309,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     return status(provider);
   }
 
+  // A personal access token (issue #1380, token-connect.ts).
+  const connectToken = createTokenConnect({ ...o, emailMatch, held, installations, keeps: () => atRest.keeps, keep, reset: (p) => { stopWaiting(p); failed.delete(p); }, fail: (p, why) => failed.set(p, why), status: (p) => withInstallations(status(p)) });
+
   const stopWaiting = (provider: ConnectedAccountProvider) => {
     waiting.get(provider)?.abort.abort('cancel');
     waiting.delete(provider);
@@ -381,7 +390,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       o.onChange?.(provider);
       return withInstallations(status(provider));
     },
-    account: (provider) => accountOf(provider),
+    account: (provider) => accountOf(provider), connectToken,
     expired: (provider) => { const c = current(provider); return c !== undefined && !('unreadable' in c) && c.ended !== undefined; },
     ended: (provider) => { const c = current(provider); return !c ? undefined : 'unreadable' in c ? c.unreadable : c.ended ? expired(provider) : undefined; },
     renew: (provider, refused) => renewer.renew(provider, refused),

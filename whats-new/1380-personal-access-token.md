@@ -1,0 +1,1 @@
+- You can connect GitHub in Sources with a personal access token of your own. Your hopper does not need the GitHub app for it.

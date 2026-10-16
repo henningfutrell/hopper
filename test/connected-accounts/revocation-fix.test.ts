@@ -56,7 +56,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
       if (!github.tokens.has(token)) throw new Error('Bad credentials');
       return { subject: '1', account: 'octo-user' };
     },
-    installations: async () => [],
+    installations: async () => [], tokenRepositories: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
     deleteToken: (p, accessToken) => tokenDeletion(apps[p], undefined)(accessToken),
     hasClientSecret: () => false,
@@ -106,7 +106,7 @@ describe('token revocation fixes (#597)', () => {
         if (refuseWhoIs || !github.tokens.has(token)) throw new Error('Bad credentials');
         return { subject: '1', account: 'octo-user' };
       },
-      installations: async () => [],
+      installations: async () => [], tokenRepositories: async () => [],
       refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
       deleteToken: (p, accessToken) => tokenDeletion(apps[p], undefined)(accessToken),
       hasClientSecret: () => false,

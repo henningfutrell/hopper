@@ -63,3 +63,20 @@ export async function installations(app: HopperApp, token: string, answers: Cond
     } satisfies AppInstallation;
   }));
 }
+
+/**
+ * The repositories a personal access token reaches (issue #1380): GitHub's list for the token's user, every page, one entry
+ * per owner, `selected` (the token, not an app, decides what it reaches). Each GET through `answers`, as `installations`.
+ */
+export async function tokenRepositories(app: HopperApp, token: string, answers: ConditionalAnswers): Promise<AppInstallation[]> {
+  const req = makeRequest(app.apiUrl) as unknown as Get;
+  const headers = { authorization: `token ${token}` };
+  const names = await all((page) => answers.get<unknown>(req, 'GET /user/repos', { per_page: PER_PAGE, page, headers }),
+    (d) => (d as { full_name: string }[]).map((r) => r.full_name));
+  const by = new Map<string, string[]>();
+  for (const name of names) {
+    const owner = name.split('/')[0]!;
+    by.set(owner, [...(by.get(owner) ?? []), name]);
+  }
+  return [...by.keys()].sort().map((account) => ({ account, repositorySelection: 'selected', repositories: by.get(account)!.sort() }));
+}

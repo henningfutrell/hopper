@@ -69,7 +69,8 @@ describe('a personal access token as the GitHub source', () => {
     expect(status.state === 'connected' && (status.installUrl ?? status.configUrl)).toBeFalsy();
     expect(s.state.read).toEqual(['repositories']);
     expect(await s.service.token('github')).toBe('github_pat_1');
-    const row = accountOf(s.store) as Record<string, unknown> | undefined;
+    expect(accountOf(s.store)).toMatchObject({ account: 'octo-user', grantedBy: 'token', accessToken: 'github_pat_1' });
+    const row = s.store.connectedAccounts.get('github'); // the row: who and when, no token
     expect(row).toMatchObject({ account: 'octo-user', grantedBy: 'token' });
     expect(JSON.stringify(row)).not.toContain('github_pat_1');
   });
@@ -96,7 +97,7 @@ describe('a personal access token as the GitHub source', () => {
   });
 
   it('a token connection is never deleted at GitHub: not when a device connect replaces it, not at a disconnect', async () => {
-    const s = setup();
+    const s = setup({ apps: hopperApps({ github: {} }) }); // the shipped app, for the device code
     await s.service.connectToken('github', 'github_pat_1', {});
     await s.service.connect('github', {});
     await waitFor(async () => (await s.service.status())[0]!.state !== 'waiting', { what: 'the device flow ended' });

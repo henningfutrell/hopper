@@ -32,13 +32,14 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     state: 'connected'; account: string; connectedAt: string;
     /** The repositories this account's jobs may use, chosen in Sources (issue #321); empty: none, so no job. */
     jobRepositories: string[];
-    /** GitHub: where to install the hopper's GitHub App — it reaches only the repositories it is installed on. */
+    /** GitHub: where to install the hopper's GitHub App — it reaches only the repositories it is installed on. Absent for a personal access token. */
     installUrl?: string;
     /** GitHub: where the app's installations are seen and their repositories chosen. */
     configUrl?: string;
     /**
      * GitHub: the installations of the app this account can see, each with the repositories it reaches, as last read (issue
-     * #1250: kept in the database, never read when shown); absent when they were never read, or no read worked yet.
+     * #1250: kept in the database, never read when shown); absent when they were never read, or no read worked yet. For a
+     * personal access token (issue #1380, `grantedBy: 'token'`): the repositories the token reaches, one entry per owner.
      */
     installations?: AppInstallation[];
     /** GitHub: why the last read of where the app is installed failed; `installations` then holds the read before it, if any. */
@@ -56,8 +57,8 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
      * only connecting again (or signing in with GitHub again) gets one that renews.
      */
     unrenewable?: string;
-    /** How GitHub granted it (issue #647): the browser's web flow or the device flow. */
-    grantedBy?: 'device' | 'web';
+    /** How GitHub granted it (issue #647): the browser's web flow or the device flow; `token`: a personal access token the person gave (issue #1380). */
+    grantedBy?: 'device' | 'web' | 'token';
     /** How the person made it (issue #647): connected from Sources, or signed in with GitHub. */
     connectedBy?: 'sources' | 'sign-in';
     /** When its token was last renewed (issue #647); absent: not since it was connected. */

@@ -230,7 +230,7 @@ export function createSignIn(o: {
     }
     const connection: Connection = {
       provider: 'github', subject: id.subject, account: id.account, accessToken: g.accessToken,
-      ...(g.grantedBy ? { grantedBy: g.grantedBy } : {}),
+      ...(g.grantedBy && g.grantedBy !== 'token' ? { grantedBy: g.grantedBy } : {}), // a sign-in's grant is a flow's, never a token's
       ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
       ...(g.refreshToken ? { refreshToken: g.refreshToken } : {}),
       ...(g.refreshTokenExpiresAt ? { refreshTokenExpiresAt: g.refreshTokenExpiresAt.toISOString() } : {}),
