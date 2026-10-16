@@ -21,10 +21,12 @@ export function SandboxPlaygroundPanel() {
   const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [draft, setDraft] = useState<PlaygroundDraft>(EMPTY_DRAFT);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const read = useCallback(() => get<PlaygroundView>('/api/sandbox-playground').then(setView, () => setView(null)), []);
+  // An answer that is no playground view hides the panel, as a failed read does (issue #1435).
+  const read = useCallback(() => get<PlaygroundView>('/api/sandbox-playground')
+    .then((v) => setView(Array.isArray(v?.sandboxes) ? v : null), () => setView(null)), []);
   useEffect(() => {
     void read();
-    get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([]));
+    get<VaultView>('/api/vault').then((v) => setTemplates(Array.isArray(v?.templates) ? v.templates : []), () => setTemplates([]));
     const timer = setInterval(() => { void read(); }, POLL_MS);
     return () => clearInterval(timer);
   }, [read]);
