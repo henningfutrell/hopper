@@ -5,7 +5,6 @@ import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
 import type { SandboxRecord } from './sandboxes.ts';
-import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
@@ -131,46 +130,33 @@ export interface LoginRepository {
 export interface FailureRepository {
   create(input: Omit<FailureRecord, 'id'>): FailureRecord;
   get(id: string): FailureRecord | undefined;
-  /** The job's newest record. */
-  forJob(jobId: JobId): FailureRecord | undefined;
-  /**
-   * Newest first: of a job, since a time, of a signature, of a problem, with one of the outcomes, with none of
-   * `notOutcome` (no outcome yet counts as none); at most `limit` (default 1000).
-   */
-  list(filter?: { jobId?: JobId; since?: string; signature?: string; problemId?: string; outcome?: FailureOutcome[]; notOutcome?: FailureOutcome[]; limit?: number }): FailureRecord[];
-  /** The records whose pending run is due at `at`, the earliest first. */
-  due(at: string): FailureRecord[];
+  /** The job's newest record. */ forJob(jobId: JobId): FailureRecord | undefined;
+  /** Newest first: of a job, since a time, of a signature, of a problem, with one of the outcomes, with none of `notOutcome` (no outcome yet counts as none); at most `limit` (default 1000). */   list(filter?: { jobId?: JobId; since?: string; signature?: string; problemId?: string; outcome?: FailureOutcome[]; notOutcome?: FailureOutcome[]; limit?: number }): FailureRecord[];
+  /** The records whose pending run is due at `at`, the earliest first. */ due(at: string): FailureRecord[];
   /** Shallow-merge; `undefined` clears. */ update(id: string, patch: Partial<Omit<FailureRecord, 'id' | 'jobId'>>): FailureRecord;
   /** Delete the records older than `before` with no pending run; how many. */ prune(before: string): number;
 }
 
-/** The hand-offs (issue #516): failed jobs waiting on a person. */
-/** The vault grants (issue #652), one row per item key: a person's grant of the vault to that item's jobs. */
+/** The hand-offs (issue #516): failed jobs waiting on a person. */ /** The vault grants (issue #652), one row per item key: a person's grant of the vault to that item's jobs. */
 export interface VaultGrantRepository {
   get(key: string): VaultGrant | undefined;
   list(): VaultGrant[];
   put(grant: VaultGrant): VaultGrant;
   /** Whether there was one to remove. */ remove(key: string): boolean;
 }
-
-/** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */
-export interface ItemSnapshotRepository {
+/** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */ export interface ItemSnapshotRepository {
   get(key: string): ItemSnapshot | undefined;
   /** Record `snapshot` as its item's approved text, in place of any before it. */ put(snapshot: ItemSnapshot): ItemSnapshot;
 }
-
 export interface HandoffRepository {
   create(input: Omit<Handoff, 'id'>): Handoff;
   get(id: string): Handoff | undefined;
   /** The job's newest hand-off. */ forJob(jobId: JobId): Handoff | undefined;
-  /** Open ones oldest first; closed ones newest closed first; at most `limit` (default 500). */
-  list(filter: { status: Handoff['status']; closedSince?: string; limit?: number }): Handoff[];
+  /** Open ones oldest first; closed ones newest closed first; at most `limit` (default 500). */ list(filter: { status: Handoff['status']; closedSince?: string; limit?: number }): Handoff[];
   /** Shallow-merge; `undefined` clears. */ update(id: string, patch: Partial<Omit<Handoff, 'id' | 'jobId'>>): Handoff;
   /** Delete the hand-offs closed before `before`, never an open one; how many. */ prune(before: string): number;
 }
-
-/** The problems (issue #509): shared causes, one per signature while open. */
-export interface ProblemRepository {
+/** The problems (issue #509): shared causes, one per signature while open. */ export interface ProblemRepository {
   create(input: Omit<Problem, 'id'>): Problem;
   get(id: string): Problem | undefined;
   /** The open problem of a signature. */ open(signature: string): Problem | undefined;
@@ -178,7 +164,6 @@ export interface ProblemRepository {
   /** Shallow-merge; `undefined` clears. */ update(id: string, patch: Partial<Omit<Problem, 'id'>>): Problem;
   /** Delete the problems resolved before `before`; how many. */ prune(before: string): number;
 }
-
 
 /** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */
 export interface UsageHistoryQuery {
