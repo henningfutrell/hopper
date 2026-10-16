@@ -19,10 +19,10 @@ import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
-import type { BoxTool, ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
+import type { BoxTool, ContainerRuntime, TemplateLimits } from '../domain/sandboxes.ts';
 import { HOME } from './flags.ts';
 import { boxImage } from './box-image.ts';
-import { DEFAULT_LIMITS } from './params.ts';
+import { boxLimits } from './params.ts';
 import { filesTar } from './socket-http.ts';
 
 import { NEED_LABEL, staleHome, USER_LABEL } from './owned.ts';
@@ -42,7 +42,6 @@ const FILES_DIR = '.hopper-need';
 const FILES_WAIT_S = 600;
 const OUTPUTS_MARK = 'HOPPER-STEP-OUTPUTS';
 const END_MARK = 'HOPPER-STEP-END';
-const LIMITS: ResourceLimits = { cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default };
 
 /** One need's minted credential, as the need box takes it. */
 export interface NeedCredential { profile: OperationProfile; minted: Minted; reach: MintReach }
@@ -175,8 +174,11 @@ export interface NeedBox {
   userId: string;
   instanceId: string;
   network: string;
-  /** The template's image, its tools, and whether it is read-only (its terraform runs through the read-only wrapper). */
-  template: { image: string; tools?: readonly BoxTool[]; readOnly?: boolean };
+  /**
+   * The template's image, its tools, whether it is read-only (its terraform runs through the read-only wrapper), and its
+   * limits: the box runs with their defaults (issue #1349).
+   */
+  template: { image: string; tools?: readonly BoxTool[]; readOnly?: boolean; limits?: TemplateLimits };
   env: Record<string, string>;
   timeoutMs: number;
   /** The step's own directory on this machine: the tars of its files are written there. */
@@ -227,7 +229,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     const { image, user } = await boxImage(runtime, box.template.image, box.template.tools ? [...box.template.tools] : undefined, box.template.readOnly);
     if (!(await runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
-    id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env, limits: LIMITS, script: NEED_BOX_SCRIPT });
+    id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env, limits: boxLimits(box.template.limits), script: NEED_BOX_SCRIPT });
     if (io.signal.aborted) return { exit: 125, problem: 'stopped before it started' };
     await runtime.start(id);
     if (copyIn) {

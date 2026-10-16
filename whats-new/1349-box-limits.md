@@ -1,0 +1,1 @@
+- A sandbox now runs with the CPUs and memory its template sets. Sandboxes on a computer you removed are also closed in the list of sandbox runs.

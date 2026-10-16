@@ -71,6 +71,11 @@ export interface ClientTargets {
   dialledIn(userId: string): string[];
   /** Every user's client targets dialled in now (issue #1349): where the sweeps look for boxes left there. */
   allDialledIn(): { userId: string; machine: string }[];
+  /**
+   * Whether the user has a client target named `machine` now, dialled in or not (issue #1349): a sandbox run on one that
+   * is no longer there is closed, as no runtime is there to say its box went.
+   */
+  known(userId: string, machine: string): boolean;
 }
 
 export interface Placements {

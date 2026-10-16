@@ -31,4 +31,13 @@ describe('sandbox runs', () => {
     expect(s.sandboxRuns.latest('admin', 1).map((r) => r.id)).toEqual(['b']);
     s.close();
   });
+
+  it('a run on a client target that was removed is closed, and says so (issue #1349)', () => {
+    const s = openInstanceStore({ url: temp.url(), clock: fixedClock() });
+    s.sandboxRuns.start({ ...run('d', '2026-10-15T10:00:00.000Z'), machine: 'studio' });
+    s.sandboxRuns.destroyed('d', '2026-10-15T10:10:00.000Z', { machineRemoved: true });
+    expect(s.sandboxRuns.get('d')).toMatchObject({ destroyedAt: '2026-10-15T10:10:00.000Z', machineRemoved: true });
+    expect(s.sandboxRuns.open()).toEqual([]);
+    s.close();
+  });
 });

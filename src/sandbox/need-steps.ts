@@ -151,7 +151,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
           const env = needEnv({ command: request.command, outputs: request.outputs, ...(fields.plan ? { plan: fields.plan } : {}), credentials });
           const files = { ...(inputsBytes > 0 ? { inputs: join(dir, 'inputs.tar') } : {}), ...(planFile ? { plan: planFile } : {}) };
           const r = await run({
-            name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.readOnly ? { readOnly: true } : {}) }, env, timeoutMs: request.timeoutSeconds * 1000,
+            name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.readOnly ? { readOnly: true } : {}), ...(t.limits ? { limits: t.limits } : {}) }, env, timeoutMs: request.timeoutSeconds * 1000,
             dir, ...(Object.keys(files).length > 0 ? { files } : {}),
           }, { log: masked.write, signal }, { jobId: job.id, step: id, template: t.name });
           if (r.outputs) writeFileSync(join(dir, 'outputs.tar'), r.outputs, { mode: 0o600 });
