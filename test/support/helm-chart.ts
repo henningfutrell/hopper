@@ -44,7 +44,7 @@ export interface Resource {
     selector?: Record<string, string> | { matchLabels?: Record<string, string> };
     policyTypes?: string[];
     template?: { spec: PodSpec; metadata?: { labels?: Record<string, string> } };
-    ports?: { port: number; targetPort?: number | string }[];
+    ports?: { port: number; targetPort?: number | string; nodePort?: number }[];
     rules?: { host: string }[];
     podSelector?: { matchLabels?: Record<string, string> };
     ingress?: { from?: { podSelector?: { matchLabels?: Record<string, string> } }[] }[];

@@ -17,6 +17,8 @@ export interface Config extends SandboxSettings {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
   host: string;
   port: number;
+  /** HOPPER_HEALTH_PORT (issue #1383): the health port, on 127.0.0.1, answered off the event loop; absent: none. */
+  healthPort?: number;
   /** HOPPER_DATABASE_URL (or the file HOPPER_DATABASE_URL_FILE names): `postgres://…` (design.md "Database"). Required. */
   databaseUrl: string;
   /** Scratch only — claude's working directory, ssh control sockets, probes; nothing kept. */
@@ -109,6 +111,7 @@ const schema = z.object({
   HOPPER_LAN_NAMES: list(lanName),
   HOPPER_LAN_PEERS: list(lanPeer),
   HOPPER_PORT: int(0, 65535).default(4790),
+  HOPPER_HEALTH_PORT: int(1, 65535).optional(),
   HOPPER_DATABASE_URL: z.string({ error: 'required: postgres://user:password@host:port/database' })
     .superRefine((v, ctx) => { try { parseDatabaseUrl(v); } catch (e) { ctx.addIssue({ code: 'custom', message: (e as Error).message }); } }),
   HOPPER_WORK_DIR: z.string().min(1).default(join(tmpdir(), 'hopper')),
@@ -162,6 +165,7 @@ const schema = z.object({
 const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or HOPPER_DATABASE_URL_FILE: a file holding it',
   HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
+  HOPPER_HEALTH_PORT: 'the health port: GET /api/health on 127.0.0.1 at this port, answered by a thread of its own, so it answers while the event loop is held too (503 and how long). Unset: none',
   HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs HOPPER_LAN_PEERS',
   HOPPER_TUNNEL_API: 'the local API of the ngrok agent (http://tunnel:4040, the compose service `tunnel`), asked whether the remote access URL is up while remote access is on with ngrok (Settings → Remote access); a Grok Bot routine is told where the hopper is reached. Unset: the hopper asks no ngrok agent',
   HOPPER_CLOUDFLARED_API: 'the metrics server of the cloudflared agent (http://cloudflared:2000, the compose service `cloudflared`), asked whether the tunnel is ready while remote access is on with Cloudflare Tunnel (Settings → Remote access). Unset: the hopper asks no cloudflared agent',
@@ -311,6 +315,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     // Every interface only when requests may come from beyond loopback (LAN peers); a reverse proxy on this host needs none.
     host: e.HOPPER_LAN_PEERS.length > 0 ? '::' : '127.0.0.1',
     port: e.HOPPER_PORT,
+    ...(e.HOPPER_HEALTH_PORT === undefined ? {} : { healthPort: e.HOPPER_HEALTH_PORT }),
     databaseUrl: e.HOPPER_DATABASE_URL,
     workDir: e.HOPPER_WORK_DIR,
     tickMs: e.HOPPER_TICK_MS,

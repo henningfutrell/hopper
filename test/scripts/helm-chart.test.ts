@@ -259,6 +259,16 @@ describe('the Helm chart, with values', () => {
     expect(out.stderr).toMatch(/service\.type/);
   });
 
+  it('pins the Service\'s node port with service.nodePort, for NodePort and LoadBalancer, and else lets Kubernetes pick one (issue #1407)', () => {
+    const nodePort = (rs: Resource[]) => find(rs, 'Service', 'hopper').spec?.ports?.[0]?.nodePort;
+    expect(nodePort(render('service.type=NodePort'))).toBeUndefined();
+    expect(nodePort(render('service.type=NodePort', 'service.nodePort=30791'))).toBe(30791);
+    expect(nodePort(render('service.type=LoadBalancer', 'service.nodePort=30791'))).toBe(30791);
+    const out = helm(['template', 'hopper', '/chart', '--set', 'service.nodePort=30791']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/service\.nodePort/);
+  });
+
   it('is in the image, so hopper-cluster.sh migrate installs the chart of the version the compose install runs', () => {
     expect(readFileSync(join(ROOT, 'Dockerfile'), 'utf8')).toMatch(/^COPY deploy\/helm \.\/deploy\/helm$/m);
     expect(readFileSync(join(ROOT, '.dockerignore'), 'utf8').split('\n')).not.toContain('deploy');

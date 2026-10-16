@@ -166,8 +166,6 @@ export function createServer(o: ServerOptions): FastifyInstance {
       console.warn(`hopper: UI session ended (${reason}): ${identity.realm} ${identityName(identity)} as user ${userId}`);
       o.tenants.user(userId)?.store.events.append({ type: 'ui_session.ended', data: { reason, realm: identity.realm } });
     },
-    // Signed in with GitHub, the session ends with the user's GitHub connection (issue #513).
-    connectionEnded: (userId) => o.tenants.user(userId)?.connectedAccounts.expired('github') === true,
     unknown: (why) => console.warn(`hopper: a request carried a UI session token that names no live session (${why}); the UI signs in again`),
   });
   // The sign-in config may have changed since the sessions were made: a realm removed or off, or a rule, ends them.
@@ -224,7 +222,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
-  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock });
+  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock, process: loop.reading });
   componentWatcherReadRoutes(app, { ...tenant, instanceAdmin }); // Component watchers (issue #1077): the stack's only for the instance admin
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });

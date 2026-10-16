@@ -9412,7 +9412,8 @@ progress. The reap removes the credentials dir whatever else it keeps.
 
 **Hopper sessions are not bound to the token** while the connection lives: a token renewing or failing to
 renew for a reason that may pass never ends a hopper UI session; its lifetime is #439's. A connection that
-**ends** ends the sessions signed in with GitHub (issue #513, "A GitHub sign-in ends with its connection").
+**ends** ends no session either since issue #1380 part 3 (it ended the sessions signed in with GitHub, issue #513): it
+marks only the source as needing a new connection.
 
 **Verification:** `test/connected-accounts/rotation.test.ts` (real Postgres, two connections to one user
 schema as two processes, the real renewal over HTTP to the fake GitHub, a fake clock: renewed by the
@@ -9464,7 +9465,7 @@ the renewer decides whether the sign-in ended, the message no longer says to con
 sealed under a key the runtime does not give reads **`unreadable`** (`ConnectedAccountStatus`): its source
 pauses saying to give the hopper the key it was sealed under, as `HOPPER_MASTER_KEY` or as
 `HOPPER_MASTER_KEY_PREVIOUS` beside a new one; it is not expired, so the header asks nothing and no session
-ends (#513); the panel offers only *Forget this connection*, after which Connect is offered. A key rotation
+ends; the panel offers only *Forget this connection*, after which Connect is offered. A key rotation
 asks for no new sign-in: the token box opens under `HOPPER_MASTER_KEY_PREVIOUS` and the renewer seals again
 under the new key.
 
@@ -12276,7 +12277,10 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 
-## A GitHub sign-in ends with its connection (issue #513, 2026-10-08)
+## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
+
+**Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
+session. What follows is the history.
 
 Owner request: when the connected GitHub account ended ("GitHub sign-in expired: connect again"), the person
 stayed signed in to the hopper: Sources paused, the header asked to connect again, and the rest of the UI stayed
@@ -12311,7 +12315,8 @@ again restores both; no "still signed in, only reconnect GitHub" path for someon
 
 **Verification:** `test/http/ui-sessions.test.ts` (every GitHub session of the user ends, as `connection-ended`,
 on lookup and on renewal; a session of that user signed in another way stays; a live connection and another
-user's session stay), `test/integration/connection-ended-session.test.ts` (the real daemon and a fake GitHub on
+user's session stay), `test/integration/connection-ended-session.test.ts` (since issue #1380 part 3,
+`test/integration/source-expired-session.test.ts`; the real daemon and a fake GitHub on
 loopback: two browsers signed in with GitHub, GitHub revokes the grant, both sessions read signed out, a change
 is refused, two `ui_session.ended` events; signing in with GitHub again gives a session and a connected account;
 a token refused while its refresh token works is renewed and ends no session), `test/ui/sources-view.test.ts`
@@ -21636,9 +21641,27 @@ said what did not hold the loop, never what did.
   calls of 20 ms said the same. The store now totals the time and count of every call by statement, and the watchdog
   names the difference of the totals across a stall (`storeCallsBetween`), so `store` says the store's whole part,
   `SELECT jobs 41.0 s ×2050` included. The rest of the stall is the hopper's own code, or the garbage collector.
-- **Not done here.** `/api/health` still cannot answer while the loop is held: it is served on the loop. A second
-  listener in the worker would be a second network surface, which a person decides. No other code is moved off the
-  loop yet: the reads say what to move, and no hopper has run them through a stall.
+- **The health port answers while the loop is held** (`src/http/event-loop-held.ts`, `event-loop-held-worker.ts`, part
+  4; `HOPPER_HEALTH_PORT`, the image sets 4791). `/api/health` on the daemon's port is served on the loop, so a held
+  loop does not answer it, and a probe sees only a timeout. The held-loop thread, given a port, listens on `127.0.0.1` at
+  it and answers `GET /api/health` (and `HEAD`) from the beat alone: `200 { ok: true, version, uptimeS }` while the beat
+  is fresh, `503 { ok: false, version, uptimeS, eventLoopHeldMs }` once no beat came for 5 s (`HELD_MS`). Inside the
+  container: `curl 127.0.0.1:4791/api/health`. It is a second listener, made as small as it can be: loopback only, never
+  every interface, even with LAN peers; a loopback Host only (`127.0.0.1:<port>`, `localhost:<port>`, else 421), as the
+  Host guard; one path (else 404) and GET only (else 405); the instance's version and uptime only, the same as the
+  daemon's answer to a request with no user, never a user's state; it changes and records nothing, and reads no store.
+  The image publishes no port for it. A port it cannot take is logged (`hopper: the health port cannot answer: …`) and
+  the daemon starts without it. Unset (a host install): no health port. The image's `HEALTHCHECK` stays on the daemon's
+  port: a held loop is not healthy, and the health port is there to say why, not to hide it.
+- **The process reading** (`GET /api/process`, an instance read, `src/http/stack-resources.ts`; `reading` of
+  `src/http/event-loop.ts`, part 4). The hopper's own memory now (`rssMb`, `heapUsedMb`, `heapTotalMb`, `externalMb`,
+  `arrayBuffersMb`) and its event loop over the last minute: the delay of its timers (`monitorEventLoopDelay`, 20 ms
+  resolution: `mean`, `p50`, `p99`, `max` in ms) and its use (`eventLoopUtilization`, 0..1). The minute going on is
+  answered in place of the last one when it held the loop longer, so a stall shows at once. Memory growth and a slow
+  loop show here before they are a stall, with no container runtime to ask (`podman stats`).
+- **Not done here.** No other code is moved off the loop: the cause found (the waits, part 3) was in the loop's own work,
+  not code that needs a thread. A heap-growth check run locally (an idle and a busy hopper driven for a time, the heap
+  read after a forced garbage collection) and the smaller collections with no bound (issue #1402) are left.
 
 **Verification:** `test/http/event-loop.test.ts` (a stall names the code the loop ran while held, from the real worker;
 `heldSince`, a stall going on included; the memory line once per GiB; `frameOf` never an absolute path),
@@ -21647,7 +21670,10 @@ the future; still once), `test/http/sse-held.test.ts` (a replay frees the loop b
 a live event after it; a reader far behind is ended; one that reads is kept), `test/store/slow-calls.test.ts` and
 `test/http/event-loop.test.ts` (the store's totals; a stall of many fast store calls names them with their count; a
 stream its reader closed is no longer in flight), `test/github-proxy/pr-wait.test.ts` (the pull request and skill waits
-hear a user's event log once, however often they are answered again).
+hear a user's event log once, however often they are answered again), `test/http/event-loop.test.ts` part 4 (the health
+port answers 200 while the beat is fresh and 503 with the held time while another process asks it with this one held; a
+host that is not loopback 421, another path 404; no port, no listener; the process reading's memory and loop delay, and a
+held loop in its `max`), `test/integration/config.test.ts` (`HOPPER_HEALTH_PORT`).
 
 ## Local accounts (issue #1380, part 1, 2026-10-15)
 
@@ -21794,3 +21820,36 @@ plugin; no `@octokit/auth-app`), `test/integration/github-writes.test.ts` and `t
 the thread through the account's token), `test/integration/github-budget.test.ts` (the budget, through the account's
 source), `test/ui/sources.test.ts` (the summary per state), `test/ui/intake-view.test.ts` (the account's source that
 cannot run has its panel, with the error).
+
+## A source that expires marks only the source (issue #1380, part 3, 2026-10-15)
+
+Issue #1380: sessions are no longer tied to GitHub token expiry; a source expiring only marks that source as needing
+re-auth. Acceptance test: a source token expiring does not log the user out; the source is marked as needing re-auth.
+This replaces issue #513 ("A GitHub sign-in ends with its connection"), which ended every session of a user signed in
+with GitHub when their GitHub connection ended.
+
+**The change.**
+- `src/http/ui/sessions.ts`: a session ends only by its own lengths, a realm change, a gateway's refusal or a logout. The
+  `connectionEnded` hook and its check are gone; `src/http/index.ts` no longer gives it.
+- The connection is marked as before: `connected_account.expired`, the account's state `expired` ("reconnect needed"),
+  its job source paused with the reason. The header's **GitHub: reconnect needed** shows to everyone, signed in with
+  GitHub or not, and the page no longer asks the daemon at once to go to sign-in.
+- The Sources panel offers **Connect GitHub again** to everyone: on an ended connection, and on one GitHub gave no
+  refresh token (issue #518). The device code connects the same user's GitHub again from the session it has.
+
+**Decisions:**
+- **`connection-ended` stays a reason of `ui_session.ended`.** Events recorded before this part carry it, and the event
+  schema checks the events it reads; no new event carries it.
+- **Signed in with GitHub, the panel still offers Sign out, not Stop working through GitHub** (issue #322). Taking the
+  sign-in and the source apart in the panel belongs to the part that makes GitHub a source a user attaches.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+GitHub as a source a user attaches (OAuth or a personal access token, in the user's vault), with its repositories, the
+acting identity per job and the source-email match setting (checked again on refresh); no GitHub App required (no App
+private key is required since issue #1377); the migration of GitHub-signed-in users; Kubernetes and service-account tokens.
+
+**Verification:** `test/integration/source-expired-session.test.ts` (the real daemon and a fake GitHub on loopback: two
+browsers signed in with GitHub, GitHub revokes the grant, both sessions live, no `ui_session.ended`, the account reads
+`expired`; Connect GitHub again from the same session makes it `connected`; a renewal ends no session),
+`test/ui/sources-view.test.ts` (signed in with GitHub, an ended connection keeps the session, the header asks to
+reconnect, and the panel's Connect GitHub again shows the device code).

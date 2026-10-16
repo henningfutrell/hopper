@@ -9,6 +9,8 @@
 {{- if or (lt $replicas 0) (gt $replicas 1) }}{{ fail "replicas is 0 or 1: one hopper writes its database" }}{{ end -}}
 {{- $serviceType := .Values.service.type -}}
 {{- if not (has $serviceType (list "ClusterIP" "LoadBalancer" "NodePort")) }}{{ fail "service.type is ClusterIP, LoadBalancer or NodePort" }}{{ end -}}
+{{- $nodePort := .Values.service.nodePort | toString -}}
+{{- if and $nodePort (eq $serviceType "ClusterIP") }}{{ fail "service.nodePort needs service.type NodePort or LoadBalancer" }}{{ end -}}
 {{- $lanNames := list (printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $name $name $ns $name $ns $name $ns .Values.clusterDomain) -}}
 {{- range splitList "," (.Values.lanNames | toString) }}{{ if trim . }}{{ $lanNames = append $lanNames (trim .) }}{{ end }}{{ end -}}
 {{- $health := printf "fetch('http://127.0.0.1:%d/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" $port -}}
@@ -26,6 +28,9 @@ spec:
     - name: http
       port: {{ $port }}
       targetPort: http
+      {{- if $nodePort }}
+      nodePort: {{ $nodePort | int }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
