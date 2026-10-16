@@ -46,11 +46,6 @@ storageClassName: {{ . | quote }}
 {{- .Values.masterKey.existingSecret | default (printf "%s-master-key" (include "hopper.fullname" .)) -}}
 {{- end -}}
 
-{{/* Whether the master key is read from a mounted Secret file (a Secret given, or an ExternalSecret), not variables. */}}
-{{- define "hopper.masterKeyFromFile" -}}
-{{- if or .Values.masterKey.existingSecret .Values.masterKey.externalSecret.enabled }}true{{ end -}}
-{{- end -}}
-
 {{/* Whether the chart makes the hopper's service account: asked, or the sandbox Role needs one and none is named. */}}
 {{- define "hopper.makesServiceAccount" -}}
 {{- if or .Values.serviceAccount.create (and .Values.sandbox.enabled (not .Values.serviceAccount.name)) }}true{{ end -}}
@@ -100,41 +95,23 @@ bytes. With no limit set, Kubernetes gives the node's allocatable.
 
 {{/*
 The master key, for each pod that seals or opens with it: the hopper, and the vault pod. From the mounted Secret's files
-(a start without its file is refused), else from its keys as variables.
+(the chart's own, one given, or one an ExternalSecret fills): a start without its file is refused.
 */}}
 {{- define "hopper.masterKeyEnv" -}}
-{{- if include "hopper.masterKeyFromFile" . -}}
-# The master key from the mounted Secret: a start without its file is refused.
 - name: HOPPER_MASTER_KEY_FILE
   value: /run/hopper-master-key/master-key
 - name: HOPPER_MASTER_KEY_PREVIOUS_FILE
   value: /run/hopper-master-key/previous
-{{- else -}}
-- name: HOPPER_MASTER_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "hopper.masterKeySecret" . }}
-      key: master-key
-      optional: true
-- name: HOPPER_MASTER_KEY_PREVIOUS
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "hopper.masterKeySecret" . }}
-      key: previous
-      optional: true
-{{- end -}}
 {{- end -}}
 
-{{/* The master key Secret's volume, when it is read from files. */}}
+{{/* The master key Secret's volume. */}}
 {{- define "hopper.masterKeyVolume" -}}
-{{- if include "hopper.masterKeyFromFile" . -}}
 # Optional: with no Secret the pod starts and refuses, saying the key file is missing.
 - name: master-key
   secret:
     secretName: {{ include "hopper.masterKeySecret" . }}
     defaultMode: 0440
     optional: true
-{{- end -}}
 {{- end -}}
 
 {{/*

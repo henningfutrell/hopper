@@ -1,8 +1,9 @@
 // The kind check (issue #1281, docs/deploy.md "Check the chart on kind"): on a fresh kind cluster, `helm install` alone
 // brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket, or runs Podman, Docker or
 // compose. Then `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the
-// machines come up as pods — on a fresh install given a master key, sandbox boxes on, one lane pod — and the check runs
-// again: still no container runtime. Needs
+// hopper's pod is deleted, and the new one runs on the master key of the same fingerprint: the key the chart made and
+// keeps (issue #1406). Then the machines come up as pods — by an upgrade of the same release, sandbox boxes on, one lane
+// pod — and the check runs again: still no container runtime. Needs
 // `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
 //
 //   node scripts/kind-check.ts [--cluster NAME] [--tag TAG] [--keep] [--set key=value ...]
@@ -10,7 +11,6 @@
 // --cluster names the kind cluster (default hopper-check), --tag the hopper's image tag (default: the chart's), --set
 // passes more values to the chart, and --keep keeps the cluster at the end. Exit 0 when the check passes, 1 when not.
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -61,7 +61,7 @@ function check(context: string, tag: string | undefined, sets: string[]): string
   const values = [...(tag ? [`image.tag=${tag}`] : []), ...sets];
   if (install(context, ['--create-namespace'], values) !== 0) return 'helm install did not bring up the release';
 
-  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? machines(context, values);
+  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? machines(context);
 }
 
 /** `helm install` of the release, waiting for it, with `values`. Answers its exit status. */
@@ -111,26 +111,61 @@ function migratesOnce(context: string): string | null {
   return null;
 }
 
+let fingerprint = '';
+
+// The start's line about the master key (src/secrets/master-key.ts logMasterKey): where it came from, and its fingerprint.
+const KEY_LINE = /master key: .*\(([a-z-]+)\), fingerprint ([0-9a-f]+)/;
+
+/**
+ * The fingerprint of the master key the hopper's pod runs on, from its log: never the key. Given at launch, never one it
+ * made itself. Read from the log, as `hopper master-key status` needs a user, and no one signed in here.
+ */
+function keyOf(context: string): { fingerprint: string } | { failure: string } {
+  const log = sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'logs', 'deploy/hopper', '-c', 'hopper'], true);
+  const line = log.stdout.split('\n').map((l) => KEY_LINE.exec(l)).find((m) => m !== null);
+  if (log.status !== 0 || !line) return { failure: `the hopper's log names no master key: ${log.status === 0 ? 'no line about it' : `exit ${log.status}`}` };
+  if (line[1] !== 'given') return { failure: `the hopper's master key is not given at launch (source ${line[1]}): the chart's Secret did not reach it` };
+  return { fingerprint: line[2]! };
+}
+
+/** The same key as before, on the hopper's pod as it is now. */
+function sameKey(context: string, what: string): string | null {
+  const key = keyOf(context);
+  if ('failure' in key) return key.failure;
+  if (key.fingerprint !== fingerprint) return `${what} runs on the master key of fingerprint ${key.fingerprint}, not ${fingerprint}`;
+  return null;
+}
+
+/** The hopper's pod deleted, its new pod starts on the same master key: the one the chart made and keeps (issue #1406). */
+function keyKept(context: string): string | null {
+  const key = keyOf(context);
+  if ('failure' in key) return key.failure;
+  fingerprint = key.fingerprint;
+  const kubectl = (...args: string[]): number | null => sh('kubectl', ['--context', context, '--namespace', NAMESPACE, ...args]).status;
+  if (kubectl('delete', 'pod', '-l', 'app.kubernetes.io/instance=hopper,app.kubernetes.io/component=hopper', '--wait=true', '--timeout=5m') !== 0) return 'kubectl could not delete the hopper\'s pod';
+  if (kubectl('rollout', 'status', 'deployment/hopper', '--timeout=5m') !== 0) return 'no new hopper pod came up after its pod was deleted';
+  const health = healthy(context);
+  if (health) return `after its pod was deleted, ${health}`;
+  const same = sameKey(context, 'the new hopper pod');
+  if (same) return same;
+  console.log(`a new hopper pod runs on the same master key (fingerprint ${fingerprint})`);
+  return null;
+}
+
 /**
  * The machines as pods: sandbox boxes on (the hopper starts them through the Kubernetes API), and one lane pod. The lane
  * pod joins only once a person signed in, so its upgrade does not wait for it: its spec is what the check reads.
  *
- * They come up on a fresh install given a master key. The first install's hopper made its key at its first start and
- * shows it only in the UI, so a new hopper pod on that database does not start (issue #1296), and turning sandbox boxes
- * on makes a new pod. Deleting the namespace removes the release, the claims it keeps and the database with it.
+ * They come up by an upgrade of the same release: a new hopper pod on its database starts on the key the chart keeps.
  */
-function machines(context: string, values: string[]): string | null {
-  if (sh('kubectl', ['--context', context, 'delete', 'namespace', NAMESPACE, '--wait=true', '--timeout=5m']).status !== 0) return 'kubectl could not delete the first install';
-  if (sh('kubectl', ['--context', context, 'create', 'namespace', NAMESPACE]).status !== 0) return `kubectl could not make the namespace ${NAMESPACE}`;
-  // The chart's default name for the key's Secret: masterKey.existingSecret unset.
-  const key = randomBytes(32).toString('hex');
-  if (sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'create', 'secret', 'generic', 'hopper-master-key',
-    `--from-literal=master-key=${key}`], true).status !== 0) return 'kubectl could not make the master key Secret';
-  if (install(context, [], [...values, 'sandbox.enabled=true']) !== 0) return 'helm install with sandbox.enabled=true did not bring up the release';
+function machines(context: string): string | null {
   const upgrade = (...args: string[]): number | null => sh('helm', ['upgrade', 'hopper', CHART, '--kube-context', context,
     '--namespace', NAMESPACE, '--reuse-values', ...args]).status;
+  if (upgrade('--wait', '--wait-for-jobs', '--timeout', '15m', '--set', 'sandbox.enabled=true') !== 0) return 'helm upgrade with sandbox.enabled=true did not succeed';
   const health = healthy(context);
   if (health) return `with sandbox boxes on, ${health}`;
+  const same = sameKey(context, 'with sandbox boxes on, the hopper');
+  if (same) return same;
   if (upgrade('--set', 'lanes.replicas=1') !== 0) return 'helm upgrade with lanes.replicas=1 did not succeed';
   sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'wait', '--for=create', `pod/${LANE_POD}`, '--timeout=180s']);
   const pods = listPods(context);

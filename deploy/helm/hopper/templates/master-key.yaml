@@ -1,0 +1,45 @@
+{{- /*
+The master key Secret (issue #1406): `helm install` alone keeps the master key. With no Secret given
+(masterKey.existingSecret) and no ExternalSecret, the chart makes <release>-master-key with the key masterKey.value
+gives, else a new random one (32 bytes, as 64 hex digits), and keeps it at each upgrade (read back from the Secret) and at
+an uninstall: every secret the hopper keeps is sealed under it. A `previous` put in the Secret by hand for a rotation is
+kept too. A Secret of that name the chart did not make (one a person made, as before) is theirs: the chart leaves it.
+An upgrade that finds no Secret is refused: that release's hopper made its key at its first start and holds it only in
+memory, and a new key would lose it.
+*/ -}}
+{{- with .Values.masterKey }}
+{{- if and .value .existingSecret }}{{ fail "masterKey.value and masterKey.existingSecret: set one" }}{{ end -}}
+{{- if and .value .externalSecret.enabled }}{{ fail "masterKey.value and masterKey.externalSecret.enabled: set one" }}{{ end -}}
+{{- if .value }}
+{{- if not (or (regexMatch "^[0-9a-fA-F]{64}$" .value) (regexMatch "^[A-Za-z0-9+/]{43}=$" .value)) }}
+{{- fail "masterKey.value: the master key is 32 bytes, as 64 hex digits or base64 (openssl rand -hex 32)" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if not (or .Values.masterKey.existingSecret .Values.masterKey.externalSecret.enabled) }}
+{{- $name := include "hopper.masterKeySecret" . -}}
+{{- $found := lookup "v1" "Secret" .Release.Namespace $name -}}
+{{- $annotations := get (get $found "metadata" | default dict) "annotations" | default dict -}}
+{{- $owner := get $annotations "meta.helm.sh/release-name" -}}
+{{- if or (not $found) (eq $owner .Release.Name) }}
+{{- $old := $found.data | default dict -}}
+{{- if and .Release.IsUpgrade (not $found) (not .Values.masterKey.value) }}
+{{- fail (printf "no Secret %s with the master key: this release's hopper made its key at its first start and holds it only in memory. Save it from the UI (Show the key (once)), then give it: --set masterKey.value=<the key>, or kubectl --namespace %s create secret generic %s --from-literal=master-key=<the key> (docs/deploy.md \"On Kubernetes, with Helm\")" $name .Release.Namespace $name) }}
+{{- end }}
+{{- $key := .Values.masterKey.value | default (get $old "master-key" | b64dec) | default (randAlphaNum 64 | sha256sum) -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" (dict "ctx" . "component" "master-key") | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  master-key: {{ $key | quote }}
+  {{- with get $old "previous" }}
+  previous: {{ b64dec . | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

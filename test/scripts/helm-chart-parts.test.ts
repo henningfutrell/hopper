@@ -95,19 +95,23 @@ describe('the OpenFGA migration', () => {
 });
 
 describe('the master key, with every part on', () => {
-  for (const [name, set] of [['by Secret reference', all], ['from a mounted Secret', [...all, 'masterKey.existingSecret=my-key']]] as const) {
-    it(`${name}: no pod has it as a value, and the chart makes no Secret of it`, () => {
+  for (const [name, set, secret] of [['in the chart\'s Secret', all, 'hopper-master-key'], ['from a Secret given', [...all, 'masterKey.existingSecret=my-key'], 'my-key']] as const) {
+    it(`${name}: every pod reads it from the mounted Secret, never as a value`, () => {
       const rs = render(...set);
       for (const w of workloads(rs)) {
         for (const c of [...pod(w).containers, ...(pod(w).initContainers ?? [])]) {
           for (const e of c.env ?? []) {
-            if (/^HOPPER_MASTER_KEY(_PREVIOUS)?$/.test(e.name)) expect(e.valueFrom?.secretKeyRef, `${w.metadata.name}/${c.name}`).toBeDefined();
-            if (/^HOPPER_MASTER_KEY/.test(e.name)) expect(e.value ?? '', `${w.metadata.name}/${c.name}`).not.toMatch(/[0-9a-f]{32}/);
+            expect(e.name, `${w.metadata.name}/${c.name}`).not.toMatch(/^HOPPER_MASTER_KEY(_PREVIOUS)?$/);
+            if (/^HOPPER_MASTER_KEY/.test(e.name)) expect(e.value ?? '', `${w.metadata.name}/${c.name}`).toMatch(/^\/run\/hopper-master-key\//);
+          }
+          if (env(c, 'HOPPER_MASTER_KEY_FILE')) {
+            const mount = c.volumeMounts?.find((m) => m.mountPath === '/run/hopper-master-key');
+            expect(pod(w).volumes?.find((v) => v.name === mount?.name)?.secret?.secretName, `${w.metadata.name}/${c.name}`).toBe(secret);
           }
         }
         for (const v of pod(w).volumes ?? []) expect(v.hostPath, `${w.metadata.name} volume ${v.name}`).toBeUndefined();
       }
-      expect(rs.some((r) => r.kind === 'Secret' && /master-key/.test(r.metadata.name))).toBe(false);
+      expect(rs.filter((r) => r.kind === 'Secret' && /master-key/.test(r.metadata.name)).map((r) => r.metadata.name)).toEqual(secret === 'my-key' ? [] : ['hopper-master-key']);
     });
   }
 });
