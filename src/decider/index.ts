@@ -79,8 +79,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
-    const native = nativeHold(job, machines, inputs.unavailableExecutors, inputs.signedOut) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
-      ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius, inputs.signedOut);
+    const native = nativeHold(job, machines, inputs.unavailableExecutors, inputs.signedOut, inputs.credentialAcceptances) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
+      ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius, inputs.signedOut, inputs.credentialAcceptances);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
@@ -100,7 +100,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks, inputs.credentialAcceptances);
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const elbowing = new Set(inputs.running.filter((j) => elbowsInAs(j) !== undefined).map((j) => j.id));
 

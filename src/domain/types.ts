@@ -373,9 +373,10 @@ export interface DecisionInputs {
    * Issue #688. `expectedCosts`: each waiting job's expected cost, where one is known: a machine where it does not fit is
    * passed over. `placementPicks`: Jev's applied picks of a waiting job's machine (`job-machine`), taken first where the
    * job may go. Absent on Decisions stored before them: none. `signedOut` (issue #1128 part 5): the machines whose agent tool
-   * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none.
+   * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none. `credentialAcceptances` (issue #1459):
+   * the machines whose infra credentials an admin accepted; they take jobs despite the credentials. Absent on Decisions stored before it: none.
    */
-  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[];
+  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialAcceptances?: Set<string>;
   policy: DeciderPolicy;
 }
 
