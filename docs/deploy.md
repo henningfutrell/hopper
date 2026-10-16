@@ -804,6 +804,7 @@ vault then runs in the hopper, under the master key.
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `replicas` | `1`, or `0` while nothing may write the database (`hopper-cluster.sh migrate` moves data in so). Never more |
 | `service.type` | `ClusterIP` (the default), `LoadBalancer` or `NodePort`: the hopper's Service, at `port` |
+| `service.nodePort` | the Service's node port, with `service.type` `NodePort` or `LoadBalancer`. Empty (the default): Kubernetes picks one ("On kind, at a host port") |
 | `lanNames` | more names the hopper answers to (comma-separated), after its Service's names: the names machines outside the cluster reach it by |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
@@ -832,6 +833,33 @@ its update notice gives the command. Not in the chart: HashiCorp Vault (the comp
 - **The OpenFGA migration** is a Job whose name carries a hash of its spec. It makes the `openfga` schema, then runs
   `openfga migrate`, which only adds the migrations the schema lacks. An upgrade that changes nothing in it leaves the
   finished Job and runs nothing; a new OpenFGA version is a new Job. OpenFGA is not ready until the Job has run.
+
+### On kind, at a host port
+
+kind maps a fixed port of its node to a port of this host (`extraPortMappings`), so the hopper's Service needs a fixed node
+port (issue #1407). The Host guard takes only the port the hopper answers on, so `port` is the host port too. Make the
+cluster with this config, for host port 4791 and node port 30791:
+
+```yaml
+# kind.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30791
+        hostPort: 4791
+```
+
+```sh
+kind create cluster --name hopper --config kind.yaml
+helm install hopper deploy/helm/hopper --namespace hopper --create-namespace \
+  --set service.type=NodePort --set service.nodePort=30791 --set port=4791
+curl http://localhost:4791/api/health    # 200, once the hopper is ready
+```
+
+The node port must be in the cluster's node port range (30000–32767 by default). A request through the mapping comes from
+the node's network, which the default `lanPeers` holds: the browser reads the API only with a UI session.
 
 ### Check the chart on kind
 
