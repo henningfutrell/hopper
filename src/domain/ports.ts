@@ -841,5 +841,5 @@ export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
-export type * from './store.ts'; export type * from './local-accounts.ts'; // local accounts (issue #1380)
+export type * from './store.ts'; export type * from './local-accounts.ts'; export type * from './lane-pool-keys.ts'; // local accounts (issue #1380); lane pool keys the hopper issues (issue #1454)
 export { CONFIG_NAMES, INSTANCE_CONFIG, USER_CONFIG } from './store.ts';

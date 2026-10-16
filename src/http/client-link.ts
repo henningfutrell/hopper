@@ -4,7 +4,8 @@
 //   POST /client/join      a one-time join code (minted through an admin's UI session, or the operator CLI)
 //                          and the machine's key: the machine is added as a client target. The code is
 //                          what authorizes the write; it is spent by it.. Or the lane pool key (issue #1284), never
-//                          spent: a lane pod joins as the first user's machine, under its own name.
+//                          spent: a lane pod joins as the first user's machine, under its own name; or a lane pool
+//                          key the hopper issued (issue #1454), the same, as its user's machine.
 //   POST /client/leave     a machine's say that it leaves (issue #1284), signed with its client token over its
 //                          user and machine key: it takes no new job; a lane pod with no job left is retired.
 //   GET  /client/connect   an HTTP/1.1 upgrade to `hopper-client/1`, signed with the client token: the
@@ -28,7 +29,7 @@ import { HELD_CREDIT_MS, REQUEST_HEADER, WINDOW_MS, createNonceCache, nonceOf, v
 import { askOf, sealAnswer, VAULT_CONTENT_TYPE, VAULT_PATH } from '../client/vault.ts';
 import type { Clock, InstanceStore, JoinCodePlace } from '../domain/ports.ts';
 import { useJoinCode } from '../machines/join-code.ts';
-import { isLanePoolKey, LANE_POOL_USER } from '../machines/lane-pool.ts';
+import { isLanePoolKey, issuedLanePoolUser, LANE_POOL_USER } from '../machines/lane-pool.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, publicOriginOf, type Lan } from './reach.ts';
@@ -37,7 +38,7 @@ import { holdsTemplate } from '../vault/vault.ts';
 
 export interface ClientLinkOptions {
   tenants: Tenants;
-  instance: Pick<InstanceStore, 'joinCodes'>;
+  instance: Pick<InstanceStore, 'joinCodes' | 'lanePoolKeys'>;
   clock: Clock;
   port: () => number;
   lan: Lan;
@@ -82,8 +83,10 @@ const header = (req: IncomingMessage, name: string): string => {
 export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): void {
   app.post(JOIN_PATH, async (req) => {
     const b = parseWith(joinBody, req.body);
-    const pool = isLanePoolKey(o.poolKey?.(), b.code);
-    const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code);
+    const installed = isLanePoolKey(o.poolKey?.(), b.code);
+    const issued = installed ? undefined : issuedLanePoolUser(o.instance, b.code);
+    const pool = installed || issued !== undefined;
+    const taken: ({ userId: string } & JoinCodePlace) | undefined = installed ? { userId: LANE_POOL_USER } : issued !== undefined ? { userId: issued } : useJoinCode(o.instance, o.clock, b.code);
     if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
     const { userId, template, pod } = taken;
     const tenant = o.tenants.user(userId);

@@ -7,7 +7,7 @@ import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createAccessRepository } from './access.ts';
 import { createConfigRecords } from './config.ts';
-import { createJoinCodeRepository, createLoginCodeRepository } from './login-codes.ts';
+import { createJoinCodeRepository, createLanePoolKeyRepository, createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
 import { keptSecrets } from './kept-secrets.ts';
 import { resealUnderNewKey } from './rotate-master-key.ts';
@@ -57,6 +57,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     apiGrants: createApiGrantRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
     joinCodes: createJoinCodeRepository(ctx),
+    lanePoolKeys: createLanePoolKeyRepository(ctx),
     sandboxes: createSandboxRepository(ctx),
     sandboxRuns: createSandboxRunRepository(ctx),
     config,

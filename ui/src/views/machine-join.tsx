@@ -2,6 +2,7 @@
 // (POST /ui/api/machines/join), run it on the computer. Nothing is typed into the hopper: the machine joins itself, dials
 // in, and shows in the Machines view, online. Attaching over ssh stays behind a link, for a machine that cannot run the
 // client. A sandbox never joins as a machine (issue #1349): a job's step runs in a sandbox of its own, burned after it.
+// A pod on Kubernetes (issue #1454) gets a lane pool key and a Helm command instead: machine-pool.tsx.
 // Phone width first: every control stacks.
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -9,12 +10,26 @@ import { Button } from '@/components/ui/button';
 import { post } from '@/lib/api';
 import { joinLine } from '@/model/machines';
 import { useHopper } from '@/store';
+import { PodMachineForm } from './machine-pool';
 
 interface Minted { code: string; expiresAt: string }
 
 const time = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 export function JoinMachineForm({ onDone, onSsh }: { onDone: () => void; onSsh: () => void }) {
+  const [kind, setKind] = useState<'computer' | 'pod'>('computer');
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="What to add">
+        <Button type="button" size="sm" variant={kind === 'computer' ? 'default' : 'outline'} aria-pressed={kind === 'computer'} onClick={() => setKind('computer')}>A computer</Button>
+        <Button type="button" size="sm" variant={kind === 'pod' ? 'default' : 'outline'} aria-pressed={kind === 'pod'} onClick={() => setKind('pod')}>Pods on Kubernetes</Button>
+      </div>
+      {kind === 'computer' ? <ComputerForm onDone={onDone} onSsh={onSsh} /> : <PodMachineForm onDone={onDone} />}
+    </div>
+  );
+}
+
+function ComputerForm({ onDone, onSsh }: { onDone: () => void; onSsh: () => void }) {
   const [minted, setMinted] = useState<Minted | null>(null);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);

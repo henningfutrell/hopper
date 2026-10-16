@@ -4,8 +4,13 @@
 // and the pods' join step. Unlike a join code it is not spent: every pod, and every restart of one, joins with it.
 // It has a join code's shape (64 hex: `openssl rand -hex 32`), so the join line is the same `<hopper URL>#<key>`.
 // The pods are the machines of the hopper's first user, `admin`: the person who signed in first.
-import { createHash, timingSafeEqual } from 'node:crypto';
+//
+// The hopper also issues a lane pool key (issue #1454, design.md "Lane pods of another release"): Add machine's Pod /
+// Kubernetes, for lane pods of a chart release that is not this hopper's own — a compose hopper's, or a hopper on another
+// cluster. One per user, kept hashed, issued and revoked with no restart; its pods are the machines of that user.
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { AGENT_CREDENTIAL_VARIABLE, POD_AGENT_CREDENTIAL } from '../domain/agent-credential.ts';
+import type { Clock, InstanceStore } from '../domain/ports.ts';
 import type { AttachedMachine } from '../domain/types.ts';
 import type { AgentCredentialAnswer, PodCredentialAsk } from '../vault/agent-credential.ts';
 
@@ -20,6 +25,19 @@ const digest = (s: string): Buffer => createHash('sha256').update(s).digest();
 /** Whether `code` is the lane pool key. False when the hopper has none, or none of the right shape. Constant time. */
 export function isLanePoolKey(poolKey: string | undefined, code: string): boolean {
   return poolKey !== undefined && KEY.test(poolKey) && timingSafeEqual(digest(poolKey), digest(code));
+}
+
+/** A new lane pool key for `userId`, in place of the one it had: only its hash is kept. The key is answered only here. */
+export function issueLanePoolKey(store: Pick<InstanceStore, 'lanePoolKeys'>, clock: Clock, userId: string): { key: string; issuedAt: string } {
+  const key = randomBytes(32).toString('hex');
+  const issuedAt = clock.now().toISOString();
+  store.lanePoolKeys.replace(digest(key).toString('hex'), userId, issuedAt);
+  return { key, issuedAt };
+}
+
+/** The user of the issued lane pool key `code`; undefined when it is none (not the key's shape, or no user's). */
+export function issuedLanePoolUser(store: Pick<InstanceStore, 'lanePoolKeys'>, code: string): string | undefined {
+  return KEY.test(code) ? store.lanePoolKeys.userOf(digest(code).toString('hex')) : undefined;
 }
 
 /** The agent's sign-in a lane pod gives: its variable and value, none, or why not. */
