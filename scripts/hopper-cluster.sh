@@ -627,7 +627,11 @@ verify() {
   health="$(in_hopper node -e "fetch('http://127.0.0.1:$port/api/health').then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 1); }, () => process.exit(1))")" \
     || { say "the cluster hopper is not healthy: $health"; return 1; }
   say "health: $health"
-  status="$(in_hopper hopper master-key status </dev/null)" || { say 'hopper master-key status failed in the cluster hopper'; return 1; }
+  # The chart names the previous-keys file, which a Secret with no previous key does not hold. The daemon reads that as no
+  # previous key; the CLI of an image built before issue #1373 stops on it. So the name goes when the file is not there.
+  # shellcheck disable=SC2016 # expanded in the pod
+  status="$(in_hopper sh -c '[ -e "$HOPPER_MASTER_KEY_PREVIOUS_FILE" ] || unset HOPPER_MASTER_KEY_PREVIOUS_FILE; exec hopper master-key status' </dev/null)" \
+    || { say 'hopper master-key status failed in the cluster hopper'; return 1; }
   fingerprint="$(printf '%s' "$status" | sed -n 's/.*"fingerprint": *"\([0-9a-f]*\)".*/\1/p' | head -n 1)"
   [ "$fingerprint" = "$want" ] || { say "the cluster hopper runs on the key of fingerprint ${fingerprint:-none}, not $want"; return 1; }
   say "the cluster hopper runs on the same master key (fingerprint $fingerprint)"
