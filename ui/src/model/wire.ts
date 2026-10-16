@@ -93,7 +93,7 @@ export interface LoginsRead {
   logins: LoginView[];
 }
 
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk };
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; credentialAcceptance?: import('../../../src/domain/machine-credentials.ts').CredentialAcceptance };
 
 export interface Health {
   ok: boolean;

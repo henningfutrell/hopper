@@ -138,8 +138,8 @@ export function createEngine(o: EngineOptions): Engine {
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
-  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine.
-  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes };
+  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine; credential acceptances (issue #1459) let machines with infra credentials run jobs.
+  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes, credentialAccepted: (id: string) => c.store.credentialAcceptances.get(id) !== undefined };
   const laneTuning = createLaneTuning(c, laneCalls);
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
 

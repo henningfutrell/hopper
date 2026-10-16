@@ -27,6 +27,8 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
     const expectedCosts = expectedOf(waiting, expected);
     const placementPicks = picks.input(waiting);
+    const accepted = c.store.credentialAcceptances.list().filter((a) => a.revokedAt === undefined).map((a) => a.machineKey);
+    const credentialAcceptances = accepted.length ? new Set(accepted) : undefined;
     return {
       at: nowIso(c),
       trigger,
@@ -44,6 +46,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(expectedCosts ? { expectedCosts } : {}),
       ...(placementPicks ? { placementPicks } : {}),
       ...(signedOut.length ? { signedOut } : {}),
+      ...(credentialAcceptances ? { credentialAcceptances } : {}),
       policy: policyOf(c),
     };
   } };

@@ -13,9 +13,11 @@ import { registerJobActionRoutes } from './job-actions.ts';
 import { registerLaneTuningRoutes } from './lane-tuning.ts';
 import { registerLoginRoutes } from './logins.ts';
 import { registerToolSignInRoutes } from './tool-sign-in.ts';
+import type { BoxAction } from './box-actions.ts';
 import { registerJobTerminalRoutes } from './job-terminal.ts';
 import { registerJobTranscriptRoutes } from './job-transcript.ts';
 import { registerMachineTerminalRoutes } from './machine-terminal.ts';
+import { registerMachineCredentialRoutes } from './machine-credentials.ts';
 import { registerMinorDecisionRoutes } from './minor-decisions.ts';
 import { registerPriorityLaneRoutes } from './priority-lanes.ts';
 import { registerPullRequestActRoutes } from './pull-request-acts.ts';
@@ -44,5 +46,10 @@ import { registerContributionRoutes } from './contribution.ts';
 import { registerShrinkGuardRoutes } from './shrink-guard.ts';
 import { registerWindowsHostRoutes } from './windows-hosts.ts';
 import { registerSearchRoutes } from '../search.ts';
+import { BOX_ACTIONS } from './box-actions.ts';
+import { BOX_ACTIONS_EXTEND } from './machine-credentials.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerIntakeAutoApprovalRoutes, registerLoginRoutes, registerToolSignInRoutes, registerJobTerminalRoutes, registerJobTranscriptRoutes, registerMachineTerminalRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerSandboxRequestRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerLandingBatchRoutes, registerContributionRoutes, registerShrinkGuardRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerInstallationsRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerPromotionRoutes, registerGitHubWatchRoutes, registerComponentWatcherRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerIntakeAutoApprovalRoutes, registerLoginRoutes, registerToolSignInRoutes, registerJobTerminalRoutes, registerJobTranscriptRoutes, registerMachineTerminalRoutes, registerMachineCredentialRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerSandboxRequestRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerLandingBatchRoutes, registerContributionRoutes, registerShrinkGuardRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerInstallationsRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerPromotionRoutes, registerGitHubWatchRoutes, registerComponentWatcherRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;
+
+// Extend BOX_ACTIONS at module load time
+(BOX_ACTIONS as BoxAction[]).push(...BOX_ACTIONS_EXTEND);
