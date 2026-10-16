@@ -1,53 +1,45 @@
-// The sandbox module (issue #708, design.md "Sandbox boxes the hopper launches"): the one owner of the life of the
-// sandbox boxes the hopper starts. Everything that creates, inspects, stops or removes one goes through it: the launch
-// (Add machine → A sandbox box, POST /ui/api/machines/sandbox), the reconcile pass (every 10 s and at start), and the
-// view (GET /api/sandboxes). Once an hour the reconcile pass also removes the leftover box builds beside the hopper
-// (leftover-builds.ts, issue #1120). A job's step runs in a sandbox of its own, a need box (need-box.ts), that the module
-// burns after the step and keeps in the sandbox runs ledger (issue #1349): no machine, no lane, no record of a box that
-// stays. The check pass's sweep burns any need box that outlives its step, and notes each burn in the ledger. It drives the container runtime beside the hopper, and a client target's own through its
-// client (src/sandbox/runtime.ts places each box), and keeps a sandbox record per box (the instance's `sandboxes` table). A box it cannot remove is a cleanup problem, shown on Machines.
-import { randomUUID } from 'node:crypto';
+// The sandbox module (issue #708, design.md "Sandboxes are burned after each step"): the one owner of the life of the
+// sandboxes the hopper starts. A job's step runs in a sandbox of its own, a need box (need-box.ts), that the module burns
+// after the step and keeps in the sandbox runs ledger (issue #1349): no machine, no lane, no box that stays. The check
+// pass's sweep burns any need box that outlives its step, and notes each burn in the ledger. The hopper launches no box
+// that joins as a machine: the burn pass (burn-launched.ts, every 10 s and at start) burns each one an older build
+// launched, and once an hour removes the leftover box builds beside the hopper (leftover-builds.ts, issue #1120). It
+// drives the container runtime beside the hopper, and a client target's own through its client (src/sandbox/runtime.ts).
+// A box it cannot remove is a cleanup problem, shown on Machines.
+import { hostname } from 'node:os';
 import type { SandboxesView } from '../domain/machines.ts';
-import type { ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
+import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
 import { outcomeOf, type SandboxRun, type SandboxRunRepository } from '../domain/sandbox-runs.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
-import { launchBox, type LaunchRequest } from './launch.ts';
 import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
-import { launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
-import { reconcilePass, type Problems } from './reconcile.ts';
+import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
 import { runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
-import { sweepHomes } from './owned.ts';
-import type { AgentCredentialOf } from './agent-credential.ts';
-import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
+import { BOX_LABEL, sweepHomes } from './owned.ts';
 
-export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
+export { BOX_IMAGE } from './box-image.ts';
+export { BOX_LABEL, USER_LABEL } from './owned.ts';
 export { usersTemplates } from './check.ts';
-export { usersAgentCredentials } from './agent-credential.ts';
-export { hopperAddress, ownContainer } from './address.ts';
-export { cachedSandboxes } from './records.ts';
 
-/** What each of the user's boxes was launched with, by its name (issue #708): the vault gives a box's jobs nothing else. */
-export function launchScopes(records: SandboxRecord[], userId: string): Map<string, { secrets: string[]; profile?: LaunchedProfile }> {
-  return new Map(records.filter((r) => r.userId === userId).flatMap((r) => { const s = launchScopeOf(r); return s ? [[r.name, s] as const] : []; }));
-}
+/** The hopper's own container: in a container, its hostname is its id; a hopper on the host has none. */
+export const ownContainer = (localMachine: boolean): string | undefined => (localMachine ? undefined : hostname());
 
 /** The network the release compose.yaml makes and names (issue #711): the same name whatever the project is called. */
 export const COMPOSE_NETWORK = 'hopper_default';
 
 /**
  * The hopper's network (issues #708, #711): HOPPER_SANDBOX_NETWORK, else the compose network for a hopper in its
- * container, `host` for one on the host. The boxes it starts join it; a machine off it is shown the command that joins it.
+ * container, `host` for one on the host. The sandboxes it starts join it.
  */
 export const hopperNetwork = (c: { sandboxNetwork?: string | undefined; localMachine: boolean }): string => c.sandboxNetwork ?? (c.localMachine ? 'host' : COMPOSE_NETWORK);
 
-/** How often the hopper checks its boxes against their records and the machines, and runs their start checks. */
-export const RECONCILE_MS = 10_000;
-/** How long a launch waits for the box's start check to pass: the box reaches the hopper, or the launch fails. */
-export const START_CHECK_MS = 30_000;
+/** How often the hopper burns the boxes an older build launched, and runs the check pass with its sweep. */
+export const PASS_MS = 10_000;
+/** No box holds a home. */
+const NONE: ReadonlySet<string> = new Set();
 /** How many of a user's latest sandbox runs the view shows. */
 export const RUNS_IN_VIEW = 50;
 
@@ -57,47 +49,28 @@ export interface NeedRun { jobId: string; step: string; template: string }
 export interface SandboxesOptions {
   /** Undefined: no runtime socket is given to the hopper (HOPPER_PODMAN_SOCKET, HOPPER_DOCKER_SOCKET unset). */
   runtime: ContainerRuntime | undefined;
-  repo: SandboxRepository;
+  /** The sandbox records of the boxes an older build launched (issue #708): the burn pass removes each once its box is gone. */
+  repo: Pick<SandboxRepository, 'list' | 'remove'>;
   /** The sandbox runs (issue #1349): each sandbox made for one step, from its start to its burn. */
   runs: SandboxRunRepository;
   /** This hopper's instance id: the value of the box label, so two hoppers on one runtime leave each other's boxes. */
   instanceId: string;
   /** The network a box joins (`hopper_default` beside the compose hopper, `host` beside one on the host). */
   network: string;
-  /** The URL a box dials the hopper at, from that network, as configured: a box taken on from before the records. */
-  joinUrl: () => string;
   /** The hopper runs in a Kubernetes pod (issue #1289): with no runtime, that is said, not a socket to give. */
   cluster?: boolean;
-  /** Sets that URL at each launch from what the runtime says of the hopper (address.ts); absent: `joinUrl`. */
-  address?: (runtime: ContainerRuntime) => Promise<string>;
-  /** How long a launch waits for the box's start check to pass; default START_CHECK_MS. */
-  startCheckMs?: number;
   /** A user's client target by name, for a box on it (the remote runtime); absent: boxes start only beside the hopper. */
   clients?: ClientTargets;
-  /** A join code for the user's box `container`, of `template` when it is one's. */
-  mint(userId: string, container: string, template: string | undefined): string;
-  /** The boxes a user's client targets name; undefined: they cannot be read now. A user the instance lacks names none. */
-  boxesOf(userId: string): Set<string> | undefined;
-  /** The boxes a live join code waits for at `now`: launched, not joined yet. */
-  waiting(now: Date): Set<string>;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
   /** The templates the read-only check reads, and where it keeps a check (issue #716). Absent: no check runs. */
   checks?: CheckTemplates;
   /** The probes of the read-only check; absent: the hopper's catalog (src/sandbox/probes.ts). */
   probes?: ProbeCatalog;
-  /** The users' vaults, for a template's agent credential at launch (issue #708, part 10). Absent: no box gets one. */
-  agentCredentials?: AgentCredentialOf;
 }
 
 export interface Sandboxes {
-  view(userId: string): Promise<SandboxesView>;
-  /**
-   * Launch a box for the user: of a template (its approved image, its parameters within its limits), else of the agent
-   * (the published box image); beside the hopper, or on the client target `machine` names. Throws LaunchRefused before
-   * it starts anything; any other error: it did not start.
-   */
-  launch(userId: string, l: LaunchRequest): Promise<{ container: string }>;
+  view(userId: string): SandboxesView;
   /**
    * Run one need step (issue #1007, need-box.ts): a one-shot box of the template, its credentials in its
    * environment, beside the hopper, else on a client target of the user's dialled in with a runtime there (as a read-only
@@ -105,13 +78,13 @@ export interface Sandboxes {
    * #1349). Never rejects: no place to run it, or a failure of its own, is `problem`.
    */
   needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }, run: NeedRun): Promise<NeedBoxResult>;
-  /** One reconcile pass, at `now` (default the clock's). */
-  reconcile(now?: Date): Promise<void>;
+  /** One burn pass (burn-launched.ts): each box an older build launched, burned, and its record removed. */
+  burnLaunched(): Promise<void>;
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
   check(): Promise<void>;
   start(): void;
   /**
-   * Ends the timer, then waits for a reconcile or check pass in flight: the hopper closes its database after this. A pass
+   * Ends the timer, then waits for a burn or check pass in flight: the hopper closes its database after this. A pass
    * that waits on a machine's link ends once the hopper closes its links.
    */
   stop(): Promise<void>;
@@ -119,31 +92,25 @@ export interface Sandboxes {
 
 export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const problems: Problems = new Map();
-  const launching = new Set<string>();
-  let unclaimed = new Set<string>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let running: Promise<void> | undefined;
   const down = new Map<string, string>();
   let buildsAt = -Infinity;
   const noRuntime = o.cluster ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME;
-  const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, noRuntime, ...(o.address ? { address: o.address } : {}), ...(o.clients ? { clients: o.clients } : {}) });
+  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}) });
 
   /**
    * The hopper's own runtime, then each client target that holds a recorded box. One that cannot be listed now — a
-   * machine not dialled in — keeps its boxes and their records, past their time limit too, until it can.
+   * machine not dialled in — keeps its boxes and their records until it can.
    */
   const pass = async (now: Date): Promise<void> => {
     const remote = new Map(o.repo.list().filter((r) => r.machine !== LOCAL).map((r) => [`${r.userId}\0${r.machine}`, { userId: r.userId, machine: r.machine }]));
     const groups = [...(o.runtime ? [{ machine: LOCAL, key: LOCAL, userId: undefined }] : []), ...[...remote].map(([key, g]) => ({ ...g, key }))];
-    const next = new Set<string>();
     for (const g of groups) {
-      const at = places.runtimeOf(g.userId ?? '', g.machine);
-      if (!at) continue;
+      const runtime = places.runtimeOf(g.userId ?? '', g.machine);
+      if (!runtime) continue;
       try {
-        for (const name of await reconcilePass({
-          runtime: at.runtime, machine: g.machine, ...(g.userId !== undefined ? { userId: g.userId } : {}), repo: o.repo, instanceId: o.instanceId, now, boxesOf: o.boxesOf,
-          waiting: o.waiting(now), launching, newId: randomUUID, joinUrl: at.joinUrl, logger: o.logger,
-        }, problems, unclaimed)) next.add(name);
+        await burnLaunched({ runtime, machine: g.machine, ...(g.userId !== undefined ? { userId: g.userId } : {}), repo: o.repo, instanceId: o.instanceId, now, logger: o.logger }, problems);
         down.delete(g.key);
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
@@ -151,17 +118,19 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
         down.set(g.key, reason);
       }
     }
-    unclaimed = next;
     if (o.runtime && now.getTime() - buildsAt >= LEFTOVER_PASS_MS) {
       buildsAt = now.getTime();
       await removeLeftoverBuilds({ runtime: o.runtime, now, inUse: o.repo.list().map((r) => r.image), logger: o.logger })
         .catch((e: unknown) => o.logger.warn(`hopper: cannot remove the leftover box builds: ${e instanceof Error ? e.message : String(e)}`));
     }
   };
-  const reconcile = (now?: Date): Promise<void> => (running ??= pass(now ?? o.clock.now()).finally(() => { running = undefined; }));
+  const burnPass = (): Promise<void> => (running ??= pass(o.clock.now()).finally(() => { running = undefined; }));
   // The need boxes' homes no step holds (issue #1371): one whose remove failed, or one a hopper that stopped left.
   const sweepStepHomes = async (): Promise<void> => {
-    if (o.runtime) await sweepHomes(o.runtime, { [NEED_LABEL]: o.instanceId }, stepping).catch(() => {});
+    if (!o.runtime) return;
+    await sweepHomes(o.runtime, { [NEED_LABEL]: o.instanceId }, stepping).catch(() => {});
+    // And the homes of the boxes an older build launched (issue #1349): no box of theirs starts again.
+    await sweepHomes(o.runtime, { [BOX_LABEL]: o.instanceId }, NONE).catch(() => {});
   };
   // The read-only check (issue #716): beside the hopper, else on a client target of the template's user (issue #708).
   const checkPass = o.checks
@@ -215,25 +184,11 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     .finally(() => { checking = undefined; }));
 
   return {
-    async view(userId) {
-      const problem = o.runtime ? await o.runtime.problem() : noRuntime;
+    view(userId) {
       return {
-        launch: { available: problem === undefined, ...(problem !== undefined ? { problem } : {}), ...(o.runtime ? { runtime: o.runtime.kind } : {}) },
-        boxes: o.repo.list().filter((r) => r.userId === userId).map(({ userId: _u, ...box }) => box),
         runs: o.runs.latest(userId, RUNS_IN_VIEW).map(({ userId: _u, ...run }) => run),
         problems: [...problems.values()].filter((p) => p.userId === userId).map(({ userId: _u, machine: _m, ...p }) => p),
       };
-    },
-
-    async launch(userId, l) {
-      const at = await places.place(userId, l.machine);
-      const record = await launchBox({
-        runtime: at.runtime, repo: o.repo, instanceId: o.instanceId, machine: at.machine, network: at.network, joinUrl: at.joinUrl, now: o.clock.now(),
-        id: randomUUID(), mint: (container, template) => o.mint(userId, container, template), launching, startCheckMs: o.startCheckMs ?? START_CHECK_MS,
-        ...(o.agentCredentials ? { agentCredential: (ask: AgentCredentialAsk) => o.agentCredentials!(userId, ask) } : {}),
-      }, userId, l);
-      o.logger.info(`hopper: sandbox box ${record.name} started (${record.image}, ${at.runtime.kind} on ${at.machine}); it joins as a machine`);
-      return { container: record.name };
     },
 
     async needStep(userId, box, io, run) {
@@ -254,13 +209,13 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       }
     },
 
-    reconcile,
+    burnLaunched: burnPass,
     check,
     start() {
       if (timer) return;
-      void reconcile();
+      void burnPass();
       void check();
-      timer = setInterval(() => { void reconcile(); void check(); }, RECONCILE_MS);
+      timer = setInterval(() => { void burnPass(); void check(); }, PASS_MS);
       timer.unref();
     },
     async stop() {

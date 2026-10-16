@@ -2,9 +2,9 @@
 // The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts). The create body is
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { BuildingRuntime, ContainerInfo } from '../domain/sandboxes.ts';
-import { execCalls } from './exec.ts';
+import { copyInCall } from './copy-in.ts';
 import { imageCalls } from './images.ts';
-import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
+import { infoOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
 import { notASandbox, sandboxLabelled } from './owned.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
@@ -51,7 +51,7 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
   return {
     kind: 'podman',
     // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
-    ...(via === socketCall ? execCalls(socket, API, 'podman') : {}),
+    ...(via === socketCall ? copyInCall(socket, API, 'podman') : {}),
     // The images on the machine (issue #1120): only over the socket here, never through a machine's relay.
     ...(via === socketCall ? imageCalls('podman', (method, path) => call(method, path)) : {}),
 
@@ -137,16 +137,6 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     async inspect(id) {
       const c = await read(id);
       return c && infoOf(c, id);
-    },
-
-    async startCheck(id) {
-      const c = await read(id);
-      const before = startCheckOf(c);
-      if (!before || c?.State?.Status !== 'running') return before;
-      // Run in the box now (no timer runs it: flags.ts sets no interval); the run's output is in the inspect answer.
-      const ran = await call('GET', `/containers/${enc(id)}/healthcheck`);
-      if (!ok(ran)) throw refusal(`run the start check of the box ${id}`, ran);
-      return startCheckOf(await read(id));
     },
 
     async stop(id) {

@@ -80,7 +80,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`), the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the exec and archive calls both share (`exec.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`); the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
@@ -4760,6 +4760,8 @@ boxes), on #312's protocol. Built for #308: "Joining a machine" below.
 
 ## Joining a machine (issue #308, 2026-10-07)
 
+**Partly superseded (issue #1349).** Add machine adds a computer only: *A sandbox box*, its line and its `run` flags are removed, as a sandbox never joins as a machine. A join code names no container.
+
 Owner request, on the hopper in its container: adding a machine must be as easy as possible, and allow
 sandboxing. Built on #312's protocol and #310's add flow (above): **one Add machine action, one copied
 line**, and the machine dials in. This replaces the client target's ssh tunnel; ssh targets stay, for a
@@ -5001,6 +5003,8 @@ ask opened, refused outside the host's list, given after the grant and masked in
 
 ## Sandbox boxes the hopper launches (issue #603, 2026-10-09)
 
+**Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
+
 Owner direction, from a live test: a person had to start a sandbox box by hand, and removing its machine left the
 container running. The hopper now starts, stops and removes sandbox boxes itself, through rootless Podman. This is
 #310's option B, which that research put off; the owner asked for it.
@@ -5199,6 +5203,8 @@ its output read through the client, and nothing of it left.
 
 ### The agent credential (issue #708 part 10, 2026-10-12)
 
+**Partly superseded (issue #1349).** No box is launched, so the credential at launch (`src/sandbox/agent-credential.ts`) is removed; the vault's policy and a job pod's credential stay.
+
 Owner direction (2026-10-10): sandbox agent auth is inheritable from an approved source instead of a per-box `/login`;
 a new box of an approved template starts signed in where policy allows, and a one-time `/login` is the fallback. Before
 it, a person signed each box's agent in by hand (its home volume keeps the sign-in), and a box that nobody signed in
@@ -5297,6 +5303,8 @@ is `unreachable` until it passes again. `test/ui/sandbox-reach.test.ts`. Real ro
 bridge network the hopper is not on fails the launch with curl's own words, and leaves no container, volume or record.
 
 ### A launch's scope: what the vault gives a launched box (issue #708 part 4, 2026-10-11)
+
+**Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
 
 Before it, the launch's `secrets` and `profile` were kept on the sandbox record and nothing read them: a box got all
 its template's approved scope. Now the record is the box's scope, and the vault reads it:
@@ -10142,6 +10150,8 @@ runs again, its hand-off is resolved (`handoff wont-do` ends it with no more wor
 Tests: `test/integration/operator-cli.test.ts`.
 
 ## The vault and sandbox boxes from the operator CLI (issue #716, part 1, 2026-10-10)
+
+**Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
 
 An agent that needs a template for its job could not make one: templates, vault secrets and sandbox launches were
 only `POST /ui/api/vault` and `POST /ui/api/machines/sandbox` behind an admin UI session, and the operator CLI had no
@@ -21895,23 +21905,49 @@ steps (issue #1004) ran in that box between other jobs' work.
   fails stays open in the ledger, and the next sweep tries again.
 - **Registered sandboxes leave `machines`** (tenant migration 70, `src/store/migration-no-sandbox-machines.ts`). Each
   `client` machine whose `container` names a `hopper-sandbox-…` box is removed from the user's `plugins` record. At the
-  next start the daemon closes the lanes of machines it does not know (recovery), and the reconcile pass removes the
-  boxes no machine names, with their sandbox records. A job that ran on such a box is requeued or failed by the
+  next start the daemon closes the lanes of machines it does not know (recovery), and the burn pass burns their boxes,
+  with their sandbox records (part 2, below). A job that ran on such a box is requeued or failed by the
   restart's recovery, as for any machine that went.
 
 **Decided here.** A box step mints only the template's reads unless the step names an approved plan: a long-lived box
 had every profile and the apply gate checked each change at its mint; a step names its plan up front, as a need step
 does. The template name is the box a step names, as the step no longer has a container of its own until it runs.
 
-**Not built (left for the next part).** Machines → Add machine → A sandbox box and `hopper sandbox launch` still start a
-box that joins as a machine (`src/sandbox/launch.ts`, the reconcile pass, the sandbox records, the join code with a
-`container`). They are a person's test path, not a job's; removing them, and the `exec` call of the container runtime
-port that only they could still use, is the remaining work. The sweep and the ledger see need boxes beside the hopper;
-one on a client target is burned by its step and noted when that runtime says it is gone, and not swept.
+**Part 2: no sandbox joins as a machine.** The person's test path that still started one is removed.
+
+- **No launch.** Machines → Add machine adds a computer only (`ui/src/views/machine-join.tsx`); *A sandbox box*, its
+  launch parameters and its `podman run` line are gone. `POST /ui/api/machines/sandbox`, its OpenAPI entry and its
+  `BOX_ACTIONS` row, `hopper sandbox launch`, `launchBox` (`src/sandbox/launch.ts`), the reconcile pass
+  (`src/sandbox/reconcile.ts`), the box's address (`address.ts`), the agent credential at launch, and the record cache
+  (`records.ts`) are removed. `POST /ui/api/machines/join` takes `template` only: no `box` flags. A join code names no
+  `container`, and the `client` machine plugin has no `container` option (tenant migration 70 removed every machine
+  that had one).
+- **The burn pass** (`src/sandbox/burn-launched.ts`, every 10 s and at start). Each box an older build launched — it
+  carries `io.hopper.box` with this hopper's instance id — is stopped and removed with its home volume, beside the
+  hopper and on each client target that holds a recorded box, through its client. The record goes once its box is gone.
+  A box it cannot remove is a cleanup problem on Machines (`GET /api/sandboxes` `problems`) until a pass removes it; a
+  client target that is away keeps its boxes and their records until it dials in. The check pass's sweep also removes
+  the home volumes of those boxes. The `sandboxes` table stays, so the build before still runs on the store; the hopper
+  writes no row to it.
+- **The runtime port is smaller.** The start check (`startCheck`, the spec's `check`, the health check in the create
+  bodies) and `exec` are removed: only a launched box used them. `copyIn` stays for need boxes (`copy-in.ts`).
+- **A machine's client makes no sandbox box** (`src/client/runtime.ts`): it creates only check boxes and need boxes, and
+  refuses a create with a health check or the `healthcheck` call. It still stops, inspects and removes a box an older
+  hopper launched, so the burn pass reaches it.
+- **The vault's launch scope is removed** (`LaunchScope`, `withLaunch`, `launchRefusal`, `launchedOf`): only a launched
+  box had one. A machine joined as a template's instance gets what the template gives, as before.
+- `GET /api/sandboxes` answers `runs` and `problems` only.
+
+**Not built.** The sweep and the ledger see need boxes beside the hopper; one on a client target is burned by its step
+and noted when that runtime says it is gone, and not swept. A launched box on a client target with no sandbox record is
+not found. A template's `ttlMinutes` and `keepHome` limits are still saved and shown, but no box reads them now.
 
 Tests: `test/sandbox/requests.test.ts` (an approval starts nothing), `test/sandbox/need-steps.test.ts` (a box step:
 reads minted, changes with a plan, refusals), `test/sandbox/sandbox-runs.test.ts` (the ledger from start to destroy, a
 failed step, a remove that failed and the next sweep, a box left by a hopper that stopped), `test/store/sandbox-runs.test.ts`,
 `test/store/tenant-migration-70.test.ts`, `test/integration/box-steps.test.ts` (the real daemon, `hopper-skill` and
 `hopper-step`: two steps, two sandboxes, none left, no machine, the ledger), `test/integration/job-sandboxes.test.ts`,
-`test/integration/skill-wait-wakes-job.test.ts`.
+`test/integration/skill-wait-wakes-job.test.ts`. Part 2: `test/integration/launched-boxes.test.ts` (Add machine starts no box;
+boxes launched before are burned, with their homes and records; a box it cannot burn is shown until it goes),
+`test/integration/sandbox-remote.test.ts` (the burn on a client target, through its client; away, then dialled in; the
+client makes no sandbox box), `test/client/runtime.test.ts`, `test/ui/template-limits-view.test.ts`.

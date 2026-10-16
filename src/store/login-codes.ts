@@ -24,17 +24,14 @@ export function createLoginCodeRepository(c: StoreContext): LoginCodeRepository 
 export function createJoinCodeRepository(c: StoreContext): JoinCodeRepository {
   return {
     create(codeHash, expiresAt, userId, place = {}) {
-      c.db.run('INSERT INTO join_codes (code_hash, expires_at, user_id, template, container, pod) VALUES (?, ?, ?, ?, ?, ?)', codeHash, expiresAt, userId, place.template ?? null, place.container ?? null, place.pod ?? null);
+      c.db.run('INSERT INTO join_codes (code_hash, expires_at, user_id, template, pod) VALUES (?, ?, ?, ?, ?)', codeHash, expiresAt, userId, place.template ?? null, place.pod ?? null);
     },
     take(codeHash, now) {
       return c.tx(() => {
         c.db.run('DELETE FROM join_codes WHERE expires_at <= ?', now);
-        const r = c.db.get('DELETE FROM join_codes WHERE code_hash = ? RETURNING user_id, template, container, pod', codeHash);
-        return r ? { userId: String(r.user_id), ...(r.template ? { template: String(r.template) } : {}), ...(r.container ? { container: String(r.container) } : {}), ...(r.pod ? { pod: String(r.pod) } : {}) } : undefined;
+        const r = c.db.get('DELETE FROM join_codes WHERE code_hash = ? RETURNING user_id, template, pod', codeHash);
+        return r ? { userId: String(r.user_id), ...(r.template ? { template: String(r.template) } : {}), ...(r.pod ? { pod: String(r.pod) } : {}) } : undefined;
       });
-    },
-    waiting(now) {
-      return c.db.all('SELECT container FROM join_codes WHERE container IS NOT NULL AND expires_at > ?', now).map((r) => String(r.container));
     },
   };
 }

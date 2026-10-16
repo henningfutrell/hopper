@@ -25,9 +25,7 @@ function memoryRepo(): SandboxRepository {
   const rows = new Map<string, SandboxRecord>();
   return {
     list: () => [...rows.values()],
-    get: (id) => rows.get(id),
     add: (r) => (rows.has(r.id) ? false : (rows.set(r.id, r), true)),
-    update: (r) => { rows.set(r.id, r); },
     remove: (id) => rows.delete(id),
   };
 }
@@ -38,8 +36,8 @@ function setup() {
   const runtime = createFakeContainerRuntime();
   const runs = memorySandboxRuns();
   const sandboxes = createSandboxes({
-    runtime, repo: memoryRepo(), runs, instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
-    mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(), clock: { now: () => NOW }, logger: { info() {}, warn() {} },
+    runtime, repo: memoryRepo(), runs, instanceId: 'test', network: 'host',
+    clock: { now: () => NOW }, logger: { info() {}, warn() {} },
   });
   const dir = mkdtempSync(join(tmpdir(), 'sandbox-runs-'));
   dirs.push(dir);

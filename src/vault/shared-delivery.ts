@@ -6,7 +6,7 @@
 import type { UserStore } from '../domain/ports.ts';
 import { isSharedSecret } from '../domain/vault.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
-import { boxAsk, launchRefusal, type ClientTarget } from './box.ts';
+import { boxAsk, type ClientTarget } from './box.ts';
 import type { SharedSecrets } from './shared.ts';
 import type { Vault } from './vault.ts';
 
@@ -30,8 +30,6 @@ export function withSharedSecrets(v: Vault, o: {
       return { refused: reason };
     };
     if ('refused' in box) return refuse(box.refused);
-    const launched = launchRefusal(box.machine, ask.name);
-    if (launched) return refuse(launched);
     if (!v.scopeOf(box.machine.name).secrets.includes(ask.name)) return refuse(`${box.machine.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
     const r = await o.shared.read(ask.name, o.userId);
     if ('refused' in r) return refuse(r.refused);

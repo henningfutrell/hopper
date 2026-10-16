@@ -20,7 +20,6 @@ import { withVaultGrants } from './grants.ts';
 import type { MintingOptions } from './mint.ts';
 
 export { clientTargets } from './service.ts';
-export { withLaunch, type LaunchScope } from './box.ts';
 export { vaultView, type Vault } from './vault.ts';
 export { approvalWait } from '../domain/vault.ts';
 

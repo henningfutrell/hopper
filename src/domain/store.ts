@@ -297,23 +297,19 @@ export interface LoginCodeRepository {
  * What a join code names beside its user: the template the machine joins as (issue #558), when the line names one;
  * the sandbox box the hopper launched with it (issue #603), when it did; the job pod it started with it (issue #1283).
  */
-export interface JoinCodePlace { template?: string; container?: string; pod?: string }
+export interface JoinCodePlace { template?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
   /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
   take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
-  /** The sandbox boxes live codes name (issue #603): launched, not joined yet. */
-  waiting(now: string): string[];
 }
 
-/** The sandbox records (issue #708, instance migration 34): one per sandbox box the hopper launched, by id; names are unique. */
+/** The sandbox records (issue #708, instance migration 34): one per sandbox box an older build launched, by id; names are unique. */
 export interface SandboxRepository {
   list(): SandboxRecord[];
-  get(id: string): SandboxRecord | undefined;
-  /** False when a record of that id or name exists. */
+  /** False when a record of that id or name exists. A record of a box an older build launched: a test's, the hopper adds none (issue #1349). */
   add(record: SandboxRecord): boolean;
-  update(record: SandboxRecord): void;
   remove(id: string): boolean;
 }
 

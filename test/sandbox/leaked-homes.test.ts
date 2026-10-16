@@ -55,8 +55,8 @@ function memoryRepo(): SandboxRepository {
 }
 
 const sandboxes = (r: FakeContainerRuntime) => createSandboxes({
-  runtime: r, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: INSTANCE, network: 'host', joinUrl: () => 'http://hopper:1',
-  mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(), clock, logger,
+  runtime: r, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: INSTANCE, network: 'host',
+  clock, logger,
 });
 
 /** A one-shot box's script that runs until `release` is called. */

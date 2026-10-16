@@ -6,9 +6,11 @@
 // A home whose remove failed, or one a hopper that stopped left with no box, the sweeps remove (sweepHomes).
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 
-/** The label on every box the hopper launches: its value is the hopper's instance id. */
+/** The label on every box an older build launched (issue #1349: none is launched now): its value is the hopper's instance id. */
 export const BOX_LABEL = 'io.hopper.box';
-/** The label on every need box: its value is the hopper's instance id. The reconcile pass leaves it; the step removes it. */
+/** The label naming the user whose box it is. */
+export const USER_LABEL = 'io.hopper.user';
+/** The label on every need box: its value is the hopper's instance id. The step removes it; the sweep burns one it left. */
 export const NEED_LABEL = 'io.hopper.need';
 /** The label on every check box: its value is the hopper's instance id. */
 export const CHECK_LABEL = 'io.hopper.check';

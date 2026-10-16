@@ -21,11 +21,11 @@ import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { BoxTool, ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
 import { HOME } from './flags.ts';
-import { boxImage, USER_LABEL } from './launch.ts';
+import { boxImage } from './box-image.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 import { filesTar } from './socket-http.ts';
 
-import { NEED_LABEL, staleHome } from './owned.ts';
+import { NEED_LABEL, staleHome, USER_LABEL } from './owned.ts';
 
 export { NEED_LABEL };
 /** The most a step's files may hold in the box's environment, when its runtime takes no copy. */

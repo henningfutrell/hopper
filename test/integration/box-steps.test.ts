@@ -117,7 +117,7 @@ describe('box steps, each in a sandbox of its own (issues #1004, #1349)', () => 
     const events = await ofJob(b, jobId);
     const started = events.filter((e) => e.type === 'step.started').map((e) => e.data as { step: string; box: string });
     const view = (await b.a.api<SandboxesView>('GET', '/api/sandboxes', undefined, { 'x-hopper-session': b.token })).body;
-    expect(view.boxes).toEqual([]);
+    expect(view.problems).toEqual([]);
     expect(view.runs).toHaveLength(2);
     for (const run of view.runs) {
       expect(started).toContainEqual(expect.objectContaining({ step: run.id, box: run.box }));

@@ -16,15 +16,7 @@ export interface ContainerInfo {
   labels: Record<string, string>;
   /** The runtime's own word: `created`, `running`, `exited`, … */
   state: string;
-  /** Inspect only: the names it answers to on each network it is on (issue #708, the hopper's address for a box). */
-  networks?: Record<string, string[]>;
 }
-
-/**
- * The start check (issue #708): run in the box, by the runtime, as its health check — `bash --noprofile --norc`, so no
- * rc file swallows it (#518) —, it fetches the hopper at the address the box was given. `output`: what it wrote.
- */
-export interface StartCheck { passed: boolean; output: string }
 
 /** The resources one box may use: CPUs (fractions allowed) and memory, in MiB. */
 export interface ResourceLimits { cpus: number; memoryMb: number }
@@ -44,8 +36,6 @@ export interface ContainerSpec {
   limits: ResourceLimits;
   /** The user it runs as: the image's own, never root (the launch refuses an image that runs as root). */
   user: string;
-  /** The hopper's URL the box's start check fetches (issue #708); absent: the box has none (a one-shot container). */
-  check?: string;
   /**
    * A one-shot container (issue #716, the read-only check): it runs `sh -c <script>` in place of the image's entrypoint,
    * on a terminal, and is not restarted when it ends. Absent: a box, which runs its image's entrypoint and is restarted.
@@ -105,23 +95,12 @@ export interface ContainerRuntime {
   logs(id: string): Promise<string>;
   /** The container by id or name; undefined: no such container. */
   inspect(id: string): Promise<ContainerInfo | undefined>;
-  /**
-   * Run the box's start check now, in the box (issue #708), and answer how it went. Undefined: the box has no start
-   * check (made before it). A box that does not run fails it. Docker runs it on its own interval: the last run.
-   */
-  startCheck(id: string): Promise<StartCheck | undefined>;
   /** Stop it (a grace period, then killed); one already stopped or gone is no error. */
   stop(id: string): Promise<void>;
   /** Remove it, stopped or not; one already gone is no error. Its volumes stay. */
   remove(id: string): Promise<void>;
   /** The containers that carry every one of these labels; none given: every container. */
   list(labels?: Record<string, string>): Promise<ContainerInfo[]>;
-  /**
-   * Run a command in the running container as its own user (issue #1004, a box step), and answer its exit code. Each
-   * chunk it writes goes to `out` as it comes, with its stream. `signal` ends the wait, not the command: the caller stops
-   * it in the box. Throws when it could not run. Absent: this runtime runs no command in a box (one on another machine).
-   */
-  exec?(id: string, run: ExecRun): Promise<number>;
   /** Extract the tar file `tar` (on this machine) into the directory `dir` of the running container, owned by its user. */
   copyIn?(id: string, dir: string, tar: string): Promise<void>;
   /** Every image on the machine, intermediate ones too (issue #1120). Absent: this runtime lists none (one on another machine). */
@@ -135,15 +114,6 @@ export interface ContainerRuntime {
 
 /** A runtime that builds images: Podman, Docker, and a client target's through the remote runtime. */
 export type BuildingRuntime = ContainerRuntime & Required<Pick<ContainerRuntime, 'build'>>;
-
-/** A command run in a box (issue #1004): its argv (no shell but the one it names), and its environment beside the box's. */
-export interface ExecRun {
-  cmd: string[];
-  env?: Record<string, string>;
-  /** 1: its stdout; 2: its stderr. */
-  out(chunk: Buffer, stream: 1 | 2): void;
-  signal?: AbortSignal;
-}
 
 /**
  * One call of a runtime's API, as the remote runtime carries it to a machine's client (issue #708): a JSON `body`, or
@@ -185,66 +155,17 @@ export function limitsProblem(l: TemplateLimits): string | undefined {
   return undefined;
 }
 
-/** What a launch names (issue #708): each is optional; the template's defaults fill the rest. */
-export interface LaunchParams {
-  /** Which of the template's approved secrets the box may ask for; absent: all of them. */
-  secrets?: string[];
-  cpus?: number;
-  memoryMb?: number;
-  ttlMinutes?: number;
-  /** One of the template's operation profiles, `operation/kind/name`. */
-  profile?: string;
-  /** Which of the template's tools the box gets (issue #716); absent: all of them. A box of no template: any tool. */
-  tools?: string[];
-}
-
-/** The parameters a launch ran with once the template's defaults filled them in: what the sandbox record keeps. */
-export interface ResolvedParams {
-  secrets: string[];
-  /** 0: no limit (a box taken on from before the records). */
-  cpus: number;
-  /** 0: no limit (a box taken on from before the records). */
-  memoryMb: number;
-  /** Absent: no time limit. */
-  ttlMinutes?: number;
-  profile?: string;
-  /** The tools added to its image (issue #716); absent: none. */
-  tools?: BoxTool[];
-}
-
 /**
- * A sandbox record's state: `starting` until its start check passed and a machine names it, then `ready`;
- * `unreachable` while its start check fails — from inside it, the hopper does not answer at its address (issue #708).
+ * The sandbox record (issue #708): one row of the instance's `sandboxes` table per box an older build launched. The
+ * hopper launches no box now (issue #1349): it burns each recorded box, and removes the record once the box is gone.
+ * Only what the burn reads: a row holds more, as that build wrote it.
  */
-export type SandboxState = 'starting' | 'ready' | 'unreachable';
-
-/** The sandbox record (issue #708): one row of the instance's `sandboxes` table per box the hopper launched. */
 export interface SandboxRecord {
   id: string;
   userId: string;
-  /** The container's name, and the name of the machine it joins as. */
+  /** The container's name. */
   name: string;
-  agent: string;
-  /** The template it is an instance of: its name, and the version (when it was saved) the launch read. */
-  template?: { name: string; version: string };
   image: string;
-  params: ResolvedParams;
-  runtime: RuntimeKind;
-  /** Where it runs: `local`, the computer the hopper runs on. */
+  /** Where it runs: `local`, the computer the hopper runs on, or a client target's name. */
   machine: string;
-  /** The runtime's container id; empty while the launch makes it. */
-  containerId: string;
-  volume: string;
-  /** Whether its home volume stays when it is removed. */
-  keepHome: boolean;
-  state: SandboxState;
-  createdAt: string;
-  /** Absent: no time limit. */
-  expiresAt?: string;
-  /** The URL the box dials the hopper at: written at launch, proven by its start check before the launch answers. */
-  address: string;
-  /** Its last start check: at launch, then at each reconcile pass. Absent: a box with none (taken on from before). */
-  check?: { passed: boolean; at: string; output?: string };
-  /** The vault secret its agent signs in with (issue #708, part 10): its name, never its value. Absent: none was given. */
-  agentCredential?: string;
 }

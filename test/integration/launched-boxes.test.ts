@@ -39,10 +39,7 @@ async function boot(runtime: FakeContainerRuntime, dbPath?: string): Promise<{ a
 const spec = (name: string, owner: string): ContainerSpec => ({
   name, image: BOX_IMAGE, network: 'host', volume: `${name}-home`, env: {}, labels: { [BOX_LABEL]: owner, [USER_LABEL]: 'admin' }, limits: { cpus: 1, memoryMb: 1 }, user: 'agent',
 });
-const record = (name: string): SandboxRecord => ({
-  id: `sbx-${name}`, userId: 'admin', name, agent: 'claude', image: BOX_IMAGE, params: { secrets: [], cpus: 1, memoryMb: 1024 }, runtime: 'podman',
-  machine: 'local', containerId: '', volume: `${name}-home`, keepHome: true, state: 'ready', createdAt: '2026-10-15T10:00:00.000Z', address: 'http://hopper:4790',
-});
+const record = (name: string): SandboxRecord => ({ id: `sbx-${name}`, userId: 'admin', name, image: BOX_IMAGE, machine: 'local' });
 
 interface View { runs: unknown[]; problems: { container: string; reason: string; at: string }[] }
 const view = async (a: TestApp, session: string): Promise<View> => (await a.api('GET', '/api/sandboxes', undefined, { 'x-hopper-session': session })).body as View;

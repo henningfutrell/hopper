@@ -272,12 +272,10 @@ is only in the hopper's environment, given at launch.
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
   attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them. The Machines
   view offers no **Add this machine** here. To run jobs on the computer the container runs on, use
-  **Add machine** → *A computer*, and run the line it shows there (issue #308, `README.md` "A computer
-  or a sandbox box: one line"): the computer dials in to the published port, so nothing is set up
-  inside the container and nothing leans on a `~/.ssh` (issue #293). *A sandbox box* starts a
-  locked-down container on the compose network `hopper_default`, which reaches the hopper as
-  `http://hopper:<port>` — the compose file's `HOPPER_LAN_NAMES` and `HOPPER_LAN_PEERS` defaults let it
-  through. The box keeps no copy of the join code (issue #606): its entrypoint moves `HOPPER_JOIN` into a
+  **Add machine**, and run the line it shows there (issue #308, `README.md` "A computer: one line"):
+  the computer dials in to the published port, so nothing is set up inside the container and nothing
+  leans on a `~/.ssh` (issue #293). A sandbox never joins as a machine (issue #1349): a job's step
+  runs in a sandbox of its own on the compose network `hopper_default`, burned after the step. The box keeps no copy of the join code (issue #606): its entrypoint moves `HOPPER_JOIN` into a
   file only the box's user can read and starts itself again without the variable; the client reads that
   file once and removes it, joined or not. So the box's processes, herdr and the jobs do not get the code,
   and a restart dials in with the box's link, not the spent code. The container's own config still holds the
@@ -353,7 +351,7 @@ is only in the hopper's environment, given at launch.
        (`$XDG_RUNTIME_DIR/podman/podman.sock`, issue #1157): when `podman.socket` is on, the new file gives it to the
        hopper; when it is off, the update goes on without it and says the line that turns it on (`systemctl --user
        enable --now podman.socket`). A `compose.override.yaml` that is the old `compose.sandboxes.yaml` goes to
-       `compose.override.yaml.bak` ("Sandbox boxes the hopper starts" below).
+       `compose.override.yaml.bak` ("Sandboxes the hopper starts" below).
        **First it checks the new `compose.yaml` with your `compose.override.yaml`** as compose merges them (issue #1246,
        `hopper update check`): a target mounted twice or a host port published twice makes `up -d` fail, so the update
        stops before it changes anything, and says the file, the service, the key and the fix
@@ -1073,7 +1071,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespaces it lists. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
   each one must be refused.
 - **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
-  ("Sandbox boxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
+  ("Sandboxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
   the check box there. With neither, the template waits for its check. A client older than this release refuses the
   check box, and the check fails with that reason; run it again once the machine has the new client.
@@ -1287,12 +1285,13 @@ Keep in mind:
 - In a hopper job, the same command reports as the job, with the job's own token: leave out `--hopper`, `--state` and
   the refresh token.
 
-## Sandbox boxes the hopper starts
+## Sandboxes the hopper starts
 
-On by default in `compose.yaml` (issues #603, #708, #1157). Give the hopper your rootless Podman socket, and it starts,
-stops and removes sandbox boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
-flags as the boxes the hopper starts: one builder makes both. Its CPUs and memory start at the template's defaults
-(the hopper's for a box of no template); change them before *Show the line*, within the template's max.
+On by default in `compose.yaml` (issues #603, #708, #1157, #1349). Give the hopper your rootless Podman socket, and it
+runs each job's need step and box step in a sandbox of its own, and the read-only check of a template, beside it. Each
+sandbox does one step and is burned after it. A sandbox never joins as a machine and has no lane. Without the socket,
+a step runs in the runtime of one of your machines that is dialled in (see "Sandboxes on another machine"), else it
+fails with what to do.
 
 **Requirement: a rootless runtime.** Podman is the default whenever it is reachable. Rootless Docker works too, through
 the Docker Engine API (never the docker CLI): `HOPPER_DOCKER_SOCKET` names its socket, used when no Podman socket is
@@ -1333,43 +1332,27 @@ What the hopper then does:
 
 | When | The hopper |
 |---|---|
-| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | writes a sandbox record, then starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the sandbox flags, the resource limits of the launch (what the person set under *A sandbox box*, within the template's maximums; it starts at the template's defaults, or 4 CPUs and 8 GiB for a box of no template; a template's defaults and maximums are set on its form in Settings → Vault), its home the volume `<name>-home`, and a join code minted for it. Then it runs the box's start check: from inside the box, the box fetches the hopper at its address. Until that passes (at most 30 seconds), the launch does not answer; if it does not pass, the launch fails with what the check wrote and removes the box. The box joins as that machine, and its record is then *ready*. A template's box runs only once its image is approved (Settings → Vault). |
-| A box has tools (a template's, or `--tool` on a launch) | first builds the image with them added through the same runtime, once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`. The build fetches each tool from its own release and checks its SHA-256, so the runtime needs network access to awscli.amazonaws.com, get.helm.sh, dl.k8s.io, releases.hashicorp.com, Docker Hub and Debian's mirrors. Old tools images stay in the runtime's storage: `podman image prune` or `podman rmi` removes them. |
-| A person removes that machine | stops the container and removes it within about 20 seconds, and its record. Its home volume stays, so a box of that name later keeps its sign-in, unless the template's limits say `keepHome: false`. `/tmp` in the box is a tmpfs: it goes with the container. |
-| A box's time limit passes (a template's `ttlMinutes`, or the launch's) | stops the container and removes it, and its record. The home volume stays, as above. A box of no template has no time limit unless the launch names one. |
-| The hopper starts | reads its sandbox records and the boxes it started (label `io.hopper.box` = its instance id). A box of its own with no record that a machine names (one started before the records) is taken on as a record; one that no machine names and no live join code waits for is removed, its home volume kept. A box another hopper started is left alone. |
-| It cannot stop or remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
-| Every 10 seconds | runs each box's start check again, in the box. A box that cannot reach the hopper is shown on Machines, under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and the hopper logs it once. It is ready again when its check passes. |
+| A job runs a need step or a box step | starts a new sandbox of the template (`hopper-need-<name>`) with the sandbox flags, the template's CPU and memory defaults (4 CPUs and 8 GiB for a template that sets none), and a fresh home volume. The step runs, its output comes back, and the sandbox is removed with its home volume. Machines → *Sandbox runs* lists each run: its job, step, template, start and end, outcome, and when it was destroyed. |
+| A template has tools | first builds the image with them added through the same runtime, once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`. The build fetches each tool from its own release and checks its SHA-256, so the runtime needs network access to awscli.amazonaws.com, get.helm.sh, dl.k8s.io, releases.hashicorp.com, Docker Hub and Debian's mirrors. Old tools images stay in the runtime's storage: `podman image prune` or `podman rmi` removes them. |
+| Every 10 seconds, and at start | burns each sandbox that outlives its step. It also burns each sandbox box an older version started that joined as a machine (label `io.hopper.box` = its instance id), with its home volume, and removes its record. A box another hopper started is left alone. |
+| It cannot remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
 
 The sandbox network is `hopper_default` for the hopper in its container and `host` for a hopper on the host;
-`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). On the host network,
-a box reaches the hopper at `http://127.0.0.1:<port>`. Else the hopper reads its own container's names on that network
-and takes the first that is also in `HOPPER_LAN_NAMES`: on the compose network that is `hopper`, which compose.yaml
-sets. When the hopper's container is not on that network, or none of its names there is in `HOPPER_LAN_NAMES`, Add
-machine says so and what to do, and starts nothing. A hopper on the host with another network uses its first
-`HOPPER_LAN_NAMES` name, and the start check says whether a box there reaches it.
-
-When a launch fails with `the hopper does not answer at <address>`, the rest of the line is curl's own words from
-inside the box: `Could not resolve host` (the name is not known on that network), `Failed to connect` (nothing
-listens there), or `returned error: 403` / `421` (the hopper refused the box: its address is not in
-`HOPPER_LAN_PEERS`, or the name is not in `HOPPER_LAN_NAMES`).
+`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`).
 
 **Residual risk.** The socket is your account: whoever controls the hopper's process can start any container as you.
-The hopper itself only starts locked-down boxes — every capability dropped, no new privileges, a read-only root,
+The hopper itself only starts locked-down sandboxes — every capability dropped, no new privileges, a read-only root,
 the image's own non-root user, CPU and memory limits, nothing of the computer mounted — from the published box image
-or an approved template's image, and a request to it can name only an agent or a template and parameters within the
-template's limits, never an image, a mount or a flag. An admin UI session can start and remove
-boxes, as it can add and remove any machine.
+or an approved template's image. A job names only a template and its command, never an image, a mount or a flag.
 
 Turn it off: `export HOPPER_PODMAN_SOCKET_HOST=/dev/null` and run `podman compose up -d`, or turn `podman.socket` off
-and run the update. The boxes it started keep running; remove their machines in the Machines view first if you want
-them gone.
+and run the update.
 
-### Sandbox boxes on another machine
+### Sandboxes on another machine
 
-A machine that joined with Add machine → *A computer* can hold sandbox boxes too (issue #708). The hopper starts
-them in that machine's own rootless Podman (or rootless Docker when Podman is not there), through the machine's
-client: no socket of that machine is given to the hopper, and nothing listens on the machine. On the machine, once:
+A machine that joined with Add machine can run sandboxes too (issue #708). The hopper starts them in that machine's
+own rootless Podman (or rootless Docker when Podman is not there), through the machine's client: no socket of that
+machine is given to the hopper, and nothing listens on the machine. On the machine, once:
 
 ```sh
 systemctl --user enable --now podman.socket
@@ -1379,15 +1362,13 @@ loginctl enable-linger "$USER"
 The second line keeps your user's services, the socket included, running after you sign out. Under WSL, also keep
 the distro running: WSL stops an idle distro, and its containers with it ("Keep a hopper in WSL running" above).
 
-Then Machines → Add machine → *A sandbox box* shows **on** with the hopper's computer and each machine online now:
-pick the machine, then **Start the box**. The box is on that machine's network and reaches the hopper at the address
-the machine's client dialled in on, and its start check proves that from inside it, as for a box beside the hopper. The machine's client checks each call again: it creates only a container with the
-sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
-away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
-again. A box with tools on a machine runs a tools image the hopper builds in that machine's runtime, through its
-client, once per base image and set of tools; the client builds only a tools image, from the hopper's one
-Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
-runs on it.
+A step runs there when the hopper has no runtime beside it: on the first of your machines that is dialled in and has a
+runtime. The machine's client checks each call again: it creates only a check box or a need box, with the sandbox
+flags and no mount of the machine, and stops or removes only the boxes the hopper made. It makes no sandbox box that
+joins as a machine (issue #1349). A box with tools on a machine runs a tools image the hopper builds in that machine's
+runtime, through its client, once per base image and set of tools; the client builds only a tools image, from the
+hopper's one Containerfile. A client of an older release refuses the build: the hopper loads its own release there
+once no job runs on it.
 
 ### Sandbox boxes on Kubernetes
 

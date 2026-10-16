@@ -6,7 +6,7 @@
 // the container runtime are doubles at their ports, the gateway realm's issuer a loopback OIDC issuer.
 //
 // Feature: API tokens
-//   Scenario: a person mints a token, and an agent with it sets a secret, saves and approves a template and launches a box
+//   Scenario: a person mints a token, and an agent with it sets a secret, saves and approves a template and mints a join code
 //     Given a hopper with a master key, a machine and OpenFGA
 //     When the admin mints a grant in the UI, as a box grant (issue #795: a launch is a box action; issue #881: a grant)
 //     Then its access token and refresh token are answered once, and the grant is listed with neither
@@ -72,8 +72,8 @@ async function mint(a: TestApp, session: string, body: Record<string, unknown> =
 }
 
 describe('API tokens (issue #718)', () => {
-  it('a person mints a token; with it alone an agent sets a secret, saves and approves a template, and launches a box', async () => {
-    const { a, runtime } = await boot();
+  it('a person mints a token; with it alone an agent sets a secret, saves and approves a template, and mints a join code', async () => {
+    const { a } = await boot();
     const session = await a.login();
     const before = Date.now();
     const minted = await mint(a, session, { minutes: 10, box: true });
@@ -103,9 +103,10 @@ describe('API tokens (issue #718)', () => {
     expect(vault.status).toBe(200);
     expect(vault.body.secrets).toEqual([expect.objectContaining({ name: 'KUBE_TOKEN' })]);
     expect(vault.text).not.toContain(VALUE);
-    const launch = await agent(a, 'POST', '/ui/api/machines/sandbox', token, { template: 'kube', params: {} });
-    expect(launch.status).toBe(200);
-    expect(runtime.boxes.get(launch.body.container as string)?.spec.image).toBe(IMAGE);
+    // A box action (issue #795): the token was minted with a box grant.
+    const join = await agent(a, 'POST', '/ui/api/machines/join', token, { template: 'kube' });
+    expect(join.status).toBe(200);
+    expect(join.body.code).toEqual(expect.any(String));
   });
 
   it('every POST /ui/api/* route takes an API token: a refusal is the role\'s, never the session\'s or the Origin\'s', async () => {

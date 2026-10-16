@@ -6,7 +6,7 @@
 //
 // Feature: box tokens
 //   Scenario: a token without box reads, holds and cancels, but every box action is refused with the reason
-//   Scenario: a person mints a box token; with it an agent launches a sandbox box
+//   Scenario: a person mints a box token; with it an agent mints a join code
 //   Scenario: the sign-in exchange never mints a box token
 //   Scenario: the operator CLI mints a box grant with --box
 //   Scenario: every listed box action is a route the hopper serves, and no other route asks for a box token
@@ -75,7 +75,7 @@ const asOpenApi = (route: string): string => route.replace(/:([A-Za-z]+)/g, '{$1
 
 describe('box tokens (issue #795)', () => {
   it('a token without box reads, holds and cancels, but every box action is refused with the reason', async () => {
-    const { a, runtime } = await boot();
+    const { a } = await boot();
     const token = (await mint(a, await a.login())).body.token as string;
     expect((await agent(a, 'GET', '/api/queue', token)).status).toBe(200);
     expect((await agent(a, 'POST', '/ui/api/queue/order', token, { jobIds: [] })).status).toBe(200);
@@ -84,10 +84,9 @@ describe('box tokens (issue #795)', () => {
     expect((await agent(a, 'POST', '/ui/api/jobs/nope/cancel', token, {})).status).not.toBe(403);
     await template(a, token);
 
-    const launch = await agent(a, 'POST', '/ui/api/machines/sandbox', token, { template: 'kube', params: {} });
-    expect(launch.status).toBe(403);
-    expect(launch.body.error).toMatch(BOX_REFUSAL);
-    expect(runtime.boxes.size).toBe(0);
+    const join = await agent(a, 'POST', '/ui/api/machines/join', token, { template: 'kube' });
+    expect(join.status).toBe(403);
+    expect(join.body.error).toMatch(BOX_REFUSAL);
     for (const path of ['/ui/api/jobs/nope/approve', '/ui/api/questions/nope/answer', '/ui/api/pull-requests/merge', '/ui/api/update']) {
       const r = await agent(a, 'POST', path, token, {});
       expect(r.status, `${path}: ${r.text}`).toBe(403);
@@ -95,8 +94,8 @@ describe('box tokens (issue #795)', () => {
     }
   });
 
-  it('a person mints a box token; with it an agent launches a sandbox box', async () => {
-    const { a, runtime } = await boot();
+  it('a person mints a box token; with it an agent mints a join code', async () => {
+    const { a } = await boot();
     const session = await a.login();
     const minted = await mint(a, session, { box: true, minutes: 10 });
     expect(minted.status).toBe(200);
@@ -110,9 +109,9 @@ describe('box tokens (issue #795)', () => {
 
     const token = minted.body.token as string;
     await template(a, token);
-    const launch = await agent(a, 'POST', '/ui/api/machines/sandbox', token, { template: 'kube', params: {} });
-    expect(launch.status, launch.text).toBe(200);
-    expect(runtime.boxes.get(launch.body.container as string)?.spec.image).toBe(IMAGE);
+    const join = await agent(a, 'POST', '/ui/api/machines/join', token, { template: 'kube' });
+    expect(join.status, join.text).toBe(200);
+    expect(join.body.code).toEqual(expect.any(String));
     // A box token does not mint one either.
     expect((await agent(a, 'POST', '/ui/api/api-tokens', token, { action: 'mint', label: 'again', box: true })).status).toBe(403);
   });

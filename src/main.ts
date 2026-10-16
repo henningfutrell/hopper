@@ -35,9 +35,9 @@ import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts'; import { createOutboundGuard } from './outbound/index.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
-import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
+import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
-import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersAgentCredentials, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -89,9 +89,9 @@ export interface AppSeams extends UserSeams {
    * OpenFGA's checks; default its metrics endpoint beside HOPPER_OPENFGA_URL, else none. And what reads the search index's
    * Solr; default its metrics API beside HOPPER_SOLR_URL, else none. */
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
-  /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
+  /** The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  startCheckMs?: number; searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string;
+  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -113,7 +113,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -203,18 +203,17 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       })));
     },
   });
-  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. It reads each box's launch
-  // scope from the sandbox records, kept in memory (issue #708): from callbacks too, which can outlive the database. The
+  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. The
   // tunnel watch (issue #795, remoteAccess below): whether the remote access URL is up, so each user's Grok Bot routine is
   // told where the hopper is.
   // Search (issue #945): one Solr core for the hopper, each user's documents apart by the instance id and the user id.
   // One outbound guard for the process (issue #1014): every user's sends to one destination share its limits. The shared
   // secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
-  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run) }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below
+  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run) }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
+      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
       installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -281,22 +280,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
   });
-  // The sandbox boxes the hopper starts (issues #603, #708): through the container runtime selected once here (Podman
-  // whenever it is reachable), beside the hopper — on the compose network, reaching it by its LAN name, or on the host
-  // network, reaching it on loopback; or, with the Kubernetes runtime (issue #1286), as pods that reach it by its LAN
-  // name, its Service's.
+  // The sandboxes the hopper starts, one per step (issues #708, #1349): through the container runtime selected once here
+  // (Podman whenever it is reachable), beside the hopper, on the compose network or the host network; or, with the
+  // Kubernetes runtime (issue #1286), as pods. It burns the boxes an older build launched, and their sandbox records.
   const sandboxes = createSandboxes({
     runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }),
-    repo: sandboxRecords, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
+    repo: instance.sandboxes, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config), cluster: inPod,
-    joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
-    address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),
-    ...(seams.startCheckMs !== undefined ? { startCheckMs: seams.startCheckMs } : {}),
     clients: sandboxClientsOf(runtimes),
-    mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
-    boxesOf: sandboxBoxesFor(instance, runtimes),
-    waiting: (now) => new Set(instance.joinCodes.waiting(now.toISOString())),
-    clock, logger, checks: usersTemplates(() => runtimes.all()), agentCredentials: usersAgentCredentials(() => runtimes.all()), // the read-only check (issue #716), the agent credential (#708)
+    clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
@@ -305,7 +297,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Stack resources (issue #947): the containers through the runtime's socket, the sandbox boxes on client targets through
   // their clients, Postgres through the store, OpenFGA and Solr their metrics, with every user's documents waiting to be
   // indexed; the stack recorder keeps them over time.
-  const solrMeter = seams.solrMeter ?? (config.solrUrl ? createSolrMeter({ url: config.solrUrl }) : undefined), stack = createStack({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), remote: seams.remoteBoxMeter ?? createRemoteBoxMeter({ instanceId: instance.settings.instanceId(), records: () => sandboxRecords.list(), clients: sandboxClientsOf(runtimes) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), solr: solrMeter && { meter: solrMeter, pending: () => runtimes.all().reduce((n, r) => n + r.search.status().pending, 0) }, database: store.databaseStats, history: store.stackHistory, clock, logger });
+  const solrMeter = seams.solrMeter ?? (config.solrUrl ? createSolrMeter({ url: config.solrUrl }) : undefined), stack = createStack({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), remote: seams.remoteBoxMeter ?? createRemoteBoxMeter({ instanceId: instance.settings.instanceId(), records: () => instance.sandboxes.list(), clients: sandboxClientsOf(runtimes) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), solr: solrMeter && { meter: solrMeter, pending: () => runtimes.all().reduce((n, r) => n + r.search.status().pending, 0) }, database: store.databaseStats, history: store.stackHistory, clock, logger });
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.

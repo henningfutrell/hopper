@@ -9,8 +9,7 @@
 //   Scenario: the runtime sees only its own pods
 //   Scenario: start waits until the pod runs, and says why it cannot
 //   Scenario: wait answers the exit code, and gives up at its time limit
-//   Scenario: the start check runs in the box through exec
-//   Scenario: a command runs in the box with its environment; files are copied in through tar
+//   Scenario: files are copied in through tar
 //   Scenario: the home is a claim; one that exists is kept
 //   Scenario: listVolumes answers the runtime's own claims with every label asked, by the hopper's name (issue #1371)
 //   Scenario: stop, remove and removeVolume refuse a pod or claim that is not the runtime's: the hopper's own pod, a
@@ -29,7 +28,7 @@ const hopper = { namespace: 'hopper', labels: { 'app.kubernetes.io/name': 'hoppe
 const spec = (over: Partial<ContainerSpec> = {}): ContainerSpec => ({
   name: 'hopper-sandbox-infra', image: 'ghcr.io/henningfutrell/hopper:box-claude', network: 'hopper_default', volume: 'hopper-sandbox-infra-home',
   env: { HOPPER_CLIENT_NAME: 'hopper-sandbox-infra' }, labels: { 'io.hopper.box': 'abc123', 'io.hopper.user': 'u1', 'io.hopper.sandbox': 's1' },
-  limits: { cpus: 1.5, memoryMb: 2048 }, user: '1000:1000', check: 'http://hopper:4790', ...over,
+  limits: { cpus: 1.5, memoryMb: 2048 }, user: '1000:1000', ...over,
 });
 const runtime = (api: FakeKubeApi) => createKubernetesRuntime({ api, hopper, pollMs: 1, startMs: 50 });
 const podOf = (api: FakeKubeApi, name: string): V1Pod => api.pods.get(name)!;
@@ -88,8 +87,7 @@ describe('the Kubernetes container runtime', () => {
 
   it('a one-shot container runs its script and is not restarted', async () => {
     const api = createFakeKubeApi();
-    const { check: _check, ...noCheck } = spec();
-    const id = await runtime(api).create({ ...noCheck, name: 'hopper-check-infra-1', volume: 'hopper-check-infra-1-home', script: 'echo hi' });
+    const id = await runtime(api).create({ ...spec(), name: 'hopper-check-infra-1', volume: 'hopper-check-infra-1-home', script: 'echo hi' });
     const pod = podOf(api, id);
     expect(pod.spec?.restartPolicy).toBe('Never');
     expect(pod.spec!.containers[0]!.command).toEqual(['/bin/sh', '-c', 'echo hi']);
@@ -161,35 +159,6 @@ describe('the Kubernetes container runtime', () => {
     expect((await rt.inspect(id))?.state).toBe('exited');
     api.logs.set(id, 'PROBE ok\n');
     expect(await rt.logs(id)).toBe('PROBE ok\n');
-  });
-
-  it('the start check runs in the box through exec', async () => {
-    const api = createFakeKubeApi();
-    const rt = runtime(api);
-    const id = await rt.create(spec());
-    expect(await rt.startCheck(id)).toEqual({ passed: false, output: 'the box is created, not running' });
-    api.phase(id, 'Running');
-    api.onExec = () => ({ exit: 7, stderr: 'curl: (7) Failed to connect\n' });
-    expect(await rt.startCheck(id)).toEqual({ passed: false, output: 'curl: (7) Failed to connect' });
-    expect(api.execs.at(-1)).toEqual({ pod: id, cmd: ['bash', '--noprofile', '--norc', '-c', "curl -fsS -m 5 -o /dev/null 'http://hopper:4790/client/install'"] });
-    api.onExec = () => ({ exit: 0 });
-    expect(await rt.startCheck(id)).toEqual({ passed: true, output: '' });
-    const { check: _check, ...noCheck } = spec();
-    const plain = await rt.create({ ...noCheck, name: 'hopper-sandbox-old' });
-    expect(await rt.startCheck(plain)).toBeUndefined();
-    expect(await rt.startCheck('gone')).toEqual({ passed: false, output: 'the box is gone' });
-  });
-
-  it('a command runs in the box with its environment', async () => {
-    const api = createFakeKubeApi();
-    const rt = runtime(api);
-    const id = await rt.create(spec());
-    api.onExec = () => ({ exit: 2, stdout: 'out', stderr: 'err' });
-    const got: [string, number][] = [];
-    const exit = await rt.exec!(id, { cmd: ['kubectl', 'get', 'ns'], env: { KUBECONFIG: '/tmp/k' }, out: (c, s) => got.push([c.toString(), s]) });
-    expect(exit).toBe(2);
-    expect(got).toEqual([['out', 1], ['err', 2]]);
-    expect(api.execs.at(-1)?.cmd).toEqual(['env', 'KUBECONFIG=/tmp/k', 'kubectl', 'get', 'ns']);
   });
 
   it('files are copied in through tar, as the box\'s user', async () => {

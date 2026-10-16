@@ -141,7 +141,8 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     expect(r.stdout).toContain('approved by the read policy');
     expect(r.stdout).toContain('sh "$HOPPER_SKILL" kube-diagnostics cluster/lab');
     expect(r.stdout).toContain('sh "$HOPPER_SKILL" aws-diagnostics aws-role/123456789012/readonly');
-    expect(r.stdout).toContain(`hopper sandbox launch --template ${t!.name}`);
+    expect(r.stdout).toContain(`sh "$HOPPER_STEP" box ${t!.name}`);
+    expect(r.stdout).not.toContain('hopper sandbox launch');
     expect((await check(a, token, t!.name, LAB_READ)).allowed).toBe(true);
 
     // The same needs, in another order and another job: the same template.

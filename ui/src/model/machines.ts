@@ -81,13 +81,6 @@ export function templateText(m: MachineSnapshot): string | null {
 }
 
 /**
- * The machines a sandbox box can start on besides the computer the hopper runs on (issue #708): client targets online
- * now, through their own Podman. Not a sandbox box itself: a box has no runtime to start another in.
- */
-export const boxHosts = (machines: Pick<MachineSnapshot, 'id' | 'online' | 'client'>[]): string[] =>
-  machines.filter((m) => m.client && m.online && !m.id.startsWith('hopper-sandbox-')).map((m) => m.id);
-
-/**
  * A machine off the hopper's network on Machines (issue #711): why its jobs cannot reach the hopper, and the command that
  * joins it to the hopper's network when one fits; null for a machine whose jobs reach it.
  */
@@ -351,47 +344,10 @@ export function reservedText(m: Pick<MachineSnapshot, 'maxLanes' | 'reservedLane
   return `${n} of ${m.maxLanes}, for jobs pinned here; jobs that could run anywhere use the other ${m.maxLanes - n}`;
 }
 
-/** The agents a sandbox box is offered with (issue #308): those an executor drives on a client target. */
-export const BOX_AGENTS = ['claude'] as const;
-export type BoxAgent = (typeof BOX_AGENTS)[number];
-
-/** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker (the line's container runtime). */
-export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; runtime: 'podman' | 'docker'; template?: { name: string; image: string } };
-
-/** Where a box reaches the hopper from, and the image it runs. */
-export interface BoxPlace { boxUrl: string; boxNetwork: string; boxImage: string }
-
-/** The published image: a box is its `box-<agent>` tag. */
-const BOX_IMAGE = 'ghcr.io/henningfutrell/hopper';
-
 /**
- * A hopper in its compose container is reached by name on the compose network (`hopper`, on
- * `hopper_default`); one installed on this computer, through its loopback on the host network. `port`:
- * the daemon's own (a reverse proxy in front may serve the page on another).
+ * The one line Add machine shows (design.md "Joining a machine"): the computer runs the install the hopper serves, from
+ * the URL this page is open at. A sandbox never joins as a machine (issue #1349).
  */
-export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
-  return config.thisMachineRefused
-    ? { boxUrl: `http://hopper:${port}`, boxNetwork: 'hopper_default', boxImage: BOX_IMAGE }
-    : { boxUrl: `http://127.0.0.1:${port}`, boxNetwork: 'host', boxImage: BOX_IMAGE };
-}
-
-/** How a person signs in the agent of a box the hopper started (issue #603): once, in the box, on the computer. */
-export const boxSignInLine = (container: string, agent: BoxAgent): string => `podman exec -it ${container} ${agent}`;
-
-/**
- * The one line Add machine shows (design.md "Joining a machine"). A computer runs the install the hopper
- * serves, from the URL this page is open at. A box is a locked-down container: `flags` are the sandbox flags
- * and limits the hopper builds for the boxes it starts too (GET /api/sandboxes `line`, issue #708) — every
- * capability dropped, no new privileges, a read-only root —, its own home volume, nothing of the computer mounted.
- */
-export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace; flags: string }): string {
-  if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
-  // A box of a template (issue #558) is named after it and runs its image.
-  const box = `hopper-sandbox-${choice.template?.name ?? choice.agent}`;
-  const image = choice.template?.image ?? `${o.join.boxImage}:box-${choice.agent}`;
-  return [
-    `${choice.runtime} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
-    o.flags,
-    `-v ${box}-home:/home/agent -e HOPPER_CLIENT_NAME=${box} -e HOPPER_JOIN='${o.join.boxUrl}#${o.code}' ${image}`,
-  ].join(' ');
+export function joinLine(o: { origin: string; code: string }): string {
+  return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
 }

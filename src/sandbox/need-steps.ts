@@ -117,7 +117,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     if (!fields.command || fields.command.trim() === '') return refuse(job, 400, 'give the command to run (sh): --command TEXT or --script FILE');
     const request = stepRequestOf({ host: t.name, command: fields.command, ...(fields.timeout !== undefined ? { timeout: fields.timeout } : {}), outputs: fields.outputs });
     if ('problem' in request) return refuse(job, 400, request.problem);
-    if (!o.run) return refuse(job, 503, 'this hopper runs no sandbox step: it is given no container runtime (docs/deploy.md "Sandbox boxes the hopper starts")');
+    if (!o.run) return refuse(job, 503, 'this hopper runs no sandbox step: it is given no container runtime (docs/deploy.md "Sandboxes the hopper starts")');
     const id = newId();
     const box = `hopper-need-${t.name}-${id.slice(0, 8)}`;
     // Minted now, before the inputs come: a no costs the job no upload. Held in memory for this step only.
