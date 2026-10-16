@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { DECISION_POINTS, MINOR_DECISION_MODES, VAULT_VALUE_MAX, type DecisionPoint } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -49,7 +49,7 @@ export function registerMinorDecisionRoutes(app: FastifyInstance, o: { operator:
     if (!s) throw new HttpError(401, 'sign in to change the TypeSafe API key');
     const { typesafeKey } = o.tenant(req);
     const edit = parseWith(typesafeKeyBody, req.body);
-    const who = { userId: s.userId, admin: s.role === 'admin', by: identityName(s.identity) };
+    const who = { userId: s.userId, admin: s.role === 'admin', by: personOf(s) };
     const r = edit.action === 'set' ? await typesafeKey.set(edit.value, who) : await typesafeKey.remove(who);
     if (!r.ok) throw new HttpError(KEY_STATUS[r.code], r.error);
     return r.view;

@@ -10,7 +10,7 @@ import { ARTIFACT_LIMITS, ARTIFACT_MAX_BYTES, type ArtifactSettings } from '../.
 import type { ArtifactEdge } from '../artifacts.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -70,7 +70,7 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
   const by = (req: FastifyRequest): string => {
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to change artifacts');
-    return identityName(s.identity);
+    return personOf(s);
   };
   const viewOf = (req: FastifyRequest, t: TenantParts, id: string) => {
     const a = t.artifacts.get(id);

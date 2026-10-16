@@ -11,7 +11,7 @@ import { actorCandidates, ActorsGitHubError, IntakeActorsRefused, resolveActors,
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts, type Tenants } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -84,7 +84,7 @@ export function registerIntakeActorRoutes(app: FastifyInstance, o: {
       const before = named(t);
       if (JSON.stringify(before.accounts ?? null) === JSON.stringify(accounts) && before.actors.length === to.length) return;
       t.store.settings.setIntakeActors({ actors: to, accounts });
-      if (JSON.stringify(before.actors) !== JSON.stringify(to)) t.store.events.append({ type: 'intake.actors_changed', data: { from: before.actors, to, by: identityName(s.identity) } });
+      if (JSON.stringify(before.actors) !== JSON.stringify(to)) t.store.events.append({ type: 'intake.actors_changed', data: { from: before.actors, to, by: personOf(s) } });
     });
     return viewOf(t);
   });

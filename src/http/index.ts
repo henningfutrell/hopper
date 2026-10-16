@@ -47,6 +47,7 @@ import { sectionRoutes } from './sections.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
 import { createLocalAccountsAdmin, localAccountRoutes } from './local-accounts.ts';
+import { createPasskeys } from '../auth/passkeys.ts';
 import { createApiGrants } from './ui/api-grants.ts';
 import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
@@ -93,7 +94,7 @@ export type { TailnetSource } from './tailnet.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'localAccounts' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'localAccounts' | 'localAccountPasskeys' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -234,6 +235,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   realmRoutes(app, { realms, instanceAdmin });
   // Local accounts (issue #1380): the hopper's own email and password sign-in.
   const localAccounts = createLocalAccountsAdmin({ instance: o.instance, signIn: o.signIn, sessions, grants, clock: o.clock });
+  const passkeys = createPasskeys({ accounts: o.instance.localAccounts, passkeys: o.instance.localAccountPasskeys, clock: o.clock });
   localAccountRoutes(app, { localAccounts, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan, heldSince: loop.heldSince });
@@ -267,7 +269,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
     updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;

@@ -8,7 +8,7 @@ import { APP_SLUG, appSlug, DEFAULT_INTAKE_AUTO_APPROVAL, type IntakeAutoApprova
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -34,7 +34,7 @@ export function registerIntakeAutoApprovalRoutes(app: FastifyInstance, o: { admi
       const from = settingsOf(t);
       if (from.on === to.on && from.apps.join() === to.apps.join()) return;
       t.store.settings.setIntakeAutoApproval(to);
-      t.store.events.append({ type: 'intake.auto_approval_changed', data: { from, to, by: identityName(s.identity) } });
+      t.store.events.append({ type: 'intake.auto_approval_changed', data: { from, to, by: personOf(s) } });
     });
     return settingsOf(t);
   });

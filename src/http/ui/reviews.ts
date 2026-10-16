@@ -12,7 +12,7 @@ import { editReviewSettings } from '../../review/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { reviewItemView } from '../reviews.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -62,7 +62,7 @@ export function registerReviewRoutes(app: FastifyInstance, o: { operator: Guard;
     const who = (req: FastifyRequest): string => {
       const s = signedInOf(req);
       if (!s) throw new HttpError(401, `sign in to decide on a ${noun}`);
-      return identityName(s.identity);
+      return personOf(s);
     };
     const answer = (req: FastifyRequest, r: ReviewActionResult) => {
       if (r.ok) return reviewItemView(o.tenant(req).store, r.item);

@@ -3,6 +3,7 @@
 // The job is told its brief and results stay in the hopper: nothing of them goes to GitHub, or anywhere else. Pure.
 import { authorizesVault, DEFAULT_DIRECT_EXECUTOR, DEFAULT_DIRECT_PRIORITY, directKey, type DirectJob } from '../domain/direct-jobs.ts';
 import type { SourceItem } from '../domain/source-item.ts';
+import { nameWithoutEmail } from '../domain/users.ts';
 
 /** What the job is told about where it came from, before its brief. */
 export const PRIVATE_LINE = '[hopper direct job] A person submitted this job straight to the hopper. No GitHub issue is behind it. Its brief and its results are private: they stay in the hopper. Do not write the brief, its details or your results to GitHub or anywhere else: no issue, no comment, no gist. Open a pull request only when the brief asks for a change to the repository named below; its title, body, branch and commits describe the change in neutral terms and carry no detail of the brief.';
@@ -31,7 +32,7 @@ export function directPrompt(d: DirectJob): string {
     authorizesVault(d)
       ? 'vault: granted by the submitter — the vault\'s helper gives what your box\'s template holds, never more'
       : 'vault: not granted — the vault gives this job nothing',
-    `submitted by: ${d.submittedBy.person} (${d.submittedBy.via}) at ${d.submittedAt}`,
+    `submitted by: ${nameWithoutEmail(d.submittedBy.person)} (${d.submittedBy.via}) at ${d.submittedAt}`,
     d.repo ? `repository: ${d.repo} — a pull request, if the brief asks for a change, goes here` : 'repository: none — open no pull request',
     OUTPUTS_LINE,
     DONE_LINE,

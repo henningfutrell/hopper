@@ -8,7 +8,7 @@ import type { SignInPaste, SignInStart } from '../../logins/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -45,7 +45,7 @@ export function registerToolSignInRoutes(app: FastifyInstance, o: { operator: Gu
     const { account } = parseWith(setupTokenBody, req.body);
     const s = signedInOf(req);
     const t = o.tenant(req);
-    return answer(t, await t.signIns.startSetupToken({ account, by: s ? identityName(s.identity) : 'admin' }));
+    return answer(t, await t.signIns.startSetupToken({ account, by: s ? personOf(s) : 'admin' }));
   });
   app.post('/ui/api/logins/:id/code', o.operator, async (req) => {
     const { id } = parseWith(idParams, req.params);

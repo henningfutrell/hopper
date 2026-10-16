@@ -8,7 +8,7 @@ import { canMove, POINTED_JOB_STATUSES, pointedJobOf, POINTER_KINDS, TRANSITIONS
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 const idParams = z.object({ id: z.string() });
@@ -56,7 +56,7 @@ export function pointedJobReadRoutes(app: FastifyInstance, o: { tenant: (req: Fa
 const byOf = (req: FastifyRequest, doing: string): string => {
   const s = signedInOf(req);
   if (!s) throw new HttpError(401, `sign in to ${doing}`);
-  return identityName(s.identity);
+  return personOf(s);
 };
 
 export function registerPointedJobRoutes(app: FastifyInstance, o: { operator: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {

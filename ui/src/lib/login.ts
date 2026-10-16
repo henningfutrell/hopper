@@ -1,7 +1,8 @@
 // Logging a browser in (design.md "UI session and mutations", "Reaching the UI across the LAN"):
 // the one-time login code goes to POST /ui/login as a plain form, whose answer stores the session
 // token and reloads. A device link carries the code in the URL fragment, never sent to a server. No
-// sign-in, password sign-in and a gateway realm answer JSON with the token (design.md "Sign-in", issues #53, #215).
+// sign-in, password sign-in, a passkey (issue #1380) and a gateway realm answer JSON with the token (design.md "Sign-in", issues #53, #215).
+import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import type { SessionView } from '../model/wire.ts';
 import { checkInstance, INSTANCE_HEADER } from './instance.ts';
 
@@ -99,3 +100,20 @@ export const signInWithoutCredential = (): Promise<string | null> => jsonSignIn(
 export const signInThroughGateway = (): Promise<string | null> => jsonSignIn('/ui/auth/gateway', {});
 export const signInWithPassword = (username: string, password: string): Promise<string | null> => jsonSignIn('/ui/auth/password', { username, password });
 
+
+/**
+ * Sign in with a passkey (issue #1380, design.md "Passkeys for local accounts"): the daemon's options for this origin, the
+ * browser's passkey prompt (@simplewebauthn/browser), then its answer; keeps the token. Resolves the error, or null.
+ */
+export async function signInWithPasskey(): Promise<string | null> {
+  const res = await fetch('/ui/auth/passkey/options', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  const start = await res.json().catch(() => ({})) as { flow?: string; options?: PublicKeyCredentialRequestOptionsJSON; error?: string };
+  if (!res.ok || !start.flow || !start.options) return res.status === 429 ? 'too many sign-in attempts; wait a minute' : (start.error ?? `${res.status}`);
+  let response;
+  try {
+    response = await startAuthentication({ optionsJSON: start.options });
+  } catch (e) {
+    return `no passkey was used: ${(e as Error).message}`;
+  }
+  return jsonSignIn('/ui/auth/passkey', { flow: start.flow, response });
+}

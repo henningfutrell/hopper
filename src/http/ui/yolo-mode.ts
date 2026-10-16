@@ -13,7 +13,7 @@ import { landingCards } from '../../domain/work-item-landing.ts';
 import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -66,7 +66,7 @@ export function registerYoloModeRoutes(app: FastifyInstance, o: { operator: Guar
       const to = patchYoloMode(from, patch);
       if (JSON.stringify(from) === JSON.stringify(to)) return;
       t.store.settings.setYoloMode(to);
-      t.store.events.append({ type: 'yolo_mode.changed', data: { from, to, by: identityName(s.identity) } });
+      t.store.events.append({ type: 'yolo_mode.changed', data: { from, to, by: personOf(s) } });
     });
     return yoloModeView(t);
   });

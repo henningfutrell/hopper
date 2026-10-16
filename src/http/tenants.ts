@@ -135,6 +135,8 @@ const kinds = new WeakMap<FastifyRequest, SessionKind>();
 const labels = new WeakMap<FastifyRequest, string>();
 /** An API token's grant (issue #881), for what a delegate approver may approve (issue #1138). */
 const grantIds = new WeakMap<FastifyRequest, string>();
+/** The verified email of the request's user (issue #1380), read when an act is recorded: what attribution names. */
+const emails = new WeakMap<FastifyRequest, () => string | undefined>();
 
 /** What a refused API token, or one that names no live session, is told. */
 export const API_TOKEN_GONE = 'the API token is unknown, revoked or expired';
@@ -159,6 +161,7 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
 }): void {
   const peers = peerList(o.lan.peers);
   const throughApiDoor = createApiDoor(o);
+  const emailOf = (userId: string) => (): string | undefined => o.tenants.list().find((u) => u.id === userId)?.email;
   app.addHook('onRequest', async (req, reply) => {
     const session = requestSession(req, o.sessions);
     if (session) {
@@ -176,6 +179,7 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
         }
       }
       users.set(req, session.userId); roles.set(req, session.role); identities.set(req, session.identity); kinds.set(req, session.kind);
+      emails.set(req, emailOf(session.userId));
       if (session.kind === 'api' && session.label !== undefined) labels.set(req, session.label);
       if (session.kind === 'api' && session.grantId !== undefined) grantIds.set(req, session.grantId);
       return;
@@ -189,6 +193,7 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
       users.set(req, at.userId);
       roles.set(req, at.role);
       identities.set(req, at.who);
+      emails.set(req, emailOf(at.userId));
       return;
     }
     const r = classifyRequest({ host: req.headers.host, peer: req.socket.remoteAddress }, o.port(), o.lan, peers);
@@ -230,16 +235,18 @@ export const roleOfRequest = (req: FastifyRequest): UiRole | undefined => roles.
 /**
  * The request's session or token as the instance admin check reads it (issue #240); undefined: neither. `kind`: the
  * session's (an API token's is `api`); absent for a sign-in's token on the API door. `label`: an API token's. `grantId`: its grant's.
+ * `email`: the verified email its user is known by (issue #1380), what an act is recorded by (`personOf`); absent: none yet.
  */
-export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; kind?: SessionKind; label?: string; grantId?: string } | undefined {
+export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; email?: string; kind?: SessionKind; label?: string; grantId?: string } | undefined {
   const role = roles.get(req);
   const identity = identities.get(req);
   const userId = users.get(req);
   const kind = kinds.get(req);
   const label = labels.get(req);
   const grantId = grantIds.get(req);
-  return role === undefined || identity === undefined || userId === undefined ? undefined
-    : { role, identity, userId, ...(kind ? { kind } : {}), ...(label !== undefined ? { label } : {}), ...(grantId !== undefined ? { grantId } : {}) };
+  if (role === undefined || identity === undefined || userId === undefined) return undefined;
+  const email = emails.get(req)?.();
+  return { role, identity, userId, ...(email !== undefined ? { email } : {}), ...(kind ? { kind } : {}), ...(label !== undefined ? { label } : {}), ...(grantId !== undefined ? { grantId } : {}) };
 }
 
 const notLinked = (who: Identity, via: 'gateway' | 'github'): string => via === 'github'

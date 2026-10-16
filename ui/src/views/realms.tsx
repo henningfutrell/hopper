@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Admins } from '@/views/admins';
-import { LocalAccounts, OwnPassword } from '@/views/local-accounts'; import { SourceEmailMatch } from '@/views/source-email-match';
+import { LocalAccounts, OwnPasskeys, OwnPassword } from '@/views/local-accounts'; import { SourceEmailMatch } from '@/views/source-email-match';
 import { SessionLengthsPanel } from '@/views/session-lengths';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -68,7 +68,7 @@ export function Realms() {
     } finally { setBusy(false); }
   };
 
-  if (!canAdmin) return <div className="space-y-3"><OwnPassword /><Panel title="Sign-in" icon={KeyRound}><Empty>Only the hopper's admins manage sign-in.</Empty></Panel></div>;
+  if (!canAdmin) return <div className="space-y-3"><OwnPassword /><OwnPasskeys /><Panel title="Sign-in" icon={KeyRound}><Empty>Only the hopper's admins manage sign-in.</Empty></Panel></div>;
   if (!view) return <Panel title="Sign-in" icon={KeyRound}><Empty>Loading…</Empty></Panel>;
   const { version, githubAdmin } = view;
   // Each realm with its place in the whole list: a move names that place.
@@ -99,7 +99,7 @@ export function Realms() {
 
   return (
     <div className="space-y-3">
-      <OwnPassword />
+      <OwnPassword /><OwnPasskeys />
       <Panel title="GitHub" icon={KeyRound}>
         <div data-section="github" className="space-y-3 text-sm">
           <p className="text-muted-foreground">

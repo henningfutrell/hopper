@@ -8,7 +8,7 @@ import { DEFAULT_LANDING_BATCHES, patchLandingBatches, type LandingBatchesView }
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -60,7 +60,7 @@ export function registerLandingBatchRoutes(app: FastifyInstance, o: { admin: Gua
       const to = patchLandingBatches(from, patch);
       if (JSON.stringify(from) === JSON.stringify(to)) return;
       t.store.settings.setLandingBatches(to);
-      t.store.events.append({ type: 'landing_batches.changed', data: { from, to, by: identityName(s.identity) } });
+      t.store.events.append({ type: 'landing_batches.changed', data: { from, to, by: personOf(s) } });
     });
     void t.githubProxy.landingBatches.pass().catch(() => undefined);
     return landingBatchesView(t);
@@ -73,7 +73,7 @@ export function registerLandingBatchRoutes(app: FastifyInstance, o: { admin: Gua
     if (!(t.store.settings.getLandingBatches() ?? DEFAULT_LANDING_BATCHES).repos[repo.toLowerCase()]) throw new HttpError(404, `${repo} has no landing batches`);
     let done: Promise<void>;
     try {
-      ({ done } = t.githubProxy.landingBatches.restart(repo, identityName(s.identity)));
+      ({ done } = t.githubProxy.landingBatches.restart(repo, personOf(s)));
     } catch (e) {
       throw new HttpError(409, (e as Error).message);
     }

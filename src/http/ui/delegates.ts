@@ -6,19 +6,19 @@ import { delegateBy, deniedBy, type DelegatePolicy } from '../../domain/delegate
 import type { Identity } from '../../domain/types.ts';
 import { HttpError } from '../errors.ts';
 import type { ApiGrants } from './api-grants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 /** A delegate approver acting: its name, the person it acts for, and its approver policy. */
 export interface Delegate extends DelegatePolicy { name: string; person: string }
 
 /** The delegate approver the request's API token is of, or undefined: the request is a person's, or another grant's. */
-export function delegateOf(grants: Pick<ApiGrants, 'live'>, s: { identity: Identity; grantId?: string }): Delegate | undefined {
+export function delegateOf(grants: Pick<ApiGrants, 'live'>, s: { identity: Identity; email?: string; grantId?: string }): Delegate | undefined {
   const g = s.grantId === undefined ? undefined : grants.live(s.grantId);
-  return g?.delegate ? { name: g.label, person: identityName(s.identity), deny: g.delegate.deny } : undefined;
+  return g?.delegate ? { name: g.label, person: personOf(s), deny: g.delegate.deny } : undefined;
 }
 
 /** Who an approval records: a delegate and the person it acts for, else the person. */
-export const approverOf = (d: Delegate | undefined, s: { identity: Identity }): string => (d ? delegateBy(d.name, d.person) : identityName(s.identity));
+export const approverOf = (d: Delegate | undefined, s: { identity: Identity; email?: string }): string => (d ? delegateBy(d.name, d.person) : personOf(s));
 
 /** 403 when the delegate's approver policy names one of what the approval touches; a person's approval passes. */
 export function refuseDenied(d: Delegate | undefined, names: readonly (string | undefined)[], doing: string): void {

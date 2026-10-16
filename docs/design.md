@@ -18925,8 +18925,26 @@ Tests: `test/scripts/kind-sandbox-check.test.ts` (with a fake kubectl and the ru
 before the box is made; a hopper that leaves the box fails the check; an instance id that cannot be read stops the
 check before the hopper is stopped). The kind workflow runs the step itself.
 
-What is still open is listed in the issue's pull request: the ledger outcomes and the need box sweep on client targets
-(both wait for #1368), and credentials that die with their sandbox (a decision, #1394).
+**Part 6 (2026-10-16): each way a run ends has its own outcome.** The ledger of #1349 had `succeeded`, `failed` and
+`swept`: a step past its time limit, one the job stopped waiting for, and one a stopped hopper left all read as
+`failed` or `swept`. The need box sweep on client targets went in with #1349 ("Sandboxes are burned after each step").
+
+- **Timed out.** The need box (`need-box.ts`) holds the step's time limit with its own timer, not only through the
+  runtime's `wait` (now given the limit and 5 s more): a wait that hangs past the limit still ends the step. The box is
+  stopped, then removed with its home as before, and the result says `stopped: 'timed-out'`.
+- **Cancelled.** A step the job stopped waiting for (its signal aborted, before or after the box started) says
+  `stopped: 'cancelled'`. `outcomeOf` (`src/domain/sandbox-runs.ts`) takes `stopped` first.
+- **Interrupted.** At start (`Sandboxes.start`, before the first pass), no step runs yet, so each run with no end was
+  left by a hopper that stopped mid-step: it ends as `interrupted`, with its job in the log line. The sweep that follows
+  burns its box and home and notes the burn, as before. `swept` stays for a run whose box the sweep burned while this
+  hopper ran.
+- No migration: the outcome is a field of the run's JSON body, and the older outcomes keep their meaning.
+
+Tests: `test/sandbox/need-box.test.ts` (a step past its limit is stopped and removed as timed out; one the job stops
+waiting for, as cancelled), `test/sandbox/sandbox-runs.test.ts` (the ledger's `timed-out` and `cancelled` runs, burned;
+at start, a run a stopped hopper left ends as `interrupted` and its box and home are gone).
+
+What is still open is listed in the issue's pull request: credentials that die with their sandbox (a decision, #1394).
 
 ## Kubernetes sandboxes, end to end on kind (issue #1422, 2026-10-15)
 
@@ -22293,7 +22311,7 @@ with a local account or SSO of the same email got a second, empty user, and thei
 - **Every realm's vouched email links.** The owner made external SSO trusted, and the admin chose each realm. A realm
   with `trustUnverifiedEmail` vouches for emails its provider did not verify: an admin turns that on only for a provider
   they trust to name people.
-- **OpenFGA subjects, audit and attribution still name the user id** (OpenFGA subjects: replaced by part 9). The id is stable and every tuple and event names it;
+- **OpenFGA subjects, audit and attribution still name the user id** (OpenFGA subjects: replaced by part 9; audit and attribution: by part 10). The id is stable and every tuple and event names it;
   a user's email is now one lookup away. Keying those by email is a larger change with its own migration of tuples.
 - **No migration of the old build.** `users.email` is a new column; the build before reads `SELECT *` and ignores it, and
   adds its users with none.
@@ -22392,3 +22410,108 @@ than one GitHub source per user, and sources from other forges.
 its id; a check asks as the email, the owner told by email; a user who takes an email is moved at the next ask; a
 decision's path and reason, and the matrix, name the email; escaping); `test/authz/openfga-real.test.ts` (opt-in, a real
 OpenFGA: a subject of an email, and of an escaped one, is stored and checked).
+
+## Audit and attribution keyed by email (issue #1380, part 10, 2026-10-16)
+
+Owner decision 1 on issue #1380: user records, OpenFGA subjects, audit and attribution use the verified email, never a
+username. Part 7 gave each user its email; part 9 keyed OpenFGA by it. Who did an act was still recorded as the realm named
+the person (`identityName`: name, username, email or subject, the first the realm gave): `Ada Lovelace` through one realm,
+`ada` through another, for one user.
+
+**The change.**
+- **An act is recorded by the verified email of the session's user** (`src/http/ui/sessions.ts` `personOf`). Every `by`
+  a UI session or an API token writes — settings changes, approvals, grants, artifacts, promotions, vault changes, the
+  instance's own settings — and every acting person (`ActingPerson.person`: notes, hand-offs, failures, pull request acts,
+  direct jobs, terminals) names it. `signedInOf` (`src/http/tenants.ts`) carries the user's email, read from the users
+  when an act asks for it.
+- **A user with no email yet keeps the name the realm gave.** A GitHub-signed-in user from before part 7 has none until
+  their next GitHub sign-in; a realm that vouches for no email gives none.
+- **The operator CLI keeps its own name** (`operator CLI`). Its session signs in no person, whichever user it acts for;
+  a vault grant reads that name as the CLI's.
+- **Text that leaves the hopper names a person without an email address** (`src/domain/users.ts` `nameWithoutEmail`: each
+  address cut to its local part). A promotion's "Requested by" goes to GitHub. A direct job's "submitted by", a box
+  template's "approved by" and an infra plan's "approved by" go to a job, which may write to GitHub. Every other `by` stays
+  in the hopper: events, records and the UI.
+
+**Decisions:**
+- **No migration of events or records.** Events are the history: an act before this part stays recorded as the realm named
+  the person then. Rewriting it would change what the audit says happened.
+- **The local part, not a mask, where text leaves the hopper.** The person asked for the requester to be named; the local
+  part names them, and holds no address. The publishing rule's other checks (the promotion's scan) still apply.
+- **The email is read at each act, not kept in the session.** A user who takes an email at a sign-in is recorded by it at
+  the next act, with no session to end.
+
+**Residual risk.** The UI shows emails in timelines and settings history to everyone who reads that user's work. They
+were already shown in Settings → Users and Settings → Access.
+
+**Left for later parts of issue #1380:** passkeys; more than one GitHub source per user, and sources from other forges.
+
+**Verification:** `test/http/attribution.test.ts` (the session user's email, else the realm's name; the operator CLI's own
+name; an address cut to its local part), `test/promotions/promotion.test.ts` (a requester known by an email is named
+without it), `test/direct-jobs/item.test.ts` (the job is told its submitter without an email), and
+`test/integration/email-attribution.test.ts` (a setting changed by an OIDC user is recorded by their verified email; one
+whose email the realm does not vouch for, by the name it gave).
+
+## Passkeys for local accounts (issue #1380, part 11, 2026-10-16)
+
+Owner decision 3 on issue #1380: local users sign in with an email and a password **or a passkey**. Part 1 built the
+password. This part adds the passkey: a WebAuthn credential a local account adds, which then signs it in in place of its
+password.
+
+**The change.**
+- **The WebAuthn checks are an established library's** (`@simplewebauthn/server`, its browser half
+  `@simplewebauthn/browser` in the UI): the challenge, the origin, the RP ID hash, user presence and user verification,
+  the attestation and the assertion's signature. `src/auth/passkeys.ts` keeps only the ceremonies and the rules around
+  them. No hand-rolled WebAuthn code (AGENTS.md "Sign-in fails closed").
+- **The relying party is the UI origin's host name.** The browser's Origin must be a UI origin (loopback, a LAN name, the
+  public URL); its host name is the RP ID. A passkey keeps the host name it was added at (`rp_id`) and signs in there
+  only: browsers bind a passkey to it anyway, and the check makes the rule the hopper's too. A passkey added at
+  `localhost` does not sign in at the public URL; the person adds one there as well.
+- **Each challenge is used once, by its own ceremony.** A registration's challenge is the session's (keyed by its
+  token); a sign-in's is the `flow` id its options answered. Both are kept in memory for 5 minutes, at most 1000 at a
+  time, and taken out at the first answer whether it holds or not. A restart drops them: the person starts again.
+- **User verification is required and the credential is discoverable.** The passkey stands in for the password, so the
+  device must prove the person (a PIN or a biometric), not only a touch. The sign-in asks for no email: the passkey names
+  its account, and the hopper looks it up by its credential id.
+- **What is kept**: `local_account_passkeys` (instance migration 44): the credential id, the account's email (a foreign
+  key: removing the account removes its passkeys), the RP ID, the COSE public key, the signature counter, the
+  transports, a name, when it was added and last used. No secret: a public key verifies, it cannot sign.
+- **The role is the account's own, now.** A passkey sign-in is the account's sign-in: the identity `local-accounts` /
+  the email, as the password's, so the same user, the same role, and every rule of part 1 (a removed account signs
+  nobody in; a role change applies at once).
+- **Routes.** `POST /ui/auth/passkey/options` and `POST /ui/auth/passkey` (the sign-in routes' rate limit, an exact UI
+  Origin); `GET /api/local-accounts/passkeys`, `POST /ui/api/local-accounts/passkeys/options`,
+  `POST /ui/api/local-accounts/passkeys` and `POST /ui/api/local-accounts/passkeys/remove` (a session of a local account,
+  role viewer, its own passkeys only: 409 for a session of another realm). The session view's `signIn.passkeys` says
+  whether any account has one: the landing page offers "Sign in with a passkey" then.
+- **UI.** The landing page: "Sign in with a passkey" under the password form. Settings → Sign-in → Your passkeys: the
+  session's passkeys (name, host name, added, last used), Add passkey with a name, and Remove. Settings → Sign-in →
+  Local accounts shows each account's passkey count.
+
+**Decisions:**
+- **`@simplewebauthn/server`**: the WebAuthn library for Node with the longest release history and active upkeep; it
+  needs no native code. Writing the checks here would mean owning CBOR, COSE and attestation parsing alone.
+- **Attestation `none`.** The hopper trusts the person who signed in to add a passkey, not a device maker; an
+  attestation check would refuse common authenticators and add nothing for a personal hopper.
+- **Only the account's own session adds or removes its passkeys.** An admin never gets a way into another user's work
+  (issue #221): an admin cannot add a passkey to another account. An admin who removes the account removes its passkeys.
+- **A passkey is an addition, not a replacement.** The account keeps its password. A password change does not remove
+  passkeys, and a passkey change ends no session.
+- **The landing page offers a passkey only while one exists** (`signIn.passkeys`). It says one bit — some account has a
+  passkey — to whoever reaches the landing page, the same reach as the password form.
+
+**Residual risk.** The ceremonies are kept in memory: someone who reaches the sign-in routes can start up to the rate limit
+(20 a minute per caller) of them; the cap of 1000 drops the oldest first, so a flood can make a person's own sign-in start
+again. WebAuthn needs a secure context: a browser on plain HTTP at a LAN name offers no passkey (loopback and the HTTPS
+public URL do).
+
+**Left for later** (issue #1448): more than one GitHub source per user, and sources from other forges (GitLab).
+The issue named them as later work.
+
+**Verification:** `test/auth/passkeys.test.ts` (the relying party; the options; add, then sign in; the counter; a challenge
+used once; another origin, another RP ID, no user verification or another challenge refused; another host name refused;
+an unknown, removed, or removed account's passkey refused; a registration challenge is its session's, and a passkey is not
+added twice) with a fake authenticator (`test/support/fake-authenticator.ts`, an EC P-256 key);
+`test/integration/passkeys.test.ts` (a realm-only hopper end to end; another origin refused; an account's own passkeys
+only; the account's removal removes them; a session of another realm adds none; the role now);
+`test/ui/passkeys-panel.test.ts` (Settings and the landing page).

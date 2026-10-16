@@ -8,7 +8,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 import { webhooksView } from '../webhooks.ts';
 
 // The content (url, events, a typed-in secret) is checked in the editor, so the UI shows one set of
@@ -36,7 +36,7 @@ export function registerWebhookAndNotifierRoutes(app: FastifyInstance, o: {
     reply.header('cache-control', 'no-store');
     const t = o.tenant(req);
     const s = signedInOf(req);
-    const r = t.webhooksEditor.edit(parseWith(webhooksEditBody, req.body), s ? identityName(s.identity) : undefined);
+    const r = t.webhooksEditor.edit(parseWith(webhooksEditBody, req.body), s ? personOf(s) : undefined);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
     return { ...webhooksView(t.store, t.secretProblem), ...(r.generatedSecret !== undefined ? { generatedSecret: r.generatedSecret } : {}) };
   });
