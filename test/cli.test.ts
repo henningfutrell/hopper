@@ -173,6 +173,24 @@ describe('hopper config set sign-in (issue #237)', () => {
     const gh = { version: 1, local: { enabled: true }, realms: [{ name: 'gh', type: 'github' }] };
     expect((await cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(gh) })).code).toBe(0);
   });
+
+  // Issue #1373: the chart mounts the master key Secret as files and names a previous-keys file a Secret with no
+  // `previous` does not hold. The CLI reads the key as the daemon does: that file not there gives no previous key.
+  it('seals with the key from HOPPER_MASTER_KEY_FILE when the previous-keys file it names is not there', async () => {
+    const url = db();
+    const d = mkdtempSync(`${tmpdir()}/jh-cli-key-`);
+    dirs.push(d);
+    writeFileSync(`${d}/master-key`, `${'ab'.repeat(32)}\n`, { mode: 0o600 });
+    const version = (await cli(url, ['config', 'version', 'sign-in'])).out.trim();
+    const record = { version: 1, realms: [{ name: 'google', type: 'oidc', issuer: 'https://accounts.google.com', clientId: 'id-1', clientSecret: 'oidc-secret', roles: { admin: { emails: ['a@example.com'] } } }] };
+    const err: string[] = [];
+    const code = await runCli(['config', 'set', 'sign-in', '--if-version', version], {
+      env: { HOPPER_DATABASE_URL: url, HOPPER_MASTER_KEY_FILE: `${d}/master-key`, HOPPER_MASTER_KEY_PREVIOUS_FILE: `${d}/previous` },
+      stdin: () => JSON.stringify(record), out: () => {}, err: (t) => err.push(t),
+    });
+    expect(err.join('')).not.toMatch(/cannot read/);
+    expect(code).toBe(0);
+  });
 });
 
 describe('hopper help (issue #68)', () => {
