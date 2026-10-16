@@ -38,7 +38,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   code names — the code minted through an admin's UI session or the operator CLI, kept hashed, spent by the join — and
   a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,
   `docs/design.md` "GitHub through the hopper"): `POST /job/github`, with the job's proxy token — derived, never stored,
-  honoured only while the job is at work — asks the hopper to act on GitHub with its own connection; it changes no job,
+  honoured only while the job is at work — asks the hopper to act on GitHub with the job's own user's connection (issue #1380); it changes no job,
   question, webhook or setting, only records what it did. A running job's git (issue #652, `docs/design.md` "Git through the
   hopper"): `GET`/`POST /job/git/<owner>/<name>.git/…`, git's smart HTTP with the job's proxy token as its password, fetches
   and pushes on GitHub with the job's own user's connection — a push only to a branch of the job's own repository, or, with

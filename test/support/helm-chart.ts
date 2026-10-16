@@ -45,6 +45,7 @@ export interface Resource {
     policyTypes?: string[];
     template?: { spec: PodSpec; metadata?: { labels?: Record<string, string> } };
     ports?: { port: number; targetPort?: number | string; nodePort?: number }[];
+    loadBalancerIP?: string;
     rules?: { host: string }[];
     podSelector?: { matchLabels?: Record<string, string> };
     ingress?: { from?: { podSelector?: { matchLabels?: Record<string, string> } }[] }[];

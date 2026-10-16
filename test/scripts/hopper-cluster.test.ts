@@ -120,12 +120,19 @@ describe('hopper-cluster.sh migrate', () => {
 
     // The order: the release with the hopper at 0 while compose runs; then the watchdog off and the compose hopper stopped;
     // the dump; the hopper at 1; the checks; the home; then the whole stack stopped.
-    const install = at(/^helm install hopper .* --namespace hopper -f - --wait --wait-for-jobs/);
+    // The install waits for its parts itself, never with helm's --wait: that waits for the hopper's home volume, which a
+    // WaitForFirstConsumer StorageClass (kind's, k3s's) binds only once a hopper pod takes it, and the hopper is at 0.
+    const install = at(/^helm install hopper .* --namespace hopper -f - --timeout 15m$/);
+    expect(calls[install]).not.toContain('--wait');
+    for (const part of ['statefulset.apps/hopper-postgres', 'deployment.apps/hopper-openfga', 'deployment.apps/hopper']) {
+      expect(at(new RegExp(`^kubectl --namespace hopper rollout status ${part} --timeout=15m$`))).toBeGreaterThan(install);
+    }
+    expect(at(/^kubectl --namespace hopper wait --for=condition=complete job -l app.kubernetes.io\/instance=hopper,app.kubernetes.io\/component=openfga-migrate --timeout=15m$/)).toBeGreaterThan(install);
     const watchdog = at(/^systemctl --user disable hopper-compose.service hopper-compose-check.timer/);
     const stopHopper = at(/^podman stop hopperid$/);
     const restore = at(/^restored-dump$/);
     const upgrade = at(/^helm upgrade hopper .* --reuse-values --set replicas=1/);
-    const fingerprint = at(/exec deployment\/hopper -c hopper -- hopper master-key status/);
+    const fingerprint = at(/exec deployment\/hopper -c hopper -- sh -c .*exec hopper master-key status/);
     const home = at(/^home-copied$/);
     const stopAll = at(/^podman stop hopperid pgid$/);
     expect([install, watchdog, stopHopper, restore, upgrade, fingerprint, home, stopAll]).toEqual([...[install, watchdog, stopHopper, restore, upgrade, fingerprint, home, stopAll]].sort((a, b) => a - b));
@@ -142,8 +149,9 @@ describe('hopper-cluster.sh migrate', () => {
       replicas: 0, port: 4790, service: { type: 'ClusterIP' }, image: { repository: 'ghcr.io/henningfutrell/hopper', tag: 'beta' },
       masterKey: { existingSecret: 'hopper-master-key' }, hopperVault: { enabled: false },
     });
-    expect(String(values.lanNames).split(',')).toContain('box.lan');
-    expect(String(values.lanNames).split(',')).not.toContain('hopper');
+    expect(values.allowedHosts).toContain('box.lan');
+    expect(values.allowedHosts).not.toContain('hopper');
+    expect(values).not.toHaveProperty('lanNames');
     expect(values.extraEnv).toEqual([
       { name: 'HOPPER_PUBLIC_URL', value: 'https://hopper.example' },
       { name: 'CLAUDE_CODE_OAUTH_TOKEN', valueFrom: { secretKeyRef: { name: 'hopper-carried-env', key: 'CLAUDE_CODE_OAUTH_TOKEN' } } },

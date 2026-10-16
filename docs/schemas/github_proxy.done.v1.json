@@ -10,6 +10,9 @@
         "machine": {
           "type": "string"
         },
+        "as": {
+          "type": "string"
+        },
         "own": {
           "type": "boolean"
         },
@@ -70,7 +73,6 @@
       },
       "required": [
         "requestId",
-        "own",
         "op",
         "repo",
         "number",
@@ -85,6 +87,9 @@
           "type": "string"
         },
         "machine": {
+          "type": "string"
+        },
+        "as": {
           "type": "string"
         },
         "own": {
@@ -112,7 +117,6 @@
       },
       "required": [
         "requestId",
-        "own",
         "op",
         "repo",
         "refs"
@@ -126,6 +130,9 @@
           "type": "string"
         },
         "machine": {
+          "type": "string"
+        },
+        "as": {
           "type": "string"
         },
         "own": {
@@ -164,7 +171,6 @@
       },
       "required": [
         "requestId",
-        "own",
         "op",
         "repo",
         "url"

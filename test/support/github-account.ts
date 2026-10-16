@@ -17,11 +17,11 @@ export const TEST_ACCOUNT_TOKEN = 'test-account-token';
 /** The daemon's environment that points its GitHub at the node:http fake GitHub: the connected account's calls go there. */
 export const fakeGitHubEnv = (fake: { url: string }): Record<string, string> => ({ HOPPER_GITHUB_URL: fake.url });
 
-/** Connect `login`'s GitHub account for the user, its jobs using `repositories`. `expiresAt`: its token's end. */
-export function connectGitHub(a: TestApp, repositories: string[], o: { login?: string; userId?: string; expiresAt?: string } = {}): void {
+/** Connect `login`'s GitHub account for the user, its jobs using `repositories`. `expiresAt`: its token's end; `token`: its access token. */
+export function connectGitHub(a: TestApp, repositories: string[], o: { login?: string; userId?: string; expiresAt?: string; token?: string } = {}): void {
   const { store } = a.user(o.userId ?? ADMIN_ID);
   putAccount(store, {
-    provider: 'github', account: o.login ?? 'owner', subject: '1', accessToken: TEST_ACCOUNT_TOKEN,
+    provider: 'github', account: o.login ?? 'owner', subject: '1', accessToken: o.token ?? TEST_ACCOUNT_TOKEN,
     connectedAt: '2026-10-07T00:00:00.000Z', ...(o.expiresAt ? { expiresAt: o.expiresAt } : {}),
   });
   store.settings.setJobRepositories('github', repositories);

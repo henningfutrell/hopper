@@ -73,6 +73,9 @@ What it does, in order:
    `--master-key-secret` or an outside store). The chart mounts it as a file. The hopper's own launch settings go to the
    chart (see "What is carried" below).
 3. **The release, with the hopper at 0.** `helm install` with `replicas=0`. Its Postgres, OpenFGA and Solr start empty.
+   The script waits for each StatefulSet and Deployment and for OpenFGA's migration Job, not with Helm's `--wait`: that
+   also waits for the hopper's home volume, which a `WaitForFirstConsumer` StorageClass (kind's, k3s's) binds only when a
+   hopper pod uses it.
    The compose hopper still runs. With `--master-key-secret` or an outside store, a one-off pod checks the key in the
    Secret now (below); a key of another fingerprint stops here, and the compose hopper runs on.
 4. **The cutover starts.** The user service's port check (`hopper-compose-check.timer`) stops, and the user service no
@@ -137,7 +140,7 @@ are in the compose volume `kms`. Turn it off before you migrate (`docs/deploy.md
 - **The image and the update channel**: the image compose ran (`image.repository`, `image.tag`).
 - **The port**: compose's `HOPPER_PORT` (`port`).
 - **The vault container**: the profile `hopper-vault` turns on `hopperVault.enabled`.
-- **The names machines reach the hopper by** (`lanNames`): compose's `HOPPER_LAN_NAMES`, this host's names, and its
+- **The names machines reach the hopper by** (`allowedHosts`): compose's `HOPPER_LAN_NAMES`, this host's names, and its
   tailnet name when Tailscale runs.
 - **The hopper's own launch settings**: each variable the compose hopper was started with that its image does not set and
   that is not compose's own plumbing (the database, OpenFGA, Solr, the vault, the tunnel, the socket). For example
@@ -155,7 +158,7 @@ cluster hopper must answer there.
 
 - **On a cluster bootstrap made**, the hopper's Service is a `LoadBalancer` on its port (`service.type`). k3s's load
   balancer takes that port on this host, as compose did. So a machine that joined `http://<this host>:4790` dials in to
-  the cluster hopper, and no lane is lost. The names it dialled are in `lanNames`.
+  the cluster hopper, and no lane is lost. The names it dialled are in `allowedHosts`.
 - **On another cluster**, the Service stays `ClusterIP`. Give the hopper an address machines reach, with
   `--set ingress.enabled=true --set ingress.host=<name>`, or `--set service.type=LoadBalancer`. A machine that joined
   another address must join again (Add machine).
@@ -201,6 +204,9 @@ compose stack it made.
 ```sh
 node scripts/kind-migrate-check.ts --tag dev      # --keep keeps both
 ```
+
+A pull request that changes the chart, this check or `scripts/hopper-cluster.sh` runs it after the kind check
+(`.github/workflows/kind.yml`), with the `dev` channel's image.
 
 It needs `kind`, `helm`, `kubectl` and Docker (or Podman with `KIND_EXPERIMENTAL_PROVIDER=podman`). A job run needs a
 GitHub sign-in, which no check has: with `--keep`, sign in to the cluster hopper and queue a job on a test repository.

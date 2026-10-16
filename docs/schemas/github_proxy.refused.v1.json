@@ -8,6 +8,9 @@
     "machine": {
       "type": "string"
     },
+    "as": {
+      "type": "string"
+    },
     "own": {
       "type": "boolean"
     },
@@ -70,7 +73,6 @@
   },
   "required": [
     "requestId",
-    "own",
     "reason"
   ],
   "additionalProperties": false

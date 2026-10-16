@@ -311,9 +311,36 @@ describe('the Helm chart, with values', () => {
     expect(readFileSync(join(ROOT, '.dockerignore'), 'utf8').split('\n')).not.toContain('deploy');
   });
 
-  it('answers to the names lanNames gives too, after its Service\'s names', () => {
-    const rs = render('lanNames=box.lan\\, box.tailnet.ts.net\\,');
+  // Issue #1421: a request through a port-forward, a node port or a load balancer under this host's own name or address
+  // got 421. allowedHosts adds names to the Host guard's LAN names, through Helm values alone.
+  it('answers to the names allowedHosts gives too, after its Service\'s names (issue #1421)', () => {
+    const rs = render('allowedHosts={box.lan, box.tailnet.ts.net,192.0.2.7}');
     expect(env(container(find(rs, 'Deployment', 'hopper'), 'hopper'), 'HOPPER_LAN_NAMES')?.value)
-      .toBe('hopper,hopper.hopper,hopper.hopper.svc,hopper.hopper.svc.cluster.local,box.lan,box.tailnet.ts.net');
+      .toBe('hopper,hopper.hopper,hopper.hopper.svc,hopper.hopper.svc.cluster.local,box.lan,box.tailnet.ts.net,192.0.2.7');
+  });
+
+  it('answers to the load balancer address service.loadBalancerIP asks for, and gives it to the Service (issue #1421)', () => {
+    const rs = render('service.type=LoadBalancer', 'service.loadBalancerIP=192.0.2.8', 'allowedHosts={box.lan}');
+    expect(find(rs, 'Service', 'hopper').spec?.loadBalancerIP).toBe('192.0.2.8');
+    expect(env(container(find(rs, 'Deployment', 'hopper'), 'hopper'), 'HOPPER_LAN_NAMES')?.value)
+      .toBe('hopper,hopper.hopper,hopper.hopper.svc,hopper.hopper.svc.cluster.local,box.lan,192.0.2.8');
+    expect(find(render('service.type=LoadBalancer'), 'Service', 'hopper').spec?.loadBalancerIP).toBeUndefined();
+    const out = helm(['template', 'hopper', '/chart', '--set', 'service.loadBalancerIP=192.0.2.8']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/service\.loadBalancerIP/);
+  });
+
+  // The ingress host is the public URL's host, which the Host guard takes already as a public request. As a LAN name it
+  // would make each request through the ingress a LAN request.
+  it('keeps the ingress host out of the LAN names: a request through it stays a public request', () => {
+    const rs = render('ingress.enabled=true', 'ingress.host=hopper.example.com');
+    expect(env(container(find(rs, 'Deployment', 'hopper'), 'hopper'), 'HOPPER_LAN_NAMES')?.value).not.toMatch(/hopper\.example\.com/);
+    expect(env(container(find(rs, 'Deployment', 'hopper'), 'hopper'), 'HOPPER_PUBLIC_URL')?.value).toBe('https://hopper.example.com');
+  });
+
+  it('refuses lanNames, the name allowedHosts had before, so an upgrade with old values loses no name', () => {
+    const out = helm(['template', 'hopper', '/chart', '--set', 'lanNames=box.lan']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/allowedHosts/);
   });
 });

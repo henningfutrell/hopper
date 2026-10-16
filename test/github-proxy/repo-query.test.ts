@@ -52,15 +52,14 @@ describe('the repo-query cache', () => {
 });
 
 describe('who may ask a repo query', () => {
-  const own = { jobId: 'j', own: true, repo: 'octo/tools' };
+  const own = { jobId: 'j', repo: 'octo/tools' };
   const queries: ProxyRequest[] = [
     { op: 'pr.diff', repo: 'else/where', number: 1 }, { op: 'pr.commits', repo: 'else/where', number: 1 },
     { op: 'pr.checks', repo: 'else/where', number: 1 }, { op: 'issue.comments', repo: 'else/where', number: 1 },
     { op: 'pr.reviews', repo: 'else/where', number: 1 },
   ];
-  it('the hopper\'s own job, on any repository its connection sees; another user\'s job, never', () => {
+  it('a job, on any repository its user\'s connection sees', () => {
     for (const q of queries) expect(checkRequest(q, own, ['octo/tools'])).toEqual({ ok: true });
-    for (const q of queries) expect(checkRequest(q, { ...own, own: false }, ['octo/tools'])).toMatchObject({ ok: false });
   });
 });
 
@@ -92,7 +91,7 @@ function broker(o: { cache?: RepoQueryCache; mergedAt?: number }) {
   };
   const proxy = createGitHubProxy({
     user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => now, ...(o.cache ? { cache: o.cache } : {}),
-    hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api } }),
+    connection: () => ({ jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api }),
   });
   const bearer = `Bearer ${proxyToken(key, 'u1', 'job-1')}`;
   return {
@@ -153,7 +152,7 @@ describe('the repo queries need the hopper\'s GitHub as before', () => {
     cache.put(queryKey({ op: 'pr.view', repo: 'octo/tools', number: 8 }), { number: 8, url: PR_URL }, Date.now());
     const proxy = createGitHubProxy({
       user: () => user, limiter: createProxyLimiter({ now: () => new Date() }), log: () => {}, cache,
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ problem: 'the hopper\'s GitHub is not connected' }) } }),
+      connection: () => ({ jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ problem: 'the hopper\'s GitHub is not connected' }) }),
     });
     expect(await proxy.handle(`Bearer ${proxyToken(key, 'u1', 'job-1')}`, { op: 'pr.view', repo: 'octo/tools', number: 8 })).toMatchObject({ status: 503 });
   });

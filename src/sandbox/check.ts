@@ -16,13 +16,13 @@ import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
 import { currentCheck, markRuns, workspaceRole } from '../domain/read-only-check.ts';
-import type { ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
+import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
 import { boxImage } from './box-image.ts';
 import { CHECK_LABEL, staleHome, sweepHomes, USER_LABEL } from './owned.ts';
-import { DEFAULT_LIMITS } from './params.ts';
+import { boxLimits } from './params.ts';
 
 export { CHECK_LABEL };
 
@@ -30,7 +30,6 @@ export { CHECK_LABEL };
 export const CHECK_MS = 30 * 60_000;
 /** How often a passed check runs again (issue #715). */
 export const CHECK_EVERY_MS = 24 * 60 * 60_000;
-const LIMITS: ResourceLimits = { cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default };
 
 /** The templates the check pass reads, of every user, and where it keeps a check. */
 export interface CheckTemplates {
@@ -144,7 +143,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     const { image, user } = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
     if (!(await c.runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
-    id = await c.runtime.create({ name, image, network: c.network, volume, labels, user, env: checkEnv(given.credentials), limits: LIMITS, script: checkScript(runs, given.credentials) });
+    id = await c.runtime.create({ name, image, network: c.network, volume, labels, user, env: checkEnv(given.credentials), limits: boxLimits(t.limits), script: checkScript(runs, given.credentials) });
     await c.runtime.start(id);
     const exit = await c.runtime.wait(id, CHECK_MS);
     const probes = readResults(runs, await c.runtime.logs(id));

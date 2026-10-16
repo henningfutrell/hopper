@@ -23,7 +23,7 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      the cluster says it is and its namespaces (auth whoami, get ns)
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
-                    [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
+                    [--cpus <default>:<max>] [--memory-mb <default>:<max>]
                     [--tool aws|helm|kubectl|terraform]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...
                     [--agent-credential <secret>|none]
                                                      save a template; what is left out keeps what it has. A new scope, image,
@@ -57,7 +57,7 @@ const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user i
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_GRANT = 'vault grant|revoke <job>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_GRANT} | hopper ${VAULT_MINT_TEST}`;
-const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--mark <probe>=expect-denied|skip|none]...';
+const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--mark <probe>=expect-denied|skip|none]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const GRANT_VERBS = 'grant [list] | approve <job> | deny <job>';
@@ -128,23 +128,18 @@ function numberOf(flag: string, raw: string): number {
   return n;
 }
 
-/** `<default>:<max>`; for the time limit either side may be left out. */
-function rangeOf(flag: string, raw: string | undefined, optional: boolean): { default?: number; max?: number } | undefined {
+/** `<default>:<max>`. */
+function rangeOf(flag: string, raw: string | undefined): { default: number; max: number } | undefined {
   if (raw === undefined) return undefined;
   const [d, m, ...extra] = raw.split(':');
-  if (m === undefined || extra.length > 0 || (!optional && (!d || !m)) || (!d && !m)) {
-    throw new OperatorRefusal(`--${flag} ${raw}: write ${optional ? '[<default>]:[<max>]' : '<default>:<max>'}, e.g. 2:4`);
-  }
-  return { ...(d ? { default: numberOf(flag, d) } : {}), ...(m ? { max: numberOf(flag, m) } : {}) };
+  if (!d || !m || extra.length > 0) throw new OperatorRefusal(`--${flag} ${raw}: write <default>:<max>, e.g. 2:4`);
+  return { default: numberOf(flag, d), max: numberOf(flag, m) };
 }
 
-function limitsOf(values: { cpus?: string | undefined; 'memory-mb'?: string | undefined; 'ttl-minutes'?: string | undefined; 'keep-home'?: string | undefined }) {
-  const cpus = rangeOf('cpus', values.cpus, false);
-  const memoryMb = rangeOf('memory-mb', values['memory-mb'], false);
-  const ttlMinutes = rangeOf('ttl-minutes', values['ttl-minutes'], true);
-  const keep = values['keep-home'];
-  if (keep !== undefined && keep !== 'on' && keep !== 'off') throw new OperatorRefusal(`--keep-home must be on or off; not ${keep}`);
-  const limits = { ...(cpus ? { cpus } : {}), ...(memoryMb ? { memoryMb } : {}), ...(ttlMinutes ? { ttlMinutes } : {}), ...(keep ? { keepHome: keep === 'on' } : {}) };
+function limitsOf(values: { cpus?: string | undefined; 'memory-mb'?: string | undefined }) {
+  const cpus = rangeOf('cpus', values.cpus);
+  const memoryMb = rangeOf('memory-mb', values['memory-mb']);
+  const limits = { ...(cpus ? { cpus } : {}), ...(memoryMb ? { memoryMb } : {}) };
   return Object.keys(limits).length ? limits : undefined;
 }
 
@@ -171,7 +166,7 @@ function withMarks(had: Readonly<Record<string, string>>, marks: readonly [strin
 export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true }, backend: { type: 'string', multiple: true },
-    cpus: { type: 'string' }, 'memory-mb': { type: 'string' }, 'ttl-minutes': { type: 'string' }, 'keep-home': { type: 'string' },
+    cpus: { type: 'string' }, 'memory-mb': { type: 'string' },
     tool: { type: 'string', multiple: true }, needs: { type: 'string' }, 'agent-credential': { type: 'string' },
     mark: { type: 'string', multiple: true },
   } });

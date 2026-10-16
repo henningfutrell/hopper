@@ -65,7 +65,7 @@ describe('the broker answers pr wait (issue #1072)', () => {
     };
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => Date.parse('2026-10-14T10:00:00Z'),
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api } }),
+      connection: () => ({ jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api }),
       wait: (_u, jobId, pr, seconds) => {
         opened.push({ jobId, repo: pr.repo, number: pr.number, ...(seconds !== undefined ? { seconds } : {}), ...(pr.over?.for === 'mergeable' ? { for: 'mergeable', from: pr.over.from } : {}) });
         return { id: 'w-1', deadline: '2026-10-14T10:10:00.000Z' };

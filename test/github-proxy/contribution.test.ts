@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { checkRequest, CONTRIBUTION_OFF, contributionSteps, proxyRequest, type ProxyAsker, type ProxyRequest } from '../../src/github-proxy/index.ts';
 
 const repos = ['upstream/lib'];
-const asker: ProxyAsker = { jobId: 'j', own: true, repo: 'upstream/lib', issue: 7, contribution: true, login: 'owner' };
+const asker: ProxyAsker = { jobId: 'j', repo: 'upstream/lib', issue: 7, contribution: true, login: 'owner' };
 const req = (r: Record<string, unknown>): ProxyRequest => proxyRequest.parse(r);
 const pr = (head: string, repo = 'upstream/lib') => req({ op: 'pr.create', repo, head, title: 't', body: 'b' });
 const why = (r: ReturnType<typeof checkRequest>) => (r.ok ? 'ok' : r.reason);
@@ -25,7 +25,6 @@ describe('the contribution flow\'s policy (issue #429)', () => {
     expect(why(checkRequest(fork, { ...asker, canPush: true }, repos))).toBe('your user can push to upstream/lib: push a branch there, with no fork');
     expect(why(checkRequest(fork, { ...asker, contribution: false, canPush: false }, repos))).toBe(CONTRIBUTION_OFF);
     expect(why(checkRequest(req({ op: 'repo.fork', repo: 'octo/x' }), { ...asker, canPush: false }, [...repos, 'octo/x']))).toBe('a job forks only its own repository (upstream/lib)');
-    expect(why(checkRequest(fork, { ...asker, own: false }, repos))).toMatch(/^a job of another user may only file an issue/);
   });
 
   it('opens a pull request from a fork only from its user\'s own, on the job\'s repository, with Contribution on', () => {

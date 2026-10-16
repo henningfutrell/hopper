@@ -76,7 +76,7 @@ function check(o: { runtime: string; dir: string; cluster: string; tag: string; 
   if (sh('bash', [join(o.dir, 'hopper-cluster.sh'), 'migrate', '--chart', CHART], { cwd: o.dir, env: run }).status !== 0) return 'hopper-cluster.sh migrate failed';
 
   const kubectl = (args: string[]) => sh('kubectl', ['--kubeconfig', kubeconfig, '--namespace', NAMESPACE, ...args], { capture: true });
-  const users = kubectl(['exec', 'deploy/hopper', '-c', 'hopper', '--', 'hopper', 'users']);
+  const users = kubectl(['exec', 'deploy/hopper', '-c', 'hopper', '--', ...inHopper(['hopper', 'users'])]);
   if (users.status !== 0 || !users.stdout.includes(USER)) return `the cluster hopper does not hold the seeded user: ${users.stdout.trim()}`;
   console.log(`users in the cluster: ${users.stdout.trim()}`);
 
@@ -123,6 +123,14 @@ function main(): number {
   if (failed) { console.error(`kind-migrate-check: FAILED: ${failed}`); return 1; }
   console.log('kind-migrate-check: passed');
   return 0;
+}
+
+/**
+ * `command` as the cluster hopper runs it: the chart names the previous-keys file, which a Secret with no previous key does
+ * not hold, and the CLI of an image built before issue #1373 stops on it. The name goes when the file is not there.
+ */
+export function inHopper(command: string[]): string[] {
+  return ['sh', '-c', '[ -e "$HOPPER_MASTER_KEY_PREVIOUS_FILE" ] || unset HOPPER_MASTER_KEY_PREVIOUS_FILE; exec "$@"', 'sh', ...command];
 }
 
 if (import.meta.main) process.exitCode = main();

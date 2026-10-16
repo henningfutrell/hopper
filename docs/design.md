@@ -5080,7 +5080,7 @@ deleted the home volume.
   The libpod body, the Docker body, and the `run` flags of the line Add machine shows all come from it; the UI imports
   nothing of `src/`, so it reads the line's flags from the API (part 6, below).
 - **A template is a base skeleton plus per-launch parameters.** `Template.limits` (`TemplateLimits`): `cpus` and
-  `memoryMb` as `{default, max}`, `ttlMinutes` as `{default?, max?}`, `keepHome`. Absent: the hopper's defaults — 4
+  `memoryMb` as `{default, max}` (`ttlMinutes` and `keepHome` until issue #1349, part 4). Absent: the hopper's defaults — 4
   CPUs (max 8), 8192 MiB (max 16384), no time limit, the home kept. Saved with `save-template` (`limits`, checked:
   each default within its max); not part of the approval, since limits narrow what a box may use and give it nothing.
   A launch names `params` (`LaunchParams`: `secrets` — a subset of what the template gives —, `cpus`, `memoryMb`,
@@ -10162,7 +10162,7 @@ running daemon, under a session the CLI mints for the one call and drops after i
   - `hopper vault` (the vault's view: secrets and templates, never a value), `vault set <name> [--scope <text>]` with
     the value on stdin only (never an argument: it would be in the shell history and the process list), `vault remove <name>`;
   - `hopper template list`, `template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
-    [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off]`, `template approve <name>`,
+    [--cpus <d>:<max>] [--memory-mb <d>:<max>]` (issue #1349 removed `--ttl-minutes` and `--keep-home`), `template approve <name>`,
     `template approve-profile <name> <operation>/<kind>/<asset>`, `template revoke <name>`, `template remove <name>`;
   - `hopper sandbox list` (the user's boxes, as `GET /api/sandboxes`), `sandbox launch [--template <name>] [--secret <name>]...
     [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]`.
@@ -13902,10 +13902,11 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
 
 1. the token: its user's runtime, its link key, its job, at work — else **401**;
 2. the request's shape (`proxyRequest`, strict: no labels, no assignees, GitHub's length limits) — else **400**;
-3. who asks (`checkRequest`, `src/github-proxy/policy.ts`): the repository must be one of the hopper's user's **job
-   repositories**, or the **job's fork** ("The contribution flow"); the hopper's **own job** (a job of that user) may ask every operation, a pull request only on its own
-   repository (its source's, a fork's parent's); **another user's job** only `issue.create` — else **403** with the reason;
-4. the hopper's GitHub connection: none, or its sign-in ended — **503** saying so;
+3. who asks (`checkRequest`, `src/github-proxy/policy.ts`): the repository must be one of the job's user's **job
+   repositories**, or the **job's fork** ("The contribution flow"); a job may ask every operation, a pull request only on its own
+   repository (its source's, a fork's parent's) — else **403** with the reason. (Before issue #1380 part 5 the hopper acted
+   with its oldest user's connection for every job, and another user's job could only file an issue.);
+4. the GitHub connection of the job's own user (issue #1380 part 5): none, or its sign-in ended — **503** saying so;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
    `issue.comment` 20 and 100, `pr.create` 3 and 20, reads 120 and 600; in memory, a restart starts them again) — **429**;
 6. GitHub (`src/github-proxy/api.ts`: one REST call, `pr.create` without `--base` first reads the default branch; a 401
@@ -13928,8 +13929,8 @@ both, so the issue names the job and the request, and the event under that reque
 
 **Audit.** Every outcome but a token that names no job is an event on the job's timeline: `github_proxy.done` (`op`,
 `repo`, `number`, `url`), `github_proxy.refused` (`reason`) or `github_proxy.failed` (`error`), each with `requestId`,
-`machine` and `own`. For another user's job the same event also goes to the hopper's own user's log, with `forUser` and
-`job`: the owner of the credentials sees everything done with them. A token that names no job is logged only.
+`machine` and `as`, the GitHub login that acted: the job's own user's (issue #1380 part 5). The credentials are the job's
+user's own, so the event is in that user's log only. A token that names no job is logged only.
 
 **Steering a login** (`src/executors/herdr/login.ts`). A herdr-claude job that reports a GitHub login (HOPPER_AUTH_PENDING
 with tool `gh…` or a `github.com/login/device` URL, `isGitHubLogin`) is not taken to the Logins: it is told, in its pane,
@@ -21582,7 +21583,7 @@ and `hopper-service.sh` are. The steps are in `docs/kubernetes.md`; here, why th
   then be in this script's memory, which is what this path exists to avoid.
 - **Machines keep their lanes.** Their link keys are in the database. On a cluster bootstrap made, the Service is a
   `LoadBalancer` at compose's port, which k3s's load balancer takes on the host: a machine dials the address it joined.
-  The names it dialled (compose's `HOPPER_LAN_NAMES`, the host's names, its tailnet name) go to the chart's `lanNames`.
+  The names it dialled (compose's `HOPPER_LAN_NAMES`, the host's names, its tailnet name) go to the chart's `allowedHosts` (issue #1421).
 - **The hopper's own launch settings** are carried in `extraEnv`: each variable the compose hopper was started with that
   its image does not set and compose's plumbing does not name. A secret one goes to a Secret of its own.
 - **Rollback is compose again.** The cutover rolls back by itself when a step fails: the cluster hopper to 0, the
@@ -21597,7 +21598,7 @@ sign-in, which no check has).
 
 **Verification:** `test/scripts/hopper-cluster.test.ts` (stubs for podman, kubectl, helm, systemctl and curl: the order
 of the cutover, the key never in an argument or a file, the rollback, the refusals),
-`test/scripts/helm-chart.test.ts` (`replicas`, `service.type`, `lanNames`, the chart in the image),
+`test/scripts/helm-chart.test.ts` (`replicas`, `service.type`, `allowedHosts`, the chart in the image),
 `test/scripts/kind-migrate-check.test.ts`, and `scripts/kind-migrate-check.ts` on kind.
 
 ## Reading the held event loop (issue #1383, 2026-10-15)
@@ -21962,11 +21963,42 @@ and a box an older build launched there with no record was never found.
   `swept`. It lists only that user's boxes (`io.hopper.user`): another user's client on the same runtime keeps theirs.
   The sweep of homes (`sweepHomes`) runs there too, for need boxes and for boxes an older build launched.
 - **A target that is away** keeps its boxes, and its runs stay open, until it dials in again; the next sweep then burns
-  them. A run on a client target that is removed for good stays open.
+  them. A run on a client target that is removed for good is closed by part 5.
 
-**Not built.** A template's `ttlMinutes` and `keepHome` limits are still saved and shown, but no box reads them now.
-The jobs that wait on template checks or approvals of `asked-…` templates are not changed here. A run on a client target
-removed for good is never closed.
+**Part 4: no time limit and no kept home on a template.** Before, a template's `ttlMinutes` and `keepHome` limits were
+saved and shown, but no box read them: a sandbox does one step and is burned with its home.
+
+- `TemplateLimits` (`src/domain/sandboxes.ts`) is `cpus` and `memoryMb` only. `save-template` refuses `ttlMinutes` and
+  `keepHome` (400); `hopper template save` takes no `--ttl-minutes` or `--keep-home`; a template's form and its line in
+  Settings → Vault show CPUs and memory only.
+- Tenant migration 71 (`src/store/migration-template-limits.ts`) removes both from each stored template's limits, and
+  the limits themselves when nothing is left. The build before reads both as absent.
+- Tests: `test/store/tenant-migration-71.test.ts`, `test/ui/sandbox-launch.test.ts`, `test/ui/template-limits-view.test.ts`,
+  `test/domain/template-limits.test.ts`.
+
+**Part 5: a sandbox runs with its template's CPUs and memory; a run on a removed client target is closed.**
+
+- **The template's limits are read.** Before, a need box and a check box ran with the hopper's defaults
+  (`DEFAULT_LIMITS`), and a template's `cpus` and `memoryMb` were saved and shown but read by no box. Now both run with
+  `boxLimits(t.limits)` (`src/sandbox/params.ts`): each the template's default, else the hopper's. A box step and a need
+  step pass the template's limits to the need box (`NeedBox.template.limits`, `need-steps.ts`); the read-only check reads
+  them from the template it checks (`check.ts`).
+- **A run on a removed client target is closed** (`closeRemoved`, `src/sandbox/service.ts`, after each sweep). Each open
+  run on a client target the user no longer has — removed from Machines, or its user gone — is closed:
+  `destroyedAt` is the time of the close, and `machineRemoved: true` says that no runtime saw its box go. A step that
+  never ended ends as `swept`. `ClientTargets.known(userId, machine)` (`src/users/sandbox-boxes.ts`) says whether the
+  user has that client target now, dialled in or not; a target that is only away keeps its runs open, as before.
+- **No migration.** `machineRemoved` is a new optional field of a `sandbox_runs` row's JSON body; the build before reads
+  the row and ignores it. A template's stored `limits` keep their shape.
+- Tests: `test/sandbox/template-box-limits.test.ts` (a need box and a check box with the template's limits, and with the
+  hopper's defaults), `test/sandbox/need-steps.test.ts` (the template's limits reach the need box),
+  `test/sandbox/sweep-remote.test.ts` (a run on a removed client target, and one of a machine the user never had, is
+  closed), `test/store/sandbox-runs.test.ts` (`machineRemoved` kept).
+
+**Decided here.** The jobs that waited for days on template checks or approvals of `asked-…` templates are not changed
+by code. Those waits are a person's decision by design: a person approves or declines the template in Settings → Vault,
+or runs its read-only check again (`hopper template check <name>`). The issue lists them as what was seen, not as what is
+expected. With no sandbox as a machine, no such wait holds a machine's lane any more.
 
 Tests: `test/sandbox/requests.test.ts` (an approval starts nothing), `test/sandbox/need-steps.test.ts` (a box step:
 reads minted, changes with a plan, refusals), `test/sandbox/sandbox-runs.test.ts` (the ledger from start to destroy, a
@@ -22027,3 +22059,42 @@ keeps it; one without it, or whose emails GitHub does not show, is refused with 
 setting off it connects; a session with no email connects; a renewal ends an account that lost the email, keeps one that
 has it, and checks nothing with the setting off or when GitHub does not answer; `whoIs` lists every verified email.
 `test/integration/source-email-match.test.ts`: the setting's routes, its default, the instance admin's alone, and its event.
+
+## Each job acts with its own user's GitHub, and the job page names it (issue #1380, part 5, 2026-10-15)
+
+Issue #1380: jobs act on GitHub with the token of the source owner, and the UI shows which identity acts for each job.
+Acceptance test: two users with separate sources each act only through their own sources; jobs act with the owning user's
+token, and the acting identity is shown. Before this part, a job's git (issue #652) already used its own user's
+connection, but the GitHub proxy (`POST /job/github`, issue #563) acted with the hopper's **oldest** user's connection
+for every job, and another user's job could only file an issue.
+
+**The change.**
+- `src/github-proxy/broker.ts`: the broker asks `connection(userId)` for the job's own user's connection (`src/http/job-github.ts`:
+  `tenants.user(id).githubProxy.connection`); `hopper()`, `own`, `forUser` and the copy of another user's event in the
+  oldest user's log are removed. A job whose user has no connection, or whose sign-in ended, is refused (**503**, the
+  connection's own reason) and nothing reaches GitHub: no other user's connection acts for it.
+- `src/github-proxy/policy.ts`: there is no "another user's job" any more. Every job asks every operation, on its own
+  user's job repositories and its fork, under the same checks; `OTHERS_MAY` and the `own` field of `ProxyAsker` are removed.
+- **The acting identity.** Every `github_proxy.done`, `.refused` and `.failed` event (from the proxy and from git) carries
+  `as`, the login of the connection that acts. Each answer the proxy gives from GitHub or its cache carries `as` too, so
+  the job knows who acted. `hopper-gh help` says so.
+- **The job page** (`ui/src/views/job.tsx`, `ui/src/model/acting-identity.ts`): the fact **GitHub as** is the login of
+  the job's newest proxy or push event; before the job acted, its user's connected GitHub account
+  (`GET /api/connected-accounts`), marked as not acted yet; with none, `Sources → Connect GitHub`.
+
+**Decisions:**
+- **No migration.** Events recorded before keep `own`, `forUser` and `job`; the event schema keeps them optional, and `as`
+  is a new optional field. The build before ignores `as` (the daemon does not check event data when it reads).
+- **The hopper's own records answer `pr status` with no `as`.** No GitHub identity acted for that answer.
+- **The job page reads the connected account once** for the "not acted yet" case, not on each event. A job that acted
+  shows the login its events name, which stays true when the account changes later.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+GitHub by OAuth or a personal access token, with no GitHub App required; the migration of GitHub-signed-in users to hopper
+users with GitHub attached as a source; Kubernetes and service-account tokens.
+
+**Verification:** `test/github-proxy/proxy.test.ts` (two users: each job comments through its own user's connection, each
+event and answer names it, no event in the other user's log; a user with no connection is refused and nothing is sent),
+`test/integration/github-proxy.test.ts` (the real daemon and fake GitHub: a second user's job files and comments with that
+user's token, never the first user's; a user with no connection is refused), `test/integration/git-proxy.test.ts` (a push
+names `as`), `test/ui/acting-identity.test.ts` and `test/ui/job-acting-as-view.test.ts` (the job page's **GitHub as**).

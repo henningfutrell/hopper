@@ -11,9 +11,9 @@ export function memorySandboxRuns(): SandboxRunRepository & { all(): SandboxRun[
       if (!r || r.endedAt !== undefined) return;
       rows.set(id, { ...r, endedAt: e.at, outcome: e.outcome, ...(e.exit !== undefined ? { exit: e.exit } : {}), ...(e.problem ? { problem: e.problem } : {}) });
     },
-    destroyed(id, at) {
+    destroyed(id, at, o) {
       const r = rows.get(id);
-      if (r && r.destroyedAt === undefined) rows.set(id, { ...r, destroyedAt: at });
+      if (r && r.destroyedAt === undefined) rows.set(id, { ...r, destroyedAt: at, ...(o?.machineRemoved ? { machineRemoved: true as const } : {}) });
     },
     get: (id) => rows.get(id),
     open: () => [...rows.values()].filter((r) => r.destroyedAt === undefined).sort(byStart),

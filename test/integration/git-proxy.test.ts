@@ -54,7 +54,7 @@ describe('git through the hopper (issue #652)', () => {
     expect(toGitHub.length).toBeGreaterThan(0);
     for (const r of toGitHub) expect(basicOf(r.auth)).toBe('x-access-token:test-account-token');
     expect(eventsOf(t.app, 'github_proxy.done')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'octo/tools', refs: ['refs/heads/issue-7-fix'], own: true }) }),
+      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'octo/tools', refs: ['refs/heads/issue-7-fix'], as: 'owner' }) }),
     ]));
 
     // Updated and forced on its own branch: a rebase pushes with --force-with-lease.

@@ -821,7 +821,8 @@ vault then runs in the hopper, under the master key.
 | `replicas` | `1`, or `0` while nothing may write the database (`hopper-cluster.sh migrate` moves data in so). Never more |
 | `service.type` | `ClusterIP` (the default), `LoadBalancer` or `NodePort`: the hopper's Service, at `port` |
 | `service.nodePort` | the Service's node port, with `service.type` `NodePort` or `LoadBalancer`. Empty (the default): Kubernetes picks one ("On kind, at a host port") |
-| `lanNames` | more names the hopper answers to (comma-separated), after its Service's names: the names machines outside the cluster reach it by |
+| `allowedHosts` | more names and addresses the hopper answers to (LAN names), a list, after its Service's names: the names machines outside the cluster reach it by, through a port-forward, a node port or a load balancer (`--set allowedHosts={box.lan,192.0.2.7}`). Another Host gets 421. The ingress host needs no entry: it is the public URL. The value `lanNames` it replaces is refused |
+| `service.loadBalancerIP` | the address the Service asks the load balancer for, with `service.type` `LoadBalancer`; the hopper answers to it too. Empty (the default): the load balancer picks one, and you put it in `allowedHosts` |
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
 The chart makes the database password and the preshared keys of OpenFGA and the vault pod at the first install, in the
@@ -874,6 +875,9 @@ helm install hopper deploy/helm/hopper --namespace hopper --create-namespace \
   --set service.type=NodePort --set service.nodePort=30791 --set port=4791
 curl http://localhost:4791/api/health    # 200, once the hopper is ready
 ```
+
+To reach it from other machines at this host's name or address, add them to `allowedHosts`, else the hopper answers 421
+(issue #1421): `--set allowedHosts={myhost,192.0.2.7}`. Then `curl http://myhost:4791/api/health` answers 200.
 
 The node port must be in the cluster's node port range (30000–32767 by default). A request through the mapping comes from
 the node's network, which the default `lanPeers` holds: the browser reads the API only with a UI session.

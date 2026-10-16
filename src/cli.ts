@@ -50,6 +50,7 @@ import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { mintJoinCode } from './machines/join-code.ts';
+import { launchKey, withMasterKey } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { OPERATOR_COMMANDS, OPERATOR_USAGE, REFRESH_TOKEN_FILE, runOperatorAction, runOperatorActionWithGrant } from './cli-operator.ts';
 import { OperatorRefusal } from './cli-operator-call.ts';
@@ -310,7 +311,9 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     const clock = { now: () => new Date() };
     // The sign-in config with its realms' secrets from the instance's vault (issue #658), opened with the runtime's key.
     store = openInstanceStore({ url, clock });
-    store = openInstanceSecrets(store, { env: io.env, clock, logger: { info: () => undefined, warn: (l) => io.err(`${l}\n`) } }).instance;
+    // The key as the daemon reads it (issue #1373): a previous-keys file that is not there gives no previous key.
+    const keyed = withMasterKey(io.env, launchKey(io.env)).env;
+    store = openInstanceSecrets(store, { env: keyed, clock, logger: { info: () => undefined, warn: (l) => io.err(`${l}\n`) } }).instance;
     if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);

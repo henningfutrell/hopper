@@ -15,7 +15,7 @@ import { createNeedSteps, NEED_STEP_INPUTS_MAX_BYTES } from '../../src/sandbox/n
 const PLAN = '3f2b8a7c-1d4e-4f6a-9b0c-2d3e4f5a6b7c';
 const FILE = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 1, 2, 255]);
 const WRITE: OperationProfile = { operation: 'apply', asset: { kind: 'aws-role', name: '123456789012/deploy' } };
-const TEMPLATE = { name: 'deploy', image: 'img', profiles: [WRITE] } as unknown as TemplateView;
+const TEMPLATE = { name: 'deploy', image: 'img', profiles: [WRITE], limits: { cpus: { default: 2, max: 2 } } } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
 
 const dirs: string[] = [];
@@ -43,6 +43,8 @@ describe('a need step\'s files (issue #1007)', () => {
     expect(await started.run({ inputsBytes: 0, log: () => {}, signal: new AbortController().signal })).toEqual({ exit: 0 });
     expect(boxes[0]!.files).toEqual({ plan: FILE });
     expect(boxes[0]!.env.HOPPER_PLAN).toBe(PLAN);
+    // The box runs with the template's limits (issue #1349).
+    expect(boxes[0]!.template.limits).toEqual({ cpus: { default: 2, max: 2 } });
   });
 
   it('a plan with no saved file gives the box its id only: the wrapper there says why it cannot apply', async () => {

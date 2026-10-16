@@ -1,7 +1,7 @@
 // One user's side of the GitHub proxy (issue #563, design.md "GitHub through the hopper"): what each of their jobs
 // asks the hopper with — its proxy token under this user's link key, `hopper-gh`, the hopper's URL as its machine
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
-// connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
+// connection, which the hopper acts with for this user's own jobs, their requests and their git (issue #1380).
 // The shrink guard (issue #1096) of their jobs' pushes: the push's lines from the user's mirror, with their own connection,
 // judged at the percent of their settings, read at each push.
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
@@ -35,7 +35,7 @@ import {
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
 } from '../github-proxy/index.ts';
 
-/** A user's side of the GitHub proxy: their jobs as askers, their GitHub connection as the hopper's, and as their jobs' git's. */
+/** A user's side of the GitHub proxy: their jobs as askers, and their GitHub connection, which acts for their jobs and their jobs' git. */
 export interface UserGitHubProxy {
   user: ProxyUser;
   connection: ProxyConnection;
@@ -98,7 +98,7 @@ export interface UserGitHubProxyOptions {
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
-  const notConnected = 'the hopper\'s GitHub is not connected: its admin connects it in Sources → Connect GitHub';
+  const notConnected = 'GitHub is not connected: the job\'s user connects it in Sources → Connect GitHub';
   const api = () => createProxyApi({
     apiUrl: o.accounts.endpoints('github').apiUrl,
     token: () => o.accounts.token('github'),

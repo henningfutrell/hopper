@@ -10,6 +10,7 @@
 //   Scenario: another user's box on the same runtime stays
 //   Scenario: while the client target is away its run stays open; once it dials in again the sweep burns its box
 //   Scenario: a box an older build launched on a client target with no sandbox record is burned
+//   Scenario: a run on a client target that was removed is closed: no runtime is there to say its box went
 import { describe, expect, it } from 'vitest';
 import type { RuntimeRelay, SandboxRecord } from '../../src/domain/sandboxes.ts';
 import type { SandboxRepository } from '../../src/domain/store.ts';
@@ -46,13 +47,14 @@ function setup() {
   const libpod = createFakeLibpod();
   const runs = memorySandboxRuns();
   const repo = memoryRepo();
-  const studio = { dialledIn: true };
+  const studio = { dialledIn: true, removed: false };
   // The user u1 has one client target, studio; u2 has none.
   const clients: ClientTargets = Object.assign(
     (userId: string, machine: string) => (userId === 'u1' && machine === 'studio' && studio.dialledIn ? { relay: relayTo(libpod) } : undefined),
     {
       dialledIn: (userId: string) => (userId === 'u1' && studio.dialledIn ? ['studio'] : []),
       allDialledIn: () => (studio.dialledIn ? [{ userId: 'u1', machine: 'studio' }] : []),
+      known: (userId: string, machine: string) => userId === 'u1' && machine === 'studio' && !studio.removed,
     },
   );
   const sandboxes = createSandboxes({ runtime: undefined, repo, runs, instanceId: INSTANCE, network: 'host', clients, clock: { now: () => NOW }, logger: { info() {}, warn() {} } });
@@ -115,5 +117,19 @@ describe('sandboxes on a client target are burned (issue #1349)', () => {
     await sandboxes.burnLaunched();
     expect(on(libpod, 'hopper-sandbox-claude-2')).toBeUndefined();
     expect(on(libpod, 'hopper-sandbox-other')).toBeDefined();
+  });
+
+  it('a run on a client target that was removed is closed: no runtime is there to say its box went', async () => {
+    const { runs, studio, sandboxes } = setup();
+    runs.start({ id: 's-3', userId: 'u1', jobId: 'job-1', template: 'asked-1', box: 'hopper-need-asked-1-eeee', machine: 'studio', startedAt: '2026-10-15T11:00:00.000Z' });
+    // A run of a machine the user never had, or one of a user who is gone, is closed the same way.
+    runs.start({ id: 's-4', userId: 'u2', jobId: 'job-2', template: 'asked-2', box: 'hopper-need-asked-2-ffff', machine: 'attic', startedAt: '2026-10-15T11:00:00.000Z' });
+    studio.dialledIn = false;
+    studio.removed = true;
+    await sandboxes.check();
+    for (const id of ['s-3', 's-4']) {
+      expect(runs.get(id)).toMatchObject({ outcome: 'swept', endedAt: NOW.toISOString(), destroyedAt: NOW.toISOString(), machineRemoved: true, problem: expect.stringContaining('its machine was removed') });
+    }
+    expect(runs.open()).toEqual([]);
   });
 });

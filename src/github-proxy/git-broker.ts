@@ -166,8 +166,11 @@ export function createGitProxy(o: GitProxyOptions) {
       const push = at.service === 'git-receive-pack';
       const machine = side.user.machineOf(job);
       const requestId = newId();
+      const git = side.git();
+      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380).
+      const acting = 'problem' in git ? {} : { as: git.login };
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
-        const event: NewEvent = { type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), own: true, op: 'git.push', repo: at.repo, ...data } };
+        const event: NewEvent = { type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, op: 'git.push', repo: at.repo, ...data } };
         side.user.record(event);
       };
       const refuse = (reason: string): GitAnswer => {
@@ -177,7 +180,6 @@ export function createGitProxy(o: GitProxyOptions) {
       const own = repoOf(job);
       const toOwn = own !== undefined && same(own, at.repo);
       const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
-      const git = side.git();
       const contribution = side.contribution();
       // The job's fork (issue #429): read only when it can be one — Contribution on, the user's own, no job repository.
       let facts: RepoFacts | undefined;

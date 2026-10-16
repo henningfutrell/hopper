@@ -1,5 +1,5 @@
-// Issue #563: a running job asks the hopper for a GitHub operation, and the hopper does it with its own GitHub
-// connection — the job's machine holds no GitHub login. The daemon, store and HTTP edge are real; GitHub is a
+// Issue #563: a running job asks the hopper for a GitHub operation, and the hopper does it with the GitHub connection of
+// the job's own user (issue #1380) — the job's machine holds no GitHub login. The daemon, store and HTTP edge are real; GitHub is a
 // fake on loopback (test/support/fake-forges.ts); the job's machine is a double at the MachineShell port whose
 // credential files are real files, and the job runs the real `hopper-gh` script (sh and curl) against the hopper.
 //
@@ -8,7 +8,7 @@
 //     Given a hopper whose GitHub is connected, working on octo/tools
 //     And a job running on this machine, with no GitHub login of its own
 //     When the job runs `sh "$HOPPER_GH" issue create --repo octo/tools --title … --body-file …`
-//     Then the issue is filed on GitHub with the hopper's connection, and the job is answered its url
+//     Then the issue is filed on GitHub with the job's user's connection, and the job is answered its url
 //     And the issue carries no labels and no assignees, and says the hopper filed it for that job
 //     And it is on the job's timeline (`github_proxy.done`), and it never becomes a job
 //   Scenario: a job asks for a repository the hopper does not work on
@@ -19,9 +19,11 @@
 //     When the job reads its pull request's diff, commits and checks, and its issue's comments, twice
 //     Then GitHub is read once for each: the second answer comes from the hopper's repo-query cache (`source: cache`)
 //     And a comment the job posts drops what was kept of that issue: the next read of its comments is GitHub's
-//   Scenario: a job of another user files an issue, and may do nothing else
-//     Then the issue is filed with the hopper's connection, marked; a comment is refused
-//     And both are in that job's timeline and in the hopper's own user's log, naming the user and the job
+//   Scenario: each user's job acts with its own user's connection (issue #1380)
+//     Given a second user with a GitHub connection of their own
+//     When their job files an issue and comments through the hopper
+//     Then GitHub is asked with that user's token, never the first user's, and each answer and event names who acted (`as`)
+//     And a job whose user has no connection is refused, and nothing reaches GitHub
 //   Scenario: an issue a job files is a child of the job's issue (issue #729: issue lineage)
 //     Given a job running for octo/tools#7
 //     When the job files an issue through the hopper
@@ -110,7 +112,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(t.github.issues[0]).toMatchObject({ labels: [], assignees: [] });
 
     const [done] = eventsOf(t.app, ADMIN_ID, 'github_proxy.done');
-    expect(done).toMatchObject({ jobId: job.id, data: { requestId: answer.requestId, op: 'issue.create', repo: 'octo/tools', number: 1, url: answer.url, own: true, machine: 'local' } });
+    expect(done).toMatchObject({ jobId: job.id, data: { requestId: answer.requestId, op: 'issue.create', repo: 'octo/tools', number: 1, url: answer.url, as: 'owner', machine: 'local' } });
     expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([]);
     await t.app.sync();
     expect((await t.app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.map((j) => j.id)).toEqual([job.id]);
@@ -123,7 +125,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(r.code).toBe(1);
     expect(json(r).error).toBe('refused: someone/else is not one of the repositories the hopper works on, so it does nothing there for a job');
     expect(created(t.github)).toEqual([]);
-    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.refused')).toEqual([expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'issue.create', repo: 'someone/else', own: true }) })]);
+    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.refused')).toEqual([expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'issue.create', repo: 'someone/else', as: 'owner' }) })]);
   });
 
   it('comments, reads an issue, opens a pull request from the job\'s branch on its own repository, and reads it', async () => {
@@ -250,25 +252,39 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(t.github.requests.filter((q) => q.path.endsWith('/pulls'))).toEqual([]);
   });
 
-  it('files an issue for another user\'s job with the hopper\'s connection, and does nothing else for it; the hopper\'s own user sees both', async () => {
+  it('acts for another user\'s job with that user\'s own connection, never the first user\'s; each event names who acted (issue #1380)', async () => {
     const t = await start();
     const guest = await t.app.addUser('guest');
     await t.app.addThisMachine(guest.id);
+    t.github.tokens.set('guest-token', 'guest-login');
+    connectGitHub(t.app, ['guest/own'], { userId: guest.id, login: 'guest-login', token: 'guest-token' });
+    t.github.issues.push({ repo: 'guest/own', number: 3, title: 'Fix it', body: 'Please.', author: 'guest-login', labels: ['hopper'] });
     const { job, env } = await running(t, 'guest/own', guest.id);
 
-    const filed = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Found a problem', '--body', 'Details.']);
-    expect(json(filed)).toMatchObject({ ok: true, number: 1 });
-    expect(created(t.github)[0]!.auth).toBe('token test-account-token');
-    expect(String(created(t.github)[0]!.body.body)).toContain(`Filed through hopper for job \`${job.id}\``);
-    expect(t.github.issues[0]).toMatchObject({ labels: [], assignees: [] });
+    const filed = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'guest/own', '--title', 'Found a problem', '--body', 'Details.']);
+    expect(json(filed)).toMatchObject({ ok: true, as: 'guest-login' });
+    const comment = await hopperGh(t.root, env, ['issue', 'comment', '3', '--repo', 'guest/own', '--body', 'more']);
+    expect(json(comment)).toMatchObject({ ok: true, op: 'issue.comment', as: 'guest-login' });
+    const writes = t.github.requests.filter((r) => r.method === 'POST' && r.path.includes('/repos/guest/own/'));
+    expect(writes.map((r) => r.auth)).toEqual(['token guest-token', 'token guest-token']);
 
-    const comment = await hopperGh(t.root, env, ['issue', 'comment', '1', '--repo', 'octo/tools', '--body', 'more']);
-    expect(comment.code).toBe(1);
-    expect(json(comment).error).toBe('refused: a job of another user may only file an issue through the hopper (issue.create), not issue.comment');
+    const refused = await hopperGh(t.root, env, ['issue', 'comment', '1', '--repo', 'octo/tools', '--body', 'x']);
+    expect(json(refused).error).toBe('refused: octo/tools is not one of the repositories the hopper works on, so it does nothing there for a job');
 
-    expect(eventsOf(t.app, guest.id, 'github_proxy.done')).toEqual([expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ own: false }) })]);
-    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.done')).toEqual([expect.objectContaining({ data: expect.objectContaining({ own: false, forUser: guest.id, job: job.id, url: expect.any(String) }) })]);
-    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.refused')).toEqual([expect.objectContaining({ data: expect.objectContaining({ forUser: guest.id, op: 'issue.comment' }) })]);
+    const done = eventsOf(t.app, guest.id, 'github_proxy.done');
+    expect(done.map((e) => [e.jobId, e.data.op, e.data.as]).sort()).toEqual([[job.id, 'issue.comment', 'guest-login'], [job.id, 'issue.create', 'guest-login']]);
+    expect([...eventsOf(t.app, ADMIN_ID, 'github_proxy.done'), ...eventsOf(t.app, ADMIN_ID, 'github_proxy.refused')]).toEqual([]);
+  });
+
+  it('refuses a job whose user has no GitHub connection, saying how to connect; the first user\'s connection does not act for it', async () => {
+    const t = await start();
+    const guest = await t.app.addUser('guest');
+    await t.app.addThisMachine(guest.id);
+    const { env } = await running(t, 'guest/own', guest.id);
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'x', '--body', 'y']);
+    expect(r.code).toBe(1);
+    expect(json(r).error).toMatch(/^refused: GitHub is not connected/);
+    expect(created(t.github)).toEqual([]);
   });
 
   it('refuses a token that is no job\'s, and a job no longer at work', async () => {

@@ -3314,7 +3314,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -3322,7 +3322,7 @@ Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub op
 {
   "requestId": "r1",
   "machine": "desk",
-  "own": true,
+  "as": "octocat",
   "op": "issue.create",
   "repo": "octo/tools",
   "number": 42,
@@ -3332,13 +3332,14 @@ Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub op
 
 ## `github_proxy.refused`
 
-Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own (or, with Contribution on, its user's fork of it, issue #429), to one its user cannot push to, or to its default or a release branch, a tag or a delete; or a push the **shrink guard** refused (issue #1096): it brings in the default branch and empties or shrinks files the branch's own change does not, named in `shrunk` (`path`, its lines `from` — on the base branch, or `against: head` before the push — and `to`). Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
+Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, a rate limit, or no GitHub connection of the job's user; for a git push (issue #652), a push to another repository than the job's own (or, with Contribution on, its user's fork of it, issue #429), to one its user cannot push to, or to its default or a release branch, a tag or a delete; or a push the **shrink guard** refused (issue #1096): it brings in the default branch and empties or shrinks files the branch's own change does not, named in `shrunk` (`path`, its lines `from` — on the base branch, or `against: head` before the push — and `to`). Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
 
 | field | type | required |
 |---|---|---|
 | `requestId` | string | yes |
 | `machine` | string | no |
-| `own` | boolean | yes |
+| `as` | string | no |
+| `own` | boolean | no |
 | `forUser` | string | no |
 | `job` | string | no |
 | `op` | string | no |
@@ -3351,12 +3352,10 @@ Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a Gi
 {
   "requestId": "r2",
   "machine": "box",
-  "own": false,
-  "forUser": "u2",
-  "job": "j7",
-  "op": "issue.comment",
-  "repo": "octo/tools",
-  "reason": "a job of another user may only file an issue through the hopper (issue.create), not issue.comment"
+  "as": "octocat",
+  "op": "pr.create",
+  "repo": "octo/site",
+  "reason": "a job opens a pull request only on its own repository (octo/tools)"
 }
 ```
 
@@ -3368,7 +3367,8 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 |---|---|---|
 | `requestId` | string | yes |
 | `machine` | string | no |
-| `own` | boolean | yes |
+| `as` | string | no |
+| `own` | boolean | no |
 | `forUser` | string | no |
 | `job` | string | no |
 | `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.comments` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.diff` \| `pr.commits` \| `pr.checks` \| `pr.reviews` \| `pr.status` \| `pr.ready` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
@@ -3380,7 +3380,7 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 {
   "requestId": "r3",
   "machine": "desk",
-  "own": true,
+  "as": "octocat",
   "op": "pr.create",
   "repo": "octo/tools",
   "error": "GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)"
@@ -4015,7 +4015,7 @@ Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked 
 
 ## `vault.sandbox_approved`
 
-Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before. The hopper starts the box now. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
@@ -4054,7 +4054,7 @@ Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a s
 
 ## `vault.sandbox_started`
 
-Version 1 (`docs/schemas/vault.sandbox_started.v1.json`). The box of a sandbox request started (issue #991): `container`, the sandbox box, which joins as a machine. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_started.v1.json`). The box of a sandbox request started (issue #991): `container`, the sandbox box, which joined as a machine. Recorded until issue #1349; an approval now starts no box. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
@@ -4072,7 +4072,7 @@ Version 1 (`docs/schemas/vault.sandbox_started.v1.json`). The box of a sandbox r
 
 ## `vault.sandbox_failed`
 
-Version 1 (`docs/schemas/vault.sandbox_failed.v1.json`). The box of an approved sandbox request did not start (issue #991): `reason`. The job may ask again. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_failed.v1.json`). The box of an approved sandbox request did not start (issue #991): `reason`. Recorded until issue #1349; an approval now starts no box. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
