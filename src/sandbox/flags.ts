@@ -69,7 +69,7 @@ function numericUser(user: string): { uid: number; gid: number } {
  * service account token, no service links, nothing of the node. A one-shot container runs its script and is never
  * restarted; a box is restarted, as `unless-stopped`.
  */
-export function kubernetesPodBody(spec: ContainerSpec, o: { name: string; claim: string; labels: Record<string, string>; annotations: Record<string, string> }): Record<string, unknown> {
+export function kubernetesPodBody(spec: ContainerSpec, o: { name: string; claim: string; labels: Record<string, string>; annotations: Record<string, string>; priorityClass?: string }): Record<string, unknown> {
   const { uid, gid } = numericUser(spec.user);
   const limits = { ...(spec.limits.cpus > 0 ? { cpu: String(spec.limits.cpus) } : {}), ...(spec.limits.memoryMb > 0 ? { memory: `${spec.limits.memoryMb}Mi` } : {}) };
   return {
@@ -79,6 +79,8 @@ export function kubernetesPodBody(spec: ContainerSpec, o: { name: string; claim:
       automountServiceAccountToken: false, enableServiceLinks: false,
       restartPolicy: spec.script !== undefined ? 'Never' : 'Always',
       terminationGracePeriodSeconds: STOP_S,
+      // A ResourceQuota scoped to this PriorityClass holds the sandbox pods alone (issue #1410, the chart's sandbox.quota).
+      ...(o.priorityClass !== undefined ? { priorityClassName: o.priorityClass } : {}),
       securityContext: { runAsNonRoot: true, runAsUser: uid, runAsGroup: gid, fsGroup: gid, seccompProfile: { type: 'RuntimeDefault' } },
       containers: [{
         name: KUBERNETES_CONTAINER, image: spec.image, imagePullPolicy: 'IfNotPresent',

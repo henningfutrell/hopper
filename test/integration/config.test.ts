@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
 import { SHIPPED_APPS } from '../../src/connected-accounts/hopper-app.ts';
+import { PLAYGROUND_LIMITS } from '../../src/sandbox/playground.ts';
 
 const DB = { HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh' };
 
@@ -77,6 +78,8 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       lanPeers: [],
       updateCheckMs: 60000,
       leftoverEnv: {},
+      // The sandbox playground's limits (issue #1410).
+      playground: PLAYGROUND_LIMITS,
       // The hopper's app (issue #214): its GitHub App on github.com.
       hopperApps: {
         github: {
@@ -85,6 +88,18 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
         },
       },
     });
+  });
+
+  it('the sandbox playground\'s limits: counts and sizes, each default within its max (issue #1410)', () => {
+    const c = loadConfig({
+      ...DB, HOPPER_SANDBOX_MAX_CONCURRENT: '50', HOPPER_SANDBOX_MAX_PER_USER: '5', HOPPER_SANDBOX_DEFAULT_CPUS: '0.5', HOPPER_SANDBOX_DEFAULT_MEMORY_MB: '512',
+      HOPPER_SANDBOX_DEFAULT_TTL_MINUTES: '10', HOPPER_SANDBOX_MAX_CPUS: '2.5', HOPPER_SANDBOX_MAX_MEMORY_MB: '4096', HOPPER_SANDBOX_MAX_TTL_MINUTES: '120',
+    });
+    expect(c.playground).toEqual({ maxConcurrent: 50, maxPerUser: 5, defaults: { cpus: 0.5, memoryMb: 512, ttlMinutes: 10 }, max: { cpus: 2.5, memoryMb: 4096, ttlMinutes: 120 } });
+    expect(() => loadConfig({ ...DB, HOPPER_SANDBOX_MAX_CPUS: '0.5' })).toThrow(/default cpus 1 is more than the max 0\.5/);
+    expect(() => loadConfig({ ...DB, HOPPER_SANDBOX_MAX_CONCURRENT: '-1' })).toThrow(/HOPPER_SANDBOX_MAX_CONCURRENT/);
+    expect(() => loadConfig({ ...DB, HOPPER_SANDBOX_MAX_MEMORY_MB: '1.5' })).toThrow(/HOPPER_SANDBOX_MAX_MEMORY_MB/);
+    expect(loadConfig({ ...DB, HOPPER_SANDBOX_RUNTIME: 'kubernetes', HOPPER_KUBERNETES_PRIORITY_CLASS: 'hopper-sandbox' }).kubernetes?.priorityClass).toBe('hopper-sandbox');
   });
 
   it('HOPPER_HEALTH_PORT names the health port; unset, there is none (issue #1383)', () => {
@@ -111,7 +126,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       softLimit: 0.5, hardLimit: 0.9, pacing: { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 }, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, reconnectGraceMs: 3000, linkGraceMs: 4000, doneRecheckMs: 500, checksWaitMs: 600, ownCommandGraceMs: 700, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
       pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
-      lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {},
+      lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {}, playground: PLAYGROUND_LIMITS,
       hopperApps: {
         github: { provider: 'github', url: 'https://github.example.com', apiUrl: 'https://github.example.com/api/v3', clientId: 'gh-id', slug: 'hopper-x' },
       },

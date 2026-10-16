@@ -17,8 +17,8 @@ export interface RuntimeChoice {
   dockerSocket?: string;
   /** HOPPER_SANDBOX_RUNTIME. */
   runtime?: Exclude<RuntimeKind, 'remote'>;
-  /** For `kubernetes`: the namespace of the boxes (unset: the hopper's own), the hopper's pods' labels, and its port. */
-  kubernetes?: { namespace?: string; hopperLabels: Record<string, string>; port: number };
+  /** For `kubernetes`: the namespace of the boxes (unset: the hopper's own), the hopper's pods' labels, its port, and the boxes' PriorityClass. */
+  kubernetes?: { namespace?: string; hopperLabels: Record<string, string>; port: number; priorityClass?: string };
 }
 
 /**
@@ -42,7 +42,7 @@ export async function selectRuntime(o: RuntimeChoice): Promise<ContainerRuntime 
     // Loaded only here: a hopper on a socket never loads the Kubernetes client.
     const { createKubeApi } = await import('./kubernetes-api.ts');
     const { api, ownNamespace } = createKubeApi(o.kubernetes.namespace);
-    return createKubernetesRuntime({ api, hopper: { namespace: ownNamespace, labels: o.kubernetes.hopperLabels, port: o.kubernetes.port } });
+    return createKubernetesRuntime({ api, hopper: { namespace: ownNamespace, labels: o.kubernetes.hopperLabels, port: o.kubernetes.port }, ...(o.kubernetes.priorityClass !== undefined ? { priorityClass: o.kubernetes.priorityClass } : {}) });
   }
   const podmanSocket = givenSocket(o.podmanSocket), dockerSocket = givenSocket(o.dockerSocket);
   const podman = podmanSocket ? createPodmanRuntime(podmanSocket) : undefined;

@@ -181,6 +181,27 @@ solr:
 # public addresses only. The network plugin must enforce NetworkPolicy. Off: the hopper starts no sandbox boxes.
 sandbox:
   enabled: false
+  # The sandbox playground (docs/deploy.md "The sandbox playground"): how many playground sandboxes run at once, all users
+  # together and per user. Over it, a create is refused with 429, naming the limit.
+  maxConcurrent: 20
+  maxPerUser: 10
+  # The size of a playground sandbox when the create and its template name none, and the most it may ask for.
+  defaults:
+    cpus: 1
+    memoryMb: 2048
+    ttlMinutes: 60
+  max:
+    cpus: 4
+    memoryMb: 8192
+    ttlMinutes: 1440
+  # A ResourceQuota on every sandbox pod the hopper starts (job boxes and playground sandboxes), and on nothing else of the
+  # namespace: the chart makes a PriorityClass for them, and the quota counts only pods of it. Needs the right to make a
+  # PriorityClass (cluster-scoped) at install.
+  quota:
+    enabled: false
+    pods: 30
+    cpu: "40"
+    memory: 80Gi
 
 # NetworkPolicies: only the hopper, OpenFGA, its migration and the vault pod reach Postgres, only the hopper reaches
 # OpenFGA, Solr, the vault pod and the tunnel services, and only the pod the vault runs in reaches the local KMS. They

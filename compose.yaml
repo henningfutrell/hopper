@@ -174,6 +174,16 @@ services:
       # The container runtime socket (issues #603, #947, #1157), mounted below: the hopper reads its stack's containers
       # through it (Resources, drift) and starts sandbox boxes. Nothing there but /dev/null: the hopper says it has none.
       HOPPER_PODMAN_SOCKET: /run/podman/podman.sock
+      # The sandbox playground's limits (docs/deploy.md "The sandbox playground"): how many run at once, in all and per
+      # user, and the default and most CPUs, memory (MiB) and time limit (minutes) of one.
+      HOPPER_SANDBOX_MAX_CONCURRENT: ${HOPPER_SANDBOX_MAX_CONCURRENT:-20}
+      HOPPER_SANDBOX_MAX_PER_USER: ${HOPPER_SANDBOX_MAX_PER_USER:-10}
+      HOPPER_SANDBOX_DEFAULT_CPUS: ${HOPPER_SANDBOX_DEFAULT_CPUS:-1}
+      HOPPER_SANDBOX_DEFAULT_MEMORY_MB: ${HOPPER_SANDBOX_DEFAULT_MEMORY_MB:-2048}
+      HOPPER_SANDBOX_DEFAULT_TTL_MINUTES: ${HOPPER_SANDBOX_DEFAULT_TTL_MINUTES:-60}
+      HOPPER_SANDBOX_MAX_CPUS: ${HOPPER_SANDBOX_MAX_CPUS:-4}
+      HOPPER_SANDBOX_MAX_MEMORY_MB: ${HOPPER_SANDBOX_MAX_MEMORY_MB:-8192}
+      HOPPER_SANDBOX_MAX_TTL_MINUTES: ${HOPPER_SANDBOX_MAX_TTL_MINUTES:-1440}
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
       - vault-token:/run/hopper-vault:ro

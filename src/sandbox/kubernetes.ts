@@ -132,7 +132,8 @@ function pendingWhy(p: V1Pod): string {
   return unscheduled?.message ?? 'it is pending';
 }
 
-export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; pollMs?: number; startMs?: number }): ContainerRuntime {
+/** `priorityClass`: every pod's PriorityClass (issue #1410), so a ResourceQuota scoped to it holds them alone. */
+export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; priorityClass?: string; pollMs?: number; startMs?: number }): ContainerRuntime {
   const { api } = o;
   const sleep = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, o.pollMs ?? 1_000));
   /** The pod, by its id or the hopper's name for it; undefined: none of the runtime's. */
@@ -191,7 +192,7 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
     async create(spec) {
       const name = kubeName(spec.name);
       const annotations = { [NAME_ANNOTATION]: spec.name, [LABELS_ANNOTATION]: JSON.stringify(spec.labels) };
-      const body = kubernetesPodBody(spec, { name, claim: kubeName(spec.volume), labels: { ...selectable(spec.labels), [POD_LABEL]: 'true' }, annotations });
+      const body = kubernetesPodBody(spec, { name, claim: kubeName(spec.volume), labels: { ...selectable(spec.labels), [POD_LABEL]: 'true' }, annotations, ...(o.priorityClass !== undefined ? { priorityClass: o.priorityClass } : {}) });
       // Before the pod: no box of the hopper's runs a moment without its egress policy.
       await api.applyNetworkPolicy(egressPolicy(o.hopper));
       await api.createPod(body);

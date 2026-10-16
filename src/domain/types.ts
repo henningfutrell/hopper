@@ -496,7 +496,7 @@ export type { AfterAnswerTimed, AfterAnswerTiming, SourceCallLog, SourceCalls, S
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView, type PlaygroundLimits, type PlaygroundSandbox, type PlaygroundSize, type PlaygroundState, type PlaygroundView } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 

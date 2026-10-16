@@ -43,6 +43,7 @@ import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
 import { DiskBudgetPanel } from './disk-budget';
+import { SandboxPlaygroundPanel } from './sandbox-playground';
 import { MachineTerminal } from './machine-terminal';
 
 const REFRESH_MS = 15000;
@@ -273,6 +274,7 @@ export function Machines() {
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
         : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
+      {authed && <SandboxPlaygroundPanel />}
       {machines.length > 0 && <DiskBudgetPanel />}
       {machines.length > 0 && <LaneTuningPanel />}
       {machines.length > 0 && <JobCostsPanel />}
