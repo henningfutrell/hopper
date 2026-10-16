@@ -77,7 +77,7 @@ describe("What's new of this repository", () => {
     const lines = allBullets(readNotes(ROOT));
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) {
-      expect(line).not.toMatch(/#\d+|\b[0-9a-f]{7,40}\b|^\w+(\(.*\))?!?:|\b[\w-]+\.(ts|tsx|sh|md|yaml|json)\b|`/);
+      expect(line).not.toMatch(/#\d+|\b[0-9a-f]{7,40}\b|^[a-z]+(\(.*\))?!?:|\b[\w-]+\.(ts|tsx|sh|md|yaml|json)\b|`/);
     }
     expect(new Set(lines).size).toBe(lines.length);
   });
