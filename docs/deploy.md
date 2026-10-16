@@ -732,7 +732,18 @@ helm install hopper deploy/helm/hopper --namespace hopper --create-namespace
 kubectl --namespace hopper port-forward svc/hopper 4790      # then open http://localhost:4790/
 ```
 
-Sign in with GitHub: the first person to do so is the admin.
+Sign in with GitHub: the first person to do so is the admin. With no GitHub (issue #1380), add the first admin's local
+account with the operator CLI in the hopper's pod, its password on stdin, then sign in with its email and password. An
+OIDC realm set up at launch ("Sign-in set up at launch") works the same way in a cluster.
+
+```sh
+kubectl --namespace hopper exec -i deploy/hopper -c hopper -- hopper local-account add admin@example.com < password-file
+```
+
+An agent then acts for a person through a **grant** the person mints in Settings → API tokens (`docs/design.md` "Grants
+and refresh tokens"), whatever realm they signed in through: the agent trades its refresh token for API tokens at
+`POST /ui/auth/token/refresh`. GitHub is a source a person attaches after the sign-in (Sources → Connect GitHub), not a
+requirement of the install.
 
 **The master key** ("The master key", issue #1406). The install makes it: a new random key (32 bytes, as 64 hex digits)
 in the Secret `hopper-master-key` (`<release>-master-key`), under `master-key`. The hopper reads it from that Secret's
@@ -892,9 +903,12 @@ has a Podman or Docker socket (a host path, a mount or a socket variable) or run
 `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then it deletes the
 hopper's pod: the new pod must be healthy and run on the master key of the same fingerprint, given at launch (its start
 log line), the key the chart made (issue #1406). Then `kubectl rollout restart deployment/hopper`: the hopper must come
-back healthy on the same key (issue #1422). Then the machines come up as pods, by an upgrade of the same release
-with sandbox boxes on (`sandbox.enabled=true`, with `sandbox.limits.cpus=0.25` and `sandbox.limits.memoryMb=128`, the
-hopper's health and key asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
+back healthy on the same key (issue #1422). Then a person signs in with no GitHub (issue #1380): the operator CLI in the
+hopper's pod adds the first admin's local account; in the pod, on its loopback, that account signs in with its email
+and password, is admin through `local-accounts`, and mints a read-only grant; the grant's refresh token is traded for a
+new API token, which must read that person's grants and only them. Then the machines come up as pods, by an upgrade of
+the same release with sandbox boxes on (`sandbox.enabled=true`, with `sandbox.limits.cpus=0.25` and
+`sandbox.limits.memoryMb=128`, the hopper's health and key asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
 only once a person signed in).
 The lane pod must exist, and again no pod may have a container runtime socket. Then it deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
 Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
@@ -932,8 +946,9 @@ kind delete cluster --name hopper-check
 ```
 
 A pull request that changes the chart, either check or the sandbox module (`src/sandbox/`) runs both (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
-runs to a merged pull request needs a GitHub sign-in, which no check has: with `--keep`, port-forward the hopper
-(`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in with GitHub, add a
+runs to a merged pull request needs a GitHub source (a connected account), which no check has: with `--keep`, port-forward the hopper
+(`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in (with GitHub, or as the
+check's local account after `hopper local-account password admin@example.com`) and connect GitHub in Sources, add a
 `kubernetes-cluster` machine for the kubernetes executor (`docs/design.md` "Job pods on Kubernetes"), and queue a job on an issue of a test repository.
 
 ## Access: OpenFGA
