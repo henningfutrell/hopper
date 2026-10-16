@@ -95,4 +95,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 71: No time limit and no kept home on a template (issue #1349): each stored template's limits lose `ttlMinutes` and
   // `keepHome`, which no box reads. Rows only: the build before reads both as absent, its defaults.
   (db) => { noTemplateTimeLimit(db); },
+  // 72: machine credential acceptances (issue #1459): an admin's acceptance that a machine whose job user holds infra
+  // credentials takes jobs anyway. A row per machine, revoked when `revoked_at` is set. A table only: the build before
+  // never reads it, and holds such machines.
+  'CREATE TABLE IF NOT EXISTS machine_credential_acceptances (machine_key TEXT PRIMARY KEY, credentials TEXT NOT NULL, accepted_by TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT)',
 ];

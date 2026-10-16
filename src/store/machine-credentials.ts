@@ -13,7 +13,7 @@ export function createCredentialAcceptanceRepository(c: StoreContext): Credentia
       credentials: JSON.parse(r.credentials as string) as string[],
       acceptedBy: r.accepted_by as string,
       acceptedAt: r.accepted_at as string,
-      revokedAt: r.revoked_at as string | undefined,
+      ...(r.revoked_at ? { revokedAt: r.revoked_at as string } : {}),
     };
   };
   return {
@@ -34,7 +34,7 @@ export function createCredentialAcceptanceRepository(c: StoreContext): Credentia
         credentials: JSON.parse(r.credentials as string) as string[],
         acceptedBy: r.accepted_by as string,
         acceptedAt: r.accepted_at as string,
-        revokedAt: r.revoked_at as string | undefined,
+        ...(r.revoked_at ? { revokedAt: r.revoked_at as string } : {}),
       }));
     },
   };
