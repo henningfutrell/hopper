@@ -31,4 +31,11 @@ describe('a direct job as an item (issue #901)', () => {
     expect(item.prompt).toContain('authorized by the submitter: none.');
     expect(item).toMatchObject({ repo: 'octo-org/hello', executor: 'claude', priority: 80, priorityReason: 'submitted', env: { HOPPER_DIRECT_JOB: 'd1', HOPPER_REPO: 'octo-org/hello' } });
   });
+
+  it('names the submitter to the job without an email address (issue #1380)', () => {
+    const item = directItem({ ...job, submittedBy: { person: 'ada@example.com', via: 'ui' } }, 'u');
+    expect(item.prompt).toContain('submitted by: ada (ui)');
+    expect(item.prompt).not.toContain('ada@example.com');
+    expect(item.author).toBe('ada@example.com');
+  });
 });

@@ -7,7 +7,7 @@ import type { TldrSettings } from '../../domain/types.ts';
 import { tldrSettings } from '../../tldr/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -25,7 +25,7 @@ export function registerTldrRoutes(app: FastifyInstance, o: { operator: Guard; a
       const from = tldrSettings(t.store);
       if (from.enabled === to.enabled) return false;
       t.store.settings.setTldr(to);
-      t.store.events.append({ type: 'tldr.settings_changed', data: { from, to, by: identityName(s.identity) } });
+      t.store.events.append({ type: 'tldr.settings_changed', data: { from, to, by: personOf(s) } });
       return true;
     });
     if (changed && to.enabled) void t.tldrs.sweep();

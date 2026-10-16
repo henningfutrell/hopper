@@ -7,7 +7,7 @@ import { GITHUB_WATCH_INTERVAL } from '../../domain/github-watch.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -30,6 +30,6 @@ export function registerGitHubWatchRoutes(app: FastifyInstance, o: { admin: Guar
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to change the GitHub watches');
     const b = parseWith(githubWatchBody, req.body);
-    return o.tenant(req).githubProxy.watches.change(b, identityName(s.identity));
+    return o.tenant(req).githubProxy.watches.change(b, personOf(s));
   });
 }

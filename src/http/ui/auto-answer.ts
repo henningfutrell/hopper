@@ -10,7 +10,7 @@ import { HttpError, parseWith } from '../errors.ts';
 import { questionView } from '../questions.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { answerBody } from './job-bodies.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -26,7 +26,7 @@ export function registerAutoAnswerRoutes(app: FastifyInstance, o: { operator: Gu
   const by = (req: FastifyRequest, what: string): string => {
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, `sign in to ${what}`);
-    return identityName(s.identity);
+    return personOf(s);
   };
 
   app.post('/ui/api/auto-answer', o.admin, async (req) => {

@@ -8,7 +8,7 @@ import { DEFAULT_SHRINK_GUARD, SHRINK_GUARD_PERCENT, type ShrinkGuardSettings } 
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -32,7 +32,7 @@ export function registerShrinkGuardRoutes(app: FastifyInstance, o: { admin: Guar
       const from = settingsOf(t);
       if (from.percent === to.percent) return;
       t.store.settings.setShrinkGuard(to);
-      t.store.events.append({ type: 'shrink_guard.changed', data: { from, to, by: identityName(s.identity) } });
+      t.store.events.append({ type: 'shrink_guard.changed', data: { from, to, by: personOf(s) } });
     });
     return settingsOf(t);
   });

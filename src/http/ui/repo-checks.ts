@@ -9,7 +9,7 @@ import { RepoChecksRefused } from '../../repo-checks/index.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -47,7 +47,7 @@ export function registerRepoChecksRoutes(app: FastifyInstance, o: { operator: Gu
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to queue a job');
     const { repo } = parseWith(repoChecksQueueBody, req.body);
-    return answer(() => service(req).queue(repo, identityName(s.identity)));
+    return answer(() => service(req).queue(repo, personOf(s)));
   });
   app.post('/ui/api/repo-checks/refresh', o.operator, async (req) => {
     const { repo } = parseWith(repoChecksRefreshBody, req.body);
@@ -57,6 +57,6 @@ export function registerRepoChecksRoutes(app: FastifyInstance, o: { operator: Gu
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to dismiss a recommendation');
     const { repo, dismissed } = parseWith(repoChecksDismissBody, req.body);
-    return answer(() => service(req).dismiss(repo, dismissed, identityName(s.identity)));
+    return answer(() => service(req).dismiss(repo, dismissed, personOf(s)));
   });
 }

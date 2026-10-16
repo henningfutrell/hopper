@@ -47,6 +47,12 @@ describe('the promoted text (issue #946)', () => {
     expect(noUrl).toContain('Requested by ops.');
   });
 
+  it('names a requester known by an email without the address (issue #1380)', () => {
+    const text = promotionText({ body: 'x', artifacts: [], directJobId: 'd1', promotedBy: 'octocat', requester: 'ada@example.com' });
+    expect(text).toContain('Requested by ada.');
+    expect(text).not.toContain('@');
+  });
+
   it('carries the routing labels, never the hopper\'s own', () => {
     expect(carriedLabels(['sme:identity', 'hopper', 'hopper:high', 'Hopper', 'bug', 'sme:identity'])).toEqual(['sme:identity', 'bug']);
   });

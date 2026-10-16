@@ -17,7 +17,7 @@ import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
 import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
-import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
+import { signedInOf, userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
 import { mutationRefusal, sessionIn } from './guard.ts';
 import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
@@ -26,7 +26,7 @@ import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerSandboxPlaygroundRoutes } from './sandbox-playground.ts'; import { registerHeaderBadgeRoutes } from './header-badges.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts'; import { registerDiskBudgetRoutes } from './disk-budget.ts'; import { registerWindowsLinkRoutes } from './windows-link.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
-import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
+import { identityName, personOf, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes, type CallerOf } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
@@ -317,7 +317,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
   for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, grants: o.grants, edge: o.artifacts, access: o.access, updater: o.updater });
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
-  registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
+  registerAccessRoutes(app, { instance, access: o.access, by: (req) => personOf(signedInOf(req)!) });
   registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
   registerApiTokenRoutes(app, { allow, instance, sessions, grants: o.grants, registry: o.scopeRegistry, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
 
@@ -356,7 +356,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => userName(sessionOf(req)!) });
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => personOf(signedInOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.

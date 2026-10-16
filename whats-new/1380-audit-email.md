@@ -1,0 +1,1 @@
+- Settings changes, approvals and other actions now show who did them by the email the person signs in with. Text the hopper posts to GitHub or gives a job names a person without an email address.

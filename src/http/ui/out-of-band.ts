@@ -10,7 +10,7 @@ import { isPlanRefusal } from '../../infra-plans/service.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -44,7 +44,7 @@ export function registerOutOfBandRoutes(app: FastifyInstance, o: { operator: Gua
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to report signals');
     const b = parseWith(signalsBody, req.body);
-    const r = o.tenant(req).githubProxy.outOfBand.report({ reporter: s.label ?? identityName(s.identity) }, b.signals as unknown as Signal[]);
+    const r = o.tenant(req).githubProxy.outOfBand.report({ reporter: s.label ?? personOf(s) }, b.signals as unknown as Signal[]);
     if (isPlanRefusal(r)) throw new HttpError(r.status, r.no);
     return { recorded: r.recorded.map(({ detail: _detail, ...c }) => c), inBand: r.inBand, known: r.known };
   });
@@ -53,7 +53,7 @@ export function registerOutOfBandRoutes(app: FastifyInstance, o: { operator: Gua
     if (!s) throw new HttpError(401, 'sign in to mark a change');
     const b = parseWith(outOfBandBody, req.body);
     const changes = o.tenant(req).githubProxy.outOfBand;
-    const by = identityName(s.identity);
+    const by = personOf(s);
     if (b.action === 'controllers') {
       const r = changes.setControllers(b.identities.filter((i) => i.trim()), by);
       if (isPlanRefusal(r)) throw new HttpError(r.status, r.no);

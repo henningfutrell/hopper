@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -25,7 +25,7 @@ export function registerMintTestRoutes(app: FastifyInstance, o: { admin: Guard; 
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to test a minting credential');
     const { asset } = parseWith(mintTestBody, req.body);
-    const r = await o.tenant(req).vault.testMint(asset.trim(), identityName(s.identity));
+    const r = await o.tenant(req).vault.testMint(asset.trim(), personOf(s));
     if ('refused' in r) throw new HttpError(STATUS[r.code], r.refused);
     return r.tested;
   });

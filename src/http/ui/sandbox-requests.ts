@@ -14,7 +14,7 @@ import { vaultAnswer } from '../vault.ts';
 import { templateNames } from '../../domain/delegates.ts';
 import type { ApiGrants } from './api-grants.ts';
 import { approverOf, delegateOf, refuseDenied } from './delegates.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -64,7 +64,7 @@ export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: G
     if (!s) throw new HttpError(401, 'sign in to change the sandbox approvals');
     const { forgetWrite, ...b } = parseWith(sandboxApprovalsBody, req.body);
     const parts = o.tenant(req);
-    const by = identityName(s.identity);
+    const by = personOf(s);
     const { settings, events } = parts.store;
     parts.store.tx(() => {
       if (forgetWrite) {

@@ -14,6 +14,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { failedChecks, PLAN_FILE_MAX, PLAN_JSON_MAX, PLAN_TEXT_MAX, type PlanInput } from '../domain/infra-plans.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
+import { nameWithoutEmail } from '../domain/users.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
 import { isPlanRefusal } from '../infra-plans/service.ts';
 import type { Signal } from '../domain/out-of-band.ts';
@@ -85,7 +86,7 @@ export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }
       const { plan: p, view } = r;
       const failed = failedChecks(p);
       const next = failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again`
-        : view.approval ? `approved by ${view.approval.by} (auto-approve: ${view.approver.why})\nnext: ask with --plan ${p.id}`
+        : view.approval ? `approved by ${nameWithoutEmail(view.approval.by)} (auto-approve: ${view.approver.why})\nnext: ask with --plan ${p.id}`
           : `next: ${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it on Infra (${view.approver.why}); then ask with --plan ${p.id}`;
       return answer(req, reply, 201, { plan: view }, `recorded: plan ${p.id}  ${p.tool}  ${p.asset.kind}/${p.asset.name}  ${p.target}  stale at ${p.expiresAt}
 summary: ${p.summary?.words ?? ''} (${p.summary?.level ?? ''} risk)
@@ -121,7 +122,7 @@ ${next}`);
       }
       const { text: _text, ...view } = plans.view(plan.id)!;
       return answer(req, reply, 200, { plan: view },
-        `plan ${plan.id}  ${plan.tool}  ${plan.asset.kind}/${plan.asset.name}  ${plan.target}  ${view.approval ? `approved by ${view.approval.by}` : `not approved: ${view.approver.who === 'nobody' ? 'nobody approves it' : `${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it`} (${view.approver.why})`}  stale at ${plan.expiresAt}`);
+        `plan ${plan.id}  ${plan.tool}  ${plan.asset.kind}/${plan.asset.name}  ${plan.target}  ${view.approval ? `approved by ${nameWithoutEmail(view.approval.by)}` : `not approved: ${view.approver.who === 'nobody' ? 'nobody approves it' : `${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it`} (${view.approver.why})`}  stale at ${plan.expiresAt}`);
     });
   });
 }

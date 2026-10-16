@@ -11,7 +11,7 @@ import type { Updater } from '../../domain/ports.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -82,7 +82,7 @@ export function registerBugReportRoutes(app: FastifyInstance, o: { operator: Gua
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to report a bug');
     const draft = parseWith(bugReportBody, req.body);
-    return answer(() => reports(req).file(draft, identityName(s.identity)));
+    return answer(() => reports(req).file(draft, personOf(s)));
   });
   app.post('/ui/api/bug-reports/refresh', o.operator, async (req) => {
     parseWith(z.strictObject({}), req.body ?? {});

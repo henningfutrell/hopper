@@ -13,6 +13,7 @@ import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 import type { SandboxRequestView } from '../domain/sandbox-approvals.ts';
+import { nameWithoutEmail } from '../domain/users.ts';
 import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
 import { PLAN_MAX, PURPOSE_MAX } from '../domain/vault.ts';
 import { helpForAgent } from '../help/book.ts';
@@ -198,7 +199,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       record('skill.loaded');
       return {
         status: 200,
-        text: `${SANDBOX_SKILL}: the sandbox runs of template ${t.template} are approved for this job, by ${r.approvedBy ?? 'a person'}. A sandbox never runs this job and never joins the hopper as a machine. Run each command that needs these assets as a box step: the hopper makes a new sandbox of template ${t.template} for the step, mints short-lived credentials for it there, gives back the output, exit code and outputs, and destroys the sandbox when the step ends. Nothing is kept between steps.\n  sh "$HOPPER_STEP" box ${t.template} --command '<the command>'\nLoad the box-step skill (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs, --plan-id and the credentials in the sandbox.\n`,
+        text: `${SANDBOX_SKILL}: the sandbox runs of template ${t.template} are approved for this job, by ${nameWithoutEmail(r.approvedBy ?? 'a person')}. A sandbox never runs this job and never joins the hopper as a machine. Run each command that needs these assets as a box step: the hopper makes a new sandbox of template ${t.template} for the step, mints short-lived credentials for it there, gives back the output, exit code and outputs, and destroys the sandbox when the step ends. Nothing is kept between steps.\n  sh "$HOPPER_STEP" box ${t.template} --command '<the command>'\nLoad the box-step skill (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs, --plan-id and the credentials in the sandbox.\n`,
       };
     }
 

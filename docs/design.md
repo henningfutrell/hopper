@@ -22293,7 +22293,7 @@ with a local account or SSO of the same email got a second, empty user, and thei
 - **Every realm's vouched email links.** The owner made external SSO trusted, and the admin chose each realm. A realm
   with `trustUnverifiedEmail` vouches for emails its provider did not verify: an admin turns that on only for a provider
   they trust to name people.
-- **OpenFGA subjects, audit and attribution still name the user id** (OpenFGA subjects: replaced by part 9). The id is stable and every tuple and event names it;
+- **OpenFGA subjects, audit and attribution still name the user id** (OpenFGA subjects: replaced by part 9; audit and attribution: by part 10). The id is stable and every tuple and event names it;
   a user's email is now one lookup away. Keying those by email is a larger change with its own migration of tuples.
 - **No migration of the old build.** `users.email` is a new column; the build before reads `SELECT *` and ignores it, and
   adds its users with none.
@@ -22392,3 +22392,44 @@ than one GitHub source per user, and sources from other forges.
 its id; a check asks as the email, the owner told by email; a user who takes an email is moved at the next ask; a
 decision's path and reason, and the matrix, name the email; escaping); `test/authz/openfga-real.test.ts` (opt-in, a real
 OpenFGA: a subject of an email, and of an escaped one, is stored and checked).
+
+## Audit and attribution keyed by email (issue #1380, part 10, 2026-10-16)
+
+Owner decision 1 on issue #1380: user records, OpenFGA subjects, audit and attribution use the verified email, never a
+username. Part 7 gave each user its email; part 9 keyed OpenFGA by it. Who did an act was still recorded as the realm named
+the person (`identityName`: name, username, email or subject, the first the realm gave): `Ada Lovelace` through one realm,
+`ada` through another, for one user.
+
+**The change.**
+- **An act is recorded by the verified email of the session's user** (`src/http/ui/sessions.ts` `personOf`). Every `by`
+  a UI session or an API token writes — settings changes, approvals, grants, artifacts, promotions, vault changes, the
+  instance's own settings — and every acting person (`ActingPerson.person`: notes, hand-offs, failures, pull request acts,
+  direct jobs, terminals) names it. `signedInOf` (`src/http/tenants.ts`) carries the user's email, read from the users
+  when an act asks for it.
+- **A user with no email yet keeps the name the realm gave.** A GitHub-signed-in user from before part 7 has none until
+  their next GitHub sign-in; a realm that vouches for no email gives none.
+- **The operator CLI keeps its own name** (`operator CLI`). Its session signs in no person, whichever user it acts for;
+  a vault grant reads that name as the CLI's.
+- **Text that leaves the hopper names a person without an email address** (`src/domain/users.ts` `nameWithoutEmail`: each
+  address cut to its local part). A promotion's "Requested by" goes to GitHub. A direct job's "submitted by", a box
+  template's "approved by" and an infra plan's "approved by" go to a job, which may write to GitHub. Every other `by` stays
+  in the hopper: events, records and the UI.
+
+**Decisions:**
+- **No migration of events or records.** Events are the history: an act before this part stays recorded as the realm named
+  the person then. Rewriting it would change what the audit says happened.
+- **The local part, not a mask, where text leaves the hopper.** The person asked for the requester to be named; the local
+  part names them, and holds no address. The publishing rule's other checks (the promotion's scan) still apply.
+- **The email is read at each act, not kept in the session.** A user who takes an email at a sign-in is recorded by it at
+  the next act, with no session to end.
+
+**Residual risk.** The UI shows emails in timelines and settings history to everyone who reads that user's work. They
+were already shown in Settings → Users and Settings → Access.
+
+**Left for later parts of issue #1380:** passkeys; more than one GitHub source per user, and sources from other forges.
+
+**Verification:** `test/http/attribution.test.ts` (the session user's email, else the realm's name; the operator CLI's own
+name; an address cut to its local part), `test/promotions/promotion.test.ts` (a requester known by an email is named
+without it), `test/direct-jobs/item.test.ts` (the job is told its submitter without an email), and
+`test/integration/email-attribution.test.ts` (a setting changed by an OIDC user is recorded by their verified email; one
+whose email the realm does not vouch for, by the name it gave).

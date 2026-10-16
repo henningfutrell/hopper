@@ -8,7 +8,7 @@ import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { vaultView } from '../../vault/vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -35,7 +35,7 @@ export function registerSharedSecretRoutes(app: FastifyInstance, o: { instance: 
     if (!vault.shared) throw new HttpError(503, 'this hopper keeps no shared secrets');
     const edit = parseWith(sharedSecretBody, req.body);
     // The instance guard let only the hopper's admin in.
-    const who = { userId: s.userId, admin: true, by: identityName(s.identity) };
+    const who = { userId: s.userId, admin: true, by: personOf(s) };
     const r = edit.action === 'set'
       ? await vault.shared.set({ name: edit.name, value: edit.value, ...(edit.scope !== undefined ? { scope: edit.scope } : {}), ...(edit.readers ? { readers: edit.readers } : {}) }, who)
       : await vault.shared.remove(edit.name, who);
