@@ -98,7 +98,7 @@ export interface UserGitHubProxyOptions {
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
-  const notConnected = 'the hopper\'s GitHub is not connected: its admin connects it in Sources → Connect GitHub';
+  const notConnected = 'GitHub is not connected: the job\'s user connects it in Sources → Connect GitHub';
   const api = () => createProxyApi({
     apiUrl: o.accounts.endpoints('github').apiUrl,
     token: () => o.accounts.token('github'),

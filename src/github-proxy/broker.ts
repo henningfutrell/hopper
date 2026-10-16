@@ -175,6 +175,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         jobId: job.id, contribution, ...(login ? { login } : {}), ...facts,
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
       };
+      // No connection of the job's own user (issue #1380): refused with how to connect, before the repositories it would
+      // name. Only where a pull request stands may still come from the hopper's own records.
+      if ('problem' in api && req.op !== 'pr.status') return refuse(503, api.problem, req);
       const allowed = checkRequest(req, asker, connection.jobRepositories());
       if (!allowed.ok) return refuse(403, allowed.reason, req);
       // Where a pull request stands (issue #1072): the hopper's records first; it costs GitHub nothing, so no limit.

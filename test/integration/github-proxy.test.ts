@@ -265,7 +265,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(json(filed)).toMatchObject({ ok: true, as: 'guest-login' });
     const comment = await hopperGh(t.root, env, ['issue', 'comment', '3', '--repo', 'guest/own', '--body', 'more']);
     expect(json(comment)).toMatchObject({ ok: true, op: 'issue.comment', as: 'guest-login' });
-    const writes = t.github.requests.filter((r) => r.method === 'POST' && r.path.startsWith('/repos/guest/own/'));
+    const writes = t.github.requests.filter((r) => r.method === 'POST' && r.path.includes('/repos/guest/own/'));
     expect(writes.map((r) => r.auth)).toEqual(['token guest-token', 'token guest-token']);
 
     const refused = await hopperGh(t.root, env, ['issue', 'comment', '1', '--repo', 'octo/tools', '--body', 'x']);
