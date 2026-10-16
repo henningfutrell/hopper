@@ -5080,7 +5080,7 @@ deleted the home volume.
   The libpod body, the Docker body, and the `run` flags of the line Add machine shows all come from it; the UI imports
   nothing of `src/`, so it reads the line's flags from the API (part 6, below).
 - **A template is a base skeleton plus per-launch parameters.** `Template.limits` (`TemplateLimits`): `cpus` and
-  `memoryMb` as `{default, max}`, `ttlMinutes` as `{default?, max?}`, `keepHome`. Absent: the hopper's defaults — 4
+  `memoryMb` as `{default, max}` (`ttlMinutes` and `keepHome` until issue #1349, part 4). Absent: the hopper's defaults — 4
   CPUs (max 8), 8192 MiB (max 16384), no time limit, the home kept. Saved with `save-template` (`limits`, checked:
   each default within its max); not part of the approval, since limits narrow what a box may use and give it nothing.
   A launch names `params` (`LaunchParams`: `secrets` — a subset of what the template gives —, `cpus`, `memoryMb`,
@@ -10162,7 +10162,7 @@ running daemon, under a session the CLI mints for the one call and drops after i
   - `hopper vault` (the vault's view: secrets and templates, never a value), `vault set <name> [--scope <text>]` with
     the value on stdin only (never an argument: it would be in the shell history and the process list), `vault remove <name>`;
   - `hopper template list`, `template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
-    [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off]`, `template approve <name>`,
+    [--cpus <d>:<max>] [--memory-mb <d>:<max>]` (issue #1349 removed `--ttl-minutes` and `--keep-home`), `template approve <name>`,
     `template approve-profile <name> <operation>/<kind>/<asset>`, `template revoke <name>`, `template remove <name>`;
   - `hopper sandbox list` (the user's boxes, as `GET /api/sandboxes`), `sandbox launch [--template <name>] [--secret <name>]...
     [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]`.
@@ -21964,8 +21964,18 @@ and a box an older build launched there with no record was never found.
 - **A target that is away** keeps its boxes, and its runs stay open, until it dials in again; the next sweep then burns
   them. A run on a client target that is removed for good stays open.
 
-**Not built.** A template's `ttlMinutes` and `keepHome` limits are still saved and shown, but no box reads them now.
-The jobs that wait on template checks or approvals of `asked-…` templates are not changed here. A run on a client target
+**Part 4: no time limit and no kept home on a template.** Before, a template's `ttlMinutes` and `keepHome` limits were
+saved and shown, but no box read them: a sandbox does one step and is burned with its home.
+
+- `TemplateLimits` (`src/domain/sandboxes.ts`) is `cpus` and `memoryMb` only. `save-template` refuses `ttlMinutes` and
+  `keepHome` (400); `hopper template save` takes no `--ttl-minutes` or `--keep-home`; a template's form and its line in
+  Settings → Vault show CPUs and memory only.
+- Tenant migration 71 (`src/store/migration-template-limits.ts`) removes both from each stored template's limits, and
+  the limits themselves when nothing is left. The build before reads both as absent.
+- Tests: `test/store/tenant-migration-71.test.ts`, `test/ui/sandbox-launch.test.ts`, `test/ui/template-limits-view.test.ts`,
+  `test/domain/template-limits.test.ts`.
+
+**Not built.** The jobs that wait on template checks or approvals of `asked-…` templates are not changed here. A run on a client target
 removed for good is never closed.
 
 Tests: `test/sandbox/requests.test.ts` (an approval starts nothing), `test/sandbox/need-steps.test.ts` (a box step:

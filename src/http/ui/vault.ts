@@ -36,11 +36,7 @@ const mints = z.strictObject({ kind: z.enum(MINTS_FOR_KINDS), name: z.string().m
 
 /** A template's limits (issue #708): the defaults and maximums a launch of it may ask for; checked by the vault. */
 const range = z.strictObject({ default: z.number().positive(), max: z.number().positive() });
-const templateLimits = z.strictObject({
-  cpus: range.optional(), memoryMb: range.optional(),
-  ttlMinutes: z.strictObject({ default: z.number().int().positive().optional(), max: z.number().int().positive().optional() }).optional(),
-  keepHome: z.boolean().optional(),
-});
+const templateLimits = z.strictObject({ cpus: range.optional(), memoryMb: range.optional() });
 
 export const vaultEditBody = z.discriminatedUnion('action', [
   // A value, or (issue #585) the vault backend that keeps it and where: one of the two, never both. `mints` (issue #580):

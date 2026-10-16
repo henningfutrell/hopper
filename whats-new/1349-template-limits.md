@@ -1,0 +1,1 @@
+- A sandbox template no longer asks for a time limit or whether to keep the home volume. A sandbox is always removed with its home after its step, so these settings did nothing.

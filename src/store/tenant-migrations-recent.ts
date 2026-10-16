@@ -21,6 +21,7 @@ import { APP_INSTALLATIONS_TABLE } from './app-installations.ts';
 import { JOB_FILTER_COLUMNS } from './job-filter-columns.ts';
 import { accountSourceOnly } from './migration-account-source.ts';
 import { noSandboxMachines } from './migration-no-sandbox-machines.ts';
+import { noTemplateTimeLimit } from './migration-template-limits.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -91,4 +92,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 70: A sandbox is no machine (issue #1349): each client machine of a sandbox box the hopper started leaves `machines`.
   // Config rows only: the build before runs on them, and its reconcile pass removes the boxes no machine names.
   (db) => { noSandboxMachines(db); },
+  // 71: No time limit and no kept home on a template (issue #1349): each stored template's limits lose `ttlMinutes` and
+  // `keepHome`, which no box reads. Rows only: the build before reads both as absent, its defaults.
+  (db) => { noTemplateTimeLimit(db); },
 ];

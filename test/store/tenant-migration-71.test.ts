@@ -10,7 +10,7 @@ const t = useTempStore();
 
 function at70(...templates: Record<string, unknown>[]): Db {
   const raw = t.tenantAt(t.url(), 70);
-  for (const tp of templates) raw.run('INSERT INTO templates (name, body) VALUES (?, ?)', tp.name, JSON.stringify(tp));
+  for (const tp of templates) raw.run('INSERT INTO templates (name, body) VALUES (?, ?)', String(tp.name), JSON.stringify(tp));
   return raw;
 }
 
