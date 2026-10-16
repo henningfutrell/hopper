@@ -11,6 +11,13 @@
 //   Scenario: the hopper's pod deleted, the new one runs on the master key of the same fingerprint, the key the chart
 //             made (issue #1406)
 //   Scenario: a new pod on another key fails the check
+//   Scenario: then `kubectl rollout restart` of a default install comes back healthy on the same key (issues #1406,
+//             #1422)
+//   Scenario: then a person signs in with no GitHub (issue #1380): the CLI in the hopper's pod adds the first admin's local
+//             account, its password on stdin only; in the pod that account signs in, mints a grant, and the grant's
+//             refreshed API token reads that person's grants
+//   Scenario: a sign-in or a grant that does not work, a local account that is not admin, or a CLI that fails fails the
+//             check
 //   Scenario: then the machines come up as pods (sandbox boxes, a lane pod) by an upgrade of the same release, the hopper
 //             stays healthy on the same key, and still no pod has a container runtime socket
 //   Scenario: a lane pod that does not come up fails the check
@@ -57,7 +64,12 @@ const FINGERPRINT = 'a1b2c3d4e5f60718';
 // The hopper's start line about its key (src/secrets/master-key.ts logMasterKey).
 const status = (fingerprint: string, source = 'given'): string => `hopper: master key: given at launch as HOPPER_MASTER_KEY or its file (${source}), fingerprint ${fingerprint}`;
 
-function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1'], keys = [status(FINGERPRINT)]): void {
+// What the sign-in in the pod prints (scripts/kind-check.ts SIGN_IN_AND_GRANT), and how the CLI and it end.
+const SIGNED_IN = '{"realm":"local-accounts","role":"admin","holders":["kind-check"]}';
+interface SignIn { out?: string; status?: number; addStatus?: number }
+
+function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1'], keys = [status(FINGERPRINT)], signIn: SignIn = {}): void {
+  writeFileSync(join(dir, 'signin.json'), signIn.out ?? SIGNED_IN);
   writeFileSync(join(dir, 'jobs'), migrations.join('\n') + '\n');
   // Each read of the hopper's log answers the next line; the last one stays.
   writeFileSync(join(dir, 'keys'), keys.join('\n') + '\n');
@@ -68,6 +80,9 @@ function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}'
   tool('kubectl', [
     'case "$*" in',
     `  *" logs deploy/hopper "*) echo 'hopper: listening'; head -n 1 "${join(dir, 'keys')}"; if [ "$(wc -l < "${join(dir, 'keys')}")" -gt 1 ]; then sed -i 1d "${join(dir, 'keys')}"; fi ;;`,
+    // The CLI in the pod keeps what came on its stdin; the sign-in script too, and answers what it read.
+    `  *" exec -i deploy/hopper -c hopper -- hopper local-account add "*) cat > "${join(dir, 'cli-stdin')}"; exit ${signIn.addStatus ?? 0} ;;`,
+    `  *" exec -i deploy/hopper -c hopper -- node -e "*) cat > "${join(dir, 'signin-stdin')}"; cat "${join(dir, 'signin.json')}"; exit ${signIn.status ?? 0} ;;`,
     `  *" exec "*) cat "${join(dir, 'health.json')}" ;;`,
     `  *"get pods --all-namespaces -o json"*) cat "${join(dir, 'pods.json')}" ;;`,
     // Each ask for the migration Jobs answers the next line: before the upgrade, then after.
@@ -122,16 +137,19 @@ describe('scripts/kind-check.ts', () => {
     // The key the chart made is kept (issue #1406): a new pod of the same release starts on it, so no fresh install.
     const restarted = at('kubectl --context kind-hopper-check --namespace hopper delete pod -l app.kubernetes.io/instance=hopper,app.kubernetes.io/component=hopper --wait=true --timeout=5m');
     expect(r.calls.some((c) => c.includes('create secret') || c.includes('delete namespace'))).toBe(false);
-    const sandbox = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 15m --set sandbox.enabled=true`);
+    const restart = at('kubectl --context kind-hopper-check --namespace hopper rollout restart deployment/hopper');
+    // The boxes get little each, which a kind node on a CI runner can give: the sandbox check reads it from the chart.
+    const sandbox = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 15m --set sandbox.enabled=true --set sandbox.limits.cpus=0.25 --set sandbox.limits.memoryMb=128`);
     // No --wait: a lane pod is ready only once a person signed in, and its spec is what the check reads.
     const lanes = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --set lanes.replicas=1`);
     const created = at('kubectl --context kind-hopper-check --namespace hopper wait --for=create pod/hopper-lanes-0 --timeout=180s');
     expect(migration).toBeLessThan(restarted);
-    expect(restarted).toBeLessThan(sandbox);
+    expect(restarted).toBeLessThan(restart);
+    expect(restart).toBeLessThan(sandbox);
     expect(sandbox).toBeLessThan(lanes);
     expect(lanes).toBeLessThan(created);
-    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper ') && c.includes('/api/health'))).toHaveLength(3);
-    expect(r.calls.filter((c) => c === 'kubectl --context kind-hopper-check --namespace hopper logs deploy/hopper -c hopper')).toHaveLength(3);
+    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper ') && c.includes('/api/health'))).toHaveLength(4);
+    expect(r.calls.filter((c) => c === 'kubectl --context kind-hopper-check --namespace hopper logs deploy/hopper -c hopper')).toHaveLength(4);
     expect(r.stdout).toContain(`a new hopper pod runs on the same master key (fingerprint ${FINGERPRINT})`);
     expect(r.calls.slice(created).some((c) => c === 'kubectl --context kind-hopper-check get pods --all-namespaces -o json')).toBe(true);
     expect(r.stdout).toContain('machines as pods: sandbox boxes on, lane pod hopper-lanes-0');
@@ -145,6 +163,72 @@ describe('scripts/kind-check.ts', () => {
     const rollout = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout status deployment/hopper --timeout=5m');
     expect(deleted).toBeGreaterThan(-1);
     expect(rollout).toBeGreaterThan(deleted);
+  });
+
+  it('restarts the hopper with rollout restart, waits for it, and asks its health and key again (issues #1406, #1422)', () => {
+    fakes(clean);
+    const r = run();
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const restart = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout restart deployment/hopper');
+    expect(restart).toBeGreaterThan(-1);
+    const rollout = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout status deployment/hopper --timeout=5m', restart);
+    expect(rollout).toBeGreaterThan(restart);
+    const health = r.calls.findIndex((c, i) => i > rollout && c.includes(' exec deploy/hopper ') && c.includes('/api/health'));
+    const key = r.calls.findIndex((c, i) => i > health && c.includes(' logs deploy/hopper '));
+    expect(health).toBeGreaterThan(rollout);
+    expect(key).toBeGreaterThan(health);
+    expect(r.stdout).toContain(`after rollout restart the hopper is healthy on the same master key (fingerprint ${FINGERPRINT})`);
+  });
+
+  it('then signs in with no GitHub: the CLI in the pod adds the first admin, its password on stdin only, and a grant reads as them (issue #1380)', () => {
+    fakes(clean);
+    const r = run();
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const restart = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout restart deployment/hopper');
+    const add = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper exec -i deploy/hopper -c hopper -- hopper local-account add admin@example.com');
+    const signIn = r.calls.findIndex((c) => c.startsWith('kubectl --context kind-hopper-check --namespace hopper exec -i deploy/hopper -c hopper -- node -e '));
+    const sandbox = r.calls.findIndex((c) => c.includes('sandbox.enabled=true'));
+    expect(add).toBeGreaterThan(restart);
+    expect(signIn).toBeGreaterThan(add);
+    expect(sandbox).toBeGreaterThan(signIn);
+    const password = readFileSync(join(dir, 'cli-stdin'), 'utf8').trim();
+    expect(password.length).toBeGreaterThanOrEqual(12);
+    expect(readFileSync(join(dir, 'signin-stdin'), 'utf8')).toBe(password);
+    expect(r.calls.some((c) => c.includes(password))).toBe(false);
+    // The script is one argument over many lines of the log.
+    const script = readFileSync(log, 'utf8');
+    for (const route of ['/ui/auth/password', '/ui/api/session', '/ui/api/api-tokens', '/ui/auth/token/refresh', '/api/api-tokens']) expect(script).toContain(route);
+    expect(r.stdout).toContain('a local account signed in with no GitHub, minted a grant, and its refreshed API token read as that person');
+  });
+
+  it('fails when the CLI in the pod cannot add the local account', () => {
+    fakes(clean, undefined, undefined, undefined, { addStatus: 2 });
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('hopper local-account add in the hopper\'s pod did not succeed: exit 2');
+    expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
+  });
+
+  it('fails when the sign-in or the grant does not work, and says why', () => {
+    fakes(clean, undefined, undefined, undefined, { out: '{"error":"/ui/auth/password: 403 {}"}', status: 1 });
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('a sign-in with no GitHub and a grant did not work: /ui/auth/password: 403 {}');
+  });
+
+  it('fails when the local account is not admin through local-accounts, or the token reads other grants', () => {
+    fakes(clean, undefined, undefined, undefined, { out: '{"realm":"corp","role":"viewer","holders":["kind-check"]}' });
+    expect(run().stderr).toContain('the local account signed in as viewer through corp, not as admin through local-accounts');
+    rmSync(log);
+    fakes(clean, undefined, undefined, undefined, { out: '{"realm":"local-accounts","role":"admin","holders":["kind-check","other"]}' });
+    expect(run().stderr).toContain('the grant\'s API token read the grants ["kind-check","other"], not the one it was minted with');
+  });
+
+  it('fails when the hopper after rollout restart runs on another master key', () => {
+    fakes(clean, undefined, undefined, [status(FINGERPRINT), status(FINGERPRINT), status('ffffffffffffffff')]);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`after rollout restart the hopper runs on the master key of fingerprint ffffffffffffffff, not ${FINGERPRINT}`);
   });
 
   it('fails when the new hopper pod runs on another master key', () => {
@@ -249,7 +333,11 @@ describe('.github/workflows/kind.yml, the kind check on a pull request', () => {
     expect(at('node scripts/kind-check.ts --tag dev --keep')).toBeLessThan(at('node scripts/kind-sandbox-check.ts --context kind-hopper-check'));
     const remove = steps.find((s) => s.run === 'kind delete cluster --name hopper-check');
     expect(remove?.if).toBe('always()');
-    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['scripts/kind-sandbox-check.ts', 'src/sandbox/kubernetes.ts', 'src/sandbox/need-box.ts']));
+    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['scripts/kind-sandbox-check.ts']));
+  });
+
+  it('runs on every change of the sandbox module and the types it runs on, not only the Kubernetes runtime (issue #1422)', () => {
+    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['src/sandbox/**', 'src/domain/sandboxes.ts', 'src/domain/sandbox-runs.ts']));
   });
 
   it('runs the migration check too, on a pull request that changes it or the cluster script (issue #1373)', () => {

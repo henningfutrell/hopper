@@ -323,8 +323,8 @@ export const EVENT_SCHEMAS = {
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
   // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository. person, via (issue #677): a
-  // person's Merge now or Close PR, and the way.
-  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean(), byHopper: z.literal(true).optional(), ...actingIfPerson }),
+  // person's Merge now or Close PR, and the way. stray (issue #1420): no job followed it, and it was merged on GitHub.
+  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean(), byHopper: z.literal(true).optional(), stray: z.literal(true).optional(), ...actingIfPerson }),
   'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), superseded: z.string().optional(), stray: z.literal(true).optional(), ...actingIfPerson }),
   'job.pull_request_abandoned': strict({ pullRequest: z.string(), part: z.boolean() }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.

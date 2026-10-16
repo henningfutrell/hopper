@@ -1,7 +1,7 @@
 // The HTTP API's shapes as the UI reads them. Domain types come from src/domain/types.ts as
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
 import type {
-  AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
+  AttachedMachine, PlaygroundLimits, PlaygroundSandbox, PlaygroundView, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   WindowsHost, WindowsHostsView,
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, JobActMarker, UsageReading, UsageReport, UsageSourceReport, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
@@ -31,7 +31,7 @@ import type {
 } from '../../../src/domain/types.ts';
 
 export type {
-  AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
+  AttachedMachine, PlaygroundLimits, PlaygroundSandbox, PlaygroundView, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   WindowsHost, WindowsHostsView,
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, JobActMarker, UsageReading, UsageReport, UsageSourceReport, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,

@@ -59,7 +59,7 @@ import { registerUiRoutes } from './ui/index.ts';
 import type { AllowedHosts } from './allowed-hosts.ts';
 import type { SourceEmailMatch } from './source-email-match.ts';
 import type { CallerOf } from './ui/sign-in.ts';
-import type { Sandboxes } from '../sandbox/service.ts';
+import type { Sandboxes } from '../sandbox/service.ts'; import type { Playground } from '../sandbox/playground.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { masterKeyRoutes, type MasterKeyStatus } from './master-key.ts';
@@ -110,6 +110,8 @@ export interface ServerOptions {
   access: Access;
   /** The sandboxes the hopper starts, one per step (issue #1349): GET /api/sandboxes. */
   sandboxes: Sandboxes;
+  /** The sandbox playground (issue #1410): GET /api/sandbox-playground, POST /ui/api/sandbox-playground. */
+  playground: Playground;
   /** The master key's status (issue #659): GET /api/master-key, POST /ui/api/master-key. */
   masterKey: MasterKeyStatus;
   /** The shared GitHub rate limiter's settings (issue #436): GET /api/github-rate-limiter, POST /ui/api/github-rate-limiter. */
@@ -266,7 +268,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

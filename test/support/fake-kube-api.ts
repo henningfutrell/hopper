@@ -12,8 +12,11 @@ export interface FakeKubeApi extends KubeApi {
   calls: string[];
   /** The commands exec ran, with their pod. */
   execs: { pod: string; cmd: string[]; stdin?: string }[];
-  /** Sets a pod's phase, and its container's state to match (`exitCode` for an ended one, `waiting` for a pending one). */
-  phase(name: string, phase: string, o?: { exitCode?: number; waiting?: string }): void;
+  /**
+   * Sets a pod's phase, and its container's state to match (`exitCode` and `reason` for an ended one, `waiting` for a
+   * pending one).
+   */
+  phase(name: string, phase: string, o?: { exitCode?: number; reason?: string; waiting?: string }): void;
   /** How exec answers: its exit code and what it writes. Default: 0, nothing. */
   onExec?: (pod: string, cmd: string[]) => { exit: number; stdout?: string; stderr?: string } | Error;
   logs: Map<string, string>;
@@ -33,7 +36,7 @@ export function createFakeKubeApi(namespace = 'hopper'): FakeKubeApi {
     phase(name, phase, o = {}) {
       const p = api.pods.get(name);
       if (!p) throw new Error(`no pod ${name}`);
-      const state = phase === 'Running' ? { running: {} } : phase === 'Succeeded' || phase === 'Failed' ? { terminated: { exitCode: o.exitCode ?? 0 } } : { waiting: { reason: o.waiting ?? 'ContainerCreating' } };
+      const state = phase === 'Running' ? { running: {} } : phase === 'Succeeded' || phase === 'Failed' ? { terminated: { exitCode: o.exitCode ?? 0, ...(o.reason ? { reason: o.reason } : {}) } } : { waiting: { reason: o.waiting ?? 'ContainerCreating' } };
       p.status = { phase, containerStatuses: [{ name: 'box', image: '', imageID: '', ready: phase === 'Running', restartCount: 0, state }] };
     },
     async readPod(name) {

@@ -14,8 +14,11 @@
 //   Scenario: listVolumes answers the runtime's own claims with every label asked, by the hopper's name (issue #1371)
 //   Scenario: stop, remove and removeVolume refuse a pod or claim that is not the runtime's: the hopper's own pod, a
 //     claim of the hopper's Postgres (issue #1371)
+//   Scenario: a box gets no more CPU and memory than the most the chart gives (issue #1422)
+//   Scenario: a box Kubernetes killed for its memory says so in its log (issue #1422)
 //   Scenario: an API it cannot reach is its problem
 //   Scenario: the image's user is the box image's agent user, by number, and nothing is built
+//   Scenario: every pod gets the PriorityClass the runtime is given, for the sandbox quota (issue #1410)
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -219,6 +222,33 @@ describe('the Kubernetes container runtime', () => {
     expect(api.calls.filter((c) => c.startsWith('delete'))).toEqual([]);
   });
 
+  it('a box gets no more CPU and memory than the most the chart gives, and what it asks under that (issue #1422)', async () => {
+    const api = createFakeKubeApi();
+    const rt = createKubernetesRuntime({ api, hopper, pollMs: 1, startMs: 50, most: { cpus: 0.5, memoryMb: 1024 } });
+    const big = await rt.create(spec());
+    expect(podOf(api, big).spec!.containers[0]!.resources).toEqual({ limits: { cpu: '0.5', memory: '1024Mi' } });
+    const small = await rt.create(spec({ name: 'small', volume: 'small-home', limits: { cpus: 0.25, memoryMb: 256 } }));
+    expect(podOf(api, small).spec!.containers[0]!.resources).toEqual({ limits: { cpu: '0.25', memory: '256Mi' } });
+    // Only memory given: the CPU is the box's own.
+    const memory = createKubernetesRuntime({ api, hopper, most: { memoryMb: 512 } });
+    const m = await memory.create(spec({ name: 'memory', volume: 'memory-home' }));
+    expect(podOf(api, m).spec!.containers[0]!.resources).toEqual({ limits: { cpu: '1.5', memory: '512Mi' } });
+  });
+
+  it('a box Kubernetes killed for its memory says so in its log; another box\'s log is as it is (issue #1422)', async () => {
+    const api = createFakeKubeApi();
+    const rt = runtime(api);
+    const id = await rt.create(spec({ script: 'eat memory' }));
+    api.logs.set(id, 'allocating');
+    api.phase(id, 'Failed', { exitCode: 137, reason: 'OOMKilled' });
+    expect(await rt.wait(id, 5_000)).toBe(137);
+    expect(await rt.logs(id)).toBe('allocating\nhopper: Kubernetes killed the box: it went over its memory limit (2048Mi, OOMKilled)\n');
+    const other = await rt.create(spec({ name: 'other', volume: 'other-home', script: 'exit 137' }));
+    api.logs.set(other, 'killed\n');
+    api.phase(other, 'Failed', { exitCode: 137 });
+    expect(await rt.logs(other)).toBe('killed\n');
+  });
+
   it('an API it cannot reach is its problem', async () => {
     const api = createFakeKubeApi();
     expect(await runtime(api).problem()).toBeUndefined();
@@ -231,5 +261,13 @@ describe('the Kubernetes container runtime', () => {
     expect(rt.kind).toBe('kubernetes');
     expect(await rt.pull('ghcr.io/henningfutrell/hopper:box-claude')).toEqual({ user: '1000:1000' });
     expect(rt.build).toBeUndefined();
+  });
+
+  it('every pod gets the PriorityClass the runtime is given, for the sandbox quota (issue #1410)', async () => {
+    const api = createFakeKubeApi();
+    await createKubernetesRuntime({ api, hopper, priorityClass: 'hopper-sandbox', pollMs: 1, startMs: 50 }).create(spec());
+    expect(podOf(api, 'hopper-sandbox-infra').spec?.priorityClassName).toBe('hopper-sandbox');
+    await runtime(api).create(spec({ name: 'other' }));
+    expect(podOf(api, 'other').spec?.priorityClassName).toBeUndefined();
   });
 });

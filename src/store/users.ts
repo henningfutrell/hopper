@@ -9,7 +9,10 @@ const MAX_ID = 24;
 
 const rowOf = (r: Record<string, unknown>): User => ({
   id: String(r.id), name: String(r.name), createdAt: String(r.created_at), workDir: String(r.work_dir), secretPrefix: String(r.secret_prefix),
+  ...(typeof r.email === 'string' ? { email: r.email } : {}),
 });
+
+const emailOf = (r: Record<string, unknown>): string | null => (typeof r.email === 'string' ? r.email : null);
 
 /** A user id from a name: lowercase letters, digits and `_`, starting with a letter, at most 24 long. */
 export function idFromName(name: string): string {
@@ -32,7 +35,14 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
       const r = c.db.get('SELECT * FROM users WHERE id = ?', id);
       return r ? rowOf(r) : undefined;
     },
-    add(name) {
+    byEmail(email) {
+      const r = c.db.get('SELECT * FROM users WHERE lower(email) = lower(?)', email.trim());
+      return r ? rowOf(r) : undefined;
+    },
+    setEmail(id, email) {
+      c.db.run('UPDATE users SET email = ? WHERE id = ?', email.trim().toLowerCase(), id);
+    },
+    add(name, email) {
       const trimmed = name.trim();
       if (trimmed === '') throw new Error('a user needs a name');
       const user = c.tx(() => {
@@ -40,8 +50,13 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
         const base = idFromName(trimmed);
         let id = base;
         for (let n = 2; c.db.get('SELECT 1 FROM users WHERE id = ?', id); n++) id = `${base.slice(0, MAX_ID - String(n).length - 1)}_${n}`;
-        const user: User = { id, name: trimmed, createdAt: c.clock.now().toISOString(), workDir: `users/${id}`, secretPrefix: `HOPPER_USER_${id.toUpperCase()}_` };
-        c.db.run('INSERT INTO users (id, name, created_at, work_dir, secret_prefix) VALUES (?, ?, ?, ?, ?)', user.id, user.name, user.createdAt, user.workDir, user.secretPrefix);
+        const user: User = {
+          id, name: trimmed, createdAt: c.clock.now().toISOString(), workDir: `users/${id}`, secretPrefix: `HOPPER_USER_${id.toUpperCase()}_`,
+          ...(email ? { email: email.trim().toLowerCase() } : {}),
+        };
+        // The email column only with an email: a store opened at a version before migration 43 has none.
+        if (user.email === undefined) c.db.run('INSERT INTO users (id, name, created_at, work_dir, secret_prefix) VALUES (?, ?, ?, ?, ?)', user.id, user.name, user.createdAt, user.workDir, user.secretPrefix);
+        else c.db.run('INSERT INTO users (id, name, created_at, work_dir, secret_prefix, email) VALUES (?, ?, ?, ?, ?, ?)', user.id, user.name, user.createdAt, user.workDir, user.secretPrefix, user.email);
         return user;
       });
       onAdded(user);
@@ -62,7 +77,7 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
         if (held.length > 0) throw new Error(`${toId} holds work of its own (${held.join(', ')}); nothing changed`);
         for (const table of ['user_identities', 'ui_sessions', 'login_codes', 'join_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, fromId, toId);
         c.db.run('DELETE FROM users WHERE id = ?', toId);
-        c.db.run('UPDATE users SET name = ? WHERE id = ?', String(to.name), fromId);
+        c.db.run('UPDATE users SET name = ?, email = coalesce(?, email) WHERE id = ?', String(to.name), emailOf(to), fromId);
         c.db.exec(`DROP SCHEMA ${schema} CASCADE`);
         return rowOf(c.db.get('SELECT * FROM users WHERE id = ?', fromId)!);
       });
@@ -82,7 +97,7 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
         for (const table of ['user_identities', 'ui_sessions', 'login_codes', 'join_codes']) c.db.run(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, intoId, fromId);
         c.db.run('DELETE FROM users WHERE id = ?', intoId);
         c.db.exec(`DROP SCHEMA ${quoteIdent(gone)} CASCADE`);
-        c.db.run('UPDATE users SET id = ?, name = ? WHERE id = ?', intoId, String(into.name), fromId);
+        c.db.run('UPDATE users SET id = ?, name = ?, email = coalesce(?, email) WHERE id = ?', intoId, String(into.name), emailOf(into), fromId);
         c.db.exec(`ALTER SCHEMA ${quoteIdent(kept)} RENAME TO ${quoteIdent(gone)}`);
         c.db.exec('ALTER TABLE user_identities ADD CONSTRAINT user_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id)');
         return rowOf(c.db.get('SELECT * FROM users WHERE id = ?', intoId)!);

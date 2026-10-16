@@ -5,7 +5,7 @@
 //
 // An admin runs the instance, never another user's work (issue #221, design.md "What an admin sees"): no change here sets
 // the password of, or adds again, an account that signs in as another user — that would hand the admin a way into that
-// user's work. The account's own user changes its password, which ends the account's other sessions. Nobody locks
+// user's work. Since identity is keyed by email (issue #1380), that is also a new account of another user's email. The account's own user changes its password, which ends the account's other sessions. Nobody locks
 // themselves out: the acting account is not removed, nor its role lowered from admin, from here.
 import type { FastifyInstance } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
@@ -32,7 +32,8 @@ export function createLocalAccountsAdmin(o: {
   signIn: Pick<SignIn, 'roleOf'>; sessions: UiSessions; grants: Pick<ApiGrants, 'reconcile'>; clock: Clock;
 }): LocalAccountsAdmin {
   const accounts = o.instance.localAccounts;
-  const userOf = (email: string): string | undefined => o.instance.identities.userOf(LOCAL_ACCOUNTS_REALM, email);
+  // The user the account signs in as: the one its identity is linked to, else the user known by its email (issue #1380).
+  const userOf = (email: string): string | undefined => o.instance.identities.userOf(LOCAL_ACCOUNTS_REALM, email) ?? o.instance.users.byEmail(email)?.id;
   const view = (): LocalAccountsView => ({
     accounts: accounts.list().map((a) => {
       const id = userOf(a.email);
@@ -52,7 +53,8 @@ export function createLocalAccountsAdmin(o: {
         if (own(actor, email)) throw new HttpError(409, 'this is the account you signed in with: sign in as an admin another way first');
         accounts.remove(email);
       } else {
-        // A new account takes the user its email signed in as before; a password set on it would be a way into that user's work.
+        // A new account takes the user its email signed in as before, or the user known by its email; a password set on it
+        // would be a way into that user's work.
         if (linked !== undefined && linked !== actorUser && (!existing || edit.password !== undefined)) throw new HttpError(409, `${email} ${NOT_YOURS}`);
         if (!existing && edit.password === undefined) throw new HttpError(400, 'a new local account needs a password');
         if (own(actor, email) && !roleAllows(edit.role, 'admin')) throw new HttpError(409, 'this would end your own admin session: sign in as an admin another way first');

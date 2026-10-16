@@ -17,8 +17,11 @@ export interface Grant {
   /** Trades for a new pair once (issue #358); absent: the token does not expire. */
   refreshToken?: string;
   refreshTokenExpiresAt?: Date;
-  /** Which flow granted it (issue #441): a web flow grant renews only with the app's client secret. A renewed grant keeps its first's; absent: one kept before #441. */
-  grantedBy?: 'device' | 'web';
+  /**
+   * Which flow granted it (issue #441): a web flow grant renews only with the app's client secret. A renewed grant keeps its
+   * first's; absent: one kept before #441. `token`: a personal access token the person gave (issue #1380): no app granted it.
+   */
+  grantedBy?: 'device' | 'web' | 'token';
 }
 
 /** A grant from what @octokit/oauth-methods answers for a GitHub App's user token. */

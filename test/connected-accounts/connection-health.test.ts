@@ -68,7 +68,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
       if (!github.tokens.has(token)) throw new Error('Bad credentials');
       return { subject: '1', account: 'octo-user' };
     },
-    installations: async () => [],
+    installations: async () => [], tokenRepositories: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
     deleteToken: async (_p, accessToken) => { deleted.push(accessToken); },
     hasClientSecret: () => false,

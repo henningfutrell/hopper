@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
 import type { UsagePacing } from './domain/types.ts';
+import { playgroundLimitsProblem } from './sandbox/playground.ts';
 import { SANDBOX_SETTING_HELP, SANDBOX_SETTINGS, sandboxSettings, type SandboxSettings } from './sandbox/settings.ts';
 import { MASTER_KEY_VARIABLES } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
@@ -159,6 +160,10 @@ const schema = z.object({
 }).refine((e) => e.HOPPER_LAN_PEERS.length === 0 || e.HOPPER_LAN_NAMES.length > 0 || e.HOPPER_PUBLIC_URL !== undefined, {
   message: 'must be set with HOPPER_LAN_PEERS (or set HOPPER_PUBLIC_URL): the names the UI answers to beyond loopback',
   path: ['HOPPER_LAN_NAMES'],
+}).superRefine((e, ctx) => {
+  // The playground's defaults (issue #1410) are within its maximums: a create that names nothing is never refused.
+  const problem = playgroundLimitsProblem(sandboxSettings(e).playground);
+  if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['HOPPER_SANDBOX_MAX_CPUS'] });
 });
 
 /** What each setting does, for `node src/main.ts --help`. Keyed by the schema: a new setting needs its line. */

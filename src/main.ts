@@ -36,7 +36,7 @@ import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts'; import { createOutboundGuard } from './outbound/index.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
-import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
+import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
@@ -55,8 +55,8 @@ export interface App {
   updater: Updater;
   /** Access (issue #559): the decision the vault asks before every mint, the approvals, the model. */
   access: Access;
-  /** The sandbox boxes the hopper starts and removes (issue #603). */
-  sandboxes: Sandboxes;
+  /** The sandbox boxes the hopper starts and removes (issue #603), and the sandbox playground (issue #1410). */
+  sandboxes: Sandboxes; playground: Playground;
   /** The master key's status (issue #659): its source, the one reveal, a person's word that they saved it. The stack
    * recorder (issue #947): the stack's resources over time. */
   masterKey: MasterKeyStatus; stackHistory: StackRecorder;
@@ -283,13 +283,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // The sandboxes the hopper starts, one per step (issues #708, #1349): through the container runtime selected once here
   // (Podman whenever it is reachable), beside the hopper, on the compose network or the host network; or, with the
   // Kubernetes runtime (issue #1286), as pods. It burns the boxes an older build launched, and their sandbox records.
-  const sandboxes = createSandboxes({
-    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }),
-    repo: instance.sandboxes, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
+  const sandboxRuntime = seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }), sandboxes = createSandboxes({
+    runtime: sandboxRuntime, repo: instance.sandboxes, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config), cluster: inPod,
     clients: sandboxClientsOf(runtimes),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
+  const playground = createPlayground({ runtime: sandboxRuntime, noRuntime: inPod ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME, instanceId: instance.settings.instanceId(), network: hopperNetwork(config), limits: config.playground, clock, logger }); // the sandbox playground (issue #1410): many sandboxes at once, on the same runtime, none a machine
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
     return runtimes.ensure(user).then(() => user);
@@ -301,7 +301,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
-    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: stack.resources, cluster, stackDrift: startStackDrift({ appDir, env, logger, cluster, channel: () => clusterChannelTag(updater.status()), probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl, database: databaseHostOf(config.databaseUrl, () => { store.databaseStats.read(); return true; }) }) }),
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, playground, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: stack.resources, cluster, stackDrift: startStackDrift({ appDir, env, logger, cluster, channel: () => clusterChannelTag(updater.status()), probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl, database: databaseHostOf(config.databaseUrl, () => { store.databaseStats.read(); return true; }) }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
@@ -333,7 +333,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   await runtimes.start();
   runtimes.watch(intervalMs);
   // After the runtimes: a box is kept only when a machine names it, so the machines must be known first.
-  sandboxes.start(); stack.recorder.start();
+  sandboxes.start(); void playground.start(); stack.recorder.start();
 
   let stopped: Promise<void> | undefined;
   const app: App = {
@@ -344,7 +344,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance,
     updater,
     access,
-    sandboxes,
+    sandboxes, playground,
     masterKey: masterKeyStatus, stackHistory: stack.recorder,
     users: () => instance.users.list(),
     user(id) {
@@ -357,7 +357,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       stopped ??= (async () => {
         updater.stop(); stack.recorder.stop();
         await access.stop();
-        const passes = sandboxes.stop();
+        const passes = Promise.all([sandboxes.stop(), playground.stop()]);
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll(); allowedHosts.stop();
         await Promise.all([server.close(), passes, remoteAccess.stop()]);

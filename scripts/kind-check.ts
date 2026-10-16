@@ -2,8 +2,11 @@
 // brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket, or runs Podman, Docker or
 // compose. Then `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the
 // hopper's pod is deleted, and the new one runs on the master key of the same fingerprint: the key the chart made and
-// keeps (issue #1406). Then the machines come up as pods — by an upgrade of the same release, sandbox boxes on, one lane
-// pod — and the check runs again: still no container runtime. Needs
+// keeps (issue #1406). Then `kubectl rollout restart` of the hopper: it comes back healthy on that key (issue #1422). Then
+// a person signs in with no GitHub (issue #1380): the operator CLI in the hopper's pod adds the first admin's local
+// account, who signs in with its email and password and mints a grant, and the grant's refreshed API token reads as that
+// person. Then the machines come up as pods — by an upgrade of the same release, sandbox boxes on with little CPU and
+// memory each, one lane pod — and the check runs again: still no container runtime. Needs
 // `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
 //
 //   node scripts/kind-check.ts [--cluster NAME] [--tag TAG] [--keep] [--set key=value ...]
@@ -11,6 +14,7 @@
 // --cluster names the kind cluster (default hopper-check), --tag the hopper's image tag (default: the chart's), --set
 // passes more values to the chart, and --keep keeps the cluster at the end. Exit 0 when the check passes, 1 when not.
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -61,7 +65,7 @@ function check(context: string, tag: string | undefined, sets: string[]): string
   const values = [...(tag ? [`image.tag=${tag}`] : []), ...sets];
   if (install(context, ['--create-namespace'], values) !== 0) return 'helm install did not bring up the release';
 
-  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? machines(context);
+  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? rolloutRestart(context) ?? withoutGitHub(context) ?? machines(context);
 }
 
 /** `helm install` of the release, waiting for it, with `values`. Answers its exit status. */
@@ -152,6 +156,78 @@ function keyKept(context: string): string | null {
   return null;
 }
 
+/** A default install comes back healthy after `kubectl rollout restart`, on the same master key (issues #1406, #1422). */
+function rolloutRestart(context: string): string | null {
+  const kubectl = (...args: string[]): number | null => sh('kubectl', ['--context', context, '--namespace', NAMESPACE, ...args]).status;
+  if (kubectl('rollout', 'restart', 'deployment/hopper') !== 0) return 'kubectl could not restart the hopper\'s deployment';
+  if (kubectl('rollout', 'status', 'deployment/hopper', '--timeout=5m') !== 0) return 'the hopper did not come back after rollout restart';
+  const health = healthy(context);
+  if (health) return `after rollout restart, ${health}`;
+  const same = sameKey(context, 'after rollout restart the hopper');
+  if (same) return same;
+  console.log(`after rollout restart the hopper is healthy on the same master key (fingerprint ${fingerprint})`);
+  return null;
+}
+
+/** What each box gets on kind (the chart's `sandbox.limits`): little, as a kind node on a CI runner has little room. */
+const BOX_LIMITS = ['sandbox.limits.cpus=0.25', 'sandbox.limits.memoryMb=128'];
+
+// The first admin's local account on the cluster hopper. Its password is made here and goes only on stdin.
+const ADMIN = 'admin@example.com';
+
+/**
+ * In the hopper's pod, on its loopback (a loopback request, as a person at a port-forward makes): sign in with the local
+ * account's email and password (on stdin), mint a read-only grant for an agent, trade its refresh token for a new API
+ * token, and read the person's grants with it. Prints what the API token read, as JSON.
+ */
+const SIGN_IN_AND_GRANT = `
+const base = 'http://127.0.0.1:${PORT}';
+const json = { 'content-type': 'application/json', origin: base };
+const call = async (path, body, headers = {}) => {
+  const r = await fetch(base + path, { method: body === undefined ? 'GET' : 'POST', headers: { ...json, ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const text = await r.text();
+  if (!r.ok) throw new Error(path + ': ' + r.status + ' ' + text);
+  return JSON.parse(text);
+};
+let password = '';
+process.stdin.on('data', (d) => { password += d; }).on('end', async () => {
+  try {
+    const { token } = await call('/ui/auth/password', { username: '${ADMIN}', password: password.trim() });
+    const who = await call('/ui/api/session', undefined, { 'x-hopper-session': token });
+    const minted = await call('/ui/api/api-tokens', { action: 'mint', label: 'kind check', holder: 'kind-check', preset: 'read-only' }, { 'x-hopper-session': token });
+    const pair = await call('/ui/auth/token/refresh', { refresh: minted.refresh });
+    const seen = await call('/api/api-tokens', undefined, { authorization: 'Bearer ' + pair.token });
+    process.stdout.write(JSON.stringify({ realm: who.user && who.user.realm, role: who.user && who.user.role, holders: seen.grants.map((g) => g.holder) }));
+  } catch (e) { process.stdout.write(JSON.stringify({ error: e.message })); process.exit(1); }
+});`;
+
+/** A command in the hopper's container, with `input` on its stdin. */
+function inPod(context: string, input: string, ...command: string[]): { status: number | null; stdout: string } {
+  const r = spawnSync('kubectl', ['--context', context, '--namespace', NAMESPACE, 'exec', '-i', 'deploy/hopper', '-c', 'hopper', '--', ...command],
+    { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'] });
+  if (r.error) throw r.error;
+  return { status: r.status, stdout: r.stdout ?? '' };
+}
+
+/**
+ * A person signs in with no GitHub and an agent acts for them (issue #1380): the first admin's local account from the
+ * operator CLI in the pod, a sign-in with its email and password, a grant minted for an agent, and the grant's refreshed
+ * API token reads that person's grants. The cluster holds no GitHub App and no GitHub connection.
+ */
+function withoutGitHub(context: string): string | null {
+  const password = randomBytes(18).toString('base64url');
+  const added = inPod(context, `${password}\n`, 'hopper', 'local-account', 'add', ADMIN);
+  if (added.status !== 0) return `hopper local-account add in the hopper's pod did not succeed: exit ${added.status}`;
+  const r = inPod(context, password, 'node', '-e', SIGN_IN_AND_GRANT);
+  let seen: { realm?: string; role?: string; holders?: string[]; error?: string } = {};
+  try { seen = JSON.parse(r.stdout) as typeof seen; } catch { /* not JSON */ }
+  if (r.status !== 0 || seen.error) return `a sign-in with no GitHub and a grant did not work: ${seen.error ?? (r.stdout.trim() || `exit ${r.status}`)}`;
+  if (seen.realm !== 'local-accounts' || seen.role !== 'admin') return `the local account signed in as ${seen.role ?? 'no role'} through ${seen.realm ?? 'no realm'}, not as admin through local-accounts`;
+  if (JSON.stringify(seen.holders) !== '["kind-check"]') return `the grant's API token read the grants ${JSON.stringify(seen.holders)}, not the one it was minted with`;
+  console.log('a local account signed in with no GitHub, minted a grant, and its refreshed API token read as that person');
+  return null;
+}
+
 /**
  * The machines as pods: sandbox boxes on (the hopper starts them through the Kubernetes API), and one lane pod. The lane
  * pod joins only once a person signed in, so its upgrade does not wait for it: its spec is what the check reads.
@@ -161,7 +237,7 @@ function keyKept(context: string): string | null {
 function machines(context: string): string | null {
   const upgrade = (...args: string[]): number | null => sh('helm', ['upgrade', 'hopper', CHART, '--kube-context', context,
     '--namespace', NAMESPACE, '--reuse-values', ...args]).status;
-  if (upgrade('--wait', '--wait-for-jobs', '--timeout', '15m', '--set', 'sandbox.enabled=true') !== 0) return 'helm upgrade with sandbox.enabled=true did not succeed';
+  if (upgrade('--wait', '--wait-for-jobs', '--timeout', '15m', '--set', 'sandbox.enabled=true', ...BOX_LIMITS.flatMap((v) => ['--set', v])) !== 0) return 'helm upgrade with sandbox.enabled=true did not succeed';
   const health = healthy(context);
   if (health) return `with sandbox boxes on, ${health}`;
   const same = sameKey(context, 'with sandbox boxes on, the hopper');

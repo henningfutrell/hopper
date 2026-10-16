@@ -1,5 +1,5 @@
 // What the hopper may stop or remove (issue #1371, design.md "Sandboxes are fresh and leave nothing"): only a resource
-// that carries a sandbox label — a sandbox box's (BOX_LABEL), a need box's (NEED_LABEL) or a check box's (CHECK_LABEL),
+// that carries a sandbox label — a sandbox box's (BOX_LABEL), a need box's (NEED_LABEL), a check box's (CHECK_LABEL) or a playground sandbox's (PLAYGROUND_LABEL, issue #1410),
 // each a container and its home volume; on Kubernetes the runtime's pod label on its pods and claims. A hopper stack
 // container, a volume of someone else's, the hopper's own pod: none carries one, so a stop or remove of it is refused.
 // The adapters check before each stop and remove, whoever asks: a wrong id in a caller never reaches the stack.
@@ -14,8 +14,10 @@ export const USER_LABEL = 'io.hopper.user';
 export const NEED_LABEL = 'io.hopper.need';
 /** The label on every check box: its value is the hopper's instance id. */
 export const CHECK_LABEL = 'io.hopper.check';
+/** The label on every playground sandbox (issue #1410): its value is the hopper's instance id. */
+export const PLAYGROUND_LABEL = 'io.hopper.playground';
 
-const SANDBOX_LABELS = [BOX_LABEL, NEED_LABEL, CHECK_LABEL] as const;
+const SANDBOX_LABELS = [BOX_LABEL, NEED_LABEL, CHECK_LABEL, PLAYGROUND_LABEL] as const;
 
 /** Whether these labels make a container or volume a sandbox's. */
 export const sandboxLabelled = (labels: Record<string, string> | null | undefined): boolean =>

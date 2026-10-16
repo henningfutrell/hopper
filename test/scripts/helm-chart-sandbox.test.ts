@@ -3,7 +3,8 @@ import { container, env, find, pod, render, type Resource, workloads } from '../
 
 // Sandbox boxes as pods (issue #1286, docs/deploy.md "Sandbox boxes on Kubernetes"): with sandbox.enabled the hopper
 // starts its boxes through the Kubernetes API, with its own service account and the Role the runtime needs in its
-// namespace, and no container socket anywhere.
+// namespace, and no container socket anywhere. The sandbox playground's limits are values (issue #1410), and an optional
+// ResourceQuota holds the sandbox pods alone, through a PriorityClass they all get.
 interface Rule { apiGroups: string[]; resources: string[]; verbs: string[] }
 type Rbac = Resource & { rules?: Rule[]; roleRef?: { kind: string; name: string }; subjects?: { kind: string; name: string; namespace?: string }[] };
 
@@ -37,6 +38,14 @@ describe('the Helm chart\'s sandbox boxes', () => {
     }
   });
 
+  it('gives each box no more CPU and memory than sandbox.limits says, and sets none unless asked (issue #1422)', () => {
+    expect(env(daemon, 'HOPPER_KUBERNETES_BOX_CPUS')).toBeUndefined();
+    expect(env(daemon, 'HOPPER_KUBERNETES_BOX_MEMORY_MB')).toBeUndefined();
+    const given = container(find(render('sandbox.enabled=true', 'sandbox.limits.cpus=0.25', 'sandbox.limits.memoryMb=128'), 'Deployment', 'hopper'), 'hopper');
+    expect(env(given, 'HOPPER_KUBERNETES_BOX_CPUS')?.value).toBe('0.25');
+    expect(env(given, 'HOPPER_KUBERNETES_BOX_MEMORY_MB')?.value).toBe('128');
+  });
+
   it('runs the hopper as a service account of its own, with its token: the API client reads it', () => {
     expect(pod(hopper).serviceAccountName).toBe('hopper');
     expect(find(rs, 'ServiceAccount', 'hopper')).toBeDefined();
@@ -65,5 +74,34 @@ describe('the Helm chart\'s sandbox boxes', () => {
     expect(pod(find(given, 'Deployment', 'hopper')).serviceAccountName).toBe('ops');
     expect(given.filter((r) => r.kind === 'ServiceAccount')).toEqual([]);
     expect((find(given, 'RoleBinding', 'hopper-sandbox') as Rbac).subjects?.[0]?.name).toBe('ops');
+  });
+
+  it('gives the hopper the playground\'s limits, from its values (issue #1410)', () => {
+    const limits = (c: typeof daemon) => Object.fromEntries((c.env ?? []).filter((e) => /^HOPPER_SANDBOX_(MAX|DEFAULT)_/.test(e.name)).map((e) => [e.name, e.value]));
+    expect(limits(daemon)).toEqual({
+      HOPPER_SANDBOX_MAX_CONCURRENT: '20', HOPPER_SANDBOX_MAX_PER_USER: '10',
+      HOPPER_SANDBOX_DEFAULT_CPUS: '1', HOPPER_SANDBOX_DEFAULT_MEMORY_MB: '2048', HOPPER_SANDBOX_DEFAULT_TTL_MINUTES: '60',
+      HOPPER_SANDBOX_MAX_CPUS: '4', HOPPER_SANDBOX_MAX_MEMORY_MB: '8192', HOPPER_SANDBOX_MAX_TTL_MINUTES: '1440',
+    });
+    const set = render('sandbox.enabled=true', 'sandbox.maxConcurrent=50', 'sandbox.maxPerUser=25', 'sandbox.max.cpus=2.5', 'sandbox.defaults.ttlMinutes=15');
+    expect(limits(container(find(set, 'Deployment', 'hopper'), 'hopper'))).toMatchObject({
+      HOPPER_SANDBOX_MAX_CONCURRENT: '50', HOPPER_SANDBOX_MAX_PER_USER: '25', HOPPER_SANDBOX_MAX_CPUS: '2.5', HOPPER_SANDBOX_DEFAULT_TTL_MINUTES: '15',
+    });
+    // No quota unless asked.
+    expect(rs.filter((r) => r.kind === 'ResourceQuota' || r.kind === 'PriorityClass')).toEqual([]);
+    expect(env(daemon, 'HOPPER_KUBERNETES_PRIORITY_CLASS')).toBeUndefined();
+  });
+
+  it('holds the sandbox pods alone in a ResourceQuota, through their PriorityClass (issue #1410)', () => {
+    const q = render('sandbox.enabled=true', 'sandbox.quota.enabled=true', 'sandbox.quota.pods=25', 'sandbox.quota.cpu=30', 'sandbox.quota.memory=60Gi');
+    const d = container(find(q, 'Deployment', 'hopper'), 'hopper');
+    expect(env(d, 'HOPPER_KUBERNETES_PRIORITY_CLASS')?.value).toBe('hopper-sandbox');
+    const pc = find(q, 'PriorityClass', 'hopper-sandbox') as Resource & { value?: number; preemptionPolicy?: string; globalDefault?: boolean };
+    expect(pc).toMatchObject({ value: 0, preemptionPolicy: 'Never', globalDefault: false });
+    const quota = find(q, 'ResourceQuota', 'hopper-sandbox') as Resource & { spec: { hard: Record<string, string>; scopeSelector: unknown } };
+    expect(quota.spec.hard).toEqual({ pods: '25', 'limits.cpu': '30', 'limits.memory': '60Gi' });
+    expect(quota.spec.scopeSelector).toEqual({ matchExpressions: [{ scopeName: 'PriorityClass', operator: 'In', values: ['hopper-sandbox'] }] });
+    // No pod of the chart's own is of the class: the quota never holds the hopper, Postgres, OpenFGA or Solr.
+    for (const w of workloads(q)) expect((pod(w) as { priorityClassName?: string }).priorityClassName, w.metadata.name).toBeUndefined();
   });
 });

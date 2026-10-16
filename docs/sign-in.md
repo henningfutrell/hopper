@@ -327,6 +327,24 @@ signed in with (issue #1380). This setting is on by default.
   `POST /ui/api/source-email-match` `{ "on": false }`. It applies at once, to the next connect and the
   next renewal. Each change is recorded (`source_email_match.changed`).
 
+## GitHub with a personal access token
+
+A person can connect GitHub in Sources with a personal access token of their own account (issue #1380). The
+hopper's GitHub App is not needed for it.
+
+1. Make a token at https://github.com/settings/tokens. A fine-grained token needs read and write access to
+   issues, pull requests and contents in the repositories your jobs use, and read access to email addresses.
+   A classic token needs the `repo` and `user:email` scopes.
+2. In Sources → GitHub account, paste the token in **Personal access token** and click **Connect with a
+   token**.
+3. Choose the job repositories from **Repositories the token reaches**.
+
+- **Checks.** GitHub must take the token. The source email match applies as for a device code.
+- **Where it is kept.** In your vault, sealed under the master key, as every connection's token. The hopper
+  never shows it again, and never deletes it at GitHub: delete it at GitHub yourself when you stop using it.
+- **When it ends.** Nothing renews a token. When GitHub refuses it (it expired, or you deleted it), the
+  source pauses and Sources asks to connect again. You stay signed in.
+
 ## LDAP realm
 
 People sign in on the same username and password form with their directory account. The hopper
@@ -596,7 +614,24 @@ user of their own, and then it is folded into that user at the next start (below
 |---|---|
 | login code | the user it was minted for: a device link is for the session's own user; a new user's login link for that user |
 | no sign-in (`none`) | its own user, made by its first visitor (on a hopper from before: `admin`, which it signed in as there) |
-| a realm (LDAP, OIDC, GitHub, SAML, gateway) | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
+| a realm (LDAP, OIDC, GitHub, SAML, gateway) or a local account | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in signs in as the user known by its verified email (issue #1380), else creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`); either way it links it |
+
+**Identity keyed by email (issue #1380).** Each user keeps the verified email it is known by: a local account's email,
+or the first email a realm vouches for at a sign-in (OIDC only with `email_verified`, GitHub its primary verified
+email). A second identity with that email — another realm, or the same provider with a new subject — signs in as the
+same user. Settings → Users shows each user's email.
+
+**Move from a GitHub sign-in to a local account or SSO.** A person who signed in with GitHub keeps their user, their
+work and their GitHub connection (now a source in Sources):
+
+1. They sign in with GitHub once on this version, so their user takes their primary verified GitHub email. Settings →
+   Users shows it.
+2. The operator adds a local account of that email: `hopper local-account add <email>`, the password on stdin. Or the
+   admin sets up an OIDC realm whose provider vouches for that email.
+3. They sign in with it. The session is their user; Sources shows GitHub as connected.
+
+An admin cannot add a local account of another user's email in Settings → Sign-in (409): that would be a way into that
+user's work (issue #221). The operator CLI can, as it can every other change to the database.
 
 - An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
   one-time login link it shows.
@@ -1029,6 +1064,7 @@ The same for every realm, no sign-in and the login code:
 | LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |
 | Sources: "the GitHub account … has no verified email …, the email you signed in with" | The source email match is on, and the account does not have that email verified at GitHub. Add and verify the email at https://github.com/settings/emails, then connect again. Or the instance admin turns the match off in Settings → Sign-in. |
 | Sources: "GitHub did not show the verified emails of …" | The hopper's app cannot read the account's email addresses. Approve the app's email permission at GitHub, or the instance admin turns the source email match off. |
+| Sources: "GitHub refused the token: Bad credentials" | The personal access token is wrong, expired or deleted. Make a new one at https://github.com/settings/tokens, then connect with it. |
 | Sources: GitHub "sign-in expired", and the last error says it "no longer has the verified email" | The account lost the email it was connected for (the source email match, checked at each renewal). Verify the email at GitHub again, then connect again. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |

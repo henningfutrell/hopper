@@ -268,8 +268,9 @@ async function housekeep(ctx: FollowContext, repo: string, url: string, pr: Numb
  * Housekeeping of stray pull requests (issue #1143 part 4, `JobSource.housekeepStrays`): which are open, from one batched read
  * of their repositories' open pull requests; each open one of its job's own repository is read, then closed as superseded by
  * the pull request that closed its issue, or as `housekeep` says. Its item closed as not planned, it is left as it is, as an
- * abandoned follow leaves it. A repository GitHub does not answer for, or a stray whose housekeeping throws, is logged and
- * asked again at the next round.
+ * abandoned follow leaves it. One not open is read once by its number (issue #1420): merged or closed, it has `ended`, so
+ * the job that holds it is no longer shown with it open. A repository GitHub does not answer for, or a stray whose
+ * housekeeping throws, is logged and asked again at the next round.
  */
 export async function housekeepStrays(ctx: FollowContext, strays: Stray[]): Promise<StrayHousekept[]> {
   const own = strays.filter((s) => s.job.source?.repo && s.job.source.number && repoOfPull(s.pullRequest).toLowerCase() === s.job.source.repo.toLowerCase());
@@ -278,15 +279,22 @@ export async function housekeepStrays(ctx: FollowContext, strays: Stray[]): Prom
   for (const [repo, error] of open.repoErrors) console.warn(`hopper: the stray pull requests of ${repo} were not read, asked again at the next round: ${error}`);
   const done: StrayHousekept[] = [];
   for (const s of own) {
-    if (!open.repos.get(s.job.source!.repo!)?.some((p) => p.url === s.pullRequest)) continue;
+    const listed = open.repos.get(s.job.source!.repo!);
+    if (!listed) continue;
     try {
-      const kept = await housekeepStray(ctx, s);
+      const kept = listed.some((p) => p.url === s.pullRequest) ? await housekeepStray(ctx, s) : await endedStray(ctx, s);
       if (kept) done.push({ jobId: s.job.id, pullRequest: s.pullRequest, part: s.part, ...kept });
     } catch (e) {
       console.warn(`hopper: housekeeping of the stray pull request ${s.pullRequest} failed, asked again at the next round: ${(e as Error).message}`);
     }
   }
   return done;
+}
+
+/** A stray not among its repository's open pull requests (issue #1420): how it ended on GitHub; undefined: open after all. */
+async function endedStray(ctx: FollowContext, s: Stray): Promise<{ ended: 'merged' | 'closed' } | undefined> {
+  const state = (await ctx.api.pullRequest(s.job.source!.repo!, numberOf(s.pullRequest)))?.state;
+  return state === 'merged' || state === 'closed' ? { ended: state } : undefined;
 }
 
 async function housekeepStray(ctx: FollowContext, s: Stray): Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {

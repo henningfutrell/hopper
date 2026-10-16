@@ -732,7 +732,18 @@ helm install hopper deploy/helm/hopper --namespace hopper --create-namespace
 kubectl --namespace hopper port-forward svc/hopper 4790      # then open http://localhost:4790/
 ```
 
-Sign in with GitHub: the first person to do so is the admin.
+Sign in with GitHub: the first person to do so is the admin. With no GitHub (issue #1380), add the first admin's local
+account with the operator CLI in the hopper's pod, its password on stdin, then sign in with its email and password. An
+OIDC realm set up at launch ("Sign-in set up at launch") works the same way in a cluster.
+
+```sh
+kubectl --namespace hopper exec -i deploy/hopper -c hopper -- hopper local-account add admin@example.com < password-file
+```
+
+An agent then acts for a person through a **grant** the person mints in Settings → API tokens (`docs/design.md` "Grants
+and refresh tokens"), whatever realm they signed in through: the agent trades its refresh token for API tokens at
+`POST /ui/auth/token/refresh`. GitHub is a source a person attaches after the sign-in (Sources → Connect GitHub), not a
+requirement of the install.
 
 **The master key** ("The master key", issue #1406). The install makes it: a new random key (32 bytes, as 64 hex digits)
 in the Secret `hopper-master-key` (`<release>-master-key`), under `master-key`. The hopper reads it from that Secret's
@@ -817,6 +828,8 @@ vault then runs in the hopper, under the master key.
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
 | `extraEnv` | more environment for the hopper ("What every deploy needs") |
 | `sandbox.enabled` | sandbox boxes the hopper starts as pods in the release's namespace ("Sandbox boxes on Kubernetes"). Default off |
+| `sandbox.maxConcurrent`, `sandbox.maxPerUser`, `sandbox.defaults.*`, `sandbox.max.*`, `sandbox.quota.*` | the sandbox playground's limits, and an optional quota on the sandbox pods ("The sandbox playground") |
+| `sandbox.limits.cpus`, `sandbox.limits.memoryMb` | the most CPU and memory (MiB) each sandbox box gets ("Sandbox boxes on Kubernetes"). Default `0`: what the box asks for |
 | `lanes.replicas` and the other `lanes.*` | lane pods: machines in the cluster that dial out to the hopper ("Lane pods on Kubernetes"). Default `0`: none |
 | `replicas` | `1`, or `0` while nothing may write the database (`hopper-cluster.sh migrate` moves data in so). Never more |
 | `service.type` | `ClusterIP` (the default), `LoadBalancer` or `NodePort`: the hopper's Service, at `port` |
@@ -889,8 +902,13 @@ alone brings up the hopper; its health answers ok in its pod; and no pod anywher
 has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose; and
 `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then it deletes the
 hopper's pod: the new pod must be healthy and run on the master key of the same fingerprint, given at launch (its start
-log line), the key the chart made (issue #1406). Then the machines come up as pods, by an upgrade of the same release
-with sandbox boxes on (`sandbox.enabled=true`, the hopper's health and key asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
+log line), the key the chart made (issue #1406). Then `kubectl rollout restart deployment/hopper`: the hopper must come
+back healthy on the same key (issue #1422). Then a person signs in with no GitHub (issue #1380): the operator CLI in the
+hopper's pod adds the first admin's local account; in the pod, on its loopback, that account signs in with its email
+and password, is admin through `local-accounts`, and mints a read-only grant; the grant's refresh token is traded for a
+new API token, which must read that person's grants and only them. Then the machines come up as pods, by an upgrade of
+the same release with sandbox boxes on (`sandbox.enabled=true`, with `sandbox.limits.cpus=0.25` and
+`sandbox.limits.memoryMb=128`, the hopper's health and key asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
 only once a person signed in).
 The lane pod must exist, and again no pod may have a container runtime socket. Then it deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
 Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
@@ -902,8 +920,23 @@ node scripts/kind-check.ts --tag dev          # --cluster NAME, --set key=value,
 Then `scripts/kind-sandbox-check.ts` (issue #1371) runs on the cluster `--keep` kept. It needs this checkout's
 dependencies (`npm ci`). As the hopper's own service account, it runs need boxes through this checkout's Kubernetes
 runtime. Each box succeeds, fails, times out or is cancelled. After each, no pod, claim or secret with its labels may
-stay. A later box must not see an earlier one's files, and two boxes at once must not see each other's. The runtime
-must refuse to remove the hopper's pod and the release's claims. Last, the check kills the hopper's pod (scaled to 0,
+stay. A later box must not see an earlier one's files, and two boxes at once must not see each other's. Then (issue
+#1422):
+
+- **Limits.** A box's cgroup holds the chart's `sandbox.limits` (`memory.max`, `cpu.max`). A box that goes over its
+  memory ends with exit 137, and its log says `OOMKilled`.
+- **Isolation.** A box reaches the hopper on its port, and not another box, any other Service of the release (its
+  Postgres, OpenFGA, …). It holds no service account token, and the credential its step was given only in its file,
+  never in its environment. It does not reach its node or the Kubernetes API either: kind's network plugin holds a pod
+  off its own node. On a cluster whose plugin does not (see "Egress" in "Sandbox boxes on Kubernetes"),
+  `--node-reach` says what a box reaches there instead of failing on it.
+- **Many at once.** Dozens of need steps start together through the sandbox module (`src/sandbox/service.ts`), more
+  than the nodes have room for: the ones with no room wait for the scheduler, and none fails. Each gives back its own
+  output. After them nothing with their labels stays, the module's ledger holds no open run and no problem, no box
+  is a lane pod or carries a client's link, and the lane pods are as they were. The hopper's memory before and after
+  is printed, not checked: load numbers run locally.
+
+The runtime must refuse to remove the hopper's pod and the release's claims. Last, the check kills the hopper's pod (scaled to 0,
 deleted with no grace), runs a need box of the hopper's instance while the hopper is down, and starts the hopper again:
 the hopper's first sweep must remove that box and its home claim.
 
@@ -912,9 +945,10 @@ node scripts/kind-sandbox-check.ts --context kind-hopper-check   # --namespace N
 kind delete cluster --name hopper-check
 ```
 
-A pull request that changes the chart, either check or the Kubernetes runtime runs both (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
-runs to a merged pull request needs a GitHub sign-in, which no check has: with `--keep`, port-forward the hopper
-(`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in with GitHub, add a
+A pull request that changes the chart, either check or the sandbox module (`src/sandbox/`) runs both (`.github/workflows/kind.yml`), with the `dev` channel's image. A job that
+runs to a merged pull request needs a GitHub source (a connected account), which no check has: with `--keep`, port-forward the hopper
+(`kubectl --context kind-hopper-check --namespace hopper port-forward svc/hopper 4790`), sign in (with GitHub, or as the
+check's local account after `hopper local-account password admin@example.com`) and connect GitHub in Sources, add a
 `kubernetes-cluster` machine for the kubernetes executor (`docs/design.md` "Job pods on Kubernetes"), and queue a job on an issue of a test repository.
 
 ## Access: OpenFGA
@@ -1402,6 +1436,8 @@ cluster: the kubeconfig).
 |---|---|
 | `HOPPER_KUBERNETES_NAMESPACE` | The namespace the boxes start in. Unset: the hopper's own namespace. |
 | `HOPPER_KUBERNETES_HOPPER_LABELS` | The labels of the hopper's pods, `key=value`, comma-separated. Default `app.kubernetes.io/name=hopper`. A box may reach only pods with these labels in the hopper's namespace, on the hopper's port. |
+| `HOPPER_KUBERNETES_PRIORITY_CLASS` | The PriorityClass every sandbox pod gets, so a ResourceQuota scoped to it holds the sandbox pods alone ("The sandbox playground"). Unset: none. |
+| `HOPPER_KUBERNETES_BOX_CPUS`, `HOPPER_KUBERNETES_BOX_MEMORY_MB` | The most CPUs and memory (MiB) a box gets. Unset: what the box asks for (a need box: 4 CPUs, 8192 MiB). |
 | `HOPPER_LAN_NAMES` | Its first name is the address a box dials: the name of the hopper's Service in that namespace (for example `hopper`). The box's start check proves it from inside the box. |
 
 **With the Helm chart**, set `sandbox.enabled=true`. The chart sets these settings, makes the Role below in the
@@ -1442,12 +1478,56 @@ What is different from Podman:
   allowlist of hosts per template is #849, for Podman and Kubernetes together. Kubernetes always lets a pod reach the
   node it runs on: where that node also runs the cluster's API server (kind, a one-node cluster), a box reaches the
   API server. It holds no token there. Run boxes on worker nodes where you can.
+- **Limits.** A box's CPU and memory limits are its requests too, so the scheduler starts a box only on a node with
+  room for it; a box with no room waits, pending, and starts when room comes (a step waits at most 15 minutes for its
+  box to start). `sandbox.limits.cpus` and `sandbox.limits.memoryMb` set the most each box gets (issue #1422). A box
+  that goes over its memory is killed by Kubernetes: its step ends with exit 137, and the last line of its log says
+  `hopper: Kubernetes killed the box: it went over its memory limit (…, OOMKilled)`.
 - **No image is built.** A box with tools runs the tools image CI publishes for its box image, with every tool:
   `ghcr.io/henningfutrell/hopper:box-<agent>-tools`, or `…-tools-read-only` for a read-only template's boxes. A
   template with its own image and tools cannot start a box here; one with no tools can. The node pulls each image.
 - **Steps and copies** go through the API's exec: the box image needs `tar` for a copy (the published one has it).
 
 Leftover box builds are not removed here: the hopper builds none.
+
+### The sandbox playground
+
+The sandbox playground (Machines → **Sandbox playground**, issue #1410) starts many sandboxes at once, on Podman, Docker
+or Kubernetes, beside the hopper. A playground sandbox runs its image idle, with a fresh home, no secret and no join
+code: it is not a machine and takes no lane. It is destroyed with its home (on Kubernetes its pod and its claim) when a
+person destroys it, when its time limit passes, and at the hopper's next start (after a restart or a crash). These
+settings limit it; with the Helm chart set the values (they need `sandbox.enabled=true`), with compose the variables:
+
+| Helm value | Variable | Default | What it does |
+|---|---|---|---|
+| `sandbox.maxConcurrent` | `HOPPER_SANDBOX_MAX_CONCURRENT` | `20` | How many run at once, all users together. Over it a create is refused with 429, naming the limit. `0`: none start |
+| `sandbox.maxPerUser` | `HOPPER_SANDBOX_MAX_PER_USER` | `10` | How many one user runs at once. Over it: 429, naming the limit |
+| `sandbox.defaults.cpus` | `HOPPER_SANDBOX_DEFAULT_CPUS` | `1` | The CPUs of a sandbox when the create and its template name none |
+| `sandbox.defaults.memoryMb` | `HOPPER_SANDBOX_DEFAULT_MEMORY_MB` | `2048` | Its memory, in MiB |
+| `sandbox.defaults.ttlMinutes` | `HOPPER_SANDBOX_DEFAULT_TTL_MINUTES` | `60` | Its time limit, in minutes |
+| `sandbox.max.cpus` | `HOPPER_SANDBOX_MAX_CPUS` | `4` | The most CPUs a create may ask for. More: 400 |
+| `sandbox.max.memoryMb` | `HOPPER_SANDBOX_MAX_MEMORY_MB` | `8192` | The most memory, in MiB |
+| `sandbox.max.ttlMinutes` | `HOPPER_SANDBOX_MAX_TTL_MINUTES` | `1440` | The longest time limit, in minutes |
+| `sandbox.quota.enabled` | `HOPPER_KUBERNETES_PRIORITY_CLASS` | off | A ResourceQuota on the sandbox pods alone (below) |
+| `sandbox.quota.pods`, `.cpu`, `.memory` | | `30`, `"40"`, `80Gi` | The quota's `pods`, `limits.cpu` and `limits.memory` |
+
+A default above its max stops the hopper at start, with the setting named. A template's own limits also hold: a create
+over them is refused with 400.
+
+**The quota** counts every sandbox pod the hopper starts (need boxes, check boxes and playground sandboxes), and nothing else of the
+namespace. A ResourceQuota holds a whole namespace, so the chart makes a PriorityClass, `<release>-sandbox` (value 0, it
+never preempts a pod), the hopper gives it to every sandbox pod, and the quota counts only pods of that class. To make the
+PriorityClass, the account that runs `helm install` needs the right to make one (it is cluster-wide). There is no
+LimitRange: it would also set limits on the hopper, Postgres, OpenFGA and Solr. The hopper sets CPU and memory limits on
+every sandbox pod itself.
+
+```sh
+helm upgrade hopper deploy/helm/hopper --namespace hopper --reuse-values \
+  --set sandbox.enabled=true --set sandbox.maxConcurrent=50 --set sandbox.maxPerUser=50 \
+  --set sandbox.quota.enabled=true --set sandbox.quota.pods=60
+```
+
+The runtime's NetworkPolicy, `hopper-sandbox`, is one for every sandbox pod, so it stays when the last sandbox goes.
 
 ## Lane pods on Kubernetes
 

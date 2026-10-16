@@ -18928,6 +18928,44 @@ check before the hopper is stopped). The kind workflow runs the step itself.
 What is still open is listed in the issue's pull request: the ledger outcomes and the need box sweep on client targets
 (both wait for #1368), and credentials that die with their sandbox (a decision, #1394).
 
+## Kubernetes sandboxes, end to end on kind (issue #1422, 2026-10-15)
+
+Owner direction: a CI suite on a kind cluster, installed by the Helm chart alone, proves that the hopper on Kubernetes
+starts sandboxes on demand, burns each after its step, keeps them apart, holds them to their limits, and leaves nothing
+when it restarts. It asserts behaviour and order only; no timing budget runs on GitHub Actions.
+
+- **The chart caps each box** (`sandbox.limits.cpus`, `sandbox.limits.memoryMb` → `HOPPER_KUBERNETES_BOX_CPUS`,
+  `HOPPER_KUBERNETES_BOX_MEMORY_MB`, `src/sandbox/settings.ts`). The Kubernetes runtime gives a box no more than that
+  (`most`, `src/sandbox/kubernetes.ts`); a box that asks for less keeps what it asks. Before, a need box always asked
+  for 4 CPUs and 8 GiB as its requests, and the sandbox check had to wrap the runtime to ask for less. Unset, nothing
+  changes.
+- **A box killed for its memory says so.** When its pod's container ended `OOMKilled`, the runtime's `logs` ends with
+  one line that says so and names the limit, so the step's log reads why it ended with exit 137.
+- **The kind check restarts the hopper** with `kubectl rollout restart` after its pod delete, and asks its health and
+  master key again (`scripts/kind-check.ts`, issue #1406).
+- **The sandbox check adds three cases** (`scripts/kind-sandbox-cases.ts`, run by `scripts/kind-sandbox-check.ts`
+  before the kill and restart of #1371): the limits, as the box's cgroup holds them, and a box over its memory killed
+  and reported; isolation, a box that reaches the hopper and not another box, a Service of the release, its node or the API server, with
+  no service account token and its credential only in its file; and many at once, dozens of need steps through the
+  sandbox module (`createSandboxes`, as the hopper runs them), more than the nodes have room for, so some wait for
+  the scheduler, each with its own output, then nothing left, no open run in the ledger, no problem, no box a lane pod
+  or with a client's link. A box's CPU and memory limits are its requests too, so "queued, not failed" is the
+  scheduler's: a pod with no room is pending until room comes, within the 15 minutes `start` waits.
+- **The node and the API server too.** On kind a box reaches neither its node nor the API server on it: kind's network
+  plugin holds a pod off its node, and the check asserts it. Not every plugin does ("Egress" in docs/deploy.md), so
+  `--node-reach` makes those two probes said, not asserted, on such a cluster.
+- **What is not asserted.** The hopper's memory
+  before and after the burst is printed, never asserted: load numbers run locally. The steps run through the sandbox
+  module in the check's own process, not through a job of the hopper: a job needs a GitHub sign-in, which no check has.
+- **The workflow runs on every sandbox change**: `src/sandbox/**`, `src/domain/sandboxes.ts`,
+  `src/domain/sandbox-runs.ts`, the chart and both check files (`.github/workflows/kind.yml`).
+
+Tests: `test/sandbox/kubernetes.test.ts` (a box capped by the chart's limits; an OOMKilled box's log),
+`test/sandbox/runtime-select.test.ts` (the variables), `test/scripts/helm-chart-sandbox.test.ts` (the chart sets them
+only when given), `test/scripts/kind-check.test.ts` (the rollout restart, in order; another key after it fails; the
+workflow's paths) and `test/scripts/kind-sandbox-check.test.ts` (the pure steps of the new cases: the limits read from
+the hopper's env, the room on the nodes, a pod queued, each probe read, isolation). The kind workflow runs the cases.
+
 ## Approve several at once (issue #1018, 2026-10-13)
 
 Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at
@@ -20491,15 +20529,21 @@ only the batch runner's move from the tested branch reached it.
 
 - In a round of every follow (the reconcile interval), after reconciling, the sync loop gives the source its strays, each
   held by the newest job that names it, once that job's end is reported (`JobSource.housekeepStrays`). The source reads the
-  open pull requests of their repositories in one batch (`openPullRequestsIn`, as reconciling does); one not open is left.
-  For each open one: its item closed as not planned, it is left as it is (as an abandoned follow leaves it); else it is
+  open pull requests of their repositories in one batch (`openPullRequestsIn`, as reconciling does). One not open is read
+  once by its number (issue #1420): merged or closed without a merge on GitHub, it has **ended** (`ended`); open after all
+  (a repository with more open pull requests than one read lists), it is left. For each open one: its item closed as not planned, it is left as it is (as an abandoned follow leaves it); else it is
   closed as superseded by the pull request that closed its issue (never a part), or gets the follow's housekeeping
   (`housekeep` in `follow.ts`, shared with the follow): moved to the landing branch, or closed with its changes on its base.
   Each act says so on the pull request, with the same notes.
 - What the source did is recorded on the job that holds it, with `stray: true`: `job.pull_request_retargeted`, or
-  `job.pull_request_closed` with `superseded`, and that job's `follow: closed`, so it is a stray no more.
+  `job.pull_request_closed` with `superseded`, and that job's `follow: closed`, so it is a stray no more. One that ended on
+  GitHub (issue #1420) is recorded as it ended: `job.pull_request_closed` with no `superseded`, or
+  `job.pull_request_merged`, and that job's `follow: closed` or `follow: merged`. Before, a stray closed on GitHub was left
+  as it was: the job that holds it kept `follow: tended`, and the job graph, which counts a tended pull request as open,
+  showed it open, with merge conflicts and tended, for ever, while Rework said the job follows no open pull request. Now
+  both read the one `follow`, and a stray that ended before is corrected at the first round of every follow after a start.
 - **A stray's close moves no work item.** No job followed it, so its close ends no wait of its item: a hand-off stays a
-  hand-off. Only the item's own pull request's state is marked closed.
+  hand-off. Only the item's own pull request's state is marked closed — or merged, for a stray merged on GitHub.
 - **A stray is never tended.** Each way to a stray is a decision that stands: a person cancelled or rejected the newer job,
   the hopper gave up after a failed tend (part 3 retries a rebase once its base moves), or the cap of retries was used.
   Tending it again would undo that. A person's Tend again, or Run again, still works.
@@ -20515,8 +20559,9 @@ Tests: `test/sources/github-pr-housekeeping.test.ts` (retarget, a stack, no land
 superseded both ways, a part), `test/integration/pull-request-housekeeping.test.ts` (the events and the comments over the
 real daemon, and a rebase held an hour), `test/landing-batches/runner.test.ts` (the batch runner's move and its note),
 `test/store/jobs-lanes.test.ts` (`namesPullRequest`), `test/domain/stray-pull-requests.test.ts` (part 4: which pull
-requests are strays, and which job holds each), `test/domain/work-items.test.ts` (a stray's close moves no item), the strays
-in `test/integration/pull-request-housekeeping.test.ts`, `test/integration/pull-request-retend.test.ts` (part 3: a failed
+requests are strays, and which job holds each), `test/domain/work-items.test.ts` (a stray's close or merge moves no item), the strays
+in `test/integration/pull-request-housekeeping.test.ts` (with issue #1420's: closed or merged on GitHub, and the job graph and
+Rework agree), `test/integration/pull-request-retend.test.ts` (part 3: a failed
 rebase tended again once its base moves, at most three in a row; no mirror, no retry), `test/domain/tend-retries.test.ts`
 (`tendOf`, `tendRetryAt` with a moved base), `test/git-mirror/mirrors.test.ts` (`baseTip`).
 
@@ -22098,3 +22143,199 @@ event and answer names it, no event in the other user's log; a user with no conn
 `test/integration/github-proxy.test.ts` (the real daemon and fake GitHub: a second user's job files and comments with that
 user's token, never the first user's; a user with no connection is refused), `test/integration/git-proxy.test.ts` (a push
 names `as`), `test/ui/acting-identity.test.ts` and `test/ui/job-acting-as-view.test.ts` (the job page's **GitHub as**).
+
+## A personal access token (issue #1380, part 6, 2026-10-15)
+
+Issue #1380: users attach their own sources, GitHub through OAuth or a personal access token, kept in the user's vault, and
+the GitHub App is no longer required. Before this part, a GitHub source came only through the hopper's app: a sign-in with
+GitHub, or a device code from Sources. An instance with no app (no client id) could not connect GitHub at all.
+
+**The change.**
+- **Connect with a token.** `POST /ui/api/connected-accounts` `{ action: 'connect-token', provider, token }` (admin of the
+  user, as `connect`). `src/connected-accounts/token-connect.ts`: GitHub must take the token (`GET /user`), and the source
+  email match applies as for a device code (the session's email). Then the token is kept as the connected account's access
+  token, `grantedBy: 'token'`, `connectedBy: 'sources'`, with no refresh token and no expiry: a system secret in the user's
+  vault (`connected-account.github.access-token`), sealed under the master key, as every connection's token. Without the
+  master key nothing is kept. A refusal (GitHub refused the token, the email match, no key) answers `failed` with why, and a
+  connection there was stays as it was.
+- **No app.** The token path reads no client id. The status of a token's connection has no `installUrl` and no
+  `configUrl`, and the UI names no app.
+- **Its repositories.** Where the app is installed means nothing for a token. Its connection reads, in the same schedule and
+  kept read (issue #1250), the repositories the token reaches: `GET /user/repos`, every page, one entry per owner
+  (`identity.ts` `tokenRepositories`), `repositorySelection: 'selected'`. Sources lists them under **Repositories the token
+  reaches**, and the person picks the job repositories from them as before. Intake reads the source's issues in them with
+  the token.
+- **Its end.** Nothing renews a token. A 401 ends the connection as any connection with no refresh token ends: it reads
+  **expired**, its source pauses, the owner is told once, and the person stays signed in (part 3). Sources offers Connect
+  again and the token field.
+- **Never deleted at GitHub.** The token is the person's, not a grant of the app: a connect that replaces it, and a
+  disconnect, delete nothing at GitHub (`replace` in `service.ts` skips a `token` connection). An app's grant that a token
+  replaces is deleted as before.
+- **Jobs.** A job's GitHub proxy and git ask the connection for its token as before (part 5): with a token connection, they
+  act with the person's token, and **GitHub as** names its login.
+
+**Decisions:**
+- **A personal access token, not an OAuth App.** A token needs no registration and no client secret on the instance; an
+  OAuth App would need both, and the device flow through the hopper's app already covers the OAuth case.
+- **One connection per provider still.** A token replaces the connection there was, as a new device code does. Two GitHub
+  sources for one user are not part of this change.
+- **No migration.** `grantedBy: 'token'` is a new value in the JSON body of the `connected_accounts` row. The build before
+  reads the row unchecked; on that build, a disconnect of a token connection asks GitHub to delete it through the app,
+  which GitHub refuses, and the build only logs it.
+- **No re-check of the email without a renewal.** The email match runs again at each renewal (part 4), and a token has
+  none. A token keeps its `matchEmail`; the check at the next connect applies.
+- **No expiry read.** GitHub says a fine-grained token's expiry only in a response header. A token that expired gets a
+  401 and ends then, which says the same thing to the person.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+more than one GitHub source per user, and sources from other forges; the migration of GitHub-signed-in users to hopper
+users with GitHub attached as a source; Kubernetes and service-account tokens.
+
+**Verification:** `test/connected-accounts/personal-access-token.test.ts` (a token connects with no app and is kept in the
+vault, not the row; its repositories are read in place of the installations; a refused token, a refused email and no key
+keep nothing and delete nothing at GitHub; a token is never deleted at GitHub when replaced or at a disconnect; a 401 ends
+only the connection; GitHub's repository list, every page, grouped by owner) and `test/ui/personal-access-token-view.test.ts`
+(the token field connects and is cleared; a token connection lists the repositories the token reaches, with no app link).
+
+## The sandbox playground (issue #1410, 2026-10-15)
+
+Owner direction: a hopper, on Kubernetes (kind and the Helm chart) or on Podman, is a playground where a person starts
+many sandboxes at once. Before, the only direct path was Add machine → a sandbox box: one box per click, and each box
+joined as a machine, against issue #1371 (a sandbox is no machine and takes no lane). Issue #1349 removed that path. And
+nothing limited how many ran at once.
+
+- **The playground** (`src/sandbox/playground.ts`). One create starts `count` **playground sandboxes**: the published box
+  image of an agent, or the approved image of a template (its read-only check passed, its tools added as for a box), on
+  the runtime the hopper selected, beside the hopper only. Each runs its image idle (`exec sleep infinity`, a one-shot
+  container, never restarted), with the sandbox flags, on a fresh home made for it (`staleHome` refuses one that is there),
+  with no secret, no join code and no start check. No join code is minted, so it never joins: it is no client target,
+  takes no lane, gets no job, and `GET /api/machines` does not list it.
+- **Limits** are the hopper's settings, and the chart's values (`sandbox.maxConcurrent`, `sandbox.maxPerUser`,
+  `sandbox.defaults.*`, `sandbox.max.*`): `HOPPER_SANDBOX_MAX_CONCURRENT` (all users together, default 20),
+  `HOPPER_SANDBOX_MAX_PER_USER` (default 10), and the default and most CPUs, memory and time limit of one
+  (`HOPPER_SANDBOX_DEFAULT_*`, `HOPPER_SANDBOX_MAX_*`; defaults 1 CPU, 2048 MiB, 60 minutes; most 4, 8192, 1440). A
+  default above its max stops the daemon at start. A size is the create's, else its template's default, else the
+  hopper's (a template has no time limit since issue #1349: only the hopper's holds); over the hopper's max or the template's it is refused with 400, naming the limit. A count over the room the
+  two counts leave starts what fits and answers `refused: { count, limit, setting, reason }`; none fits: 429 with
+  `limit` and `setting`. The room is counted and taken in one synchronous step before any start, so two creates at once
+  never pass a limit. A sandbox that failed holds no room.
+- **Nothing is left, nothing is reused.** The playground keeps its sandboxes in memory only. A start that fails, or a
+  destroy while one starts, removes what the start made (container, then home), and only then forgets it; a remove that
+  fails keeps it `destroying`, with why, and the pass every 10 s tries again. The pass also destroys each sandbox past
+  its time limit, and removes every container and volume with the playground label of this instance
+  (`io.hopper.playground=<instance id>`, a **sandbox label**, so the adapters' own label check lets it go) that no
+  sandbox in memory holds. At start the hopper runs the pass first: whatever a restart or a crash left goes then. On
+  Kubernetes a sandbox is a pod and a claim; the runtime's one NetworkPolicy (`hopper-sandbox`) holds every sandbox pod
+  and is shared, so it stays: deleting it while another box starts would leave that box a moment with no egress policy.
+- **A quota for the sandbox pods only** (chart: `sandbox.quota.enabled`). A ResourceQuota is the namespace's, and the
+  hopper's own pods are in the same namespace. So the chart makes a PriorityClass `<release>-sandbox` (value 0, never
+  preempts), gives its name to the hopper (`HOPPER_KUBERNETES_PRIORITY_CLASS`), the Kubernetes runtime sets it on every
+  sandbox pod (need and check boxes, playground sandboxes), and the ResourceQuota counts only pods of that
+  class (`scopeSelector`): `pods`, `limits.cpu`, `limits.memory`. Every sandbox pod has CPU and memory limits, so the
+  quota admits it. No LimitRange: it cannot be scoped, so it would also set limits on the hopper, Postgres, OpenFGA and
+  Solr.
+- **Routes.** `GET /api/sandbox-playground` (the user's sandboxes, how many run, the limits), `POST
+  /ui/api/sandbox-playground` (admin, a box action: it starts containers), `POST /ui/api/sandbox-playground/destroy`
+  (admin; `ids` or `all: true`, only the user's own). The UI: the **Sandbox playground** panel on Machines.
+
+Residual risk: the playground starts containers on the hopper's runtime, as a job's box step does; a person with the admin
+role can start up to the limits. A sandbox on Podman joins the hopper's network, as a need box does.
+
+Tests: `test/sandbox/playground.test.ts` (50 with `maxConcurrent` 20 start 20 and refuse 30 naming the limit, destroy-all
+leaves no pod or claim; the time limit; a restart removes what was left, and nothing else; the limits per user; sizes;
+a failed start leaves nothing), `test/integration/sandbox-playground.test.ts` (over the API: 429 naming the limit; none is
+in the machines list or its config; a restart), `test/scripts/helm-chart-sandbox.test.ts` (the
+values and the quota), `test/integration/config.test.ts`, `test/sandbox/kubernetes.test.ts` (the PriorityClass),
+`test/ui/sandbox-playground.test.ts`.
+
+## Identity keyed by email (issue #1380, part 7, 2026-10-15)
+
+Owner decision 1 on issue #1380: identity is keyed by the verified email throughout; usernames are display only. The
+issue's migration: existing GitHub-signed-in users become hopper users with their GitHub attached as a source. Before this
+part, a user was known only through its identity links (realm and subject): a person who signed in with GitHub and later
+with a local account or SSO of the same email got a second, empty user, and their GitHub connection stayed with the first.
+
+**The change.**
+- **A user keeps its email.** `users.email` (instance migration 43), lowercase, unique among the users (`users_email`, on
+  `lower(email)`). The migration gives a user a local account signed in as that account's email (its subject); every
+  other user takes one at its next sign-in. `User.email`, `UserRepository.byEmail` and `setEmail`.
+- **A sign-in is keyed by it** (`src/users/identities.ts` `userForIdentity`). Only `Identity.email` counts: an address the
+  realm vouches for (OIDC with `email_verified`, or `trustUnverifiedEmail`; GitHub's primary verified email; LDAP, SAML
+  and the gateway as their realm config names it; a local account's own email). A linked identity is its user, as before,
+  and gives that user its email when it has none and no other user has it. An unlinked identity whose email a user is
+  known by signs in as that user, and is linked to it. Else a new user, which keeps the email.
+- **The migration of a GitHub-signed-in user.** Their next GitHub sign-in gives their user their primary verified email.
+  A local account of that email (the operator CLI), or an SSO identity that vouches for it, then signs in as the same
+  user: its work, and its GitHub connection, which part 3 already made a source that outlives every session. Nothing
+  needs the hopper's app or a private key after that: the connection renews through the app's client id, or is a personal
+  access token (part 6).
+- **An admin never takes another user's email** (issue #221). Settings → Sign-in refuses a new local account of an email
+  another user is known by, as it refuses one linked to another user (409, `src/http/local-accounts.ts`). The operator CLI
+  does not: it holds the database's credentials.
+- `GET /api/users` and Settings → Users show each user's email.
+
+**Decisions:**
+- **Link at the sign-in, not in a migration.** The instance does not know a GitHub user's email until GitHub says it, and
+  a migration cannot ask GitHub. The next sign-in reads it, with the check GitHub already did.
+- **The first email wins.** A user's email is set once, by the first sign-in that vouches for one no other user has. A
+  later identity with another email does not change it: an email that changes on each sign-in would move who is who.
+- **Every realm's vouched email links.** The owner made external SSO trusted, and the admin chose each realm. A realm
+  with `trustUnverifiedEmail` vouches for emails its provider did not verify: an admin turns that on only for a provider
+  they trust to name people.
+- **OpenFGA subjects, audit and attribution still name the user id.** The id is stable and every tuple and event names it;
+  a user's email is now one lookup away. Keying those by email is a larger change with its own migration of tuples.
+- **No migration of the old build.** `users.email` is a new column; the build before reads `SELECT *` and ignores it, and
+  adds its users with none.
+
+**Residual risk.** Whoever controls a realm that vouches for an email signs in as the user of that email. Before, such a
+realm reached only users of its own identities.
+
+**Left for later parts of issue #1380:** passkeys; OpenFGA subjects, audit and attribution keyed by email; more than one
+GitHub source per user, and sources from other forges; Kubernetes (#1281) and service-account tokens (#909).
+
+**Verification:** `test/users/identities.test.ts` (a linked identity gives its user its email, keeps the one it has, never
+takes another user's; an unlinked identity with a user's email signs in as that user; else a new user with the email),
+`test/store/migration-43.test.ts` (a local account's user takes its email; another user has none),
+`test/integration/email-identity.test.ts` (a GitHub-signed-in user signs in with a local account of their email as the
+same user, its GitHub connection still connected; a second OIDC subject of a verified email is the same user, an
+unverified one is not; an admin is refused a local account of another user's email; `GET /api/users` names the email).
+
+## Kubernetes and service-account tokens with no GitHub (issue #1380, part 8, 2026-10-15)
+
+The issue's acceptance test: the hopper-owned user model works on the Kubernetes deployment (#1281) and with
+service-account tokens (#909: grants with scopes). Parts 1 to 7 made sign-in work with no GitHub (local accounts, OIDC)
+and made GitHub a source a person attaches. No check showed that either holds in a cluster, or that a person who signs
+in without GitHub can give an agent a grant.
+
+**What was found.** Nothing in the code needed a change. A grant (`POST /ui/api/api-tokens`, "Grants and refresh
+tokens") is minted for the session's user and role, whatever realm signed them in. The operator CLI is in the image
+(`/usr/local/bin/hopper`), and reads the database URL from the file the chart mounts (`HOPPER_DATABASE_URL_FILE`), so
+`kubectl exec -i deploy/hopper -c hopper -- hopper local-account add <email>` adds the first admin in a pod. The kind
+check's own comment said that a job run needs a GitHub sign-in: since part 6 it needs a GitHub source, after any
+sign-in.
+
+**The change: checks and docs.**
+- `scripts/kind-check.ts` `withoutGitHub`: after the pod restarts, the operator CLI in the hopper's pod adds the first
+  admin's local account, its random password on stdin. In the pod, on its loopback, that account signs in with its
+  email and password (`POST /ui/auth/password`), must be admin through `local-accounts`, and mints a `read-only` grant.
+  Its refresh token is traded at `POST /ui/auth/token/refresh`, and the new API token must read that person's grants
+  (`GET /api/api-tokens`), the one just minted only. The kind check runs on the `dev` image, which holds parts 1 to 6.
+- `test/integration/grants-without-github.test.ts`: a realm-only hopper's first admin (the CLI) mints a box grant from a
+  preset; its tokens refresh, read, act within their scopes, and are refused outside them. A second local account's
+  grant reaches only its own person's grants, is refused a role above its minter's and an admin read. A person signed
+  in through OIDC mints a grant that reads as them.
+- `docs/deploy.md` "On Kubernetes, with Helm": the first admin with no GitHub, and a grant for an agent;
+  "Check the chart on kind": the new step, and that a job run needs a GitHub source, not a GitHub sign-in.
+
+**Decisions:**
+- **No bootstrap admin from the chart's values.** The CLI in the pod is the first-run admin, as on a container install:
+  a password in Helm values stays in the release record in the namespace. The simplest path that meets the requirement.
+- **The kind check signs in on the pod's loopback**, as its health check asks: from outside the pod the request is a LAN
+  request, which needs allowed hosts set.
+
+**Left for later parts of issue #1380:** passkeys; OpenFGA subjects, audit and attribution keyed by email; more than one
+GitHub source per user, and sources from other forges.
+
+**Verification:** `test/integration/grants-without-github.test.ts`; `test/scripts/kind-check.test.ts` (with fake
+`kind`, `helm` and `kubectl`: the step's order, the password on stdin and in no argument, and each failure); the kind
+check itself (`.github/workflows/kind.yml`, which runs on a change to `scripts/kind-check.ts`).

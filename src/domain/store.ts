@@ -340,8 +340,12 @@ export interface ConfigRecords<N extends string = UserConfigName> {
 export interface UserRepository {
   list(): User[];
   get(id: string): User | undefined;
-  /** A new user under a unique name (throws when taken): its row and its user schema. */
-  add(name: string): User;
+  /** A new user under a unique name (throws when taken): its row and its user schema. `email`: the verified email it is known by. */
+  add(name: string, email?: string): User;
+  /** The user known by this email (issue #1380), compared in lowercase. */
+  byEmail(email: string): User | undefined;
+  /** The user is known by this email from now on, lowercase; throws when another user has it. */
+  setEmail(id: string, email: string): void;
   /**
    * `to` takes over `from`'s work (issue #212): `to`'s sign-ins, sessions and login codes move onto
    * `from`'s record, which takes `to`'s name; `to`'s record and user schema are removed. Throws, nothing
@@ -428,8 +432,12 @@ export interface ConnectedAccount {
   /** Why the sign-in ended — GitHub refused the token and its renewal (issue #358): the account is expired, until connected again. */
   ended?: string;
   connectedAt: string;
-  /** How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant without; absent: kept before #441. */
-  grantedBy?: 'device' | 'web';
+  /**
+   * How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant
+   * without; absent: kept before #441. `token`: a personal access token the person gave (issue #1380): no app granted it, nothing
+   * renews it, and the hopper never deletes it at GitHub.
+   */
+  grantedBy?: 'device' | 'web' | 'token';
   /** How the person made the connection (issue #647): connected from Sources, or signed in with GitHub; absent: kept before #647. */
   connectedBy?: 'sources' | 'sign-in';
   /**

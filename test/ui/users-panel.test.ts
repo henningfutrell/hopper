@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const LINK = `http://127.0.0.1:4790/#login=${'c'.repeat(64)}`;
 const TOTALS = { users: 2, jobs: { queued: 1, held: 1, claimed: 0, running: 3, waiting_answer: 2 }, questions: { open: 4 }, lanes: { busy: 3, total: 5 }, endedLastDay: { finished: 7, failed: 2, cancelled: 1, rejected: 0 }, usage: [{ unit: '%', window: 'session', used: 90, limit: 200, readings: 2 }] };
 let posts: unknown[] = [];
-let users = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }];
+let users: { id: string; name: string; createdAt: string; email?: string }[] = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }];
 
 function fakeDaemon() {
   return vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -32,11 +32,13 @@ function fakeDaemon() {
 
 let root: Root | undefined;
 
-async function render(role: 'admin' | 'operator', realm = 'local', instanceAdmin = role === 'admin') {
+type Row = { id: string; name: string; createdAt: string; email?: string };
+
+async function render(role: 'admin' | 'operator', realm = 'local', instanceAdmin = role === 'admin', seed: Row[] = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }]) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   posts = [];
-  users = [{ id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' }];
+  users = seed;
   vi.stubGlobal('fetch', fakeDaemon());
   const store = '../../ui/src/store/index.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
@@ -62,6 +64,15 @@ describe('Settings: Users', () => {
   it('lists the users', async () => {
     await render('admin');
     await vi.waitFor(() => expect(rows()).toEqual(['admin']));
+  });
+
+  it('names the verified email each user is known by (issue #1380)', async () => {
+    await render('admin', 'local', true, [
+      { id: 'admin', name: 'admin', createdAt: '2026-10-05T10:00:00.000Z' },
+      { id: 'octo', name: 'octo-user', createdAt: '2026-10-05T10:00:00.000Z', email: 'octo-user@example.com' },
+    ]);
+    await vi.waitFor(() => expect(rows()).toEqual(['admin', 'octo']));
+    expect([...document.querySelectorAll('[data-user-email]')].map((e) => e.textContent)).toEqual(['octo-user@example.com']);
   });
 
   it('an admin adds a user and is shown its login link to hand over; the list follows', async () => {

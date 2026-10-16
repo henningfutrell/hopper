@@ -23,7 +23,7 @@ import { mutationRefusal, sessionIn } from './guard.ts';
 import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
 import { isBoxAction } from './box-actions.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
-import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerHeaderBadgeRoutes } from './header-badges.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts'; import { registerDiskBudgetRoutes } from './disk-budget.ts'; import { registerWindowsLinkRoutes } from './windows-link.ts';
+import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerSandboxPlaygroundRoutes } from './sandbox-playground.ts'; import { registerHeaderBadgeRoutes } from './header-badges.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts'; import { registerDiskBudgetRoutes } from './disk-budget.ts'; import { registerWindowsLinkRoutes } from './windows-link.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
@@ -63,9 +63,8 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   instanceAdmin: InstanceAdmin;
   /** Access (issue #559): the instance's. */
   access: Access;
-  /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
-  artifacts: ArtifactEdge;
-  /** The sandbox boxes the hopper starts (issue #603). */
+  /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper; the sandbox playground (issue #1410). */
+  artifacts: ArtifactEdge; playground: Parameters<typeof registerSandboxPlaygroundRoutes>[1]['playground'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -159,6 +158,8 @@ export const connectedAccountsBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect', 'take-held', 'drop-held']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
   // Issue #321: the job repositories, the whole list.
   z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
+  // Issue #1380: a personal access token, with no GitHub App; never logged, never answered.
+  z.strictObject({ action: z.literal('connect-token'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), token: z.string().trim().min(1).max(1024).regex(/^\S+$/, 'one token, no spaces') }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
@@ -337,7 +338,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
-  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerSandboxPlaygroundRoutes(app, { admin, tenant: o.tenant, playground: o.playground }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the sandbox playground (issue #1410), the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {
@@ -364,7 +365,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { connectedAccounts } = o.tenant(req);
     if (body.action === 'choose') return connectedAccounts.choose(body.provider, body.repositories);
     // The source email match (issue #1380): the account must have the email the session's identity signed in with.
-    if (body.action === 'connect') { const email = sessionOf(req)?.identity.email; return connectedAccounts.connect(body.provider, email ? { email } : {}); }
+    const email = sessionOf(req)?.identity.email, by = email ? { email } : {};
+    if (body.action === 'connect') return connectedAccounts.connect(body.provider, by); if (body.action === 'connect-token') return connectedAccounts.connectToken(body.provider, body.token, by); // a personal access token (issue #1380)
     if (body.action === 'take-held') return connectedAccounts.takeHeld(body.provider).catch((e: Error) => { throw new HttpError(409, e.message); });
     return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : body.action === 'drop-held' ? connectedAccounts.dropHeld(body.provider) : connectedAccounts.disconnect(body.provider);
   });
