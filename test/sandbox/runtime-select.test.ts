@@ -81,4 +81,13 @@ describe('runtime selection', () => {
     expect(() => loadConfig({ ...base, HOPPER_KUBERNETES_HOPPER_LABELS: 'no-value' })).toThrow(/HOPPER_KUBERNETES_HOPPER_LABELS/);
     expect(() => loadConfig({ ...base, HOPPER_KUBERNETES_NAMESPACE: 'Not_A_Namespace' })).toThrow(/HOPPER_KUBERNETES_NAMESPACE/);
   });
+
+  it('the most CPU and memory a box gets is read from the environment the chart sets (issue #1422)', () => {
+    const base = { HOPPER_DATABASE_URL: 'postgres://hopper:pw@localhost:5432/hopper', HOPPER_SANDBOX_RUNTIME: 'kubernetes' };
+    expect(loadConfig(base).kubernetes?.most).toBeUndefined();
+    expect(loadConfig({ ...base, HOPPER_KUBERNETES_BOX_CPUS: '0.25', HOPPER_KUBERNETES_BOX_MEMORY_MB: '128' }).kubernetes?.most).toEqual({ cpus: 0.25, memoryMb: 128 });
+    expect(loadConfig({ ...base, HOPPER_KUBERNETES_BOX_MEMORY_MB: '512' }).kubernetes?.most).toEqual({ memoryMb: 512 });
+    expect(() => loadConfig({ ...base, HOPPER_KUBERNETES_BOX_CPUS: '0' })).toThrow(/HOPPER_KUBERNETES_BOX_CPUS/);
+    expect(() => loadConfig({ ...base, HOPPER_KUBERNETES_BOX_MEMORY_MB: '1.5' })).toThrow(/HOPPER_KUBERNETES_BOX_MEMORY_MB/);
+  });
 });

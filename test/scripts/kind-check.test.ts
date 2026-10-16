@@ -11,6 +11,8 @@
 //   Scenario: the hopper's pod deleted, the new one runs on the master key of the same fingerprint, the key the chart
 //             made (issue #1406)
 //   Scenario: a new pod on another key fails the check
+//   Scenario: then `kubectl rollout restart` of a default install comes back healthy on the same key (issues #1406,
+//             #1422)
 //   Scenario: then the machines come up as pods (sandbox boxes, a lane pod) by an upgrade of the same release, the hopper
 //             stays healthy on the same key, and still no pod has a container runtime socket
 //   Scenario: a lane pod that does not come up fails the check
@@ -122,16 +124,19 @@ describe('scripts/kind-check.ts', () => {
     // The key the chart made is kept (issue #1406): a new pod of the same release starts on it, so no fresh install.
     const restarted = at('kubectl --context kind-hopper-check --namespace hopper delete pod -l app.kubernetes.io/instance=hopper,app.kubernetes.io/component=hopper --wait=true --timeout=5m');
     expect(r.calls.some((c) => c.includes('create secret') || c.includes('delete namespace'))).toBe(false);
-    const sandbox = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 15m --set sandbox.enabled=true`);
+    const restart = at('kubectl --context kind-hopper-check --namespace hopper rollout restart deployment/hopper');
+    // The boxes get little each, which a kind node on a CI runner can give: the sandbox check reads it from the chart.
+    const sandbox = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --wait --wait-for-jobs --timeout 15m --set sandbox.enabled=true --set sandbox.limits.cpus=0.25 --set sandbox.limits.memoryMb=128`);
     // No --wait: a lane pod is ready only once a person signed in, and its spec is what the check reads.
     const lanes = at(`helm upgrade hopper ${CHART} --kube-context kind-hopper-check --namespace hopper --reuse-values --set lanes.replicas=1`);
     const created = at('kubectl --context kind-hopper-check --namespace hopper wait --for=create pod/hopper-lanes-0 --timeout=180s');
     expect(migration).toBeLessThan(restarted);
-    expect(restarted).toBeLessThan(sandbox);
+    expect(restarted).toBeLessThan(restart);
+    expect(restart).toBeLessThan(sandbox);
     expect(sandbox).toBeLessThan(lanes);
     expect(lanes).toBeLessThan(created);
-    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper ') && c.includes('/api/health'))).toHaveLength(3);
-    expect(r.calls.filter((c) => c === 'kubectl --context kind-hopper-check --namespace hopper logs deploy/hopper -c hopper')).toHaveLength(3);
+    expect(r.calls.filter((c) => c.includes(' exec deploy/hopper ') && c.includes('/api/health'))).toHaveLength(4);
+    expect(r.calls.filter((c) => c === 'kubectl --context kind-hopper-check --namespace hopper logs deploy/hopper -c hopper')).toHaveLength(4);
     expect(r.stdout).toContain(`a new hopper pod runs on the same master key (fingerprint ${FINGERPRINT})`);
     expect(r.calls.slice(created).some((c) => c === 'kubectl --context kind-hopper-check get pods --all-namespaces -o json')).toBe(true);
     expect(r.stdout).toContain('machines as pods: sandbox boxes on, lane pod hopper-lanes-0');
@@ -145,6 +150,28 @@ describe('scripts/kind-check.ts', () => {
     const rollout = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout status deployment/hopper --timeout=5m');
     expect(deleted).toBeGreaterThan(-1);
     expect(rollout).toBeGreaterThan(deleted);
+  });
+
+  it('restarts the hopper with rollout restart, waits for it, and asks its health and key again (issues #1406, #1422)', () => {
+    fakes(clean);
+    const r = run();
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const restart = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout restart deployment/hopper');
+    expect(restart).toBeGreaterThan(-1);
+    const rollout = r.calls.indexOf('kubectl --context kind-hopper-check --namespace hopper rollout status deployment/hopper --timeout=5m', restart);
+    expect(rollout).toBeGreaterThan(restart);
+    const health = r.calls.findIndex((c, i) => i > rollout && c.includes(' exec deploy/hopper ') && c.includes('/api/health'));
+    const key = r.calls.findIndex((c, i) => i > health && c.includes(' logs deploy/hopper '));
+    expect(health).toBeGreaterThan(rollout);
+    expect(key).toBeGreaterThan(health);
+    expect(r.stdout).toContain(`after rollout restart the hopper is healthy on the same master key (fingerprint ${FINGERPRINT})`);
+  });
+
+  it('fails when the hopper after rollout restart runs on another master key', () => {
+    fakes(clean, undefined, undefined, [status(FINGERPRINT), status(FINGERPRINT), status('ffffffffffffffff')]);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`after rollout restart the hopper runs on the master key of fingerprint ffffffffffffffff, not ${FINGERPRINT}`);
   });
 
   it('fails when the new hopper pod runs on another master key', () => {
@@ -249,7 +276,11 @@ describe('.github/workflows/kind.yml, the kind check on a pull request', () => {
     expect(at('node scripts/kind-check.ts --tag dev --keep')).toBeLessThan(at('node scripts/kind-sandbox-check.ts --context kind-hopper-check'));
     const remove = steps.find((s) => s.run === 'kind delete cluster --name hopper-check');
     expect(remove?.if).toBe('always()');
-    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['scripts/kind-sandbox-check.ts', 'src/sandbox/kubernetes.ts', 'src/sandbox/need-box.ts']));
+    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['scripts/kind-sandbox-check.ts']));
+  });
+
+  it('runs on every change of the sandbox module and the types it runs on, not only the Kubernetes runtime (issue #1422)', () => {
+    expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['src/sandbox/**', 'src/domain/sandboxes.ts', 'src/domain/sandbox-runs.ts']));
   });
 
   it('runs the migration check too, on a pull request that changes it or the cluster script (issue #1373)', () => {
