@@ -68,6 +68,7 @@ describe('a GitHub-signed-in user becomes a hopper user with GitHub as a source 
     const { app, origin } = await startWithAuth(h, undefined, ENV(github));
     const gh = await githubSignIn(app.url, origin, github, 'octo-user');
     expect(app.app.instance.users.get(gh.userId)?.email).toBe('octo-user@example.com');
+    const before = app.app.instance.users.list().length;
 
     expect((await cli(app, ['local-account', 'add', 'Octo-User@example.com'], `${PASSWORD}\n`)).code).toBe(0);
     const local = await passwordSignIn(app, origin, 'octo-user@example.com');
@@ -75,7 +76,7 @@ describe('a GitHub-signed-in user becomes a hopper user with GitHub as a source 
 
     const accounts = (await app.api<{ accounts: ConnectedAccountStatus[] }>('GET', '/api/connected-accounts', undefined, { 'x-hopper-session': local })).body.accounts;
     expect(accounts.find((a) => a.provider === 'github')).toMatchObject({ state: 'connected', account: 'octo-user' });
-    expect(app.app.instance.users.list().filter((u) => u.id !== 'admin').map((u) => u.id)).toEqual([gh.userId]);
+    expect(app.app.instance.users.list()).toHaveLength(before);
   });
 });
 
