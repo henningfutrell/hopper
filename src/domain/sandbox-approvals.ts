@@ -76,8 +76,11 @@ export function editedApprovals(was: SandboxApprovals, e: { yolo?: boolean; skip
   };
 }
 
-/** Where a sandbox request is (issue #991): waits for a person, starts, runs, or ended without a box. */
-export type SandboxRequestState = 'waiting' | 'starting' | 'running' | 'declined' | 'failed';
+/**
+ * Where a sandbox request is (issue #991): waits for a person, approved, or declined. Approved, the job's box steps run,
+ * each in a sandbox of its own that the hopper burns after the step (issue #1349); no box waits between them.
+ */
+export type SandboxRequestState = 'waiting' | 'approved' | 'declined';
 
 /** One sandbox request as the vault's view shows it: a job's ask for a box of a template. Kept in memory. */
 export interface SandboxRequestView {
@@ -96,8 +99,6 @@ export interface SandboxRequestView {
   askedAt: string;
   /** Who approved it: a person, `skip sandbox approval`, the auto-approve policy, or the template's approval by a person. */
   approvedBy?: string;
-  /** The box's name, once it started. */
-  container?: string;
-  /** Why it was declined or failed. */
+  /** Why it was declined. */
   reason?: string;
 }

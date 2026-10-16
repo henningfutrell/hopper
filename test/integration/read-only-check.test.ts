@@ -13,13 +13,13 @@
 //     And the vault holds a minting credential for cluster lab and one for aws-account 123456789012
 //     When a job asks for read on cluster lab and aws-role 123456789012/readonly, with --wait
 //     Then the template is approved by the read policy, and the job waits for its read-only check
-//     And a box of it is refused, saying the check has not run
+//     And a step in a box of it is refused, saying the check has not run
 //     When the check pass runs
 //     Then a check box ran the template's image with its tools, under the sandbox flags, with the check label, and is gone
 //     And Access allowed the template each read before the vault minted it for the check box
 //     And the box ran its probes with the minted AWS session and Kubernetes token, never with a minting credential
 //     And the check passed: the template holds it, `template.checked` says so, and the job's wait ends with the template ready
-//     And a box of it starts
+//     And a step may run in a box of it
 //   Scenario: a write that goes through fails the check: the template takes no box until a person runs it again and it passes
 //   Scenario: a save makes the check stale: it runs again on the template as it is now
 //   Scenario: a template with a write need, and one a person saved, take no read-only check
@@ -37,10 +37,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AccessView } from '../../src/domain/types.ts';
 import { CHECK_LABEL } from '../../src/sandbox/check.ts';
-import { BOX_LABEL } from '../../src/sandbox/launch.ts';
+import { BOX_LABEL } from '../../src/sandbox/owned.ts';
 import { TOOLS_IMAGE } from '../../src/sandbox/tools.ts';
 import { MINTED_AWS, MINTED_KUBE_TOKEN } from '../support/fake-mint-apis.ts';
-import { ACCOUNT, asked, AWS_MINTING_SECRET, boot, KUBE_MINTING_TOKEN, launch, NEEDS, runningJob, skill, stopAll, vault, waiting } from '../support/read-only-check.ts';
+import { ACCOUNT, asked, AWS_MINTING_SECRET, boot, KUBE_MINTING_TOKEN, NEEDS, stepBox, runningJob, skill, stopAll, vault, waiting } from '../support/read-only-check.ts';
 
 afterEach(stopAll);
 
@@ -53,7 +53,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     const t = await asked(a, token);
     expect(t).toMatchObject({ readOnly: true, approval: { by: 'the read policy' } });
     expect(t.check).toBeUndefined();
-    const refused = await launch(a, token, t.name);
+    const refused = await stepBox(a, token, t.name);
     expect(refused.status).toBe(409);
     expect(refused.body.error).toBe(`waiting for the read-only check of ${t.name}: it has not run on this version yet`);
 
@@ -106,7 +106,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     const event = (await a.events()).find((e) => e.type === 'template.checked');
     expect(event?.data).toEqual({ template: t.name, state: 'passed', failed: [], artifact: checked.check!.artifact });
 
-    expect((await launch(a, token, t.name)).status).toBe(200);
+    expect((await stepBox(a, token, t.name)).status).toBe(200);
     // A passed check is not run again.
     await a.app.sandboxes.check();
     expect(runtime.ran.size).toBe(1);
@@ -123,7 +123,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     const failed = ['kube.create-namespace on lab (allowed)', 'kube.delete-pod on lab (error)', 'helm.install on lab (allowed)'];
     expect((await a.events()).find((e) => e.type === 'template.checked')?.data).toEqual({ template: t.name, state: 'failed', failed, artifact: t.check!.artifact });
 
-    const refused = await launch(a, token, t.name);
+    const refused = await stepBox(a, token, t.name);
     expect(refused.status).toBe(409);
     expect(refused.body.error).toContain(`it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`);
     const told = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
@@ -139,7 +139,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect((await asked(a, token)).check).toBeUndefined();
     await a.app.sandboxes.check();
     expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
-    expect((await launch(a, token, t.name)).status).toBe(200);
+    expect((await stepBox(a, token, t.name)).status).toBe(200);
     expect((await a.events()).find((e) => e.type === 'template.check_requested')?.data).toMatchObject({ template: t.name });
   });
 
@@ -155,15 +155,15 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect((await vault(a, token, { action: 'save-template', name: t.name, image: t.image, secrets: [], tools: ['helm', 'kubectl', 'terraform'] })).status).toBe(200);
     const saved = await asked(a, token);
     expect(saved.readOnly).toBe(true);
-    expect((await launch(a, token, t.name)).status).toBe(409);
+    expect((await stepBox(a, token, t.name)).status).toBe(409);
     await a.app.sandboxes.check();
     expect(runtime.ran.size).toBe(1);
     expect((await vault(a, token, { action: 'approve-template', name: t.name })).status).toBe(200);
-    expect((await launch(a, token, t.name)).body.error).toContain('it has not run on this version yet');
+    expect((await stepBox(a, token, t.name)).body.error).toContain('it has not run on this version yet');
     await a.app.sandboxes.check();
     expect(runtime.ran.size).toBe(2);
     expect((await asked(a, token)).check).toMatchObject({ version: saved.savedAt, state: 'passed' });
-    expect((await launch(a, token, t.name)).status).toBe(200);
+    expect((await stepBox(a, token, t.name)).status).toBe(200);
   });
 
   it('a template with a write need, and one a person saved, take no read-only check', async () => {
@@ -174,11 +174,11 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(t.readOnly).toBeUndefined();
     expect((await vault(a, token, { action: 'approve-template', name: t.name })).status).toBe(200);
     expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t.name, operation: 'write', asset: { kind: 'cluster', name: 'lab' } }, { token })).status).toBe(200);
-    expect((await launch(a, token, t.name)).status).toBe(200);
+    expect((await stepBox(a, token, t.name)).status).toBe(200);
 
     expect((await vault(a, token, { action: 'save-template', name: 'kube', image: 'example.org/kube-box:1', secrets: [], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }] })).status).toBe(200);
     expect((await vault(a, token, { action: 'approve-template', name: 'kube' })).status).toBe(200);
-    expect((await launch(a, token, 'kube')).status).toBe(200);
+    expect((await stepBox(a, token, 'kube')).status).toBe(200);
     const no = await vault(a, token, { action: 'check-template', name: 'kube' });
     expect(no.status).toBe(400);
     expect(no.body.error).toBe('kube takes no read-only check: only a template a job asked for with read needs only does');
@@ -202,7 +202,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     await a.app.sandboxes.check();
     expect((await asked(a, token)).check).toMatchObject({ state: 'failed', probes: [], problem: 'the check box did not run: no space left on device' });
     expect(runtime.volumes.size).toBe(0);
-    expect((await launch(a, token, t.name)).status).toBe(409);
+    expect((await stepBox(a, token, t.name)).status).toBe(409);
   });
 
   it('a check box no run holds (a hopper stopped mid-check) is removed, and its check runs again', async () => {
@@ -233,7 +233,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     ].join('; '));
     expect(runtime.ran.size).toBe(0);
     expect(kube.seen).toHaveLength(0);
-    expect((await launch(a, token, t.name)).status).toBe(409);
+    expect((await stepBox(a, token, t.name)).status).toBe(409);
   });
 
   it('a read Access does not allow fails the check, saying so, and mints nothing', async () => {
@@ -298,7 +298,7 @@ exec "$(dirname "$0")/helm.real" "$@"
     const passed = (await asked(a, token)).check!;
     expect(passed).toMatchObject({ version: marked.savedAt, state: 'passed' });
     expect(passed.probes.find((p) => p.id === 'helm.list')).toMatchObject({ expect: 'denied', mark: 'expect-denied', outcome: 'denied', passed: true });
-    expect((await launch(a, token, t.name)).status).toBe(200);
+    expect((await stepBox(a, token, t.name)).status).toBe(200);
 
     // A save that leaves the marks out keeps them; the job's request of the same needs changes nothing.
     expect((await vault(a, token, { action: 'save-template', name: t.name, image: t.image, secrets: [] })).status).toBe(200);

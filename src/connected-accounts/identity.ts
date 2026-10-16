@@ -8,8 +8,11 @@ import type { ConditionalAnswers, Get } from '../repo-checks/conditional.ts';
 import { makeRequest } from '../sources/github/http/http.ts';
 import type { HopperApp } from './hopper-app.ts';
 
-/** The account a token belongs to. `subject`: GitHub's stable numeric id; `account`: the login. */
-export interface AccountIdentity { subject: string; account: string; name?: string; email?: string }
+/**
+ * The account a token belongs to. `subject`: GitHub's stable numeric id; `account`: the login. `verifiedEmails`: every
+ * email GitHub verified for it (issue #1380, the source email match); absent when GitHub did not show them.
+ */
+export interface AccountIdentity { subject: string; account: string; name?: string; email?: string; verifiedEmails?: string[] }
 
 const github = (app: HopperApp, token: string) =>
   octokitRequest.defaults({ baseUrl: app.apiUrl, headers: { authorization: `token ${token}`, 'user-agent': 'hopper', 'x-github-api-version': '2022-11-28' } });
@@ -17,9 +20,13 @@ const github = (app: HopperApp, token: string) =>
 export async function whoIs(app: HopperApp, token: string): Promise<AccountIdentity> {
   const req = github(app, token);
   const u = (await req('GET /user')).data as { id: number; login: string; name?: string | null };
-  // A primary verified email, when the app may read email addresses; without it the identity has none.
-  const email = await req('GET /user/emails').then((r) => (r.data as { email: string; primary: boolean; verified: boolean }[]).find((e) => e.primary && e.verified)?.email, () => undefined);
-  return { subject: String(u.id), account: u.login, ...(u.name ? { name: u.name } : {}), ...(email ? { email } : {}) };
+  // The verified emails, and the primary one, when the app may read email addresses; without them the identity has none.
+  const emails = await req('GET /user/emails').then((r) => (r.data as { email: string; primary: boolean; verified: boolean }[]).filter((e) => e.verified), () => undefined);
+  const email = emails?.find((e) => e.primary)?.email;
+  return {
+    subject: String(u.id), account: u.login, ...(u.name ? { name: u.name } : {}), ...(email ? { email } : {}),
+    ...(emails ? { verifiedEmails: emails.map((e) => e.email) } : {}),
+  };
 }
 
 const PER_PAGE = 100;

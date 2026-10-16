@@ -2,7 +2,6 @@
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
 import type { MachineSnapshot } from './types.ts';
-import type { RuntimeKind, SandboxRecord } from './sandboxes.ts';
 // A Windows host (issue #731) is reached over ssh as an ssh target is, but runs only steps: src/domain/windows-steps.ts.
 export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
 /**
@@ -107,7 +106,7 @@ export interface ClientMachine extends AttachedBase {
    * hopper started for it (issue #603), when it did; `pool` when it is a lane pod (issue #1284), joined with the lane
    * pool key; the job pod it started (issue #1283), when it is one.
    */
-  client: { key: string; template?: string; container?: string; pool?: true; pod?: string };
+  client: { key: string; template?: string; pool?: true; pod?: string };
 }
 
 /**
@@ -193,17 +192,13 @@ export interface MachinesConfig {
 /** A sandbox box the hopper could not stop or remove (issue #603): shown on Machines until it goes. */
 export interface CleanupProblem { container: string; reason: string; at: string }
 
-/** A sandbox box as GET /api/sandboxes shows it: its record (issue #708), but whose it is. */
-export type SandboxBox = Omit<SandboxRecord, 'userId'>;
-
 /**
- * GET /api/sandboxes (issues #603, #708): whether the hopper can start a sandbox box now, why not, and through which
- * container runtime; the sandbox flags of the line Add machine shows (`src/sandbox/flags.ts`, the boxes' own builder);
- * the user's boxes, from their records; and the user's cleanup problems.
+ * GET /api/sandboxes (issues #603, #1349): the user's latest sandbox runs, each sandbox made for one step, and the boxes
+ * an older build launched that the hopper could not burn yet.
  */
 export interface SandboxesView {
-  launch: { available: boolean; problem?: string; runtime?: RuntimeKind };
-  boxes: SandboxBox[];
+  /** The user's latest sandbox runs, newest first (issue #1349): each sandbox made for one step, and when it was burned. */
+  runs: Omit<import('./sandbox-runs.ts').SandboxRun, 'userId'>[];
   problems: CleanupProblem[];
 }
 

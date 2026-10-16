@@ -10,9 +10,8 @@
 // priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx); and each machine's
 // blast radius, the gate and the actor machines (issue #542, blast-radius.tsx). Each card says its CPU and memory now,
 // draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). Each machine's lane
-// recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box the
-// hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes); a box
-// whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx). A machine whose link dropped under a running
+// recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box an older
+// build launched that the hopper could not burn is shown with the reason (issues #603, #1349, GET /api/sandboxes). A machine whose link dropped under a running
 // job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx). Each card
 // says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx).
 // A machine whose job user holds infra credentials is not ready: their names and the guided fix to a dedicated job user (issues #1128 part 7, #1248).
@@ -43,19 +42,18 @@ import { BlastRadiusPanel } from './blast-radius';
 import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
-import { UnreachableBoxes } from './sandbox-reach';
 import { DiskBudgetPanel } from './disk-budget';
 import { MachineTerminal } from './machine-terminal';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
 
-/** The sandbox boxes the hopper could not remove (issue #603): each with the reason, until it goes. */
+/** The sandbox boxes an older build launched that the hopper could not burn (issues #603, #1349): each with the reason, until it goes. */
 function CleanupProblems({ problems }: { problems: CleanupProblem[] }) {
   return (
     <Panel title="Sandbox boxes not removed" icon={Box}>
       <div role="alert" className="grid gap-2 text-sm">
-        <p className="text-xs text-muted-foreground">Their machines are gone, but the hopper could not stop or remove these boxes. It tries again every few seconds. To remove one by hand: <code className="font-mono">podman rm -f &lt;box&gt;</code>, then <code className="font-mono">podman volume rm &lt;box&gt;-home</code>.</p>
+        <p className="text-xs text-muted-foreground">A sandbox never joins as a machine, so the hopper burns each box an older build launched. It could not remove these boxes. It tries again every few seconds. To remove one by hand: <code className="font-mono">podman rm -f &lt;box&gt;</code>, then <code className="font-mono">podman volume rm &lt;box&gt;-home</code>.</p>
         <ul className="grid gap-1.5">
           {problems.map((p) => (
             <li key={p.container} className="text-xs break-words">
@@ -262,7 +260,7 @@ export function Machines() {
           </div>
         ))}
       {authed && config && adding === 'join' && !defaulting && (
-        <Panel title="Add machine" icon={Plus}><JoinMachineForm config={config} onDone={() => setAdding(false)} onSsh={() => setAdding('ssh')} /></Panel>
+        <Panel title="Add machine" icon={Plus}><JoinMachineForm onDone={() => setAdding(false)} onSsh={() => setAdding('ssh')} /></Panel>
       )}
       {authed && config && adding === 'this' && !defaulting && (
         <Panel title="Add this machine" icon={Plus}><AddThisMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
@@ -271,7 +269,6 @@ export function Machines() {
         <Panel title="Attach a machine over ssh" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
       )}
       {cleanup.length > 0 && <CleanupProblems problems={cleanup} />}
-      <UnreachableBoxes view={boxes} />
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>

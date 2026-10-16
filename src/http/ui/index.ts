@@ -40,7 +40,7 @@ import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
 
 /** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436); remote access (issue #880). */
-export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess' | 'githubDeliveries' | 'hostLink' | 'wsl' | 'allowedHosts'> {
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess' | 'githubDeliveries' | 'hostLink' | 'wsl' | 'allowedHosts' | 'sourceEmailMatch'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
@@ -66,7 +66,6 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
   artifacts: ArtifactEdge;
   /** The sandbox boxes the hopper starts (issue #603). */
-  sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -338,7 +337,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
-  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock, sandboxes: o.sandboxes }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {
@@ -356,7 +355,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => userName(sessionOf(req)!) });
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.
@@ -364,7 +363,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const body = parseWith(connectedAccountsBody, req.body);
     const { connectedAccounts } = o.tenant(req);
     if (body.action === 'choose') return connectedAccounts.choose(body.provider, body.repositories);
-    if (body.action === 'connect') return connectedAccounts.connect(body.provider);
+    // The source email match (issue #1380): the account must have the email the session's identity signed in with.
+    if (body.action === 'connect') { const email = sessionOf(req)?.identity.email; return connectedAccounts.connect(body.provider, email ? { email } : {}); }
     if (body.action === 'take-held') return connectedAccounts.takeHeld(body.provider).catch((e: Error) => { throw new HttpError(409, e.message); });
     return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : body.action === 'drop-held' ? connectedAccounts.dropHeld(body.provider) : connectedAccounts.disconnect(body.provider);
   });

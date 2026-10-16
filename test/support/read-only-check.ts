@@ -6,8 +6,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect } from 'vitest';
+import { checkWait } from '../../src/domain/read-only-check.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
+import { ready } from '../../src/sandbox/need-steps.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from './fake-authorization-server.ts';
 import { createFakeCloudTools, type FakeCloudTools } from './fake-cloud-tools.ts';
@@ -94,6 +96,14 @@ export function waiting(a: TestApp, creds: string, args: string[]): { opened: Pr
 
 export const asked = async (a: TestApp, token: string): Promise<TemplateView> =>
   (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((t) => t.name.startsWith('asked-'))!;
-export const launch = (a: TestApp, token: string, template: string) => a.ui<{ container: string; error: string }>('/ui/api/machines/sandbox', { template }, { token });
+/**
+ * Whether a step may run in a box of the template now (issue #1349: a sandbox runs one step; src/sandbox/need-steps.ts
+ * `ready`): 200, or 409 with why not — its check, else that it is not approved.
+ */
+export const stepBox = async (a: TestApp, token: string, template: string): Promise<{ status: 200 | 409; body: { error?: string } }> => {
+  const t = (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((x) => x.name === template);
+  if (t && ready(t)) return { status: 200, body: {} };
+  return { status: 409, body: { error: (t && checkWait(t)) ?? `the template ${template} is not approved` } };
+};
 export const vault = (a: TestApp, token: string, body: unknown) => a.ui<{ error: string }>('/ui/api/vault', body, { token });
 export const NEEDS = ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/cluster/lab read/aws-role/${ACCOUNT}/readonly`];

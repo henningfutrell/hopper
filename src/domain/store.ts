@@ -297,23 +297,19 @@ export interface LoginCodeRepository {
  * What a join code names beside its user: the template the machine joins as (issue #558), when the line names one;
  * the sandbox box the hopper launched with it (issue #603), when it did; the job pod it started with it (issue #1283).
  */
-export interface JoinCodePlace { template?: string; container?: string; pod?: string }
+export interface JoinCodePlace { template?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
   /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
   take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
-  /** The sandbox boxes live codes name (issue #603): launched, not joined yet. */
-  waiting(now: string): string[];
 }
 
-/** The sandbox records (issue #708, instance migration 34): one per sandbox box the hopper launched, by id; names are unique. */
+/** The sandbox records (issue #708, instance migration 34): one per sandbox box an older build launched, by id; names are unique. */
 export interface SandboxRepository {
   list(): SandboxRecord[];
-  get(id: string): SandboxRecord | undefined;
-  /** False when a record of that id or name exists. */
+  /** False when a record of that id or name exists. A record of a box an older build launched: a test's, the hopper adds none (issue #1349). */
   add(record: SandboxRecord): boolean;
-  update(record: SandboxRecord): void;
   remove(id: string): boolean;
 }
 
@@ -436,8 +432,13 @@ export interface ConnectedAccount {
   grantedBy?: 'device' | 'web';
   /** How the person made the connection (issue #647): connected from Sources, or signed in with GitHub; absent: kept before #647. */
   connectedBy?: 'sources' | 'sign-in';
-  /** When its token was last renewed (issue #647); absent: not renewed since it was connected. */
-  renewedAt?: string;
+  /**
+   * `renewedAt`: when its token was last renewed (issue #647); absent: not renewed since it was connected.
+   * `matchEmail`: the email, lowercase, the account was connected for (issue #1380, the source email match): one of its verified emails
+   * equalled the email its person signed in with, and each renewal checks it again. Absent: not checked (the setting off, a
+   * sign-in that gave no email, a GitHub sign-in, or kept before #1380).
+   */
+  renewedAt?: string; matchEmail?: string;
 }
 
 /** A connected account's row (issue #658): who and when. Its tokens are system secrets in the user's vault (src/connected-accounts/at-rest.ts). */
@@ -532,7 +533,7 @@ export interface InstanceStore {
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */
-  sandboxes: SandboxRepository;
+  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */

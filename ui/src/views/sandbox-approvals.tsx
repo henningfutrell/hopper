@@ -41,7 +41,7 @@ async function sendSandbox(path: string, body: unknown, done: string, quiet = fa
 }
 
 const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
-  waiting: 'waits for a person', starting: 'starts now', running: 'runs', declined: 'declined', failed: 'did not start',
+  waiting: 'waits for a person', approved: 'approved: each step runs in a sandbox of its own', declined: 'declined',
 };
 
 function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; template?: TemplateView | undefined; secrets: readonly VaultSecret[]; can: boolean }) {
@@ -69,7 +69,7 @@ function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; templat
       {can ? (
         <div className="flex flex-wrap items-center gap-2">
           <Confirm title={`Start a box of ${r.template}?`} action="Approve" onConfirm={() => void approveItems([runItem(r)])}
-            description={<>The hopper starts a sandbox box of <span className="font-mono">{r.template}</span> with its defaults. It joins as a machine and gets what the template is approved for{template?.radius ? <>, blast radius {template.radius.level}</> : null}.</>}>
+            description={<>Each step of the job runs in a new sandbox of <span className="font-mono">{r.template}</span>, which the hopper destroys after the step. A step gets what the template is approved for{template?.radius ? <>, blast radius {template.radius.level}</> : null}.</>}>
             <Button size="sm" disabled={pending}><Check />Approve</Button>
           </Confirm>
           <Input className="h-8 max-w-64 text-sm" placeholder="Why not (the job is told)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Why not start ${r.template}`} />
@@ -90,7 +90,7 @@ export function SandboxRuns({ view, can }: { view: VaultView | null; can: boolea
   return (
     <div data-access-panel="sandbox-runs">
       <Panel title="Sandbox runs" icon={Rocket} count={waiting.length || ''} bodyClassName="space-y-3">
-        <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox, and the hopper starts the box. A run waits here for a person unless <a href="#settings/vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the template the job asked for.</p>
+        <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox. Once its runs are approved, each step of the job runs in a new sandbox, which the hopper destroys after the step. A run waits here for a person unless <a href="#settings/vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the template the job asked for.</p>
         {waiting.length === 0 ? <Empty>No sandbox run waits. A run a job asks for waits here.</Empty>
           : <ul className="space-y-2">{waiting.map((r) => <Waiting key={r.id} r={r} template={templates.find((t) => t.name === r.template)} secrets={view?.secrets ?? []} can={can} />)}</ul>}
         {rest.length > 0 && (
@@ -98,7 +98,7 @@ export function SandboxRuns({ view, can }: { view: VaultView | null; can: boolea
             {rest.map((r) => (
               <li key={r.id} data-sandbox-request={r.id} className="break-words">
                 <span className="font-mono">{r.template}</span> for job <a href={`#jobs/${r.jobId}`} className="font-mono underline">{r.jobId.slice(0, 8)}</a>: {STATE_TEXT[r.state]}
-                {r.container ? <> as <span className="font-mono">{r.container}</span></> : null}{r.approvedBy ? <>, approved by {r.approvedBy}</> : null}{r.reason ? <> — {r.reason}</> : null}
+                {r.approvedBy ? <>, approved by {r.approvedBy}</> : null}{r.reason ? <> — {r.reason}</> : null}
               </li>
             ))}
           </ul>
@@ -163,7 +163,7 @@ export function SandboxApprovals({ approvals, remembered, can, busy }: { approva
   return (
     <div data-slot="sandbox-approvals">
       <Panel title="Sandbox approvals" icon={Rocket} bodyClassName="space-y-3 text-sm">
-        <p className="text-sm text-muted-foreground">Jobs start their own sandboxes: a job asks, the hopper makes or reuses the template, and starts the box. {sandboxApprovalsText(approvals)}</p>
+        <p className="text-sm text-muted-foreground">Jobs start their own sandboxes: a job asks, the hopper makes or reuses the template, and runs each step in a sandbox of its own. {sandboxApprovalsText(approvals)}</p>
         {yolo && (
           <p role="note" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
             <TriangleAlert className="size-4 shrink-0 text-amber-600" />Nobody approves anything: a job can get write, sync or apply on any asset it names. Each approval is still an event that names the toggle.

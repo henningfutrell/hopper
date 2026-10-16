@@ -6,7 +6,7 @@
 import type { UserStore } from '../domain/ports.ts';
 import { isSharedSecret } from '../domain/vault.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
-import { boxAsk, launchRefusal, type ClientTarget } from './box.ts';
+import { boxAsk, type ClientTarget } from './box.ts';
 import type { SharedSecrets } from './shared.ts';
 import type { Vault } from './vault.ts';
 
@@ -16,13 +16,11 @@ export function withSharedSecrets(v: Vault, o: {
   store: Pick<UserStore, 'events' | 'jobs'>;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
-  /** Whether a box step of the job runs on the machine now (issue #1004). */
-  stepsOn?: (jobId: string, machine: string) => boolean;
 }): Vault {
   const { events } = o.store;
 
   async function deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }> {
-    const box = boxAsk({ targets: o.targets, holds: o.holds, ...(o.stepsOn ? { stepsOn: o.stepsOn } : {}), job: (id) => o.store.jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, ask.token, machineKey);
+    const box = boxAsk({ targets: o.targets, holds: o.holds, job: (id) => o.store.jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, ask.token, machineKey);
     const { machine: m, job } = box;
     const refuse = (reason: string): { refused: string } => {
       events.append({
@@ -32,8 +30,6 @@ export function withSharedSecrets(v: Vault, o: {
       return { refused: reason };
     };
     if ('refused' in box) return refuse(box.refused);
-    const launched = launchRefusal(box.machine, ask.name);
-    if (launched) return refuse(launched);
     if (!v.scopeOf(box.machine.name).secrets.includes(ask.name)) return refuse(`${box.machine.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
     const r = await o.shared.read(ask.name, o.userId);
     if ('refused' in r) return refuse(r.refused);

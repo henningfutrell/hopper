@@ -1,0 +1,1 @@
+- When you connect GitHub from Sources, the GitHub account must have the email you signed in with as a verified email. The hopper checks it again each time it renews the connection. An admin can turn this check off in Settings.

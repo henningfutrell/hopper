@@ -1,12 +1,9 @@
-// Issue #1004: whose ask a box's vault ask is. A job on a seat does not run on the box; while it runs a box step there,
-// the box asks for it, and the vault takes that ask as the job's on the box — only on that box, and only while the step
-// runs. Every other check stays as it was.
+// Whose ask a box's vault ask is (issue #1004). A job on a seat does not run on the box, so the box's ask for it is
+// refused. Since issue #1349 no box step asks through a box: a box step runs in a sandbox of its own, minted for it.
 //
-// Feature: a box step's vault ask
+// Feature: a box's vault ask
 //   Scenario: a job that runs on another machine is refused by the box
-//   Scenario: while the job runs a box step on that box, the box's ask is the job's
-//   Scenario: a box step on one box gives nothing on another box
-//   Scenario: a job not at work is refused, box step or not
+//   Scenario: a job not at work is refused
 import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
 import type { Job } from '../../src/domain/types.ts';
@@ -22,22 +19,13 @@ const options = (o: Partial<BoxAskOptions> = {}): BoxAskOptions => ({
   targets, holds: (p) => holdsProxyToken(link.privateKey, p), job: (id) => (id === job.id ? job : undefined), ...o,
 });
 
-describe('a box step\'s vault ask (issue #1004)', () => {
+describe('a box\'s vault ask (issue #1004)', () => {
   it('a job that runs on another machine is refused by the box', () => {
     expect(boxAsk(options(), token, 'ka')).toMatchObject({ refused: 'the job does not run on box-a' });
   });
 
-  it('while the job runs a box step on that box, the box\'s ask is the job\'s', () => {
-    const r = boxAsk(options({ stepsOn: (jobId, machine) => jobId === 'j1' && machine === 'box-a' }), token, 'ka');
-    expect(r).toEqual({ machine: { name: 'box-a', template: 'asked-1' }, job });
-  });
-
-  it('a box step on one box gives nothing on another box', () => {
-    expect(boxAsk(options({ stepsOn: (_j, machine) => machine === 'box-a' }), token, 'kb')).toMatchObject({ refused: 'the job does not run on box-b' });
-  });
-
-  it('a job not at work is refused, box step or not', () => {
+  it('a job not at work is refused', () => {
     const ended = { ...job, status: 'finished' } as Job;
-    expect(boxAsk(options({ job: () => ended, stepsOn: () => true }), token, 'ka')).toMatchObject({ refused: expect.stringMatching(/not at work/) });
+    expect(boxAsk(options({ job: () => ended }), token, 'ka')).toMatchObject({ refused: expect.stringMatching(/not at work/) });
   });
 });

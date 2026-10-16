@@ -181,30 +181,24 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     }
 
     /**
-     * Issue #991: the template the needs make, then a box of it. Each wait is a 202 the job's --wait ends; the box that
-     * runs is a 200 with its name and the skills it loads.
+     * Issue #991: the template the needs make, then the approval of its sandbox runs. Each wait is a 202 the job's --wait
+     * ends; the approval is a 200 that says how the job runs each step (issue #1349): in a sandbox of its own, burned after it.
      */
     async function sandbox(): Promise<SkillAnswer> {
       const t = await user.requestTemplate(field(body, 'needs'), job, about);
       if ('reason' in t) return no(t.status, t.reason);
-      const later = ' Add --wait to have the hopper tell you when the box runs.\n';
+      const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
       if (t.status === 202) {
         user.sandboxWaits?.(t.template, job);
-        return { status: 202, text: `${t.text} Then the hopper starts the box.${later}` };
+        return { status: 202, text: `${t.text} Then the sandbox runs of it wait for approval.${later}` };
       }
       const r = user.sandbox(t.template, job, about);
-      if (r.state === 'waiting') return { status: 202, text: `waiting: the box of template ${t.template} waits for a person to approve the sandbox run on Access requests.${later}` };
-      if (r.state === 'starting') return { status: 202, text: `waiting: the box of template ${t.template} starts now, approved by ${r.approvedBy ?? 'a person'}.${later}` };
-      if (r.state === 'declined') return no(403, `a person declined the sandbox run of template ${t.template}: ${r.reason ?? 'no reason given'}. Find another way.`);
-      if (r.state === 'failed') return no(503, `the box of template ${t.template} did not start: ${r.reason ?? 'no reason given'}. A person starts one: hopper sandbox launch --template ${t.template}.`);
+      if (r.state === 'waiting') return { status: 202, text: `waiting: the sandbox runs of template ${t.template} wait for a person to approve them on Access requests.${later}` };
+      if (r.state === 'declined') return no(403, `a person declined the sandbox runs of template ${t.template}: ${r.reason ?? 'no reason given'}. Find another way.`);
       record('skill.loaded');
-      const skills = t.text.slice(t.text.indexOf('\nOn the box'));
-      // Issue #1009: the job stays where it runs, and the answer says so. Issue #1004: it runs its work in the box as box
-      // steps; the skills above load only in a job on the box, so it is told how a step reaches the vault there.
-      const elsewhere = box.template === t.template ? '' : `\n\nThis job runs on ${machine === undefined ? 'no machine' : `machine ${machine}`}, not on box ${r.container!}. The hopper does not move this job there: it runs each command that needs these assets in the box, as a box step, and gives back its output, exit code and outputs:\n  sh "$HOPPER_STEP" box ${r.container!} --command '<the command>'\nIn a box step, $HOPPER_SECRET is the vault's helper in the box: point each tool at it, and the vault mints a short-lived credential each time. The skills above load only in a job on the box: load the box-step skill instead (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs and the tools' set-up.`;
       return {
         status: 200,
-        text: `${SANDBOX_SKILL}: box ${r.container!} of template ${t.template} runs, approved by ${r.approvedBy ?? 'a person'}. It joins the hopper as a machine of that template; it ends at the template's time limit.${skills}${elsewhere}\n`,
+        text: `${SANDBOX_SKILL}: the sandbox runs of template ${t.template} are approved for this job, by ${r.approvedBy ?? 'a person'}. A sandbox never runs this job and never joins the hopper as a machine. Run each command that needs these assets as a box step: the hopper makes a new sandbox of template ${t.template} for the step, mints short-lived credentials for it there, gives back the output, exit code and outputs, and destroys the sandbox when the step ends. Nothing is kept between steps.\n  sh "$HOPPER_STEP" box ${t.template} --command '<the command>'\nLoad the box-step skill (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs, --plan-id and the credentials in the sandbox.\n`,
       };
     }
 

@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659) | http, decider |
@@ -59,7 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -73,14 +73,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
-| `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps") and box steps (issue #1004, "Box steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host or box, stopped at the timeout, recorded, results kept an hour; a box step runs through the sandbox module, given as `StepBoxes` (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
+| `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`), the sandbox requests jobs make (`requests.ts`, issue #991), one box step run in a box (`box-step.ts`, issue #1004); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the exec and archive calls both share (`exec.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
@@ -4760,6 +4760,8 @@ boxes), on #312's protocol. Built for #308: "Joining a machine" below.
 
 ## Joining a machine (issue #308, 2026-10-07)
 
+**Partly superseded (issue #1349).** Add machine adds a computer only: *A sandbox box*, its line and its `run` flags are removed, as a sandbox never joins as a machine. A join code names no container.
+
 Owner request, on the hopper in its container: adding a machine must be as easy as possible, and allow
 sandboxing. Built on #312's protocol and #310's add flow (above): **one Add machine action, one copied
 line**, and the machine dials in. This replaces the client target's ssh tunnel; ssh targets stay, for a
@@ -5001,6 +5003,8 @@ ask opened, refused outside the host's list, given after the grant and masked in
 
 ## Sandbox boxes the hopper launches (issue #603, 2026-10-09)
 
+**Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
+
 Owner direction, from a live test: a person had to start a sandbox box by hand, and removing its machine left the
 container running. The hopper now starts, stops and removes sandbox boxes itself, through rootless Podman. This is
 #310's option B, which that research put off; the owner asked for it.
@@ -5199,6 +5203,8 @@ its output read through the client, and nothing of it left.
 
 ### The agent credential (issue #708 part 10, 2026-10-12)
 
+**Partly superseded (issue #1349).** No box is launched, so the credential at launch (`src/sandbox/agent-credential.ts`) is removed; the vault's policy and a job pod's credential stay.
+
 Owner direction (2026-10-10): sandbox agent auth is inheritable from an approved source instead of a per-box `/login`;
 a new box of an approved template starts signed in where policy allows, and a one-time `/login` is the fallback. Before
 it, a person signed each box's agent in by hand (its home volume keeps the sign-in), and a box that nobody signed in
@@ -5297,6 +5303,8 @@ is `unreachable` until it passes again. `test/ui/sandbox-reach.test.ts`. Real ro
 bridge network the hopper is not on fails the launch with curl's own words, and leaves no container, volume or record.
 
 ### A launch's scope: what the vault gives a launched box (issue #708 part 4, 2026-10-11)
+
+**Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
 
 Before it, the launch's `secrets` and `profile` were kept on the sandbox record and nothing read them: a box got all
 its template's approved scope. Now the record is the box's scope, and the vault reads it:
@@ -10143,6 +10151,8 @@ Tests: `test/integration/operator-cli.test.ts`.
 
 ## The vault and sandbox boxes from the operator CLI (issue #716, part 1, 2026-10-10)
 
+**Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
+
 An agent that needs a template for its job could not make one: templates, vault secrets and sandbox launches were
 only `POST /ui/api/vault` and `POST /ui/api/machines/sandbox` behind an admin UI session, and the operator CLI had no
 command for them. They are now operator CLI commands, on the same footing as issue #374's: the UI's own routes on the
@@ -10230,6 +10240,9 @@ entry it cannot read refused), `test/skills/template-request.test.ts`, `test/int
 (`template read-policy`), `test/ui/vault-read-policy.test.ts`.
 
 ## Sandboxes jobs start (issue #991, 2026-10-13)
+
+Since issue #1349 ("Sandboxes are burned after each step"), an approved request starts no box: each box step runs in a
+sandbox of its own. What follows is the model before it, where it says the box starts.
 
 Owner's model (issue #991): sandboxes are started by jobs, not created by hand. A user never creates a sandbox, and
 approves sandbox runs only if they choose to. Before it, a job could ask for a template ("Templates on request"), but a
@@ -18742,6 +18755,9 @@ any repository; every write elsewhere refused; another user's job refused).
 
 ## Box steps (issue #1004, 2026-10-13)
 
+Since issue #1349 ("Sandboxes are burned after each step"), a box step names a template, not a box, and runs as a need
+step in a need box of its own; no box's helper asks the vault for the job. What follows is the model before it.
+
 Seen on a hopper (issue #1004, the ask of issue #990): a job on a seat asked for a sandbox, the hopper started box B for
 it, and the job failed: `$HOPPER_STEP` took only Windows hosts, and its commands did not reach B. Seats never hold infra
 access; the minted credentials are only in the box. Owner direction (issue #990): the job asks the hopper, the hopper
@@ -18866,7 +18882,7 @@ runtime through a machine's relay had no `listVolumes`, so the check pass's home
   name alone is no proof the hopper made it; one already gone answers 404, as before.
 - **Left.** The need box sweep (`sweepSteps`, `service.ts`) still runs only beside the hopper: a need box a client
   target leaked stays there until a later step on that machine. Issue #1349 (#1368) rewrites that sweep and its ledger;
-  the sweep of client targets goes with it.
+  the sweep of client targets goes with it. (Done by #1349 part 3: "Sandboxes are burned after each step".)
 
 Tests: `test/client/runtime.test.ts` (a need box carried under its own label and name, with a wrong name refused; the
 volumes of a label listed; a volume with a home's name and no sandbox label not removed), `test/adapters/remote-runtime.test.ts`
@@ -21659,9 +21675,19 @@ said what did not hold the loop, never what did.
   resolution: `mean`, `p50`, `p99`, `max` in ms) and its use (`eventLoopUtilization`, 0..1). The minute going on is
   answered in place of the last one when it held the loop longer, so a stall shows at once. Memory growth and a slow
   loop show here before they are a stall, with no container runtime to ask (`podman stats`).
+- **The heap-growth check** (`test/reliability/heap-growth.test.ts`, part 5). It runs locally, never as a pull request
+  check: it takes minutes, and a heap bound is a reading of the machine. `HOPPER_HEAP_CHECK=1` runs it; the file is
+  skipped without it. It drives one real hopper idle for 30 s, then busy: 3 rounds of warm-up and 12 measured rounds
+  (`HOPPER_HEAP_CHECK_ROUNDS`, `HOPPER_HEAP_CHECK_IDLE_MS`), each a GitHub sync, an intake action the outbox sends, 10
+  jobs to their end, 5 event-stream readers that come and go, and 5 checkpoints that fail (`git could not read the work
+  tree`). It reads the heap used after a forced garbage collection (`gc`, exposed in the test process only) and checks
+  it grows less than 8 MiB idle and 24 MiB busy after the warm-up. Each reading is logged (`heap check: …`). First run
+  (2026-10-15): idle 139.2 → 140.8 MiB; busy 144.7 → 145.8 MiB over 12 rounds, with no growth trend. So none of the
+  activity it drives holds memory with no bound. The same run stalled the loop for 3 to 9 s from about 150 jobs, each
+  stall hundreds of `SELECT jobs` calls: issue #1411.
 - **Not done here.** No other code is moved off the loop: the cause found (the waits, part 3) was in the loop's own work,
-  not code that needs a thread. A heap-growth check run locally (an idle and a busy hopper driven for a time, the heap
-  read after a forced garbage collection) and the smaller collections with no bound (issue #1402) are left.
+  not code that needs a thread. Left: the smaller collections with no bound (issue #1402) and the reads of `jobs` in a
+  busy hopper (issue #1411).
 
 **Verification:** `test/http/event-loop.test.ts` (a stall names the code the loop ran while held, from the real worker;
 `heldSince`, a stall going on included; the memory line once per GiB; `frameOf` never an absolute path),
@@ -21673,7 +21699,8 @@ stream its reader closed is no longer in flight), `test/github-proxy/pr-wait.tes
 hear a user's event log once, however often they are answered again), `test/http/event-loop.test.ts` part 4 (the health
 port answers 200 while the beat is fresh and 503 with the held time while another process asks it with this one held; a
 host that is not loopback 421, another path 404; no port, no listener; the process reading's memory and loop delay, and a
-held loop in its `max`), `test/integration/config.test.ts` (`HOPPER_HEALTH_PORT`).
+held loop in its `max`), `test/integration/config.test.ts` (`HOPPER_HEALTH_PORT`), `test/reliability/heap-growth.test.ts`
+(part 5, local only: the heap of an idle and a busy hopper stays in a bound).
 
 ## Local accounts (issue #1380, part 1, 2026-10-15)
 
@@ -21853,3 +21880,150 @@ browsers signed in with GitHub, GitHub revokes the grant, both sessions live, no
 `expired`; Connect GitHub again from the same session makes it `connected`; a renewal ends no session),
 `test/ui/sources-view.test.ts` (signed in with GitHub, an ended connection keeps the session, the header asks to
 reconnect, and the panel's Connect GitHub again shows the device code).
+
+## Sandboxes are burned after each step (issue #1349, 2026-10-15)
+
+Owner's model (issue #1349): a sandbox does one task and is then burned. A sandbox is **not** a registered machine and
+has no lane, but the hopper tracks each one in a ledger. Seen on a hopper before it: the machines config held 13
+`hopper-sandbox-*` client machines (one lane each) next to the real seats; boxes were up for hours, exited boxes were never
+removed, and one was stuck in Created. A job's `sandbox` ask started a box that joined as a machine, and the job's box
+steps (issue #1004) ran in that box between other jobs' work.
+
+- **An approval starts nothing** (`src/sandbox/requests.ts`). A sandbox request's states are `waiting`, `approved`,
+  `declined`; `starting`, `running` and `failed` are gone, and so are the background start and its time limit (issue
+  #1002). `vault.sandbox_approved` is the last event of an approved request; `vault.sandbox_started` and
+  `vault.sandbox_failed` stay in the event registry for the events kept from before. The `sandbox` answer (200) says the
+  runs are approved, that a sandbox never runs the job and never joins as a machine, and how to run each command:
+  `sh "$HOPPER_STEP" box <template>`.
+- **A box step is a need step** (`NeedSteps.box`, `src/sandbox/need-steps.ts`; route `POST /job/step?box=`). The box it
+  names is a template of one of the job's approved sandbox requests (`GET /job/step` lists them `box T  template T`).
+  The template must be ready now (approved, image approved, no profile waiting, its read-only check passed). The step runs
+  in a new **need box** of the template, minted `boxNeeds`: each of the template's profiles the vault mints for a step
+  (an aws-role, a cluster, a namespace) that reads, and with `--plan-id` every one, through the apply gate as a need
+  step's change is. A `--secret` is refused. Nothing is kept between steps: the job brings back with `--output` what its
+  next step needs. The box step that ran in a long-lived box (`src/sandbox/box-step.ts`, the module's `step`), the
+  Windows steps' box branch (`StepBoxes`, `onBox`) and the vault's `stepsOn` are removed: no box's helper asks for a job
+  any more.
+- **The sandbox runs ledger** (`SandboxRun`, `src/domain/sandbox-runs.ts`; instance migration 42, table `sandbox_runs`,
+  `src/store/sandbox-runs.ts`). The sandbox module's `needStep` — the one way a need step or a box step runs — writes a
+  run when the need box starts: user, job, step id, template, box, machine, start. When the step ends: end, outcome
+  (`succeeded` for exit 0 with no problem, else `failed`), exit code, problem. Then it lists the runtime's need boxes;
+  one still there is burned again, and once the box is gone, `destroyedAt`. `GET /api/sandboxes` answers the user's 50
+  latest runs (`runs`).
+- **The sweep** (the check pass, every 10 s, beside the hopper). Every need box of this hopper that no step holds is
+  burned: stopped, removed, its home volume removed. Then every run beside the hopper not destroyed whose box is gone is
+  marked destroyed, and one whose step never ended (a hopper that stopped mid-step) ends as `swept`. A box whose remove
+  fails stays open in the ledger, and the next sweep tries again.
+- **Registered sandboxes leave `machines`** (tenant migration 70, `src/store/migration-no-sandbox-machines.ts`). Each
+  `client` machine whose `container` names a `hopper-sandbox-…` box is removed from the user's `plugins` record. At the
+  next start the daemon closes the lanes of machines it does not know (recovery), and the burn pass burns their boxes,
+  with their sandbox records (part 2, below). A job that ran on such a box is requeued or failed by the
+  restart's recovery, as for any machine that went.
+
+**Decided here.** A box step mints only the template's reads unless the step names an approved plan: a long-lived box
+had every profile and the apply gate checked each change at its mint; a step names its plan up front, as a need step
+does. The template name is the box a step names, as the step no longer has a container of its own until it runs.
+
+**Part 2: no sandbox joins as a machine.** The person's test path that still started one is removed.
+
+- **No launch.** Machines → Add machine adds a computer only (`ui/src/views/machine-join.tsx`); *A sandbox box*, its
+  launch parameters and its `podman run` line are gone. `POST /ui/api/machines/sandbox`, its OpenAPI entry and its
+  `BOX_ACTIONS` row, `hopper sandbox launch`, `launchBox` (`src/sandbox/launch.ts`), the reconcile pass
+  (`src/sandbox/reconcile.ts`), the box's address (`address.ts`), the agent credential at launch, and the record cache
+  (`records.ts`) are removed. `POST /ui/api/machines/join` takes `template` only: no `box` flags. A join code names no
+  `container`, and the `client` machine plugin has no `container` option (tenant migration 70 removed every machine
+  that had one).
+- **The burn pass** (`src/sandbox/burn-launched.ts`, every 10 s and at start). Each box an older build launched — it
+  carries `io.hopper.box` with this hopper's instance id — is stopped and removed with its home volume, beside the
+  hopper and on each client target that holds a recorded box, through its client. The record goes once its box is gone.
+  A box it cannot remove is a cleanup problem on Machines (`GET /api/sandboxes` `problems`) until a pass removes it; a
+  client target that is away keeps its boxes and their records until it dials in. The check pass's sweep also removes
+  the home volumes of those boxes. The `sandboxes` table stays, so the build before still runs on the store; the hopper
+  writes no row to it.
+- **The runtime port is smaller.** The start check (`startCheck`, the spec's `check`, the health check in the create
+  bodies) and `exec` are removed: only a launched box used them. `copyIn` stays for need boxes (`copy-in.ts`).
+- **A machine's client makes no sandbox box** (`src/client/runtime.ts`): it creates only check boxes and need boxes, and
+  refuses a create with a health check or the `healthcheck` call. It still stops, inspects and removes a box an older
+  hopper launched, so the burn pass reaches it.
+- **The vault's launch scope is removed** (`LaunchScope`, `withLaunch`, `launchRefusal`, `launchedOf`): only a launched
+  box had one. A machine joined as a template's instance gets what the template gives, as before.
+- `GET /api/sandboxes` answers `runs` and `problems` only.
+
+**Part 3: the sweeps reach client targets.** Before, the sweep and the burn pass looked beside the hopper, and the burn
+pass also at a client target a sandbox record named: a need box a client target leaked stayed there, its run stayed open,
+and a box an older build launched there with no record was never found.
+
+- **Every client target dialled in** (`ClientTargets.allDialledIn`, `src/users/sandbox-boxes.ts`): each user's client
+  targets whose link is up now. The burn pass looks on each of them and on each one a sandbox record names; the sweep on
+  each of them and on each one an open sandbox run names.
+- **The sweep on a client target** (`sweepPlaces`, `sweepSteps`, `src/sandbox/service.ts`) burns there, through its
+  client, each need box of this hopper and of that target's user that no step holds, with its home, as beside the hopper.
+  Each open run of that user on that target whose box is gone is marked destroyed; one whose step never ended ends as
+  `swept`. It lists only that user's boxes (`io.hopper.user`): another user's client on the same runtime keeps theirs.
+  The sweep of homes (`sweepHomes`) runs there too, for need boxes and for boxes an older build launched.
+- **A target that is away** keeps its boxes, and its runs stay open, until it dials in again; the next sweep then burns
+  them. A run on a client target that is removed for good stays open.
+
+**Not built.** A template's `ttlMinutes` and `keepHome` limits are still saved and shown, but no box reads them now.
+The jobs that wait on template checks or approvals of `asked-…` templates are not changed here. A run on a client target
+removed for good is never closed.
+
+Tests: `test/sandbox/requests.test.ts` (an approval starts nothing), `test/sandbox/need-steps.test.ts` (a box step:
+reads minted, changes with a plan, refusals), `test/sandbox/sandbox-runs.test.ts` (the ledger from start to destroy, a
+failed step, a remove that failed and the next sweep, a box left by a hopper that stopped), `test/store/sandbox-runs.test.ts`,
+`test/store/tenant-migration-70.test.ts`, `test/integration/box-steps.test.ts` (the real daemon, `hopper-skill` and
+`hopper-step`: two steps, two sandboxes, none left, no machine, the ledger), `test/integration/job-sandboxes.test.ts`,
+`test/integration/skill-wait-wakes-job.test.ts`. Part 2: `test/integration/launched-boxes.test.ts` (Add machine starts no box;
+boxes launched before are burned, with their homes and records; a box it cannot burn is shown until it goes),
+`test/integration/sandbox-remote.test.ts` (the burn on a client target, through its client; away, then dialled in; the
+client makes no sandbox box), `test/client/runtime.test.ts`, `test/ui/template-limits-view.test.ts`. Part 3: `test/sandbox/sweep-remote.test.ts` (a need
+box left on a client target burned with its home and its run swept; another user's box stays; away, then dialled in; a
+launched box with no record burned), `test/integration/sandbox-remote.test.ts` (the same through a real client).
+
+## The source email match (issue #1380, part 4, 2026-10-15)
+
+Owner decision 4 on issue #1380: every source identity a user attaches must have a verified email equal to the user's
+SSO or realm email; a GitHub source whose verified emails do not include it is refused with a clear message; the match is
+checked again on token refresh; a setting, on by default, that an admin can turn off. Acceptance test: attaching a source
+whose verified emails do not match is refused with a clear message; with the setting off, it is allowed.
+
+**The check** (`src/connected-accounts/email-match.ts`, `service.ts`):
+- **At the connect from Sources.** `POST /ui/api/connected-accounts` `connect` hands the service the email of the
+  session's identity (`Identity.email`: only an address the realm vouches for). Once the device code is approved, the
+  service reads who the token belongs to (`identity.ts` `whoIs`, now with `verifiedEmails`: every email `GET
+  /user/emails` says is verified). None equal to the session's email (both trimmed, lowercase), or no emails shown: the
+  account is not kept, its new grant is deleted at GitHub (best effort, as for a replaced grant, issue #514), and the
+  status is `failed` with the reason. A match is kept on the account as `matchEmail`.
+- **At each renewal.** The renewer, once the new pair is kept, asks the service (`afterRenewal`): an account with a
+  `matchEmail`, while the setting is on, is read again; one that lost the email ends as an expired sign-in does
+  (`end`: `ended`, `connected_account.expired`, its source paused, the owner told once), and the renewal throws, so no
+  token is given. The session stays (part 3). GitHub not answering the read ends nothing: it is logged.
+- **Not checked.** A sign-in with GitHub (`adopt`) and a held grant taken from Sources: the account is the person's own
+  identity there. A session whose identity gave no email (no sign-in, a login code): nothing to match. An account kept
+  before this change has no `matchEmail`, so its renewals do not check it until it is connected again.
+
+**The setting** (`src/http/source-email-match.ts`, `src/http/ui/source-email-match.ts`): the instance's settings key
+`sourceEmailMatch` (`on`/`off`; never set: on), read at each check, so a change applies at once. `GET
+/api/source-email-match` (an instance read), `POST /ui/api/source-email-match` `{ on }` (the instance admin), each
+change `source_email_match.changed`. UI: Settings → Sign-in → Source email match; Sources shows the email an account was
+connected for.
+
+**Decisions:**
+- **Emails GitHub does not show refuse the connect.** The owner's rule needs a verified email; with none to read, the
+  hopper cannot say it matches. The message says so and names the setting.
+- **At a renewal, emails GitHub does not show end nothing.** `whoIs` cannot tell a refused email read from GitHub not
+  answering it, and ending a working connection on a network fault would cost the person a reconnect.
+- **The email checked again is the one kept at the connect,** not the email of a later session: the user model keeps no
+  email of its own yet (identity keyed by email is a later part of issue #1380).
+- **No migration.** `matchEmail` is a new optional field of the `connected_accounts` row's JSON body; the build before reads
+  the row and ignores it.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+GitHub by OAuth or a personal access token, with no GitHub App required; the acting identity shown per job; the migration
+of GitHub-signed-in users to hopper users with GitHub attached as a source; Kubernetes and service-account tokens.
+
+**Verification:** `test/connected-accounts/source-email-match.test.ts`: an account with the session's email connects and
+keeps it; one without it, or whose emails GitHub does not show, is refused with the message and nothing is kept; with the
+setting off it connects; a session with no email connects; a renewal ends an account that lost the email, keeps one that
+has it, and checks nothing with the setting off or when GitHub does not answer; `whoIs` lists every verified email.
+`test/integration/source-email-match.test.ts`: the setting's routes, its default, the instance admin's alone, and its event.

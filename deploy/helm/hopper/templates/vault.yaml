@@ -118,11 +118,9 @@ spec:
               mountPath: /run/hopper-database
               readOnly: true
             {{- end }}
-            {{- if include "hopper.masterKeyFromFile" . }}
             - name: master-key
               mountPath: /run/hopper-master-key
               readOnly: true
-            {{- end }}
       volumes:
         - name: secrets
           secret:

@@ -189,6 +189,7 @@ function ConnectionHealth({ s, name }: { s: Extract<ConnectedAccountStatus, { st
   return (
     <dl data-connection-health className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
       <dt>Connected</dt><dd data-connected-at>{when(s.connectedAt)}{by ? `, ${by}` : ''}{flow ? `, through ${flow}` : ''}</dd>
+      {s.matchEmail && <><dt>Email</dt><dd data-match-email className="break-words">{s.matchEmail}, checked at each renewal</dd></>}
       <dt>Last renewal</dt><dd data-renewed-at>{when(s.renewedAt)}</dd>
       <dt>Next renewal</dt><dd data-next-renewal>{s.nextRenewalAt ? when(s.nextRenewalAt) : 'none: its token does not renew'}</dd>
       <dt>Last error</dt><dd data-last-error className={s.lastError ? 'break-words text-warn' : undefined}>{s.lastError ? `${when(s.lastError.at)}: ${s.lastError.error}` : 'none'}</dd>

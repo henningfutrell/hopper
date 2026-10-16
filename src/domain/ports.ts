@@ -785,8 +785,11 @@ export interface ConnectedAccounts {
    * held until the person takes or drops it (issue #647).
    */
   adopt(connection: Connection): Promise<void>;
-  /** Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. */
-  connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  /**
+   * Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. `email`:
+   * the email the person signed in with (issue #1380): with the source email match on, the account must have it verified.
+   */
+  connect(provider: ConnectedAccountProvider, by?: { email?: string }): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
   /** Replace the connection with the held grant of a sign-in (issue #647); running jobs are handed its token. */

@@ -28,25 +28,25 @@ const relay = (which: Awaited<ReturnType<RuntimeRelay['which']>>): RuntimeRelay 
 /** The user `u` has two client targets dialled in: `away` with no runtime, then `studio` with Podman. */
 const clients: ClientTargets = Object.assign(
   (_userId: string, machine: string) => {
-    if (machine === 'away') return { relay: relay({ problem: 'no Podman or Docker socket on this machine' }), dialled: () => 'http://hopper.test:4790' };
-    if (machine === 'studio') return { relay: relay({ kind: 'podman' }), dialled: () => 'http://hopper.test:4790' };
+    if (machine === 'away') return { relay: relay({ problem: 'no Podman or Docker socket on this machine' }) };
+    if (machine === 'studio') return { relay: relay({ kind: 'podman' }) };
     return undefined;
   },
-  { dialledIn: (userId: string) => (userId === 'u' ? ['away', 'studio'] : []) },
+  { dialledIn: (userId: string) => (userId === 'u' ? ['away', 'studio'] : []), allDialledIn: () => [{ userId: 'u', machine: 'away' }, { userId: 'u', machine: 'studio' }] },
 );
 
 describe('where the read-only check runs (issue #708)', () => {
   it('beside the hopper when it is given a runtime; else the first client target dialled in with one; else nowhere', async () => {
     const local = createFakeContainerRuntime();
-    const beside = createPlacements({ local, network: 'hopper_default', joinUrl: () => 'http://hopper:4790', clients });
+    const beside = createPlacements({ local, network: 'hopper_default', clients });
     expect(await beside.forCheck('u')).toEqual({ machine: 'local', runtime: local, network: 'hopper_default' });
 
-    const none = createPlacements({ local: undefined, network: 'hopper_default', joinUrl: () => 'http://hopper:4790', clients });
+    const none = createPlacements({ local: undefined, network: 'hopper_default', clients });
     const at = await none.forCheck('u');
     expect(at).toMatchObject({ machine: 'studio', network: 'host' });
     expect(at!.runtime.kind).toBe('remote');
     expect(await none.forCheck('v')).toBeUndefined();
-    expect(await createPlacements({ local: undefined, network: 'host', joinUrl: () => '' }).forCheck('u')).toBeUndefined();
+    expect(await createPlacements({ local: undefined, network: 'host' }).forCheck('u')).toBeUndefined();
   });
 
   it('a hopper with no runtime checks the template on a client target, and removes the check boxes no run holds there first', async () => {

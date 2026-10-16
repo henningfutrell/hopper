@@ -1,6 +1,6 @@
 # The compose.sandboxes.yaml issue #603 shipped, which installs saved as compose.override.yaml. Issue #1157 put its socket in
 # compose.yaml; the update moves this file aside (test/scripts/update.test.ts).
-# Optional (issue #603, docs/deploy.md "Sandbox boxes the hopper starts"): the hopper starts, stops and removes sandbox
+# Optional (issue #603, docs/deploy.md "Sandboxes the hopper starts"): the hopper starts, stops and removes sandbox
 # boxes itself, through your rootless Podman. Without this file, Add machine → A sandbox box shows a line you run.
 #
 # It gives the hopper's container your rootless Podman API socket: whoever controls the hopper can then start

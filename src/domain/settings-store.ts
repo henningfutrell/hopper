@@ -188,6 +188,9 @@ export interface InstanceSettingsRepository {
   /** The hosts the admin allowed beyond the LAN names (issue #1024); empty: never set. */
   getAllowedHosts(): string[];
   setAllowedHosts(hosts: readonly string[]): void;
+  /** The source email match (issue #1380): an account connected from Sources must have its person's email verified; never set: on. */
+  getSourceEmailMatch(): boolean;
+  setSourceEmailMatch(on: boolean): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */

@@ -1,16 +1,14 @@
 // Which container runtime a sandbox box starts through (issue #708): decided here and nowhere else.
 // - Beside the hopper (`local`): the runtime selected once at start. A runtime configured (HOPPER_SANDBOX_RUNTIME)
 //   wins. Else Podman whenever it is reachable — the primary runtime —, then Docker when it is; neither reached, the
-//   one given first, so Add machine says why it cannot start one. Kubernetes (issue #1286) only when it is configured:
+//   one given first, so a need step says why it cannot run. Kubernetes (issue #1286) only when it is configured:
 //   pods in a namespace, through the Kubernetes API, with no socket.
 // - On a client target: the remote runtime (remote.ts), that machine's own Podman (else Docker) through its client.
-//   The box is on that machine's network and dials the hopper where the machine's client did: an address the client
-//   proved by dialling in on it (issue #695).
+//   The box is on that machine's network.
 import { statSync } from 'node:fs';
 import type { ContainerRuntime, RuntimeKind, RuntimeRelay } from '../domain/sandboxes.ts';
 import { createDockerRuntime } from './docker.ts';
 import { createKubernetesRuntime } from './kubernetes.ts';
-import { LaunchRefused } from './launch.ts';
 import { createPodmanRuntime } from './podman.ts';
 import { createRemoteRuntime } from './remote.ts';
 
@@ -64,28 +62,22 @@ export const LOCAL = 'local';
 export const REMOTE_NETWORK = 'host';
 /** A hopper in a Kubernetes pod (issue #1289): no socket is a fault to fix there; sandbox boxes do not run in the cluster yet (issue #1281). */
 export const NO_RUNTIME_IN_CLUSTER = 'the hopper runs in a Kubernetes cluster: it starts no sandbox box beside itself there';
-export const NO_RUNTIME = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot start sandbox boxes itself. docs/deploy.md "Sandbox boxes the hopper starts"';
+export const NO_RUNTIME = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot start sandboxes itself. docs/deploy.md "Sandboxes the hopper starts"';
 
-/** A user's client target named `machine`: its runtime relay, and the hopper's URL as it dialled in. Undefined: none. */
+/** A user's client target named `machine`: its runtime relay. Undefined: none. */
 export interface ClientTargets {
-  (userId: string, machine: string): { relay: RuntimeRelay; dialled(): string | undefined } | undefined;
+  (userId: string, machine: string): { relay: RuntimeRelay } | undefined;
   /** The names of the user's client targets dialled in now. */
   dialledIn(userId: string): string[];
+  /** Every user's client targets dialled in now (issue #1349): where the sweeps look for boxes left there. */
+  allDialledIn(): { userId: string; machine: string }[];
 }
-
-/** Where a box runs, and how it is made there. */
-export interface Placement { machine: string; runtime: ContainerRuntime; network: string; joinUrl: string }
 
 export interface Placements {
   /** The runtime beside the hopper; undefined: none is given. */
   readonly local: ContainerRuntime | undefined;
-  /**
-   * Where a box of the user's launch runs: `machine` absent or `local`, beside the hopper; else that client target.
-   * Throws LaunchRefused for a machine that is no client target (400) or cannot take a box now (409), else an Error.
-   */
-  place(userId: string, machine?: string): Promise<Placement>;
-  /** The runtime a recorded box runs in, and where a box there dials the hopper; undefined: none now (no runtime here, or no such client target). */
-  runtimeOf(userId: string, machine: string): { runtime: ContainerRuntime; joinUrl: string } | undefined;
+  /** The runtime a box on `machine` runs in; undefined: none now (no runtime here, or no such client target). */
+  runtimeOf(userId: string, machine: string): ContainerRuntime | undefined;
   /**
    * Where a read-only check of the user's template runs (issue #708): beside the hopper when it is given a runtime, else
    * on the first of the user's client targets dialled in now with a runtime there. Undefined: nowhere now.
@@ -93,43 +85,20 @@ export interface Placements {
   forCheck(userId: string): Promise<{ machine: string; runtime: ContainerRuntime; network: string } | undefined>;
 }
 
-/**
- * `joinUrl`: where a box beside the hopper dials it, as configured; `address`, when given, sets it at each launch from
- * what the runtime says of the hopper (address.ts).
- */
-export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; joinUrl: () => string; address?: (runtime: ContainerRuntime) => Promise<string>; clients?: ClientTargets; noRuntime?: string }): Placements {
+export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets }): Placements {
   // Made at each look: a machine that joined again under the same name has a new link key.
-  const remote = (userId: string, machine: string): { runtime: ContainerRuntime; dialled(): string | undefined } | undefined => {
+  const remote = (userId: string, machine: string): ContainerRuntime | undefined => {
     const target = o.clients?.(userId, machine);
-    return target && { runtime: createRemoteRuntime(machine, target.relay), dialled: target.dialled };
+    return target && createRemoteRuntime(machine, target.relay);
   };
   return {
     local: o.local,
-    async place(userId, machine) {
-      if (machine === undefined || machine === LOCAL) {
-        if (!o.local) throw new Error(o.noRuntime ?? NO_RUNTIME);
-        const problem = await o.local.problem();
-        if (problem) throw new Error(problem);
-        return { machine: LOCAL, runtime: o.local, network: o.network, joinUrl: o.address ? await o.address(o.local) : o.joinUrl() };
-      }
-      const target = remote(userId, machine);
-      if (!target) throw new LaunchRefused(400, `no client target ${machine}: a sandbox box starts on the computer the hopper runs on, or on a machine that joined with Add machine`);
-      const problem = await target.runtime.problem();
-      if (problem) throw new LaunchRefused(409, problem);
-      const joinUrl = target.dialled();
-      if (!joinUrl) throw new LaunchRefused(409, `${machine} has not dialled in since the hopper started: its box would not know where the hopper is`);
-      return { machine, runtime: target.runtime, network: REMOTE_NETWORK, joinUrl };
-    },
-    runtimeOf(userId, machine) {
-      if (machine === LOCAL) return o.local && { runtime: o.local, joinUrl: o.joinUrl() };
-      const target = remote(userId, machine);
-      return target && { runtime: target.runtime, joinUrl: target.dialled() ?? '' };
-    },
+    runtimeOf: (userId, machine) => (machine === LOCAL ? o.local : remote(userId, machine)),
     async forCheck(userId) {
       if (o.local) return { machine: LOCAL, runtime: o.local, network: o.network };
       for (const machine of o.clients?.dialledIn(userId) ?? []) {
-        const target = remote(userId, machine);
-        if (target && (await target.runtime.problem()) === undefined) return { machine, runtime: target.runtime, network: REMOTE_NETWORK };
+        const runtime = remote(userId, machine);
+        if (runtime && (await runtime.problem()) === undefined) return { machine, runtime, network: REMOTE_NETWORK };
       }
       return undefined;
     },

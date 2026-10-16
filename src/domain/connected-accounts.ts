@@ -71,6 +71,8 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
      * takes it (it replaces this connection) or drops it. A sign-in never quietly replaces a working connection.
      */
     held?: { account: string; at: string };
+    /** The email the account was connected for (issue #1380, the source email match); each renewal checks it again. Absent: not checked. */
+    matchEmail?: string;
   }
   | { state: 'not-connected' }
   /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */

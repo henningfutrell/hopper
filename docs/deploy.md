@@ -134,8 +134,9 @@ systemctl --user restart hopper-compose.service                 # each start: th
 - **Host install** (systemd --user): seal it with `systemd-creds --user encrypt --name=hopper-master-key - <file>`, and
   give it to the unit in a drop-in: `LoadCredentialEncrypted=hopper-master-key:<file>` and
   `Environment=HOPPER_MASTER_KEY_FILE=%d/hopper-master-key`. Remove `HOPPER_MASTER_KEY` from `daemon.env`.
-- **Kubernetes.** The master key Secret, filled by the External Secrets Operator from an outside store ("On Kubernetes,
-  with Helm"). A Helm upgrade needs no key from you; a missing Secret stops the pod.
+- **Kubernetes.** The master key Secret: the chart's own, made at the first install and kept, or one you give, or one the
+  External Secrets Operator fills from an outside store ("On Kubernetes, with Helm"). A Helm upgrade needs no key from
+  you; a missing Secret stops the pod.
 
 **The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
 every log line goes through a mask that removes the key in any form. To see the key's status without the key:
@@ -272,12 +273,10 @@ is only in the hopper's environment, given at launch.
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
   attached machines (`README.md` "Add machines"); the image carries herdr's CLI for them. The Machines
   view offers no **Add this machine** here. To run jobs on the computer the container runs on, use
-  **Add machine** → *A computer*, and run the line it shows there (issue #308, `README.md` "A computer
-  or a sandbox box: one line"): the computer dials in to the published port, so nothing is set up
-  inside the container and nothing leans on a `~/.ssh` (issue #293). *A sandbox box* starts a
-  locked-down container on the compose network `hopper_default`, which reaches the hopper as
-  `http://hopper:<port>` — the compose file's `HOPPER_LAN_NAMES` and `HOPPER_LAN_PEERS` defaults let it
-  through. The box keeps no copy of the join code (issue #606): its entrypoint moves `HOPPER_JOIN` into a
+  **Add machine**, and run the line it shows there (issue #308, `README.md` "A computer: one line"):
+  the computer dials in to the published port, so nothing is set up inside the container and nothing
+  leans on a `~/.ssh` (issue #293). A sandbox never joins as a machine (issue #1349): a job's step
+  runs in a sandbox of its own on the compose network `hopper_default`, burned after the step. The box keeps no copy of the join code (issue #606): its entrypoint moves `HOPPER_JOIN` into a
   file only the box's user can read and starts itself again without the variable; the client reads that
   file once and removes it, joined or not. So the box's processes, herdr and the jobs do not get the code,
   and a restart dials in with the box's link, not the spent code. The container's own config still holds the
@@ -353,7 +352,7 @@ is only in the hopper's environment, given at launch.
        (`$XDG_RUNTIME_DIR/podman/podman.sock`, issue #1157): when `podman.socket` is on, the new file gives it to the
        hopper; when it is off, the update goes on without it and says the line that turns it on (`systemctl --user
        enable --now podman.socket`). A `compose.override.yaml` that is the old `compose.sandboxes.yaml` goes to
-       `compose.override.yaml.bak` ("Sandbox boxes the hopper starts" below).
+       `compose.override.yaml.bak` ("Sandboxes the hopper starts" below).
        **First it checks the new `compose.yaml` with your `compose.override.yaml`** as compose merges them (issue #1246,
        `hopper update check`): a target mounted twice or a host port published twice makes `up -d` fail, so the update
        stops before it changes anything, and says the file, the service, the key and the fix
@@ -733,21 +732,37 @@ helm install hopper deploy/helm/hopper --namespace hopper --create-namespace
 kubectl --namespace hopper port-forward svc/hopper 4790      # then open http://localhost:4790/
 ```
 
-Sign in with GitHub: the first person to do so is the admin. Then give the master key ("The master key"). The first start
-makes one and shows it once, in the UI. Keep it in a password manager, then put it in a Secret and restart the hopper:
+Sign in with GitHub: the first person to do so is the admin.
+
+**The master key** ("The master key", issue #1406). The install makes it: a new random key (32 bytes, as 64 hex digits)
+in the Secret `hopper-master-key` (`<release>-master-key`), under `master-key`. The hopper reads it from that Secret's
+file, so a new pod (a restart, an upgrade, a moved node) starts on the same key. Each upgrade reads the key back from the
+Secret and keeps it, and an uninstall keeps the Secret (`helm.sh/resource-policy: keep`). Keep a copy in a password
+manager: without it, a lost namespace or cluster opens none of the hopper's secrets.
 
 ```sh
-read -rs KEY && kubectl --namespace hopper create secret generic hopper-master-key --from-literal=master-key="$KEY"
-kubectl --namespace hopper rollout restart deployment/hopper
+kubectl --namespace hopper get secret hopper-master-key -o jsonpath='{.data.master-key}' | base64 -d
 ```
+
+- **Bring your own key**: `--set masterKey.value=<64 hex digits>` (`openssl rand -hex 32`, or base64 of 32 bytes). The
+  chart puts it in the same Secret. Helm keeps values in its release record in the namespace, so the key is there too:
+  prefer `masterKey.existingSecret` (below) when that matters.
+- **A Secret made before the install.** A `hopper-master-key` Secret made with `kubectl` before `helm install` is used as
+  it is: the chart does not change or take it over.
+- **Rotate**: put the old key under `previous` in the Secret and the new key under `master-key`, then
+  `kubectl --namespace hopper rollout restart deployment/hopper`. The chart keeps both at the next upgrade (unless
+  `masterKey.value` names another key). Once the log says every secret is sealed again, remove `previous`.
+- **An install made before this.** Its hopper made its key at its first start, and holds it only in memory. An upgrade
+  that finds no Secret `hopper-master-key` stops before any pod does: a new key would lose the old one. Save the key
+  from the UI (**Show the key (once)**), then give it: `--set masterKey.value=<the key>`, or make the Secret with
+  `kubectl` as above.
+- **A tool that renders the chart with no cluster** (`helm template`, Argo CD): it cannot read the Secret back, and makes
+  a new key at each render. Give the key with `masterKey.existingSecret` there.
 
 **Move a compose install here** (issue #1373): `docs/kubernetes.md`. `hopper-cluster.sh bootstrap` makes a small
 cluster on this host (k3s, rootless, beside Podman), and `hopper-cluster.sh migrate` moves the database, the master key
 and the hopper's own settings into the chart's release, then stops the compose stack (not removed). `hopper-cluster.sh
 rollback` starts compose again.
-
-To give a key from the first start, make that Secret before `helm install`. A rotation puts the old key under
-`previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`).
 
 **The master key from a Secret you manage** (issue #1288). Set `masterKey.existingSecret` to a Secret with the key
 under `master-key`. The chart mounts it as files, and the hopper reads `HOPPER_MASTER_KEY_FILE`. A start with no
@@ -795,7 +810,8 @@ vault then runs in the hopper, under the master key.
 | `solr.enabled` | `false`: no Solr, and no search |
 | `networkPolicy.enabled` | NetworkPolicies: only the hopper, OpenFGA, its migration and the vault pod reach Postgres; only the hopper reaches OpenFGA, Solr, the vault pod and the tunnel services; only the pod the vault runs in reaches the local KMS. Default on; they take effect where the network plugin enforces them |
 | `tunnel.ngrok.enabled`, `tunnel.cloudflared.enabled`, `postgres.bundled`, `postgres.external.existingSecret` | the other optional parts (below) |
-| `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above) |
+| `masterKey.value` | the master key for the Secret the chart makes; empty: the Secret's own key, else a new one (above) |
+| `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above); the chart then makes no Secret of it |
 | `kms.aws.region`, `kms.aws.key`, `kms.aws.endpoint` | AWS KMS wraps the vault's data key (above) |
 | `hopperVault.enabled`, `kms.local.enabled`, `kms.local.size` | the vault in a pod of its own, and a local KMS (above). Default off |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
@@ -809,7 +825,8 @@ vault then runs in the hopper, under the master key.
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
 The chart makes the database password and the preshared keys of OpenFGA and the vault pod at the first install, in the
-Secret `hopper-runtime`, and the lane pool key in the Secret `hopper-lane-pool`, and keeps them at each upgrade. An
+Secret `hopper-runtime`, the master key in the Secret `hopper-master-key`, and the lane pool key in the Secret
+`hopper-lane-pool`, and keeps them at each upgrade. An
 uninstall keeps those Secrets and the home volume (`helm.sh/resource-policy: keep`), and
 the StatefulSets' volumes stay too: the database keeps the password it was made with. Remove them by hand only together.
 
@@ -866,11 +883,10 @@ the node's network, which the default `lanPeers` holds: the browser reads the AP
 `scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
 alone brings up the hopper; its health answers ok in its pod; and no pod anywhere in the cluster
 has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose; and
-`helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the machines
-come up as pods, on a fresh install given a master key: the first install's hopper made its key and shows it only in
-the UI, so a new hopper pod on its database does not start. The check deletes the namespace, makes the
-`hopper-master-key` Secret with a new key, and installs with sandbox boxes on (`sandbox.enabled=true`, the hopper's
-health asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
+`helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then it deletes the
+hopper's pod: the new pod must be healthy and run on the master key of the same fingerprint, given at launch (its start
+log line), the key the chart made (issue #1406). Then the machines come up as pods, by an upgrade of the same release
+with sandbox boxes on (`sandbox.enabled=true`, the hopper's health and key asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
 only once a person signed in).
 The lane pod must exist, and again no pod may have a container runtime socket. Then it deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
 Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
@@ -1073,7 +1089,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespaces it lists. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
   each one must be refused.
 - **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
-  ("Sandbox boxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
+  ("Sandboxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
   the check box there. With neither, the template waits for its check. A client older than this release refuses the
   check box, and the check fails with that reason; run it again once the machine has the new client.
@@ -1287,12 +1303,13 @@ Keep in mind:
 - In a hopper job, the same command reports as the job, with the job's own token: leave out `--hopper`, `--state` and
   the refresh token.
 
-## Sandbox boxes the hopper starts
+## Sandboxes the hopper starts
 
-On by default in `compose.yaml` (issues #603, #708, #1157). Give the hopper your rootless Podman socket, and it starts,
-stops and removes sandbox boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
-flags as the boxes the hopper starts: one builder makes both. Its CPUs and memory start at the template's defaults
-(the hopper's for a box of no template); change them before *Show the line*, within the template's max.
+On by default in `compose.yaml` (issues #603, #708, #1157, #1349). Give the hopper your rootless Podman socket, and it
+runs each job's need step and box step in a sandbox of its own, and the read-only check of a template, beside it. Each
+sandbox does one step and is burned after it. A sandbox never joins as a machine and has no lane. Without the socket,
+a step runs in the runtime of one of your machines that is dialled in (see "Sandboxes on another machine"), else it
+fails with what to do.
 
 **Requirement: a rootless runtime.** Podman is the default whenever it is reachable. Rootless Docker works too, through
 the Docker Engine API (never the docker CLI): `HOPPER_DOCKER_SOCKET` names its socket, used when no Podman socket is
@@ -1333,43 +1350,27 @@ What the hopper then does:
 
 | When | The hopper |
 |---|---|
-| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | writes a sandbox record, then starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the sandbox flags, the resource limits of the launch (what the person set under *A sandbox box*, within the template's maximums; it starts at the template's defaults, or 4 CPUs and 8 GiB for a box of no template; a template's defaults and maximums are set on its form in Settings → Vault), its home the volume `<name>-home`, and a join code minted for it. Then it runs the box's start check: from inside the box, the box fetches the hopper at its address. Until that passes (at most 30 seconds), the launch does not answer; if it does not pass, the launch fails with what the check wrote and removes the box. The box joins as that machine, and its record is then *ready*. A template's box runs only once its image is approved (Settings → Vault). |
-| A box has tools (a template's, or `--tool` on a launch) | first builds the image with them added through the same runtime, once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`. The build fetches each tool from its own release and checks its SHA-256, so the runtime needs network access to awscli.amazonaws.com, get.helm.sh, dl.k8s.io, releases.hashicorp.com, Docker Hub and Debian's mirrors. Old tools images stay in the runtime's storage: `podman image prune` or `podman rmi` removes them. |
-| A person removes that machine | stops the container and removes it within about 20 seconds, and its record. Its home volume stays, so a box of that name later keeps its sign-in, unless the template's limits say `keepHome: false`. `/tmp` in the box is a tmpfs: it goes with the container. |
-| A box's time limit passes (a template's `ttlMinutes`, or the launch's) | stops the container and removes it, and its record. The home volume stays, as above. A box of no template has no time limit unless the launch names one. |
-| The hopper starts | reads its sandbox records and the boxes it started (label `io.hopper.box` = its instance id). A box of its own with no record that a machine names (one started before the records) is taken on as a record; one that no machine names and no live join code waits for is removed, its home volume kept. A box another hopper started is left alone. |
-| It cannot stop or remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
-| Every 10 seconds | runs each box's start check again, in the box. A box that cannot reach the hopper is shown on Machines, under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and the hopper logs it once. It is ready again when its check passes. |
+| A job runs a need step or a box step | starts a new sandbox of the template (`hopper-need-<name>`) with the sandbox flags, the template's CPU and memory defaults (4 CPUs and 8 GiB for a template that sets none), and a fresh home volume. The step runs, its output comes back, and the sandbox is removed with its home volume. Machines → *Sandbox runs* lists each run: its job, step, template, start and end, outcome, and when it was destroyed. |
+| A template has tools | first builds the image with them added through the same runtime, once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`. The build fetches each tool from its own release and checks its SHA-256, so the runtime needs network access to awscli.amazonaws.com, get.helm.sh, dl.k8s.io, releases.hashicorp.com, Docker Hub and Debian's mirrors. Old tools images stay in the runtime's storage: `podman image prune` or `podman rmi` removes them. |
+| Every 10 seconds, and at start | burns each sandbox that outlives its step. It also burns each sandbox box an older version started that joined as a machine (label `io.hopper.box` = its instance id), with its home volume, and removes its record. A box another hopper started is left alone. |
+| It cannot remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
 
 The sandbox network is `hopper_default` for the hopper in its container and `host` for a hopper on the host;
-`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). On the host network,
-a box reaches the hopper at `http://127.0.0.1:<port>`. Else the hopper reads its own container's names on that network
-and takes the first that is also in `HOPPER_LAN_NAMES`: on the compose network that is `hopper`, which compose.yaml
-sets. When the hopper's container is not on that network, or none of its names there is in `HOPPER_LAN_NAMES`, Add
-machine says so and what to do, and starts nothing. A hopper on the host with another network uses its first
-`HOPPER_LAN_NAMES` name, and the start check says whether a box there reaches it.
-
-When a launch fails with `the hopper does not answer at <address>`, the rest of the line is curl's own words from
-inside the box: `Could not resolve host` (the name is not known on that network), `Failed to connect` (nothing
-listens there), or `returned error: 403` / `421` (the hopper refused the box: its address is not in
-`HOPPER_LAN_PEERS`, or the name is not in `HOPPER_LAN_NAMES`).
+`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`).
 
 **Residual risk.** The socket is your account: whoever controls the hopper's process can start any container as you.
-The hopper itself only starts locked-down boxes — every capability dropped, no new privileges, a read-only root,
+The hopper itself only starts locked-down sandboxes — every capability dropped, no new privileges, a read-only root,
 the image's own non-root user, CPU and memory limits, nothing of the computer mounted — from the published box image
-or an approved template's image, and a request to it can name only an agent or a template and parameters within the
-template's limits, never an image, a mount or a flag. An admin UI session can start and remove
-boxes, as it can add and remove any machine.
+or an approved template's image. A job names only a template and its command, never an image, a mount or a flag.
 
 Turn it off: `export HOPPER_PODMAN_SOCKET_HOST=/dev/null` and run `podman compose up -d`, or turn `podman.socket` off
-and run the update. The boxes it started keep running; remove their machines in the Machines view first if you want
-them gone.
+and run the update.
 
-### Sandbox boxes on another machine
+### Sandboxes on another machine
 
-A machine that joined with Add machine → *A computer* can hold sandbox boxes too (issue #708). The hopper starts
-them in that machine's own rootless Podman (or rootless Docker when Podman is not there), through the machine's
-client: no socket of that machine is given to the hopper, and nothing listens on the machine. On the machine, once:
+A machine that joined with Add machine can run sandboxes too (issue #708). The hopper starts them in that machine's
+own rootless Podman (or rootless Docker when Podman is not there), through the machine's client: no socket of that
+machine is given to the hopper, and nothing listens on the machine. On the machine, once:
 
 ```sh
 systemctl --user enable --now podman.socket
@@ -1379,15 +1380,13 @@ loginctl enable-linger "$USER"
 The second line keeps your user's services, the socket included, running after you sign out. Under WSL, also keep
 the distro running: WSL stops an idle distro, and its containers with it ("Keep a hopper in WSL running" above).
 
-Then Machines → Add machine → *A sandbox box* shows **on** with the hopper's computer and each machine online now:
-pick the machine, then **Start the box**. The box is on that machine's network and reaches the hopper at the address
-the machine's client dialled in on, and its start check proves that from inside it, as for a box beside the hopper. The machine's client checks each call again: it creates only a container with the
-sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
-away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
-again. A box with tools on a machine runs a tools image the hopper builds in that machine's runtime, through its
-client, once per base image and set of tools; the client builds only a tools image, from the hopper's one
-Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
-runs on it.
+A step runs there when the hopper has no runtime beside it: on the first of your machines that is dialled in and has a
+runtime. The machine's client checks each call again: it creates only a check box or a need box, with the sandbox
+flags and no mount of the machine, and stops or removes only the boxes the hopper made. It makes no sandbox box that
+joins as a machine (issue #1349). A box with tools on a machine runs a tools image the hopper builds in that machine's
+runtime, through its client, once per base image and set of tools; the client builds only a tools image, from the
+hopper's one Containerfile. A client of an older release refuses the build: the hopper loads its own release there
+once no job runs on it.
 
 ### Sandbox boxes on Kubernetes
 

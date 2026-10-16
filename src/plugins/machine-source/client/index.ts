@@ -6,10 +6,10 @@ import type { ClientMachine } from '../../../domain/types.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { attachedBase, attachedShape, diskLowShape, reach, sweepShape, workTreeOption, workTreesOption, type AttachedOptions } from '../attached.ts';
 
-export interface ClientOptions extends AttachedOptions { key: string; template?: string; container?: string; pool?: true; pod?: string }
+export interface ClientOptions extends AttachedOptions { key: string; template?: string; pool?: true; pod?: string }
 
 export const clientMachine = (name: string, o: ClientOptions): ClientMachine => ({
-  ...attachedBase(name, o), client: { key: o.key, ...(o.template ? { template: o.template } : {}), ...(o.container ? { container: o.container } : {}), ...(o.pool ? { pool: true as const } : {}), ...(o.pod ? { pod: o.pod } : {}) },
+  ...attachedBase(name, o), client: { key: o.key, ...(o.template ? { template: o.template } : {}), ...(o.pool ? { pool: true as const } : {}), ...(o.pod ? { pod: o.pod } : {}) },
 });
 
 const client: PluginDefinition<'machine-source', ClientOptions> = {
@@ -21,8 +21,6 @@ const client: PluginDefinition<'machine-source', ClientOptions> = {
       .meta({ commandBearing: true, description: 'its machine key, recorded when it joined: the public half of its link key — the one machine its jobs go to' }),
     template: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/).optional()
       .meta({ commandBearing: true, description: 'the template it joined as (issue #558): its join line named it; what of the vault its jobs may ask for' }),
-    container: z.string().regex(/^hopper-sandbox-[a-z0-9][a-z0-9._-]{0,80}$/).optional()
-      .meta({ commandBearing: true, description: 'the sandbox box the hopper started for it (issue #603): removing the machine stops and removes that box' }),
     pool: z.literal(true).optional()
       .meta({ commandBearing: true, description: 'a lane pod (issue #1284): it joined with the lane pool key, joins again under its name, and is retired when it leaves with no job on it' }),
     pod: z.string().regex(/^hopper-job-[a-z0-9-]{1,52}$/).optional()

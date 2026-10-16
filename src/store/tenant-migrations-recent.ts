@@ -20,6 +20,7 @@ import { LAST_ACCOUNT_TABLE } from './last-accounts.ts';
 import { APP_INSTALLATIONS_TABLE } from './app-installations.ts';
 import { JOB_FILTER_COLUMNS } from './job-filter-columns.ts';
 import { accountSourceOnly } from './migration-account-source.ts';
+import { noSandboxMachines } from './migration-no-sandbox-machines.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -87,4 +88,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // ledger is rebuilt, and the App's key leaves the vault. The build before runs on it: a config it knows, and jobs of a
   // source it runs.
   accountSourceOnly,
+  // 70: A sandbox is no machine (issue #1349): each client machine of a sandbox box the hopper started leaves `machines`.
+  // Config rows only: the build before runs on them, and its reconcile pass removes the boxes no machine names.
+  (db) => { noSandboxMachines(db); },
 ];

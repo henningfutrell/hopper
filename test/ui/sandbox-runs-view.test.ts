@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #991, rendered in happy-dom inside the whole app against a fake of the daemon's HTTP surface. Access requests,
 // Sandbox runs: a run a job asked for waits with its job and template; Approve posts it after the confirm; Decline posts
-// the reason; the runs that started are listed with who approved them; the nav badge counts the run that waits.
+// the reason; the approved runs are listed with who approved them; the nav badge counts the run that waits.
 // Settings → Vault, Sandbox approvals: the toggles post what changed, and YOLO posts both.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -11,7 +11,7 @@ const WAITING = {
   id: 'q1', jobId: 'f3b1c2d4-0000-4000-8000-000000000001', jobTitle: 'Check the AWS bill', jobUrl: 'https://github.com/acme/infra/issues/7', template: 'asked-3f2a9c1d0e4b', state: 'waiting', askedAt: '2026-10-13T10:00:00.000Z',
   purpose: 'Read the bill of the UAT account', plan: 'aws ce get-cost-and-usage',
 };
-const RUNNING = { id: 'q2', jobId: 'a1b2c3d4-0000-4000-8000-000000000002', template: 'asked-3f2a9c1d0e4b', state: 'running', askedAt: '2026-10-13T09:00:00.000Z', approvedBy: 'skip sandbox approval', container: 'hopper-sandbox-asked-1' };
+const RUNNING = { id: 'q2', jobId: 'a1b2c3d4-0000-4000-8000-000000000002', template: 'asked-3f2a9c1d0e4b', state: 'approved', askedAt: '2026-10-13T09:00:00.000Z', approvedBy: 'skip sandbox approval' };
 const WAITING_2 = { ...WAITING, id: 'q3', jobId: 'c1b2c3d4-0000-4000-8000-000000000003', jobTitle: 'Read the cluster', template: 'asked-9a8b7c6d5e4f' };
 const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } };
 const HIGH = {
@@ -98,12 +98,12 @@ afterEach(() => {
 });
 
 describe('Access requests: sandbox runs (issue #991)', () => {
-  it('shows the run that waits with its job and template; Approve posts it after the confirm; the started run says who approved it', async () => {
+  it('shows the run that waits with its job and template; Approve posts it after the confirm; the approved run says who approved it', async () => {
     const daemon = await boot('#access-requests', runs);
     const panel = runs()!;
     expect(panel.textContent).toContain('asked-3f2a9c1d0e4b');
     expect(panel.textContent).toContain('Check the AWS bill');
-    expect(panel.textContent).toContain('runs as hopper-sandbox-asked-1, approved by skip sandbox approval');
+    expect(panel.textContent).toContain('approved: each step runs in a sandbox of its own, approved by skip sandbox approval');
     await act(async () => { buttonIn(panel, 'Approve').click(); });
     const confirm = () => [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent?.trim() === 'Approve');
     await vi.waitFor(() => expect(confirm()).toBeDefined());
