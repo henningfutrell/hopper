@@ -22206,6 +22206,6 @@ role can start up to the limits. A sandbox on Podman joins the hopper's network,
 Tests: `test/sandbox/playground.test.ts` (50 with `maxConcurrent` 20 start 20 and refuse 30 naming the limit, destroy-all
 leaves no pod or claim; the time limit; a restart removes what was left, and nothing else; the limits per user; sizes;
 a failed start leaves nothing), `test/integration/sandbox-playground.test.ts` (over the API: 429 naming the limit; none is
-in the machines list or its config, and no join code waits; a restart), `test/scripts/helm-chart-sandbox.test.ts` (the
+in the machines list or its config; a restart), `test/scripts/helm-chart-sandbox.test.ts` (the
 values and the quota), `test/integration/config.test.ts`, `test/sandbox/kubernetes.test.ts` (the PriorityClass),
 `test/ui/sandbox-playground.test.ts`.

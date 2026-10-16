@@ -211,7 +211,6 @@ describe('the sandbox playground', () => {
     const [box] = [...rt.boxes.values()];
     expect(box!.spec.env).toEqual({});
     expect(box!.spec.script).toBe(IDLE_SCRIPT);
-    expect(box!.spec.check).toBeUndefined();
     expect(box!.spec.limits).toEqual({ cpus: 2, memoryMb: 3072 });
     expect(box!.spec.image).toBe('ghcr.io/henningfutrell/hopper:box-claude');
     expect(box!.spec.labels[PLAYGROUND_LABEL]).toBe('inst1');

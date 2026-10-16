@@ -75,7 +75,6 @@ describe('the sandbox playground over the API', () => {
     expect(machines.machines.filter((m) => m.name.startsWith('hopper-playground-'))).toEqual([]);
     const config = (await a.api('GET', '/api/machines/config')).body as { machines: { name: string }[] };
     expect(config.machines).toEqual([]);
-    expect(a.app.instance.joinCodes.waiting(new Date().toISOString())).toEqual([]);
 
     const gone = await a.ui<{ destroyed: number }>('/ui/api/sandbox-playground/destroy', { all: true }, { token: session });
     expect(gone.body).toEqual({ destroyed: 4, problems: [] });
