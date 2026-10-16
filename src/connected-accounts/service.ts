@@ -39,8 +39,7 @@ import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './de
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 import type { Renewal } from './renewal.ts';
-import { createHeldGrants } from './held.ts';
-import { connectRefusal, normalEmail, renewalRefusal } from './email-match.ts';
+import { createHeldGrants } from './held.ts'; import { createEmailMatch } from './email-match.ts';
 import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
 import { createRenewer, type Live } from './renewer.ts';
 
@@ -88,10 +87,8 @@ export interface ConnectedAccountsOptions {
   hasClientSecret?(): boolean;
   /** Where the tokens are kept (issue #658): system secrets in the user's vault, sealed under the master key; none is kept without it (issue #659). */
   secrets: SystemSecrets;
-  /** How often the renewer looks; default RENEW_EVERY_MS. */
-  renewEveryMs?: number;
-  /** Whether the source email match is on (issue #1380): the instance's setting, read at each check. Absent: on. */
-  sourceEmailMatch?(): boolean;
+  /** How often the renewer looks, default RENEW_EVERY_MS; whether the source email match is on (issue #1380), the instance's setting read at each check, absent: on. */
+  renewEveryMs?: number; sourceEmailMatch?(): boolean;
 }
 
 export type { Renewal };
@@ -109,10 +106,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   const waiting = new Map<ConnectedAccountProvider, Waiting>();
   const failed = new Map<ConnectedAccountProvider, string>();
   const starting = new Map<ConnectedAccountProvider, Promise<ConnectedAccountStatus>>();
-  const held = createHeldGrants(o);
+  const held = createHeldGrants(o), emailMatch = createEmailMatch({ ...(o.sourceEmailMatch ? { on: o.sourceEmailMatch } : {}), whoIs: o.whoIs, logger: o.logger });
   const atRest = createAtRest(o.store, o.secrets);
   const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= o.clock.now().getTime();
-  const matching = (): boolean => o.sourceEmailMatch?.() ?? true;
 
   /** Why the account's sign-in ended, or undefined while it lives: GitHub refused it, or it expired with nothing to renew it. */
   const endOf = (a: ConnectedAccount): string | undefined => {
@@ -163,26 +159,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     ...(o.hasClientSecret ? { hasClientSecret: o.hasClientSecret } : {}),
     ...(o.onRenewed ? { onRenewed: o.onRenewed } : {}),
     ...(o.onRenewalFailed ? { onRenewalFailed: o.onRenewalFailed } : {}),
-    ...(o.renewEveryMs ? { renewEveryMs: o.renewEveryMs } : {}),
-    afterRenewal: (provider, renewed) => recheck(provider, renewed),
+    // The source email match again (issue #1380): an account that lost the email it was connected for ends, told once.
+    ...(o.renewEveryMs ? { renewEveryMs: o.renewEveryMs } : {}), afterRenewal: async (provider, a) => { const why = await emailMatch.atRenewal(provider, a); const row = o.store.connectedAccounts.get(provider); if (why && row) throw end({ ...row, accessToken: a.accessToken }, why); },
   });
-
-  /**
-   * The source email match again, after a renewal (issue #1380): an account that lost the email it was connected for ends,
-   * told once. GitHub not answering ends nothing.
-   */
-  async function recheck(provider: ConnectedAccountProvider, a: ConnectedAccount): Promise<void> {
-    if (!a.matchEmail || !matching()) return;
-    let refused: string | undefined;
-    try {
-      refused = renewalRefusal(provider, a.account, a.matchEmail, (await o.whoIs(provider, a.accessToken)).verifiedEmails);
-    } catch (err) {
-      o.logger.warn(`hopper: could not check the verified emails of the ${PROVIDER_NAME[provider]} account ${a.account}: ${(err as Error).message}`);
-      return;
-    }
-    const stored = o.store.connectedAccounts.get(provider);
-    if (refused && stored) throw end({ ...stored, accessToken: a.accessToken }, refused);
-  }
 
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
     const base = { provider, via: CONNECTED_VIA } as const;
@@ -210,8 +189,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         ...(a.renewedAt ? { renewedAt: a.renewedAt } : {}),
         ...(next ? { nextRenewalAt: next } : {}),
         ...(lastError ? { lastError } : {}),
-        ...(h ? { held: { account: h.who.account, at: h.at } } : {}),
-        ...(a.matchEmail ? { matchEmail: a.matchEmail } : {}),
+        ...(h ? { held: { account: h.who.account, at: h.at } } : {}), ...(a.matchEmail ? { matchEmail: a.matchEmail } : {}),
       };
     }
     const error = failed.get(provider);
@@ -287,14 +265,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         const who = await o.whoIs(provider, g.accessToken);
         if (waiting.get(provider) !== w) return;
         // The source email match (issue #1380): a refused account is never kept, and its new grant is deleted at GitHub.
-        const matchEmail = w.email !== undefined && matching() ? normalEmail(w.email) : undefined;
-        const refused = matchEmail === undefined ? undefined : connectRefusal(provider, who.account, matchEmail, who.verifiedEmails);
-        if (refused) {
-          failed.set(provider, refused);
-          o.logger.warn(`hopper: connecting ${PROVIDER_NAME[provider]} refused: ${refused}`);
-          await o.deleteToken?.(provider, g.accessToken).catch(() => undefined);
-          return;
-        }
+        const { matchEmail, refused } = emailMatch.atConnect(provider, w.email, who); if (refused) { failed.set(provider, refused); o.logger.warn(`hopper: connecting ${PROVIDER_NAME[provider]} refused: ${refused}`); await o.deleteToken?.(provider, g.accessToken).catch(() => undefined); return; }
         await keep(provider, who, g, o.clock.now().toISOString(), 'sources', matchEmail);
         await held.release(provider, false);
         await installations.refresh(provider); // while it still reads as waiting: connected, it shows where the app is installed
@@ -321,10 +292,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     }
     try {
       const pending = await flow(provider).start();
-      const w: Waiting = {
-        userCode: pending.userCode, verificationUri: pending.verificationUri, expiresAt: pending.expiresAt.toISOString(), abort: new AbortController(),
-        ...(email !== undefined ? { email } : {}),
-      };
+      const w: Waiting = { userCode: pending.userCode, verificationUri: pending.verificationUri, expiresAt: pending.expiresAt.toISOString(), abort: new AbortController(), ...(email !== undefined ? { email } : {}) };
       waiting.set(provider, w);
       o.logger.info(`hopper: connecting ${PROVIDER_NAME[provider]}: waiting for the device code to be approved`);
       follow(provider, w, (s) => pending.grant(s));
