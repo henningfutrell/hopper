@@ -193,8 +193,14 @@ const homeTar = (o: { plan?: Buffer; inputs?: Buffer }): Buffer => filesTar([
   ...(o.inputs ? [{ name: `${FILES_DIR}/inputs.tar`, data: o.inputs, mode: 0o600 }] : []),
 ]);
 
-/** What a need box came to: the command's exit code, its outputs tar, and the hopper's problem, if any. */
-export interface NeedBoxResult { exit: number; outputs?: Buffer; problem?: string }
+/**
+ * What a need box came to: the command's exit code, its outputs tar, and the hopper's problem, if any; `stopped`, the
+ * hopper stopped it: it ran past its time limit, or the job stopped waiting for it (issue #1371).
+ */
+export interface NeedBoxResult { exit: number; outputs?: Buffer; problem?: string; stopped?: 'timed-out' | 'cancelled' }
+
+/** How long past the step's time limit the runtime's own wait may take: the hopper's timer ends the step first. */
+const WAIT_GRACE_MS = 5000;
 
 /**
  * Runs one need box to its end: its output to `log` as it comes, at most every `pollMs`. `signal` stops it (the job's
@@ -204,6 +210,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
   const labels = { [NEED_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
   const volume = `${box.name}-home`;
   let id = '';
+  let limit: ReturnType<typeof setTimeout> | undefined;
   let madeHome = false;
   let shown = 0;
   let output = '';
@@ -230,7 +237,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     if (!(await runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
     id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env, limits: boxLimits(box.template.limits), script: NEED_BOX_SCRIPT });
-    if (io.signal.aborted) return { exit: 125, problem: 'stopped before it started' };
+    if (io.signal.aborted) return { exit: 125, problem: 'stopped before it started', stopped: 'cancelled' };
     await runtime.start(id);
     if (copyIn) {
       // Copied as the box's user, once it runs; the mark last, so the script never reads a file half there.
@@ -241,8 +248,10 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
       await copyIn(id, HOME, ready);
     }
     let ended = false;
-    const exited = runtime.wait(id, box.timeoutMs).finally(() => { ended = true; });
+    // The hopper's own timer holds the time limit (issue #1371): a runtime's wait that hangs past it ends the step all the same.
+    const exited = runtime.wait(id, box.timeoutMs + WAIT_GRACE_MS).finally(() => { ended = true; });
     const stopped = new Promise<'stopped'>((resolve) => { io.signal.addEventListener('abort', () => resolve('stopped'), { once: true }); });
+    const timedOut = new Promise<'timed-out'>((resolve) => { limit = setTimeout(() => resolve('timed-out'), box.timeoutMs); });
     const poll = (async () => {
       while (!ended && !io.signal.aborted) {
         await new Promise((r) => setTimeout(r, io.pollMs ?? NEED_POLL_MS));
@@ -251,12 +260,17 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
         show(output);
       }
     })();
-    const first = await Promise.race([exited.then((exit) => ({ exit }), (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })), stopped]);
-    await poll.catch(() => undefined);
-    if (first === 'stopped') {
+    const first = await Promise.race([exited.then((exit) => ({ exit }), (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })), stopped, timedOut]);
+    clearTimeout(limit);
+    if (first === 'stopped' || first === 'timed-out') {
+      ended = true;
       await runtime.stop(id).catch(() => undefined);
-      return { exit: 125, problem: 'the job stopped waiting for it' };
+      await poll.catch(() => undefined);
+      return first === 'stopped'
+        ? { exit: 125, problem: 'the job stopped waiting for it', stopped: 'cancelled' }
+        : { exit: 125, problem: `the need box did not end in ${box.timeoutMs / 1000} s`, stopped: 'timed-out' };
     }
+    await poll.catch(() => undefined);
     if ('error' in first) {
       await runtime.stop(id).catch(() => undefined);
       output = await runtime.logs(id).catch(() => output);
@@ -273,6 +287,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
   } catch (e) {
     return { exit: 125, problem: `the need box did not run: ${e instanceof Error ? e.message : String(e)}` };
   } finally {
+    clearTimeout(limit);
     rmSync(home, { force: true });
     rmSync(ready, { force: true });
     if (id) await runtime.remove(id).catch(() => {});
