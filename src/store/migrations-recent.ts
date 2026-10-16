@@ -29,4 +29,10 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 42: the sandbox runs (issue #1349): one row per sandbox made for a step, from its start to its burn. A table only:
   // the build before never reads it.
   SANDBOX_RUN_TABLE,
+  // 43: identity keyed by email (issue #1380): a user keeps the verified email it is known by, unique among the users. A
+  // user a local account signed in as takes that account's email, its subject; any other user takes one at its next
+  // sign-in. A column only: the build before never reads it, and inserts its users with none.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT; CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users (lower(email));
+   UPDATE users SET email = f.subject FROM (SELECT DISTINCT ON (user_id) user_id, subject FROM user_identities WHERE realm = 'local-accounts' ORDER BY user_id, subject) f
+   WHERE f.user_id = users.id AND users.email IS NULL;`,
 ];

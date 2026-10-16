@@ -91,7 +91,10 @@ export function Users() {
           <ul className="divide-y rounded-lg border">
             {users.map((u) => (
               <li key={u.id} data-user={u.id} className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm">
-                <span className="min-w-0 flex-1 truncate font-medium">{u.name}</span>
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {u.name}
+                  {u.email && <span className="ml-2 font-normal text-muted-foreground" data-user-email>{u.email}</span>}
+                </span>
                 {u.id === me && <StatusBadge status="you" tone="muted" />}
                 <span className="num shrink-0 text-xs text-muted-foreground">added {clock(u.createdAt)}</span>
               </li>

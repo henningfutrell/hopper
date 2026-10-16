@@ -340,8 +340,12 @@ export interface ConfigRecords<N extends string = UserConfigName> {
 export interface UserRepository {
   list(): User[];
   get(id: string): User | undefined;
-  /** A new user under a unique name (throws when taken): its row and its user schema. */
-  add(name: string): User;
+  /** A new user under a unique name (throws when taken): its row and its user schema. `email`: the verified email it is known by. */
+  add(name: string, email?: string): User;
+  /** The user known by this email (issue #1380), compared in lowercase. */
+  byEmail(email: string): User | undefined;
+  /** The user is known by this email from now on, lowercase; throws when another user has it. */
+  setEmail(id: string, email: string): void;
   /**
    * `to` takes over `from`'s work (issue #212): `to`'s sign-ins, sessions and login codes move onto
    * `from`'s record, which takes `to`'s name; `to`'s record and user schema are removed. Throws, nothing

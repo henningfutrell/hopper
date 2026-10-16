@@ -23,8 +23,9 @@ describe('an identity signs in as its user', () => {
     const again = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, again)).user.id).toBe('ada');
     expect(app.app.users().map((u) => u.id)).toEqual(['admin', 'ada']);
-    // Another identity with the same username gets a user of its own, under a name made unique.
-    Object.assign(idp.claims, { sub: 'sub-other' });
+    // Another identity with the same username, and another email, gets a user of its own, under a name made unique. (One
+    // with the same verified email signs in as ada: identity is keyed by email, issue #1380.)
+    Object.assign(idp.claims, { sub: 'sub-other', email: 'other@example.com' });
     Object.assign(idp.userinfo, { sub: 'sub-other' });
     const other = (await signIn(app.url, origin, 'corp')).token!;
     expect((await session(app, other)).user).toMatchObject({ id: 'ada_2', name: 'ada 2' });
