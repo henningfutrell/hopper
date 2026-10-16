@@ -11,8 +11,8 @@ interface LimitRange { default: number; max: number }
 export const DEFAULT_LIMITS = { cpus: { default: 4, max: 8 }, memoryMb: { default: 8192, max: 16384 } } as const;
 
 /** The ranges a box of the template gets: its own, else the hopper's. */
-export function launchRanges(t: Pick<TemplateView, 'limits'> | undefined): { cpus: LimitRange; memoryMb: LimitRange; ttlMinutes: { default?: number; max?: number } } {
-  return { cpus: t?.limits?.cpus ?? DEFAULT_LIMITS.cpus, memoryMb: t?.limits?.memoryMb ?? DEFAULT_LIMITS.memoryMb, ttlMinutes: t?.limits?.ttlMinutes ?? {} };
+export function launchRanges(t: Pick<TemplateView, 'limits'> | undefined): { cpus: LimitRange; memoryMb: LimitRange } {
+  return { cpus: t?.limits?.cpus ?? DEFAULT_LIMITS.cpus, memoryMb: t?.limits?.memoryMb ?? DEFAULT_LIMITS.memoryMb };
 }
 
 type Result<K extends string, T> = ({ ok: true } & Record<K, T>) | { ok: false; error: string };
@@ -24,16 +24,11 @@ const positive = (s: string): number | undefined => {
   const n = s.trim() === '' ? NaN : Number(s);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 };
-const wholeMinutes = (s: string): number | undefined => {
-  const n = positive(s);
-  return n !== undefined && Number.isInteger(n) ? n : undefined;
-};
 const NUMBER = 'give a number more than 0';
-const MINUTES = 'give whole minutes, more than 0';
 
 /** A template's limits as its form holds them: empty where the hopper's default applies. */
 export interface LimitsDraft {
-  cpus: { default: string; max: string }; memoryGiB: { default: string; max: string }; ttlMinutes: { default: string; max: string }; keepHome: boolean;
+  cpus: { default: string; max: string }; memoryGiB: { default: string; max: string };
 }
 
 const text = (n: number | undefined, f: (n: number) => string = String): string => (n === undefined ? '' : f(n));
@@ -42,8 +37,6 @@ export function limitsDraft(l: TemplateLimits | undefined): LimitsDraft {
   return {
     cpus: { default: text(l?.cpus?.default), max: text(l?.cpus?.max) },
     memoryGiB: { default: text(l?.memoryMb?.default, gib), max: text(l?.memoryMb?.max, gib) },
-    ttlMinutes: { default: text(l?.ttlMinutes?.default), max: text(l?.ttlMinutes?.max) },
-    keepHome: l?.keepHome !== false,
   };
 }
 
@@ -61,31 +54,15 @@ export function templateLimits(d: LimitsDraft): Result<'limits', TemplateLimits>
   if (!cpus.ok) return cpus;
   const memory = range('Memory', d.memoryGiB, (s) => { const n = positive(s); return n === undefined ? undefined : mib(n); }, (n) => `${gib(n)} GiB`, NUMBER);
   if (!memory.ok) return memory;
-  const ttl = { default: d.ttlMinutes.default.trim(), max: d.ttlMinutes.max.trim() };
-  const ttlDefault = ttl.default === '' ? undefined : wholeMinutes(ttl.default), ttlMax = ttl.max === '' ? undefined : wholeMinutes(ttl.max);
-  if ((ttl.default !== '' && ttlDefault === undefined) || (ttl.max !== '' && ttlMax === undefined)) return { ok: false, error: `Time limit: ${MINUTES}` };
-  if (ttlDefault !== undefined && ttlMax !== undefined && ttlDefault > ttlMax) return { ok: false, error: `Time limit: the default ${ttlDefault} minutes is more than the max ${ttlMax} minutes` };
-  const ttlMinutes = { ...(ttlDefault !== undefined ? { default: ttlDefault } : {}), ...(ttlMax !== undefined ? { max: ttlMax } : {}) };
-  return {
-    ok: true,
-    limits: {
-      ...(cpus.range ? { cpus: cpus.range } : {}), ...(memory.range ? { memoryMb: memory.range } : {}),
-      ...(ttlDefault !== undefined || ttlMax !== undefined ? { ttlMinutes } : {}), ...(d.keepHome ? {} : { keepHome: false }),
-    },
-  };
+  return { ok: true, limits: { ...(cpus.range ? { cpus: cpus.range } : {}), ...(memory.range ? { memoryMb: memory.range } : {}) } };
 }
 
 /** A template's limits in a few words, the hopper's defaults marked. */
 export function limitsText(l: TemplateLimits | undefined): string {
   const r = launchRanges({ limits: l });
   const ours = (set: unknown) => (set ? '' : ' (the hopper\'s)');
-  const ttl = l?.ttlMinutes;
-  const time = ttl?.default !== undefined ? `time limit ${ttl.default} minutes${ttl.max !== undefined ? `, at most ${ttl.max}` : ''}`
-    : ttl?.max !== undefined ? `no time limit unless a launch sets one, at most ${ttl.max}` : 'no time limit';
   return [
     `${r.cpus.default} CPUs, at most ${r.cpus.max}${ours(l?.cpus)}`,
     `${gib(r.memoryMb.default)} GiB, at most ${gib(r.memoryMb.max)} GiB${ours(l?.memoryMb)}`,
-    time,
-    l?.keepHome === false ? 'home removed with the box' : 'home kept',
   ].join(' · ');
 }

@@ -11,7 +11,7 @@ const template = (over: Partial<TemplateView> = {}): TemplateView => ({
   name: 'kube', image: 'img', secrets: ['KUBE', 'AWS'], profiles: [READ], savedBy: 'Ada', savedAt: '2026-10-11T10:00:00Z',
   approval: { image: 'img', secrets: ['KUBE', 'AWS'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] },
   gives: ['KUBE', 'AWS'], radius: { level: 'low', reasons: [], profiles: [] },
-  limits: { cpus: { default: 2, max: 4 }, memoryMb: { default: 2048, max: 4096 }, ttlMinutes: { default: 60, max: 240 } },
+  limits: { cpus: { default: 2, max: 4 }, memoryMb: { default: 2048, max: 4096 } },
   tools: ['helm', 'kubectl'], ...over,
 });
 
@@ -23,13 +23,13 @@ describe('the hopper\'s default limits', () => {
 
 describe('a template\'s limits on its form', () => {
   it('a draft shows what is set, empty where the hopper\'s default applies; memory in GiB', () => {
-    expect(limitsDraft(undefined)).toEqual({ cpus: { default: '', max: '' }, memoryGiB: { default: '', max: '' }, ttlMinutes: { default: '', max: '' }, keepHome: true });
-    expect(limitsDraft({ cpus: { default: 2, max: 4 }, memoryMb: { default: 1536, max: 4096 }, ttlMinutes: { max: 90 }, keepHome: false }))
-      .toEqual({ cpus: { default: '2', max: '4' }, memoryGiB: { default: '1.5', max: '4' }, ttlMinutes: { default: '', max: '90' }, keepHome: false });
+    expect(limitsDraft(undefined)).toEqual({ cpus: { default: '', max: '' }, memoryGiB: { default: '', max: '' } });
+    expect(limitsDraft({ cpus: { default: 2, max: 4 }, memoryMb: { default: 1536, max: 4096 } }))
+      .toEqual({ cpus: { default: '2', max: '4' }, memoryGiB: { default: '1.5', max: '4' } });
   });
 
   it('a draft goes back to the limits it was made from; empty fields send nothing, so the hopper\'s defaults apply', () => {
-    const l: TemplateLimits = { cpus: { default: 2, max: 4 }, memoryMb: { default: 1536, max: 4096 }, ttlMinutes: { max: 90 }, keepHome: false };
+    const l: TemplateLimits = { cpus: { default: 2, max: 4 }, memoryMb: { default: 1536, max: 4096 } };
     expect(templateLimits(limitsDraft(l))).toEqual({ ok: true, limits: l });
     expect(templateLimits(limitsDraft(undefined))).toEqual({ ok: true, limits: {} });
   });
@@ -38,16 +38,12 @@ describe('a template\'s limits on its form', () => {
     const d = limitsDraft(undefined);
     expect(templateLimits({ ...d, cpus: { default: '2', max: '' } })).toEqual({ ok: false, error: 'CPUs: give the default and the max, or neither' });
     expect(templateLimits({ ...d, memoryGiB: { default: '8', max: '4' } })).toEqual({ ok: false, error: 'Memory: the default 8 GiB is more than the max 4 GiB' });
-    expect(templateLimits({ ...d, ttlMinutes: { default: '90', max: '60' } })).toEqual({ ok: false, error: 'Time limit: the default 90 minutes is more than the max 60 minutes' });
-    expect(templateLimits({ ...d, ttlMinutes: { default: '0.5', max: '' } })).toEqual({ ok: false, error: 'Time limit: give whole minutes, more than 0' });
     expect(templateLimits({ ...d, cpus: { default: 'x', max: '4' } })).toEqual({ ok: false, error: 'CPUs: give a number more than 0' });
     expect(limitsProblem({ memoryMb: { default: 8192, max: 4096 } })).toBeDefined();
-    expect(limitsProblem({ ttlMinutes: { default: 90, max: 60 } })).toBeDefined();
   });
 
   it('says them in a few words, and which are the hopper\'s defaults', () => {
-    expect(limitsText(template().limits)).toBe('2 CPUs, at most 4 · 2 GiB, at most 4 GiB · time limit 60 minutes, at most 240 · home kept');
-    expect(limitsText(undefined)).toBe('4 CPUs, at most 8 (the hopper\'s) · 8 GiB, at most 16 GiB (the hopper\'s) · no time limit · home kept');
-    expect(limitsText({ ttlMinutes: { max: 30 }, keepHome: false })).toBe('4 CPUs, at most 8 (the hopper\'s) · 8 GiB, at most 16 GiB (the hopper\'s) · no time limit unless a launch sets one, at most 30 · home removed with the box');
+    expect(limitsText(template().limits)).toBe('2 CPUs, at most 4 · 2 GiB, at most 4 GiB');
+    expect(limitsText(undefined)).toBe('4 CPUs, at most 8 (the hopper\'s) · 8 GiB, at most 16 GiB (the hopper\'s)');
   });
 });

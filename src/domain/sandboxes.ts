@@ -133,19 +133,17 @@ export interface RuntimeRelay {
 export interface LimitRange { default: number; max: number }
 
 /**
- * What a template allows a launch to ask for (issue #708). `ttlMinutes`: absent, or with no `default`, a box of it has
- * no time limit unless the launch names one; absent `max`, any. `keepHome: false`: the home volume goes with the box.
+ * What a template allows a launch to ask for (issue #708). No time limit and no kept home (issue #1349): a sandbox does
+ * one step and is burned with its home.
  */
 export interface TemplateLimits {
   cpus?: LimitRange;
   memoryMb?: LimitRange;
-  ttlMinutes?: { default?: number; max?: number };
-  keepHome?: boolean;
 }
 
 /** Why a template's limits cannot be saved: a default not more than 0, or more than its max. Undefined: they can. */
 export function limitsProblem(l: TemplateLimits): string | undefined {
-  const ranges: [string, { default?: number; max?: number } | undefined][] = [['cpus', l.cpus], ['memoryMb', l.memoryMb], ['ttlMinutes', l.ttlMinutes]];
+  const ranges: [string, LimitRange | undefined][] = [['cpus', l.cpus], ['memoryMb', l.memoryMb]];
   for (const [name, r] of ranges) {
     if (!r) continue;
     if (r.default !== undefined && !(r.default > 0)) return `${name}: the default must be more than 0`;

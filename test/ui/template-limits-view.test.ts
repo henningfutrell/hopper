@@ -10,7 +10,7 @@ const KUBE = {
   name: 'kube', image: 'img', secrets: ['KUBE', 'AWS'], profiles: [READ], savedBy: 'Ada', savedAt: '2026-10-11T10:00:00Z',
   approval: { image: 'img', secrets: ['KUBE', 'AWS'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] },
   gives: ['KUBE', 'AWS'], radius: { level: 'low', reasons: [], profiles: [] },
-  limits: { cpus: { default: 2, max: 4 }, memoryMb: { default: 2048, max: 4096 }, ttlMinutes: { default: 60, max: 240 } },
+  limits: { cpus: { default: 2, max: 4 }, memoryMb: { default: 2048, max: 4096 } },
   tools: ['helm', 'kubectl'],
 };
 const VIEW = { secrets: [{ id: 's1', name: 'KUBE', setBy: 'Ada', createdAt: '', changedBy: 'Ada', changedAt: '' }], templates: [KUBE], requests: [] };
@@ -118,19 +118,19 @@ describe('Settings → Vault: a template\'s limits (issue #708)', () => {
 
   it('the template shows its limits; its form edits them, and Save posts them', async () => {
     const daemon = await boot();
-    expect(item()!.textContent).toContain('2 CPUs, at most 4 · 2 GiB, at most 4 GiB · time limit 60 minutes, at most 240 · home kept');
+    expect(item()!.textContent).toContain('2 CPUs, at most 4 · 2 GiB, at most 4 GiB');
+    expect(item()!.textContent).not.toContain('time limit');
     await click(button('Edit', item()!));
     const form = item()!.querySelector('form')!;
     expect(field('CPUs default', form).value).toBe('2');
     await type(field('CPUs max', form), '6');
-    await type(field('Time limit default', form), '');
-    await click(form.querySelector<HTMLInputElement>('input[type="checkbox"][aria-label="Keep the home volume when a box goes"]')!);
+    expect(form.querySelector('[aria-label^="Time limit"]')).toBeNull();
+    expect(form.querySelector('[aria-label="Keep the home volume when a box goes"]')).toBeNull();
     await click(button('Save template', form));
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/vault')).toBeDefined());
-    expect(daemon.calls.find((x) => x.path === '/ui/api/vault')!.body).toMatchObject({
-      action: 'save-template', name: 'kube',
-      limits: { cpus: { default: 2, max: 6 }, memoryMb: { default: 2048, max: 4096 }, ttlMinutes: { max: 240 }, keepHome: false },
-    });
+    const body = daemon.calls.find((x) => x.path === '/ui/api/vault')!.body!;
+    expect(body).toMatchObject({ action: 'save-template', name: 'kube' });
+    expect(body.limits).toEqual({ cpus: { default: 2, max: 6 }, memoryMb: { default: 2048, max: 4096 } });
   });
 
   it('limits it cannot take: says why, and Save waits', async () => {
