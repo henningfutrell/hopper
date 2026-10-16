@@ -81,7 +81,7 @@ const kube = (r: { out: string }) => json<TemplateView[]>(r).find((x) => x.name 
 
 async function approvedKube(a: TestApp): Promise<void> {
   expect((await hopper(a, ['vault', 'set', 'KUBE_TOKEN'], 'kube-value-0123456789')).code).toBe(0);
-  expect((await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--secret', 'KUBE_TOKEN', '--cpus', '2:4', '--ttl-minutes', '30:120'])).code).toBe(0);
+  expect((await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--secret', 'KUBE_TOKEN', '--cpus', '2:4'])).code).toBe(0);
   expect((await hopper(a, ['template', 'approve', 'kube'])).code).toBe(0);
 }
 
