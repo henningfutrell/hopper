@@ -63,10 +63,8 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   instanceAdmin: InstanceAdmin;
   /** Access (issue #559): the instance's. */
   access: Access;
-  /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
-  artifacts: ArtifactEdge;
-  /** The sandbox playground (issue #1410). */
-  playground: Parameters<typeof registerSandboxPlaygroundRoutes>[1]['playground'];
+  /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper; the sandbox playground (issue #1410). */
+  artifacts: ArtifactEdge; playground: Parameters<typeof registerSandboxPlaygroundRoutes>[1]['playground'];
 }
 
 const idParams = z.object({ id: z.string() });
