@@ -254,6 +254,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
+      // The repositories a personal access token reaches (issue #1380 part 6): every repository the issues are in.
+      if (r.method === 'GET' && path === '/user/repos') return tagged(pageOf([...new Set(issues.map((i) => i.repo))].map((full_name) => ({ full_name, owner: { login: full_name.split('/')[0] } })), r.query));
       if (r.method === 'GET' && path === '/user/installations') {
         if (forge?.installationsDown) return { status: 503, body: { message: 'Service Unavailable' } };
         const on = forge?.installedOn ?? [login];
