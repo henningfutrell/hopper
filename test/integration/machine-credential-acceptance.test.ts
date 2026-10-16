@@ -42,7 +42,7 @@ describe('machine credential acceptance', () => {
     expect(ms[0].infraCredentials).toEqual(['.kube', '.config/gh/hosts.yml']);
     
     // Queue a job
-    await a.queueDirect('test', 'direct 1', 'test');
+    const job = await a.pull('test', {});
     await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0].status === 'held'));
     
     const j = await jobs(a);
@@ -63,7 +63,7 @@ describe('machine credential acceptance', () => {
     }, { token });
     
     // Queue a job
-    await a.queueDirect('test', 'direct 2', 'test');
+    await a.pull('test', {});
     await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0].status === 'claimed'));
     
     const j = await jobs(a);
@@ -82,12 +82,12 @@ describe('machine credential acceptance', () => {
     }, { token });
     
     // Queue and claim a job
-    await a.queueDirect('test', 'direct 3', 'test');
-    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0].status === 'claimed'));
+    const job1 = await a.pull('test', {});
+    await a.waitForStatus(job1.id, 'claimed');
     
     // End the job
-    await a.drain();
-    await waitFor(() => jobs(a).then((j) => j.length === 0));
+    a.scripted.end(job1.id);
+    await a.waitForStatus(job1.id, 'done');
     
     // Revoke the acceptance
     await a.ui('/ui/api/machines/' + machineId + '/credentials/revoke', {
@@ -95,12 +95,12 @@ describe('machine credential acceptance', () => {
     }, { token });
     
     // Queue another job
-    await a.queueDirect('test', 'direct 4', 'test');
-    await waitFor(() => jobs(a).then((j) => j.length === 1 && j[0].status === 'held'));
+    const job2 = await a.pull('test', {});
+    await waitFor(() => jobs(a).then((j) => j.some((jj) => jj.id === job2.id && jj.status === 'held')));
     
-    const j = await jobs(a);
-    expect(j[0].status).toBe('held');
-    expect(j[0].holdReason).toContain('not ready');
+    const j = await a.job(job2.id);
+    expect(j.status).toBe('held');
+    expect(j.holdReason).toContain('not ready');
   });
 
   it('acceptance survives restart', async () => {
@@ -139,10 +139,10 @@ describe('machine credential acceptance', () => {
     expect(ms2[0].credentialAcceptance!.revokedAt).toBeUndefined();
     
     // The machine takes jobs
-    await t.queueDirect('test', 'direct 5', 'test');
-    await waitFor(() => jobs(t!).then((j) => j.length === 1 && j[0].status === 'claimed'));
+    const job = await t.pull('test', {});
+    await t.waitForStatus(job.id, 'claimed');
     
-    const j = await jobs(t);
-    expect(j[0].status).toBe('claimed');
+    const j = await t.job(job.id);
+    expect(j.status).toBe('claimed');
   });
 });

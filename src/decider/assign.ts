@@ -346,7 +346,7 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
 function waitReason(job: Job, states: MachineStateWithAcceptances[], pl?: PriorityLanesInput): string {
   const ex = job.spec.executor;
   const able = states.filter((m) => eligible(m, job));
-  if (able.length === 0 && isWindowsJob(job)) return windowsWait(job, states.map((s) => s.machine));
+  if (able.length === 0 && isWindowsJob(job)) return windowsWait(job, states);
   const s = able.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;

@@ -18,17 +18,17 @@ export function createCredentialAcceptanceRepository(c: StoreContext): Credentia
   };
   return {
     accept(machineKey, credentials, acceptedBy, acceptedAt) {
-      c.db.run(`INSERT INTO machine_credential_acceptances (user_id, machine_key, credentials, accepted_by, accepted_at, revoked_at)
-        VALUES (?, ?, ?, ?, ?, NULL)
-        ON CONFLICT (user_id, machine_key) DO UPDATE SET credentials = excluded.credentials, accepted_by = excluded.accepted_by, accepted_at = excluded.accepted_at, revoked_at = NULL`,
-      c.userId, machineKey, JSON.stringify(credentials), acceptedBy, acceptedAt);
+      c.db.run(`INSERT INTO machine_credential_acceptances (machine_key, credentials, accepted_by, accepted_at, revoked_at)
+        VALUES (?, ?, ?, ?, NULL)
+        ON CONFLICT (machine_key) DO UPDATE SET credentials = excluded.credentials, accepted_by = excluded.accepted_by, accepted_at = excluded.accepted_at, revoked_at = NULL`,
+      machineKey, JSON.stringify(credentials), acceptedBy, acceptedAt);
     },
     revoke(machineKey, revokedAt) {
-      c.db.run('UPDATE machine_credential_acceptances SET revoked_at = ? WHERE user_id = ? AND machine_key = ? AND revoked_at IS NULL', revokedAt, c.userId, machineKey);
+      c.db.run('UPDATE machine_credential_acceptances SET revoked_at = ? WHERE machine_key = ? AND revoked_at IS NULL', revokedAt, machineKey);
     },
     get,
     list() {
-      const rows = c.db.all('SELECT machine_key, credentials, accepted_by, accepted_at, revoked_at FROM machine_credential_acceptances WHERE user_id = ?', c.userId);
+      const rows = c.db.all('SELECT machine_key, credentials, accepted_by, accepted_at, revoked_at FROM machine_credential_acceptances');
       return rows.map((r) => ({
         machineKey: r.machine_key as string,
         credentials: JSON.parse(r.credentials as string) as string[],
