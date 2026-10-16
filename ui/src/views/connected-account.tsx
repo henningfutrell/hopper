@@ -9,8 +9,8 @@
 // cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Signed in
 // with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Settings → Plugins
 // to stop taking jobs from it while signed in. Signed in another way, Stop working through GitHub forgets the account and
-// its token and keeps the sign-in (issue #322). Signed in with GitHub, a connection that ended ended the session too: no
-// Connect again here, signing in with GitHub again restores both (issue #513). The connection's job source is shown in it, its sync under the
+// its token and keeps the sign-in (issue #322). A connection that ended marks only this source as needing a new connection:
+// the session stays, signed in with GitHub or not, and Connect again is offered here to everyone (issue #1380). The connection's job source is shown in it, its sync under the
 // account (issue #254): one GitHub piece, not a card beside it. Of the repositories the app reaches the
 // person ticks the job repositories — the only ones jobs come from — filtering a long list, with how many
 // are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
@@ -100,9 +100,8 @@ export function ConnectedAccountPanel({ provider, source, onStatus }: { provider
           {s.unrenewable && <div data-unrenewable className="space-y-1">
             <div className="break-words text-warn">
               {s.unrenewable}. It ends {s.expiresAt ? new Date(s.expiresAt).toLocaleString() : 'when GitHub expires it'}; then no jobs come from {name} until it is connected again.
-              {signedInWith ? ` Sign out and sign in with ${name} again before then.` : ''}
             </div>
-            {!signedInWith && <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `A new ${name} connection, whose token renews`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
+            <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `A new ${name} connection, whose token renews`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>
           </div>}
           {s.renewal && <div data-renewal className="break-words text-warn">
             Its token could not be renewed yet: {s.renewal}. The hopper tries again by itself; the connection goes on.
@@ -141,9 +140,7 @@ export function ConnectedAccountPanel({ provider, source, onStatus }: { provider
           <div data-expired className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
             Reconnect needed: {name} refused the connection of <span className="font-mono">{s.account}</span>: {s.error}. No jobs come from {name} until you connect it again.
           </div>
-          {signedInWith
-            ? <div>Your hopper session ended with it: sign in with {name} again to connect it.</div>
-            : <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
+          <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>
         </>}
         {s.state === 'unreadable' && <>
           <div data-unreadable className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">

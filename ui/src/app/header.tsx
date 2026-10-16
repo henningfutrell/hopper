@@ -1,8 +1,8 @@
 // The top bar: version (opens the version and update panel, on every screen), connection,
 // router health, uptime, the help pages (issue #782), the API reference, and the user menu: who you are, the theme, the device link and Sign out
 // behind one button at every width (issue #666). Shown only signed in (issue #213).
-// A GitHub connection that ended asks to connect again here, on every screen (issue #441) — unless the person signed in
-// with GitHub: then the session ended with it, and the page asks the daemon at once and goes to sign-in (issue #513). Pending logins are
+// A GitHub connection that ended asks to connect again here, on every screen (issue #441), whatever the person signed in
+// with: the connection is a source, and its end ends no session (issue #1380). Pending logins are
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
 // on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
 // A stall of the hopper's event loop shows here for 10 minutes, a warning with how long it was and the routes in flight (issue #1002).
@@ -13,7 +13,6 @@
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
 import { Activity, BookOpen, CircleCheck, CircleHelp, CircleX, KeyRound, Layers, MessageCircleQuestion, Timer, Zap } from 'lucide-react';
-import { useEffect } from 'react';
 import logo from '../../../site/hopper-logo.svg';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,10 +24,10 @@ import { BADGES, shownBadges } from '@/model/header-badges';
 import type { HeaderBadge, Health } from '@/model/wire';
 import { connectionEnded } from '@/model/sources';
 import { yoloIndicator } from '@/model/yolo-mode';
-import { recheckSession, useHopper } from '@/store';
+import { useHopper } from '@/store';
 import { cn } from '@/lib/utils';
 import { useHeaderBadges, useYoloMode } from '@/store/polled';
-import { useKpis, useLoginsBadge, useSignedInWith } from '@/store/selectors';
+import { useKpis, useLoginsBadge } from '@/store/selectors';
 import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
@@ -69,9 +68,6 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const health = useHopper((s) => s.health);
   const conn = useHopper((s) => s.conn);
   const ended = useHopper((s) => connectionEnded(s.sources));
-  const signedInWithGitHub = useSignedInWith('github');
-  // Signed in with GitHub, the session ended with the connection (issue #513): no reconnect here, straight to sign-in.
-  useEffect(() => { if (ended && signedInWithGitHub) void recheckSession(); }, [ended, signedInWithGitHub]);
   const logins = useLoginsBadge();
   const yolo = yoloIndicator(useYoloMode());
   return (
@@ -85,7 +81,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
         <UpdateButton version={health?.version} />
         <div className="hidden min-w-0 flex-1 justify-center md:flex"><SearchBox /></div>
         <div className="ml-auto flex items-center gap-1 text-xs sm:gap-3">
-          {ended && !signedInWithGitHub && (
+          {ended && (
             <a data-connection-ended href="#sources" title={ended}
               className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub: reconnect needed</a>
           )}

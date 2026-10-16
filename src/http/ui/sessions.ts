@@ -97,8 +97,6 @@ export function createUiSessions(o: {
   /** The sign-in config as it applies now (the session lengths, which realms are gateways) and the gateway check. */
   signIn: Pick<SignIn, 'config' | 'checkGateway'>;
   ended?: (s: EndedSession) => void;
-  /** Whether the user's GitHub connection ended (issue #513): their sessions signed in with GitHub end with it. */
-  connectionEnded?: (userId: string) => boolean;
   /** A request carried a token that names no live session, and why (issue #647): once per token. */
   unknown?: (why: string) => void;
 }): UiSessions {
@@ -106,7 +104,6 @@ export function createUiSessions(o: {
   const lengths = (): SessionLengths => o.signIn.config().sessions;
   const renewEvery = (): number => Math.min(RENEW_EVERY_MS, lengths().idleHours * HOUR / 10);
   const isGateway = (realm: string): boolean => o.signIn.config().realms.some((r) => r.name === realm && r.type === 'gateway');
-  const isGitHub = (realm: string): boolean => o.signIn.config().realms.some((r) => r.name === realm && r.type === 'github');
   /** Why recent sessions ended, by token hash (bounded): a later request with the token says so. */
   const endedWhy = new Map<string, SessionEndReason>();
   const end = (r: UiSessionRow, reason: SessionEndReason): void => {
@@ -115,12 +112,14 @@ export function createUiSessions(o: {
     o.repo.drop(r.tokenHash);
     o.ended?.({ userId: r.userId, identity: r.identity, reason });
   };
-  /** The row, unless it has expired or, signed in with GitHub, its user's GitHub connection ended: then it ends. */
+  /**
+   * The row, unless it has expired: then it ends. A GitHub connection that ended ends no session (issue #1380): it is a
+   * source the user attached, marked as needing a new connection, not their sign-in.
+   */
   const live = (r: UiSessionRow | undefined): UiSessionRow | undefined => {
     if (!r) return undefined;
     const e = endOf(r, lengths());
     if (now() >= e.at) { end(r, e.reason); return undefined; }
-    if (isGitHub(r.identity.realm) && o.connectionEnded?.(r.userId) === true) { end(r, 'connection-ended'); return undefined; }
     return r;
   };
   const unknownSeen = new Set<string>();

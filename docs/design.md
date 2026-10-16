@@ -9412,7 +9412,8 @@ progress. The reap removes the credentials dir whatever else it keeps.
 
 **Hopper sessions are not bound to the token** while the connection lives: a token renewing or failing to
 renew for a reason that may pass never ends a hopper UI session; its lifetime is #439's. A connection that
-**ends** ends the sessions signed in with GitHub (issue #513, "A GitHub sign-in ends with its connection").
+**ends** ends no session either since issue #1380 part 3 (it ended the sessions signed in with GitHub, issue #513): it
+marks only the source as needing a new connection.
 
 **Verification:** `test/connected-accounts/rotation.test.ts` (real Postgres, two connections to one user
 schema as two processes, the real renewal over HTTP to the fake GitHub, a fake clock: renewed by the
@@ -9464,7 +9465,7 @@ the renewer decides whether the sign-in ended, the message no longer says to con
 sealed under a key the runtime does not give reads **`unreadable`** (`ConnectedAccountStatus`): its source
 pauses saying to give the hopper the key it was sealed under, as `HOPPER_MASTER_KEY` or as
 `HOPPER_MASTER_KEY_PREVIOUS` beside a new one; it is not expired, so the header asks nothing and no session
-ends (#513); the panel offers only *Forget this connection*, after which Connect is offered. A key rotation
+ends; the panel offers only *Forget this connection*, after which Connect is offered. A key rotation
 asks for no new sign-in: the token box opens under `HOPPER_MASTER_KEY_PREVIOUS` and the renewer seals again
 under the new key.
 
@@ -12276,7 +12277,10 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 
-## A GitHub sign-in ends with its connection (issue #513, 2026-10-08)
+## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
+
+**Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
+session. What follows is the history.
 
 Owner request: when the connected GitHub account ended ("GitHub sign-in expired: connect again"), the person
 stayed signed in to the hopper: Sources paused, the header asked to connect again, and the rest of the UI stayed
@@ -12311,7 +12315,8 @@ again restores both; no "still signed in, only reconnect GitHub" path for someon
 
 **Verification:** `test/http/ui-sessions.test.ts` (every GitHub session of the user ends, as `connection-ended`,
 on lookup and on renewal; a session of that user signed in another way stays; a live connection and another
-user's session stay), `test/integration/connection-ended-session.test.ts` (the real daemon and a fake GitHub on
+user's session stay), `test/integration/connection-ended-session.test.ts` (since issue #1380 part 3,
+`test/integration/source-expired-session.test.ts`; the real daemon and a fake GitHub on
 loopback: two browsers signed in with GitHub, GitHub revokes the grant, both sessions read signed out, a change
 is refused, two `ui_session.ended` events; signing in with GitHub again gives a session and a connected account;
 a token refused while its refresh token works is renewed and ends no session), `test/ui/sources-view.test.ts`
@@ -21815,3 +21820,36 @@ plugin; no `@octokit/auth-app`), `test/integration/github-writes.test.ts` and `t
 the thread through the account's token), `test/integration/github-budget.test.ts` (the budget, through the account's
 source), `test/ui/sources.test.ts` (the summary per state), `test/ui/intake-view.test.ts` (the account's source that
 cannot run has its panel, with the error).
+
+## A source that expires marks only the source (issue #1380, part 3, 2026-10-15)
+
+Issue #1380: sessions are no longer tied to GitHub token expiry; a source expiring only marks that source as needing
+re-auth. Acceptance test: a source token expiring does not log the user out; the source is marked as needing re-auth.
+This replaces issue #513 ("A GitHub sign-in ends with its connection"), which ended every session of a user signed in
+with GitHub when their GitHub connection ended.
+
+**The change.**
+- `src/http/ui/sessions.ts`: a session ends only by its own lengths, a realm change, a gateway's refusal or a logout. The
+  `connectionEnded` hook and its check are gone; `src/http/index.ts` no longer gives it.
+- The connection is marked as before: `connected_account.expired`, the account's state `expired` ("reconnect needed"),
+  its job source paused with the reason. The header's **GitHub: reconnect needed** shows to everyone, signed in with
+  GitHub or not, and the page no longer asks the daemon at once to go to sign-in.
+- The Sources panel offers **Connect GitHub again** to everyone: on an ended connection, and on one GitHub gave no
+  refresh token (issue #518). The device code connects the same user's GitHub again from the session it has.
+
+**Decisions:**
+- **`connection-ended` stays a reason of `ui_session.ended`.** Events recorded before this part carry it, and the event
+  schema checks the events it reads; no new event carries it.
+- **Signed in with GitHub, the panel still offers Sign out, not Stop working through GitHub** (issue #322). Taking the
+  sign-in and the source apart in the panel belongs to the part that makes GitHub a source a user attaches.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+GitHub as a source a user attaches (OAuth or a personal access token, in the user's vault), with its repositories, the
+acting identity per job and the source-email match setting (checked again on refresh); no GitHub App required (no App
+private key is required since issue #1377); the migration of GitHub-signed-in users; Kubernetes and service-account tokens.
+
+**Verification:** `test/integration/source-expired-session.test.ts` (the real daemon and a fake GitHub on loopback: two
+browsers signed in with GitHub, GitHub revokes the grant, both sessions live, no `ui_session.ended`, the account reads
+`expired`; Connect GitHub again from the same session makes it `connected`; a renewal ends no session),
+`test/ui/sources-view.test.ts` (signed in with GitHub, an ended connection keeps the session, the header asks to
+reconnect, and the panel's Connect GitHub again shows the device code).
