@@ -56,8 +56,7 @@ describe('protocol footer', () => {
       + '[hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.\n'
       + '[hopper formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note) in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use raw HTML or images.\n'
       + WORK_TREE + '\n'
-      + PROTOCOL,
-    );
+      + PROTOCOL);
   });
 
   it('carries the job rules it is given in place of the default; the work tree and the protocol stay (issue #172)', () => {
