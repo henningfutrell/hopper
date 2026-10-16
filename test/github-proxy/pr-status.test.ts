@@ -44,11 +44,10 @@ describe('a pull request\'s status from what the hopper knows (issue #1072)', ()
     expect(knownPullRequest(8, URL, {})).toBeUndefined();
   });
 
-  it('is a read: the hopper\'s own job asks it on any repository; another user\'s job does not', () => {
+  it('is a read: a job asks it on any repository', () => {
     const req: ProxyRequest = proxyRequest.parse({ op: 'pr.status', repo: 'else/where', number: '8' });
     expect(req).toEqual({ op: 'pr.status', repo: 'else/where', number: 8 });
-    expect(checkRequest(req, { jobId: 'j', own: true, repo: 'octo/tools' }, ['octo/tools'])).toEqual({ ok: true });
-    expect(checkRequest(req, { jobId: 'j', own: false }, ['octo/tools'])).toMatchObject({ ok: false });
+    expect(checkRequest(req, { jobId: 'j', repo: 'octo/tools' }, ['octo/tools'])).toEqual({ ok: true });
   });
 });
 
@@ -73,7 +72,7 @@ describe('the broker answers pr status from the hopper first (issue #1072)', () 
     };
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => now,
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api } }),
+      connection: () => ({ jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api }),
     });
     return { proxy, events, asked, later: (ms: number) => { now += ms; } };
   }
