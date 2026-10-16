@@ -1,0 +1,1 @@
+- If you signed in with GitHub, you can now sign in with a password or your company's single sign-on of the same email, and keep your work and your GitHub connection.
