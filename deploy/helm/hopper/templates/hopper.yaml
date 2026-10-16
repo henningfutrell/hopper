@@ -168,6 +168,17 @@ spec:
               value: kubernetes
             - name: HOPPER_KUBERNETES_HOPPER_LABELS
               value: {{ include "hopper.selector" $sel | replace ": " "=" | splitList "\n" | join "," | quote }}
+            {{- with .Values.sandbox.limits }}
+            {{- if .cpus }}
+            # The most each box gets (issue #1422).
+            - name: HOPPER_KUBERNETES_BOX_CPUS
+              value: {{ .cpus | toString | quote }}
+            {{- end }}
+            {{- if .memoryMb }}
+            - name: HOPPER_KUBERNETES_BOX_MEMORY_MB
+              value: {{ .memoryMb | int64 | toString | quote }}
+            {{- end }}
+            {{- end }}
             # The sandbox playground's limits (issue #1410).
             - name: HOPPER_SANDBOX_MAX_CONCURRENT
               value: {{ .Values.sandbox.maxConcurrent | quote }}

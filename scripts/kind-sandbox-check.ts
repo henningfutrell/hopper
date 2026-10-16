@@ -7,6 +7,15 @@
 // the hopper is killed, a need box of its instance runs while it is down, and the hopper started again must remove it
 // (`crashAndRestart`). Needs `kubectl` on PATH and this checkout's dependencies (`npm ci`).
 //
+// Issue #1422 adds, before the restart: each box gets the CPU and memory the chart's `sandbox.limits` give, as the
+// kernel holds them; a box that goes over its memory is killed, and its log says so. A box reaches the hopper and nothing
+// else: not another box, not a Service of the release (the hopper's database, OpenFGA), not the Kubernetes API, not its
+// node; it holds no service account token and only the credential its step was given. Then dozens of steps at once go
+// through the sandbox module (src/sandbox/service.ts): more than the nodes have room for, so some wait for the scheduler,
+// and all run, give back their outputs and leave nothing; no box is a lane pod or takes a client's link, and the
+// module's ledger holds no open run after. The hopper's memory before and after the burst is printed, never asserted:
+// load numbers run locally.
+//
 //   node scripts/kind-sandbox-check.ts [--context CONTEXT] [--namespace NAMESPACE] [--image IMAGE]
 //
 // --context names the kube context (default kind-hopper-check), --namespace the release's (default hopper), --image the
@@ -21,28 +30,16 @@ import { HOME } from '../src/sandbox/flags.ts';
 import { createKubeApi } from '../src/sandbox/kubernetes-api.ts';
 import { createKubernetesRuntime, POD_LABEL } from '../src/sandbox/kubernetes.ts';
 import { needEnv, NEED_LABEL, runNeedBox, type NeedBoxResult } from '../src/sandbox/need-box.ts';
-import type { ContainerRuntime } from '../src/domain/sandboxes.ts';
+import type { ContainerRuntime, ResourceLimits } from '../src/domain/sandboxes.ts';
+import { boxLimitsOf, burst, gone, GONE_MS, held, isolation, killedForMemory, MIB, must, PORT, type Kubectl } from './kind-sandbox-cases.ts';
 
-const PORT = 4790;
+export type { Kubectl };
+
 /** The environment kubectl runs in: the person's, whatever KUBECONFIG the runtime is later given. */
 const PERSON = { ...process.env };
-/** How long a box's pod and claim may take to go once its run ended: a pod's grace, then the claim's protection. */
-const GONE_MS = 180_000;
-/** What each box here asks for. */
-const BOX_LIMITS = { cpus: 0.25, memoryMb: 128 };
-
-/** kubectl in one context: its exit status and what it wrote. */
-export type Kubectl = (args: string[]) => { status: number | null; stdout: string; stderr: string };
-
 function kubectl(context: string, args: string[]): ReturnType<Kubectl> {
   const r = spawnSync('kubectl', ['--context', context, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: PERSON });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.error ? r.error.message : r.stderr };
-}
-
-function must(k: Kubectl, args: string[]): string {
-  const r = k(args);
-  if (r.status !== 0) throw new Error(`kubectl ${args.join(' ')}: ${r.stderr.trim() || `exit ${r.status}`}`);
-  return r.stdout;
 }
 
 /**
@@ -66,23 +63,7 @@ function serviceAccountConfig(k: Kubectl, context: string, namespace: string, ac
 
 interface Named { metadata: { name: string; uid: string; labels?: Record<string, string>; deletionTimestamp?: string } }
 
-/** The pods, claims and secrets in the namespace that carry the need label of `instance`: none, once its box is gone. */
-function leftOf(k: Kubectl, instance: string): string[] {
-  return must(k, ['get', 'pods,persistentvolumeclaims,secrets', '-l', `${NEED_LABEL}=${instance}`, '-o', 'name'])
-    .split('\n').map((l) => l.trim()).filter(Boolean);
-}
-
-/** Waits until nothing with the need label of `instance` is left; answers what is left at the end. */
-async function gone(k: Kubectl, instance: string, ms = GONE_MS, pollMs = 2_000): Promise<string[]> {
-  const end = Date.now() + ms;
-  for (;;) {
-    const left = leftOf(k, instance);
-    if (left.length === 0 || Date.now() >= end) return left;
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-}
-
-interface Run { name: string; script: string; timeoutMs?: number; cancelOn?: string; expect(r: NeedBoxResult): string | null }
+interface Run { name: string; script: string; timeoutMs?: number; cancelOn?: string; expect(r: NeedBoxResult, log: string): string | null }
 
 /** One need box run to its end, as a step runs it; then nothing with its labels may be left. Answers what failed, or null. */
 async function oneBox(o: { runtime: ContainerRuntime; k: Kubectl; image: string; instance: string; dir: string }, run: Run): Promise<string | null> {
@@ -99,7 +80,7 @@ async function oneBox(o: { runtime: ContainerRuntime; k: Kubectl; image: string;
       if (run.cancelOn && log.includes(run.cancelOn)) stop.abort();
     },
   });
-  const wrong = run.expect(result);
+  const wrong = run.expect(result, log);
   if (wrong) return `${run.name}: ${wrong} (exit ${result.exit}${result.problem ? `, ${result.problem}` : ''}; log: ${log.trim() || 'none'})`;
   const left = await gone(o.k, o.instance);
   if (left.length > 0) return `${run.name}: left after the box ended: ${left.join(', ')}`;
@@ -109,13 +90,14 @@ async function oneBox(o: { runtime: ContainerRuntime; k: Kubectl; image: string;
 
 const exits = (code: number) => (r: NeedBoxResult): string | null => (r.exit === code && !r.problem ? null : `it should end with exit ${code}`);
 const problem = (text: string) => (r: NeedBoxResult): string | null => (r.exit === 125 && r.problem?.includes(text) ? null : `it should end with "${text}"`);
-
 /** The check. Answers what failed, or null. */
 export async function check(context: string, namespace: string, image: string): Promise<string | null> {
   const k: Kubectl = (args) => kubectl(context, ['--namespace', namespace, ...args]);
   const deployment = JSON.parse(must(k, ['get', 'deployment', 'hopper', '-o', 'json'])) as {
-    spec: { selector: { matchLabels: Record<string, string> }; template: { spec: { serviceAccountName?: string } } };
+    spec: { selector: { matchLabels: Record<string, string> }; template: { spec: { serviceAccountName?: string; containers: { name: string; env?: { name: string; value?: string }[] }[] } } };
   };
+  const limits = boxLimitsOf(deployment.spec.template.spec.containers.find((c) => c.name === 'hopper')?.env ?? []);
+  if (typeof limits === 'string') return limits;
   const account = deployment.spec.template.spec.serviceAccountName ?? 'default';
   const own = (): Named[] => (JSON.parse(must(k, ['get', 'pods', '-o', 'json'])) as { items: Named[] }).items
     .filter((p) => p.metadata.labels?.[POD_LABEL] === undefined);
@@ -132,10 +114,8 @@ export async function check(context: string, namespace: string, image: string): 
     serviceAccountConfig(k, context, namespace, account, config);
     process.env.KUBECONFIG = config;
     const { api } = createKubeApi(namespace);
-    const kube = createKubernetesRuntime({ api, hopper: { namespace, labels: deployment.spec.selector.matchLabels, port: PORT } });
-    // A need box's limits (4 CPUs, 8 GiB) are its requests too, which a kind node on a CI runner cannot give: the boxes
-    // here ask for little, as the check is about what is left after them, not about room.
-    const runtime: ContainerRuntime = { ...kube, create: (spec) => kube.create({ ...spec, limits: BOX_LIMITS }) };
+    // As the hopper makes it: a need box asks for 4 CPUs and 8 GiB, and the chart's limits cap that (issue #1422).
+    const runtime = createKubernetesRuntime({ api, hopper: { namespace, labels: deployment.spec.selector.matchLabels, port: PORT }, most: limits });
     const instance = `kind-${randomBytes(4).toString('hex')}`;
     const box = { runtime, k, image, instance, dir };
 
@@ -146,6 +126,9 @@ export async function check(context: string, namespace: string, image: string): 
       { name: 'fails', script: 'echo marker > "$HOME/marker"; exit 3', expect: exits(3) },
       { name: 'times-out', script: 'echo started; sleep 600', timeoutMs: 60_000, expect: problem('did not end') },
       { name: 'cancelled', script: 'echo started; sleep 600', cancelOn: 'started', expect: problem('stopped waiting') },
+      // Issue #1422: the chart's limits, as the kernel holds them; over its memory, a box is killed and says so.
+      { name: 'limits', script: 'echo "memory.max $(cat /sys/fs/cgroup/memory.max)"; echo "cpu.max $(cat /sys/fs/cgroup/cpu.max)"', expect: held(limits) },
+      { name: 'over-memory', script: `x=$(head -c ${limits.memoryMb * 4 * MIB} /dev/zero | tr '\\000' a); echo "kept ${'$'}{#x} bytes"`, expect: killedForMemory },
     ];
     for (const run of runs) {
       const failed = await oneBox(box, run);
@@ -159,6 +142,11 @@ export async function check(context: string, namespace: string, image: string): 
     }));
     const together = pair.find((f) => f !== null);
     if (together) return together;
+
+    const reach = await isolation({ ...box, namespace, hopperService: 'hopper' });
+    if (reach) return reach;
+    const many = await burst({ ...box, limits, context, namespace });
+    if (many) return many;
 
     // The runtime removes only its own: the hopper's pod and its Postgres's claim are refused.
     const refused = async (what: string, call: () => Promise<void>): Promise<string | null> => {
@@ -183,7 +171,7 @@ export async function check(context: string, namespace: string, image: string): 
     console.log(`the release's ${before.length} pods are as they were`);
 
     // Last, as it replaces the hopper's pod.
-    return await crashAndRestart({ kubectl: k, runtime, image, selector: deployment.spec.selector.matchLabels });
+    return await crashAndRestart({ kubectl: k, runtime, image, selector: deployment.spec.selector.matchLabels, limits });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -196,7 +184,7 @@ export async function check(context: string, namespace: string, image: string): 
  * while the hopper is down, so only the restarted hopper can have removed it. Answers what failed, or null.
  */
 export async function crashAndRestart(o: {
-  kubectl: Kubectl; runtime: ContainerRuntime; image: string; selector: Record<string, string>; goneMs?: number; pollMs?: number;
+  kubectl: Kubectl; runtime: ContainerRuntime; image: string; selector: Record<string, string>; limits?: ResourceLimits; goneMs?: number; pollMs?: number;
 }): Promise<string | null> {
   const k = o.kubectl;
   const read = k(['exec', 'statefulset/hopper-postgres', '-c', 'postgres', '--', 'psql', '-U', 'hopper', '-d', 'hopper', '-tAc',
@@ -218,7 +206,7 @@ export async function crashAndRestart(o: {
   const labels = { [NEED_LABEL]: instance };
   if (!(await o.runtime.createVolume(volume, labels))) return `the home ${volume} was there already`;
   const { user } = await o.runtime.pull(o.image);
-  const id = await o.runtime.create({ name, image: o.image, network: 'unused', volume, labels, user, env: { HOME }, limits: BOX_LIMITS, script: 'sleep 3600' });
+  const id = await o.runtime.create({ name, image: o.image, network: 'unused', volume, labels, user, env: { HOME }, limits: o.limits ?? { cpus: 0.25, memoryMb: 128 }, script: 'sleep 3600' });
   await o.runtime.start(id);
   const state = (await o.runtime.inspect(id))?.state;
   if (state !== 'running') return `the box ${name} the hopper leaves is ${state ?? 'gone'}, not running, while the hopper is down`;
