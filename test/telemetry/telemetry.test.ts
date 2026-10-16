@@ -1,5 +1,5 @@
 // OpenTelemetry (issue #1486, design.md "Telemetry"): off unless the launch's OTEL_* variables name an exporter; on, a
-// job is one trace with a span for each stage, every request is a span with its route's latency recorded, GitHub calls
+// job is one trace with a span for each job span, every request is a span with its route's latency recorded, GitHub calls
 // and store calls are counted, and every log line goes out as a log record with the trace it was written in. Behaviour
 // only: in-memory exporters, no timing asserted, and no secret in anything exported.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -18,6 +18,7 @@ import { instrumentHttp } from '../../src/telemetry/http.ts';
 import { traceJobs } from '../../src/telemetry/jobs.ts';
 import { bridgeLogStream } from '../../src/telemetry/logs.ts';
 import { observeProcess } from '../../src/telemetry/process.ts';
+import { countBy, observeQueue } from '../../src/telemetry/queue.ts';
 import { startTelemetry, telemetryWanted, type Telemetry } from '../../src/telemetry/sdk.ts';
 
 class TestReader extends MetricReader {
@@ -25,18 +26,19 @@ class TestReader extends MetricReader {
   protected async onShutdown(): Promise<void> {}
 }
 
-const spans = new InMemorySpanExporter();
-const logs = new InMemoryLogRecordExporter();
+// Fresh each test: a shutdown stops its exporters.
+let spans: InMemorySpanExporter;
+let logs: InMemoryLogRecordExporter;
 let reader: TestReader;
 let telemetry: Telemetry;
 
 beforeEach(() => {
-  spans.reset();
-  logs.reset();
+  spans = new InMemorySpanExporter();
+  logs = new InMemoryLogRecordExporter();
   reader = new TestReader();
   telemetry = startTelemetry({
     env: {}, version: '0.0.0-test',
-    spanProcessors: [new SimpleSpanProcessor(spans)], metricReaders: [reader], logRecordProcessors: [new SimpleLogRecordProcessor(logs)],
+    spanProcessors: [new SimpleSpanProcessor(spans)], metricReaders: [reader], logRecordProcessors: [new SimpleLogRecordProcessor({ exporter: logs })],
   });
 });
 afterEach(async () => { await telemetry.shutdown(); });
@@ -91,7 +93,7 @@ describe('a job is one trace (issue #1486)', () => {
     source: { source: 'github', kind: 'github', key: 'https://github.com/o/r/issues/7', repo: 'o/r', number: 7, title: 'SECRET-TITLE' }, ...o,
   });
 
-  it('has a root span and a child span for each stage, each parented on the root, with the job\'s attributes', async () => {
+  it('has a root span and a child span for each job span, each parented on the root, with the job\'s attributes', async () => {
     const b = bus();
     let current = job();
     const stop = traceJobs({ subscribe: b.subscribe, job: () => current });
@@ -105,8 +107,9 @@ describe('a job is one trace (issue #1486)', () => {
     b.emit('job.started', { laneId: 'desk/lane-1', machineId: 'desk' });
     current = job({ status: 'finished', laneId: 'desk/lane-1' });
     b.emit('job.finished', { laneId: 'desk/lane-1' });
+    expect(byName('hopper.job')).toHaveLength(1); // the job's end ends its root
+    // Its pull request is followed after it ended: a job span of the same trace.
     b.emit('job.pull_request_followed', {}, { pullRequest: 'https://github.com/o/r/pull/12' });
-    expect(byName('hopper.job')).toEqual([]); // open while its pull request is followed
     b.emit('job.pull_request_merged', {}, { pullRequest: 'https://github.com/o/r/pull/12' });
     stop();
 
@@ -115,24 +118,25 @@ describe('a job is one trace (issue #1486)', () => {
     expect(parentOf(root!)).toBeUndefined();
     expect(root!.attributes).toMatchObject({
       'hopper.job.id': 'j1', 'hopper.job.executor': 'herdr-claude', 'hopper.repo': 'o/r', 'hopper.issue.number': 7,
-      'hopper.lane.id': 'desk/lane-1', 'hopper.machine.id': 'desk', 'hopper.pull_request.number': 12, 'hopper.job.outcome': 'finished',
+      'hopper.lane.id': 'desk/lane-1', 'hopper.machine.id': 'desk', 'hopper.job.outcome': 'finished',
     });
-    const stages = spans.getFinishedSpans().filter((s) => s !== root);
-    expect(stages.map((s) => s.name).sort()).toEqual(['hopper.job.pull_request', 'hopper.job.question', 'hopper.job.queue', 'hopper.job.run', 'hopper.job.run'].sort());
-    for (const s of stages) {
+    expect(byName('hopper.job.pull_request')[0]?.attributes['hopper.pull_request.number']).toBe(12);
+    const jobSpans = spans.getFinishedSpans().filter((s) => s !== root);
+    expect(jobSpans.map((s) => s.name).sort()).toEqual(['hopper.job.pull_request', 'hopper.job.question', 'hopper.job.queue', 'hopper.job.run', 'hopper.job.run'].sort());
+    for (const s of jobSpans) {
       expect(s.spanContext().traceId).toBe(root!.spanContext().traceId);
       expect(parentOf(s)).toBe(root!.spanContext().spanId);
     }
     const [question] = byName('hopper.job.question');
     expect(question!.events.map((e) => e.name)).toContain('question.escalated');
     expect(question!.events.find((e) => e.name === 'question.escalated')!.attributes).toEqual({ 'hopper.question.target': 'human' });
-    // The stage's time is the events': the queue lasted from queued to claimed.
+    // The job span's time is the events': the queue lasted from queued to claimed.
     const [queue] = byName('hopper.job.queue');
     expect(queue!.duration).toEqual([1, 0]);
 
     const rm = await metricsNow();
-    const stage = metric(rm, 'hopper.job.stage.duration');
-    expect(stage?.dataPoints.map((p) => p.attributes['hopper.job.stage']).sort()).toEqual(['pull_request', 'question', 'queue', 'run']);
+    const kinds = metric(rm, 'hopper.job.span.duration');
+    expect(kinds?.dataPoints.map((p) => p.attributes['hopper.job.span']).sort()).toEqual(['pull_request', 'question', 'queue', 'run']);
     const ended = metric(rm, 'hopper.job.ended');
     expect(ended?.dataPoints).toEqual([expect.objectContaining({ attributes: { 'hopper.job.outcome': 'finished', 'hopper.job.executor': 'herdr-claude' }, value: 1 })]);
 
@@ -140,7 +144,7 @@ describe('a job is one trace (issue #1486)', () => {
     for (const secret of ['SECRET-PROMPT-TEXT', 'SECRET-TITLE', 'SECRET-QUESTION', 'SECRET-ANSWER']) expect(exported).not.toContain(secret);
   });
 
-  it('a job that fails with no pull request ends its trace at once, its open stage with it', () => {
+  it('a job that fails with no pull request ends its trace at once, its open job span with it', () => {
     const b = bus();
     let current = job();
     const stop = traceJobs({ subscribe: b.subscribe, job: () => current });
@@ -253,5 +257,15 @@ describe('the process (issue #1486)', () => {
     const rm = await metricsNow();
     stop();
     for (const name of ['process.memory.usage', 'process.cpu.time', 'nodejs.eventloop.delay.max']) expect(metric(rm, name), name).toBeDefined();
+  });
+});
+
+describe('the queue (issue #1486)', () => {
+  it('reports the live jobs by status and the lanes by state', async () => {
+    const stop = observeQueue(() => ({ jobs: countBy(['queued', 'running', 'queued'], (s) => s), lanes: { busy: 1, idle: 2 } }));
+    const rm = await metricsNow();
+    stop();
+    expect(metric(rm, 'hopper.jobs')?.dataPoints.map((p) => [p.attributes['hopper.job.status'], p.value])).toEqual([['queued', 2], ['running', 1]]);
+    expect(metric(rm, 'hopper.lanes')?.dataPoints.map((p) => [p.attributes['hopper.lane.state'], p.value])).toEqual([['busy', 1], ['idle', 2]]);
   });
 });

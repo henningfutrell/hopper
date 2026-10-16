@@ -184,6 +184,17 @@ services:
       HOPPER_SANDBOX_MAX_CPUS: ${HOPPER_SANDBOX_MAX_CPUS:-4}
       HOPPER_SANDBOX_MAX_MEMORY_MB: ${HOPPER_SANDBOX_MAX_MEMORY_MB:-8192}
       HOPPER_SANDBOX_MAX_TTL_MINUTES: ${HOPPER_SANDBOX_MAX_TTL_MINUTES:-1440}
+      # OpenTelemetry (issue #1486, docs/deploy.md "Telemetry"): off unless an exporter or an OTLP endpoint is set. With the
+      # `telemetry` profile below: OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-hopper}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
       - vault-token:/run/hopper-vault:ro
@@ -502,6 +513,21 @@ services:
       - vault-keys:/vault/keys
       - vault-token:/run/hopper-vault
 
+  # A telemetry viewer (issue #1486, docs/deploy.md "Telemetry"), optional: Grafana's all-in-one OpenTelemetry stack — an
+  # OpenTelemetry collector, Tempo for traces, Prometheus for metrics, Loki for logs, and Grafana to see them. It starts
+  # only when asked for, and the hopper never needs it:
+  #   COMPOSE_PROFILES=telemetry OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318 podman compose up -d
+  # Grafana is on this computer's loopback only, at http://127.0.0.1:3000 (TELEMETRY_UI_PORT). Its data is in the
+  # `telemetry` volume.
+  telemetry:
+    image: docker.io/grafana/otel-lgtm:0.37.0
+    profiles: [telemetry]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TELEMETRY_UI_PORT:-3000}:3000"
+    volumes:
+      - telemetry:/data
+
 # The hopper's network (issue #711): made by this file, under this name, on every `up`, whatever the project is called.
 # Every service is on it, and so is each box the hopper starts (HOPPER_SANDBOX_NETWORK): there `http://hopper:<port>`
 # reaches the hopper, with no HOPPER_PUBLIC_URL. A container started apart joins it:
@@ -544,3 +570,5 @@ volumes:
   vault-keys:
   vault-token:
   kms:
+  # The telemetry viewer's data (issue #1486), profile `telemetry`: traces, metrics, logs and Grafana's own.
+  telemetry:

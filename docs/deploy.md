@@ -1157,6 +1157,31 @@ events.
 - **Solr down**: search answers `degraded` and why, and the rest of the hopper goes on. Changes wait in the database and
   are written when Solr is back. The stack check names a missing `solr` service.
 
+## Telemetry
+
+The hopper exports OpenTelemetry traces, metrics and logs (issue #1486, docs/design.md "Telemetry"). It is off until the
+launch names an exporter, with the usual `OTEL_*` variables. Nothing else is needed, and nothing is set in a file.
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — your collector, for example `http://collector:4318`. Setting it turns telemetry on.
+- `OTEL_EXPORTER_OTLP_PROTOCOL` — `http/protobuf` (the compose default), `http/json` or `grpc`.
+- `OTEL_EXPORTER_OTLP_HEADERS` — headers for the collector, such as its API key.
+- `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` — `otlp` (the default), `console` or `none`, per
+  signal.
+- `OTEL_SERVICE_NAME` (default `hopper`), `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER` — as everywhere else.
+- `OTEL_SDK_DISABLED=true` turns it off whatever else is set.
+
+`compose.yaml` passes these through to the hopper. To see the data on this computer, start the optional viewer, Grafana's
+all-in-one OpenTelemetry image (a collector, Tempo, Prometheus, Loki and Grafana):
+
+```sh
+COMPOSE_PROFILES=telemetry OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318 podman compose up -d
+```
+
+Then open Grafana at http://127.0.0.1:3000 (`TELEMETRY_UI_PORT` moves it). Explore → Tempo shows a job's trace
+(`hopper.job`, and its job spans) and each request's; Explore → Prometheus shows the metrics, for example
+`http_server_request_duration_seconds` by `http_route` for the slowest actions, `hopper_job_span_duration_seconds` by kind,
+and `hopper_github_calls_total` by route.
+
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.

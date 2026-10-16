@@ -82,6 +82,7 @@ import { componentWatcherReadRoutes } from './ui/component-watchers.ts';
 import { landingBatchReadRoutes } from './ui/landing-batches.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
+import { instrumentHttp } from '../telemetry/http.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
 export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
@@ -155,6 +156,8 @@ export interface ServerOptions {
 
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
+  // Every request a span, its latency recorded (issue #1486): first, so the guards' answers are measured too.
+  instrumentHttp(app);
   installErrorHandling(app);
   // Every answer names its hopper (issue #1295): the page drops another hopper's at the same address.
   const instanceTag = instanceTagOf(o.instance.settings.instanceId());
