@@ -54,7 +54,9 @@ export function createUserRepository(c: StoreContext, onAdded: (user: User) => v
           id, name: trimmed, createdAt: c.clock.now().toISOString(), workDir: `users/${id}`, secretPrefix: `HOPPER_USER_${id.toUpperCase()}_`,
           ...(email ? { email: email.trim().toLowerCase() } : {}),
         };
-        c.db.run('INSERT INTO users (id, name, created_at, work_dir, secret_prefix, email) VALUES (?, ?, ?, ?, ?, ?)', user.id, user.name, user.createdAt, user.workDir, user.secretPrefix, user.email ?? null);
+        // The email column only with an email: a store opened at a version before migration 43 has none.
+        if (user.email === undefined) c.db.run('INSERT INTO users (id, name, created_at, work_dir, secret_prefix) VALUES (?, ?, ?, ?, ?)', user.id, user.name, user.createdAt, user.workDir, user.secretPrefix);
+        else c.db.run('INSERT INTO users (id, name, created_at, work_dir, secret_prefix, email) VALUES (?, ?, ?, ?, ?, ?)', user.id, user.name, user.createdAt, user.workDir, user.secretPrefix, user.email);
         return user;
       });
       onAdded(user);
