@@ -185,8 +185,8 @@ export const EVENT_SCHEMAS = {
   'question.corrected': strict({ questionId: z.string(), level: stage, was: z.string(), answer: z.string(), by: z.string(), raisedBy }),
   // `answer` is the close text typed into the job in place of an answer.
   'question.closed': strict({ questionId: z.string(), answer: z.string(), raisedBy }),
-  // Nothing is typed into the job; a job still waiting on it is cancelled (job.cancelled, reason `question dismissed`).
-  'question.dismissed': strict({ questionId: z.string(), raisedBy }),
+  // Nothing is typed into the job; a job still waiting on it is cancelled (job.cancelled, reason `question dismissed`). Cancelled (issue #1457): its job ended or is gone.
+  'question.dismissed': strict({ questionId: z.string(), raisedBy }), 'question.cancelled': strict({ questionId: z.string(), raisedBy }),
   'question.expired': strict({ questionId: z.string(), after_ms: z.number(), raisedBy }),
   // Issue #376: nobody answered; the agent denied its dialog by itself when the countdown ran out.
   'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string(), raisedBy }),

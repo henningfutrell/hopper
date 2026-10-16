@@ -585,6 +585,21 @@ Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in 
 }
 ```
 
+## `question.cancelled`
+
+Version 1 (`docs/schemas/question.cancelled.v1.json`). An open question was cancelled: its job ended or is gone (at a restart, or on the sweep), so nothing waits on it any more. Nothing is typed into the job; any escalation level call in flight is aborted. The UI drops it from the open questions and the Needs you count (issue #1457).
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `raisedBy` | object | no |
+
+```json
+{
+  "questionId": "q1"
+}
+```
+
 ## `update.available`
 
 Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch of the channel; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead). `pullRequest` (issue #652): the number of the pull request the target is the merge of, whose checks passed; only such a target is announced, a held one never.

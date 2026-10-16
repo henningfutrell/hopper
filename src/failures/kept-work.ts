@@ -36,12 +36,16 @@ function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs
 
 /**
  * The kept work still waiting on a person, newest first: the jobs the ledger's items say (`keptWorkShown`), each with
- * what its newest work event kept. Failures lists it and the Failures section counts it, from this one read.
+ * what its newest work event kept. Failures lists it and the Failures section counts it, from this one read. A job a person
+ * dismissed waits on nobody (issue #1457): its kept work is not listed.
  */
-export function keptWorkLeft(store: Pick<UserStore, 'events' | 'workItems'>): KeptWork[] {
+export function keptWorkLeft(store: Pick<UserStore, 'events' | 'workItems' | 'jobs'>): KeptWork[] {
   const out: KeptWork[] = [];
   for (const item of store.workItems.list({ keptWork: true })) {
-    for (const jobId of keptWorkShown(item)) out.push(...keptWorkOf(store.events.recent(1, [...WORK_EVENTS], jobId)));
+    for (const jobId of keptWorkShown(item)) {
+      if (store.jobs.get(jobId)?.dismissedAt !== undefined) continue;
+      out.push(...keptWorkOf(store.events.recent(1, [...WORK_EVENTS], jobId)));
+    }
   }
   return out.sort((a, b) => b.at.localeCompare(a.at) || a.jobId.localeCompare(b.jobId));
 }

@@ -46,6 +46,7 @@
         "question.dismissed",
         "question.expired",
         "question.lapsed",
+        "question.cancelled",
         "update.available",
         "update.started",
         "update.applied",
