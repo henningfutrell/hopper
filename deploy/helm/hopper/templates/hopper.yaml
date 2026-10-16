@@ -10,8 +10,13 @@
 {{- if not (has $serviceType (list "ClusterIP" "LoadBalancer" "NodePort")) }}{{ fail "service.type is ClusterIP, LoadBalancer or NodePort" }}{{ end -}}
 {{- $nodePort := .Values.service.nodePort | toString -}}
 {{- if and $nodePort (eq $serviceType "ClusterIP") }}{{ fail "service.nodePort needs service.type NodePort or LoadBalancer" }}{{ end -}}
+{{- $lbIP := .Values.service.loadBalancerIP | toString -}}
+{{- if and $lbIP (ne $serviceType "LoadBalancer") }}{{ fail "service.loadBalancerIP needs service.type LoadBalancer" }}{{ end -}}
+{{- if hasKey .Values "lanNames" }}{{ fail "lanNames is now allowedHosts, a list: --set allowedHosts={name1,name2}" }}{{ end -}}
+{{- if not (kindIs "slice" .Values.allowedHosts) }}{{ fail "allowedHosts is a list: --set allowedHosts={name1,name2}" }}{{ end -}}
 {{- $lanNames := list (printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $name $name $ns $name $ns $name $ns .Values.clusterDomain) -}}
-{{- range splitList "," (.Values.lanNames | toString) }}{{ if trim . }}{{ $lanNames = append $lanNames (trim .) }}{{ end }}{{ end -}}
+{{- range .Values.allowedHosts }}{{ if trim (toString .) }}{{ $lanNames = append $lanNames (trim (toString .)) }}{{ end }}{{ end -}}
+{{- if $lbIP }}{{ $lanNames = append $lanNames $lbIP }}{{ end -}}
 {{- $health := printf "fetch('http://127.0.0.1:%d/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" $port -}}
 apiVersion: v1
 kind: Service
@@ -21,6 +26,9 @@ metadata:
     {{- include "hopper.labels" $sel | nindent 4 }}
 spec:
   type: {{ $serviceType }}
+  {{- if $lbIP }}
+  loadBalancerIP: {{ $lbIP | quote }}
+  {{- end }}
   selector:
     {{- include "hopper.selector" $sel | nindent 4 }}
   ports:
@@ -148,8 +156,8 @@ spec:
             - name: HOPPER_SOLR_URL
               value: {{ printf "http://%s-solr:8983/solr/hopper" $name | quote }}
             {{- end }}
-            # The names the cluster reaches it by; the first is the one in question links. Then lanNames: the names machines
-            # outside the cluster reach it by.
+            # The names the cluster reaches it by; the first is the one in question links. Then allowedHosts and
+            # service.loadBalancerIP: the names machines outside the cluster reach it by.
             - name: HOPPER_LAN_NAMES
               value: {{ join "," $lanNames | quote }}
             - name: HOPPER_LAN_PEERS

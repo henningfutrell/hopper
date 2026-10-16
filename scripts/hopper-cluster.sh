@@ -509,7 +509,7 @@ json() {
 # The release's values, as JSON (YAML reads it): from compose's image, port, profiles, names and settings.
 helm_values() {
   local env=$1 repository=$2 tag=$3 port=$4 profiles=$5 secret=$6 store=$7 store_key=$8 store_kind=$9 carried=${10}
-  local names; names="$(lan_names "$env")"
+  local names; names="$(allowed_hosts "$env")"
   local extra='' line name sep=''
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -529,8 +529,8 @@ helm_values() {
   fi
   local vault=false
   [[ ",$profiles," != *,hopper-vault,* ]] || vault=true
-  printf '{"replicas":0,"port":%s,"service":{"type":%s},"image":{"repository":%s,"tag":%s},%s,"lanNames":%s,"hopperVault":{"enabled":%s},"extraEnv":[%s]}' \
-    "$port" "$(json "$(service_type)")" "$(json "$repository")" "$(json "$tag")" "$key" "$(json "$names")" "$vault" "$extra"
+  printf '{"replicas":0,"port":%s,"service":{"type":%s},"image":{"repository":%s,"tag":%s},%s,"allowedHosts":%s,"hopperVault":{"enabled":%s},"extraEnv":[%s]}' \
+    "$port" "$(json "$(service_type)")" "$(json "$repository")" "$(json "$tag")" "$key" "$names" "$vault" "$extra"
 }
 
 # LoadBalancer on the cluster bootstrap made (its load balancer takes this host's port), else ClusterIP.
@@ -539,8 +539,8 @@ service_type() {
 }
 
 # The names machines reach the hopper by: compose's own (but `hopper`, its compose network name), this host's names, and
-# its tailnet name when Tailscale runs.
-lan_names() {
+# its tailnet name when Tailscale runs: the chart's allowedHosts, a JSON list.
+allowed_hosts() {
   local names=() n
   IFS=, read -ra names <<<"$(value_of HOPPER_LAN_NAMES "$1")"
   names+=("$(hostname 2>/dev/null || true)" "$(hostname -f 2>/dev/null || true)")
@@ -552,10 +552,10 @@ lan_names() {
   for n in "${names[@]}"; do
     n="${n// /}"
     [ -n "$n" ] && [ "$n" != hopper ] && [[ "$seen" != *",$n,"* ]] || continue
-    out+="${out:+,}$n"
+    out+="${out:+,}$(json "$n")"
     seen+="$n,"
   done
-  printf '%s' "$out"
+  printf '[%s]' "$out"
 }
 
 # The carried settings whose names say secret, in a Secret of their own, from a pipe. A value on more than one line is

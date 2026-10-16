@@ -137,7 +137,7 @@ are in the compose volume `kms`. Turn it off before you migrate (`docs/deploy.md
 - **The image and the update channel**: the image compose ran (`image.repository`, `image.tag`).
 - **The port**: compose's `HOPPER_PORT` (`port`).
 - **The vault container**: the profile `hopper-vault` turns on `hopperVault.enabled`.
-- **The names machines reach the hopper by** (`lanNames`): compose's `HOPPER_LAN_NAMES`, this host's names, and its
+- **The names machines reach the hopper by** (`allowedHosts`): compose's `HOPPER_LAN_NAMES`, this host's names, and its
   tailnet name when Tailscale runs.
 - **The hopper's own launch settings**: each variable the compose hopper was started with that its image does not set and
   that is not compose's own plumbing (the database, OpenFGA, Solr, the vault, the tunnel, the socket). For example
@@ -155,7 +155,7 @@ cluster hopper must answer there.
 
 - **On a cluster bootstrap made**, the hopper's Service is a `LoadBalancer` on its port (`service.type`). k3s's load
   balancer takes that port on this host, as compose did. So a machine that joined `http://<this host>:4790` dials in to
-  the cluster hopper, and no lane is lost. The names it dialled are in `lanNames`.
+  the cluster hopper, and no lane is lost. The names it dialled are in `allowedHosts`.
 - **On another cluster**, the Service stays `ClusterIP`. Give the hopper an address machines reach, with
   `--set ingress.enabled=true --set ingress.host=<name>`, or `--set service.type=LoadBalancer`. A machine that joined
   another address must join again (Add machine).
