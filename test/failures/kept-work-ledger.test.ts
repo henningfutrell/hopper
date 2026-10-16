@@ -32,4 +32,19 @@ describe('work not pushed, from the ledger', () => {
     expect(keptWorkLeft(store)).toEqual([]);
     store.close();
   });
+
+  it('lists none of a failed job a person dismissed (issue #1457): nothing waits on it any more', () => {
+    const store = t.open(t.url());
+    const a = store.jobs.create(spec, 50, ref(KEY, 1));
+    store.events.append({ type: 'job.queued', jobId: a.id, data: { spec, priority: 50 } });
+    store.jobs.update(a.id, { status: 'failed' });
+    store.events.append({ type: 'job.failed', jobId: a.id, data: { error: 'boom' } });
+    store.events.append({ type: 'job.work_kept', jobId: a.id, data: { paths: ['/w/a'] } });
+    expect(keptWorkLeft(store)).toEqual([expect.objectContaining({ jobId: a.id })]);
+
+    store.jobs.update(a.id, { dismissedAt: '2026-10-16T10:00:00.000Z' });
+    store.events.append({ type: 'job.dismissed', jobId: a.id, data: { by: 'user' } });
+    expect(keptWorkLeft(store)).toEqual([]);
+    store.close();
+  });
 });

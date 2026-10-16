@@ -114,6 +114,8 @@ describe('stale questions clear themselves (issue #529)', () => {
     (r.mem.store.jobs.get(later.jobId) as { status: string }).status = status;
     r.svc.sweep();
     expect(r.mem.store.questions.get(later.id)).toMatchObject({ status: 'cancelled' });
+    // Each says so (issue #1457): the UI drops it from the open questions and the Needs you count.
+    expect(r.eventsOf('question.cancelled').map((e) => e.data.questionId)).toEqual([q.id, later.id]);
   });
 
   it('an open question whose job is gone is cancelled', () => {

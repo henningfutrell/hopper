@@ -179,8 +179,8 @@ describe('what every view reads of an item (issue #1067, part 2)', () => {
     // A newer job works the item: the older job's kept work is history.
     expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.started', {}, j2]])!)).toEqual([]);
     expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.finished', {}, j2], ['job.pull_request_followed', { pullRequest: PR }, j2]])!)).toEqual([]);
-    // The newer job failed too: both are left to look at.
-    expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.failed', { error: 'y' }, j2], ['job.work_kept', { paths: ['/v'] }, j2]])!)).toEqual(['j1', 'j2']);
+    // The newer job failed too: only its own kept work waits; the older job's stays history (issue #1457).
+    expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.failed', { error: 'y' }, j2], ['job.work_kept', { paths: ['/v'] }, j2]])!)).toEqual(['j2']);
     // The item is done: its pull request merged, or its issue closed.
     expect(keptWorkShown(fold([...kept, ['job.pull_request_merged', { pullRequest: PR }]])!)).toEqual([]);
     const closed = applyRead(fold(kept)!, { kind: 'issue', at: '2026-10-13T12:00:00.000Z', state: 'closed', reason: 'completed' })!;
