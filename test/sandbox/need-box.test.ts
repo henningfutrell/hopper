@@ -168,8 +168,16 @@ describe('a need step\'s box (issue #1007)', () => {
     const stop = new AbortController();
     const running = runNeedBox(r, box(needEnv({ command: 'sleep 2', outputs: [], credentials: [] })), { log: () => {}, signal: stop.signal, pollMs: 10 });
     setTimeout(() => stop.abort(), 100);
-    expect(await running).toEqual({ exit: 125, problem: 'the job stopped waiting for it' });
+    expect(await running).toEqual({ exit: 125, problem: 'the job stopped waiting for it', stopped: 'cancelled' });
     expect(r.boxes.size).toBe(0);
+  });
+
+  it('a step that runs past its time limit is stopped and removed, as timed out (issue #1371)', async () => {
+    const r = runtime();
+    const running = runNeedBox(r, { ...box(needEnv({ command: 'sleep 2', outputs: [], credentials: [] })), timeoutMs: 100 }, { log: () => {}, signal: new AbortController().signal, pollMs: 10 });
+    expect(await running).toEqual({ exit: 125, problem: 'the need box did not end in 0.1 s', stopped: 'timed-out' });
+    expect(r.boxes.size).toBe(0);
+    expect(r.volumes.size).toBe(0);
   });
 
   it('a home volume that is there already is not the step\'s: no box runs, and the volume stays (issue #1371)', async () => {
