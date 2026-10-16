@@ -98,8 +98,9 @@ describe('a superseded pull request', () => {
   it('a stray part, its issue closed as completed by another pull request: closed as superseded (issue #1433)', async () => {
     const s = waiting({ part: true });
     const other = s.gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: LATER });
-    const done = await s.source.housekeepStrays!([{ job: s.job(), pullRequest: s.pr.url, part: true }]);
-    expect(done).toEqual([{ jobId: s.job().id, pullRequest: s.pr.url, part: true, superseded: `its issue was closed by ${other.url}` }]);
+    const job = s.job();
+    const done = await s.source.housekeepStrays!([{ job, pullRequest: s.pr.url, part: true }]);
+    expect(done).toEqual([{ jobId: job.id, pullRequest: s.pr.url, part: true, superseded: `its issue was closed by ${other.url}` }]);
     expect(s.gh.pullRequestComments(s.pr.url)).toEqual([supersededNote(`its issue was closed by ${other.url}`)]);
   });
 
