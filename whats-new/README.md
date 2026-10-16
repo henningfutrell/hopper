@@ -14,4 +14,5 @@ Before a promotion to beta, `node scripts/whats-new.ts assemble` moves every fra
 `scripts/promote.sh beta`. Until then, the update notice reads the fragments too.
 
 The pull request check runs `node scripts/whats-new.ts check HEAD^1`. It fails when a pull request adds a
-line to `WHATS-NEW.md` directly, changes or removes a released line, or names a fragment wrongly.
+line to `WHATS-NEW.md` directly, adds a line that is not in plain words, changes or removes a released line
+(except to write one that is not in plain words again), or names a fragment wrongly.

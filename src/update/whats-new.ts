@@ -34,6 +34,12 @@ export function bullets(text: string): string[] {
 
 export const isFragment = (name: string): boolean => FRAGMENT.test(name);
 
+/** Words a bullet never has (AGENTS.md "What's new"): an issue or pull request number, a hash, a commit prefix, a file name, a code word. */
+const NOT_PLAIN = /#\d+|\b[0-9a-f]{7,40}\b|^\w+(\(.*\))?!?:|\b[\w-]+\.(ts|tsx|sh|md|yaml|json)\b|`/;
+
+/** Whether a bullet breaks the plain-words rule (issue #1483). */
+export const breaksPlainWords = (bullet: string): boolean => NOT_PLAIN.test(bullet);
+
 /** The fragments, newest first: the higher issue number first, then by name, backwards (code points, never the locale). */
 export function fragmentsInOrder(fragments: Notes['fragments']): Notes['fragments'] {
   const issue = (name: string): number => Number(FRAGMENT.exec(name)?.[1]);
@@ -65,7 +71,8 @@ export function assemble(notes: Notes): string {
  * Why the change from `base` to `head` breaks the What's new rules (issue #824), or none. A bullet goes in a
  * fragment, never straight into WHATS-NEW.md: WHATS-NEW.md gains only bullets the assembly moved there from
  * `base`'s fragments. A released bullet (one `base` has) never changes or goes away: the update notice would
- * show it again as new.
+ * show it again as new. A bullet the change adds is in plain words (issue #1483); a released one that is not may be
+ * written again, the one way to make it plain.
  */
 export function problems(base: Notes, head: Notes): string[] {
   const out: string[] = [];
@@ -81,7 +88,11 @@ export function problems(base: Notes, head: Notes): string[] {
   }
   const now = allBullets(head);
   const kept = new Set(now);
-  for (const b of allBullets(base)) if (!kept.has(b)) out.push(`a released line changed or went away; never edit one: "${b}"`);
+  const had = new Set(allBullets(base));
+  for (const b of now) {
+    if (!had.has(b) && breaksPlainWords(b)) out.push(`a line is not in plain words: no issue numbers, hashes, prefixes, file names or code words: "${b}"`);
+  }
+  for (const b of had) if (!kept.has(b) && !breaksPlainWords(b)) out.push(`a released line changed or went away; never edit one: "${b}"`);
   const seen = new Set<string>();
   for (const b of now) {
     if (seen.has(b)) out.push(`a line is in What's new twice: "${b}"`);
