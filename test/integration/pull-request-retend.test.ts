@@ -100,6 +100,33 @@ describe('a failed rebase tend, once its base branch moves (issue #1143 part 3)'
     expect(gh.pullRequestComments(url)).toEqual(Array(MAX_TEND_RETRIES + 1).fill(tendNote('rebase')));
   });
 
+  it('is not tended again once it was closed without a merge (issue #1456): the end is recorded, and it shows open no more', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job, url } = await pullRequestWaiting(gh, app, () => undefined);
+    gh.setBaseTip(REPO, 'dev', tip(1));
+    gh.setConflicting(url, true);
+    await app.sync();
+    const tender = await nextJob(app, issue.url, 2);
+    await app.waitForStatus(tender!.id, 'failed');
+    await waitFor(async () => (await app.job(tender!.id)).sourceState?.sync?.finalReported === true, { what: 'its end reported' });
+    await app.sync();
+    // Closed as superseded by another pull request, then the base moves: nothing is left to rebase. The strays' read fails
+    // once, as a sync between two rounds of every follow makes none: only the tend itself sees the close.
+    gh.closePullRequest(url);
+    gh.setBaseTip(REPO, 'dev', tip(2));
+    gh.failNext('openPullRequestsIn', new Error('GitHub is away'));
+    await app.sync();
+    expect(await jobsFor(app, issue.url)).toHaveLength(2);
+    expect((await app.job(job.id)).sourceState?.source).toMatchObject({ pullRequest: url, follow: 'closed' });
+    await app.sync();
+    expect(await jobsFor(app, issue.url)).toHaveLength(2);
+    expect(gh.pullRequestComments(url)).toEqual([tendNote('rebase')]);
+    expect((await cardOf(app, job.id))?.state).not.toBe('open');
+    expect((await app.events('types=job.pull_request_closed')).filter((e) => e.jobId === job.id))
+      .toEqual([expect.objectContaining({ data: expect.objectContaining({ pullRequest: url }) })]);
+  });
+
   it('where the hopper cannot read the base branch (no mirror), a failed rebase tend waits on a person, as before', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);

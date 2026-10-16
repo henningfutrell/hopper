@@ -2075,7 +2075,12 @@ At most `MAX_TENDS` (3) `fix_checks` tends in a row of one pull request (`tendsI
 person, as before tending, its card on the Pull requests list saying `checks failing`. A `rebase` is never capped (issue
 #786): each is made needed by a new merge on the base, not by the tend before it, and a rebase that fails ends the row by
 itself — the tend job ends failed and waits on a person. With a cap, a busy base left pull requests conflicting after
-three good rebases, and nothing tended them again. A refusal because a newer job of
+three good rebases, and nothing tended them again. **A tend starts only on an open pull request** (issue #1456): a tend
+works from what was last seen, and the tended job follows its pull request no more, so a pull request closed or merged
+on GitHub after its tend job failed was rebased again at each move of its base, and shown open. Before each tend the
+source reads whether it ended (`JobSource.endedPullRequests`); ended, no tend starts, the job follows it again at once, and
+that follow records its end (`job.pull_request_closed` or `job.pull_request_merged`) and its labels, as any follow does. A
+read that fails tends it as before. A refusal because a newer job of
 the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
 it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
