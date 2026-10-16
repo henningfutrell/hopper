@@ -50,7 +50,7 @@ describe('the broker and a job that polls (issue #1210)', () => {
     };
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => at,
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api } }),
+      connection: () => ({ jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api }),
       polled: (_u, j, p) => { polled.push({ jobId: j.id, on: p.on, reads: p.reads, answer: p.answer }); },
     });
     const askEvery = async (n: number, body: Record<string, string> = ask) => {

@@ -1,0 +1,1 @@
+- Each person's jobs now work on GitHub with that person's own connected GitHub account, never another person's, and a job's page shows which GitHub account acts for it.

@@ -13902,10 +13902,11 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
 
 1. the token: its user's runtime, its link key, its job, at work — else **401**;
 2. the request's shape (`proxyRequest`, strict: no labels, no assignees, GitHub's length limits) — else **400**;
-3. who asks (`checkRequest`, `src/github-proxy/policy.ts`): the repository must be one of the hopper's user's **job
-   repositories**, or the **job's fork** ("The contribution flow"); the hopper's **own job** (a job of that user) may ask every operation, a pull request only on its own
-   repository (its source's, a fork's parent's); **another user's job** only `issue.create` — else **403** with the reason;
-4. the hopper's GitHub connection: none, or its sign-in ended — **503** saying so;
+3. who asks (`checkRequest`, `src/github-proxy/policy.ts`): the repository must be one of the job's user's **job
+   repositories**, or the **job's fork** ("The contribution flow"); a job may ask every operation, a pull request only on its own
+   repository (its source's, a fork's parent's) — else **403** with the reason. (Before issue #1380 part 5 the hopper acted
+   with its oldest user's connection for every job, and another user's job could only file an issue.);
+4. the GitHub connection of the job's own user (issue #1380 part 5): none, or its sign-in ended — **503** saying so;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
    `issue.comment` 20 and 100, `pr.create` 3 and 20, reads 120 and 600; in memory, a restart starts them again) — **429**;
 6. GitHub (`src/github-proxy/api.ts`: one REST call, `pr.create` without `--base` first reads the default branch; a 401
@@ -13928,8 +13929,8 @@ both, so the issue names the job and the request, and the event under that reque
 
 **Audit.** Every outcome but a token that names no job is an event on the job's timeline: `github_proxy.done` (`op`,
 `repo`, `number`, `url`), `github_proxy.refused` (`reason`) or `github_proxy.failed` (`error`), each with `requestId`,
-`machine` and `own`. For another user's job the same event also goes to the hopper's own user's log, with `forUser` and
-`job`: the owner of the credentials sees everything done with them. A token that names no job is logged only.
+`machine` and `as`, the GitHub login that acted: the job's own user's (issue #1380 part 5). The credentials are the job's
+user's own, so the event is in that user's log only. A token that names no job is logged only.
 
 **Steering a login** (`src/executors/herdr/login.ts`). A herdr-claude job that reports a GitHub login (HOPPER_AUTH_PENDING
 with tool `gh…` or a `github.com/login/device` URL, `isGitHubLogin`) is not taken to the Logins: it is told, in its pane,
@@ -22027,3 +22028,42 @@ keeps it; one without it, or whose emails GitHub does not show, is refused with 
 setting off it connects; a session with no email connects; a renewal ends an account that lost the email, keeps one that
 has it, and checks nothing with the setting off or when GitHub does not answer; `whoIs` lists every verified email.
 `test/integration/source-email-match.test.ts`: the setting's routes, its default, the instance admin's alone, and its event.
+
+## Each job acts with its own user's GitHub, and the job page names it (issue #1380, part 5, 2026-10-15)
+
+Issue #1380: jobs act on GitHub with the token of the source owner, and the UI shows which identity acts for each job.
+Acceptance test: two users with separate sources each act only through their own sources; jobs act with the owning user's
+token, and the acting identity is shown. Before this part, a job's git (issue #652) already used its own user's
+connection, but the GitHub proxy (`POST /job/github`, issue #563) acted with the hopper's **oldest** user's connection
+for every job, and another user's job could only file an issue.
+
+**The change.**
+- `src/github-proxy/broker.ts`: the broker asks `connection(userId)` for the job's own user's connection (`src/http/job-github.ts`:
+  `tenants.user(id).githubProxy.connection`); `hopper()`, `own`, `forUser` and the copy of another user's event in the
+  oldest user's log are removed. A job whose user has no connection, or whose sign-in ended, is refused (**503**, the
+  connection's own reason) and nothing reaches GitHub: no other user's connection acts for it.
+- `src/github-proxy/policy.ts`: there is no "another user's job" any more. Every job asks every operation, on its own
+  user's job repositories and its fork, under the same checks; `OTHERS_MAY` and the `own` field of `ProxyAsker` are removed.
+- **The acting identity.** Every `github_proxy.done`, `.refused` and `.failed` event (from the proxy and from git) carries
+  `as`, the login of the connection that acts. Each answer the proxy gives from GitHub or its cache carries `as` too, so
+  the job knows who acted. `hopper-gh help` says so.
+- **The job page** (`ui/src/views/job.tsx`, `ui/src/model/acting-identity.ts`): the fact **GitHub as** is the login of
+  the job's newest proxy or push event; before the job acted, its user's connected GitHub account
+  (`GET /api/connected-accounts`), marked as not acted yet; with none, `Sources → Connect GitHub`.
+
+**Decisions:**
+- **No migration.** Events recorded before keep `own`, `forUser` and `job`; the event schema keeps them optional, and `as`
+  is a new optional field. The build before ignores `as` (the daemon does not check event data when it reads).
+- **The hopper's own records answer `pr status` with no `as`.** No GitHub identity acted for that answer.
+- **The job page reads the connected account once** for the "not acted yet" case, not on each event. A job that acted
+  shows the login its events name, which stays true when the account changes later.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+GitHub by OAuth or a personal access token, with no GitHub App required; the migration of GitHub-signed-in users to hopper
+users with GitHub attached as a source; Kubernetes and service-account tokens.
+
+**Verification:** `test/github-proxy/proxy.test.ts` (two users: each job comments through its own user's connection, each
+event and answer names it, no event in the other user's log; a user with no connection is refused and nothing is sent),
+`test/integration/github-proxy.test.ts` (the real daemon and fake GitHub: a second user's job files and comments with that
+user's token, never the first user's; a user with no connection is refused), `test/integration/git-proxy.test.ts` (a push
+names `as`), `test/ui/acting-identity.test.ts` and `test/ui/job-acting-as-view.test.ts` (the job page's **GitHub as**).

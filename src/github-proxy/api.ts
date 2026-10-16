@@ -1,4 +1,4 @@
-// The GitHub calls the hopper makes for a job (issue #563), with the hopper's own connection's token: one REST
+// The GitHub calls the hopper makes for a job (issue #563), with the token of the job's user's connection (issue #1380): one REST
 // call per operation, through the same `@octokit/request` binding as the sources (src/sources/github/http/http.ts).
 // `token()` is asked at every call; a token GitHub refuses (401) is renewed once and the call made again. A repository's
 // read (`repo`) is what the contribution flow (issue #429) decides on: whether the user can push to it, whether it takes

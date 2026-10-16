@@ -19,7 +19,7 @@ export const PROXY_PATH = '/job/github';
 export const PROXY_SCRIPT_FILE = 'hopper/gh';
 export const PROXY_TOKEN_FILE = 'hopper/token';
 
-export const PROXY_HELP = `hopper-gh: GitHub through the hopper. The hopper acts with its own GitHub connection;
+export const PROXY_HELP = `hopper-gh: GitHub through the hopper. The hopper acts with your user's GitHub connection;
 this machine needs no GitHub login. Never run gh auth login or start a device login.
 
   sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE) [--required]
@@ -44,7 +44,7 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
                                                          (report a bug in the hopper itself)
 
-Prints the answer as JSON, with the url. A refusal prints why and exits 1: do not try another way around it.
+Prints the answer as JSON, with the url and as (the GitHub account that acted). A refusal prints why and exits 1: do not try another way around it.
 Read GitHub only this way: never curl api.github.com, never gh api, never a browser. A read is answered from what the
 hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
 github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.

@@ -3,12 +3,11 @@
 // guard, like a machine's join and dial-in (client-link.ts).
 //
 //   POST /job/github   `Authorization: Bearer <the job's proxy token>`; the request as a form (what `hopper-gh`
-//                      sends, src/github-proxy/script.ts) or JSON. The hopper does it with its own GitHub
-//                      connection, or answers why not. It changes no job, question, webhook or setting.
+//                      sends, src/github-proxy/script.ts) or JSON. The hopper does it with the GitHub connection
+//                      of the job's own user, or answers why not. It changes no job, question, webhook or setting.
 //
-// The hopper acts with its oldest user's GitHub connection — the instance's first, as the plugin store reads
-// the oldest user's (src/users/runtimes.ts). A job's bug report (issue #694) is the one exception: Report a bug's own
-// path, with the job's own user's connection, so it is filed as that user.
+// The hopper acts with the job's own user's GitHub connection (issue #1380), never another user's; a job's bug report
+// (issue #694) too, by Report a bug's own path.
 //
 // A wait on a pull request's checks (`pr wait`, issue #1072 part 2) answers 202 while the checks of a pull request the
 // hopper follows run: the watch it opens is on the job's stream (job-stream.ts), ended when the hopper sees them end.
@@ -68,11 +67,7 @@ export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clo
   const prWaits = prWaitsOf(o.tenants);
   const proxy = createGitHubProxy({
     user: (id) => o.tenants.user(id)?.githubProxy.user,
-    hopper: () => {
-      const oldest = o.tenants.list()[0];
-      const parts = oldest ? o.tenants.user(oldest.id) : undefined;
-      return parts ? { user: parts.githubProxy.user, connection: parts.githubProxy.connection } : undefined;
-    },
+    connection: (id) => o.tenants.user(id)?.githubProxy.connection,
     limiter: createProxyLimiter(o.clock),
     report: (user, job, req) => reportForJob(o, user.id, job.id, req),
     log: (line) => console.warn(line),
