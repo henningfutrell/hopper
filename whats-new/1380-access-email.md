@@ -1,0 +1,1 @@
+- Settings → Access names each person by the email they sign in with, in its reasons and its permission matrix.

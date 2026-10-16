@@ -29,23 +29,25 @@ export function requesterCopy(r: Requester): Requester {
   return { kind: r.kind, userId: r.userId };
 }
 
-/** How a reason names the requester: by its template when it runs as one, else by itself. */
-export function requesterText(r: Requester, template: string | undefined): string {
+/** How a reason names the requester: by its template when it runs as one, else by itself, a user by its email when it has one (issue #1380). */
+export function requesterText(r: Requester, template: string | undefined, email?: string): string {
   if (template !== undefined) return `template ${template}`;
-  return r.kind === 'job' ? `job ${r.jobId}` : r.kind === 'machine' ? `machine ${r.machine}` : `user ${r.userId}`;
+  return r.kind === 'job' ? `job ${r.jobId}` : r.kind === 'machine' ? `machine ${r.machine}` : `user ${email ?? r.userId}`;
 }
 
 /** The template a path goes through, or undefined. */
 export const templateOnPath = (path: readonly RelationshipTuple[] | undefined): string | undefined =>
   path?.find((t) => t.relation === 'approved_for')?.subject.replace(/^template:/, '');
 
-/** Every user, then each of their live jobs and boxes, each with the profiles it reaches through `tuples` (the hopper's reading). */
-export function requesterRows(live: readonly LiveRequesters[], tuples: readonly RelationshipTuple[], profiles: readonly OperationProfile[]): RequesterRow[] {
+/** Every user, then each of their live jobs and boxes, each with the profiles it reaches through `tuples` (the hopper's reading), each path's tuples as `shown` gives them (a person by their email, issue #1380). */
+export function requesterRows(
+  live: readonly LiveRequesters[], tuples: readonly RelationshipTuple[], profiles: readonly OperationProfile[], shown: (t: RelationshipTuple) => RelationshipTuple = (t) => t,
+): RequesterRow[] {
   const row = (requester: Requester, at: { template?: string; machine?: string } = {}): RequesterRow => ({
     requester, ...at,
     grants: profiles.flatMap((profile) => {
       const path = relationshipPath(tuples, requesterObject(requester), profile);
-      return path ? [{ profile, path }] : [];
+      return path ? [{ profile, path: path.map(shown) }] : [];
     }),
   });
   return live.flatMap((l) => {

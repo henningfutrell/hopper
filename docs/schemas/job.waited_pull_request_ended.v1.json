@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "merged",
+        "closed"
+      ]
+    }
+  },
+  "required": [
+    "pullRequest",
+    "state"
+  ],
+  "additionalProperties": false
+}

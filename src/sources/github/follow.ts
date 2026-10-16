@@ -41,7 +41,7 @@
 
 import {
   classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, rechecksMerge, readyToMerge, ruleKey,
-  type ChangeClass, type ChangeKind, type ChangeRule, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
+  type ChangeClass, type ChangeKind, type ChangeRule, type EndedPullRequest, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
 } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
@@ -301,10 +301,27 @@ async function housekeepStray(ctx: FollowContext, s: Stray): Promise<{ retargete
   const { repo, number } = s.job.source as { repo: string; number: number };
   const issue = await ctx.api.getIssue(repo, number);
   if (issue.state === 'closed' && issue.stateReason === 'not_planned') return undefined;
-  const elsewhere = s.part ? undefined : await supersededBy(ctx.api, repo, number, issue, s.pullRequest);
+  const elsewhere = await supersededBy(ctx.api, repo, number, issue, s.pullRequest);
   if (elsewhere) return { superseded: (await closeSuperseded(ctx.api, repo, s.pullRequest, elsewhere)).superseded };
   const pr = await ctx.api.pullRequest(repo, numberOf(s.pullRequest));
   return pr && housekeep(ctx, repo, s.pullRequest, pr);
+}
+
+/**
+ * The pull requests jobs wait on that ended (issue #1433, `JobSource.endedPullRequests`): each read by its number. One GitHub
+ * does not know, or whose read throws, is logged and left out: asked again at the next sync.
+ */
+export async function endedPullRequests(api: GitHubApi, pulls: { repo: string; number: number }[]): Promise<EndedPullRequest[]> {
+  const ended: EndedPullRequest[] = [];
+  for (const { repo, number } of pulls) {
+    try {
+      const pr = await api.pullRequest(repo, number);
+      if (pr && pr.state !== 'open') ended.push({ repo, number, pullRequest: pr.url, state: pr.state });
+    } catch (e) {
+      console.warn(`hopper: the waited pull request ${repo}#${number} was not read, asked again at the next sync: ${(e as Error).message}`);
+    }
+  }
+  return ended;
 }
 
 /** Close pull request `url` without a merge, as nothing is left to land (issue #1143), and say why on it. */
@@ -316,7 +333,8 @@ async function closeSuperseded(api: GitHubApi, repo: string, url: string, why: s
 
 /**
  * Why the open pull request `url` is superseded by its issue (issue #1143): the issue closed as completed by the merge of
- * another pull request. Undefined: it is not. A part never is: its issue's close is for the whole.
+ * another pull request. Undefined: it is not. A part is too (issue #1433): the close says the whole is done, so the part
+ * has nothing left to land, and an open part left so is a stale pull request that jobs may wait on.
  */
 async function supersededBy(api: GitHubApi, repo: string, number: number, issue: GitHubIssue | undefined, url: string): Promise<string | undefined> {
   if (issue?.state !== 'closed' || issue.stateReason === 'not_planned') return undefined;
@@ -399,8 +417,9 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     let byHopper = false;
     let mergedHere = false;
     let superseded: string | undefined;
-    // Done by another pull request (issue #1143): nothing is left to land, and the item is done.
-    const doneElsewhere = now.state === 'open' && !part ? await supersededBy(ctx.api, repo, number, issue, now.url) : undefined;
+    // Done by another pull request (issue #1143): nothing is left to land, and the item is done. A part too (issue #1433):
+    // its issue closed as completed, every part of it is done.
+    const doneElsewhere = now.state === 'open' ? await supersededBy(ctx.api, repo, number, issue, now.url) : undefined;
     if (doneElsewhere) {
       superseded = (await closeSuperseded(ctx.api, repo, now.url, doneElsewhere)).superseded;
       now = { state: 'closed', url: now.url };

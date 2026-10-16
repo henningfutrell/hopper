@@ -86,12 +86,22 @@ describe('a superseded pull request', () => {
     expect(s.gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-closed']);
   });
 
-  it('a part is not superseded by its issue\'s close: it is followed as before', async () => {
+  it('a part, its issue closed as completed by another pull request, is superseded too (issue #1433): closed with why', async () => {
     const s = waiting({ part: true });
-    s.gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: LATER });
+    const other = s.gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: LATER });
     const r = await s.source.follow!(s.job());
-    expect(r).not.toHaveProperty('superseded');
-    expect(s.gh.calls.some((c) => c.method === 'closeWithoutMerge')).toBe(false);
+    expect(r).toMatchObject({ outcome: 'closed', pullRequest: s.pr.url, part: true, superseded: `its issue was closed by ${other.url}` });
+    expect(s.gh.calls.filter((c) => c.method === 'closeWithoutMerge').map((c) => c.args)).toEqual([[REPO, numberOf(s.pr.url)]]);
+    expect(s.gh.pullRequestComments(s.pr.url)).toEqual([supersededNote(`its issue was closed by ${other.url}`)]);
+  });
+
+  it('a stray part, its issue closed as completed by another pull request: closed as superseded (issue #1433)', async () => {
+    const s = waiting({ part: true });
+    const other = s.gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: LATER });
+    const job = s.job();
+    const done = await s.source.housekeepStrays!([{ job, pullRequest: s.pr.url, part: true }]);
+    expect(done).toEqual([{ jobId: job.id, pullRequest: s.pr.url, part: true, superseded: `its issue was closed by ${other.url}` }]);
+    expect(s.gh.pullRequestComments(s.pr.url)).toEqual([supersededNote(`its issue was closed by ${other.url}`)]);
   });
 
   it('commits its base lacks, and its issue open: not superseded', async () => {
