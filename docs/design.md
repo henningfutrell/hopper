@@ -22299,3 +22299,43 @@ takes another user's; an unlinked identity with a user's email signs in as that 
 `test/integration/email-identity.test.ts` (a GitHub-signed-in user signs in with a local account of their email as the
 same user, its GitHub connection still connected; a second OIDC subject of a verified email is the same user, an
 unverified one is not; an admin is refused a local account of another user's email; `GET /api/users` names the email).
+
+## Kubernetes and service-account tokens with no GitHub (issue #1380, part 8, 2026-10-15)
+
+The issue's acceptance test: the hopper-owned user model works on the Kubernetes deployment (#1281) and with
+service-account tokens (#909: grants with scopes). Parts 1 to 7 made sign-in work with no GitHub (local accounts, OIDC)
+and made GitHub a source a person attaches. No check showed that either holds in a cluster, or that a person who signs
+in without GitHub can give an agent a grant.
+
+**What was found.** Nothing in the code needed a change. A grant (`POST /ui/api/api-tokens`, "Grants and refresh
+tokens") is minted for the session's user and role, whatever realm signed them in. The operator CLI is in the image
+(`/usr/local/bin/hopper`), and reads the database URL from the file the chart mounts (`HOPPER_DATABASE_URL_FILE`), so
+`kubectl exec -i deploy/hopper -c hopper -- hopper local-account add <email>` adds the first admin in a pod. The kind
+check's own comment said that a job run needs a GitHub sign-in: since part 6 it needs a GitHub source, after any
+sign-in.
+
+**The change: checks and docs.**
+- `scripts/kind-check.ts` `withoutGitHub`: after the pod restarts, the operator CLI in the hopper's pod adds the first
+  admin's local account, its random password on stdin. In the pod, on its loopback, that account signs in with its
+  email and password (`POST /ui/auth/password`), must be admin through `local-accounts`, and mints a `read-only` grant.
+  Its refresh token is traded at `POST /ui/auth/token/refresh`, and the new API token must read that person's grants
+  (`GET /api/api-tokens`), the one just minted only. The kind check runs on the `dev` image, which holds parts 1 to 6.
+- `test/integration/grants-without-github.test.ts`: a realm-only hopper's first admin (the CLI) mints a box grant from a
+  preset; its tokens refresh, read, act within their scopes, and are refused outside them. A second local account's
+  grant reaches only its own person's grants, is refused a role above its minter's and an admin read. A person signed
+  in through OIDC mints a grant that reads as them.
+- `docs/deploy.md` "On Kubernetes, with Helm": the first admin with no GitHub, and a grant for an agent;
+  "Check the chart on kind": the new step, and that a job run needs a GitHub source, not a GitHub sign-in.
+
+**Decisions:**
+- **No bootstrap admin from the chart's values.** The CLI in the pod is the first-run admin, as on a container install:
+  a password in Helm values stays in the release record in the namespace. The simplest path that meets the requirement.
+- **The kind check signs in on the pod's loopback**, as its health check asks: from outside the pod the request is a LAN
+  request, which needs allowed hosts set.
+
+**Left for later parts of issue #1380:** passkeys; OpenFGA subjects, audit and attribution keyed by email; more than one
+GitHub source per user, and sources from other forges.
+
+**Verification:** `test/integration/grants-without-github.test.ts`; `test/scripts/kind-check.test.ts` (with fake
+`kind`, `helm` and `kubectl`: the step's order, the password on stdin and in no argument, and each failure); the kind
+check itself (`.github/workflows/kind.yml`, which runs on a change to `scripts/kind-check.ts`).
