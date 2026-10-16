@@ -12,6 +12,11 @@ export interface User {
   workDir: string;
   /** What the user's secret names start with: '' for `admin`, `HOPPER_USER_<ID>_` for a user added later. */
   secretPrefix: string;
+  /**
+   * The verified email the user is known by (issue #1380, identity keyed by email), lowercase, unique among the users: a
+   * sign-in whose realm vouches for it signs in as this user. Absent until a sign-in gave one.
+   */
+  email?: string;
 }
 
 /**
@@ -27,6 +32,8 @@ export interface UserView {
   id: string;
   name: string;
   createdAt: string;
+  /** The verified email the user is known by (issue #1380). */
+  email?: string;
 }
 
 /** POST /ui/api/users `add`: the new user and a one-time login link for it per UI origin (none when local sign-in is off). */

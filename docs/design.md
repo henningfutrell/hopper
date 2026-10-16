@@ -22209,3 +22209,55 @@ a failed start leaves nothing), `test/integration/sandbox-playground.test.ts` (o
 in the machines list or its config; a restart), `test/scripts/helm-chart-sandbox.test.ts` (the
 values and the quota), `test/integration/config.test.ts`, `test/sandbox/kubernetes.test.ts` (the PriorityClass),
 `test/ui/sandbox-playground.test.ts`.
+
+## Identity keyed by email (issue #1380, part 7, 2026-10-15)
+
+Owner decision 1 on issue #1380: identity is keyed by the verified email throughout; usernames are display only. The
+issue's migration: existing GitHub-signed-in users become hopper users with their GitHub attached as a source. Before this
+part, a user was known only through its identity links (realm and subject): a person who signed in with GitHub and later
+with a local account or SSO of the same email got a second, empty user, and their GitHub connection stayed with the first.
+
+**The change.**
+- **A user keeps its email.** `users.email` (instance migration 43), lowercase, unique among the users (`users_email`, on
+  `lower(email)`). The migration gives a user a local account signed in as that account's email (its subject); every
+  other user takes one at its next sign-in. `User.email`, `UserRepository.byEmail` and `setEmail`.
+- **A sign-in is keyed by it** (`src/users/identities.ts` `userForIdentity`). Only `Identity.email` counts: an address the
+  realm vouches for (OIDC with `email_verified`, or `trustUnverifiedEmail`; GitHub's primary verified email; LDAP, SAML
+  and the gateway as their realm config names it; a local account's own email). A linked identity is its user, as before,
+  and gives that user its email when it has none and no other user has it. An unlinked identity whose email a user is
+  known by signs in as that user, and is linked to it. Else a new user, which keeps the email.
+- **The migration of a GitHub-signed-in user.** Their next GitHub sign-in gives their user their primary verified email.
+  A local account of that email (the operator CLI), or an SSO identity that vouches for it, then signs in as the same
+  user: its work, and its GitHub connection, which part 3 already made a source that outlives every session. Nothing
+  needs the hopper's app or a private key after that: the connection renews through the app's client id, or is a personal
+  access token (part 6).
+- **An admin never takes another user's email** (issue #221). Settings → Sign-in refuses a new local account of an email
+  another user is known by, as it refuses one linked to another user (409, `src/http/local-accounts.ts`). The operator CLI
+  does not: it holds the database's credentials.
+- `GET /api/users` and Settings → Users show each user's email.
+
+**Decisions:**
+- **Link at the sign-in, not in a migration.** The instance does not know a GitHub user's email until GitHub says it, and
+  a migration cannot ask GitHub. The next sign-in reads it, with the check GitHub already did.
+- **The first email wins.** A user's email is set once, by the first sign-in that vouches for one no other user has. A
+  later identity with another email does not change it: an email that changes on each sign-in would move who is who.
+- **Every realm's vouched email links.** The owner made external SSO trusted, and the admin chose each realm. A realm
+  with `trustUnverifiedEmail` vouches for emails its provider did not verify: an admin turns that on only for a provider
+  they trust to name people.
+- **OpenFGA subjects, audit and attribution still name the user id.** The id is stable and every tuple and event names it;
+  a user's email is now one lookup away. Keying those by email is a larger change with its own migration of tuples.
+- **No migration of the old build.** `users.email` is a new column; the build before reads `SELECT *` and ignores it, and
+  adds its users with none.
+
+**Residual risk.** Whoever controls a realm that vouches for an email signs in as the user of that email. Before, such a
+realm reached only users of its own identities.
+
+**Left for later parts of issue #1380:** passkeys; OpenFGA subjects, audit and attribution keyed by email; more than one
+GitHub source per user, and sources from other forges; Kubernetes (#1281) and service-account tokens (#909).
+
+**Verification:** `test/users/identities.test.ts` (a linked identity gives its user its email, keeps the one it has, never
+takes another user's; an unlinked identity with a user's email signs in as that user; else a new user with the email),
+`test/store/migration-43.test.ts` (a local account's user takes its email; another user has none),
+`test/integration/email-identity.test.ts` (a GitHub-signed-in user signs in with a local account of their email as the
+same user, its GitHub connection still connected; a second OIDC subject of a verified email is the same user, an
+unverified one is not; an admin is refused a local account of another user's email; `GET /api/users` names the email).

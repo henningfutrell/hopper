@@ -614,7 +614,24 @@ user of their own, and then it is folded into that user at the next start (below
 |---|---|
 | login code | the user it was minted for: a device link is for the session's own user; a new user's login link for that user |
 | no sign-in (`none`) | its own user, made by its first visitor (on a hopper from before: `admin`, which it signed in as there) |
-| a realm (LDAP, OIDC, GitHub, SAML, gateway) | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`), and links it |
+| a realm (LDAP, OIDC, GitHub, SAML, gateway) or a local account | the user its identity (realm and subject) is linked to; the **first** sign-in of an identity a role rule lets in signs in as the user known by its verified email (issue #1380), else creates a new user for it, named after its username, else its name, else its email (made unique: `ada`, `ada 2`); either way it links it |
+
+**Identity keyed by email (issue #1380).** Each user keeps the verified email it is known by: a local account's email,
+or the first email a realm vouches for at a sign-in (OIDC only with `email_verified`, GitHub its primary verified
+email). A second identity with that email — another realm, or the same provider with a new subject — signs in as the
+same user. Settings → Users shows each user's email.
+
+**Move from a GitHub sign-in to a local account or SSO.** A person who signed in with GitHub keeps their user, their
+work and their GitHub connection (now a source in Sources):
+
+1. They sign in with GitHub once on this version, so their user takes their primary verified GitHub email. Settings →
+   Users shows it.
+2. The operator adds a local account of that email: `hopper local-account add <email>`, the password on stdin. Or the
+   admin sets up an OIDC realm whose provider vouches for that email.
+3. They sign in with it. The session is their user; Sources shows GitHub as connected.
+
+An admin cannot add a local account of another user's email in Settings → Sign-in (409): that would be a way into that
+user's work (issue #221). The operator CLI can, as it can every other change to the database.
 
 - An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
   one-time login link it shows.
