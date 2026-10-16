@@ -12607,6 +12607,29 @@ section's decisions; zero paths shows the reason with Accept, Ask for more paths
 proposals list each path of the signed-off version: a selected one links to its follow-on with its live status, the
 others greyed out and kept.
 
+## The delivery path (issue #1458, 2026-10-16)
+
+Owner requirement: a job knows how its change is delivered. A job whose change spanned another repository asked a person
+to pick a delivery path — file a child issue, have a person apply a patch, or let the job push there — because nothing told
+it the path. A question is fine; one about a path the rules already settle is not.
+
+**The delivery line** (`DELIVERY_LINE`, `src/job-rules/`): a fixed protocol line, after the review sections' lines, so every
+job is told it whatever its job rules. It says:
+
+- **Where the change lands.** In the job's own repository, through its pull request.
+- **A change another repository needs** is a **required child** ("Issue lineage"): the job files it on that repository
+  with `hopper-gh issue create --repo OWNER/NAME --required`, a job of that repository delivers it, and the job follows
+  it, since its issue is not done while the child is open. A job with no issue of its own (a direct job) files it with no
+  `--required` (the proxy refuses a required child there) and names it in its result. Never a patch for a person to apply.
+- **What delivered means.** Merged on the repository's landing branch, its checks passed there, and moved through the next
+  stages the repository names (a deploy to a test environment, for example). A pull request, a patch or an artifact is not
+  delivered. The branch and the stages are the repository's to name, in its own rules and documents: the line names none.
+  The job's own done stays its done line (`doneLine`, `src/sources/github/context.ts`).
+- **Production** waits for a person's approval; nothing short of it releases, and a job never releases to production.
+- **No question about the path itself**: only a real decision, as the decisions line says.
+
+**Verification.** `test/job-rules/delivery-path.test.ts`.
+
 ## Decide and proceed (issue #1059, 2026-10-13)
 
 Owner requirement: a job for well-scoped work does not stop to write a proposal or ask a question when a recommended path
