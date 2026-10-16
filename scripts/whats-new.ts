@@ -6,7 +6,7 @@
 //
 // `assemble` runs on main as an ordinary pull request, and reaches dev with the next batch run, before a
 // promotion to beta (scripts/promote.sh refuses a commit with fragments). `check` runs on every pull request into main (.github/workflows/pr.yml), not on a
-// promotion: it refuses a line added to WHATS-NEW.md directly, a released line changed, and a fragment with a wrong
+// promotion: it refuses a line added to WHATS-NEW.md directly, a line not in plain words, a released line changed, and a fragment with a wrong
 // name.
 import { execFileSync } from 'node:child_process';
 import { rmSync, writeFileSync } from 'node:fs';
