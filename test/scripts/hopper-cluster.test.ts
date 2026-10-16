@@ -142,8 +142,9 @@ describe('hopper-cluster.sh migrate', () => {
       replicas: 0, port: 4790, service: { type: 'ClusterIP' }, image: { repository: 'ghcr.io/henningfutrell/hopper', tag: 'beta' },
       masterKey: { existingSecret: 'hopper-master-key' }, hopperVault: { enabled: false },
     });
-    expect(String(values.lanNames).split(',')).toContain('box.lan');
-    expect(String(values.lanNames).split(',')).not.toContain('hopper');
+    expect(values.allowedHosts).toContain('box.lan');
+    expect(values.allowedHosts).not.toContain('hopper');
+    expect(values).not.toHaveProperty('lanNames');
     expect(values.extraEnv).toEqual([
       { name: 'HOPPER_PUBLIC_URL', value: 'https://hopper.example' },
       { name: 'CLAUDE_CODE_OAUTH_TOKEN', valueFrom: { secretKeyRef: { name: 'hopper-carried-env', key: 'CLAUDE_CODE_OAUTH_TOKEN' } } },
