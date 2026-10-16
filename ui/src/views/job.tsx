@@ -6,7 +6,8 @@
 // timeline of everything that happened, newest first (the parts list's events and the ones the UI holds); and the parts
 // as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997). Its
-// transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169).
+// transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169). Its facts name the GitHub
+// identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account.
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { JobTitle, LinkLostFlag, Since } from '@/components/job';
@@ -17,8 +18,9 @@ import { StatusBadge } from '@/components/status';
 import { WaitsOnLink } from '@/components/waits-on';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
+import { actingIdentity, actingText } from '@/model/acting-identity';
 import { directJobOf } from '@/model/promotions';
-import type { DomainEvent, Job, JobBom } from '@/model/wire';
+import type { ConnectedAccountStatus, DomainEvent, Job, JobBom } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
@@ -58,6 +60,17 @@ function useJobEvents(id: string, read: readonly DomainEvent[]): DomainEvent[] {
 
 const NONE: DomainEvent[] = [];
 
+/** The user's connected GitHub account, read once (issue #1380); undefined until read, or when the read fails. */
+function useGitHubAccount(): ConnectedAccountStatus | undefined {
+  const [account, setAccount] = useState<ConnectedAccountStatus>();
+  useEffect(() => {
+    let gone = false;
+    get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((r) => { if (!gone) setAccount(r.accounts.find((a) => a.provider === 'github')); }, () => {});
+    return () => { gone = true; };
+  }, []);
+  return account;
+}
+
 /** A tend or rework job's own events, newest first, from its parts list. */
 const readEventsOf = (jobId: string) => get<JobBom>(`/api/jobs/${encodeURIComponent(jobId)}/bom`).then((b) => b.events);
 
@@ -70,6 +83,7 @@ export function JobView() {
   const read = useJob(id);
   const bom = useJobBom(id);
   const events = useJobEvents(id, bom?.events ?? NONE);
+  const acting = actingIdentity(events, useGitHubAccount());
   const machines = useHopper((s) => s.machines);
   const jobs = useHopper((s) => s.jobs);
   const locked = useHopper((s) => s.locked);
@@ -96,6 +110,7 @@ export function JobView() {
             <JobAct jobId={read.job.id} />
             <Fact label="job">{read.job.id}</Fact>
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
+            <Fact label="GitHub as"><span data-slot="job-acting-as" className={acting.kind === 'acted' ? 'font-mono' : 'text-muted-foreground'}>{actingText(acting)}</span></Fact>
             <Fact label="created">{read.job.createdAt}</Fact>
             {read.job.startedAt && <Fact label="started">{read.job.startedAt}</Fact>}
             {read.job.finishedAt && <Fact label="ended">{read.job.finishedAt}</Fact>}

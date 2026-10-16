@@ -1,18 +1,15 @@
 // What a job may ask the hopper to do on GitHub (issue #563, design.md "GitHub through the hopper"): the
 // operations, the request's shape, and the check against who asks. Pure: no I/O, no clock.
 //
-// The hopper acts with its own GitHub connection — its oldest user's, the one that set it up — so who asks
-// decides what it does with it:
-// - a job of that same user (**its own job**) may file and read issues, comment, open a pull request from
-//   its pushed branch on its own repository, mark one ready for review there, close its own issue as completed
-//   (issue #652: it holds no GitHub token of its own), and read pull requests and a failed check's log (issue #993), on
-//   the hopper's job repositories; it reads (`READS`) on any repository the connection sees (issue #1015): the job
-//   repositories decide intake and where a job writes, not what it reads;
-// - a job of any other user (**another user's job**, treated as untrusted) may only file an issue there.
+// The hopper acts for a job with the GitHub connection of the job's own user (issue #1380): a job may file and read
+// issues, comment, open a pull request from its pushed branch on its own repository, mark one ready for review there,
+// close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
+// check's log (issue #993), on its user's job repositories; it reads (`READS`) on any repository the connection sees
+// (issue #1015): the job repositories decide intake and where a job writes, not what it reads.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
-// An issue a job files is a child of the job's own issue (issue #729, issue lineage): a follow-up, or — `required`, only
-// for the hopper's own job — a required child, linked as a GitHub sub-issue, so the parent is not done while it is open.
-// The contribution flow (issue #429): with the user's Contribution on, the hopper's own job of a repository its user cannot
+// An issue a job files is a child of the job's own issue (issue #729, issue lineage): a follow-up, or — `required` — a
+// required child, linked as a GitHub sub-issue, so the parent is not done while it is open.
+// The contribution flow (issue #429): with the user's Contribution on, a job of a repository its user cannot
 // push to may have the hopper fork it into the user's account (`repo.fork`), open its pull request there from the fork
 // (`--head <login>:<branch>`), and file, read and comment on issues on that fork — the **job's fork**, a fork of the
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
@@ -80,18 +77,16 @@ export const WAIT_OP = 'pr.wait';
 export const waitRequest = z.strictObject({ op: z.literal(WAIT_OP), repo, number, timeout: number.optional(), for: z.enum(['checks', 'mergeable']).optional() });
 export type WaitRequest = z.infer<typeof waitRequest>;
 
-/** Who asks: the job, whether it is the hopper's own user's, and the repository it came from. */
+/** Who asks: the job, and the repository it came from. */
 export interface ProxyAsker {
   jobId: string;
-  /** A job of the user whose GitHub connection the hopper acts with. */
-  own: boolean;
   /** The job's own repository (its source's, or its parent's for a fork); absent: none. */
   repo?: string;
   /** The number of the job's own issue in that repository; absent: none. */
   issue?: number;
   /** Whether the user's Contribution is on (issue #429). */
   contribution?: boolean;
-  /** The login of the user whose connection the hopper acts with: the owner of the job's fork. */
+  /** The login of the job's user's connection, which acts for it: the owner of the job's fork. */
   login?: string;
   /** The request's repository when GitHub says it is the job's fork: the user's fork of the job's own repository. */
   fork?: string;
@@ -106,22 +101,16 @@ export const CONTRIBUTION_OFF = 'contributing through a fork is off: a person tu
 const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view'];
 
 /**
- * What only reads (issue #1015): the hopper's own job asks them on any repository its connection sees. Each is a **repo
+ * What only reads (issue #1015): a job asks them on any repository its user's connection sees. Each is a **repo
  * query** (issue #1074): answered from the repo-query cache when it can be (repo-query.ts).
  */
 export const READS: readonly ProxyOp[] = ['issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view', 'check.log'];
 export const isRead = (op: ProxyOp): boolean => READS.includes(op);
 
-/** What a job of another user may ask: filing an issue. Everything else reads or writes as the hopper's user. */
-const OTHERS_MAY: readonly ProxyOp[] = ['issue.create'];
-
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /** Whether the asker may have the request done; else why not, in words the job can act on. */
 export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositories: readonly string[]): { ok: true } | { ok: false; reason: string } {
-  if (!asker.own && !OTHERS_MAY.includes(req.op)) {
-    return { ok: false, reason: `a job of another user may only file an issue through the hopper (issue.create), not ${req.op}` };
-  }
   const onFork = asker.fork !== undefined && same(asker.fork, req.repo);
   if (!onFork && !READS.includes(req.op) && !jobRepositories.some((r) => same(r, req.repo))) {
     return { ok: false, reason: `${req.repo} is not one of the repositories the hopper works on, so it does nothing there for a job` };
@@ -148,9 +137,6 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   }
   if (req.op === 'pr.ready' && !ownRepo) {
     return { ok: false, reason: `a job marks a pull request ready only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
-  }
-  if (req.op === 'issue.create' && req.required && !asker.own) {
-    return { ok: false, reason: 'a job of another user files no required child: file it with no --required' };
   }
   if (req.op === 'issue.create' && req.required && (asker.repo === undefined || asker.issue === undefined)) {
     return { ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' };

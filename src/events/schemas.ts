@@ -22,7 +22,9 @@ const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 /** Who asked the GitHub proxy (issue #563): the request, the job's machine, whether the job is the hopper's own user's. */
 const skillAsked = { requestId: z.string(), machine: z.string().optional(), template: z.string().optional(), asset: z.string().optional() };
-const proxyAsked = { requestId: z.string(), machine: z.string().optional(), own: z.boolean(), forUser: z.string().optional(), job: z.string().optional() };
+// `as`: the GitHub login that acted for the job, its own user's (issue #1380). `own`, `forUser`, `job`: only in events
+// recorded before, when the hopper acted with its oldest user's connection for every job.
+const proxyAsked = { requestId: z.string(), machine: z.string().optional(), as: z.string().optional(), own: z.boolean().optional(), forUser: z.string().optional(), job: z.string().optional() };
 // Who answered a job's read (issue #1074): GitHub now, or the repo-query cache.
 const proxyOp = z.enum(PROXY_OPS), answerSource = z.enum(['github', 'cache', 'hopper']);
 /** A question stage: an escalation level's instance name, or `human`. */
@@ -357,8 +359,8 @@ export const EVENT_SCHEMAS = {
   'vault.credential_asked': strict({ request: z.string(), skill: z.string(), template: z.string(), machine: z.string(), job: z.string(), why: z.string().optional() }),
   'vault.credential_given': strict({ request: z.string(), skill: z.string(), name: z.string(), kind: z.string(), template: z.string(), by: z.string(), approved: z.boolean(), jobs: z.array(z.string()) }),
   'vault.credential_declined': strict({ request: z.string(), skill: z.string(), template: z.string(), reason: z.string(), by: z.string(), jobs: z.array(z.string()) }),
-  // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
-  // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
+  // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub, with its own user's connection
+  // (issue #1380). On the job's timeline.
   // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on

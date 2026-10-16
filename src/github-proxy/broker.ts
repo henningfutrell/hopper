@@ -1,10 +1,9 @@
 // The GitHub proxy (issue #563, design.md "GitHub through the hopper"): a running job asks the hopper for a
-// GitHub operation, and the hopper does it with its own GitHub connection — the job's machine holds no GitHub
-// login, and no device code is spent. Each request is, in order: the job's proxy token checked (its job at
-// work), the request's shape checked, the asker checked (policy.ts), the rate limits taken (limits.ts), then
+// GitHub operation, and the hopper does it with the GitHub connection of the job's own user (issue #1380) — the job's
+// machine holds no GitHub login, and no device code is spent. Each request is, in order: the job's proxy token checked
+// (its job at work), the request's shape checked, the asker checked (policy.ts), the rate limits taken (limits.ts), then
 // done on GitHub (`github_proxy.done`, `.refused`, `.failed`). Every outcome but a token that names no job is
-// an event on the job's timeline; a request of
-// another user's job is also an event of the hopper's own user, whose connection it would act with. A job's bug report
+// an event on the job's timeline, with `as`, the GitHub login that acts for the job; an answer done says it too. A job's bug report
 // (`report.bug`, issue #694) is checked and limited the same way, then handed to `report`: Report a bug's own path, with
 // the job's own user's connection, whose events (`bug_report.filed`, `.failed`) record it. An issue a job with an issue
 // files is a child of that issue (issue #729, issue lineage): its text names the parent, a required one is linked as a
@@ -49,7 +48,7 @@ export interface ProxyUser {
   pullRequest?(repo: string, number: number): KnownPullRequest;
 }
 
-/** The hopper's own GitHub connection: the repositories it works on, and its calls; or why it has none. */
+/** A user's GitHub connection: the repositories their jobs work on, and its calls; or why it has none. */
 export interface ProxyConnection {
   jobRepositories(): string[];
   api(): ProxyApi | { problem: string };
@@ -68,8 +67,8 @@ export interface GitHubProxy {
 
 export interface GitHubProxyOptions {
   user(id: string): ProxyUser | undefined;
-  /** The user whose GitHub connection the hopper acts with (the oldest), and that connection; undefined: no user yet. */
-  hopper(): { user: ProxyUser; connection: ProxyConnection } | undefined;
+  /** The GitHub connection of user `id`, which acts for their jobs (issue #1380); undefined: no such user. */
+  connection(id: string): ProxyConnection | undefined;
   limiter: ProxyLimiter;
   /** A job's bug report, filed with its own user's connection (issue #694); absent: this hopper files none. Never throws. */
   report?(user: ProxyUser, job: Job, req: ReportRequest): Promise<ProxyAnswer>;
@@ -120,13 +119,13 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       }
       const requestId = newId();
       const machine = user.machineOf(job);
-      const hopper = o.hopper();
-      const own = hopper?.user.id === user.id;
-      // Who asked and from where stay in the hopper: the job's timeline, and the hopper's user's log for another user's job.
+      const connection = o.connection(user.id);
+      const login = connection?.login();
+      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380).
+      const acting = login ? { as: login } : {};
+      // Who asked and from where stay in the hopper: the job's timeline.
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
-        const at = { requestId, ...(machine ? { machine } : {}), own, ...data };
-        user.record({ type, jobId: job.id, data: at });
-        if (hopper && !own) hopper.user.record({ type, data: { ...at, forUser: user.id, job: job.id } });
+        user.record({ type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, ...data } });
       };
       const refuse = (status: number, reason: string, req?: { op?: string; repo?: string }): ProxyAnswer => {
         record('github_proxy.refused', { ...(req?.op ? { op: req.op } : {}), ...(req?.repo ? { repo: req.repo } : {}), reason });
@@ -152,12 +151,10 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         return { status: answer.status, body: { ...answer.body, requestId } };
       }
       const req = parsed.data;
-      if (!hopper) return refuse(503, 'the hopper has no user yet, so no GitHub connection', req);
+      if (!connection) return refuse(503, 'the job\'s user has no GitHub connection', req);
       const issue = job.source?.number;
       const jobRepo = repoOf(job);
-      const connection = hopper.connection;
-      const contribution = own && connection.contribution();
-      const login = connection.login();
+      const contribution = connection.contribution();
       const api = connection.api();
       // What the contribution flow decides on, read from GitHub only when it can matter (issue #429).
       const facts: Pick<ProxyAsker, 'fork' | 'canPush'> = {};
@@ -175,7 +172,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         }
       }
       const asker: ProxyAsker = {
-        jobId: job.id, own, contribution, ...(login ? { login } : {}), ...facts,
+        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts,
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
       };
       const allowed = checkRequest(req, asker, connection.jobRepositories());
@@ -236,7 +233,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end.
         const wait = waiting ? { wait: 'none' } : {};
         tellPolled(poll, result);
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait, ...(poll ? { poll: poll.note } : {}) } };
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait, ...(poll ? { poll: poll.note } : {}) } };
       };
       if (read) {
         const kept = cache.get(key);
@@ -251,13 +248,13 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         }
         if ('number' in req) cache.forget(req.repo, req.number);
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}) });
-        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result } };
+        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result } };
         const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
           ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}),
         } });
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required } };
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required } };
       } catch (e) {
         const status = e instanceof ProxyGitHubError ? e.status : undefined;
         const error = (e as Error).message;
