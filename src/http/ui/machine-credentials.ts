@@ -3,17 +3,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../../domain/ports.ts';
+import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { userIdOf, type TenantParts } from '../tenants.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
-const acceptBody = z.strictObject({
+export const acceptBody = z.strictObject({
   machineKey: z.string().min(1),
   credentials: z.array(z.string()),
 });
 
-const revokeBody = z.strictObject({
+export const revokeBody = z.strictObject({
   machineKey: z.string().min(1),
 });
 
@@ -48,3 +49,9 @@ const BOX_ACTIONS_EXTEND: readonly BoxAction[] = [
 ];
 
 export { BOX_ACTIONS_EXTEND };
+
+/** The API reference's entries for these routes (src/http/openapi.ts). */
+export const MACHINE_CREDENTIAL_OPERATIONS: Operation[] = [
+  { method: 'post', path: '/ui/api/machines/:id/credentials/accept', tag: 'Machines and usage', summary: 'Use a machine anyway though its job user holds infra credentials (issue #1459)', description: 'Records the admin\'s acceptance of the blast radius for `machineKey`: the readiness gate (issue #1248) holds the machine no longer and it takes jobs. Its warning stays shown until the acceptance is revoked.', role: 'admin', body: acceptBody, returns: '`{ ok: true }`', errors: [401] },
+  { method: 'post', path: '/ui/api/machines/:id/credentials/revoke', tag: 'Machines and usage', summary: 'Take back a machine\'s credential acceptance (issue #1459)', description: 'The machine takes no jobs again while its job user holds infra credentials.', role: 'admin', body: revokeBody, returns: '`{ ok: true }`', errors: [401] },
+];
