@@ -5,6 +5,7 @@
 // artifact the person ticks is committed to the promotion's own branch, so it opens on GitHub with no hopper sign-in. Pure.
 import { TEXT_KINDS, type ArtifactKind } from './artifacts.ts';
 import type { DirectJobView } from './direct-jobs.ts';
+import { nameWithoutEmail } from './users.ts';
 
 /** Where a promotion goes: a new issue, or a comment on an issue the person picks. */
 export type PromotionTarget = { kind: 'issue' } | { kind: 'comment'; number: number };
@@ -180,7 +181,7 @@ export function promotionFooter(f: PromotionFooter): string {
     ...(f.artifacts.length > 0 ? ['### Artifacts', '', ...f.artifacts.map(line), ''] : []),
     '---',
     `${from} (opening it needs a hopper sign-in).`,
-    `Promoted by ${f.promotedBy}.${f.requester ? ` Requested by ${f.requester}.` : ''}`,
+    `Promoted by ${f.promotedBy}.${f.requester ? ` Requested by ${nameWithoutEmail(f.requester)}.` : ''}`,
   ].join('\n');
 }
 

@@ -9,7 +9,7 @@ import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import type { InstanceAdmin } from '../instance-admin.ts';
 import { viewFor } from '../../domain/drift.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -33,6 +33,6 @@ export function registerComponentWatcherRoutes(app: FastifyInstance, o: { admin:
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to change the component watchers');
     const b = parseWith(componentWatchersBody, req.body);
-    return o.tenant(req).githubProxy.componentWatchers.change(b, identityName(s.identity));
+    return o.tenant(req).githubProxy.componentWatchers.change(b, personOf(s));
   });
 }

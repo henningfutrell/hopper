@@ -67,9 +67,17 @@ export const identityName = (who: Identity): string => who.name ?? who.username 
 /** The realm of a session the operator CLI mints for one call (issue #374): no sign-in config names it. */
 export const CLI_REALM = 'cli';
 
+/**
+ * Who a session's act is recorded by (issue #1380, "Audit and attribution keyed by email"): the verified email its user is
+ * known by, else, for a user with none yet, who signed in as the realm named them. Never a username when there is an email.
+ * The operator CLI's session signs in no person: it keeps its own name.
+ */
+export const personOf = (s: { identity: Identity; email?: string }): string =>
+  (s.identity.realm === CLI_REALM ? undefined : s.email) ?? identityName(s.identity);
+
 /** Who acts through a session, and the way (issue #623): an API token's (issue #718), the operator CLI's session, or the UI's. */
-export const actingOf = (s: { identity: Identity; kind?: SessionKind }): ActingPerson =>
-  ({ person: identityName(s.identity), via: s.kind === 'api' ? 'api' : s.identity.realm === CLI_REALM ? 'cli' : 'ui' });
+export const actingOf = (s: { identity: Identity; email?: string; kind?: SessionKind }): ActingPerson =>
+  ({ person: personOf(s), via: s.kind === 'api' ? 'api' : s.identity.realm === CLI_REALM ? 'cli' : 'ui' });
 
 /** An API token's id, as it is listed and revoked: the start of the token's hash. */
 export const apiTokenId = (tokenHash: string): string => tokenHash.slice(0, 16);

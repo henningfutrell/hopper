@@ -14,7 +14,7 @@ import { askerOf, askPerson, byApiToken, shownAsks } from './confirmation-asks.t
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 import { OUT_OF_BAND_OPERATIONS, outOfBandReadRoutes, registerOutOfBandRoutes } from './out-of-band.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
@@ -66,7 +66,7 @@ export function registerInfraPlanRoutes(app: FastifyInstance, o: { operator: Gua
     if (byApiToken(s) && plan && !infra.approval(plan.id) && !approveRefusal(plan, s.role) && planNeedsPerson(plan)) {
       return askPerson(parts.store, reply, planAsk(plan, askerOf(s)), plan.job);
     }
-    const r = infra.approve(b.plan, identityName(s.identity), s.role);
+    const r = infra.approve(b.plan, personOf(s), s.role);
     if (isPlanRefusal(r)) throw new HttpError(r.status, r.no);
     return { plan: r };
   });
@@ -74,13 +74,13 @@ export function registerInfraPlanRoutes(app: FastifyInstance, o: { operator: Gua
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to change auto-approve');
     const b = parseWith(infraPlanSettingsBody, req.body);
-    return { settings: o.tenant(req).githubProxy.infraPlans.setSettings(b, identityName(s.identity)) };
+    return { settings: o.tenant(req).githubProxy.infraPlans.setSettings(b, personOf(s)) };
   });
   app.post('/ui/api/infra-plans/watchers', o.admin, async (req) => {
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to name the environment watchers');
     const b = parseWith(infraWatchersBody, req.body);
-    const r = o.tenant(req).githubProxy.infraPlans.setWatchers(b.watchers, identityName(s.identity));
+    const r = o.tenant(req).githubProxy.infraPlans.setWatchers(b.watchers, personOf(s));
     if (isPlanRefusal(r)) throw new HttpError(r.status, r.no);
     return { watchers: r };
   });

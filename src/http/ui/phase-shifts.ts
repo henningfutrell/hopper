@@ -8,7 +8,7 @@ import { FORK_PARENT, SHIFT_MODES, withPhase, type ReviewKind } from '../../doma
 import { HttpError, parseWith } from '../errors.ts';
 import { questionView } from '../questions.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -36,7 +36,7 @@ export function registerPhaseShiftRoutes(app: FastifyInstance, o: { operator: Gu
       const { id } = parseWith(idParams, req.params);
       const body = parseWith(shiftBody, req.body ?? {});
       const t = o.tenant(req);
-      const r = t.engine.phaseShifts.shift(id, { to, ...(body.mode ? { mode: body.mode } : {}), ...(body.note ? { note: body.note } : {}) }, { person: identityName(s.identity) });
+      const r = t.engine.phaseShifts.shift(id, { to, ...(body.mode ? { mode: body.mode } : {}), ...(body.note ? { note: body.note } : {}) }, { person: personOf(s) });
       return { question: questionView(t, r.question), job: withPhase(r.job), ...(r.fork ? { fork: withPhase(r.fork) } : {}) };
     });
   }

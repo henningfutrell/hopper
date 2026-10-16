@@ -27,6 +27,13 @@ export interface User {
  */
 export const ADMIN_ID = 'admin';
 
+/**
+ * A person as text that leaves the hopper names them (issue #1380, "Audit and attribution keyed by email"): to GitHub, or
+ * to a job, which may write to GitHub. Attribution keeps the verified email; such text carries no email address, so each
+ * address in it is cut to its local part.
+ */
+export const nameWithoutEmail = (person: string): string => person.replace(/([^\s@()<>]+)@[^\s@()<>]+/g, '$1');
+
 /** GET /api/users: who the users are, nothing of their own data. */
 export interface UserView {
   id: string;
