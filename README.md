@@ -275,8 +275,7 @@ that is online, runs the job's executor, and has the most room left — unless a
 
 | Kind | Use it for | The hopper reaches it by | It needs |
 |---|---|---|---|
-| [a computer, with one line](#a-computer-or-a-sandbox-box-one-line) | the computer the hopper's container runs on, a laptop, a desktop: it dials in | its own connection to the hopper's URL | Node.js ≥ 24, herdr, `claude` |
-| [a sandbox box, with one line](#a-computer-or-a-sandbox-box-one-line) | jobs that must reach nothing of your computer | its own connection to the hopper's URL | rootless Podman or Docker beside the hopper, or on a joined computer |
+| [a computer, with one line](#a-computer-one-line) | the computer the hopper's container runs on, a laptop, a desktop: it dials in | its own connection to the hopper's URL | Node.js ≥ 24, herdr, `claude` |
 | [this host](#this-host) | the start: jobs on the hopper's own machine | nothing to reach | herdr and `claude`; set up by the install |
 | [ssh target](#an-ssh-target) | a computer that cannot run the client (no Node.js 24) | ssh, with its own key | sshd, and herdr with `claude` or [Cursor's agent](#cursors-agent) |
 | [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | `docker exec`, through a socket proxy | docker on the hopper's host |
@@ -292,9 +291,9 @@ machine online or offline; the daemon's log says why one is offline
 lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
 there with **Defaults**; they apply to machines added afterwards, never to ones already there.
 
-### A computer or a sandbox box: one line
+### A computer: one line
 
-Machines → **Add machine**, pick one, **Show the line**, run it where it says. The machine joins, and
+Machines → **Add machine**, **Show the line**, run it on the computer. The machine joins, and
 shows in the Machines view, online, a few seconds later. Nothing is typed into the hopper; nothing
 listens on the machine (it dials in to the hopper's own URL); no ssh, no keys to copy, no restart. The
 line carries a one-time join code: it works once, for 10 minutes.
@@ -312,16 +311,9 @@ line carries a one-time join code: it works once, for 10 minutes.
   distro, not in PowerShell. A client on Windows itself (Node.js for Windows, with Git Bash's `sh` on
   its `PATH`) joins too, for work that needs Windows; it serves no vault socket. The steps:
   https://henningfutrell.github.io/hopper/install.html#windows-machine
-- **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
-  container `hopper-sandbox-claude` (`hopper-sandbox-<template>` for a box of a template) from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
-  locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
-  nothing of the computer mounted. Sign its agent in once:
-  `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
-  so a recreated box is the same machine. The join code is used once: after the join, nothing in the box
-  holds it, and a restart does not need it. Given your rootless Podman socket, the hopper starts the box itself:
-  Add machine → *A sandbox box* → **Start the box**, no line to run; removing the machine, or the end of its time limit, stops the box
-  and removes it; its home volume stays unless its template says not to keep it (`docs/deploy.md` "Sandbox boxes the hopper starts").
-  Templates, approval and what a box's jobs may get: the help pages "Sandbox boxes" and "The vault" (`/help/sandboxes`, `/help/vault`).
+- **No sandbox box.** A sandbox never joins as a machine: a job's step runs in a sandbox of its own, which the
+  hopper makes for that step and destroys after it (`docs/deploy.md` "Sandboxes the hopper starts").
+  Templates, approval and what a job's sandbox may get: the help pages "Sandbox boxes" and "The vault" (`/help/sandboxes`, `/help/vault`).
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
 mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working

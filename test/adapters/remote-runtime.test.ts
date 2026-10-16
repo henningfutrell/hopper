@@ -28,10 +28,11 @@ afterEach(async () => {
   api = undefined;
 });
 
+/** A need box (issue #1007): what the hopper makes on a machine (issue #1349: no sandbox box joins as a machine). */
 const spec = {
-  name: 'hopper-sandbox-kube', image: 'example.org/kube-box:1', network: 'host', volume: 'hopper-sandbox-kube-home',
-  env: { HOPPER_CLIENT_NAME: 'hopper-sandbox-kube' }, labels: { 'io.hopper.box': 'i-1', 'io.hopper.user': 'admin', 'io.hopper.sandbox': 's-1' },
-  limits: { cpus: 2, memoryMb: 2048 }, user: 'agent',
+  name: 'hopper-need-kube-1', image: 'example.org/kube-box:1', network: 'host', volume: 'hopper-need-kube-1-home',
+  env: {}, labels: { 'io.hopper.need': 'i-1', 'io.hopper.user': 'admin' },
+  limits: { cpus: 2, memoryMb: 2048 }, user: 'agent', script: 'echo hi',
 };
 
 describe('the remote container runtime', () => {
@@ -51,7 +52,7 @@ describe('the remote container runtime', () => {
     expect(libpod.containers.get(id)!.body).toEqual(libpodCreateBody(spec));
     await rt.start(id);
     expect(await rt.inspect(id)).toEqual({ id, name: spec.name, image: spec.image, labels: spec.labels, state: 'running' });
-    expect((await rt.list({ 'io.hopper.sandbox': 's-1' })).map((x) => x.id)).toEqual([id]);
+    expect((await rt.list({ 'io.hopper.need': 'i-1' })).map((x) => x.id)).toEqual([id]);
     await rt.stop(id);
     await rt.remove(id);
     await rt.remove(id);

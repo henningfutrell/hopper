@@ -13,14 +13,13 @@ import type { SandboxRecord } from '../../src/domain/sandboxes.ts';
 import type { SandboxRepository } from '../../src/domain/store.ts';
 import { createSandboxes } from '../../src/sandbox/service.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
 function memoryRepo(): SandboxRepository {
   const rows = new Map<string, SandboxRecord>();
   return {
     list: () => [...rows.values()],
-    get: (id) => rows.get(id),
     add: (r) => (rows.has(r.id) ? false : (rows.set(r.id, r), true)),
-    update: (r) => { rows.set(r.id, r); },
     remove: (id) => rows.delete(id),
   };
 }
@@ -34,8 +33,7 @@ describe('the sandbox module stops', () => {
     let listed = 0;
     runtime.list = async (labels) => { listed++; await answered; return list(labels); };
     const sandboxes = createSandboxes({
-      runtime, repo: memoryRepo(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
-      mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(),
+      runtime, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host',
       clock: { now: () => new Date('2026-10-11T00:00:00.000Z') }, logger: { info() {}, warn() {} },
     });
     sandboxes.start();

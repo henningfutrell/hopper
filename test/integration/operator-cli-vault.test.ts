@@ -1,9 +1,9 @@
 // Issue #716, part 1: an agent sets up the vault and its sandboxes without a UI session. `hopper vault|template|sandbox …`
-// makes the same POST /ui/api/vault and POST /ui/api/machines/sandbox calls the UI makes, on the running daemon, under a
+// makes the same POST /ui/api/vault calls the UI makes, on the running daemon, under a
 // session the CLI mints for the one call (issue #374). Real daemon, real CLI; the container runtime and OpenFGA are
 // doubles at their ports.
 //
-// Feature: the vault, templates and sandbox boxes from the operator CLI
+// Feature: the vault, templates and sandboxes from the operator CLI
 //   Scenario: a vault secret is set from stdin, listed without its value, and removed
 //     Given a hopper with a master key
 //     When the operator pipes a value into `hopper vault set DEPLOY_KEY --scope deploy`
@@ -19,14 +19,13 @@
 //     When the operator saves kube again with only a new image
 //     Then its secrets and profiles stay, and the new image waits
 //   Scenario: a profile that is not <operation>/<kind>/<asset> is refused before any call
-//   Scenario: a sandbox box of an approved template is launched with parameters, and listed
-//   Scenario: a parameter outside the template's limits is refused with the daemon's reason; nothing starts
+//   Scenario: the CLI launches no sandbox box; `hopper sandbox list` lists the sandbox runs (issue #1349)
 //   Scenario: revoke and remove a template
-//   Scenario: a template's tools are saved with --tool, and a launch names fewer of them (issue #716, item 2)
+//   Scenario: a template's tools are saved with --tool, and a later save keeps them (issue #716, item 2)
 //   Scenario: a terraform workspace's state backend is saved with --backend, and kept by a later save (issue #715)
 //   Scenario: the read policy is shown, set and cleared (issue #716, item 1); an entry it cannot read is refused
-//   Scenario: a template's agent credential is saved with --agent-credential, kept by a later save, and dropped with none;
-//     a launch then starts the box signed in (issue #708, part 10)
+//   Scenario: a template's agent credential is saved with --agent-credential, kept by a later save, and dropped with none
+//     (issue #708, part 10)
 //   Scenario: a read probe is marked with --mark, a later save keeps the marks, none drops one; a write probe takes no mark (issue #916)
 //   Scenario: a job is granted the vault and the grant is taken back, with no browser (issue #1089)
 //     Given a job of the hopper's user
@@ -139,50 +138,31 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(json<VaultAnswer>(await hopper(a, ['vault'])).templates).toEqual([]);
   });
 
-  it('launches a sandbox box of an approved template with parameters, and lists it', async () => {
+  it('launches no sandbox box; sandbox list lists the sandbox runs (issue #1349)', async () => {
     const { a, runtime } = await boot();
     await approvedKube(a);
-    const r = await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--cpus', '3', '--ttl-minutes', '60', '--secret', 'KUBE_TOKEN']);
-    expect(r).toMatchObject({ code: 0 });
-    const { container } = json<{ container: string }>(r);
-    expect(runtime.boxes.get(container)?.spec.image).toBe(IMAGE);
-
-    const boxes = json<{ boxes: { name: string; template?: { name: string }; params: Record<string, unknown> }[] }>(await hopper(a, ['sandbox', 'list'])).boxes;
-    expect(boxes).toEqual([expect.objectContaining({ name: container, template: expect.objectContaining({ name: 'kube' }), params: expect.objectContaining({ cpus: 3, ttlMinutes: 60, secrets: ['KUBE_TOKEN'] }) })]);
-  });
-
-  it('refuses a parameter outside the template\'s limits with the daemon\'s reason; nothing starts', async () => {
-    const { a, runtime } = await boot();
-    await approvedKube(a);
-    expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--cpus', '8'])).toMatchObject({ code: 2, err: expect.stringContaining('at most 4') });
-    expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--cpus', 'many'])).toMatchObject({ code: 2, err: expect.stringContaining('--cpus') });
+    expect(await hopper(a, ['sandbox', 'launch'])).toMatchObject({ code: 2, err: expect.stringContaining('sandbox list | requests') });
+    expect((await hopper(a, ['sandbox', 'launch', '--template', 'kube'])).code).not.toBe(0);
     expect(runtime.boxes.size).toBe(0);
+    expect(json<{ runs: unknown[]; problems: unknown[] }>(await hopper(a, ['sandbox', 'list']))).toEqual({ runs: [], problems: [] });
   });
 
-  it('saves a template\'s tools with --tool, and a launch names fewer of them (issue #716, item 2)', async () => {
-    const { a, runtime } = await boot();
+  it('saves a template\'s tools with --tool, and a later save keeps them (issue #716, item 2)', async () => {
+    const { a } = await boot();
     const saved = kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--tool', 'kubectl', '--tool', 'helm']));
     expect(saved).toMatchObject({ tools: ['helm', 'kubectl'], pending: { image: true } });
     expect((await hopper(a, ['template', 'approve', 'kube'])).code).toBe(0);
     // A save that names no tool keeps the ones it has.
     expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE]))).toMatchObject({ tools: ['helm', 'kubectl'], pending: { image: false } });
-    const r = await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--tool', 'kubectl']);
-    expect(r).toMatchObject({ code: 0 });
-    expect(runtime.images.get(runtime.boxes.get(json<{ container: string }>(r).container)!.spec.image)).toContain('io.hopper.tools="kubectl"');
-    expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--tool', 'aws'])).toMatchObject({ code: 2, err: expect.stringContaining('does not add aws') });
   });
 
   it('saves a template\'s agent credential with --agent-credential; a later save keeps it, none drops it (issue #708)', async () => {
-    const { a, runtime } = await boot();
+    const { a } = await boot();
     const token = 'sk-ant-oat01-cli-agent-credential-0123456789';
     expect((await hopper(a, ['vault', 'set', 'CLAUDE'], token)).code).toBe(0);
     expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--secret', 'CLAUDE', '--agent-credential', 'CLAUDE']))).toMatchObject({ agentCredential: 'CLAUDE' });
     expect((await hopper(a, ['template', 'approve', 'kube'])).code).toBe(0);
     expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE]))).toMatchObject({ agentCredential: 'CLAUDE' });
-    const r = await hopper(a, ['sandbox', 'launch', '--template', 'kube']);
-    expect(r).toMatchObject({ code: 0 });
-    expect(runtime.boxes.get(json<{ container: string }>(r).container)!.spec.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(token);
-    expect(r.out).not.toContain(token);
     expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--agent-credential', 'none']))!.agentCredential).toBeUndefined();
     expect(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--agent-credential', 'OTHER'])).toMatchObject({ code: 2, err: expect.stringContaining('not one of the template\'s secrets') });
   });

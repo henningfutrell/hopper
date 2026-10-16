@@ -3,7 +3,7 @@
 // sandbox flags are the pod's security context (flags.ts). One NetworkPolicy holds every pod of the hopper's, applied
 // before each pod is made: no ingress, and egress only to DNS, the hopper's pods on its port and public addresses — no
 // other pod or address of the cluster. Nothing is built here: a box with tools runs the tools image CI published
-// (launch.ts `publishedToolsImage`). A command runs in a box, and files are copied into it, through the API's exec.
+// (box-image.ts `publishedToolsImage`). Files are copied into a box through the API's exec.
 //
 // The runtime sees only its own pods (the label POD_LABEL): another pod of the namespace, the hopper's own included, is
 // no container of it, and it stops and removes only its own pods and claims (issue #1371). A name Kubernetes does not take (a template name with `_` or `.`, one too long) is made DNS-safe,
@@ -14,7 +14,7 @@ import { createReadStream } from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { V1Pod } from '@kubernetes/client-node';
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
-import { KUBERNETES_USER, kubernetesPodBody, startCheckTest, STOP_S } from './flags.ts';
+import { KUBERNETES_USER, kubernetesPodBody, STOP_S } from './flags.ts';
 import { notASandbox } from './owned.ts';
 
 /** The label on every pod and claim the runtime makes: what it lists, inspects and holds under its egress policy. */
@@ -25,7 +25,6 @@ export const POLICY = 'hopper-sandbox';
 export const HOME_SIZE = '5Gi';
 const NAME_ANNOTATION = 'io.hopper.name';
 const LABELS_ANNOTATION = 'io.hopper.labels';
-const CHECK_ANNOTATION = 'io.hopper.check';
 /** How long a pod may take to start, its image pull included. */
 const START_MS = 15 * 60_000;
 /** A container that waits for one of these does not start without a change. */
@@ -191,7 +190,7 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
 
     async create(spec) {
       const name = kubeName(spec.name);
-      const annotations = { [NAME_ANNOTATION]: spec.name, [LABELS_ANNOTATION]: JSON.stringify(spec.labels), ...(spec.check !== undefined ? { [CHECK_ANNOTATION]: spec.check } : {}) };
+      const annotations = { [NAME_ANNOTATION]: spec.name, [LABELS_ANNOTATION]: JSON.stringify(spec.labels) };
       const body = kubernetesPodBody(spec, { name, claim: kubeName(spec.volume), labels: { ...selectable(spec.labels), [POD_LABEL]: 'true' }, annotations });
       // Before the pod: no box of the hopper's runs a moment without its egress policy.
       await api.applyNetworkPolicy(egressPolicy(o.hopper));
@@ -231,29 +230,10 @@ export function createKubernetesRuntime(o: { api: KubeApi; hopper: HopperPods; p
       return p && infoOf(p);
     },
 
-    // Run in the box now, as Podman runs it when the hopper asks.
-    async startCheck(id) {
-      const p = await read(id);
-      if (!p) return { passed: false, output: 'the box is gone' };
-      const url = p.metadata?.annotations?.[CHECK_ANNOTATION];
-      if (url === undefined) return undefined;
-      if (p.status?.phase !== 'Running' || !p.status.containerStatuses?.[0]?.state?.running) return { passed: false, output: `the box is ${stateOf(p)}, not running` };
-      const chunks: Buffer[] = [];
-      try {
-        const exit = await run(id, startCheckTest(url).slice(1), (chunk) => chunks.push(chunk));
-        return { passed: exit === 0, output: Buffer.concat(chunks).toString('utf8').trim() };
-      } catch (e) {
-        return { passed: false, output: e instanceof Error ? e.message : String(e) };
-      }
-    },
-
     stop: (id) => takePod(id),
     remove: (id) => takePod(id),
 
     list: async (labels) => (await api.listPods(selector(labels))).map(infoOf),
-
-    // Exec takes no environment: `env` sets it, in the box, for the command alone.
-    exec: (id, r) => run(id, r.env ? ['env', ...Object.entries(r.env).map(([k, v]) => `${k}=${v}`), ...r.cmd] : r.cmd, r.out, r.signal ? { signal: r.signal } : {}),
 
     // As the box's user, so the files are its own; the home's directories stay as they are (the claim's root is not its).
     async copyIn(id, dir, tar) {

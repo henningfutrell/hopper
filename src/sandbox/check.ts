@@ -20,8 +20,8 @@ import type { ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
-import { boxImage, USER_LABEL } from './launch.ts';
-import { CHECK_LABEL, staleHome, sweepHomes } from './owned.ts';
+import { boxImage } from './box-image.ts';
+import { CHECK_LABEL, staleHome, sweepHomes, USER_LABEL } from './owned.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 
 export { CHECK_LABEL };

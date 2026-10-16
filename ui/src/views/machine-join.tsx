@@ -1,61 +1,26 @@
-// Add machine (design.md "Joining a machine", issue #308): pick a computer or a sandbox box, get one line
-// with a one-time join code (POST /ui/api/machines/join), run it there. Nothing is typed into the hopper:
-// the machine joins itself, dials in, and shows in the Machines view, online. Attaching over ssh stays
-// behind a link, for a machine that cannot run the client. Phone width first: every control stacks.
-// A sandbox box the hopper can start itself (issue #603: it is given a rootless Podman socket) is started with one
-// click (POST /ui/api/machines/sandbox): no line to run. When it cannot, the form says why and shows the line. A box
-// may start on a client target online now instead (issue #708): in that machine's own Podman, through its client. The
-// box's launch parameters (issue #708, launch-params.tsx) start at its template's defaults and are checked before Start.
+// Add machine (design.md "Joining a machine", issue #308): get one line with a one-time join code
+// (POST /ui/api/machines/join), run it on the computer. Nothing is typed into the hopper: the machine joins itself, dials
+// in, and shows in the Machines view, online. Attaching over ssh stays behind a link, for a machine that cannot run the
+// client. A sandbox never joins as a machine (issue #1349): a job's step runs in a sandbox of its own, burned after it.
+// Phone width first: every control stacks.
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { get, post } from '@/lib/api';
-import { BOX_AGENTS, boxHosts, boxPlace, boxSignInLine, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
-import { launchDraft, launchParams } from '@/model/sandbox-launch';
-import type { TemplateView, MachinesConfig, SandboxesView, VaultView } from '@/model/wire';
+import { post } from '@/lib/api';
+import { joinLine } from '@/model/machines';
 import { useHopper } from '@/store';
-import { LaunchParamsInput } from './launch-params';
 
-/** A box's line also gets its `run` flags (issue #708): the hopper's own builder, with the CPUs and memory asked for. */
-interface Minted { code: string; expiresAt: string; flags?: string }
+interface Minted { code: string; expiresAt: string }
 
 const time = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-function Choice({ on, label, hint, onPick, disabled }: { on: boolean; label: string; hint: string; onPick: () => void; disabled: boolean }) {
-  return (
-    <button type="button" disabled={disabled} onClick={onPick} aria-pressed={on}
-      className={`grid min-h-16 gap-1 rounded-lg border p-3 text-left text-xs transition-colors ${on ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}>
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <span className="text-muted-foreground">{hint}</span>
-    </button>
-  );
-}
-
-export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesConfig; onDone: () => void; onSsh: () => void }) {
-  const [kind, setKind] = useState<JoinChoice['kind']>('computer');
-  const [runtime, setRuntime] = useState<'podman' | 'docker'>('podman');
-  const [agent, setAgent] = useState<BoxAgent>(BOX_AGENTS[0]);
+export function JoinMachineForm({ onDone, onSsh }: { onDone: () => void; onSsh: () => void }) {
   const [minted, setMinted] = useState<Minted | null>(null);
-  // A sandbox box may be one of a template (issue #558): its line names the template and runs its image.
-  const [templates, setTemplates] = useState<TemplateView[]>([]);
-  const [template, setTemplate] = useState<TemplateView | null>(null);
-  const [draft, setDraft] = useState(launchDraft(undefined));
-  const pick = (t: TemplateView | null) => { setTemplate(t); setDraft(launchDraft(t ?? undefined)); };
-  const params = launchParams(draft, template ?? undefined);
-  useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
-  // Whether the hopper starts a box itself (issue #603), and why not.
-  const [launch, setLaunch] = useState<SandboxesView['launch'] | null>(null);
-  useEffect(() => { get<SandboxesView>('/api/sandboxes').then((v) => setLaunch(v.launch), () => setLaunch(null)); }, []);
-  const [started, setStarted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
-  // Where the box starts: `local`, the computer the hopper runs on, or a client target (issue #708).
-  const [where, setWhere] = useState('local');
-  const hosts = boxHosts(machines);
   // The machines there were when the line was shown: the first new one online is the one that joined.
   const before = useRef<Set<string> | null>(null);
-  const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, runtime, ...(template ? { template: { name: template.name, image: template.image } } : {}) };
-  const line = minted && (choice.kind === 'computer' || minted.flags !== undefined) ? joinLine(choice, { origin: window.location.origin, code: minted.code, join: boxPlace(config, String(config.port ?? window.location.port)), flags: minted.flags ?? '' }) : null;
+  const line = minted ? joinLine({ origin: window.location.origin, code: minted.code }) : null;
 
   useEffect(() => {
     if (!before.current) return;
@@ -70,107 +35,35 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
     setBusy(true);
     try {
       before.current = new Set(machines.map((m) => m.id));
-      // A box's line: its CPUs and memory, which the hopper checks against the template and answers as flags.
-      const box = kind === 'box' && params.ok ? { ...(template ? { template: template.name } : {}), box: { cpus: params.params.cpus, memoryMb: params.params.memoryMb } } : {};
-      setMinted(await post<Minted>('/ui/api/machines/join', box));
+      setMinted(await post<Minted>('/ui/api/machines/join', {}));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setBusy(false);
     }
   };
-  const start = async () => {
-    if (!params.ok) return;
-    setBusy(true);
-    try {
-      before.current = new Set(machines.map((m) => m.id));
-      const r = await post<{ container: string }>('/ui/api/machines/sandbox', { agent, ...(template ? { template: template.name } : {}), params: params.params, ...(where !== 'local' ? { machine: where } : {}) });
-      setStarted(r.container);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const hopperStarts = kind === 'box' && (where !== 'local' || launch?.available === true);
   const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
 
   return (
     <div className="grid gap-3">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Choice on={kind === 'computer'} disabled={busy} onPick={() => setKind('computer')} label="A computer"
-          hint="this computer or another one: its jobs run as you there. It needs Node.js 24 or later and herdr." />
-        <Choice on={kind === 'box'} disabled={busy} onPick={() => setKind('box')} label="A sandbox box"
-          hint="a locked-down container on the computer the hopper runs on: its jobs reach nothing of that computer. Jobs start their own sandbox boxes; start one here only to test." />
-      </div>
-      {kind === 'box' && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">agent</span>
-          {BOX_AGENTS.map((a) => <Button key={a} type="button" size="sm" variant={agent === a ? 'default' : 'outline'} className="min-h-9" onClick={() => setAgent(a)}>{a}</Button>)}
-          {!hopperStarts && <span className="ml-2 text-muted-foreground">runtime</span>}
-          {!hopperStarts && (['podman', 'docker'] as const).map((e) => <Button key={e} type="button" size="sm" variant={runtime === e ? 'default' : 'outline'} className="min-h-9" onClick={() => setRuntime(e)}>{e}</Button>)}
-        </div>
-      )}
-      {kind === 'box' && templates.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">template</span>
-          <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => pick(null)}>none</Button>
-          {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => pick(t)}>{t.name}</Button>)}
-          {template && <span className="text-muted-foreground">{!template.approval || template.pending.image ? <>its boxes take no job and get nothing until a person approves the template on <a href="#access-requests" className="underline">Access requests</a></> : `its boxes get ${template.gives.join(', ') || 'no vault secret'}`}</span>}
-        </div>
-      )}
-      {kind === 'box' && hosts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">on</span>
-          {['local', ...hosts].map((h) => <Button key={h} type="button" size="sm" variant={where === h ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setWhere(h)}>{h === 'local' ? 'the hopper\'s computer' : h}</Button>)}
-        </div>
-      )}
-      {kind === 'box' && where === 'local' && launch && !launch.available && (
-        <p className="text-xs text-muted-foreground">The hopper does not start sandbox boxes itself here: {launch.problem} Run the line instead.</p>
-      )}
-      {hopperStarts && !started && (
-        <div className="grid gap-2 text-xs">
-          <LaunchParamsInput template={template} draft={draft} busy={busy} problem={params.ok ? undefined : params.error} onChange={setDraft} />
-          <span className="text-muted-foreground">{where === 'local' ? 'The hopper starts the box in rootless Podman on the computer it runs on.' : `The hopper starts the box on ${where}, in that machine's own rootless Podman, through its client.`} Removing the machine stops the box and removes it; its home volume stays.</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="lg" disabled={busy || !params.ok} onClick={() => void start()}>{busy ? 'Starting the box…' : 'Start the box'}</Button>
-            <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
-          </div>
-        </div>
-      )}
-      {hopperStarts && started && (
-        <div className="grid gap-2 text-xs">
-          <span className="font-medium text-foreground/90">Started {started}. It shows here, online, when it joins.</span>
-          <span className="text-muted-foreground">
-            Then sign its agent in once, on {where === 'local' ? 'the computer the hopper runs on' : where}: <code className="font-mono">{boxSignInLine(started, agent)}</code> — the sign-in stays in the box&apos;s home volume.
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground">Waiting for it to join…</span>
-            <Button type="button" size="sm" variant="ghost" className="min-h-9" onClick={onDone}>Close</Button>
-          </div>
-        </div>
-      )}
-      {!hopperStarts && !line && kind === 'box' && (
-        <LaunchParamsInput template={template} draft={draft} busy={busy} problem={params.ok ? undefined : params.error} onChange={setDraft} limitsOnly />
-      )}
-      {!hopperStarts && !line && (
+      <p className="text-xs text-muted-foreground">
+        A computer: this one or another one. Its jobs run as you there. It needs Node.js 24 or later and herdr.
+      </p>
+      {!line && (
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="lg" disabled={busy || (kind === 'box' && !params.ok)} onClick={() => void mint()}>{busy ? 'Making a join code…' : 'Show the line'}</Button>
+          <Button type="button" size="lg" disabled={busy} onClick={() => void mint()}>{busy ? 'Making a join code…' : 'Show the line'}</Button>
           <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
         </div>
       )}
-      {!hopperStarts && line && minted && (
+      {line && minted && (
         <div className="grid gap-2 text-xs">
-          <span className="font-medium text-foreground/90">
-            {kind === 'computer' ? 'Run this in a terminal on the computer:' : 'Run this on the computer the hopper runs on:'}
-          </span>
+          <span className="font-medium text-foreground/90">Run this in a terminal on the computer:</span>
           <div className="flex flex-wrap items-start gap-2">
             <code className="min-w-0 flex-1 rounded-md border bg-muted/40 p-2 font-mono break-all">{line}</code>
             <Button type="button" size="sm" variant="outline" className="min-h-9" onClick={() => void copy(line)}>Copy</Button>
           </div>
           <span className="text-muted-foreground">
             The code in it works once, until {time(minted.expiresAt)}. The machine shows here, online, when it joins.
-            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{runtime} exec -it hopper-sandbox-{template?.name ?? agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">Waiting for it to join…</span>

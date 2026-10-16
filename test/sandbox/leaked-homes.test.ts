@@ -19,6 +19,7 @@ import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
 import { probeCatalog } from '../../src/sandbox/probes.ts';
 import { createSandboxes } from '../../src/sandbox/service.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
 const INSTANCE = 'i-1371';
 const template: Template = {
@@ -54,8 +55,8 @@ function memoryRepo(): SandboxRepository {
 }
 
 const sandboxes = (r: FakeContainerRuntime) => createSandboxes({
-  runtime: r, repo: memoryRepo(), instanceId: INSTANCE, network: 'host', joinUrl: () => 'http://hopper:1',
-  mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(), clock, logger,
+  runtime: r, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: INSTANCE, network: 'host',
+  clock, logger,
 });
 
 /** A one-shot box's script that runs until `release` is called. */
@@ -108,7 +109,7 @@ describe('the sweeps remove leaked sandbox homes (issue #1371)', () => {
     const s = sandboxes(r);
     const step = s.needStep('u', {
       name: 'hopper-need-asked-1', template: { image: template.image }, env: {}, timeoutMs: 60_000, dir: mkdtempSync(join(tmpdir(), 'need-')),
-    }, { log: () => {}, signal: new AbortController().signal, pollMs: 10 });
+    }, { log: () => {}, signal: new AbortController().signal, pollMs: 10 }, { jobId: 'job-1', step: 'step-1', template: template.name });
     await run.started;
     await s.check();
     expect(r.volumes.has('hopper-need-asked-1-home')).toBe(true);

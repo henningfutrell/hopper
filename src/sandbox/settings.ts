@@ -33,7 +33,7 @@ export const SANDBOX_SETTINGS = {
 };
 
 export const SANDBOX_SETTING_HELP: Record<keyof typeof SANDBOX_SETTINGS, string> = {
-  HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
+  HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandboxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandboxes the hopper starts"). Unset: a step runs on a machine of the user with a runtime, else it fails',
   HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
   HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
   HOPPER_SANDBOX_RUNTIME: 'podman, docker or kubernetes: the container runtime the hopper starts sandbox boxes through (kubernetes: as pods in a cluster, with no socket: docs/deploy.md "Sandbox boxes on Kubernetes"). Unset: Podman whenever it is reachable, else Docker',

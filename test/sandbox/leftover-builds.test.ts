@@ -17,6 +17,7 @@ import { LEFTOVER_BUILD_MS, LEFTOVER_PASS_MS, leftoverBuilds, removeLeftoverBuil
 import { createSandboxes } from '../../src/sandbox/service.ts';
 import { TOOLS_IMAGE, TOOLS_STAGE_LABEL } from '../../src/sandbox/tools.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
 const NOW = new Date('2026-10-14T12:00:00.000Z');
 const OLD = NOW.getTime() - LEFTOVER_BUILD_MS - 60_000;
@@ -45,7 +46,7 @@ function withImages(rt: FakeContainerRuntime, images: ListedImage[]): { removed:
 
 function memoryRepo(rows: SandboxRecord[] = []): SandboxRepository {
   const m = new Map(rows.map((r) => [r.id, r]));
-  return { list: () => [...m.values()], get: (id) => m.get(id), add: (r) => (m.has(r.id) ? false : (m.set(r.id, r), true)), update: (r) => { m.set(r.id, r); }, remove: (id) => m.delete(id) };
+  return { list: () => [...m.values()], add: (r) => (m.has(r.id) ? false : (m.set(r.id, r), true)), remove: (id) => m.delete(id) };
 }
 
 describe('leftover box builds (issue #1120)', () => {
@@ -81,17 +82,17 @@ describe('leftover box builds (issue #1120)', () => {
     const seen = withImages(rt, [tools('aaaa')]);
     let now = NOW;
     const sandboxes = createSandboxes({
-      runtime: rt, repo: memoryRepo(), instanceId: 'test', network: 'host', joinUrl: () => 'http://hopper:1',
-      mint: () => 'code', boxesOf: () => new Set(), waiting: () => new Set(), clock: { now: () => now }, logger: { info() {}, warn() {} },
+      runtime: rt, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host',
+      clock: { now: () => now }, logger: { info() {}, warn() {} },
     });
-    await sandboxes.reconcile();
+    await sandboxes.burnLaunched();
     expect(seen.removed).toEqual(['sha256:taaaa']);
     const again = withImages(rt, [tools('bbbb')]);
     now = new Date(NOW.getTime() + LEFTOVER_PASS_MS - 1000);
-    await sandboxes.reconcile();
+    await sandboxes.burnLaunched();
     expect(again.removed).toEqual([]);
     now = new Date(NOW.getTime() + LEFTOVER_PASS_MS);
-    await sandboxes.reconcile();
+    await sandboxes.burnLaunched();
     expect(again.removed).toEqual(['sha256:tbbbb']);
   });
 });

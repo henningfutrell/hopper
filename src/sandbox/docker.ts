@@ -2,9 +2,9 @@
 // image has none). Rootless Docker only, as Podman: a rootful daemon is root on the computer. The create body is
 // src/sandbox/flags.ts's.
 import type { BuildingRuntime, ContainerInfo } from '../domain/sandboxes.ts';
-import { execCalls } from './exec.ts';
+import { copyInCall } from './copy-in.ts';
 import { imageCalls } from './images.ts';
-import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
+import { infoOf, type Inspected } from './inspected.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
 import { notASandbox, sandboxLabelled } from './owned.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
@@ -55,7 +55,7 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
   return {
     kind: 'docker',
     // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
-    ...(via === socketCall ? execCalls(socket, API, 'docker') : {}),
+    ...(via === socketCall ? copyInCall(socket, API, 'docker') : {}),
     // The images on the machine (issue #1120): only over the socket here, never through a machine's relay.
     ...(via === socketCall ? imageCalls('docker', (method, path) => call(method, path)) : {}),
 
@@ -144,7 +144,6 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
     },
 
     // Docker runs it on its own interval (flags.ts): the last run.
-    startCheck: async (id) => startCheckOf(await read(id)),
 
     async stop(id) {
       if (!(await boxThere(id))) return;

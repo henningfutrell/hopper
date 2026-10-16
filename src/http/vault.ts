@@ -5,11 +5,10 @@ import { profileRef } from '../domain/confirmation-asks.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
-import { BOX_IMAGE } from '../sandbox/launch.ts';
+import { BOX_IMAGE } from '../sandbox/box-image.ts';
 import type { TemplateRequestUser } from '../skills/template-request.ts';
 import type { TenantParts } from './tenants.ts';
 import { shownAsks } from './ui/confirmation-asks.ts';
-import { BOX_AGENTS } from './ui/machine-join.ts';
 import { vaultView } from '../vault/vault.ts';
 
 /**
@@ -59,7 +58,7 @@ export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>)
     policy: () => parts.store.settings.getReadPolicy(),
     approvals: () => parts.store.settings.getSandboxApprovals(),
     remembered: () => rememberedNow(parts.store),
-    image: `${BOX_IMAGE}:box-${BOX_AGENTS[0]}`,
+    image: `${BOX_IMAGE}:box-claude`,
   };
 }
 

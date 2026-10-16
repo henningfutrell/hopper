@@ -106,7 +106,7 @@ export interface ServerOptions {
   cluster?: ClusterInstall | undefined;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
-  /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */
+  /** The sandboxes the hopper starts, one per step (issue #1349): GET /api/sandboxes. */
   sandboxes: Sandboxes;
   /** The master key's status (issue #659): GET /api/master-key, POST /ui/api/master-key. */
   masterKey: MasterKeyStatus;
@@ -262,7 +262,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

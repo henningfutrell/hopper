@@ -1,16 +1,16 @@
-// The remote runtime's far end (issue #708, design.md "Sandbox boxes the hopper launches"): `POST /runtime` carries
+// The remote runtime's far end (issue #708, design.md "Sandboxes are burned after each step"): `POST /runtime` carries
 // the hopper's container runtime calls to this machine's own rootless Podman — or Docker, when only Docker is here —
-// over its socket, so the hopper starts sandbox boxes on this machine through the one sandbox module.
+// over its socket, so the hopper starts sandboxes on this machine through the one sandbox module.
 //   {which: true}                        → {kind} of the runtime here, or {problem}: what to do to give it one
 //   {method, path, body?, timeoutMs?}    → {status, text}: the runtime's own answer
 //   {method, path, tar, timeoutMs?}      → the same, for a build: its context, a tar in base64 (issue #716)
 // The hopper builds every call (src/sandbox/podman.ts, docker.ts); this end runs only the calls those adapters make,
 // and checks them: a container it creates carries the sandbox flags and mounts nothing of this machine; it starts,
-// stops, inspects, start-checks and removes only containers the hopper labelled as its boxes, and volumes named as their homes;
+// stops, inspects and removes only containers the hopper labelled as its boxes, and volumes named as their homes;
 // it builds only a tools image, with the adapters' own build options, from a context of one Containerfile.
-// A check box (the read-only check, issue #716) and a need box (a step's, issue #1007) are made the same way, each under
-// its own label and name; they alone run a script in place of the entrypoint, and are waited on and have their output
-// read. The volumes of a label are listed, so the hopper's sweep finds a home whose box is gone, and a volume is removed
+// It creates only a check box (the read-only check, issue #716) and a need box (a step's, issue #1007), each under its
+// own label and name: each runs a script once in place of the entrypoint, and is waited on and has its output read. A
+// sandbox box an older hopper launched (issue #1349: none joins as a machine now) is stopped and removed, never created. The volumes of a label are listed, so the hopper's sweep finds a home whose box is gone, and a volume is removed
 // only when it carries a sandbox label (issue #1371).
 // A box's one-shot stats (`stream=false`, nothing else) are read for the stack resources (issue #947); never a stream.
 // In a Kubernetes pod with no socket (issue #1289) the problem asks for no socket or systemd fix: a pod has neither.
@@ -99,26 +99,23 @@ const kindOf = (labels: unknown): BoxKind | undefined =>
     : typeof labels[BOX_LABEL] === 'string' ? 'box' : typeof labels[CHECK_LABEL] === 'string' ? 'check' : typeof labels[NEED_LABEL] === 'string' ? 'need' : undefined;
 const NAMED: Record<BoxKind, string> = { box: 'a sandbox box is named hopper-sandbox-<name>', check: 'a check box is named hopper-check-<name>', need: 'a need box is named hopper-need-<name>' };
 const named = (kind: BoxKind, name: unknown): string | undefined => (typeof name === 'string' && NAMES[kind].test(name) ? undefined : NAMED[kind]);
-/** A check box and a need box run their script once, as `sh -c`, on a terminal; a sandbox box runs its image's own entrypoint. */
+/** A check box and a need box run their script once, as `sh -c`, on a terminal; no sandbox box is made here now (issue #1349). */
 function scriptProblem(kind: BoxKind, entrypoint: unknown, cmd: unknown, tty: unknown, restart: unknown): string | undefined {
-  if (kind === 'box') return entrypoint === undefined && cmd === undefined && tty === undefined ? undefined : "a sandbox box runs its image's own entrypoint";
+  if (kind === 'box') return 'a sandbox never joins as a machine: the hopper makes only check boxes and need boxes';
   const once = sameList(entrypoint, ['/bin/sh']) && Array.isArray(cmd) && cmd.length === 2 && cmd[0] === '-c' && typeof cmd[1] === 'string' && tty === true && restart === 'no';
   return once ? undefined : `a ${kind} box runs its script once, as sh -c`;
 }
 
-const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks', 'healthconfig', 'entrypoint', 'command', 'terminal'];
-const DOCKER_KEYS = ['Image', 'Labels', 'User', 'Env', 'HostConfig', 'Healthcheck', 'Entrypoint', 'Cmd', 'Tty'];
-/** The start check (issue #708): a command run in the box, as the box's user, under its flags; only these fields. */
-const CHECK_KEYS = ['Test', 'Interval', 'Timeout', 'Retries'];
-const checkProblem = (c: unknown): string | undefined => (c === undefined ? undefined : !isObject(c) || !Array.isArray(c.Test) ? "a sandbox box's start check is a Test command" : onlyKeys(c, CHECK_KEYS, "a sandbox box's start check"));
+const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks', 'entrypoint', 'command', 'terminal'];
+const DOCKER_KEYS = ['Image', 'Labels', 'User', 'Env', 'HostConfig', 'Entrypoint', 'Cmd', 'Tty'];
 const DOCKER_HOST_KEYS = ['CapDrop', 'SecurityOpt', 'ReadonlyRootfs', 'Tmpfs', 'Mounts', 'NanoCpus', 'Memory', 'RestartPolicy', 'NetworkMode'];
 
 /** Why a libpod create body is not a sandbox box's; undefined: it is. */
 function podmanCreateProblem(b: Record<string, unknown>): string | undefined {
-  const extra = onlyKeys(b, PODMAN_KEYS, 'a sandbox box') ?? checkProblem(b.healthconfig);
+  const extra = onlyKeys(b, PODMAN_KEYS, 'a sandbox box');
   if (extra) return extra;
   const kind = kindOf(b.labels);
-  if (!kind) return `a sandbox box carries the ${BOX_LABEL} label`;
+  if (!kind) return `a sandbox box carries the ${CHECK_LABEL} or the ${NEED_LABEL} label`;
   const problem = named(kind, b.name) ?? scriptProblem(kind, b.entrypoint, b.command, b.terminal, b.restart_policy);
   if (problem) return problem;
   if (!sameList(b.cap_drop, ['ALL'])) return 'a sandbox box runs with every capability dropped';
@@ -134,10 +131,10 @@ function podmanCreateProblem(b: Record<string, unknown>): string | undefined {
 function dockerCreateProblem(b: Record<string, unknown>, name: string | null): string | undefined {
   const h = b.HostConfig;
   if (!isObject(h)) return 'a sandbox box has its HostConfig';
-  const extra = onlyKeys(b, DOCKER_KEYS, 'a sandbox box') ?? onlyKeys(h, DOCKER_HOST_KEYS, "a sandbox box's HostConfig") ?? checkProblem(b.Healthcheck);
+  const extra = onlyKeys(b, DOCKER_KEYS, 'a sandbox box') ?? onlyKeys(h, DOCKER_HOST_KEYS, "a sandbox box's HostConfig");
   if (extra) return extra;
   const kind = kindOf(b.Labels);
-  if (!kind) return `a sandbox box carries the ${BOX_LABEL} label`;
+  if (!kind) return `a sandbox box carries the ${CHECK_LABEL} or the ${NEED_LABEL} label`;
   const problem = named(kind, name) ?? scriptProblem(kind, b.Entrypoint, b.Cmd, b.Tty, isObject(h.RestartPolicy) ? h.RestartPolicy.Name : undefined);
   if (problem) return problem;
   if (!sameList(h.CapDrop, ['ALL'])) return 'a sandbox box runs with every capability dropped';
@@ -196,7 +193,7 @@ function routeOf(kind: RuntimeKind, method: string, route: string): Check | unde
   if (method === 'GET' && route === (kind === 'podman' ? '/volumes/json' : '/volumes')) return 'open';
   if (a === 'volumes' && n === 2 && (method === 'DELETE' || (kind === 'docker' && method === 'GET'))) return { volume: b! };
   if (a === 'containers' && n === 2 && method === 'DELETE') return { container: b! };
-  if (a === 'containers' && n === 3 && ((method === 'GET' && (c === 'json' || (kind === 'podman' && c === 'healthcheck'))) || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
+  if (a === 'containers' && n === 3 && ((method === 'GET' && c === 'json') || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
   if (a === 'containers' && n === 3 && ((method === 'POST' && c === 'wait') || (method === 'GET' && c === 'logs'))) return { container: b!, checkOnly: true };
   if (a === 'containers' && n === 3 && method === 'GET' && c === 'stats') return { container: b!, stats: true };
   return undefined;

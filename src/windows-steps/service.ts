@@ -1,11 +1,9 @@
-// One user's sandbox steps: Windows sandbox steps (issue #731, design.md "Windows sandbox steps") and box steps (issue
-// #1004, design.md "Box steps"). A running job's step is checked against the user's Windows hosts, or the boxes the
-// job's own sandbox requests started; run on its place one at a time, stopped at its timeout or when the job goes,
-// recorded on the job's timeline, and its result kept for the job to fetch — an hour, then swept. A Windows step's vault
-// secrets (each one its host gives, and the vault gives after the job's grant) go to the step only, and are masked in the
-// log the job reads; a box step's command asks the vault itself, through the box's helper, while it runs (`onBox`).
-// The Windows host is a port (`WindowsStepHost`): ssh in production, a double in tests; a box step runs through the
-// sandbox module (`boxes`).
+// One user's Windows sandbox steps (issue #731, design.md "Windows sandbox steps"). A running job's step is checked against
+// the user's Windows hosts; run on its host one at a time, stopped at its timeout or when the job goes, recorded on the
+// job's timeline, and its result kept for the job to fetch — an hour, then swept. A step's vault secrets (each one its
+// host gives, and the vault gives after the job's grant) go to the step only, and are masked in the log the job reads.
+// The Windows host is a port (`WindowsStepHost`): ssh in production, a double in tests. A box step is a need step
+// (src/sandbox/need-steps.ts, issue #1349).
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -28,20 +26,12 @@ export interface WindowsStepsOptions {
   log(line: string): void;
   /** A vault secret's value for `job`'s step on `host` (the vault's grant and checks), or why not. Absent: no step gets one. */
   secret?(ask: { name: string; job: string; host: string }): Promise<{ value: string } | { refused: string }>;
-  /** The boxes a job's steps may run in (issue #1004), and how a step runs in one. Absent: no box step. */
-  boxes?: StepBoxes;
   newId?: () => string;
   keepMs?: number;
 }
 
-/** A box step's place (issue #1004): the boxes of the job's own sandbox requests that run, and the run in one. */
-export interface StepBoxes {
-  of(job: Job): { name: string; template: string }[];
-  run(job: Job, box: string, step: { id: string; command: string; dir: string; inputs: boolean; outputs: string[] }, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
-}
-
 /** A step's fields as the job sent them. */
-export interface StepFields { host?: string; box?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }
+export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }
 
 /** A step checked and given its own directory: the route puts the inputs in `inputsFile`, then runs it. */
 export interface StepStart {
@@ -56,10 +46,6 @@ export interface StepStart {
 
 export interface WindowsSteps {
   hosts(): WindowsHost[];
-  /** The boxes `job`'s steps may run in now (issue #1004). */
-  boxes(job: Job): { name: string; template: string }[];
-  /** Whether a step of the job runs in the box now: the vault takes the box's ask as the job's while it does (issue #1004). */
-  onBox(jobId: string, box: string): boolean;
   /** Check `fields` for `job`, and get its secrets: a step to run, or a no with its HTTP status. A no is a `step.refused` event. */
   start(job: Job, fields: StepFields): Promise<StepStart | { status: number; no: string }>;
   /** A step's result, with its outputs tar when it has one; undefined: no step of this job's by that id, or swept. */
@@ -73,7 +59,7 @@ const ID = /^[a-f0-9-]{36}$/;
 /** Where a step runs: its queue's key, what its events name, and the run there. */
 interface Place {
   key: string;
-  at: { host: string; box?: undefined } | { box: string; host?: undefined };
+  at: { host: string };
   run(step: { id: string; command: string; dir: string; inputs: boolean; outputs: string[] }, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
 }
 
@@ -83,8 +69,6 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
   /** The tail of each host's queue: a step starts when the one before it on that host has ended. */
   const queues = new Map<string, Promise<unknown>>();
   const results = new Map<string, { jobId: string; result: StepResult; at: number }>();
-  /** The box steps that run now, by step id (issue #1004). */
-  const inBox = new Map<string, { jobId: string; box: string }>();
   const dirOf = (id: string) => join(o.dir, id);
 
   const refuse = (job: Job, status: number, no: string, at?: Place['at']) => {
@@ -104,16 +88,8 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
     }
   };
 
-  /** Where the step runs: a Windows host, or a box of the job's (issue #1004); else the no. */
+  /** Where the step runs: a Windows host; else the no. */
   const placeOf = async (job: Job, request: StepRequest, secrets: Record<string, string>): Promise<Place | { status: number; no: string }> => {
-    if (request.box !== undefined) {
-      const box = request.box;
-      const mine = o.boxes?.of(job) ?? [];
-      if (!mine.some((b) => b.name === box)) {
-        return refuse(job, 404, `this job has no box ${box}. ${mine.length ? `Its boxes: ${mine.map((b) => b.name).join(', ')}.` : 'It has none: ask the hopper for one with sh "$HOPPER_SKILL" sandbox.'}`, { box });
-      }
-      return { key: `box ${box}`, at: { box }, run: (step, io) => o.boxes!.run(job, box, step, io) };
-    }
     const host = o.hosts().find((h) => h.name === request.host);
     if (!host) {
       const names = o.hosts().map((h) => h.name);
@@ -135,18 +111,16 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
 
   return {
     hosts: () => o.hosts(),
-    boxes: (job) => o.boxes?.of(job) ?? [],
-    onBox: (jobId, box) => [...inBox.values()].some((s) => s.jobId === jobId && s.box === box),
     sweep,
 
     async start(job, fields) {
       sweep();
       const request = stepRequestOf(fields);
-      if ('problem' in request) return refuse(job, 400, request.problem, fields.box ? { box: fields.box } : fields.host ? { host: fields.host } : undefined);
+      if ('problem' in request) return refuse(job, 400, request.problem, fields.host ? { host: fields.host } : undefined);
       const secrets: Record<string, string> = {};
       const place = await placeOf(job, request, secrets);
       if (!('key' in place)) return place;
-      const where = place.at.host ?? place.at.box!;
+      const where = place.at.host;
       const id = newId();
       const dir = dirOf(id);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -177,12 +151,10 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
             } });
             const timer = setTimeout(() => { timedOut = true; stop.abort(); }, request.timeoutSeconds * 1000);
             let result: StepResult;
-            if (place.at.box !== undefined) inBox.set(id, { jobId: job.id, box: place.at.box });
             try {
               result = await place.run({ id, command: request.command, dir, inputs: inputsBytes > 0, outputs: request.outputs }, { log, signal: stop.signal });
             } finally {
               clearTimeout(timer);
-              inBox.delete(id);
               masked.end();
             }
             if (timedOut) result = { ...result, problem: `timed out after ${request.timeoutSeconds} s` };

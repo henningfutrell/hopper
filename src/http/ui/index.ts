@@ -66,7 +66,6 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
   artifacts: ArtifactEdge;
   /** The sandbox boxes the hopper starts (issue #603). */
-  sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -338,7 +337,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
-  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock, sandboxes: o.sandboxes }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the Windows link report (issue #712)
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {

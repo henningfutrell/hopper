@@ -90,7 +90,7 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   });
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));
-  // The sandbox boxes the hopper starts (issue #603): whether it can start one now, and the boxes it could not remove.
+  // The sandboxes the hopper starts (issue #1349): the user's latest sandbox runs, and the boxes it could not burn.
   app.get('/api/sandboxes', async (req) => {
     o.tenant(req);
     return o.sandboxes.view(userIdOf(req)!);

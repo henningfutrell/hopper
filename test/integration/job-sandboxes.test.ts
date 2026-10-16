@@ -1,18 +1,19 @@
 // Issue #991, through the real composition root and the real HTTP server, with OpenFGA and the container runtime as
 // doubles at their ports: a job that needs AWS asks the hopper for a sandbox (`sh "$HOPPER_SKILL" sandbox --needs …`,
 // the real `hopper-skill`). The hopper makes or reuses the template, a person approves it unless skip template approval
-// is on, a person approves the sandbox run unless skip sandbox approval is on, and the box starts.
+// is on, and a person approves the sandbox runs unless skip sandbox approval is on. Issue #1349: an approval starts no
+// box; each step of the job runs in a sandbox of its own (test/integration/box-steps.test.ts).
 //
 // Feature: sandboxes start from jobs
-//   Scenario: with sandbox YOLO on, a job that needs AWS gets a running box with no human step
+//   Scenario: with sandbox YOLO on, a job that needs AWS gets its sandbox runs approved with no human step
 //     Given an admin turns sandbox YOLO on
 //     When a job runs `sandbox --needs "write/aws-account/123456789012" --wait`
 //     Then the template is made and approved by skip template approval, its write profile with it
-//     And the sandbox run is approved by skip sandbox approval, and the box starts
-//     And the job's wait ends with the box's name; each auto-approval is an event that names its toggle
-//     And the answer says the job is not on the box (issue #1009), and how it runs its commands there: box steps (issue #1004)
-//     And the same job asking again gets the same box, and no second template
-//   Scenario: with both toggles off, a person approves the template the job asked for; its run starts with that approval
+//     And the sandbox runs are approved by skip sandbox approval; no box starts, and none joins as a machine
+//     And the job's wait ends; each auto-approval is an event that names its toggle
+//     And the answer says how the job runs each command: a box step, in a sandbox of its own (issues #1004, #1349)
+//     And the same job asking again gets the same request, and no second template
+//   Scenario: with both toggles off, a person approves the template the job asked for; its runs are approved with that approval
 //   Scenario: a repeat write ask on an approved account runs with zero clicks, until the approval is forgotten (issue #1001)
 //   Scenario: a job says why it asks, and its plan for a change; the cards show it with the job (issue #1001)
 //   Scenario: a person declines the sandbox run, and the job is told why
@@ -24,7 +25,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { runCli } from '../../src/cli.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
@@ -100,7 +101,7 @@ const asked = async (a: TestApp, token: string): Promise<TemplateView[]> => (awa
 const sandboxEvents = async (a: TestApp) => (await a.events()).filter((e) => e.type.startsWith('vault.sandbox_') || e.type === 'vault.approved' || e.type === 'template.profile_approved');
 
 describe('sandboxes start from jobs (issue #991)', () => {
-  it('with sandbox YOLO on, a job that needs AWS gets a running box with no human step', async () => {
+  it('with sandbox YOLO on, a job that needs AWS gets its sandbox runs approved with no human step, and no box starts', async () => {
     const { a, token, runtime } = await boot();
     expect((await a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token })).status).toBe(200);
     const creds = await runningJob(a);
@@ -110,28 +111,29 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect(t).toMatchObject({ profiles: [AWS_WRITE], approval: { by: 'skip template approval' }, pending: { image: false, profiles: [] } });
     const v = await view(a, token);
     const [req] = v.sandboxRequests!;
-    expect(req).toMatchObject({ template: t!.name, state: 'running', approvedBy: 'skip sandbox approval' });
-    expect(runtime.boxes.has(req!.container!)).toBe(true);
-    expect(r.stdout).toContain(`sandbox: box ${req!.container!} of template ${t!.name} runs, approved by skip sandbox approval`);
-    // Issue #1009: the job is not on the box, and the answer says so; issue #1004: it runs its commands there as box steps.
-    expect(r.stdout).toContain(`This job runs on machine local, not on box ${req!.container!}.`);
-    expect(r.stdout).toContain(`sh "$HOPPER_STEP" box ${req!.container!} --command`);
+    expect(req).toMatchObject({ template: t!.name, state: 'approved', approvedBy: 'skip sandbox approval' });
+    expect(runtime.boxes.size).toBe(0);
+    expect(r.stdout).toContain(`sandbox: the sandbox runs of template ${t!.name} are approved for this job, by skip sandbox approval.`);
+    // Issue #1349: a sandbox never runs the job; each command runs as a box step, in a sandbox of its own.
+    expect(r.stdout).toContain('never joins the hopper as a machine');
+    expect(r.stdout).toContain(`sh "$HOPPER_STEP" box ${t!.name} --command`);
 
     const events = await sandboxEvents(a);
     expect(events.find((e) => e.type === 'vault.approved')?.data).toMatchObject({ template: t!.name, by: 'skip template approval' });
     expect(events.find((e) => e.type === 'template.profile_approved')?.data).toMatchObject({ template: t!.name, operation: 'write', by: 'skip template approval' });
     expect(events.find((e) => e.type === 'vault.sandbox_approved')?.data).toMatchObject({ template: t!.name, by: 'skip sandbox approval' });
-    expect(events.find((e) => e.type === 'vault.sandbox_started')?.data).toMatchObject({ template: t!.name, container: req!.container });
+    expect(events.find((e) => e.type === 'vault.sandbox_started')).toBeUndefined();
 
-    // Asked again: the same box, the same template.
+    // Asked again: the same request, the same template, still no box.
     const again = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(again.code, again.stdout).toBe(0);
-    expect(again.stdout).toContain(`box ${req!.container!}`);
+    expect(again.stdout).toContain(`template ${t!.name} are approved`);
     expect((await asked(a, token)).length).toBe(1);
-    expect([...runtime.boxes.keys()].filter((n) => n === req!.container)).toHaveLength(1);
+    expect((await view(a, token)).sandboxRequests).toHaveLength(1);
+    expect(runtime.boxes.size).toBe(0);
   });
 
-  it('with both toggles off, a person approves the template the job asked for, its run starts with that approval, and the job\'s wait ends', async () => {
+  it('with both toggles off, a person approves the template the job asked for, its runs are approved with that approval, and the job\'s wait ends', async () => {
     const { a, token, runtime } = await boot();
     const creds = await runningJob(a);
     const first = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
@@ -147,10 +149,10 @@ describe('sandboxes start from jobs (issue #991)', () => {
     // Issue #1001: the person approved the template this job asked for, so its run needs no second approval.
     const end = await done.end;
     expect(end.code, end.stdout + end.stderr).toBe(0);
-    expect(end.stdout).toContain(`of template ${t!.name} runs, approved by the template's approval by `);
+    expect(end.stdout).toContain(`of template ${t!.name} are approved for this job, by the template's approval by `);
     const [req] = (await view(a, token)).sandboxRequests!;
-    expect(req).toMatchObject({ state: 'running' });
-    expect(runtime.boxes.size).toBe(1);
+    expect(req).toMatchObject({ state: 'approved' });
+    expect(runtime.boxes.size).toBe(0);
     expect((await a.ui('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(409);
   });
 
@@ -165,11 +167,11 @@ describe('sandboxes start from jobs (issue #991)', () => {
     const remembered = (await view(a, token)).rememberedWrites;
     expect(remembered).toEqual([{ ...AWS_WRITE, by: expect.any(String), at: expect.any(String), expiresAt: expect.any(String) }]);
 
-    // Another job asks the same: the approved template is used, and its run starts by the remembered approval.
+    // Another job asks the same: the approved template is used, and its runs are approved by the remembered approval.
     const other = await runningJob(a);
     const r = await waiting(a, other, ['sandbox', '--needs', NEEDS, ...ASK]).end;
     expect(r.code, r.stdout + r.stderr).toBe(0);
-    expect(r.stdout).toContain('approved by a remembered write approval');
+    expect(r.stdout).toContain('approved for this job, by a remembered write approval');
     expect((await asked(a, token)).length).toBe(1);
     expect((await sandboxEvents(a)).filter((e) => e.type === 'vault.sandbox_approved').map((e) => e.data.by)).toContain('a remembered write approval');
 
@@ -181,11 +183,11 @@ describe('sandboxes start from jobs (issue #991)', () => {
     const third = await runningJob(a);
     const waits = await skill(a, third, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(waits.code, waits.stdout).toBe(3);
-    expect(waits.stdout).toContain('waits for a person to approve the sandbox run on Access requests');
+    expect(waits.stdout).toContain('wait for a person to approve them on Access requests');
     const req = (await view(a, token)).sandboxRequests!.find((x) => x.state === 'waiting');
     expect((await a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(200);
-    await vi.waitFor(async () => expect((await view(a, token)).sandboxRequests!.find((x) => x.id === req!.id)?.state).toBe('running'));
-    expect(runtime.boxes.size).toBeGreaterThanOrEqual(2);
+    expect((await view(a, token)).sandboxRequests!.find((x) => x.id === req!.id)?.state).toBe('approved');
+    expect(runtime.boxes.size).toBe(0);
   });
 
   it('a job says why it asks, and for a change what the box will do; the cards a person decides on show it with the job', async () => {
@@ -217,7 +219,7 @@ describe('sandboxes start from jobs (issue #991)', () => {
     const creds = await runningJob(a);
     const first = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(first.code, first.stdout).toBe(3);
-    expect(first.stdout).toContain('waits for a person to approve the sandbox run on Access requests');
+    expect(first.stdout).toContain('wait for a person to approve them on Access requests');
     const [req] = (await view(a, token)).sandboxRequests!;
     expect((await a.ui('/ui/api/sandbox-requests', { action: 'decline', id: req!.id, reason: 'use the lab account' }, { token })).status).toBe(200);
     const r = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);

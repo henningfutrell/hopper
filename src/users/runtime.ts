@@ -48,7 +48,7 @@ import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts'; import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts'; import { createOutbound, type Outbound, type OutboundGuard } from '../outbound/index.ts';
-import { approvalWait, clientTargets as vaultTargets, openUserVault, type LaunchScope, type Vault, withLaunch } from '../vault/index.ts';
+import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
 import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
@@ -57,7 +57,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { stepBoxes, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { proxyToken } from '../github-proxy/token.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -124,7 +124,7 @@ export interface UserRuntimeOptions {
   /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
-  launchScopes?(userId: string): Map<string, LaunchScope>; sandboxes?: SandboxLauncher; outboundGuard: OutboundGuard; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
+  sandboxes?: SandboxLauncher; outboundGuard: OutboundGuard; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -340,7 +340,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
-  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => withLaunch(vaultTargets(host.targets()), o.launchScopes?.(user.id)), holds: (p) => proxy.githubProxy.user.holds(p), stepsOn: (jobId, box) => windowsSteps.onBox(jobId, box), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
+  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() }, configuredMachines: () => host.configuredMachineIds(),
@@ -394,7 +394,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Steps: Windows (issue #731, over ssh), box steps (issue #1004, in a job's own box), need steps (issue #1007, one-shot need boxes).
-  const sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, sandboxes: o.sandboxes, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }), ...(o.sandboxes ? { boxes: stepBoxes({ userId: user.id, requests: sandboxRequests, sandboxes: o.sandboxes, token: (jobId) => proxyToken(hopperLink.privateKey, user.id, jobId), helper: async (box) => (await host.machines().list()).find((m) => m.id === box)?.client?.vault }) } : {}) }); const needStepRun = o.sandboxes?.needStep, needSteps = createNeedSteps({ templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), ...(needStepRun ? { run: (box, io) => needStepRun(user.id, box, io) } : {}) });
+  const sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) }); const needStepRun = o.sandboxes?.needStep, needSteps = createNeedSteps({ templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), ...(needStepRun ? { run: (box, io, run) => needStepRun(user.id, box, io, run) } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349)
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {

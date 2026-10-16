@@ -155,7 +155,7 @@ async function addThisMachine(e: MachineEdit, ctx: MachineEditContext, target?: 
  * A machine joining (issue #308): its machine key, the name it asks for, its template and the box the hopper launched
  * (issue #603); `pool` when it joined with the lane pool key, a lane pod (issue #1284); the job pod it started (issue #1283).
  */
-export interface MachineJoin { key: string; name: string; template?: string; container?: string; pool?: true; pod?: string }
+export interface MachineJoin { key: string; name: string; template?: string; pool?: true; pod?: string }
 
 /**
  * A job pod's machine removed (issue #1283): the client target that joined with the job pod's join code, and no other
@@ -200,7 +200,7 @@ export function applyMachineJoin(j: MachineJoin, ctx: Pick<MachineEditContext, '
   if (j.pod && taken.has(j.pod)) return refuse('conflict', `a machine is already named ${j.pod}: the job pod cannot join as it`);
   if (j.pod) name = j.pod;
   const options = j.pod ? { key: j.key, pod: j.pod, lanes: 1, executors: [] }
-    : { key: j.key, ...(j.template ? { template: j.template } : {}), ...(j.container ? { container: j.container } : {}), ...(j.pool ? { pool: true } : {}), lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
+    : { key: j.key, ...(j.template ? { template: j.template } : {}), ...(j.pool ? { pool: true } : {}), lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
   const parsed = parseOptions(client, options);
   if (!parsed.ok) return refuse('invalid', parsed.error);
   const r = writePlugins(ctx.config, ctx.config.version(PLUGINS), (doc) => list(doc, 'machine-source', name, { name, plugin: client.id, options }, ctx.configured));

@@ -83,10 +83,6 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     const profile = { operation: ask.operation, asset } as OperationProfile;
     const problem = profileProblem(profile);
     if (problem) return refuse(problem);
-    // A box launched for one profile (issue #708) is minted that one only, before Access is asked.
-    if (machine.launch?.profile && !sameProfile(machine.launch.profile as OperationProfile, profile)) {
-      return refuse(`${machine.name} was launched for ${profileInWords(machine.launch.profile as OperationProfile)} only: ${profileInWords(profile)} is not minted for it`);
-    }
     const target = mintTarget(ask.mint, profile);
     if (typeof target === 'string') return refuse(target);
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');

@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS } from '../../src/domain/sandboxes.ts';
-import { boxImage, publishedToolsImage } from '../../src/sandbox/launch.ts';
+import { boxImage, publishedToolsImage } from '../../src/sandbox/box-image.ts';
 import { createKubernetesRuntime } from '../../src/sandbox/kubernetes.ts';
 import { toolsImage } from '../../src/sandbox/tools.ts';
 import { createFakeKubeApi } from '../support/fake-kube-api.ts';

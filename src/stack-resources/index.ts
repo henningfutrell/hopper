@@ -17,7 +17,7 @@ export { createRemoteBoxMeter } from './remote.ts';
 export { createSolrMeter } from './solr.ts';
 export { createStackRecorder, samplesOf, type StackRecorder } from './history.ts';
 
-export const NO_METER = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot read its containers. docs/deploy.md "Sandbox boxes the hopper starts" gives it one';
+export const NO_METER = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot read its containers. docs/deploy.md "Sandboxes the hopper starts" gives it one';
 
 export const NO_OPENFGA = 'the hopper is given no OpenFGA (HOPPER_OPENFGA_URL): it has no checks to read';
 

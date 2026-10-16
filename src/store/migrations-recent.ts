@@ -6,6 +6,7 @@
 // branch's first, with no job. The place in the list is the version; the number in a comment is the one its author saw.
 import type { Migration } from './migrations.ts';
 import { remoteAccessProvider } from './migration-remote-access.ts';
+import { SANDBOX_RUN_TABLE } from './sandbox-runs.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -25,4 +26,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 41: local accounts (issue #1380): the hopper's own email and password sign-in, a scrypt hash per account. A table only:
   // the build before never reads it, and signs nobody in with it.
   'CREATE TABLE IF NOT EXISTS local_accounts (email TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);',
+  // 42: the sandbox runs (issue #1349): one row per sandbox made for a step, from its start to its burn. A table only:
+  // the build before never reads it.
+  SANDBOX_RUN_TABLE,
 ];

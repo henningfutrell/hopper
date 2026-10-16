@@ -15,7 +15,7 @@ import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { mintsForProblem } from '../domain/minting.ts';
 import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
-import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type BoxAskOptions, type ClientTarget } from './box.ts';
+import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
 import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
@@ -125,8 +125,7 @@ export function createVaultService(o: {
   shared?: (row: string) => VaultSecret | undefined;
   /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. */
   plans?: MintingOptions['plans'];
-  // `stepsOn`: a box step of the job runs on the machine now, so its box asks for the job (issue #1004).
-} & Pick<BoxAskOptions, 'stepsOn'>): VaultService {
+}): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -181,7 +180,7 @@ export function createVaultService(o: {
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,
-    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.stepsOn ? { stepsOn: o.stepsOn } : {}), ...(o.plans ? { plans: o.plans } : {}),
+    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.plans ? { plans: o.plans } : {}),
   });
 
   const testMint = createMintTest({ store: o.store });
@@ -190,7 +189,7 @@ export function createVaultService(o: {
     const m = clientOf(o.targets, (x) => x.name === machine);
     const name = m?.template;
     const t = name === undefined ? undefined : vault.template(name);
-    return { ...(name !== undefined ? { template: name } : {}), secrets: launchedOf(m, t ? givesOf(t).filter((n) => !isSystemSecret(n)) : []) };
+    return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t).filter((n) => !isSystemSecret(n)) : [] };
   }
 
   const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles(name) ?? [];
@@ -355,8 +354,6 @@ export function createVaultService(o: {
       const { machine: m, job } = box;
       if (isSystemSecret(ask.name)) return refuse(await systemReadRefusal(o.access, o.userId ?? '', job.id, ask.name));
       if (vault.get(ask.name)?.mints) return refuse(`${ask.name} is a minting credential: the hopper mints from it and never gives it out`);
-      const launched = launchRefusal(m, ask.name);
-      if (launched) return refuse(launched);
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
       if (!secret) return refuse(`the vault holds no secret ${ask.name}`);
