@@ -31,10 +31,10 @@ export function createSandboxRunRepository(c: StoreContext): SandboxRunRepositor
       if (!run || run.endedAt !== undefined) return;
       write({ ...run, endedAt: e.at, outcome: e.outcome, ...(e.exit !== undefined ? { exit: e.exit } : {}), ...(e.problem ? { problem: e.problem } : {}) });
     },
-    destroyed(id, at) {
+    destroyed(id, at, o) {
       const run = get(id);
       if (!run || run.destroyedAt !== undefined) return;
-      write({ ...run, destroyedAt: at });
+      write({ ...run, destroyedAt: at, ...(o?.machineRemoved ? { machineRemoved: true as const } : {}) });
     },
     get,
     open: () => c.db.all('SELECT body FROM sandbox_runs WHERE destroyed_at IS NULL ORDER BY started_at').map((r) => parse<SandboxRun>(r.body)),

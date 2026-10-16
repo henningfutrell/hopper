@@ -21963,7 +21963,7 @@ and a box an older build launched there with no record was never found.
   `swept`. It lists only that user's boxes (`io.hopper.user`): another user's client on the same runtime keeps theirs.
   The sweep of homes (`sweepHomes`) runs there too, for need boxes and for boxes an older build launched.
 - **A target that is away** keeps its boxes, and its runs stay open, until it dials in again; the next sweep then burns
-  them. A run on a client target that is removed for good stays open.
+  them. A run on a client target that is removed for good is closed by part 5.
 
 **Part 4: no time limit and no kept home on a template.** Before, a template's `ttlMinutes` and `keepHome` limits were
 saved and shown, but no box read them: a sandbox does one step and is burned with its home.
@@ -21976,8 +21976,29 @@ saved and shown, but no box read them: a sandbox does one step and is burned wit
 - Tests: `test/store/tenant-migration-71.test.ts`, `test/ui/sandbox-launch.test.ts`, `test/ui/template-limits-view.test.ts`,
   `test/domain/template-limits.test.ts`.
 
-**Not built.** The jobs that wait on template checks or approvals of `asked-…` templates are not changed here. A run on a client target
-removed for good is never closed.
+**Part 5: a sandbox runs with its template's CPUs and memory; a run on a removed client target is closed.**
+
+- **The template's limits are read.** Before, a need box and a check box ran with the hopper's defaults
+  (`DEFAULT_LIMITS`), and a template's `cpus` and `memoryMb` were saved and shown but read by no box. Now both run with
+  `boxLimits(t.limits)` (`src/sandbox/params.ts`): each the template's default, else the hopper's. A box step and a need
+  step pass the template's limits to the need box (`NeedBox.template.limits`, `need-steps.ts`); the read-only check reads
+  them from the template it checks (`check.ts`).
+- **A run on a removed client target is closed** (`closeRemoved`, `src/sandbox/service.ts`, after each sweep). Each open
+  run on a client target the user no longer has — removed from Machines, or its user gone — is closed:
+  `destroyedAt` is the time of the close, and `machineRemoved: true` says that no runtime saw its box go. A step that
+  never ended ends as `swept`. `ClientTargets.known(userId, machine)` (`src/users/sandbox-boxes.ts`) says whether the
+  user has that client target now, dialled in or not; a target that is only away keeps its runs open, as before.
+- **No migration.** `machineRemoved` is a new optional field of a `sandbox_runs` row's JSON body; the build before reads
+  the row and ignores it. A template's stored `limits` keep their shape.
+- Tests: `test/sandbox/template-box-limits.test.ts` (a need box and a check box with the template's limits, and with the
+  hopper's defaults), `test/sandbox/need-steps.test.ts` (the template's limits reach the need box),
+  `test/sandbox/sweep-remote.test.ts` (a run on a removed client target, and one of a machine the user never had, is
+  closed), `test/store/sandbox-runs.test.ts` (`machineRemoved` kept).
+
+**Decided here.** The jobs that waited for days on template checks or approvals of `asked-…` templates are not changed
+by code. Those waits are a person's decision by design: a person approves or declines the template in Settings → Vault,
+or runs its read-only check again (`hopper template check <name>`). The issue lists them as what was seen, not as what is
+expected. With no sandbox as a machine, no such wait holds a machine's lane any more.
 
 Tests: `test/sandbox/requests.test.ts` (an approval starts nothing), `test/sandbox/need-steps.test.ts` (a box step:
 reads minted, changes with a plan, refusals), `test/sandbox/sandbox-runs.test.ts` (the ledger from start to destroy, a

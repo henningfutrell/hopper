@@ -194,9 +194,25 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     }
     o.runs.destroyed(run.id, o.clock.now().toISOString());
   };
+  /**
+   * Each open run on a client target the user no longer has (issue #1349) is closed: no runtime is there to say its box
+   * went. A step that never ended ends as `swept`. A target that is only away keeps its runs open.
+   */
+  const closeRemoved = (): void => {
+    const clients = o.clients;
+    if (!clients) return;
+    const now = o.clock.now().toISOString();
+    for (const r of o.runs.open()) {
+      if (r.machine === LOCAL || stepping.has(r.box) || clients.known(r.userId, r.machine)) continue;
+      if (r.endedAt === undefined) o.runs.end(r.id, { at: now, outcome: 'swept', problem: 'the step did not end: its machine was removed' });
+      o.runs.destroyed(r.id, now, { machineRemoved: true });
+      o.logger.info(`hopper: sandbox ${r.box} closed in the ledger: its machine ${r.machine} was removed`);
+    }
+  };
   let checking: Promise<void> | undefined;
   const sweep = async (): Promise<void> => {
     for (const at of sweepPlaces()) await sweepSteps(at).then(() => sweepStepHomes(at));
+    closeRemoved();
   };
   const check = (): Promise<void> => (checking ??= Promise.all([sweep(), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
     .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))

@@ -25,6 +25,11 @@ export interface SandboxRun {
   problem?: string;
   /** When its container and home volume were seen gone: absent, the sandbox may still be there, and the sweep burns it. */
   destroyedAt?: string;
+  /**
+   * Its client target was removed (issue #1349): no runtime is there to say its box went, so `destroyedAt` is when the
+   * hopper closed the run, not when it saw the box go.
+   */
+  machineRemoved?: true;
 }
 
 /** The sandbox runs, in the instance's `sandbox_runs` table. */
@@ -32,8 +37,8 @@ export interface SandboxRunRepository {
   start(run: SandboxRun): void;
   /** The step ended: its exit code and outcome. A run ended already keeps its end. */
   end(id: string, e: { at: string; exit?: number; outcome: SandboxRunOutcome; problem?: string }): void;
-  /** Its container and home volume are gone. */
-  destroyed(id: string, at: string): void;
+  /** Its container and home volume are gone; or, `machineRemoved`, its client target is, and the run is closed. */
+  destroyed(id: string, at: string, o?: { machineRemoved: true }): void;
   get(id: string): SandboxRun | undefined;
   /** The runs not seen destroyed yet, oldest first. */
   open(): SandboxRun[];
