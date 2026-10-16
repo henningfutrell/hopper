@@ -22098,3 +22098,56 @@ event and answer names it, no event in the other user's log; a user with no conn
 `test/integration/github-proxy.test.ts` (the real daemon and fake GitHub: a second user's job files and comments with that
 user's token, never the first user's; a user with no connection is refused), `test/integration/git-proxy.test.ts` (a push
 names `as`), `test/ui/acting-identity.test.ts` and `test/ui/job-acting-as-view.test.ts` (the job page's **GitHub as**).
+
+## A personal access token (issue #1380, part 6, 2026-10-15)
+
+Issue #1380: users attach their own sources, GitHub through OAuth or a personal access token, kept in the user's vault, and
+the GitHub App is no longer required. Before this part, a GitHub source came only through the hopper's app: a sign-in with
+GitHub, or a device code from Sources. An instance with no app (no client id) could not connect GitHub at all.
+
+**The change.**
+- **Connect with a token.** `POST /ui/api/connected-accounts` `{ action: 'connect-token', provider, token }` (admin of the
+  user, as `connect`). `src/connected-accounts/token-connect.ts`: GitHub must take the token (`GET /user`), and the source
+  email match applies as for a device code (the session's email). Then the token is kept as the connected account's access
+  token, `grantedBy: 'token'`, `connectedBy: 'sources'`, with no refresh token and no expiry: a system secret in the user's
+  vault (`connected-account.github.access-token`), sealed under the master key, as every connection's token. Without the
+  master key nothing is kept. A refusal (GitHub refused the token, the email match, no key) answers `failed` with why, and a
+  connection there was stays as it was.
+- **No app.** The token path reads no client id. The status of a token's connection has no `installUrl` and no
+  `configUrl`, and the UI names no app.
+- **Its repositories.** Where the app is installed means nothing for a token. Its connection reads, in the same schedule and
+  kept read (issue #1250), the repositories the token reaches: `GET /user/repos`, every page, one entry per owner
+  (`identity.ts` `tokenRepositories`), `repositorySelection: 'selected'`. Sources lists them under **Repositories the token
+  reaches**, and the person picks the job repositories from them as before. Intake reads the source's issues in them with
+  the token.
+- **Its end.** Nothing renews a token. A 401 ends the connection as any connection with no refresh token ends: it reads
+  **expired**, its source pauses, the owner is told once, and the person stays signed in (part 3). Sources offers Connect
+  again and the token field.
+- **Never deleted at GitHub.** The token is the person's, not a grant of the app: a connect that replaces it, and a
+  disconnect, delete nothing at GitHub (`replace` in `service.ts` skips a `token` connection). An app's grant that a token
+  replaces is deleted as before.
+- **Jobs.** A job's GitHub proxy and git ask the connection for its token as before (part 5): with a token connection, they
+  act with the person's token, and **GitHub as** names its login.
+
+**Decisions:**
+- **A personal access token, not an OAuth App.** A token needs no registration and no client secret on the instance; an
+  OAuth App would need both, and the device flow through the hopper's app already covers the OAuth case.
+- **One connection per provider still.** A token replaces the connection there was, as a new device code does. Two GitHub
+  sources for one user are not part of this change.
+- **No migration.** `grantedBy: 'token'` is a new value in the JSON body of the `connected_accounts` row. The build before
+  reads the row unchecked; on that build, a disconnect of a token connection asks GitHub to delete it through the app,
+  which GitHub refuses, and the build only logs it.
+- **No re-check of the email without a renewal.** The email match runs again at each renewal (part 4), and a token has
+  none. A token keeps its `matchEmail`; the check at the next connect applies.
+- **No expiry read.** GitHub says a fine-grained token's expiry only in a response header. A token that expired gets a
+  401 and ends then, which says the same thing to the person.
+
+**Left for later parts of issue #1380:** passkeys; identity keyed by email in OpenFGA subjects, audit and attribution;
+more than one GitHub source per user, and sources from other forges; the migration of GitHub-signed-in users to hopper
+users with GitHub attached as a source; Kubernetes and service-account tokens.
+
+**Verification:** `test/connected-accounts/personal-access-token.test.ts` (a token connects with no app and is kept in the
+vault, not the row; its repositories are read in place of the installations; a refused token, a refused email and no key
+keep nothing and delete nothing at GitHub; a token is never deleted at GitHub when replaced or at a disconnect; a 401 ends
+only the connection; GitHub's repository list, every page, grouped by owner) and `test/ui/personal-access-token-view.test.ts`
+(the token field connects and is cleared; a token connection lists the repositories the token reaches, with no app link).

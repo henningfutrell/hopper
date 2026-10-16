@@ -327,6 +327,24 @@ signed in with (issue #1380). This setting is on by default.
   `POST /ui/api/source-email-match` `{ "on": false }`. It applies at once, to the next connect and the
   next renewal. Each change is recorded (`source_email_match.changed`).
 
+## GitHub with a personal access token
+
+A person can connect GitHub in Sources with a personal access token of their own account (issue #1380). The
+hopper's GitHub App is not needed for it.
+
+1. Make a token at https://github.com/settings/tokens. A fine-grained token needs read and write access to
+   issues, pull requests and contents in the repositories your jobs use, and read access to email addresses.
+   A classic token needs the `repo` and `user:email` scopes.
+2. In Sources → GitHub account, paste the token in **Personal access token** and click **Connect with a
+   token**.
+3. Choose the job repositories from **Repositories the token reaches**.
+
+- **Checks.** GitHub must take the token. The source email match applies as for a device code.
+- **Where it is kept.** In your vault, sealed under the master key, as every connection's token. The hopper
+  never shows it again, and never deletes it at GitHub: delete it at GitHub yourself when you stop using it.
+- **When it ends.** Nothing renews a token. When GitHub refuses it (it expired, or you deleted it), the
+  source pauses and Sources asks to connect again. You stay signed in.
+
 ## LDAP realm
 
 People sign in on the same username and password form with their directory account. The hopper
@@ -1029,6 +1047,7 @@ The same for every realm, no sign-in and the login code:
 | LDAP: groups do not match | Group values are full DNs, compared exactly, one per line in the rule. No `memberOf` on the entry: set a group search base. |
 | Sources: "the GitHub account … has no verified email …, the email you signed in with" | The source email match is on, and the account does not have that email verified at GitHub. Add and verify the email at https://github.com/settings/emails, then connect again. Or the instance admin turns the match off in Settings → Sign-in. |
 | Sources: "GitHub did not show the verified emails of …" | The hopper's app cannot read the account's email addresses. Approve the app's email permission at GitHub, or the instance admin turns the source email match off. |
+| Sources: "GitHub refused the token: Bad credentials" | The personal access token is wrong, expired or deleted. Make a new one at https://github.com/settings/tokens, then connect with it. |
 | Sources: GitHub "sign-in expired", and the last error says it "no longer has the verified email" | The account lost the email it was connected for (the source email match, checked at each renewal). Verify the email at GitHub again, then connect again. |
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |

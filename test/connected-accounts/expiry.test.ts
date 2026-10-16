@@ -19,7 +19,7 @@ function service(record: ConnectedAccount | undefined, refresh = async (): Promi
     store, secrets: systemOf(store),
     apps: hopperApps({ github: {} }),
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
-    installations: async () => [],
+    installations: async () => [], tokenRepositories: async () => [],
     clock: { now: () => new Date(NOW) },
     logger: { info: () => undefined, warn: () => undefined },
     refresh: refresh as never,

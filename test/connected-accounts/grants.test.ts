@@ -70,7 +70,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
-    installations: async () => [],
+    installations: async () => [], tokenRepositories: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
     deleteToken: (p, accessToken) => tokenDeletion(apps[p], undefined)(accessToken),
     flows: { github: approvedAs(github, 'octo-user', clock) },

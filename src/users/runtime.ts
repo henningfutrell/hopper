@@ -43,7 +43,7 @@ import { createSourceSync, followEvery, withFixedStatuses, type SourceSync } fro
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
-import { installations, whoIs } from '../connected-accounts/identity.ts';
+import { installations, tokenRepositories, whoIs } from '../connected-accounts/identity.ts';
 
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts'; import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
@@ -254,7 +254,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // GitHub App user tokens expire after 8 h (issues #358, #441): renewed with the refresh token, sealed at rest.
     store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env), secrets: system,
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
-    installations: (token, answers) => installations(config.hopperApps.github, token, answers),
+    installations: (token, answers) => installations(config.hopperApps.github, token, answers), tokenRepositories: (token, answers) => tokenRepositories(config.hopperApps.github, token, answers), // a personal access token's (issue #1380)
     // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
     ...accountEvents(store.events),
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}), ...(o.sourceEmailMatch ? { sourceEmailMatch: o.sourceEmailMatch } : {}),

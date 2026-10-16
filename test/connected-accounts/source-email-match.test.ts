@@ -48,7 +48,7 @@ function setup(o: { on?: boolean; emails?: string[] | undefined } & Partial<Conn
       if (state.whoIsFails) throw new Error('connect ECONNREFUSED');
       return { subject: '1', account: 'octo-user', ...(state.emails ? { verifiedEmails: state.emails } : {}) };
     },
-    installations: async () => [],
+    installations: async () => [], tokenRepositories: async () => [],
     clock: { now: () => new Date(now) },
     logger: { info: () => undefined, warn: () => undefined },
     flows: { github: approved(() => now) },

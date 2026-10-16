@@ -766,8 +766,7 @@ export interface Connection {
   /** ISO time; absent: the token does not expire. */
   expiresAt?: string;
   /** What renews the token, and when it expires itself (issue #358); absent: nothing renews it. */
-  refreshToken?: string;
-  refreshTokenExpiresAt?: string;
+  refreshToken?: string; refreshTokenExpiresAt?: string;
   /** How GitHub granted it (issue #441): the browser's web flow or the device flow. */
   grantedBy?: 'device' | 'web';
 }
@@ -790,6 +789,12 @@ export interface ConnectedAccounts {
    * the email the person signed in with (issue #1380): with the source email match on, the account must have it verified.
    */
   connect(provider: ConnectedAccountProvider, by?: { email?: string }): Promise<ConnectedAccountStatus>;
+  /**
+   * Connect with a personal access token the person gives (issue #1380): no GitHub App. GitHub must take it; the source email
+   * match applies as for `connect`. Kept as the connection's access token, in the user's vault; never renewed, never deleted at
+   * GitHub. Answers the status: connected, or failed with why.
+   */
+  connectToken(provider: ConnectedAccountProvider, token: string, by?: { email?: string }): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
   /** Replace the connection with the held grant of a sign-in (issue #647); running jobs are handed its token. */
