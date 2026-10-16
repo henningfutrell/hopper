@@ -70,7 +70,10 @@ case "$*" in
   *"exec -i hopper-postgres-0 -c postgres -- pg_restore"*) [ "$in" = DUMP ] && echo restored-dump >> "$STUB_LOG" ;;
   *"get deployment/hopper -o"*) printf 4790 ;;
   *"exec deployment/hopper -c hopper -- node -e fetch('http://127.0.0.1"*) [ -z "\${STUB_UNHEALTHY:-}" ] || exit 1; printf '{"ok":true}' ;;
-  *"exec deployment/hopper -c hopper -- hopper master-key status"*) printf '{ "fingerprint": "${FP}" }' ;;
+  # The chart names a previous-keys file a Secret with no previous key does not hold: an image built before the CLI read
+  # it as the daemon does stops on it, so the status must drop the name of a file that is not there (issue #1373).
+  *"exec deployment/hopper -c hopper -- sh -c "*"|| unset HOPPER_MASTER_KEY_PREVIOUS_FILE; exec hopper master-key status"*) printf '{ "fingerprint": "${FP}" }' ;;
+  *"exec deployment/hopper -c hopper -- hopper master-key status"*) echo 'hopper: HOPPER_MASTER_KEY_PREVIOUS_FILE: cannot read /run/hopper-master-key/previous: ENOENT' >&2; exit 1 ;;
   *"exec -i deployment/hopper -c hopper -- tar"*) [ -n "$in" ] && echo home-copied >> "$STUB_LOG" ;;
 esac
 exit 0

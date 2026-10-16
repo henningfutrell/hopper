@@ -132,7 +132,7 @@ describe('hopper-cluster.sh migrate', () => {
     const stopHopper = at(/^podman stop hopperid$/);
     const restore = at(/^restored-dump$/);
     const upgrade = at(/^helm upgrade hopper .* --reuse-values --set replicas=1/);
-    const fingerprint = at(/exec deployment\/hopper -c hopper -- hopper master-key status/);
+    const fingerprint = at(/exec deployment\/hopper -c hopper -- sh -c .*exec hopper master-key status/);
     const home = at(/^home-copied$/);
     const stopAll = at(/^podman stop hopperid pgid$/);
     expect([install, watchdog, stopHopper, restore, upgrade, fingerprint, home, stopAll]).toEqual([...[install, watchdog, stopHopper, restore, upgrade, fingerprint, home, stopAll]].sort((a, b) => a - b));
