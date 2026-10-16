@@ -111,7 +111,16 @@ export interface FollowsPullRequests {
    * a base from before to the landing branch. A throw is asked again at the next round. Absent: none is listed.
    */
   censusPullRequests?(facts: Omit<CensusFacts, 'landing'>): Promise<void>;
+  /**
+   * The pull requests jobs wait on (issue #1433, `waitedPullRequests`): of `pulls`, the ones merged or closed without a merge
+   * now. Asked at each sync while a job of the source waits on one, whatever job, if any, follows it. One the source cannot
+   * read is left out, and asked again at the next sync. Absent: no wait is ended so.
+   */
+  endedPullRequests?(pulls: { repo: string; number: number }[]): Promise<EndedPullRequest[]>;
 }
+
+/** A pull request a job waits on, seen ended (issue #1433): merged, or closed without a merge. */
+export interface EndedPullRequest { repo: string; number: number; pullRequest: string; state: 'merged' | 'closed' }
 
 /**
  * What a base merge did (issue #967): the hopper merged the pull request's base branch into its head in its own mirror and

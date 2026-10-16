@@ -144,7 +144,7 @@ export const EVENT_SCHEMAS = {
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
-  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }),
+  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),

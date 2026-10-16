@@ -1,7 +1,7 @@
 // Issue #1245: a job's own wait always names what it waits on, typed — a pull request, a job, an item, a person's
 // question, an approval, a grant, its own command, or an outside event. A job never enters `waiting_on` without it. Pure.
 import { describe, expect, it } from 'vitest';
-import { settledAlready, settledBy, waitEntryProblem, waitOnLabel, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
+import { settledAlready, settledBy, waitedPullRequests, waitEntryProblem, waitOnLabel, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 const since = '2026-10-15T00:00:00.000Z';
@@ -88,6 +88,9 @@ describe('the jobs each dependency\'s event wakes (issue #1245, part 2)', () => 
     waiting('on-sandbox', { kind: 'approval', of: 'sandbox' }),
     waiting('on-template', { kind: 'approval', of: 'template' }),
     waiting('outside', { kind: 'outside', what: 'job j1' }),
+    waiting('on-pr', { kind: 'pull_request', number: 12, about: 'merge' }),
+    waiting('on-pr-checks', { kind: 'pull_request', repo: 'o/r', number: 12, about: 'checks' }),
+    waiting('on-pr-elsewhere', { kind: 'pull_request', repo: 'x/y', number: 12, about: 'merge' }),
     { ...waiting('ran-again', { kind: 'job', jobId: 'j1' }), status: 'queued' } as Job,
   ];
   const woken = (e: Parameters<typeof settledBy>[0]) => {
@@ -105,6 +108,20 @@ describe('the jobs each dependency\'s event wakes (issue #1245, part 2)', () => 
     expect(woken({ type: 'work_item.issue_closed', data: { key: 'https://github.com/o/r/issues/9', via: 'delivery' } }))
       .toEqual({ note: 'https://github.com/o/r/issues/9 was closed', jobs: ['on-item'] });
     expect(woken({ type: 'work_item.issue_closed', data: { key: 'https://github.com/x/y/issues/9', via: 'delivery' } })!.jobs).toEqual(['on-item-elsewhere']);
+  });
+
+  it('a waited pull request seen ended at a sync wakes the jobs waiting on it, in its repository (issue #1433)', () => {
+    expect(woken({ type: 'job.waited_pull_request_ended', jobId: 'on-pr', data: { pullRequest: 'https://github.com/o/r/pull/12', state: 'closed' } }))
+      .toEqual({ note: 'https://github.com/o/r/pull/12 was closed', jobs: ['on-pr', 'on-pr-checks'] });
+    expect(woken({ type: 'job.waited_pull_request_ended', jobId: 'on-pr-elsewhere', data: { pullRequest: 'https://github.com/x/y/pull/12', state: 'merged' } }))
+      .toEqual({ note: 'https://github.com/x/y/pull/12 was merged', jobs: ['on-pr-elsewhere'] });
+  });
+
+  it('the pull requests waits name, each once, in the repository each names or its job\'s own (issue #1433)', () => {
+    expect(waitedPullRequests([...jobs, waiting('no-repo', { kind: 'pull_request', number: 3, about: 'merge' }, '')])).toEqual([
+      { repo: 'o/r', number: 12, jobIds: ['on-pr', 'on-pr-checks'] },
+      { repo: 'x/y', number: 12, jobIds: ['on-pr-elsewhere'] },
+    ]);
   });
 
   it('a question answered, closed, dismissed or expired wakes the jobs waiting on it', () => {

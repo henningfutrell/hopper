@@ -1127,6 +1127,22 @@ Version 1 (`docs/schemas/job.wait_polled.v1.json`). A job waiting on its own bac
 }
 ```
 
+## `job.waited_pull_request_ended`
+
+Version 1 (`docs/schemas/job.waited_pull_request_ended.v1.json`). A pull request a job waits on (issue #1433), which no follow of a job recorded the end of, was seen merged or closed without a merge at a sync of the job's source: the source reads each pull request a job's own wait names. Recorded on each job waiting on it; the hopper wakes them (`job.wait_ended { by: hopper }`), as `job.pull_request_merged` or `job.pull_request_closed` would. `pullRequest`: its URL; `state`: `merged` or `closed`.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `state` | `merged` \| `closed` | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/octo/tools/pull/8",
+  "state": "closed"
+}
+```
+
 ## `job.checkpointed`
 
 Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at work, or of one just parked, or for a fresh read of its transcript (issue #1169), was taken and kept (issue #921): its agent session and its work not pushed, read on `machineId`, scrubbed of secrets. `bytes`: its size compressed. `session`: whether it holds the agent session (without it, the job cannot resume elsewhere). `commits`: the commits not pushed then. Only the latest checkpoint of a job is kept.

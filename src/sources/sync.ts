@@ -25,6 +25,8 @@
 // after it (a burst in one batch), and every `OUTBOX_EVERY_MS` the rows due; each repository a send wrote to is made due, and the source syncs then, a timed sync. A sync never waits for the outbox.
 // Poll backoff (issue #1264, `poll-backoff.ts`): a configured source's timed syncs that find nothing changed come further
 // apart; each pass's calls go to the call log, and its status shows its poll interval and its calls in the last hour and day.
+// Waited pull requests (issue #1433, `waited-pull-requests.ts`): at every sync, each pull request a job of the source waits on
+// is read, and the jobs on one merged or closed are woken, though no follow recorded its end.
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
@@ -37,7 +39,7 @@ import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
 import { createThreadAsks } from './thread-asks.ts';
-import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
+import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
 import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts';
@@ -271,6 +273,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       await Promise.all(jobsOf(slot).filter(needsWork).map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
+      // Issue #1433: a pull request a job waits on that no follow records the end of; read at every sync, not only a round's.
+      await waitedEnds(slot.source, jobsOf(slot));
     };
     try {
       await (slot.source.pass ? slot.source.pass(pass, paused) : pass()); // its line says why it takes nothing new (issue #1351)
@@ -340,6 +344,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob, kept: (s) => { const slot = slots.get(s.name); if (slot && running) outbox.soon(slot); } });
   const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
+  const waitedEnds = waitedPullRequestEnds(store);
   const afterDone = createAfterDone({
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },

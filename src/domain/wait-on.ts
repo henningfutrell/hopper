@@ -122,6 +122,11 @@ export function settledBy(e: { type: string; jobId?: string; data?: unknown }): 
       const pr = at(str('pullRequest'));
       return pr && { kind: 'pull_request', ...pr, note: `${str('pullRequest')} was ${e.type === 'job.pull_request_merged' ? 'merged' : 'closed'}` };
     }
+    // Issue #1433: a sync read a waited pull request that no follow records ended.
+    case 'job.waited_pull_request_ended': {
+      const pr = at(str('pullRequest'));
+      return pr && { kind: 'pull_request', ...pr, note: `${str('pullRequest')} was ${str('state') === 'merged' ? 'merged' : 'closed'}` };
+    }
     case 'work_item.issue_closed': {
       const item = at(str('key'));
       return item && { kind: 'item', ...item, note: `${str('key')} was closed` };
@@ -146,6 +151,28 @@ export function waitsFor(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, s:
     case 'grant': return 'jobId' in s && job.id === s.jobId;
     default: return false;
   }
+}
+
+/** A pull request jobs on their own wait name, and those jobs (issue #1433). */
+export interface WaitedPullRequest { repo: string; number: number; jobIds: string[] }
+
+/**
+ * The pull requests the jobs on their own wait name (issue #1433), each once, in the repository the wait names or its job's
+ * own; a wait with neither is left out. A sync reads each, so a job wakes when it ends though no job follows it.
+ */
+export function waitedPullRequests(jobs: Pick<Job, 'id' | 'status' | 'wait' | 'source'>[]): WaitedPullRequest[] {
+  const out = new Map<string, WaitedPullRequest>();
+  for (const j of jobs) {
+    const on = j.wait?.on;
+    if (j.status !== 'waiting_on' || on?.kind !== 'pull_request') continue;
+    const repo = on.repo ?? j.source?.repo;
+    if (!repo) continue;
+    const k = `${repo.toLowerCase()}#${on.number}`;
+    const w = out.get(k) ?? { repo, number: on.number, jobIds: [] };
+    w.jobIds.push(j.id);
+    out.set(k, w);
+  }
+  return [...out.values()];
 }
 
 /** A legacy wait (before issue #1245) names nothing it waits on, unless it was on its own command: stuck work, "waiting on nothing recorded". */

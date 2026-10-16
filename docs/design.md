@@ -20476,7 +20476,8 @@ follows, never on a person's act:
 - **Superseded.** Nothing is left to land, so it is closed without a merge (`job.pull_request_closed` with `superseded`,
   why):
   - its issue is closed as completed by the merge of another pull request: the item is done, `hopper:done`. A part
-    ("Part of #N") is never superseded this way: its issue's close is for the whole.
+    ("Part of #N") is superseded this way too (issue #1433): its issue's close says the whole is done, so the part has
+    nothing left to land. Before, an open part stayed open as a stale pull request, and a job waiting on it never woke.
   - the hopper's mirror says its base branch has every commit of it (`commits` empty, `git log base..head`): the item
     gets `hopper:pr-closed`, as any pull request closed without a merge, and waits for a person, who decides whether the
     issue is done.
@@ -21213,7 +21214,7 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
 
   | Waits on | Woken by | Note |
   |---|---|---|
-  | a pull request | `job.pull_request_merged`, `job.pull_request_closed`: its number, in `repo` or the job's own repository; whatever it waited for about it is over | `<url> was merged` |
+  | a pull request | `job.pull_request_merged`, `job.pull_request_closed`: its number, in `repo` or the job's own repository; whatever it waited for about it is over. `job.waited_pull_request_ended` too (issue #1433, below) | `<url> was merged` |
   | a job | `job.finished`, `job.failed`, `job.cancelled` of that job | `job <id> finished` |
   | an item | `work_item.issue_closed`: its issue, in `repo` or the job's own repository | `<url> was closed` |
   | a question | `question.answered`, `question.closed`, `question.dismissed`, `question.expired` | `question <id> was answered` |
@@ -21224,6 +21225,16 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   event would end the wait before that answer, and the answer would then find no wait to end. Checks keep `pr wait`
   (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person. Issue #1210
   carries the waits on hopper state a job polls for.
+- **A pull request no follow holds (issue #1433).** Only a followed pull request records `job.pull_request_merged` or
+  `job.pull_request_closed`. One whose follow ended (a tend took it, a newer job of its item), a stray a person closed, or
+  one of no job ends with no event, so a job waiting on it stayed parked. Now each sync of a source reads the pull requests
+  its jobs on their own wait name (`waitedPullRequests`, `src/domain/wait-on.ts`; `JobSource.endedPullRequests`, one REST
+  read each, `src/sources/github/follow.ts`; `src/sources/waited-pull-requests.ts`). Each one merged or closed without a
+  merge records `job.waited_pull_request_ended { pullRequest, state }` on each job waiting on it, and the engine wakes them
+  on that event, as above. So a parked job wakes within one sync after its pull request closes. A read that fails is
+  logged and asked again at the next sync. A job of no source (a direct job) is not read so: no sync lists it.
+  Verified by `test/integration/waited-pull-request.test.ts` (closed or merged, the job wakes at the next sync),
+  `test/sources/github-waited-pull-requests.test.ts` and `test/domain/wait-on.test.ts`.
 - **Legacy waits.** A `waiting_on` job from before, with no `wait.on` and not on its own command, is **stuck work** of cause
   `wait_unnamed`, "Jobs waiting on nothing recorded". Its bulk action **Resume all** ends each wait, as a person does, with a
   note: go on, or end the turn with `HOPPER_WAITING` again and an `on:` line. That is its one tend pass.
