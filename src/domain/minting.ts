@@ -114,7 +114,17 @@ export const AWS_REGION_NAME = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
 /** What is minted for one profile: the AWS role and session policies, or the Kubernetes service account. */
 export type MintTarget =
   | { kind: 'aws'; mintsFor: Asset; roleArn: string; policyArns: string[]; policy?: string; durationSeconds: number }
-  | { kind: 'kube'; mintsFor: Asset; namespace: string; serviceAccount: string; expirationSeconds: number };
+  | { kind: 'kube'; mintsFor: Asset; namespace: string; serviceAccount: string; expirationSeconds: number; bindTo?: string };
+
+/**
+ * A sandbox's Kubernetes token bound to a Secret of its own (issue #1371, design.md "Sandboxes are fresh and leave
+ * nothing" part 7): the minting credential that made it, and the Secret in the service account's namespace. When the
+ * Secret is deleted, the API server refuses the token at once.
+ */
+export interface MintBinding { credential: string; namespace: string; secret: string }
+
+/** The label on each Secret a sandbox's token is bound to: the hopper makes and deletes only these. */
+export const MINT_BINDING_LABEL = 'io.hopper.mint';
 
 /**
  * What `kind` mints for the profile, or why it mints nothing for it. AWS: an `aws-role` (`<account>/<role>`) is assumed,
@@ -167,7 +177,13 @@ export const expiryOf = (m: Minted): string => (m.kind === 'aws' ? m.Expiration 
  */
 export interface CredentialMinter {
   awsSession(credential: AwsMintingCredential, r: { roleArn: string; sessionName: string; policyArns: string[]; policy?: string | undefined; durationSeconds: number }): Promise<Extract<Minted, { kind: 'aws' }>>;
-  kubeToken(credential: KubeTokenCredential, r: { namespace: string; serviceAccount: string; expirationSeconds: number }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  /**
+   * A TokenRequest token. `bindTo` (issue #1371): first a Secret of that name is made in the namespace, and the token is
+   * bound to it, so it stops working when the Secret is deleted (`kubeUnbind`).
+   */
+  kubeToken(credential: KubeTokenCredential, r: { namespace: string; serviceAccount: string; expirationSeconds: number; bindTo?: string }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  /** Deletes the Secret a token is bound to (issue #1371): the token stops working. One already gone is no error. */
+  kubeUnbind(credential: KubeTokenCredential, r: { namespace: string; secret: string }): Promise<void>;
   /**
    * An EKS token for `cluster` (issue #854): STS `GetCallerIdentity` presigned with `session` at the region's STS, the
    * cluster's name signed in the `x-k8s-aws-id` header, as `k8s-aws-v1.` and the URL in base64url. No call is made.
