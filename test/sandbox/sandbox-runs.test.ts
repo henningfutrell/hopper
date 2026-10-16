@@ -7,6 +7,8 @@
 //   Scenario: a step's sandbox is burned after it, and the ledger has its run from start to destroy
 //   Scenario: a sandbox whose remove failed after its step is burned by the next sweep
 //   Scenario: a sandbox left by a hopper that stopped mid-step is burned by the sweep, its run ended as swept
+//   Scenario: a step past its time limit is a timed-out run, and one the job stopped waiting for a cancelled run (issue #1371)
+//   Scenario: at start, a run a stopped hopper left ends as interrupted, and its sandbox is burned (issue #1371)
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,7 +43,7 @@ function setup() {
   });
   const dir = mkdtempSync(join(tmpdir(), 'sandbox-runs-'));
   dirs.push(dir);
-  const step = (name: string, id: string) => sandboxes.needStep('u1', { name, template: { image: 'img' }, env: {}, timeoutMs: 5000, dir }, { log: () => {}, signal: new AbortController().signal, pollMs: 5 }, { jobId: 'job-1', step: id, template: 'asked-1' });
+  const step = (name: string, id: string, o: { timeoutMs?: number; signal?: AbortSignal } = {}) => sandboxes.needStep('u1', { name, template: { image: 'img' }, env: {}, timeoutMs: o.timeoutMs ?? 5000, dir }, { log: () => {}, signal: o.signal ?? new AbortController().signal, pollMs: 5 }, { jobId: 'job-1', step: id, template: 'asked-1' });
   return { runtime, runs, sandboxes, step };
 }
 
@@ -98,6 +100,32 @@ describe('sandbox runs (issue #1349)', () => {
     await sandboxes.check();
     expect(runtime.boxes.size).toBe(0);
     expect(runs.get('s-4')).toMatchObject({ outcome: 'swept', endedAt: NOW.toISOString(), destroyedAt: NOW.toISOString(), problem: expect.stringContaining('burned by the sweep') });
+    expect(runs.open()).toEqual([]);
+  });
+
+  it('a step past its time limit is a timed-out run, and one the job stopped waiting for a cancelled run (issue #1371)', async () => {
+    const { runtime, runs, step } = setup();
+    runtime.runScript = () => new Promise((resolve) => setTimeout(() => resolve({ exit: 0, output: '' }), 300));
+    expect((await step('hopper-need-asked-1-eeee', 's-5', { timeoutMs: 50 })).exit).toBe(125);
+    expect(runs.get('s-5')).toMatchObject({ outcome: 'timed-out', exit: 125, destroyedAt: NOW.toISOString() });
+
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 50);
+    expect((await step('hopper-need-asked-1-ffff', 's-6', { signal: stop.signal })).exit).toBe(125);
+    expect(runs.get('s-6')).toMatchObject({ outcome: 'cancelled', exit: 125, destroyedAt: NOW.toISOString() });
+    expect(runtime.boxes.size).toBe(0);
+    expect(runtime.volumes.size).toBe(0);
+  });
+
+  it('at start, a run a stopped hopper left ends as interrupted, and its sandbox is burned (issue #1371)', async () => {
+    const { runtime, runs, sandboxes } = setup();
+    runs.start({ id: 's-7', userId: 'u1', jobId: 'job-1', template: 'asked-1', box: 'hopper-need-asked-1-gggg', machine: 'local', startedAt: '2026-10-15T11:00:00.000Z' });
+    await leftBehind(runtime, 'hopper-need-asked-1-gggg');
+    sandboxes.start();
+    await sandboxes.stop();
+    expect(runtime.boxes.size).toBe(0);
+    expect(runtime.volumes.size).toBe(0);
+    expect(runs.get('s-7')).toMatchObject({ outcome: 'interrupted', endedAt: NOW.toISOString(), destroyedAt: NOW.toISOString(), problem: expect.stringContaining('the hopper stopped') });
     expect(runs.open()).toEqual([]);
   });
 });

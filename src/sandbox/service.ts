@@ -209,6 +209,18 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       o.logger.info(`hopper: sandbox ${r.box} closed in the ledger: its machine ${r.machine} was removed`);
     }
   };
+  /**
+   * Startup reconciliation (issue #1371): no step runs yet, so each run not ended was left by a hopper that stopped
+   * mid-step. It ends as `interrupted`; the sweep that follows burns its sandbox and notes the burn.
+   */
+  const endInterrupted = (): void => {
+    const now = o.clock.now().toISOString();
+    for (const r of o.runs.open()) {
+      if (r.endedAt !== undefined || stepping.has(r.box)) continue;
+      o.runs.end(r.id, { at: now, outcome: 'interrupted', problem: 'the hopper stopped during the step' });
+      o.logger.info(`hopper: sandbox ${r.box} of job ${r.jobId}: the hopper stopped during its step; the run ends as interrupted`);
+    }
+  };
   let checking: Promise<void> | undefined;
   const sweep = async (): Promise<void> => {
     for (const at of sweepPlaces()) await sweepSteps(at).then(() => sweepStepHomes(at));
@@ -248,6 +260,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     check,
     start() {
       if (timer) return;
+      endInterrupted();
       void burnPass();
       void check();
       timer = setInterval(() => { void burnPass(); void check(); }, PASS_MS);

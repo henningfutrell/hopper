@@ -2,8 +2,12 @@
 // one step of a job — a need step or a box step —, from its start to its burn. A sandbox does one step and is burned:
 // it is no machine and has no lane, so this ledger is the one place that says what ran where, and that it went.
 
-/** How a sandbox run ended: its step's command exited 0, exited otherwise or did not run, or a sweep burned it. */
-export type SandboxRunOutcome = 'succeeded' | 'failed' | 'swept';
+/**
+ * How a sandbox run ended: its step's command exited 0, exited otherwise or did not run, ran past its time limit
+ * (`timed-out`), was stopped because the job stopped waiting for it (`cancelled`), was left by a hopper that stopped
+ * mid-step and ended at the next start (`interrupted`, issue #1371), or a sweep burned it with its step not ended.
+ */
+export type SandboxRunOutcome = 'succeeded' | 'failed' | 'timed-out' | 'cancelled' | 'interrupted' | 'swept';
 
 export interface SandboxRun {
   /** The step's id: one sandbox per step. */
@@ -46,5 +50,6 @@ export interface SandboxRunRepository {
   latest(userId: string, limit: number): SandboxRun[];
 }
 
-/** The outcome of a step that ended with `exit` and maybe a problem. */
-export const outcomeOf = (r: { exit: number; problem?: string }): SandboxRunOutcome => (r.exit === 0 && !r.problem ? 'succeeded' : 'failed');
+/** The outcome of a step that ended with `exit` and maybe a problem, or that the hopper stopped (issue #1371). */
+export const outcomeOf = (r: { exit: number; problem?: string; stopped?: 'timed-out' | 'cancelled' }): SandboxRunOutcome =>
+  r.stopped ?? (r.exit === 0 && !r.problem ? 'succeeded' : 'failed');

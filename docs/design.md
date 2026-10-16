@@ -18925,8 +18925,26 @@ Tests: `test/scripts/kind-sandbox-check.test.ts` (with a fake kubectl and the ru
 before the box is made; a hopper that leaves the box fails the check; an instance id that cannot be read stops the
 check before the hopper is stopped). The kind workflow runs the step itself.
 
-What is still open is listed in the issue's pull request: the ledger outcomes and the need box sweep on client targets
-(both wait for #1368), and credentials that die with their sandbox (a decision, #1394).
+**Part 6 (2026-10-16): each way a run ends has its own outcome.** The ledger of #1349 had `succeeded`, `failed` and
+`swept`: a step past its time limit, one the job stopped waiting for, and one a stopped hopper left all read as
+`failed` or `swept`. The need box sweep on client targets went in with #1349 ("Sandboxes are burned after each step").
+
+- **Timed out.** The need box (`need-box.ts`) holds the step's time limit with its own timer, not only through the
+  runtime's `wait` (now given the limit and 5 s more): a wait that hangs past the limit still ends the step. The box is
+  stopped, then removed with its home as before, and the result says `stopped: 'timed-out'`.
+- **Cancelled.** A step the job stopped waiting for (its signal aborted, before or after the box started) says
+  `stopped: 'cancelled'`. `outcomeOf` (`src/domain/sandbox-runs.ts`) takes `stopped` first.
+- **Interrupted.** At start (`Sandboxes.start`, before the first pass), no step runs yet, so each run with no end was
+  left by a hopper that stopped mid-step: it ends as `interrupted`, with its job in the log line. The sweep that follows
+  burns its box and home and notes the burn, as before. `swept` stays for a run whose box the sweep burned while this
+  hopper ran.
+- No migration: the outcome is a field of the run's JSON body, and the older outcomes keep their meaning.
+
+Tests: `test/sandbox/need-box.test.ts` (a step past its limit is stopped and removed as timed out; one the job stops
+waiting for, as cancelled), `test/sandbox/sandbox-runs.test.ts` (the ledger's `timed-out` and `cancelled` runs, burned;
+at start, a run a stopped hopper left ends as `interrupted` and its box and home are gone).
+
+What is still open is listed in the issue's pull request: credentials that die with their sandbox (a decision, #1394).
 
 ## Kubernetes sandboxes, end to end on kind (issue #1422, 2026-10-15)
 
