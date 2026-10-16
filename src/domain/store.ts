@@ -541,7 +541,7 @@ export interface InstanceStore {
   /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
   uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
-  joinCodes: JoinCodeRepository;
+  joinCodes: JoinCodeRepository; lanePoolKeys: import('./lane-pool-keys.ts').LanePoolKeyRepository; // the lane pool keys the hopper issued (issue #1454)
   /** The sandbox records (issue #708). */
   sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */

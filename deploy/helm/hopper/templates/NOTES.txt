@@ -1,3 +1,9 @@
+{{- if not .Values.hopper.enabled }}
+A runner-only release in namespace {{ .Release.Namespace }}: {{ .Values.lanes.replicas }} lane pods join the hopper at
+{{ .Values.lanes.hopperUrl }} with the lane pool key in the Secret {{ .Values.lanes.existingSecret }}, as the machines of
+the person it was issued to. They show in that hopper's Machines view, online, once they joined. Watch them:
+  kubectl --namespace {{ .Release.Namespace }} logs {{ include "hopper.fullname" . }}-lanes-0 -c join
+{{- else }}
 The hopper is starting in namespace {{ .Release.Namespace }}.
 
 {{- if .Values.ingress.enabled }}
@@ -20,4 +26,5 @@ secret the hopper keeps is sealed under it. Keep a copy in a password manager: w
 
 {{ .Values.lanes.replicas }} lane pods join as machines of the first person who signed in. Sign each pod's agent in once:
   kubectl --namespace {{ .Release.Namespace }} exec -it {{ include "hopper.fullname" . }}-lanes-0 -c lane -- claude
+{{- end }}
 {{- end }}

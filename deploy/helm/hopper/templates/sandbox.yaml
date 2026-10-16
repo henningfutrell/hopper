@@ -1,3 +1,4 @@
+{{- if .Values.hopper.enabled }}
 {{- /*
 Sandbox boxes as pods (issue #1286, docs/deploy.md "Sandbox boxes on Kubernetes"): the Role the Kubernetes runtime
 needs in the release's namespace, and nothing more, bound to the hopper's service account. No ClusterRole. With
@@ -61,5 +62,6 @@ spec:
   scopeSelector:
     matchExpressions:
       - { scopeName: PriorityClass, operator: In, values: [{{ printf "%s-sandbox" $name }}] }
+{{- end }}
 {{- end }}
 {{- end }}

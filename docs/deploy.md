@@ -1572,6 +1572,47 @@ What to expect:
 Without the chart, give the same: a Secret with the key (`openssl rand -hex 32`), mounted into the hopper's pod with
 `HOPPER_LANE_POOL_KEY_FILE` naming its file, and a StatefulSet like `deploy/helm/hopper/templates/lanes.yaml`.
 
+### Lane pods of another release
+
+Lane pods can join a hopper that is not in their release (issue #1454, design.md "Lane pods of another release"): a
+compose hopper, or a hopper on another cluster. A **runner-only release** of the chart is the lane pods alone, with no
+hopper, Postgres, OpenFGA or Solr. Its pods join with a lane pool key that the hopper issues. The hopper does not start
+again. Each pod is a machine of the person who made the key. It holds no credential of the hopper's host and mounts no
+host path, so it is ready where a host machine that holds user credentials is not (issue #1248).
+
+1. In the hopper, open Machines → **Add machine** → **Pods on Kubernetes** and select **Make a key**. Set the URL that the
+   pods reach the hopper at. It must be a name the hopper answers to: a LAN name (`HOPPER_LAN_NAMES`, an allowed host),
+   or the public URL. A pod reaches a LAN name only from a LAN peer (`HOPPER_LAN_PEERS`): add the cluster's node or pod
+   network there. Or run `hopper pool-key` (the operator CLI) to print a key.
+2. Copy the two commands the page shows and run them where `kubectl` reaches the cluster, from a checkout of the hopper's
+   repository:
+
+   ```sh
+   kubectl create namespace hopper-runner && \
+     kubectl -n hopper-runner create secret generic runner-pool-key --from-literal=key='<key>'
+   helm install runner deploy/helm/hopper -n hopper-runner --set hopper.enabled=false --set lanes.replicas=1 \
+     --set lanes.hopperUrl='https://hopper.example.com' --set lanes.existingSecret=runner-pool-key
+   ```
+
+3. The pod `runner-hopper-lanes-0` shows on Machines, online. Set more pods with `--set lanes.replicas=3` on a
+   `helm upgrade runner deploy/helm/hopper -n hopper-runner --reuse-values`.
+
+| value | |
+|---|---|
+| `hopper.enabled` | `false`: a runner-only release. Default `true` |
+| `lanes.hopperUrl` | the URL the pods join and dial in at: `http://` or `https://`, a host and a port, no path. Needed with `hopper.enabled=false`. Empty: the release's own hopper |
+| `lanes.existingSecret` | a Secret with the lane pool key under `key`. Needed with `hopper.enabled=false`. With the hopper on, the hopper reads it too, and the chart makes no `hopper-lane-pool` |
+
+- The page shows the key once: the hopper keeps only its hash. **Make a new key** replaces it. **Revoke the key** (or
+  `hopper pool-key --revoke`) stops new joins. Pods that joined stay machines, until you remove them on Machines.
+- A pod joins again at each start with the key. After a new key, put it in the Secret, then restart the pods
+  (`kubectl -n hopper-runner rollout restart statefulset/runner-hopper-lanes`).
+- The agent's sign-in comes from the vault with each job, as for the chart's own lane pods (step 3 above).
+- **Manual check** (no CI runner has a compose hopper and a cluster together): start a compose hopper with its port
+  reachable from the cluster, do steps 1 to 3, and see the machine online and ready on Machines. Then label an issue
+  so the hopper takes it, and see a job start on `runner-hopper-lanes-0`. `kubectl -n hopper-runner get pod
+  runner-hopper-lanes-0 -o yaml` shows no `hostPath` volume.
+
 ## Vault backends (optional)
 
 The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,

@@ -351,3 +351,23 @@ export function reservedText(m: Pick<MachineSnapshot, 'maxLanes' | 'reservedLane
 export function joinLine(o: { origin: string; code: string }): string {
   return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
 }
+
+/**
+ * The commands Add machine's Pod / Kubernetes shows (issue #1454, design.md "Lane pods of another release"): a Secret with
+ * the lane pool key the hopper issued, then a runner-only release of the chart (from a checkout of the hopper's repository)
+ * whose lane pods join the hopper at `hopperUrl`. Nothing on the hopper restarts.
+ */
+export function podRunnerCommands(o: { hopperUrl: string; key: string; namespace?: string; release?: string }): { secret: string; helm: string } {
+  const ns = o.namespace ?? 'hopper-runner';
+  const release = o.release ?? 'runner';
+  const secretName = `${release}-pool-key`;
+  return {
+    secret: `kubectl create namespace ${ns} && kubectl -n ${ns} create secret generic ${secretName} --from-literal=key='${o.key}'`,
+    helm: `helm install ${release} deploy/helm/hopper -n ${ns} --set hopper.enabled=false --set lanes.replicas=1 --set lanes.hopperUrl='${o.hopperUrl.replace(/\/+$/, '')}' --set lanes.existingSecret=${secretName}`,
+  };
+}
+
+/** Whether pods in a cluster cannot reach a hopper at this URL: it names this computer's loopback only. */
+export const loopbackOnly = (url: string): boolean => {
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname); } catch { return false; }
+};

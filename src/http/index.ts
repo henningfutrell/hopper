@@ -94,7 +94,7 @@ export type { TailnetSource } from './tailnet.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'localAccounts' | 'localAccountPasskeys' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'lanePoolKeys' | 'users' | 'identities' | 'localAccounts' | 'localAccountPasskeys' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */

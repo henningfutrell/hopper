@@ -39,4 +39,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // added at and its signature counter; an account's removal removes its passkeys. A table only: the build before never
   // reads it, and signs nobody in with it.
   'CREATE TABLE IF NOT EXISTS local_account_passkeys (id TEXT PRIMARY KEY, email TEXT NOT NULL REFERENCES local_accounts (email) ON DELETE CASCADE, rp_id TEXT NOT NULL, public_key TEXT NOT NULL, counter BIGINT NOT NULL, transports TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT); CREATE INDEX IF NOT EXISTS local_account_passkeys_email ON local_account_passkeys (email);',
+  // 45: lane pool keys the hopper issues (issue #1454): one per user at most, only its SHA-256 kept, for lane pods of a
+  // chart release outside this hopper's own. A table only: the build before never reads it, and joins no pod with one.
+  'CREATE TABLE IF NOT EXISTS lane_pool_keys (key_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS lane_pool_keys_user ON lane_pool_keys (user_id);',
 ];
