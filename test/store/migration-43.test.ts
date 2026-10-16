@@ -10,15 +10,20 @@ const t = useTempStore();
 describe('migration 43: a user keeps its email', () => {
   it('a user a local account signed in as takes its email; a user of a GitHub identity has none yet', () => {
     const url = t.url();
+    const before = openInstanceStore({ url, clock: fixedClock(), version: 42 });
+    const ada = before.users.add('ada');
+    const octo = before.users.add('octo');
+    before.close();
     const raw = t.at(url, 42);
-    raw.run("INSERT INTO user_identities (realm, subject, user_id) VALUES ('local-accounts', 'ada@example.com', 'admin')");
-    raw.run("INSERT INTO user_identities (realm, subject, user_id) VALUES ('github', '42', 'admin')");
+    raw.run("INSERT INTO user_identities (realm, subject, user_id) VALUES ('local-accounts', 'ada@example.com', ?)", ada.id);
+    raw.run("INSERT INTO user_identities (realm, subject, user_id) VALUES ('github', '42', ?)", octo.id);
     raw.close();
 
     const instance = openInstanceStore({ url, clock: fixedClock() });
     try {
-      expect(instance.users.get('admin')?.email).toBe('ada@example.com');
-      expect(instance.users.byEmail('ADA@example.com')?.id).toBe('admin');
+      expect(instance.users.get(ada.id)?.email).toBe('ada@example.com');
+      expect(instance.users.get(octo.id)?.email).toBeUndefined();
+      expect(instance.users.byEmail('ADA@example.com')?.id).toBe(ada.id);
       expect(instance.users.byEmail('bea@example.com')).toBeUndefined();
     } finally {
       instance.close();
@@ -27,10 +32,12 @@ describe('migration 43: a user keeps its email', () => {
 
   it('a user with no local account has no email', () => {
     const url = t.url();
-    t.at(url, 42).close();
+    const before = openInstanceStore({ url, clock: fixedClock(), version: 42 });
+    const bea = before.users.add('bea');
+    before.close();
     const instance = openInstanceStore({ url, clock: fixedClock() });
     try {
-      expect(instance.users.get('admin')?.email).toBeUndefined();
+      expect(instance.users.get(bea.id)?.email).toBeUndefined();
     } finally {
       instance.close();
     }
