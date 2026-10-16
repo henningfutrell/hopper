@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { allBullets, assemble, bullets, newSince, type Notes, problems, readNotes } from '../../src/update/whats-new.ts';
+import { allBullets, assemble, breaksPlainWords, bullets, newSince, type Notes, problems, readNotes } from '../../src/update/whats-new.ts';
 
 const FILE = "# What's new\n\nWritten for people who use the hopper.\n\n- Older news.\n- Oldest news.\n";
 const notes = (fragments: Record<string, string[]>, file = FILE): Notes => ({
@@ -70,15 +70,32 @@ describe("what's new fragments (issue #824)", () => {
   });
 });
 
+describe("what's new in plain words (issue #1483)", () => {
+  it('the check refuses a new line with an issue number, a hash, a prefix, a file name or a code word', () => {
+    const base = notes({});
+    for (const line of ['Fixes #12.', 'Reverts 2ff398333026.', 'Machines: a new card.', 'Edit hopper.yaml.', 'Run `hopper`.']) {
+      expect(problems(base, notes({ '12.md': [line] }))).toEqual([`a line is not in plain words: no issue numbers, hashes, prefixes, file names or code words: "${line}"`]);
+    }
+    expect(problems(base, notes({ '12.md': ['You can pause the queue.'] }))).toEqual([]);
+  });
+
+  it('a merged line that is not in plain words may be written again in plain words; a plain one may not change', () => {
+    const base = notes({ '12.md': ['Machines: a new card.', 'You can pause the queue.'] });
+    expect(problems(base, notes({ '12.md': ['The Machines page has a new card.', 'You can pause the queue.'] }))).toEqual([]);
+    // A pull request that leaves such a merged line as it is passes: the check names only the lines it adds.
+    expect(problems(base, notes({ '12.md': ['Machines: a new card.', 'You can pause all queues.'] }))).toEqual([
+      'a released line changed or went away; never edit one: "You can pause the queue."',
+    ]);
+  });
+});
+
 describe("What's new of this repository", () => {
   const ROOT = join(import.meta.dirname, '..', '..');
 
   it('speaks plainly: no issue or pull request numbers, commit hashes, commit prefixes or file names', () => {
     const lines = allBullets(readNotes(ROOT));
     expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) {
-      expect(line).not.toMatch(/#\d+|\b[0-9a-f]{7,40}\b|^\w+(\(.*\))?!?:|\b[\w-]+\.(ts|tsx|sh|md|yaml|json)\b|`/);
-    }
+    for (const line of lines) expect(breaksPlainWords(line), line).toBe(false);
     expect(new Set(lines).size).toBe(lines.length);
   });
 
