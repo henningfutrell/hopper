@@ -3,7 +3,6 @@
 {{- $image := printf "%s:%s" .Values.image.repository (.Values.image.tag | toString) -}}
 {{- $port := .Values.port | int -}}
 {{- $ns := .Release.Namespace -}}
-{{- $keyFile := include "hopper.masterKeyFromFile" . -}}
 {{- $account := include "hopper.serviceAccount" . -}}
 {{- $replicas := .Values.replicas | int -}}
 {{- if or (lt $replicas 0) (gt $replicas 1) }}{{ fail "replicas is 0 or 1: one hopper writes its database" }}{{ end -}}
@@ -198,11 +197,9 @@ spec:
             # Its home: the claude sign-in.
             - name: home
               mountPath: /home/node
-            {{- if $keyFile }}
             - name: master-key
               mountPath: /run/hopper-master-key
               readOnly: true
-            {{- end }}
             {{- if not .Values.postgres.bundled }}
             - name: database
               mountPath: /run/hopper-database

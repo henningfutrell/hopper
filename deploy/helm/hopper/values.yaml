@@ -21,14 +21,16 @@ replicas: 1
 service:
   type: ClusterIP
 
-# The master key (docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it. The chart never
-# makes it. The first start makes one and shows it once, in the UI. Keep it in a password manager, then put it in this
-# Secret, under `master-key` (and the key before a rotation under `previous`), and restart the hopper:
-#   kubectl create secret generic hopper-master-key --from-literal=master-key=<64 hex digits>
-#   kubectl rollout restart deployment/hopper
-# Unset: the Secret named <release>-master-key, read as variables, and a start without it, once secrets are kept, is
-# refused (issue #1296).
+# The master key (docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it. Unset: the chart
+# makes it at the first install, a new random key in the Secret <release>-master-key, and keeps it at each upgrade and at
+# an uninstall (issue #1406). Keep a copy in a password manager:
+#   kubectl get secret hopper-master-key -o jsonpath='{.data.master-key}' | base64 -d
+# To rotate, put the old key under `previous` in that Secret, the new one under `master-key`, and restart the hopper.
+# A Secret of that name the chart did not make (one made with kubectl before the install) is used as it is.
 masterKey:
+  # A key you bring, 64 hex digits or base64 of 32 bytes (openssl rand -hex 32), for the Secret the chart makes. Empty: the
+  # Secret's own key, else a new one. Helm keeps values in its release record in the namespace: prefer existingSecret.
+  value: ""
   # Set: that Secret is mounted as files and the hopper reads the key from its `master-key` file. A start without that
   # file is refused. To rotate, put the new key under `master-key` and the old one under `previous`, then restart:
   # every secret is sealed again under the new key.

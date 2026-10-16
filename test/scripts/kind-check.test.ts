@@ -53,11 +53,12 @@ function tool(name: string, script: string): void {
 }
 
 const FINGERPRINT = 'a1b2c3d4e5f60718';
-const status = (fingerprint: string, source = 'given'): string => JSON.stringify({ source, fingerprint, previous: false });
+// The hopper's start line about its key (src/secrets/master-key.ts logMasterKey).
+const status = (fingerprint: string, source = 'given'): string => `hopper: master key: given at launch as HOPPER_MASTER_KEY or its file (${source}), fingerprint ${fingerprint}`;
 
 function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1'], keys = [status(FINGERPRINT)]): void {
   writeFileSync(join(dir, 'jobs'), migrations.join('\n') + '\n');
-  // Each ask for the master key's status answers the next line; the last one stays.
+  // Each read of the hopper's log answers the next line; the last one stays.
   writeFileSync(join(dir, 'keys'), keys.join('\n') + '\n');
   writeFileSync(join(dir, 'pods.json'), JSON.stringify({ items: pods }));
   writeFileSync(join(dir, 'health.json'), health);
@@ -65,7 +66,7 @@ function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}'
   tool('helm', 'exit 0');
   tool('kubectl', [
     'case "$*" in',
-    `  *"master-key status"*) head -n 1 "${join(dir, 'keys')}"; [ "$(wc -l < "${join(dir, 'keys')}")" -gt 1 ] && sed -i 1d "${join(dir, 'keys')}" ;;`,
+    `  *" logs deploy/hopper "*) echo 'hopper: listening'; head -n 1 "${join(dir, 'keys')}"; if [ "$(wc -l < "${join(dir, 'keys')}")" -gt 1 ]; then sed -i 1d "${join(dir, 'keys')}"; fi ;;`,
     `  *" exec "*) cat "${join(dir, 'health.json')}" ;;`,
     `  *"get pods --all-namespaces -o json"*) cat "${join(dir, 'pods.json')}" ;;`,
     // Each ask for the migration Jobs answers the next line: before the upgrade, then after.
@@ -129,7 +130,7 @@ describe('scripts/kind-check.ts', () => {
     expect(sandbox).toBeLessThan(lanes);
     expect(lanes).toBeLessThan(created);
     expect(r.calls.filter((c) => c.includes(' exec deploy/hopper ') && c.includes('/api/health'))).toHaveLength(3);
-    expect(r.calls.filter((c) => c.endsWith('exec deploy/hopper -c hopper -- hopper master-key status'))).toHaveLength(3);
+    expect(r.calls.filter((c) => c === 'kubectl --context kind-hopper-check --namespace hopper logs deploy/hopper -c hopper')).toHaveLength(3);
     expect(r.stdout).toContain(`a new hopper pod runs on the same master key (fingerprint ${FINGERPRINT})`);
     expect(r.calls.slice(created).some((c) => c === 'kubectl --context kind-hopper-check get pods --all-namespaces -o json')).toBe(true);
     expect(r.stdout).toContain('machines as pods: sandbox boxes on, lane pod hopper-lanes-0');

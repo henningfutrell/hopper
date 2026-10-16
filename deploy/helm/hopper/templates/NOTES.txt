@@ -9,12 +9,12 @@ then open http://localhost:{{ .Values.port }}/
 {{- end }}
 Sign in with GitHub: the first person to do so is the admin.
 
-{{- if include "hopper.masterKeyFromFile" . }}
+{{- if or .Values.masterKey.existingSecret .Values.masterKey.externalSecret.enabled }}
 The hopper reads the master key from the Secret {{ include "hopper.masterKeySecret" . }} (its master-key file), and does not start without it.
 {{- else }}
-The first start makes the master key and shows it once, in the UI. Keep it in a password manager, then:
-  kubectl --namespace {{ .Release.Namespace }} create secret generic {{ include "hopper.masterKeySecret" . }} --from-literal=master-key=<the key>
-  kubectl --namespace {{ .Release.Namespace }} rollout restart deployment/{{ include "hopper.fullname" . }}
+The master key is in the Secret {{ include "hopper.masterKeySecret" . }}, kept at each upgrade and at an uninstall: every
+secret the hopper keeps is sealed under it. Keep a copy in a password manager: without it, a lost namespace loses them all.
+  kubectl --namespace {{ .Release.Namespace }} get secret {{ include "hopper.masterKeySecret" . }} -o jsonpath='{.data.master-key}' | base64 -d
 {{- end }}
 {{- if gt (.Values.lanes.replicas | int) 0 }}
 

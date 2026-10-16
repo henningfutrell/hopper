@@ -134,8 +134,9 @@ systemctl --user restart hopper-compose.service                 # each start: th
 - **Host install** (systemd --user): seal it with `systemd-creds --user encrypt --name=hopper-master-key - <file>`, and
   give it to the unit in a drop-in: `LoadCredentialEncrypted=hopper-master-key:<file>` and
   `Environment=HOPPER_MASTER_KEY_FILE=%d/hopper-master-key`. Remove `HOPPER_MASTER_KEY` from `daemon.env`.
-- **Kubernetes.** The master key Secret, filled by the External Secrets Operator from an outside store ("On Kubernetes,
-  with Helm"). A Helm upgrade needs no key from you; a missing Secret stops the pod.
+- **Kubernetes.** The master key Secret: the chart's own, made at the first install and kept, or one you give, or one the
+  External Secrets Operator fills from an outside store ("On Kubernetes, with Helm"). A Helm upgrade needs no key from
+  you; a missing Secret stops the pod.
 
 **The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
 every log line goes through a mask that removes the key in any form. To see the key's status without the key:
@@ -733,21 +734,37 @@ helm install hopper deploy/helm/hopper --namespace hopper --create-namespace
 kubectl --namespace hopper port-forward svc/hopper 4790      # then open http://localhost:4790/
 ```
 
-Sign in with GitHub: the first person to do so is the admin. Then give the master key ("The master key"). The first start
-makes one and shows it once, in the UI. Keep it in a password manager, then put it in a Secret and restart the hopper:
+Sign in with GitHub: the first person to do so is the admin.
+
+**The master key** ("The master key", issue #1406). The install makes it: a new random key (32 bytes, as 64 hex digits)
+in the Secret `hopper-master-key` (`<release>-master-key`), under `master-key`. The hopper reads it from that Secret's
+file, so a new pod (a restart, an upgrade, a moved node) starts on the same key. Each upgrade reads the key back from the
+Secret and keeps it, and an uninstall keeps the Secret (`helm.sh/resource-policy: keep`). Keep a copy in a password
+manager: without it, a lost namespace or cluster opens none of the hopper's secrets.
 
 ```sh
-read -rs KEY && kubectl --namespace hopper create secret generic hopper-master-key --from-literal=master-key="$KEY"
-kubectl --namespace hopper rollout restart deployment/hopper
+kubectl --namespace hopper get secret hopper-master-key -o jsonpath='{.data.master-key}' | base64 -d
 ```
+
+- **Bring your own key**: `--set masterKey.value=<64 hex digits>` (`openssl rand -hex 32`, or base64 of 32 bytes). The
+  chart puts it in the same Secret. Helm keeps values in its release record in the namespace, so the key is there too:
+  prefer `masterKey.existingSecret` (below) when that matters.
+- **A Secret made before the install.** A `hopper-master-key` Secret made with `kubectl` before `helm install` is used as
+  it is: the chart does not change or take it over.
+- **Rotate**: put the old key under `previous` in the Secret and the new key under `master-key`, then
+  `kubectl --namespace hopper rollout restart deployment/hopper`. The chart keeps both at the next upgrade (unless
+  `masterKey.value` names another key). Once the log says every secret is sealed again, remove `previous`.
+- **An install made before this.** Its hopper made its key at its first start, and holds it only in memory. An upgrade
+  that finds no Secret `hopper-master-key` stops before any pod does: a new key would lose the old one. Save the key
+  from the UI (**Show the key (once)**), then give it: `--set masterKey.value=<the key>`, or make the Secret with
+  `kubectl` as above.
+- **A tool that renders the chart with no cluster** (`helm template`, Argo CD): it cannot read the Secret back, and makes
+  a new key at each render. Give the key with `masterKey.existingSecret` there.
 
 **Move a compose install here** (issue #1373): `docs/kubernetes.md`. `hopper-cluster.sh bootstrap` makes a small
 cluster on this host (k3s, rootless, beside Podman), and `hopper-cluster.sh migrate` moves the database, the master key
 and the hopper's own settings into the chart's release, then stops the compose stack (not removed). `hopper-cluster.sh
 rollback` starts compose again.
-
-To give a key from the first start, make that Secret before `helm install`. A rotation puts the old key under
-`previous` in the same Secret (`HOPPER_MASTER_KEY_PREVIOUS`).
 
 **The master key from a Secret you manage** (issue #1288). Set `masterKey.existingSecret` to a Secret with the key
 under `master-key`. The chart mounts it as files, and the hopper reads `HOPPER_MASTER_KEY_FILE`. A start with no
@@ -795,7 +812,8 @@ vault then runs in the hopper, under the master key.
 | `solr.enabled` | `false`: no Solr, and no search |
 | `networkPolicy.enabled` | NetworkPolicies: only the hopper, OpenFGA, its migration and the vault pod reach Postgres; only the hopper reaches OpenFGA, Solr, the vault pod and the tunnel services; only the pod the vault runs in reaches the local KMS. Default on; they take effect where the network plugin enforces them |
 | `tunnel.ngrok.enabled`, `tunnel.cloudflared.enabled`, `postgres.bundled`, `postgres.external.existingSecret` | the other optional parts (below) |
-| `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above) |
+| `masterKey.value` | the master key for the Secret the chart makes; empty: the Secret's own key, else a new one (above) |
+| `masterKey.existingSecret`, `masterKey.externalSecret.*` | the master key from a mounted Secret, or one the External Secrets Operator fills (above); the chart then makes no Secret of it |
 | `kms.aws.region`, `kms.aws.key`, `kms.aws.endpoint` | AWS KMS wraps the vault's data key (above) |
 | `hopperVault.enabled`, `kms.local.enabled`, `kms.local.size` | the vault in a pod of its own, and a local KMS (above). Default off |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | the hopper's service account; its annotations give it an AWS role |
@@ -808,7 +826,8 @@ vault then runs in the hopper, under the master key.
 | `home.size`, `postgres.size`, `solr.size` and each `storageClass` | the volumes: the hopper's home (the claude sign-in), the database, the search index |
 
 The chart makes the database password and the preshared keys of OpenFGA and the vault pod at the first install, in the
-Secret `hopper-runtime`, and the lane pool key in the Secret `hopper-lane-pool`, and keeps them at each upgrade. An
+Secret `hopper-runtime`, the master key in the Secret `hopper-master-key`, and the lane pool key in the Secret
+`hopper-lane-pool`, and keeps them at each upgrade. An
 uninstall keeps those Secrets and the home volume (`helm.sh/resource-policy: keep`), and
 the StatefulSets' volumes stay too: the database keeps the password it was made with. Remove them by hand only together.
 
@@ -838,11 +857,10 @@ its update notice gives the command. Not in the chart: HashiCorp Vault (the comp
 `scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
 alone brings up the hopper; its health answers ok in its pod; and no pod anywhere in the cluster
 has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose; and
-`helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the machines
-come up as pods, on a fresh install given a master key: the first install's hopper made its key and shows it only in
-the UI, so a new hopper pod on its database does not start. The check deletes the namespace, makes the
-`hopper-master-key` Secret with a new key, and installs with sandbox boxes on (`sandbox.enabled=true`, the hopper's
-health asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
+`helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then it deletes the
+hopper's pod: the new pod must be healthy and run on the master key of the same fingerprint, given at launch (its start
+log line), the key the chart made (issue #1406). Then the machines come up as pods, by an upgrade of the same release
+with sandbox boxes on (`sandbox.enabled=true`, the hopper's health and key asked again). An upgrade then scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins
 only once a person signed in).
 The lane pod must exist, and again no pod may have a container runtime socket. Then it deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
 Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
