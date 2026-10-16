@@ -3,6 +3,7 @@ import { decide } from '../decider/index.ts';
 import { retiredPins } from '../decider/retired.ts';
 import { signedOutOf } from '../decider/signed-out.ts';
 import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, LaneId, MachineSnapshot } from '../domain/types.ts';
+import { credentialHeldIds } from '../domain/machine-credentials.ts';
 import { nowIso, policyOf, priorityTagOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
 import type { BlastRadius } from './blast-radius.ts';
@@ -27,6 +28,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
     const expectedCosts = expectedOf(waiting, expected);
     const placementPicks = picks.input(waiting);
+    const credentialHeld = credentialHeldOf(c, machines);
     return {
       at: nowIso(c),
       trigger,
@@ -44,10 +46,15 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(expectedCosts ? { expectedCosts } : {}),
       ...(placementPicks ? { placementPicks } : {}),
       ...(signedOut.length ? { signedOut } : {}),
+      ...(credentialHeld.length ? { credentialHeld } : {}),
       policy: policyOf(c),
     };
   } };
 }
+
+/** The machines the credential check holds (issue #1467): the same rule the Machines view shows. */
+export const credentialHeldOf = (c: EngineContext, machines: readonly MachineSnapshot[]): string[] =>
+  credentialHeldIds(machines, c.store.credentialAcceptances.list(), c.store.credentialAcceptances.settings().strict);
 
 const oldestFirst = (jobs: Job[]): Job[] => [...jobs].reverse();
 

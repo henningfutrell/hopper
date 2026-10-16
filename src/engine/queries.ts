@@ -1,4 +1,5 @@
 // Read models for the HTTP edge.
+import { credentialHeld } from '../domain/machine-credentials.ts';
 import { isLocked } from '../domain/locked.ts';
 import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
@@ -90,9 +91,14 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
       const lanes = c.store.lanes.list();
+      const acceptanceMap = new Map(c.store.credentialAcceptances.list().map((a) => [a.machineKey, a]));
+      const { strict } = c.store.credentialAcceptances.settings();
       return machines.map((m) => {
         const hopperDisk = diskOf(m.id);
-        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}) };
+        const acceptance = acceptanceMap.get(m.id);
+        // Issue #1467: the decider's own rule, so the card never says other than what it does.
+        const held = credentialHeld(m.infraCredentials, acceptance, strict);
+        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
       });
     },
     getUsage,

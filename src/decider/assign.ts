@@ -90,8 +90,10 @@ export const herdrHolds = (m: MachineSnapshot, job: Job): boolean => m.herdrProb
  * A machine whose job user holds credentials a job could use (issue #1248: a kube config, cloud CLI credentials, an ssh key,
  * a token variable) is not ready and takes no new job: a job holds no owner credentials (#652). The job waits for a ready
  * machine, never fails there; the machine takes jobs again once its probe finds none. A job resuming there returns to the pane it holds.
+ * Only a machine the credential check holds (issue #1467, `credentialHeld` in src/domain/machine-credentials.ts): one an admin
+ * stopped, or, with strict mode on, one no admin acknowledged. Else the credentials are a warning, and it takes jobs.
  */
-export const credentialHolds = (m: MachineSnapshot, job: Job): boolean => (m.infraCredentials?.length ?? 0) > 0 && job.pendingAnswer === undefined;
+export const credentialHolds = (m: MachineSnapshot, job: Job, held: boolean): boolean => held && (m.infraCredentials?.length ?? 0) > 0 && job.pendingAnswer === undefined;
 
 /** Why such a machine holds a job (issue #1248): what its job user holds, and the fix. */
 const notReady = (m: MachineSnapshot): string =>
@@ -120,7 +122,7 @@ export const NO_NEW_JOB = 'no new job is claimed there';
  * Step 5: a hold that applies regardless of the router, or undefined. An unavailable executor
  * comes first: its reason says what to fix.
  */
-export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: ExecutorUnavailable[], signedOut?: readonly SignedOutTool[]): string | undefined {
+export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: ExecutorUnavailable[], signedOut?: readonly SignedOutTool[], credentialHeld?: readonly string[]): string | undefined {
   const executor = job.spec.executor;
   const down = unavailable.find((u) => u.name === executor);
   if (down) return `executor ${executor} unavailable: ${down.reason}`;
@@ -142,10 +144,10 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
       return `no machine running executor ${executor} reaches the hopper: ${tree.map((m) => `${m.id} ${offNetwork(m)}`).join('; ')}`;
     }
     const reached = tree.filter((m) => !addressHolds(m, job));
-    if (reached.every((m) => credentialHolds(m, job))) {
+    if (reached.every((m) => credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false))) {
       return `no machine running executor ${executor} is ready: ${reached.map((m) => `${m.id} ${notReady(m)}`).join('; ')}`;
     }
-    const reaching = reached.filter((m) => !credentialHolds(m, job));
+    const reaching = reached.filter((m) => !credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false));
     if (reaching.every((m) => herdrHolds(m, job))) {
       return `no machine running executor ${executor} has a working herdr: ${reaching.map((m) => `${m.id}: ${m.herdrProblem}`).join('; ')}`;
     }
@@ -168,7 +170,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
   if (addressHolds(pinned, job)) return `pinned machine ${pin} ${offNetwork(pinned)}`;
-  if (credentialHolds(pinned, job)) return `pinned machine ${pin} ${notReady(pinned)}`;
+  if (credentialHolds(pinned, job, credentialHeld?.includes(pinned.id) ?? false)) return `pinned machine ${pin} ${notReady(pinned)}`;
   if (herdrHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.herdrProblem}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
@@ -274,19 +276,24 @@ export function problemHold(job: Job, machines: MachineSnapshot[], problems: rea
  * Issue #542: the hold of a job the blast-radius gate keeps from every machine it could otherwise take a new job on,
  * naming them; undefined when one is not gated for it, or it resumes.
  */
-export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[], gate: BlastRadiusInput | undefined, signedOut?: readonly SignedOutTool[]): string | undefined {
+export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[], gate: BlastRadiusInput | undefined, signedOut?: readonly SignedOutTool[], credentialHeld?: readonly string[]): string | undefined {
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && windowsFits(m, job) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !leavingHolds(m, job) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
+    && !homeless(m) && !leavingHolds(m, job) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
     && signedOutFor(m.id, job, signedOut) === undefined);
   return gateHold(job, usable, gate);
 }
 
-function eligible(s: MachineState, job: Job): boolean {
+/** State with whether the credential check holds the machine (`credentialHolds`, issue #1467). */
+interface MachineStateWithCredentialHold extends MachineState {
+  credentialHeld: boolean;
+}
+
+function eligible(s: MachineStateWithCredentialHold, job: Job): boolean {
   const pin = pinOf(job);
   return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
-    && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
+    && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job, s.credentialHeld) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && signedOutFor(s.machine.id, job, s.signedOut) === undefined && (pin === undefined || pin === s.machine.id);
 }
 
@@ -294,32 +301,32 @@ function eligible(s: MachineState, job: Job): boolean {
  * Issue #788: before `job` is placed, each machine holds a priority lane for every high-priority job after it in the
  * order that could run there; none once they are placed.
  */
-function holdFor(states: MachineState[], ahead: Job[], job: Job): void {
+function holdFor(states: MachineStateWithCredentialHold[], ahead: Job[], job: Job): void {
   if (ahead[0] === job) ahead.shift();
   for (const s of states) s.slots.wanted = ahead.filter((h) => eligible(s, h) && roomFor(s, h.spec.executor) > 0).length;
 }
 
-const fitsLane = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
+const fitsLane = (s: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
 
 /**
  * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
  * machine not at its hard limit, for the machine or the job's executor, and not over its cap already —
  * so at most one lane over it.
  */
-function squeezes(s: MachineState, job: Job): boolean {
+function squeezes(s: MachineStateWithCredentialHold, job: Job): boolean {
   const e = s.executors.get(job.spec.executor);
   return eligible(s, job) && e !== undefined && s.band !== 'hard' && e.band !== 'hard'
     && s.occupied + s.assigned <= s.cap;
 }
 
 /** Where a specialty or tend job that fits nowhere may elbow in past the caps (issues #762, #967): an eligible machine with room to. */
-function elbowsIn(s: MachineState, job: Job): boolean {
+function elbowsIn(s: MachineStateWithCredentialHold, job: Job): boolean {
   const e = s.executors.get(job.spec.executor);
   return eligible(s, job) && e !== undefined && roomToElbowIn(s, e.band);
 }
 
 /** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
-function better(a: MachineState, b: MachineState, job: Job, pl?: PriorityLanesInput): MachineState {
+function better(a: MachineStateWithCredentialHold, b: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): MachineStateWithCredentialHold {
   const pa = a.executors.get(job.spec.executor)!.pressure;
   const pb = b.executors.get(job.spec.executor)!.pressure;
   if (pa !== pb) return pb > pa ? b : a;
@@ -337,7 +344,7 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  * them — its executor's when that leaves less room than the machine's, else the machine's — with its
  * real number and how many lanes it counts in use.
  */
-function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): string {
+function waitReason(job: Job, states: MachineStateWithCredentialHold[], pl?: PriorityLanesInput): string {
   const ex = job.spec.executor;
   const able = states.filter((m) => eligible(m, job));
   if (able.length === 0 && isWindowsJob(job)) return windowsWait(job, states);
@@ -382,24 +389,26 @@ function windowsWait(job: Job, states: MachineState[]): string {
  * to the machine holding the best free priority lane first (issue #535). Of the machines it may go to, one where its expected
  * cost fits goes first, and of those Jev's applied pick of its machine (issue #688).
  */
-export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>): { start: StartPlan[]; wait: WaitPlan[] } {
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>, credentialHeld?: readonly string[]): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
   const ahead = pl ? ordered.map((c) => c.job).filter((j) => isHigh(j, pl)) : [];
+  // The same state objects, not copies: placing a job counts its lane on them, and the lane plan reads them after.
+  const checked: MachineStateWithCredentialHold[] = states.map((s) => Object.assign(s, { credentialHeld: credentialHeld?.includes(s.machine.id) ?? false }));
   for (const { job, effectivePriority, note } of ordered) {
     const ex = job.spec.executor;
-    holdFor(states, ahead, job);
-    const fits = states.filter((s) => fitsLane(s, job, pl));
+    holdFor(checked, ahead, job);
+    const fits = checked.filter((s) => fitsLane(s, job, pl));
     // A specialty or tend job that fits nowhere elbows in past the cap (issues #762, #967); else a critical one takes one
     // lane over it (issue #373). The extra lane drains when its job ends.
     const as = elbowsInAs(job);
-    const elbowing = fits.length === 0 && as ? states.filter((s) => elbowsIn(s, job)) : [];
+    const elbowing = fits.length === 0 && as ? checked.filter((s) => elbowsIn(s, job)) : [];
     const elbowed = elbowing.length > 0;
     const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
-    const able = elbowed ? elbowing : squeezed ? states.filter((s) => squeezes(s, job)) : fits;
+    const able = elbowed ? elbowing : squeezed ? checked.filter((s) => squeezes(s, job)) : fits;
     if (able.length === 0) {
-      wait.push({ jobId: job.id, reason: waitReason(job, states, pl) });
+      wait.push({ jobId: job.id, reason: waitReason(job, checked, pl) });
       continue;
     }
     const { options: fit, note: costed } = fitting(able, costs?.[job.id]);

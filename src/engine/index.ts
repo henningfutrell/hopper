@@ -2,14 +2,14 @@
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
 import { settledBy } from '../domain/wait-on.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
 import type { EngineContext, EngineOptions } from './context.ts';
-import { decisionStep } from './decision-step.ts';
+import { credentialHeldOf, decisionStep } from './decision-step.ts';
 import { createPaneAnswers } from './pane-answers.ts';
 import { askFor, createReviewHandlers, type ReviewHandlers } from './reviews.ts';
 import { createQueries, type Queries } from './queries.ts';
@@ -138,8 +138,8 @@ export function createEngine(o: EngineOptions): Engine {
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
-  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine.
-  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes };
+  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine; nor for a machine the credential check holds (issue #1467).
+  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes, credentialHeld: (m: MachineSnapshot) => credentialHeldOf(c, [m]).length > 0 };
   const laneTuning = createLaneTuning(c, laneCalls);
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
 

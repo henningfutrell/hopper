@@ -38,6 +38,8 @@ export interface LaneCallDeps {
   gated(machineId: string): boolean;
   /** Every lane's reliability now (issue #535). */
   reliability(): Promise<readonly LaneReliability[]>;
+  /** Whether the credential check holds the machine (issue #1467). */
+  credentialHeld(m: MachineSnapshot): boolean;
 }
 
 /**
@@ -89,7 +91,7 @@ export function createPlacementPicks(c: EngineContext, d: LaneCallDeps & { expec
     c.store.events.between(['job.claimed'], since).find((e) => e.jobId === jobId)?.machineId;
 
   async function run(job: Job, since: string): Promise<void> {
-    const machines = (await c.machines.list()).filter((m) => m.online && m.executors.includes(job.spec.executor) && !m.workTreeProblem && !m.addressProblem && !m.infraCredentials?.length && !d.gated(m.id));
+    const machines = (await c.machines.list()).filter((m) => m.online && m.executors.includes(job.spec.executor) && !m.workTreeProblem && !m.addressProblem && !d.credentialHeld(m) && !d.gated(m.id));
     if (machines.length < 2 || c.stopping()) return;
     const lanes = c.store.lanes.list();
     const reliability = await d.reliability();

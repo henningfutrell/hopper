@@ -5219,6 +5219,28 @@ Version 1 (`docs/schemas/shrink_guard.changed.v1.json`). An admin changed the sh
 }
 ```
 
+## `credential_check.changed`
+
+Version 1 (`docs/schemas/credential_check.changed.v1.json`). An admin turned strict mode of the credential check on or off (issue #1467): on, a machine whose job user holds infra credentials takes no job until an admin uses it anyway; off, it takes jobs with a warning. `from` and `to` (`strict`), and `by`, who. It applies at the next decision.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "strict": false
+  },
+  "to": {
+    "strict": true
+  },
+  "by": "owner"
+}
+```
+
 ## `pointed_job.created`
 
 Version 1 (`docs/schemas/pointed_job.created.v1.json`). A person made a pointed job through the API (issue #425): `id`, on the issue or pull request `pointer` (`kind`, `number`, `url`) of the GitHub repository `repo`; `source` what made it (`api`), `by` who. It starts `queued`. Never its directive.

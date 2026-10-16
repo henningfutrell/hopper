@@ -20454,7 +20454,8 @@ Tests: `test/client/infra-credentials.test.ts` (the read, the ssh command, a cli
 The case: an attached machine could not reach the hopper and was still offered work; it ran jobs as the host's own login
 user, whose home held cloud and cluster credentials (AWS, kube). A job there could use them, which breaks #652's rule: a job
 holds no owner credentials. Requirement: a machine takes jobs only as a credential-free job user that reaches the hopper;
-until then it is **not ready** (glossary), takes no job, and says why on its Machines row and in Needs you.
+until then it is **not ready** (glossary), takes no job, and says why on its Machines row and in Needs you. Issue #1467
+below makes the credentials a warning by default, and a hold only in strict mode or after an admin's stop.
 
 **Credentials hold the machine.** This reverses "Flag, never hold" above. The read is the same one, wider
 (`src/client/infra-credentials.ts`, **infra credentials**): folders and files under the home — cloud CLI config (`.aws`,
@@ -20469,11 +20470,29 @@ home and environment, which its herdr session and so its jobs inherit; an ssh ta
 read or printed: a variable is tested with `printenv` into a command substitution that is never echoed, a git config only
 for a `helper =` line.
 
-The decider's `credentialHolds` (`src/decider/assign.ts`) holds a machine with any: a job is held with `no machine running
+The decider's `credentialHolds` (`src/decider/assign.ts`) holds a machine with any that the credential check holds (#1467): a job is held with `no machine running
 executor <x> is ready: <m> is not ready: its job user holds credentials a job could use (<names>). Run its jobs as a
 dedicated user that holds none`, or `pinned machine <m> is not ready: …`, never failed there. Its order among the holds:
 after the address hold, before herdr. A job resuming there returns to the pane it holds. The placement picks
 (`src/engine/lane-calls.ts`) leave out such a machine and an off-network one too.
+
+**A warning, not a gate, by default** (issue #1467, 2026-10-16). Holding every machine with credentials stopped all work on a
+local single-user install, where the owner's own login is the only one there. So the credentials are a warning: the machine
+stays ready and takes jobs, and its card says what its job user holds, with the guided fix folded under Reduce risk. The
+decider holds it only when the **credential check** holds it (`credentialHeld`, `src/domain/machine-credentials.ts`): an admin
+stopped it (Stop taking jobs), or **strict mode** is on (an admin's setting, `POST /ui/api/credential-check`, off by default,
+for a shared or hosted hopper) and no admin acknowledged it. The engine gives the decider the ids it holds
+(`DecisionInputs.credentialHeld`), the placement picks ask the same rule, and `GET /api/machines` carries `credentialHeld` per
+machine, so the card's state is the decider's and they cannot disagree. Each machine has one row in
+`machine_credential_acceptances` (issue #1459): an active row is a **credential acceptance** — Use anyway on a held machine, or
+Acknowledge on a warning, which folds it — with the credentials it named; a row with `revoked_at` set is a stop. A credential
+found later that the acknowledgement did not name raises the warning again; the machine keeps taking jobs. The rows from
+#1459 keep their meaning: an accepted one takes jobs, a revoked one is held. The card shows one state: **Taking jobs** with
+the one-line warning, Acknowledge and Stop taking jobs; **Taking jobs** acknowledged, the warning folded; or **Not taking
+jobs** with why (strict mode, or an admin's stop), the fix steps first, and Use anyway. Needs you lists each held machine
+and each warning no admin acknowledged. Tests: `test/decider/infra-credentials.test.ts` (the rule, held and not held),
+`test/ui/machine-infra-credentials.test.ts` (each card state), `test/ui/machine-credential-card.test.ts` (each state rendered,
+no contradicting text), `test/integration/machine-credential-acceptance.test.ts` (default, strict, stop, restart).
 
 **Reach is the address hold.** An ssh target's probe already asks which of the hopper's addresses it reaches (#698); one
 that reaches none has an address problem and takes no new job. A client target reaches the hopper through its door, at the

@@ -481,8 +481,8 @@ export interface UserStore {
   webhooks: WebhookRepository;
   /** The vault (issue #558). */
   vault: VaultRepository;
-  /** The job stream's events and watches (issue #613). */
-  jobStream: JobStreamRepository;
+  /** The job stream; and the machine credential acceptances (issue #1459). */
+  jobStream: JobStreamRepository; credentialAcceptances: import('./machine-credentials.ts').CredentialAcceptanceRepository;
   /** The artifacts jobs make for a person to see, and their shares (issue #624). */
   artifacts: ArtifactRepository;
   /** The infra plans jobs record, and their approvals (issue #870). */
