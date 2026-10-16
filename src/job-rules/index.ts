@@ -70,14 +70,6 @@ export const TASKS_LINE = 'Keep a task list for the job: the tasks that take it 
  */
 export const DECIDE_LINE = '[hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.';
 
-/**
- * The protocol line on the delivery path (issue #1458): where a job's change lands, how a change another repository needs
- * gets there (a required child a job of that repository delivers), what delivered means, and that production waits for a
- * person. A job that knew none of it asked a person to pick a delivery path; the repository's own stages (its landing
- * branch, its test environments) are its rules' to name, so the line names none.
- */
-export const DELIVERY_LINE = '[hopper delivery] Your change lands in the job\'s own repository, through its pull request. A change that another repository needs is not yours to push or to hand to a person: file it as an issue on that repository with sh "$HOPPER_GH" issue create --repo OWNER/NAME --required, with what to change and why, and a job of that repository delivers it. Your issue is not done while that child is open, so follow it. A job with no issue of its own files it with no --required, and names it in its result. Do not ask a person to apply a patch. A change is delivered only when it is merged on its repository\'s landing branch, its checks passed there, and it moved through the next stages the repository names (for example a deploy to a test environment). A pull request, a patch or an artifact is not delivered. Read the branch and the stages in the repository\'s own rules and documents (AGENTS.md, CONTRIBUTING.md, design and deploy documents). A release to production waits for a person\'s approval, and nothing short of that approval releases it: never release to production yourself. Do not ask a person to choose a delivery path: ask only about a real decision, as the decisions line says.';
-
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   // Decide and proceed (issue #1059): before the question line, so a job reads when not to ask first.
@@ -87,8 +79,6 @@ export const PROTOCOL_LINES: readonly string[] = [
   SUGGEST_PROTOCOL,
   // Each review section's (issues #537, #543): how to come back with a research report, a proposal.
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
-  // The delivery path (issue #1458): where a change lands, a required child for another repository, production waits.
-  DELIVERY_LINE,
   // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
   GITHUB_PROXY_LINE,
   // A short outage (issue #752): the client door holds, then says since when; the job works on locally.
