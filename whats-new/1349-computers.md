@@ -1,0 +1,1 @@
+- Sandboxes left over on your other connected computers are now removed by themselves too, as they are on the hopper's own computer.

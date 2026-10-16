@@ -1,7 +1,8 @@
 // The sandbox module (issue #708, design.md "Sandboxes are burned after each step"): the one owner of the life of the
 // sandboxes the hopper starts. A job's step runs in a sandbox of its own, a need box (need-box.ts), that the module burns
 // after the step and keeps in the sandbox runs ledger (issue #1349): no machine, no lane, no box that stays. The check
-// pass's sweep burns any need box that outlives its step, and notes each burn in the ledger. The hopper launches no box
+// pass's sweep burns any need box that outlives its step, beside the hopper and on each client target dialled in, and
+// notes each burn in the ledger. The hopper launches no box
 // that joins as a machine: the burn pass (burn-launched.ts, every 10 s and at start) burns each one an older build
 // launched, and once an hour removes the leftover box builds beside the hopper (leftover-builds.ts, issue #1120). It
 // drives the container runtime beside the hopper, and a client target's own through its client (src/sandbox/runtime.ts).
@@ -18,7 +19,7 @@ import { HOPPER_PROBES } from './probes.ts';
 import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
 import { runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
-import { BOX_LABEL, sweepHomes } from './owned.ts';
+import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
 
 export { BOX_IMAGE } from './box-image.ts';
 export { BOX_LABEL, USER_LABEL } from './owned.ts';
@@ -45,6 +46,9 @@ export const RUNS_IN_VIEW = 50;
 
 /** The run a need step's sandbox is (issue #1349): the job and the step it serves, and the template it is made of. */
 export interface NeedRun { jobId: string; step: string; template: string }
+
+/** One runtime the sweep burns on: the hopper's own (every user's boxes), or one user's client target (theirs only). */
+interface Place { runtime: ContainerRuntime; machine: string; userId?: string; only: Record<string, string> }
 
 export interface SandboxesOptions {
   /** Undefined: no runtime socket is given to the hopper (HOPPER_PODMAN_SOCKET, HOPPER_DOCKER_SOCKET unset). */
@@ -100,12 +104,15 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}) });
 
   /**
-   * The hopper's own runtime, then each client target that holds a recorded box. One that cannot be listed now — a
-   * machine not dialled in — keeps its boxes and their records until it can.
+   * Each client target to look on (issue #1349): every one dialled in now, and each one `also` names. One that cannot
+   * be listed now — a machine not dialled in — keeps its boxes, and what records them, until it can.
    */
+  const clientPlaces = (also: { userId: string; machine: string }[]): { userId: string; machine: string; key: string }[] =>
+    [...new Map([...(o.clients?.allDialledIn() ?? []), ...also].filter((g) => g.machine !== LOCAL).map((g) => [`${g.userId}\0${g.machine}`, g])).entries()]
+      .map(([key, g]) => ({ userId: g.userId, machine: g.machine, key }));
+  /** The hopper's own runtime, then each client target: one dialled in, or one that holds a recorded box. */
   const pass = async (now: Date): Promise<void> => {
-    const remote = new Map(o.repo.list().filter((r) => r.machine !== LOCAL).map((r) => [`${r.userId}\0${r.machine}`, { userId: r.userId, machine: r.machine }]));
-    const groups = [...(o.runtime ? [{ machine: LOCAL, key: LOCAL, userId: undefined }] : []), ...[...remote].map(([key, g]) => ({ ...g, key }))];
+    const groups = [...(o.runtime ? [{ machine: LOCAL, key: LOCAL, userId: undefined }] : []), ...clientPlaces(o.repo.list())];
     for (const g of groups) {
       const runtime = places.runtimeOf(g.userId ?? '', g.machine);
       if (!runtime) continue;
@@ -126,11 +133,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   };
   const burnPass = (): Promise<void> => (running ??= pass(o.clock.now()).finally(() => { running = undefined; }));
   // The need boxes' homes no step holds (issue #1371): one whose remove failed, or one a hopper that stopped left.
-  const sweepStepHomes = async (): Promise<void> => {
-    if (!o.runtime) return;
-    await sweepHomes(o.runtime, { [NEED_LABEL]: o.instanceId }, stepping).catch(() => {});
+  const sweepStepHomes = async (at: Place): Promise<void> => {
+    await sweepHomes(at.runtime, { [NEED_LABEL]: o.instanceId, ...at.only }, stepping).catch(() => {});
     // And the homes of the boxes an older build launched (issue #1349): no box of theirs starts again.
-    await sweepHomes(o.runtime, { [BOX_LABEL]: o.instanceId }, NONE).catch(() => {});
+    await sweepHomes(at.runtime, { [BOX_LABEL]: o.instanceId, ...at.only }, NONE).catch(() => {});
   };
   // The read-only check (issue #716): beside the hopper, else on a client target of the template's user (issue #708).
   const checkPass = o.checks
@@ -146,18 +152,28 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     await runtime.removeVolume(`${box.name}-home`).catch(() => {});
     return removed;
   };
-  const sweepSteps = async (): Promise<void> => {
-    if (!o.runtime) return;
-    const listed = await o.runtime.list({ [NEED_LABEL]: o.instanceId }).catch(() => undefined);
+  /**
+   * Beside the hopper, then each client target (issue #1349): one dialled in, or one an open run names. One not dialled
+   * in now keeps its boxes, and its runs stay open, until it dials in.
+   */
+  const sweepPlaces = (): Place[] => [
+    ...(o.runtime ? [{ runtime: o.runtime, machine: LOCAL, only: {} }] : []),
+    ...clientPlaces(o.runs.open()).flatMap((g) => {
+      const runtime = places.runtimeOf(g.userId, g.machine);
+      return runtime ? [{ runtime, machine: g.machine, userId: g.userId, only: { [USER_LABEL]: g.userId } }] : [];
+    }),
+  ];
+  const sweepSteps = async (at: Place): Promise<void> => {
+    const listed = await at.runtime.list({ [NEED_LABEL]: o.instanceId, ...at.only }).catch(() => undefined);
     if (!listed) return;
     const now = o.clock.now().toISOString();
-    const open = o.runs.open().filter((r) => r.machine === LOCAL);
+    const open = o.runs.open().filter((r) => r.machine === at.machine && (at.userId === undefined || r.userId === at.userId));
     const burned = new Set<string>();
     for (const box of listed) {
       if (stepping.has(box.name)) continue;
-      if (await burn(o.runtime, box)) {
+      if (await burn(at.runtime, box)) {
         burned.add(box.name);
-        o.logger.info(`hopper: sandbox ${box.name} outlived its step: burned`);
+        o.logger.info(`hopper: sandbox ${box.name} outlived its step: burned${at.machine === LOCAL ? '' : ` on ${at.machine}`}`);
       }
     }
     const there = new Set(listed.map((b) => b.name).filter((n) => !burned.has(n)));
@@ -179,7 +195,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     o.runs.destroyed(run.id, o.clock.now().toISOString());
   };
   let checking: Promise<void> | undefined;
-  const check = (): Promise<void> => (checking ??= Promise.all([sweepSteps().then(sweepStepHomes), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
+  const sweep = async (): Promise<void> => {
+    for (const at of sweepPlaces()) await sweepSteps(at).then(() => sweepStepHomes(at));
+  };
+  const check = (): Promise<void> => (checking ??= Promise.all([sweep(), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
     .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
     .finally(() => { checking = undefined; }));
 
