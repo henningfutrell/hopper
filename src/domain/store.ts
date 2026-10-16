@@ -432,8 +432,13 @@ export interface ConnectedAccount {
   grantedBy?: 'device' | 'web';
   /** How the person made the connection (issue #647): connected from Sources, or signed in with GitHub; absent: kept before #647. */
   connectedBy?: 'sources' | 'sign-in';
-  /** When its token was last renewed (issue #647); absent: not renewed since it was connected. */
-  renewedAt?: string;
+  /**
+   * `renewedAt`: when its token was last renewed (issue #647); absent: not renewed since it was connected.
+   * `matchEmail`: the email, lowercase, the account was connected for (issue #1380, the source email match): one of its verified emails
+   * equalled the email its person signed in with, and each renewal checks it again. Absent: not checked (the setting off, a
+   * sign-in that gave no email, a GitHub sign-in, or kept before #1380).
+   */
+  renewedAt?: string; matchEmail?: string;
 }
 
 /** A connected account's row (issue #658): who and when. Its tokens are system secrets in the user's vault (src/connected-accounts/at-rest.ts). */

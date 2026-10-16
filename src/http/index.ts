@@ -57,6 +57,7 @@ import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
 import type { AllowedHosts } from './allowed-hosts.ts';
+import type { SourceEmailMatch } from './source-email-match.ts';
 import type { CallerOf } from './ui/sign-in.ts';
 import type { Sandboxes } from '../sandbox/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
@@ -86,6 +87,7 @@ export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from '
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveries.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
+export { createSourceEmailMatch } from './source-email-match.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';
 
@@ -120,6 +122,8 @@ export interface ServerOptions {
   githubDeliveries: GitHubDeliveries;
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
+  /** The source email match (issue #1380): GET /api/source-email-match, POST /ui/api/source-email-match. */
+  sourceEmailMatch: SourceEmailMatch;
   /** The hopper runs in WSL (issue #712): GET /api/host-link says so, for Settings' Windows hint. */
   wsl: boolean;
   /** The instance's events (every user's log): an event loop stall is raised there (issue #1154). Absent: only logged. */
@@ -262,7 +266,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

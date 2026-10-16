@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createAllowedHosts, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld } from './http/event-loop-held.ts';
+import { createAllowedHosts, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld } from './http/event-loop-held.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -214,7 +214,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
-      installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
+      installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), sourceEmailMatch: () => instance.settings.getSourceEmailMatch(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {
@@ -320,7 +320,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     port: () => port, signIn, signInEnvironment, events: runtimes.events, held: watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }), // issue #1383: where a held loop runs, and the health port
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
   });
 

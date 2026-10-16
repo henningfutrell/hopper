@@ -165,6 +165,7 @@
         "github_rate_limiter.settings_changed",
         "remote_access.changed",
         "allowed_hosts.changed",
+        "source_email_match.changed",
         "question.thread_held",
         "question.thread_approved",
         "question.thread_posted",

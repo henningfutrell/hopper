@@ -3220,6 +3220,22 @@ Version 1 (`docs/schemas/allowed_hosts.changed.v1.json`). The hopper's admin cha
 }
 ```
 
+## `source_email_match.changed`
+
+Version 1 (`docs/schemas/source_email_match.changed.v1.json`). The hopper's admin turned the source email match on or off (issue #1380): whether a GitHub account a person connects from Sources must have, among its verified emails, the email they signed in with. `on`, the new setting; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `on` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "on": false,
+  "by": "admin"
+}
+```
+
 ## `question.thread_held`
 
 Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.

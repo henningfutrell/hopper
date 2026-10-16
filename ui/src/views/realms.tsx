@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Admins } from '@/views/admins';
-import { LocalAccounts, OwnPassword } from '@/views/local-accounts';
+import { LocalAccounts, OwnPassword } from '@/views/local-accounts'; import { SourceEmailMatch } from '@/views/source-email-match';
 import { SessionLengthsPanel } from '@/views/session-lengths';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -122,7 +122,7 @@ export function Realms() {
           ) : list(github)}
         </div>
       </Panel>
-      <Admins view={view} busy={busy} change={change} /><LocalAccounts />
+      <Admins view={view} busy={busy} change={change} /><LocalAccounts /><SourceEmailMatch />
       <Panel title="Other ways to sign in" icon={Users} count={others.length}
         action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
         <div data-section="other" className="space-y-3 text-sm">
