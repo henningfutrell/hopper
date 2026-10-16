@@ -12,9 +12,10 @@ export interface SandboxSettings {
   sandboxRuntime?: 'podman' | 'docker' | 'kubernetes';
   /**
    * With the Kubernetes runtime (issue #1286): the namespace boxes start in (unset: the hopper's own), and the labels of
-   * the hopper's pods, which a box's egress policy lets it reach.
+   * the hopper's pods, which a box's egress policy lets it reach; and the most CPU and memory a box gets (issue #1422,
+   * the chart's `sandbox.limits`).
    */
-  kubernetes?: { namespace?: string; hopperLabels: Record<string, string>; priorityClass?: string };
+  kubernetes?: { namespace?: string; hopperLabels: Record<string, string>; priorityClass?: string; most?: { cpus?: number; memoryMb?: number } };
   /** The network the boxes it starts join; unset: `hopper_default` in the container, `host` on the host. */
   sandboxNetwork?: string;
   /** The sandbox playground's limits (issue #1410). */
@@ -38,6 +39,8 @@ export const SANDBOX_SETTINGS = {
     .regex(new RegExp(`^\\s*${label}(\\s*,\\s*${label})*\\s*$`), 'must be labels key=value, comma-separated')
     .transform((v) => Object.fromEntries(v.split(',').map((t) => t.trim().split('=') as [string, string]))).default({ 'app.kubernetes.io/name': 'hopper' }),
   HOPPER_KUBERNETES_PRIORITY_CLASS: z.string().regex(/^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/, 'must be a PriorityClass name').optional(),
+  HOPPER_KUBERNETES_BOX_CPUS: z.coerce.number().positive('must be a number of CPUs above 0').optional(),
+  HOPPER_KUBERNETES_BOX_MEMORY_MB: z.coerce.number().int('must be a whole number of MiB').positive('must be a number of MiB above 0').optional(),
   HOPPER_SANDBOX_MAX_CONCURRENT: count(PLAYGROUND_LIMITS.maxConcurrent),
   HOPPER_SANDBOX_MAX_PER_USER: count(PLAYGROUND_LIMITS.maxPerUser),
   HOPPER_SANDBOX_DEFAULT_CPUS: size(PLAYGROUND_LIMITS.defaults.cpus),
@@ -56,6 +59,8 @@ export const SANDBOX_SETTING_HELP: Record<keyof typeof SANDBOX_SETTINGS, string>
   HOPPER_KUBERNETES_NAMESPACE: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the namespace sandbox boxes start in. Unset: the hopper\'s own',
   HOPPER_KUBERNETES_HOPPER_LABELS: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the labels of the hopper\'s pods, key=value, comma-separated, which a box\'s egress policy lets it reach on the hopper\'s port',
   HOPPER_KUBERNETES_PRIORITY_CLASS: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the PriorityClass every sandbox pod gets, so a ResourceQuota scoped to it holds the sandbox pods alone (the chart\'s sandbox.quota). Unset: none',
+  HOPPER_KUBERNETES_BOX_CPUS: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the most CPUs a box gets (the chart\'s sandbox.limits.cpus). Unset: what the box asks for (a need box 4)',
+  HOPPER_KUBERNETES_BOX_MEMORY_MB: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the most memory a box gets, in MiB (the chart\'s sandbox.limits.memoryMb). Unset: what the box asks for (a need box 8192)',
   HOPPER_SANDBOX_MAX_CONCURRENT: 'how many sandbox playground sandboxes run at once, all users together (docs/deploy.md "The sandbox playground"); over it a create is refused with 429. 0: none start',
   HOPPER_SANDBOX_MAX_PER_USER: 'how many sandbox playground sandboxes one user runs at once; over it a create is refused with 429. 0: none start',
   HOPPER_SANDBOX_DEFAULT_CPUS: 'the CPUs of a playground sandbox when the create and its template name none',
@@ -68,6 +73,20 @@ export const SANDBOX_SETTING_HELP: Record<keyof typeof SANDBOX_SETTINGS, string>
 
 type Parsed = z.infer<z.ZodObject<typeof SANDBOX_SETTINGS>>;
 
+/** The Kubernetes runtime's part, from its variables: the sandbox check reads the hopper's the same way (issue #1422). */
+export function kubernetesSettings(e: Pick<Parsed, 'HOPPER_KUBERNETES_NAMESPACE' | 'HOPPER_KUBERNETES_HOPPER_LABELS' | 'HOPPER_KUBERNETES_PRIORITY_CLASS' | 'HOPPER_KUBERNETES_BOX_CPUS' | 'HOPPER_KUBERNETES_BOX_MEMORY_MB'>): NonNullable<SandboxSettings['kubernetes']> {
+  const most = {
+    ...(e.HOPPER_KUBERNETES_BOX_CPUS !== undefined ? { cpus: e.HOPPER_KUBERNETES_BOX_CPUS } : {}),
+    ...(e.HOPPER_KUBERNETES_BOX_MEMORY_MB !== undefined ? { memoryMb: e.HOPPER_KUBERNETES_BOX_MEMORY_MB } : {}),
+  };
+  return {
+    ...(e.HOPPER_KUBERNETES_NAMESPACE ? { namespace: e.HOPPER_KUBERNETES_NAMESPACE } : {}),
+    hopperLabels: e.HOPPER_KUBERNETES_HOPPER_LABELS,
+    ...(e.HOPPER_KUBERNETES_PRIORITY_CLASS ? { priorityClass: e.HOPPER_KUBERNETES_PRIORITY_CLASS } : {}),
+    ...(Object.keys(most).length > 0 ? { most } : {}),
+  };
+}
+
 /** The sandbox part of the daemon's config, from its parsed variables. */
 export function sandboxSettings(e: Parsed): SandboxSettings {
   return {
@@ -75,10 +94,7 @@ export function sandboxSettings(e: Parsed): SandboxSettings {
     ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
     ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),
     ...(e.HOPPER_SANDBOX_RUNTIME ? { sandboxRuntime: e.HOPPER_SANDBOX_RUNTIME } : {}),
-    ...(e.HOPPER_SANDBOX_RUNTIME === 'kubernetes' ? { kubernetes: {
-      ...(e.HOPPER_KUBERNETES_NAMESPACE ? { namespace: e.HOPPER_KUBERNETES_NAMESPACE } : {}), hopperLabels: e.HOPPER_KUBERNETES_HOPPER_LABELS,
-      ...(e.HOPPER_KUBERNETES_PRIORITY_CLASS ? { priorityClass: e.HOPPER_KUBERNETES_PRIORITY_CLASS } : {}),
-    } } : {}),
+    ...(e.HOPPER_SANDBOX_RUNTIME === 'kubernetes' ? { kubernetes: kubernetesSettings(e) } : {}),
     playground: {
       maxConcurrent: e.HOPPER_SANDBOX_MAX_CONCURRENT, maxPerUser: e.HOPPER_SANDBOX_MAX_PER_USER,
       defaults: { cpus: e.HOPPER_SANDBOX_DEFAULT_CPUS, memoryMb: e.HOPPER_SANDBOX_DEFAULT_MEMORY_MB, ttlMinutes: e.HOPPER_SANDBOX_DEFAULT_TTL_MINUTES },

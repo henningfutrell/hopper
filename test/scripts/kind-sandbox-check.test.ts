@@ -8,6 +8,7 @@
 //   Scenario: a hopper whose instance id cannot be read fails the check before it stops the hopper
 import { describe, expect, it } from 'vitest';
 import { crashAndRestart, type Kubectl } from '../../scripts/kind-sandbox-check.ts';
+import { boxLimitsOf, burstSize, freeCpu, isolated, probeScript, readProbes, unscheduled } from '../../scripts/kind-sandbox-cases.ts';
 import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 
@@ -94,5 +95,67 @@ describe('scripts/kind-sandbox-check.ts crashAndRestart (issue #1371)', () => {
     expect(failed).toMatch(/cannot read the hopper's instance id/);
     expect(calls.some((c) => c.args.includes('scale'))).toBe(false);
     expect(runtime.boxes.size).toBe(0);
+  });
+});
+
+// Issue #1422: the parts of the sandbox check that read what the cluster says. Each is a pure step, so nothing here
+// needs a cluster.
+//
+// Feature: the sandbox check reads the limits, the room and the reach of the boxes
+//   Scenario: the boxes' limits are the ones the chart set on the hopper; a chart that sets none fails the check
+//   Scenario: the room for boxes is the nodes' CPU less what the pods there ask; a burst is more than that room
+//   Scenario: a pod the scheduler has no room for is queued
+//   Scenario: each probe of a box says whether it reached its target; an answer it cannot read counts as reached
+//   Scenario: the box reached the hopper and nothing else but its node: isolated; another reach fails, and so does no
+//             reach at all
+describe('scripts/kind-sandbox-cases.ts, what the cluster says (issue #1422)', () => {
+  it('reads the boxes\' limits from the env the chart set on the hopper, and fails when the chart set none', () => {
+    expect(boxLimitsOf([{ name: 'HOPPER_KUBERNETES_BOX_CPUS', value: '0.25' }, { name: 'HOPPER_KUBERNETES_BOX_MEMORY_MB', value: '128' }])).toEqual({ cpus: 0.25, memoryMb: 128 });
+    expect(boxLimitsOf([{ name: 'HOPPER_KUBERNETES_BOX_CPUS', value: '0.25' }])).toMatch(/sandbox\.limits\.memoryMb/);
+    expect(boxLimitsOf([])).toMatch(/sandbox\.limits\.cpus/);
+  });
+
+  it('the room is the nodes\' CPU less the requests of the pods that still run; a burst is more boxes than that room', () => {
+    const nodes = [{ status: { allocatable: { cpu: '4' } } }, { status: { allocatable: { cpu: '1500m' } } }];
+    const pods = [
+      { status: { phase: 'Running' }, spec: { containers: [{ resources: { requests: { cpu: '100m' } } }, { resources: { limits: { cpu: '400m' } } }] } },
+      { status: { phase: 'Succeeded' }, spec: { containers: [{ resources: { requests: { cpu: '2' } } }] } },
+      { status: { phase: 'Pending' }, spec: { containers: [{}] } },
+    ];
+    // A container with a limit and no request asks its limit.
+    expect(freeCpu(nodes, pods)).toBeCloseTo(5);
+    expect(burstSize(3, 0.25)).toBe(24);
+    expect(burstSize(10, 0.25)).toBe(46);
+    expect(burstSize(100, 0.25)).toBe(64);
+  });
+
+  it('names the pods the scheduler has no room for yet', () => {
+    expect(unscheduled([
+      { metadata: { name: 'a' }, status: { phase: 'Pending', conditions: [{ type: 'PodScheduled', status: 'False', reason: 'Unschedulable' }] } },
+      { metadata: { name: 'b' }, status: { phase: 'Pending', conditions: [{ type: 'PodScheduled', status: 'True' }] } },
+      { metadata: { name: 'c' }, status: { phase: 'Running' } },
+    ])).toEqual(['a']);
+  });
+
+  it('reads each probe of a box: an answer it cannot read counts as reached, so a probe never passes by mistake', () => {
+    const script = probeScript([{ name: 'hopper', url: 'http://hopper:4790/api/health' }, { name: 'postgres', url: 'http://hopper-postgres:5432/' }]);
+    expect(script).toContain('wget -q -T 5 -O /dev/null \'http://hopper:4790/api/health\'');
+    expect(readProbes([
+      'PROBE hopper: wget: server returned error: HTTP/1.1 421 Misdirected Request',
+      'PROBE postgres: wget: download timed out',
+      'PROBE fga: wget: can\'t connect to remote host (10.96.4.2): Connection refused',
+      'PROBE api: wget: error getting response: Connection reset by peer',
+      'PROBE box: ok',
+    ].join('\r\n'))).toEqual({ hopper: 'reached', postgres: 'blocked', fga: 'blocked', api: 'reached', box: 'reached' });
+  });
+
+  it('a box isolated reached the hopper and nothing else', () => {
+    expect(isolated({ hopper: 'reached', postgres: 'blocked', box: 'blocked' }, 'hopper')).toBeNull();
+    expect(isolated({ hopper: 'reached', postgres: 'reached', box: 'blocked' }, 'hopper')).toMatch(/reached postgres/);
+    // No reach at all proves nothing: the network of the box may be down.
+    expect(isolated({ hopper: 'blocked', postgres: 'blocked' }, 'hopper')).toMatch(/did not reach the hopper/);
+    expect(isolated({ postgres: 'blocked' }, 'hopper')).toMatch(/did not reach the hopper/);
+    // Its node, which Kubernetes always lets a pod reach, is a known reach: said, not a failure.
+    expect(isolated({ hopper: 'reached', 'its node': 'reached', postgres: 'blocked' }, 'hopper', ['its node'])).toBeNull();
   });
 });

@@ -2,8 +2,9 @@
 // brings up the hopper, and no pod anywhere in the cluster has a Podman or Docker socket, or runs Podman, Docker or
 // compose. Then `helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the
 // hopper's pod is deleted, and the new one runs on the master key of the same fingerprint: the key the chart made and
-// keeps (issue #1406). Then the machines come up as pods — by an upgrade of the same release, sandbox boxes on, one lane
-// pod — and the check runs again: still no container runtime. Needs
+// keeps (issue #1406). Then `kubectl rollout restart` of the hopper: it comes back healthy on that key (issue #1422). Then
+// the machines come up as pods — by an upgrade of the same release, sandbox boxes on with little CPU and memory each, one
+// lane pod — and the check runs again: still no container runtime. Needs
 // `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
 //
 //   node scripts/kind-check.ts [--cluster NAME] [--tag TAG] [--keep] [--set key=value ...]
@@ -61,7 +62,7 @@ function check(context: string, tag: string | undefined, sets: string[]): string
   const values = [...(tag ? [`image.tag=${tag}`] : []), ...sets];
   if (install(context, ['--create-namespace'], values) !== 0) return 'helm install did not bring up the release';
 
-  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? machines(context);
+  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? rolloutRestart(context) ?? machines(context);
 }
 
 /** `helm install` of the release, waiting for it, with `values`. Answers its exit status. */
@@ -152,6 +153,22 @@ function keyKept(context: string): string | null {
   return null;
 }
 
+/** A default install comes back healthy after `kubectl rollout restart`, on the same master key (issues #1406, #1422). */
+function rolloutRestart(context: string): string | null {
+  const kubectl = (...args: string[]): number | null => sh('kubectl', ['--context', context, '--namespace', NAMESPACE, ...args]).status;
+  if (kubectl('rollout', 'restart', 'deployment/hopper') !== 0) return 'kubectl could not restart the hopper\'s deployment';
+  if (kubectl('rollout', 'status', 'deployment/hopper', '--timeout=5m') !== 0) return 'the hopper did not come back after rollout restart';
+  const health = healthy(context);
+  if (health) return `after rollout restart, ${health}`;
+  const same = sameKey(context, 'after rollout restart the hopper');
+  if (same) return same;
+  console.log(`after rollout restart the hopper is healthy on the same master key (fingerprint ${fingerprint})`);
+  return null;
+}
+
+/** What each box gets on kind (the chart's `sandbox.limits`): little, as a kind node on a CI runner has little room. */
+const BOX_LIMITS = ['sandbox.limits.cpus=0.25', 'sandbox.limits.memoryMb=128'];
+
 /**
  * The machines as pods: sandbox boxes on (the hopper starts them through the Kubernetes API), and one lane pod. The lane
  * pod joins only once a person signed in, so its upgrade does not wait for it: its spec is what the check reads.
@@ -161,7 +178,7 @@ function keyKept(context: string): string | null {
 function machines(context: string): string | null {
   const upgrade = (...args: string[]): number | null => sh('helm', ['upgrade', 'hopper', CHART, '--kube-context', context,
     '--namespace', NAMESPACE, '--reuse-values', ...args]).status;
-  if (upgrade('--wait', '--wait-for-jobs', '--timeout', '15m', '--set', 'sandbox.enabled=true') !== 0) return 'helm upgrade with sandbox.enabled=true did not succeed';
+  if (upgrade('--wait', '--wait-for-jobs', '--timeout', '15m', '--set', 'sandbox.enabled=true', ...BOX_LIMITS.flatMap((v) => ['--set', v])) !== 0) return 'helm upgrade with sandbox.enabled=true did not succeed';
   const health = healthy(context);
   if (health) return `with sandbox boxes on, ${health}`;
   const same = sameKey(context, 'with sandbox boxes on, the hopper');

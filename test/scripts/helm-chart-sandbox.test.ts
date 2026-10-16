@@ -38,6 +38,14 @@ describe('the Helm chart\'s sandbox boxes', () => {
     }
   });
 
+  it('gives each box no more CPU and memory than sandbox.limits says, and sets none unless asked (issue #1422)', () => {
+    expect(env(daemon, 'HOPPER_KUBERNETES_BOX_CPUS')).toBeUndefined();
+    expect(env(daemon, 'HOPPER_KUBERNETES_BOX_MEMORY_MB')).toBeUndefined();
+    const given = container(find(render('sandbox.enabled=true', 'sandbox.limits.cpus=0.25', 'sandbox.limits.memoryMb=128'), 'Deployment', 'hopper'), 'hopper');
+    expect(env(given, 'HOPPER_KUBERNETES_BOX_CPUS')?.value).toBe('0.25');
+    expect(env(given, 'HOPPER_KUBERNETES_BOX_MEMORY_MB')?.value).toBe('128');
+  });
+
   it('runs the hopper as a service account of its own, with its token: the API client reads it', () => {
     expect(pod(hopper).serviceAccountName).toBe('hopper');
     expect(find(rs, 'ServiceAccount', 'hopper')).toBeDefined();
