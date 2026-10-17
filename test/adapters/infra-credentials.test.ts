@@ -2,7 +2,7 @@
 // its job user's context holds, as its last read found them — this machine at every list, an ssh target in its probe, a client
 // target in its client's `/release` answer. Only the names. A machine holding any takes jobs with a warning, or, held by the
 // credential check (issue #1467), takes no new job.
-import { chmodSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +26,14 @@ const flush = () => new Promise((r) => setImmediate(r));
 
 // The test HOME is a throwaway (test/support/isolate.ts): the folders are made there and removed after each test.
 const made: string[] = [];
-const holds = (...names: string[]) => { for (const n of names) { mkdirSync(join(homedir(), n), { recursive: true }); made.push(join(homedir(), n)); } };
+// A .terraform.d with only terraform's checkpoint files is no credential (issue #1502): this one holds its CLI credentials.
+const holds = (...names: string[]) => {
+  for (const n of names) {
+    mkdirSync(join(homedir(), n), { recursive: true });
+    made.push(join(homedir(), n));
+    if (n === '.terraform.d') writeFileSync(join(homedir(), n, 'credentials.tfrc.json'), '');
+  }
+};
 let client: TestClient | undefined;
 afterEach(async () => {
   for (const p of made.splice(0)) rmSync(p, { recursive: true, force: true });
