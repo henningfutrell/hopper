@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": [
+            "relaxed",
+            "standard",
+            "strict",
+            "locked"
+          ]
+        },
+        "radius": {
+          "type": "object",
+          "properties": {
+            "low": {
+              "type": "string",
+              "enum": [
+                "relaxed",
+                "standard",
+                "strict",
+                "locked"
+              ]
+            },
+            "medium": {
+              "type": "string",
+              "enum": [
+                "relaxed",
+                "standard",
+                "strict",
+                "locked"
+              ]
+            },
+            "high": {
+              "type": "string",
+              "enum": [
+                "relaxed",
+                "standard",
+                "strict",
+                "locked"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "templates": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "relaxed",
+              "standard",
+              "strict",
+              "locked"
+            ]
+          }
+        }
+      },
+      "required": [
+        "default",
+        "radius",
+        "templates"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": [
+            "relaxed",
+            "standard",
+            "strict",
+            "locked"
+          ]
+        },
+        "radius": {
+          "type": "object",
+          "properties": {
+            "low": {
+              "type": "string",
+              "enum": [
+                "relaxed",
+                "standard",
+                "strict",
+                "locked"
+              ]
+            },
+            "medium": {
+              "type": "string",
+              "enum": [
+                "relaxed",
+                "standard",
+                "strict",
+                "locked"
+              ]
+            },
+            "high": {
+              "type": "string",
+              "enum": [
+                "relaxed",
+                "standard",
+                "strict",
+                "locked"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "templates": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "relaxed",
+              "standard",
+              "strict",
+              "locked"
+            ]
+          }
+        }
+      },
+      "required": [
+        "default",
+        "radius",
+        "templates"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

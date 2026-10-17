@@ -1,0 +1,1 @@
+- In Settings → Vault you can now say which sandbox runs always need a person: for all templates, for one blast radius level or for one template.

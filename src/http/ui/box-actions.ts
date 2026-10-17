@@ -42,6 +42,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/infra-plans/settings', kind: 'approve or merge work' },
   // Issue #991: the toggles approve templates and sandbox runs with no person.
   { route: '/ui/api/sandbox-approvals', kind: 'approve or merge work' },
+  { route: '/ui/api/sandbox-strictness', kind: 'approve or merge work' },
   { route: '/ui/api/update', kind: 'update the hopper or a client' },
   { route: '/ui/api/plugin-store', kind: 'update the hopper or a client' },
   { route: '/ui/api/questions/:id/answer', kind: 'change work on a machine' },

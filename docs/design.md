@@ -16942,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 7, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 8, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17158,11 +17158,45 @@ template's approval stays: a template is not a job's. Persisted state: `edit` is
 more reason id, which the build before verifies (its MAC covers every field but `mac`); `editSeen` is one more field in the
 job's body, which it ignores, so it may lower the same edit once more.
 
+**Sandbox strictness: brake 2** (part 8, `src/domain/sandbox-strictness.ts`). The issue: "Brake 2, sandbox strictness,
+per template and per blast-radius level". An admin sets which sandbox runs gate 2 may approve with no person, in Settings →
+Vault (`GET /api/sandbox-strictness`, `POST /ui/api/sandbox-strictness`, least role admin, a box action of kind `approve or
+merge work`; `sandbox.strictness_changed` with `from`, `to` and who):
+
+| strictness | a person approves each run of |
+|---|---|
+| `relaxed` | nothing more: the toggles and the auto-approve policy decide (issues #991, #1001) |
+| `standard` (the default) | the same as `relaxed` for now |
+| `strict` | a template of medium or high blast radius, or one with no rating (fail closed) |
+| `locked` | every template |
+
+It is set by default, per blast radius level (`radius`) and per template (`templates`, by name). The most specific wins:
+the template, else its radius level, else the default (`sandboxBrakeOf`). Where it asks a person (`personBrake`), it acts
+as part 7 does below `approved`, for that template only:
+
+- a **sandbox request** waits for a person: skip sandbox approval, the auto-approve policy, a remembered write approval and a
+  person's approval of the template do not approve it (`src/sandbox/requests.ts`);
+- a **box step** runs only from a request a person approved (`runnable`, which also holds part 7's rule);
+- a **need step** of that template is refused (403): `sandbox strictness locked for the template dig: a person approves each
+  run of the template dig, and a need step has no approval of its own. Ask for a sandbox a person approves: …`;
+- the **standing read grant** grants nothing on a box of that template, one it granted before too.
+
+It is read at each ask and each step, so a change applies at once, with no restart. **Tightened, it re-checks**: a run
+that a toggle or a policy approved before no longer lets a box step run, and the standing read grant it gave no longer
+counts; a run a person approved still counts. Loosened, those runs count again. It only takes approvals away: no strictness
+approves a run that the toggles and policies would not. A template's own approval (issues #716, #1001) is not a run, and
+the brake does not change it.
+
+Why `relaxed` and `standard` are the same now: in the issue, `standard` asks Jev's `sandbox-request` point for medium and
+high, which does not exist yet; with Jev absent, the issue's fail-closed table says gate 2 is "policy plus a person", which
+is what the toggles and policies give. When that point is built, `standard` asks it, and `relaxed` keeps the toggles alone.
+Persisted state: one more key in the user's settings, `sandboxStrictness`; the build before does not read it.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
 `intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies, its brake
-and a held request that times out as a deny), a tightened brake that re-checks running jobs, and the Intake and API views
-of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies, and a
+held request that times out as a deny), a tightened intake strictness that re-checks running jobs, and the Intake and API
+views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

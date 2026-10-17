@@ -4,6 +4,7 @@
 // job's requests are kept from before it starts — the sandboxes its prompt names are asked for then — until it ends.
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
+import { DEFAULT_SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import type { Job } from '../domain/types.ts';
@@ -60,6 +61,7 @@ export function userSandboxRequests(o: {
     template: (name) => o.templates().find((t) => t.name === name),
     live: (id) => LIVE.includes(store.jobs.get(id)?.status ?? ''),
     autoApprovable: (id) => { const j = store.jobs.get(id); return j !== undefined && store.jobs.autoApprovable(j); }, // issue #655 part 7
+    strictness: () => store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, // issue #655 part 8, brake 2
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     jobUrl: (id) => store.jobs.get(id)?.source?.url,
     // Issue #1001: a person's remembered write approvals, and the read policy for the reads beside them.
