@@ -620,10 +620,16 @@ and nothing new listens. Anyone who can run `wsl.exe` as that Windows user could
   from Windows" has the PowerShell lines). `hopper.cmd` works in both shells with no execution policy; `hopper.ps1`
   gives the CLI a terminal when PowerShell has one.
 - **The container:** found by its compose labels (`com.docker.compose.project`, `com.docker.compose.service=hopper`),
-  never by its name, which changes with the compose project.
+  never by its name, which changes with the compose project. `wsl.exe -e` runs no shell, so it reads no shell profile:
+  in a WSL terminal a profile can set `XDG_RUNTIME_DIR` to `/run/user/<uid>`, the runtime dir of the systemd user
+  session (`podman-restart.service` uses it too), while `wsl.exe -e` gives podman another one (WSLg sets
+  `/mnt/wslg/runtime-dir`). There podman sees no container run (issue #1512). So the wrapper runs `podman ps` as
+  `wsl.exe -e` starts it first, then as `env XDG_RUNTIME_DIR=/run/user/<uid> podman`, and runs the CLI with the one
+  that saw the container.
 - **`HOPPER_WSL_DISTRO`:** the WSL distro the hopper runs in; unset, WSL's default distro.
 - **`HOPPER_COMPOSE_PROJECT`:** the compose project; unset, `hopper`, the `name:` in `compose.yaml`.
-- **No hopper running:** the wrapper says so, and exits 1.
+- **No hopper running:** the wrapper says so, with what podman said (`hopper.ps1`), and exits 1. `hopper doctor`
+  checks more.
 
 ### Keep it running on Windows
 
@@ -684,7 +690,9 @@ so put both in that folder. It runs on Windows, so it needs no interop from the 
 3. **The keep-alive shortcut.** `hopper-wsl.lnk` in this Windows user's Startup folder (`shell:startup`): the one
    `hopper autostart on` makes, or the one made by hand ("Keep a hopper in WSL running" above). The fix names both.
 4. **In the distro, through `wsl.exe -e`:** `systemd=true` under `[boot]` in `/etc/wsl.conf`; linger on for the distro
-   user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`).
+   user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`); a hopper container of
+   the compose project runs, found as `hopper <command>` finds it ("The hopper CLI from Windows" above), with what
+   podman said when it finds none.
 
 Each check prints `ok`, `warn` and the hint, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
 (`ui/src/model/windows-link.ts`), by the mode it read. It exits 1 when a check fails. The distro is the one
