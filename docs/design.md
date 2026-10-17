@@ -4001,7 +4001,7 @@ A **container target** is an attached machine that runs commands only. Since iss
 box of the target's `image` that the sandbox module starts and burns ("The sandbox module", "Need
 steps"). Nothing of the hopper is installed in it, and it runs no sshd, no herdr and no agent. Before
 part C it was plugin `docker`, a running container reached with `docker exec` through a docker socket
-proxy; tenant migration 80 turned each such instance into a `container` instance of the same name.
+proxy; tenant migration 81 turned each such instance into a `container` instance of the same name.
 
 ```yaml
 executors:

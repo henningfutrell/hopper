@@ -1,4 +1,4 @@
-// Tenant migration 80 (issue #865 part C): a container target runs each command in a one-shot sandbox box of its image,
+// Tenant migration 81 (issue #865 part C): a container target runs each command in a one-shot sandbox box of its image,
 // through the sandbox module, not in a running container over docker exec. Every `docker` machine instance becomes a
 // `container` instance of the same name — its lanes, executors and other options kept, its `docker` option gone, so it
 // runs the default image —; no machine is dropped. The `dockerBin` option of every `command` executor and `claude-plan`

@@ -131,7 +131,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 80: The topology sources (issue #1781): each source's last good snapshot of the infrastructure topology and its last
   // read. A table only: the build before runs on it, and never reads it.
   TOPOLOGY_TABLE,
-  // 80: A container target on the sandbox module (issue #865 part C): each `docker` machine becomes a `container` machine of
+  // 81: A container target on the sandbox module (issue #865 part C): each `docker` machine becomes a `container` machine of
   // the same name, and `dockerBin` leaves the command executors and claude-plan sources. Config rows only: the build before
   // lists no such machine, and its jobs wait.
   (db) => { containerTargets(db); },
