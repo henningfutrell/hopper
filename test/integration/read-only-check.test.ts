@@ -242,10 +242,11 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(t.check).toMatchObject({ state: 'failed' });
     expect(t.check!.problem).toBeUndefined();
     // Issue #1468: a read the vault mints nothing for (an aws-account) is refused when it is asked for, so never reaches the check.
-    const why = 'not run: the check box gets no credential for read on cluster other: no minting credential mints for cluster other: a person adds one on Settings → Vault';
+    // Issue #1766: a cluster with no minting credential is looked for in the AWS accounts; this one's STS is a double, so no EKS is asked.
+    const why = /^not run: the check box gets no credential for read on cluster other: no minting credential mints for cluster other, and the vault found it in none of the accounts it mints for \(123456789012: \w+ names an STS endpoint and no EksEndpoint\)$/;
     const other = t.check!.probes.filter((p) => p.asset === 'other');
     expect(other.length).toBeGreaterThan(0);
-    for (const p of other) expect(p).toMatchObject({ outcome: 'not-run', passed: false, output: why });
+    for (const p of other) expect(p).toMatchObject({ outcome: 'not-run', passed: false, output: expect.stringMatching(why) });
     // The probes of cluster lab ran in the check box, with the token minted for it.
     const lab = t.check!.probes.filter((p) => p.asset === 'lab');
     expect(lab.length).toBeGreaterThan(0);
