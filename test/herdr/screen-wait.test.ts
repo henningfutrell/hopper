@@ -49,6 +49,14 @@ describe('the wait marker', () => {
     expect(turn.wait).toEqual({ for: 'a review of the pull request' });
   });
 
+  it('a check: line names when the hopper checks next, or a time to wake at (issue #1694)', () => {
+    const turn = readTurn(screen(ECHO, ['● Waiting on the deploy window.', '  HOPPER_WAITING', '  for: the deploy window', '  on: outside: gated: the deploy window', '  check: after 2h'], END), FOOTER_ANCHOR);
+    expect(turn.wait).toEqual({ for: 'the deploy window', on: 'outside: gated: the deploy window', check: 'after 2h' });
+    expect(outcomeOf('Waiting.\nHOPPER_WAITING\nfor: the checks\non: pr 8 checks\ncheck: in 10m', 'm', 'c')).toEqual({ kind: 'wait', wait: { for: 'the checks', on: 'pr 8 checks', check: 'in 10m' } });
+    expect(WAIT_LINE).toContain('check: in <time>');
+    expect(WAIT_LINE).toContain('check: after <time>');
+  });
+
   it('a wait that names nothing it waits for is no wait: the turn is a status note', () => {
     const turn = readTurn(screen(ECHO, ['● Blocked.', '  HOPPER_WAITING'], END), FOOTER_ANCHOR);
     expect(turn.lastMarker).toBeNull();
