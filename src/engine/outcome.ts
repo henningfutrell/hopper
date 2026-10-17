@@ -64,8 +64,10 @@ function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId
   const asked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(w.on ? { on: maskGitHubTokens(w.on) } : {}) };
   // What it waits on (issue #1245), typed: never none.
   const masked = { for: asked.for, ...(asked.until ? { until: asked.until } : {}), on: waitOnOf(asked), ...(namesOwnCommand(w) ? { ownCommand: true as const } : {}) };
+  // Its `check:` line (issue #1694): kept with the wait for its wait check; not on `job.waiting`.
+  const checkLine = w.check ? maskGitHubTokens(w.check) : undefined;
   c.store.jobs.update(job.id, {
-    status: 'waiting_on', wait: { ...masked, since: at }, laneId: undefined, pendingAnswer: undefined,
+    status: 'waiting_on', wait: { ...masked, since: at, ...(checkLine ? { checkLine } : {}) }, laneId: undefined, pendingAnswer: undefined,
     resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,
   });
   c.store.events.append({ type: 'job.waiting', jobId: job.id, laneId, data: masked });

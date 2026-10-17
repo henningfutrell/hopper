@@ -25640,6 +25640,41 @@ stalled running jobs.
 **Persisted state.** `wait.check` is an optional field in the job's JSON: the build before ignores it. Tenant migration 76
 adds a table only.
 
+### Part 2: the check a job names, a time to wake at, a pull request's checks (2026-10-17)
+
+- **The check line.** After `HOPPER_WAITING` a job may write one `check:` line (the wait rule, `WAIT_LINE`, says so). The
+  executors read it (`waitFields`), and the hopper keeps it, masked, with the wait (`wait.checkLine`); `job.waiting` does not
+  carry it. `checkAskOf` reads it:
+  - `in <time>` or `every <time>` (`20m`, `2 hours`): the first check comes then, and the time between checks starts at it
+    (kept to 1..30 minutes), then doubles as before.
+  - `after <time>` or `at <ISO time>`: a time to wake the job at, kept to the wait's start..a week after. A wait the hopper
+    cannot test (condition `none`) gets the condition **`time_passed`**: it is checked at that time, and ended then. A wait
+    with a condition keeps it, and the check carries the time as `wakeAt`: the wait ends at it if the condition is not met
+    before (`the time you named passed (…); <the last result>`). The backoff never moves a check past the time, and the
+    deadline is at least an hour after it.
+  - Anything else is no check line: the wait gets its check as in part 1.
+- **A pull request's checks** (`pr_checks_ended`). A wait on `pr <N> checks` is tested on its checks, not only on its end.
+  The job's source reads the pull request by its number (`JobSource.waitedChecks`; GitHub: `waitedChecks`,
+  `src/sources/github/watched.ts`): its state, its checks (the rollup) and its last push. `checksOutcome` says: passed or
+  failed, met; running or not readable, not met; merged or closed, met; no pull request of that number, met (the job names
+  the right one); no checks two minutes after its last push (`NO_CHECKS_MS`, as yolo mode waits), met.
+- **The job card** names the new conditions and the time to wake at.
+
+**Decisions:**
+- **One `check:` line, not a new kind of wait.** What a wait is on (`on:`) stays as it is; the check line only says when.
+- **A time beside a condition does not replace it.** The hopper still tests the condition at each check; the time is a
+  latest wake. A wait the hopper cannot test waits for the time alone.
+- **The line is not on `job.waiting`.** It is kept with the wait in the job; the event and its schema stay as they are.
+- **A review is still tested as the pull request's end.** No read of a review decision is added here.
+
+**Not built (later parts).** A model-based condition (only where no deterministic kind fits, with its reason); a test of
+a pull request's review; the last output of an own command in what the job is told; stalled running jobs; the tailnet
+observation in the issue.
+
+**Persisted state.** `wait.checkLine` and `wait.check.wakeAt` are optional fields in the job's JSON, and `pr_checks_ended`
+and `time_passed` are new condition kinds in it. A build before this one still runs on them: its sweeper logs a check of a kind it does not
+know as failed at each pass and leaves the wait as it is, and End the wait still ends it.
+
 **Verification:** `test/domain/wait-checks.test.ts` (each condition, the backoff, the deadline, the own command outcome),
 `test/engine/wait-checks.test.ts` (the real database, two hoppers: a check kept and ended by a restarted hopper; two hoppers
 and two passes at once read and end a wait once; a hopper stopped mid-check is taken over once its lease ends, and its late

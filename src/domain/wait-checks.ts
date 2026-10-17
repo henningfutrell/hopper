@@ -2,7 +2,10 @@
 // Kept with the wait (`JobWait.check`), so a hopper after a restart, or another hopper, goes on from it. The events that
 // settle a wait stay the fast path (wait-on.ts, watched-items.ts); the check is the backstop when one is missed. A sweeper
 // (engine/wait-checks.ts) takes each check due under a lease, tests its condition, and ends the wait when it is met; else it
-// tries again later, the time between doubling. Past its deadline the wait is overdue once, and a person is told. Pure.
+// tries again later, the time between doubling. Past its deadline the wait is overdue once, and a person is told. Part 2:
+// the job names its next check-in, or a time to wake it at, on a `check:` line after HOPPER_WAITING (`checkAskOf`), and a
+// wait on a pull request's checks is tested on its checks (`checksOutcome`). Pure.
+import type { ChecksState } from './pull-requests.ts';
 import type { Job, JobWait } from './types.ts';
 import { waitOnLabel } from './wait-on.ts';
 import { watchedOf, watchKey, type WatchedRef } from './watched-items.ts';
@@ -13,6 +16,9 @@ export type WaitCondition =
   | { kind: 'job_ended'; jobId: string }
   | { kind: 'question_settled'; questionId: string }
   | { kind: 'command_exited' }
+  // Part 2: the checks of a pull request ended (passed or failed), or it ended; the time a job named passed.
+  | { kind: 'pr_checks_ended'; repo: string; number: number }
+  | { kind: 'time_passed'; at: string }
   | { kind: 'none' };
 
 /** A job's wait check: its condition, its next check, the time between checks, its deadline, and what the last check found. */
@@ -29,7 +35,12 @@ export interface WaitCheck {
   overdueAt?: string;
   /** The hopper woke the job for this condition at its wait before: met again, it is no wake but overdue. */
   repeat?: true;
+  /** The time the job named on its `check:` line (part 2): at it, the wait ends, whatever its condition says. */
+  wakeAt?: string;
 }
+
+/** What a job named on its `check:` line: its next check-in (`in 20m`, `every 5m`), or a time to wake it at (`after 2h`, `at <ISO time>`). */
+export type CheckAsk = { inMs: number } | { at: string };
 
 /** What a check found: met, with what the job is told; or not met, with why. */
 export type CheckOutcome = { met: true; note: string; told?: string } | { met: false; result: string };
@@ -42,17 +53,54 @@ export const DEADLINE_MS = 24 * 3600_000;
 export const COMMAND_DEADLINE_MS = 4 * 3600_000;
 export const OVERDUE_EVERY_MS = 3600_000;
 
+/** The latest time a job may name to be woken at, after its wait began. */
+export const MAX_WAKE_MS = 7 * 24 * 3600_000;
+
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-/** What the hopper can test of `job`'s wait. */
+const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3600_000, d: 24 * 3600_000 };
+const DURATION = /^(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?)$/i;
+
+function durationMs(text: string): number | undefined {
+  const m = DURATION.exec(text.trim());
+  const ms = m ? Number(m[1]) * UNITS[m[2]!.charAt(0).toLowerCase()]! : NaN;
+  return ms > 0 ? ms : undefined;
+}
+
+/** A `check:` line, for a wait that began at `sinceMs`; undefined when it reads as none. A check-in is kept to a minute..30 minutes, a time to wake at to the wait..a week after. */
+export function checkAskOf(line: string, sinceMs: number): CheckAsk | undefined {
+  const m = /^(in|every|after|at)\s+(.+)$/i.exec(line.trim());
+  if (!m) return undefined;
+  const word = m[1]!.toLowerCase(), rest = m[2]!;
+  const clampAt = (ms: number): CheckAsk => ({ at: iso(Math.min(Math.max(ms, sinceMs), sinceMs + MAX_WAKE_MS)) });
+  if (word === 'at') {
+    const t = /^\d{4}-\d{2}-\d{2}T/.test(rest) ? Date.parse(rest) : NaN;
+    return Number.isNaN(t) ? undefined : clampAt(t);
+  }
+  const ms = durationMs(rest);
+  if (ms === undefined) return undefined;
+  return word === 'after' ? clampAt(sinceMs + ms) : { inMs: Math.min(Math.max(ms, FIRST_CHECK_MS), MAX_EVERY_MS) };
+}
+
+/** What the job named on its wait's `check:` line, if anything. */
+const askOf = (w: Pick<JobWait, 'checkLine' | 'since'> | undefined): CheckAsk | undefined => (w?.checkLine ? checkAskOf(w.checkLine, Date.parse(w.since)) : undefined);
+
+/** What the hopper can test of `job`'s wait. A wait it cannot test, with a time the job named: that time. */
 export function conditionOf(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): WaitCondition {
+  const c = baseCondition(job);
+  const ask = askOf(job.wait);
+  return c.kind === 'none' && ask && 'at' in ask ? { kind: 'time_passed', at: ask.at } : c;
+}
+
+function baseCondition(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): WaitCondition {
   const on = job.wait?.on;
   if (job.wait?.ownCommand || on?.kind === 'own_command') return { kind: 'command_exited' };
   if (on?.kind === 'job') return { kind: 'job_ended', jobId: on.jobId };
   if (on?.kind === 'question') return { kind: 'question_settled', questionId: on.questionId };
   if (on?.kind === 'pull_request') {
     const repo = on.repo ?? job.source?.repo;
-    return repo ? { kind: 'items_ended', refs: [{ kind: 'issue', repo, number: on.number }] } : { kind: 'none' };
+    if (!repo) return { kind: 'none' };
+    return on.about === 'checks' ? { kind: 'pr_checks_ended', repo, number: on.number } : { kind: 'items_ended', refs: [{ kind: 'issue', repo, number: on.number }] };
   }
   const refs = watchedOf(job);
   return refs.length > 0 ? { kind: 'items_ended', refs } : { kind: 'none' };
@@ -64,6 +112,8 @@ export function conditionKey(c: WaitCondition): string {
     case 'items_ended': return `items_ended:${c.refs.map(watchKey).sort().join(' ')}`;
     case 'job_ended': return `job_ended:${c.jobId}`;
     case 'question_settled': return `question_settled:${c.questionId}`;
+    case 'pr_checks_ended': return `pr_checks_ended:${c.repo.toLowerCase()}#${c.number}`;
+    case 'time_passed': return `time_passed:${c.at}`;
     default: return c.kind;
   }
 }
@@ -71,15 +121,26 @@ export function conditionKey(c: WaitCondition): string {
 /** An item as a person reads it. */
 export const refLabel = (r: WatchedRef): string => (r.kind === 'issue' ? `${r.repo}#${r.number}` : `${r.repo} run ${r.runId}`);
 
-/** The check of a new wait: a minute after it began; a wait flagged stuck before (issue #1037) at once. `wokenFor`: the condition the hopper last woke the job for. */
+/**
+ * The check of a new wait: a minute after it began, or at the check-in the job named; a wait flagged stuck before (issue
+ * #1037) at once. A time the job named to be woken at: its condition's time, or `wakeAt` beside its condition; never checked
+ * later than it, and its deadline an hour past it at least. `wokenFor`: the condition the hopper last woke the job for.
+ */
 export function newCheck(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, nowMs: number, wokenFor?: string): WaitCheck {
   const w = job.wait!;
   const condition = conditionOf(job);
+  const ask = askOf(w);
   const since = Date.parse(w.since);
-  const next = w.stuckAt ? nowMs : since + FIRST_CHECK_MS;
-  const deadline = since + (condition.kind === 'command_exited' ? COMMAND_DEADLINE_MS : DEADLINE_MS);
+  const everyMs = ask && 'inMs' in ask ? ask.inMs : FIRST_CHECK_MS;
+  const wake = ask && 'at' in ask ? Date.parse(ask.at) : undefined;
+  // A time the hopper only waits for is checked at that time, not before.
+  const next = w.stuckAt ? nowMs : condition.kind === 'time_passed' ? wake! : Math.min(since + everyMs, wake ?? Infinity);
+  const deadline = Math.max(since + (condition.kind === 'command_exited' ? COMMAND_DEADLINE_MS : DEADLINE_MS), (wake ?? 0) + OVERDUE_EVERY_MS);
   const repeat = condition.kind === 'items_ended' && wokenFor === conditionKey(condition);
-  return { condition, nextCheckAt: iso(next), everyMs: FIRST_CHECK_MS, attempts: 0, deadline: iso(deadline), ...(repeat ? { repeat: true as const } : {}) };
+  return {
+    condition, nextCheckAt: iso(next), everyMs, attempts: 0, deadline: iso(deadline), ...(repeat ? { repeat: true as const } : {}),
+    ...(wake !== undefined && condition.kind !== 'time_passed' ? { wakeAt: iso(wake) } : {}),
+  };
 }
 
 /** The check after one not met at `nowMs`: tried again later, the time between doubling. `overdue`: it passed its deadline now. */
@@ -89,8 +150,10 @@ export function afterCheck(check: WaitCheck, result: string, nowMs: number, over
   const cap = check.condition.kind === 'command_exited' ? COMMAND_MAX_EVERY_MS : MAX_EVERY_MS;
   const wait = past ? OVERDUE_EVERY_MS : Math.min(check.everyMs, cap);
   const everyMs = past ? OVERDUE_EVERY_MS : Math.min(check.everyMs * 2, cap);
+  const wake = check.wakeAt ? Date.parse(check.wakeAt) : check.condition.kind === 'time_passed' ? Date.parse(check.condition.at) : undefined;
+  const nextMs = wake !== undefined && wake > nowMs ? Math.min(nowMs + wait, wake) : nowMs + wait;
   const next: WaitCheck = {
-    ...check, attempts: check.attempts + 1, checkedAt: iso(nowMs), result, nextCheckAt: iso(nowMs + wait), everyMs,
+    ...check, attempts: check.attempts + 1, checkedAt: iso(nowMs), result, nextCheckAt: iso(nextMs), everyMs,
     ...(overdue ? { overdueAt: iso(nowMs) } : {}),
   };
   return { check: next, overdue };
@@ -103,6 +166,26 @@ export const checkEndedNote = (w: Pick<JobWait, 'for' | 'on'> | undefined, note:
 /** What a job on its own command is told when the hopper ends that wait. */
 const commandNote = (why: string): string =>
   `[hopper] The hopper ended your wait on your own command: ${why}. Read the command's output. If it still runs and you still wait on it, end your turn with HOPPER_WAITING again. Else go on with the job.`;
+
+/** A pull request a wait on its checks names, as the job's source reads it (part 2): `not_found`, it names no pull request. */
+export interface WaitedChecks { url: string; state: 'open' | 'closed' | 'merged' | 'not_found'; checks?: ChecksState; headCommittedAt?: string }
+
+/** How long after a push a pull request with no checks is taken as having none (as yolo mode waits, issue #677). */
+export const NO_CHECKS_MS = 2 * 60_000;
+
+/** A wait on a pull request's checks: met when they passed or failed, when it ended, or when none started two minutes after its last push. */
+export function checksOutcome(pr: WaitedChecks, nowMs: number): CheckOutcome {
+  if (pr.state === 'not_found') return { met: true, note: `${pr.url} is no pull request. Name the right one if you still wait on it` };
+  if (pr.state !== 'open') return { met: true, note: `${pr.url} was ${pr.state}` };
+  switch (pr.checks) {
+    case 'passing': return { met: true, note: `the checks of ${pr.url} passed` };
+    case 'failing': return { met: true, note: `the checks of ${pr.url} failed` };
+    case 'pending': return { met: false, result: `the checks of ${pr.url} run` };
+    case 'unknown': return { met: false, result: `the hopper cannot read the checks of ${pr.url}` };
+  }
+  const pushed = pr.headCommittedAt ? Date.parse(pr.headCommittedAt) : NaN;
+  return !Number.isNaN(pushed) && nowMs - pushed < NO_CHECKS_MS ? { met: false, result: `no checks of ${pr.url} started yet` } : { met: true, note: `${pr.url} has no checks` };
+}
 
 /** What the executor said of the pane: its background work runs, and its pane is lost; null when it cannot tell. */
 export interface CommandSeen { runs: boolean | null; lost: boolean | null }
