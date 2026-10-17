@@ -3,7 +3,8 @@
 // machine and an ssh target run it in a fresh private dir there (`ON_MACHINE`), removed after; a client target runs
 // claude through its signed `POST /level` (issue #482), which builds the same argv, and no other CLI. The hopper never
 // reads or copies a CLI's credentials: the CLI finds its own login, and a user added later runs claude with their own
-// config dir here (src/users/env.ts). A timeout or a cancel stops the run; a device code it prints goes to the logins.
+// config dir here (src/users/env.ts). A timeout or a cancel stops the run, there too (issue #472: reaped through the same
+// connection); a run dir that stays fails the run; a device code it prints goes to the logins.
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +15,7 @@ import { hopperSshAuth, type SshAuth } from '../executors/ssh.ts';
 import type { MachineSnapshot, RunLogins } from '../domain/types.ts';
 import { hideCodes } from '../logins/recognise.ts';
 import { watchRunOutput } from '../logins/run-output.ts';
-import { CLAUDE_TIMEOUT_MS, ON_MACHINE, scrubbedEnv } from '../plugins/claude-print.ts';
+import { CLAUDE_TIMEOUT_MS, leftOf, leftReason, ON_MACHINE, reapRun, runMarkOf, scrubbedEnv, withoutRunMarks } from '../plugins/claude-print.ts';
 import { draftIssueWith, type DraftAnswer, type IssueDraftResult } from '../run-skills/draft.ts';
 import type { FileIssueInput } from '../run-skills/file-issue.ts';
 import { answeredError, CLAUDE_DEFAULT_MODEL, draftArgv, draftRefusal, failureOf, readDraft, type DraftCall, type DraftProvider } from './providers.ts';
@@ -37,7 +38,8 @@ export interface DraftHost {
 /** What the user picked: the provider, the machine, and the model and effort, else the CLI's own. `bin`: the CLI's name there. */
 export interface DraftChoice { provider: DraftProvider; machine: string; model?: string; effort?: string; bin?: string; timeoutMs?: number }
 
-type Turn = { code: number; stdout: string; stderr: string } | { error: string };
+/** `stderr` with an error: the run was stopped, and this is what it printed until then. */
+type Turn = { code: number; stdout: string; stderr: string } | { error: string; stderr?: string };
 
 /** One program to its end, `stdin` on its stdin: what it printed, or why it stopped. Never throws. */
 function turn(file: string, args: string[], stdin: string, env: NodeJS.ProcessEnv, timeoutMs: number, signal: AbortSignal, feed: (chunk: string) => void): Promise<Turn> {
@@ -56,7 +58,7 @@ function turn(file: string, args: string[], stdin: string, env: NodeJS.ProcessEn
     const child = spawn(file, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
     const onAbort = () => {
       child.kill('SIGKILL');
-      finish({ error: timeout.aborted ? `timed out after ${timeoutMs} ms` : 'cancelled' });
+      finish({ error: timeout.aborted ? `timed out after ${timeoutMs} ms` : 'cancelled', stderr });
     };
     if (stop.aborted) return onAbort();
     stop.addEventListener('abort', onAbort);
@@ -97,30 +99,41 @@ async function runOn(host: DraftHost, m: MachineSnapshot, call: DraftCall, timeo
     });
   } else {
     const { argv, stdin } = draftArgv(call);
-    const there = ['sh', '-c', ON_MACHINE, 'sh', ...argv];
+    let there: (argv: string[]) => [string, string[]];
     let file: string;
     let args: string[];
     try {
       if (m.ssh) {
         const sshControlDir = join(host.dataDir, 'ssh');
         mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
-        [file, args] = commandOn(m, there, {
+        const opts = {
           ...(host.sshBin ? { sshBin: host.sshBin } : {}), sshControlDir, sshAuth: host.sshAuth ?? (() => hopperSshAuth({ env: host.env, dataDir: host.dataDir })),
           dockerHost: () => { throw new Error('no docker'); },
-        });
+        };
+        there = (a) => commandOn(m, a, opts);
       } else {
-        [file, args] = [there[0]!, there.slice(1)];
+        there = (a) => [a[0]!, a.slice(1)];
       }
+      [file, args] = there(['sh', '-c', ON_MACHINE, 'sh', ...argv]);
     } catch (e) {
       return said({ error: `${on}: ${e instanceof Error ? e.message : String(e)}` });
     }
     // The user's config dirs only here: an ssh target's CLI runs with that machine's own environment.
     const env = scrubbedEnv(userProcessEnv(m.ssh ? {} : host.userEnv));
     ran = await turn(file, args, stdin, env, timeoutMs, signal, (c) => { seen += c; login.feed(c); });
+    // Stopped: the kill reached the process here, not the run on the machine (issue #472).
+    const mark = 'error' in ran && ran.stderr !== undefined ? runMarkOf(ran.stderr) : undefined;
+    if ('error' in ran && mark) {
+      const left = await reapRun(there, mark, env, process.cwd());
+      if (left.length) ran = { error: `${ran.error}; ${leftReason(left)}` };
+    }
   }
   if ('error' in ran) return said({ error: `${call.provider} on ${on}: ${ran.error}` });
   seen = `${ran.stdout}\n${ran.stderr}`;
-  if (ran.code !== 0) return said({ error: failureOf(call.provider, on, bin, ran.code, `${ran.stderr}\n${ran.stdout}`) });
+  const left = leftOf(ran.stderr);
+  const failed = ran.code !== 0 ? failureOf(call.provider, on, bin, ran.code, `${withoutRunMarks(ran.stderr)}\n${ran.stdout}`) : undefined;
+  if (left.length) return said({ error: `${failed ? `${failed}; ` : `${call.provider} on ${on}: `}${leftReason(left)}` });
+  if (failed) return said({ error: failed });
   const read = readDraft(call.provider, ran.stdout);
   if ('error' in read) return said({ error: answeredError(call.provider, on, read.error) });
   if ('unreadable' in read) return said({ error: `${call.provider} on ${on} gave no draft: ${read.unreadable}` });
