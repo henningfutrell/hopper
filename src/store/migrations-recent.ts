@@ -51,4 +51,8 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 47: the need steps (issue #1568): one row per need step or box step, its ask, inputs, log, result and outputs. A
   // table only: the build before never reads it, and keeps its steps in memory as before.
   NEED_STEP_TABLE,
+  // 48: spent join codes (issue #1628): a join code, once spent, is kept with the machine key that spent it until it
+  // expires, so that machine's join sent again is answered as the first. A table only: the build before never reads it,
+  // and takes no spent code again.
+  'CREATE TABLE IF NOT EXISTS join_codes_spent (code_hash TEXT PRIMARY KEY, machine_key TEXT NOT NULL, expires_at TEXT NOT NULL, user_id TEXT NOT NULL, template TEXT, pod TEXT);',
 ];

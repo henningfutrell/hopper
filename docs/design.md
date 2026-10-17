@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
-| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -619,7 +619,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), the escalation levels, lowest first → the risk check on an answer (the Decider's risk call, else the risk rules, issue #679) → auto-answer, issue #632 → accepted or human; the confidence spread (`calibration.ts`, issue #679); timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam; the not-signed-in questions a completed tool sign-in answers (`signed-out.ts`, issue #1128). The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
+| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), the escalation levels, lowest first → the risk check on an answer (the Decider's risk call, else the risk rules, issue #679) → auto-answer, issue #632 → accepted or human; the confidence spread (`calibration.ts`, issue #679); timers, recovery — a level's call recorded before the model is asked, and a restart going on at the stored level (`calls.ts`, issue #1608); a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam; the not-signed-in questions a completed tool sign-in answers (`signed-out.ts`, issue #1128). The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -959,7 +959,10 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   A dir the reap could not remove (issue #1452) is never said removed. The reap makes a read-only dir in it (a Go
   module cache) writable and removes it again, and resets the job's container storage in it through the job's runtime
   dir, which it makes again when a reboot removed it. What is still there it names (`hopper-left <path>`): the sweep
-  logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path.
+  logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path. The sweep
+  reaps that job again only once `STUCK_RETRY_MS` (6 hours) passed (issue #1613): each pass would only fail the same way,
+  and the reset of its container storage is slow. A scope or a process of the job is stopped at each pass all the same.
+  Kept in memory: after a restart, the first pass tries it again and tells it again.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
@@ -3223,9 +3226,13 @@ and options kept, and moves an open question at that stage to the new name; a qu
 history and keeps the names it was written with.
 
 Stage owner: `questions.body.tier` holds the instance name of the level holding the question, or
-`human`. Created with the first level's name (or `human` with none). **Recovery** restarts every
-open non-human question from the first level whatever its `tier` (replies are not persisted
-mid-flight; the cost is the repeated calls), so old rows at `tier: fable` are safe.
+`human`. Created with the first level's name (or `human` with none). **A level's call leaves a record**
+(issue #1608): before the model is asked, the trail gets a `started` attempt with a **call key**
+(`<question id>:<its place in the trail>`); the reply, or `superseded`, replaces that attempt under the same key, in its
+place. **Recovery** goes on at the stored `tier`, so no level below it is called again: a `started` attempt there
+is marked `interrupted` and that level is asked again (a level reads no `started` or `interrupted` attempt in
+`previous`); when the trail's last attempt is that level's kept reply, the next level up is asked. A `tier` no level
+has now (a level renamed or removed, old rows at `tier: fable`) climbs from the first level.
 
 ### Plugin contract
 
@@ -4843,8 +4850,8 @@ any machine. Never an agent box's name (`hopper-box-<agent>`): the line must not
 | A sandbox box | `<podman\|docker> run -d --name hopper-sandbox-claude --restart unless-stopped --network hopper_default --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v hopper-sandbox-claude-home:/home/agent -e HOPPER_CLIENT_NAME=hopper-sandbox-claude -e HOPPER_JOIN='http://hopper:<port>#<code>' ghcr.io/henningfutrell/hopper:box-claude` | the computer the hopper runs on; a hopper installed on the host gives `--network host` and `http://127.0.0.1:<port>` |
 
 **Join code.** `POST /ui/api/machines/join` (admin) mints one for the session's user: 32 random bytes,
-hex, kept only as its SHA-256 in the instance's `join_codes` (migration 25), for 10 minutes, taken once
-— the login code's shape (`src/machines/join-code.ts`). `hopper join-code [--user <id>]` mints one for a
+hex, kept only as its SHA-256 in the instance's `join_codes` (migration 25), for 10 minutes, taken by one
+machine (issue #1628: its join sent again is answered as the first) — the login code's shape (`src/machines/join-code.ts`). `hopper join-code [--user <id>]` mints one for a
 script (the bulk form, #310's option C). Owner question #312 left open — one code for many machines — is
 answered *one*: a script asks for one per machine.
 
@@ -12769,7 +12776,10 @@ out or empty is listed in `missing`. Nothing is refused for a missing part: the 
 (`recordReport`, `src/engine/reviews.ts`): a new proposal at version 1, or — when the job's proposal was sent back
 (`revising`) — its next version. The job goes `waiting_answer` with `proposalId` (no `questionId`): it holds no lane,
 its pane stays, it can be parked (#501) and re-queued; re-queued while its proposal is in review, it waits on it again. A restart keeps it waiting (recovery leaves a `waiting_answer` job on an open proposal
-alone); a review a level held is started again from that level (`ReviewService.recover`).
+alone); a review a level held is started again from that level (`ReviewService.recover`, issue #1608): the item keeps
+the call in flight (`call { key, stage, version, startedAt }`, cleared when its review is recorded, which keeps the key as
+`callKey`), so no level below it reviews it again; when its last review is that level's of this version, the next level
+up reviews it. At the first level, or at a stage no reviewer has now, the structural pre-check runs again first.
 `proposal.submitted` (version, Goal, missing parts, the raising machine, the job's priority). A job cancelled or gone
 takes its open proposal with it (`proposal.cancelled`, the sweep on each tick and at start).
 
@@ -13264,6 +13274,10 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `job-machine` | a waiting job that two or more machines online, with its executor and not kept by the blast-radius gate, can take; once per waiting spell (issue #688) | those machines | a placement pick: in step 7 the job goes there first |
 | `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
 | `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
+
+A `failure-assessment` ask is kept on its failure record (`jev { error, attempt, ranMs?, machineId?, doneCheck? }`, issue
+#1608) until Jev answers: a daemon that stopped first asks it again at its start, for a job still failed whose newest
+record it is, within a day of the record; any other is cleared.
 
 Grouping stays the rules' own (a problem needs failures on several items), so it is not an option. The other decider
 calls the issue names — the queue gate and pre-sort, priority, phase shifts, stale cleanup, client repair — are not
@@ -15699,7 +15713,8 @@ decide (for a question, its options in a few words each). The agent's Markdown i
   reports and hand-offs asks the model, one card at a time, for each long card whose stored TL;DR (`tldr: { text, of,
   model?, at }` in its body; no migration) was not written from its text as it is now — `of` is the SHA-256 of that
   text. So a research report's next round gets a new one, and nothing is written again on a render or a restart. A text
-  the model failed on is not asked again for the same text (in memory: a restart tries once more). A card is never
+  the model failed on is not asked again for the same text: the card keeps its hash (`tldrFailedOf`, issue #1608), so a
+  restart does not ask again either, and a TL;DR written later clears it. A card is never
   waited on; a text that changed while the model wrote is left for the next sweep. Each one written is
   `tldr.written { kind, id, text, model? }` on the card's job.
 - **Shown while it matches** (`withShownTldr`). The question, research and hand-off routes answer a card's `tldr`
@@ -19648,7 +19663,7 @@ nothing and worked to its expiry (10 minutes), and an AWS session to its own (15
   (`bindTo`). The minter (`minter.ts`) makes it, empty and labelled `io.hopper.mint`, in the service account's namespace,
   then asks for the token with `boundObjectRef` to it. When the cluster refuses the token, the Secret is deleted at once.
   The mint's event records the binding (`bound` on `vault.minted` and `vault.check_minted`), and the vault holds it for
-  the sandbox.
+  the sandbox. Since issue #1628 the vault holds and records it (`vault.binding_named`) before the minter runs.
 - **The sandbox's end deletes it.** A need step releases its sandbox's bindings (`releaseMints`) after its box is burned,
   whatever the outcome — it succeeded, failed, timed out, was cancelled, or its run threw —, and also when a later mint
   of the step is refused or the job drops the step before it runs. The check pass releases a check box's bindings after
@@ -24005,12 +24020,21 @@ restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links
 link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
 UI: Settings → hopper.io.
 
-**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
-link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
-hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its key is
-a secret the hopper owns, so it is a system secret ("The vault's system scope"), named by the link record: built in part 2
-("The cloud link key").
-Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+**No outbound traffic.** The cloud link makes no connection to hopper.io at all, linked or not
+(`test/integration/cloud-link.test.ts` watches every socket of a daemon that never links). The connection — an outbound
+link agent (no inbound port, so a container install needs no change) and hopper.io's confirmation that moves `state` from
+`pending` — is the install side of issue #464 ("Cloud link (issue #464)", "Left for the install side"), filed once a
+hopper.io server and its key exist. Its key is a secret the hopper owns, so it is a system secret ("The vault's system
+scope"), named by the link record: built in part 2 ("The cloud link key").
+Open (the tracking issue's decisions, issue #469): whether the first-run flow offers the link, and a minimum version or
+channel.
+
+**Issue #467 is complete** (2026-10-17). Each of its asks is built and tested: no data moves and an unlink leaves the
+install as it was (`test/http/cloud-link-fixture.test.ts`, two users); it arrives as a normal update, with no migration of
+existing data and no outbound traffic for an install that never links; link, rotate and unlink apply live and end no
+running job (`test/integration/cloud-link.test.ts`); a container install needs no inbound port, as the link opens none.
+The agent's own tests (a link during a running job with the agent running, and no connection while not linked) belong to
+the install side of issue #464, which must keep these tests green.
 
 ## The cloud link key (issue #467, part 2, 2026-10-17)
 
@@ -24043,9 +24067,9 @@ hopper.io shows the public half and Rotate key; Settings → Vault lists the pri
   did, and Rotate key mints one.
 - **No new event type.** The vault's own events record the mint, the rotation and the drop (R6).
 
-**Left (issue #467, waiting on issue #464):** the outbound link agent and hopper.io's confirmation from `pending`; the test
-that an install that never links makes no connection, with the agent; the test that a link during a running job does not
-end it, with the agent running.
+**Left (the install side of issue #464, not of #467):** the outbound link agent and hopper.io's confirmation from
+`pending`; the rotation overlap of R4; revocation from hopper.io's side; an operator CLI command; the agent's tests (no
+connection while not linked, and a link during a running job, with the agent running).
 
 **Verification:** `test/http/cloud-link-key.test.ts` (the real instance store): a link mints an X25519 key, the record holds
 its public half, the secret its private half; a rotation replaces it, not linked is 409; an unlink drops it; no master key,
@@ -24748,6 +24772,50 @@ git is git's own `git-http-backend`; a push to `main` refused), `test/github-pro
 config), `test/herdr/executor-job-worktree.test.ts` (the project cloned from its GitLab), `test/authz/model.test.ts`,
 `test/ui/acting-identity.test.ts` and `test/ui/gitlab-view.test.ts`.
 
+## A GitLab job's merge request (issue #1642, part 1, 2026-10-17)
+
+Part 1 of issue #1642, the work issue #1448 left. A GitLab job's end is judged by its merge request, and its issue gives the
+job's signals, as on GitHub (`src/gitlab/completion.ts`).
+
+**Done** (`notComplete`). The hopper reads the issue (`GET /projects/:id/issues/:iid`) and the merge requests whose
+description closes it (`GET …/issues/:iid/closed_by`); an open one's head pipeline is read from the merge request itself
+(`GET /projects/:id/merge_requests/:iid`), since GitLab's list leaves it out. The job is done when:
+- a merge request that closes the issue is open, not a draft, with no merge conflicts (`has_conflicts`), and its head
+  pipeline not `failed` (no pipeline, or one still running, counts as not failed, as GitHub's checks do);
+- one was merged since the job began (its target need not be the default branch, so the issue can stay open); or
+- the issue is closed and a merge request that closes it is merged.
+
+Else the job is not complete, and the reason names each merge request by its number and what keeps it: `!4 (opened, draft)`,
+`!5 (opened, merge conflicts)`, `!6 (opened, pipeline failed)`, `!7 (closed)`. The done line in the job's prompt says the
+same. An error asking GitLab throws, so the caller asks again.
+
+**Signals** (`check`), for the source's jobs not ended, one issue read each:
+- the issue gone (GitLab answers 404 or 410): cancel, `issue gone`. Any other error skips the job and is said in the
+  source's detail (`checkErrors`); GitLab refusing the token ends the account and the check;
+- the issue closed: by the job's own merge request (one that closes it, opened since the job began, merged), the job runs on
+  to its own end, and a job on its own wait (`waiting_on`) ends finished; closed any other way: cancel, `issue closed`;
+- the label removed: cancel, `label removed`;
+- a waiting job (`queued`, `held`) whose issue is on the backburner: cancel, `backburner`;
+- assignment drift as on GitHub (issue #387): no longer assigned to the account while it waits, cancel `unassigned`; once
+  started, an `unassigned` signal; assigned again, `reassigned`.
+
+With no account connected, or no job of the source, nothing is read.
+
+**Decisions:**
+- **GitLab's `closed_by`, not a search of the project's merge requests.** It is GitLab's own answer to "which merge requests
+  close this issue", the job's done line opens its merge request with "Closes #N", and it is one read per issue.
+- **A pipeline that is not `failed` does not hold the job.** As GitHub's checks: a running pipeline or none is not a reason
+  to fail a job that did its work.
+- **No migration.** No stored state changes shape.
+
+**Left for later parts of issue #1642:** a merge in yolo mode when the pipeline passed (the hopper following the merge
+request, as it follows a pull request); request cards for GitLab issues of another origin; a GitLab route for a job's API
+reads and writes; OAuth for GitLab; more than one GitLab account; the user's own GitHub acts that name no job repository.
+
+**Verification:** `test/gitlab/completion.test.ts` (done by a ready, merged or closing merge request; not done by a draft,
+merge conflicts, a failed pipeline or none, with the reason; each signal; no reads with no account or no job), over the fake
+GitLab (`test/support/fake-gitlab.ts`: one issue, `closed_by`, one merge request with its pipeline).
+
 ## Sagas: work that survives a stop (issue #1524, part 1, 2026-10-17)
 
 **The rule** (owner direction on the issue): every call that crosses a process, machine or system boundary — the hopper to
@@ -25155,3 +25223,47 @@ second start: one tunnel and one DNS record (one credential and one domain), rem
 instead: none, remote access off, no token. A change on the next start ends the mint a stop left first. A saga the settings
 do not ask for undoes itself. `test/remote-access/providers.test.ts`: a mint tried again makes nothing twice; `find` names
 what a mint cut short made.
+
+## Idempotent client calls (issue #1628, 2026-10-17)
+
+**The problem.** Three calls of the hopper's to a machine, or to a minter, were not safe to send again:
+- A join code was deleted when `POST /client/join` took it. When the answer was lost, the machine sent the join again,
+  and got 403: it could not join.
+- A create through the client (a box through `POST /runtime`, a herdr tab through `POST /herdr`) had no key. A create
+  sent again is signed with a new nonce, so the client ran it again: a second pane, or a refusal of the box's name.
+- A need box's or check box's mint binding was held in memory only after the minter made its Secret, and was recorded
+  only in the mint's event. A hopper that stopped between the two left a Secret that the reconcile pass never saw.
+
+**The change.**
+- **The join is idempotent on (code, machine key).** `join_codes` gives a spent code to `join_codes_spent` (instance
+  migration 48) with the machine key that spent it, until the code expires. A join with that code and that key is
+  answered as the first: the hopper already answers a key that joined with its machine, unchanged. A join with another
+  key is refused, as before. A build before this one reads only `join_codes`, so it never takes a spent code again.
+- **A create through the client is a keyed create** (`src/client/once.ts`). The key is the name the call makes (the
+  box's container name; the tab's workspace and label) and a SHA-256 of the whole call. The client keeps the first
+  answer that created something for 10 minutes, and answers a call with that key with it. A second call while the first
+  runs waits for it. A create that failed or was refused is not kept.
+- **The mint binding is recorded before the minter.** The vault holds the binding in memory, then appends
+  `vault.binding_named` (`box`, `job`, `credential`, `namespace`, `secret`), then asks the minter. The reconcile pass reads
+  `vault.binding_named` with the mints' events. A binding a running sandbox holds is left to it, as before.
+
+**Decisions:**
+- **A separate table for spent codes, not a column.** A column would let a build before this one take a spent code
+  again, with any key, until it expires. The separate table keeps a rollback as strict as before.
+- **The key includes a hash of the whole call.** A different create under the same name is a different call: the client
+  checks and runs it, and the runtime refuses a name in use. Only the same call gets the first answer, so a cached answer
+  never skips the client's checks.
+- **The keys are in the client's memory.** A client that starts again forgets them. Then a box create sent again is
+  refused by the runtime (the name is in use), and a tab create sent again is found by its **pane key** (issue #1569). A
+  record on the machine's disk would cost more than it saves.
+- **An intent event, not a list of the cluster's Secrets.** The issue offered both. Listing Secrets by the
+  `io.hopper.mint` label needs a new call on every minting credential, here and in the vault's own container. The event
+  needs no new call, and the reconcile pass already reads events.
+- **The hold comes before the event.** A reconcile pass that runs while the minter works sees the event, and also the
+  hold, so it leaves the Secret to its sandbox. When the minter refuses, the sandbox's end releases the binding; the
+  minter's delete of a Secret that is not there is no error.
+
+**Verification.** `test/integration/machine-join.test.ts` (a join sent again with the same key: one machine; another
+key refused), `test/client/keyed-creates.test.ts` (a box create and a tab create sent again: one container, one tab; a
+failed create runs again), `test/vault/mint-bindings.test.ts` (a stop while the minter makes the Secret: the next start's
+reconcile pass deletes that one Secret, once).

@@ -143,7 +143,8 @@ describe('a question is the owner\'s the moment it is asked', () => {
     expect(held.aborted).toEqual(['superseded']);
     const after = await a.waitForQuestion(job!.id, (x) => x.attempts.some((t) => t.reason === 'superseded'));
     expect(after).toMatchObject({ status: 'answered', answeredBy: 'human', answer: 'tabs' });
-    expect(after.attempts.map((t) => [t.tier, t.outcome, t.reason])).toEqual([['human', 'accepted', undefined], ['drafter', 'escalated', 'superseded']]);
+    // The level's late reply is kept under its call key (issue #1608), in the place of the call, which started first.
+    expect(after.attempts.map((t) => [t.tier, t.outcome, t.reason])).toEqual([['drafter', 'escalated', 'superseded'], ['human', 'accepted', undefined]]);
     expect(judged).toEqual([]);
     // The escalation gate is untouched: the owner answered first, so nothing was pushed.
     expect((await ofType(a, 'question.escalated')).map((e) => e.data.target)).toEqual(['drafter']);

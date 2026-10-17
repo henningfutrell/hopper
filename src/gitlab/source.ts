@@ -3,7 +3,8 @@
 // to the account, of a trusted origin (origin.ts, Access decides), with no end label, becomes a job (part 3): it works in a
 // clone of its project, fetched and pushed through the hopper with the account's token (git-broker.ts), and opens its merge
 // request with git's push options. The hopper writes only its labels to the issue: `hopper:claimed` while a job holds it,
-// then its end label. Paused while no account is attached, its token ended, or no project is picked.
+// then its end label. Paused while no account is attached, its token ended, or no project is picked. A job's merge request
+// judges done, and the issue's state gives the job's signals (issue #1642, completion.ts).
 import type { JobSource, SourceSignal } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -15,6 +16,7 @@ import { CHECKS_LINE, untrustedBlock } from '../sources/github/context.ts';
 import { NoGitLabAccount, type GitLabAccount } from './account.ts';
 import { GitLabNotFound } from './api.ts';
 import { gitlabActs, untrustedActs } from './origin.ts';
+import { checkJobs, notComplete } from './completion.ts';
 
 /** The labels a job's end leaves on a GitLab issue: any of them keeps the issue out until a person removes it. */
 const END_LABELS = [LABEL_DONE, LABEL_FAILED, LABEL_REJECTED] as const;
@@ -46,7 +48,7 @@ export const gitlabLine = (baseUrl: string): string => `gitlab: this issue and i
 export function gitlabDoneLine(iid: number, defaultBranch: string | undefined, title: string): string {
   const target = defaultBranch ?? 'the default branch';
   const push = `git push -o merge_request.create${defaultBranch ? ` -o merge_request.target=${defaultBranch}` : ''} -o merge_request.title=${quoted(oneLine(title))} -o ${quoted(`merge_request.description=Closes #${iid}`)} origin HEAD:<your branch>`;
-  return `done: once the change is ready for review — the repo's own checks pass, the change is pushed to a new branch of your own work, and a merge request from it into ${target} is open with "Closes #${iid}" in its description. Open the merge request as you push the branch, with git's push options: ${push}. A push goes only to a branch of your own work, never to ${target}. A local commit or an unpushed branch is not done. Do not merge the merge request: a person reviews and merges it on GitLab`;
+  return `done: once the change is ready for review — the repo's own checks pass, the change is pushed to a new branch of your own work, and a merge request from it into ${target} is open, not a draft, with no merge conflicts and no failed pipeline, with "Closes #${iid}" in its description. Open the merge request as you push the branch, with git's push options: ${push}. A push goes only to a branch of your own work, never to ${target}. A local commit or an unpushed branch is not done. Do not merge the merge request: a person reviews and merges it on GitLab`;
 }
 
 export function createGitLabSource(o: GitLabSourceOptions): JobSource {
@@ -55,6 +57,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   const fallback = o.defaultPriority ?? 50;
   let outcomes: IntakeOutcome[] = [];
   let repoErrors: Record<string, string> = {};
+  let checkErrors: Record<string, string> = {};
 
   const priorityOf = (labels: readonly string[]): { priority: number; reason: string } => {
     const hit = Object.entries(priorities).filter(([l]) => labels.includes(l)).sort((a, b) => b[1] - a[1])[0];
@@ -107,7 +110,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
     describe() {
       const s = o.account.status();
       const connected = 'account' in s ? { login: s.account, baseUrl: s.baseUrl, projects: s.projects } : {};
-      return { ...connected, label, issues: outcomes.length, ...(Object.keys(repoErrors).length ? { repoErrors } : {}) };
+      return { ...connected, label, issues: outcomes.length, ...(Object.keys(repoErrors).length ? { repoErrors } : {}), ...(Object.keys(checkErrors).length ? { checkErrors } : {}) };
     },
     paused: () => o.account.paused(),
     async discover(): Promise<SourceItem[]> {
@@ -148,7 +151,13 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       return items;
     },
     intake: () => outcomes,
-    check: async (_active: Job[]): Promise<SourceSignal[]> => [],
+    async check(active: Job[]): Promise<SourceSignal[]> {
+      if (o.account.status().state !== 'connected' || !active.some((j) => j.source?.source === o.name)) { checkErrors = {}; return []; }
+      const r = await o.account.act((a) => checkJobs(a, o.name, label, active));
+      checkErrors = r.errors;
+      return r.signals;
+    },
+    notComplete: (job) => o.account.act((a) => notComplete(a, job)),
     async report(r) {
       const before = r.job.sourceState?.source ?? {};
       const project = r.job.source?.repo, iid = r.job.source?.number;

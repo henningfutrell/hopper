@@ -245,8 +245,9 @@ describe('atomicity', () => {
     expect(got).toMatchObject({ status: 'answered', answer: 'sqlite', answeredBy: 'human' });
     expect(got.attempts.map((a) => [a.tier, a.role, a.outcome, a.reason])).toEqual([
       ['opus', 'level', 'escalated', UP.reason],
-      ['human', 'human', 'accepted', undefined],
+      // The late reply is kept under its call's key (issue #1608): in the place of the call, which started first.
       ['fable', 'level', 'escalated', 'superseded'],
+      ['human', 'human', 'accepted', undefined],
     ]);
     expect(r.answered).toHaveLength(1);
   });

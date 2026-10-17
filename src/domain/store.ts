@@ -120,8 +120,11 @@ export interface QuestionRepository {
   list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
-  /** Append one attempt to the question's trail. */
-  addAttempt(id: string, attempt: QuestionAttempt): Question;
+  /**
+   * Append one attempt to the question's trail. `finishAttempt`: replace the attempt of `callKey` (issue #1608) with
+   * `attempt`, which keeps the key; none of that key: append it.
+   */
+  addAttempt(id: string, attempt: QuestionAttempt): Question; finishAttempt(id: string, callKey: string, attempt: QuestionAttempt): Question;
 }
 
 /** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */
@@ -305,8 +308,12 @@ export interface JoinCodePlace { template?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
-  /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
-  take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
+  /**
+   * The code's user (and what it names), when it exists and `expiresAt > now`: the code is spent by `machineKey`, and
+   * taken again by that key only, until it expires (issue #1628: a join whose answer was lost is sent again). Else
+   * undefined. Expired codes are deleted first.
+   */
+  take(codeHash: string, now: string, machineKey: string): ({ userId: string } & JoinCodePlace) | undefined;
 }
 
 /** The sandbox records (issue #708, instance migration 34): one per sandbox box an older build launched, by id; names are unique. */

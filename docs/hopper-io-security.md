@@ -197,7 +197,7 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   `cloudLink`, which the instance admin writes and deletes through the UI session (`POST /ui/api/cloud-link`,
   `POST /ui/api/cloud-link/unlink`). It is the switch of R8: with no record the instance has no cloud link. It obeys:
   - R1, R8: it makes no connection to hopper.io at all, linked or not.
-  - R4: it holds no credential. Its `installId` is random, made at the link, and opens nothing.
+  - R4: it holds no credential. Its `installId` is the instance id (issue #465 part 2), and opens nothing.
   - R5: a link moves no data (`test/http/cloud-link-fixture.test.ts` compares every row of every schema before and after).
   - R6, on the instance side: `cloud_link.linked` and `cloud_link.unlinked`, with who.
 - **The cloud link key** (issue #467 part 2, `docs/design.md` "The cloud link key"): minted at the link, one X25519 key,
@@ -251,7 +251,7 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
 | #464 outbound link and what data leaves | R1, R4, R5 (the allow-list), R6, R7, R8, T1, T2 |
 | #465 register instances and machines under one account | R3 (and its tests), R4 (registration code), R6 |
 | #466 hosted dashboard | R3, R5 (shows only kept fields), T1 (the dashboard can lie), T3 (escaping) |
-| #467 onboard an existing instance | R4, R5 (no data migration), R8. Part 1 obeys them ("What is built"); the connection it starts obeys the rules of #464 |
+| #467 onboard an existing instance | R4, R5 (no data migration), R8. Complete: parts 1 and 2 obey them ("What is built"); the connection is #464's install side and obeys the rules of #464 |
 | any remote action | R2 |
 
 ## Open questions (for #469)

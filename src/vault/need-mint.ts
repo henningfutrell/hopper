@@ -53,10 +53,11 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       const { mintsFor } = target;
       const credential = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
       if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
+      // Held and recorded before the minter makes the Secret (issue #1628): the step's end releases it, whatever the
+      // outcome, and a hopper that stops meanwhile leaves it to the reconcile pass.
+      if (target.kind === 'kube' && target.bindTo) o.bindings?.named(step, { credential: credential.name, namespace: target.namespace, secret: target.bindTo }, job);
       const made = await from(credential.name, target, job);
       if ('refused' in made) return refuse(made.refused, decision.id);
-      // Held before anything else can end the step: its end releases it, whatever the outcome.
-      if (made.bound) o.bindings?.hold(step, { credential: credential.name, ...made.bound }, job);
       // The minting credential's own service took a while: the job must still be at work.
       if (!atWork()) return refuse('the job is not at work: the vault mints for a step only while its job runs', decision.id);
       const principal = principalOf(target, made);

@@ -1,7 +1,8 @@
 // The TL;DR writer (issue #569, design.md "TL;DR"): a sweep over the open cards — questions, research reports,
 // hand-offs; a proposal has its own TL;DR part (issue #651) — asks the model for the TL;DR of each long one that has none for its text as it is now, one at a
 // time, and stores it with the card (`tldr.written`). A card is never waited on: the TL;DR comes when it comes, and a
-// card without one shows the agent's own summary. A text the model failed on is not asked again for the same text.
+// card without one shows the agent's own summary. A text the model failed on is not asked again for the same text: the
+// card keeps its hash (issue #1608), so a restart does not ask again either.
 // With the setting off, nothing is asked.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { DEFAULT_TLDR, REVIEW_OPEN_STATUSES, type CardKind, type Handoff, type Question, type ReviewItem, type TldrKind, type TldrSettings, type TldrWriter } from '../domain/types.ts';
@@ -39,12 +40,8 @@ export function tldrData(store: Pick<UserStore, 'settings'>, kind: CardKind, car
 
 type Card = { kind: TldrKind; card: Question | ReviewItem | Handoff };
 
-/** Texts the model was asked about and failed on, kept so a sweep does not ask again; the oldest go past this many. */
-const FAILED_MAX = 1000;
-
 export function createTldrs(o: TldrsOptions): Tldrs {
   const { store } = o;
-  const failed = new Set<string>();
   const abort = new AbortController();
   let timer: ReturnType<typeof setInterval> | undefined;
   let sweeping: Promise<void> | undefined;
@@ -56,20 +53,19 @@ export function createTldrs(o: TldrsOptions): Tldrs {
   ];
   const reread = (c: Card): Question | ReviewItem | Handoff | undefined =>
     c.kind === 'question' ? store.questions.get(c.card.id) : c.kind === 'handoff' ? store.handoffs.get(c.card.id) : store.reviews.research.get(c.card.id);
-  const save = (c: Card, tldr: NonNullable<Question['tldr']>) => {
-    if (c.kind === 'question') store.questions.update(c.card.id, { tldr });
-    else if (c.kind === 'handoff') store.handoffs.update(c.card.id, { tldr });
-    else store.reviews.research.update(c.card.id, { tldr });
+  const save = (c: Card, patch: Pick<Question, 'tldr' | 'tldrFailedOf'>) => {
+    if (c.kind === 'question') store.questions.update(c.card.id, patch);
+    else if (c.kind === 'handoff') store.handoffs.update(c.card.id, patch);
+    else store.reviews.research.update(c.card.id, patch);
   };
 
   async function write(c: Card, source: string, of: string): Promise<void> {
-    const key = `${c.kind}:${c.card.id}:${of}`;
     const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(o.timeoutMs)]);
     const r = await o.writer(tldrPrompt(c.kind, source), signal).catch((e: unknown) => ({ error: (e as Error).message }));
     const text = 'error' in r ? '' : plainText(r.text);
     if (!text) {
-      if (failed.size >= FAILED_MAX) failed.delete(failed.values().next().value!);
-      failed.add(key);
+      // Kept with the card (issue #1608): no sweep asks again for this text, after a restart too.
+      store.tx(() => { if (reread(c)) save(c, { tldrFailedOf: of }); });
       o.logger.warn(`hopper: no TL;DR for ${c.kind} ${c.card.id}: ${'error' in r ? r.error : 'the model answered nothing'}`);
       return;
     }
@@ -78,7 +74,7 @@ export function createTldrs(o: TldrsOptions): Tldrs {
       // Changed, or gone, while the model wrote: the next sweep writes it for the text as it is now.
       if (!now || hashOf(sourceOf(c.kind, now)) !== of) return;
       const model = 'error' in r ? undefined : r.model;
-      save(c, { text, of, ...(model ? { model } : {}), at: o.clock.now().toISOString() });
+      save(c, { tldr: { text, of, ...(model ? { model } : {}), at: o.clock.now().toISOString() }, tldrFailedOf: undefined });
       store.events.append({ type: 'tldr.written', jobId: now.jobId, data: { kind: c.kind, id: now.id, text, ...(model ? { model } : {}) } });
     });
   }
@@ -89,7 +85,7 @@ export function createTldrs(o: TldrsOptions): Tldrs {
       const source = sourceOf(c.kind, c.card);
       if (!isLong(source)) continue;
       const of = hashOf(source);
-      if (c.card.tldr?.of === of || failed.has(`${c.kind}:${c.card.id}:${of}`)) continue;
+      if (c.card.tldr?.of === of || c.card.tldrFailedOf === of) continue;
       await write(c, source, of);
     }
   }

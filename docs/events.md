@@ -4258,6 +4258,28 @@ Version 1 (`docs/schemas/vault.check_mint_refused.v1.json`). A read-only check b
 }
 ```
 
+## `vault.binding_named`
+
+Version 1 (`docs/schemas/vault.binding_named.v1.json`). The vault named the Secret a sandbox's Kubernetes token is to be bound to (issue #1628), before it asked the minting credential for the token: the minter makes that Secret. `box` is the need box or check box, `job` the job it served (none for a check box), `credential` the minting credential. A hopper that stopped before the mint's own event (`vault.minted`, `vault.check_minted`) still knows the Secret: the reconcile pass deletes it (`vault.unbound`) once no sandbox holds it. Never the token.
+
+| field | type | required |
+|---|---|---|
+| `box` | string | yes |
+| `job` | string | no |
+| `credential` | string | yes |
+| `namespace` | string | yes |
+| `secret` | string | yes |
+
+```json
+{
+  "box": "hopper-need-kube-1a2b3c4d",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "credential": "KUBE_LAB",
+  "namespace": "web",
+  "secret": "hopper-mint-0b1c2d3e-0000-4000-8000-000000000004"
+}
+```
+
 ## `vault.unbound`
 
 Version 1 (`docs/schemas/vault.unbound.v1.json`). A sandbox ended, and the Secret its Kubernetes token was bound to was deleted (issue #1371): the API server refuses that token at once. `box` is the need box or check box, `job` the job it served (none for a check box), `credential` the minting credential that made the token. Its end does it, whatever the outcome; the reconcile pass, at start and every 5 minutes, does it for a binding a hopper that stopped, or an unbind that failed, left. Never the token.
