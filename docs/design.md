@@ -14027,9 +14027,10 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
 1. the token: the Basic auth password is a proxy token of a user whose job it names, at work — else **401** (git then
    asks its helper once more and stops);
 2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
-3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's), and only
-   when the user can push to it — whether or not it is one of its user's **job repositories** (issue #1131, below) —, or
-   to the **job's fork** ("The contribution flow") — else **403** with the reason, which git shows as `remote: …`;
+3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's) —
+   whether or not it is one of its user's **job repositories** (issue #1131, below) —, to another of its user's job
+   repositories (issue #1275, below), and only when the user can push to it, or to the **job's fork** ("The contribution
+   flow") — else **403** with the reason, which git shows as `remote: …`;
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -22685,3 +22686,45 @@ a job's span tree, its parent links, attributes and metrics; a request's span na
 log record its children, its latency recorded; GitHub calls counted, a conditional hit as a hit, the calls left; the
 process's and the queue's gauges; and no secret — a prompt, a title, a question, an answer, an error, a session, a bearer
 token, a query, a body, a GitHub token, an id in a URL — in anything exported.
+
+## A job pushes to another job repository (issue #1275, 2026-10-16)
+
+**The problem.** A job's issue can sit in one repository while its change belongs in another: an orchestration
+repository whose issues name the work, and the application repositories it stewards, where the code is. The git broker
+let a job push only to its own repository (its source's), so such a job finished its code and tests, and could not
+push, open its pull request, or finish. Its user could push to the other repository (`canPush`), and the job had no
+other way: `repo fork` is for its own repository only.
+
+**The change.** A job may push, open a pull request, and mark one ready on any of its user's **job repositories**, not
+only its own: the job repositories already decide where a job writes (issue #1015, `checkRequest`), so a push follows
+the same line. In the git broker (`createGitProxy`, step 3 of "Git through the hopper"), a push goes to the job's own
+repository, to another job repository, or to the job's fork; on any of them only when its user can push there, with the
+same ref check (`checkPush`: no default or release branch, no delete) and the shrink guard. A push to another job
+repository its user cannot push to is refused before GitHub refuses it (`your user cannot push to <repo>`): the
+contribution flow forks only the job's own repository. In the GitHub proxy (`checkRequest`), `pr.create` and `pr.ready`
+are no longer held to the job's own repository; a pull request from the user's fork (`--head <login>:<branch>`) still
+opens only on the job's own repository. The job's issue stays where it is: the pull request closes it by its full name
+(`Closes OWNER/NAME#N`), which GitHub links as a closing reference when the pull request is on its repository's default
+branch, so the completion check finds it among the issue's closing pull requests. `hopper-gh help` says so.
+
+**Not changed.** A repository that is no job repository takes no push from a job but its own (issue #1131). A fetch
+reads any repository the user sees (issue #1015). A job without its own repository (a direct job) may push to the job
+repositories too: it was refused all pushes before, with no reason the job repositories did not already settle.
+
+**Decisions:**
+- **The job repositories, not a list of stewarded repositories.** The hopper has no notion of which repository stewards
+  which; the job repositories are the person's own choice of where the hopper works, and adding a repository there is
+  how a person allows a job's push to it. A second list would be a second answer to the same question.
+- **Any branch of the job's own work, not only a new one.** A job pushes its branch again after a review or a rebase
+  (`--force-with-lease`), as on its own repository; refusing updates would leave it with a branch it cannot fix.
+
+**Residual risk.** A job can now overwrite a branch other than the default or a release branch on any job repository
+its user can push to, not only on its own repository. One bad issue, or one injected agent, still cannot change a
+default or release branch, so `dev`, the published image and the hosts stay out of its reach; branch protection on
+GitHub keeps the rest, as before ("Git through the hopper", residual risk). Yolo mode merges only the pull requests the
+hopper follows, on the repositories where a person turned it on.
+
+**Verification:** `test/integration/git-proxy.test.ts` ("pushes a branch to another of its user's job repositories,
+forced too", "refuses a push to another job repository its user cannot push to", a repository the hopper does not work
+on refused), `test/integration/github-proxy.test.ts` (a pull request on another job repository, marked ready; one
+elsewhere refused), `test/github-proxy/proxy.test.ts` (`checkRequest`), `test/integration/contribution.test.ts`.

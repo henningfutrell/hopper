@@ -2,8 +2,8 @@
 // operations, the request's shape, and the check against who asks. Pure: no I/O, no clock.
 //
 // The hopper acts for a job with the GitHub connection of the job's own user (issue #1380): a job may file and read
-// issues, comment, open a pull request from its pushed branch on its own repository, mark one ready for review there,
-// close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
+// issues, comment, open a pull request from its pushed branch, mark one ready for review (issue #1275: on its own
+// repository or another job repository, where its change may belong), close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
 // check's log (issue #993), on its user's job repositories; it reads (`READS`) on any repository the connection sees
 // (issue #1015): the job repositories decide intake and where a job writes, not what it reads.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
@@ -127,16 +127,13 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
     if (!asker.contribution) return { ok: false, reason: CONTRIBUTION_OFF };
     if (asker.canPush) return { ok: false, reason: `your user can push to ${req.repo}: push a branch there, with no fork` };
   }
-  if (req.op === 'pr.create' && !ownRepo) {
-    return { ok: false, reason: `a job opens a pull request only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
-  }
   const forkOwner = req.op === 'pr.create' && req.head.includes(':') ? req.head.split(':')[0]! : undefined;
+  if (forkOwner !== undefined && !ownRepo) {
+    return { ok: false, reason: `a job opens a pull request from its user's fork only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
+  }
   if (forkOwner !== undefined && !asker.contribution) return { ok: false, reason: CONTRIBUTION_OFF };
   if (forkOwner !== undefined && !(asker.login && same(asker.login, forkOwner))) {
     return { ok: false, reason: `a job opens a pull request from a fork only from its user's own (${asker.login ?? 'no login'}), not ${forkOwner}` };
-  }
-  if (req.op === 'pr.ready' && !ownRepo) {
-    return { ok: false, reason: `a job marks a pull request ready only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
   }
   if (req.op === 'issue.create' && req.required && (asker.repo === undefined || asker.issue === undefined)) {
     return { ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' };

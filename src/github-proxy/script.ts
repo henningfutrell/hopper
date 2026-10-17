@@ -53,8 +53,10 @@ It is a child of this job's issue: its text names that issue as its parent, as a
 required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open. Use
 --required only when this job's issue cannot be complete without it; a nice-to-have is a follow-up.
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
-pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
-A pull request: push the branch first (git push), on this job's own repository.
+pushes only to a new branch of its own work, never to a default or a release branch: on this job's own repository, or
+on another of the repositories the hopper works on when the change belongs there (its issue stays on this job's own:
+the pull request body says "Closes OWNER/NAME#N" with this job's issue). A pull request: push the branch first (git
+push), on the repository the pull request is opened on.
 Where a pull request stands: pr status. Ask it, not GitHub: the hopper answers from what it already knows (from:
 hopper), the same as its Pull requests list, and reads GitHub only for a pull request it does not know (from: github),
 then answers that read again for a minute (from: cache). To wait on checks, run pr wait, once: do not ask again and
