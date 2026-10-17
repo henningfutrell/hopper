@@ -11,7 +11,7 @@
 //   Scenario: every signal is one the hopper takes whole, however long the source's text
 import { describe, expect, it } from 'vitest';
 import {
-  argoSignals, cloudTrailSignals, fluxSignals, kubeAuditSignals, terraformSignal,
+  ARGO_PLAN_GATE_LABEL, argoSignals, cloudTrailSignals, fluxSignals, kubeAuditSignals, terraformSignal,
 } from '../../src/domain/out-of-band-collect.ts';
 import { DETAIL_MAX, signalProblem } from '../../src/domain/out-of-band.ts';
 
@@ -39,6 +39,23 @@ describe('Argo CD', () => {
     expect(s).toEqual([{
       source: 'gitops', key: 'argocd:argocd/web', target: 'Argo CD application argocd/web', what: 'OutOfSync', at: NOW,
       detail: 'revision abc123\nDeployment web/web OutOfSync',
+    }]);
+    expect(signalProblem(s[0]!)).toBeUndefined();
+  });
+
+  it('reports a gated application (issue #959) that syncs by itself: its syncs never ask for a plan', () => {
+    const gated = { [ARGO_PLAN_GATE_LABEL]: 'true' };
+    const list = {
+      items: [
+        { metadata: { namespace: 'argocd', name: 'web', labels: gated }, spec: { syncPolicy: { automated: { prune: true } } }, status: { sync: { status: 'Synced' } } },
+        { metadata: { namespace: 'argocd', name: 'shop', labels: gated }, spec: { syncPolicy: {} }, status: { sync: { status: 'Synced' } } },
+        { metadata: { namespace: 'argocd', name: 'docs' }, spec: { syncPolicy: { automated: {} } }, status: { sync: { status: 'Synced' } } },
+      ],
+    };
+    const s = argoSignals(list, NOW);
+    expect(s).toEqual([{
+      source: 'gitops', key: 'argocd:argocd/web:auto-sync', target: 'Argo CD application argocd/web', what: 'AutoSyncOnGatedApp', at: NOW,
+      detail: `the application is labelled ${ARGO_PLAN_GATE_LABEL}=true, but Argo CD syncs it by itself: turn off its automated sync, so it syncs only through an approved plan`,
     }]);
     expect(signalProblem(s[0]!)).toBeUndefined();
   });
