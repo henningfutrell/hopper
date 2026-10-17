@@ -25603,7 +25603,7 @@ pid and a nonce) and until when.
   takes it with no task sent twice — passes with the lease and the takeover.
 
 **A relayed act** (issue #1662 part 2). A person's cancel or park — or a preemption the Decision made — of a job that
-another live hopper drives is written on the job's lease (`job_leases.relayed`, tenant migration 75; `JobLeases.relay`).
+another live hopper drives is written on the job's lease (`job_leases.relayed`, tenant migration 78; `JobLeases.relay`).
 The request answers the job as it is, `running`, as a cancel of a job this hopper drives does. The hopper that holds the
 lease takes each act relayed to it at its next tick, once (`JobLeases.relayed`), and acts on it as on its own request: the
 cancel ends the run `cancelled` with the person's reason and note; the park parks it and frees its lane. An act relayed to a
