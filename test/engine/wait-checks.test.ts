@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecutorRegistry, UserStore } from '../../src/domain/ports.ts';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import type { WatchedEnd, WatchedRef } from '../../src/domain/watched-items.ts';
-import { DEADLINE_MS, FIRST_CHECK_MS, type WaitedChecks } from '../../src/domain/wait-checks.ts';
+import { DEADLINE_MS, FIRST_CHECK_MS, type WaitedChecks, type WaitedReviews } from '../../src/domain/wait-checks.ts';
 import { createWaitChecks, LEASE_MS, type WaitReads } from '../../src/engine/wait-checks.ts';
 import { openUserStore } from '../../src/store/user-store.ts';
 import { testDatabaseUrl } from '../support/database.ts';
@@ -250,6 +250,25 @@ describe('a wait check (issue #1694)', () => {
     await a.checks.run();
     expect(a.store.jobs.get(job.id)!.status).toBe('queued');
     expect(ended(a.store, job.id)[0]!.data).toMatchObject({ note: 'the checks of https://github.com/octo/tools/pull/8 passed', check: 'pr_checks_ended:octo/tools#8' });
+    expect(r.asked).toEqual([]);
+  });
+
+  it('a wait on a pull request\'s review: not met with no review since it began, then ended by a new review (part 3)', async () => {
+    const url = testDatabaseUrl();
+    const r = reads();
+    let pr: WaitedReviews = { url: 'https://github.com/octo/tools/pull/8', state: 'open', reviews: [{ state: 'changes_requested', submittedAt: new Date(T0 - 3600_000).toISOString() }] };
+    const a = hopper(url, { ...r, async pullRequestReviews() { return pr; } });
+    const job = waitingJob(a.store, { for: 'a review of PR 8', on: { kind: 'pull_request', number: 8, about: 'review' } });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({ result: 'no review of https://github.com/octo/tools/pull/8 since the wait began' });
+
+    pr = { ...pr, reviews: [...pr.reviews!, { state: 'approved', submittedAt: new Date(now).toISOString() }] };
+    now += FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ note: 'https://github.com/octo/tools/pull/8 was approved', check: 'pr_review_ended:octo/tools#8' });
     expect(r.asked).toEqual([]);
   });
 });
