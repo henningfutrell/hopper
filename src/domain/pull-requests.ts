@@ -46,8 +46,9 @@ export interface FollowsPullRequests {
    * is ready — or closed without a merge, with the source state to keep. A throw is asked again on a later sync. Absent: nothing followed.
    * `act` (issue #677): a person's Merge now or Close PR on its open pull request, on the same path — merged whatever
    * yolo mode and its checks say, or closed without a merge; GitHub's refusal throws, and nothing is kept of it.
+   * `at` (issue #1588): keeps the source state before the hopper's merge call, so a stop before the record loses nothing.
    */
-  follow?(job: Job, act?: PullRequestAct): Promise<FollowUp | undefined>;
+  follow?(job: Job, act?: PullRequestAct, at?: FollowAt): Promise<FollowUp | undefined>;
   /**
    * Read the pull requests that `jobs` follow, and their items, in one batch (issue #985, the in-motion cycle): asked at the
    * start of each round of follows, with the jobs it follows. Each follow after it takes its pull request's state from that
@@ -299,6 +300,18 @@ export function inMotion(job: Job, mergesOnReady: (repo: string, kind?: ChangeKi
   return readyToMerge(seen, now) && job.source?.repo !== undefined && mergesOnReady(job.source.repo, seen.change?.kind);
 }
 
+/**
+ * What a follow may keep before it acts (issue #1588): `keep` saves the job's source state now — the merge marker, before
+ * the hopper's merge call —, and `acting` is the person whose act it is, kept in that marker.
+ */
+export interface FollowAt { keep(state: Record<string, unknown>): void; acting?: ActingPerson }
+
+/**
+ * The hopper's merge call on its way (issue #1588), kept in the job's source state before the call (`merging`): the pull
+ * request, the head it merges, and who merges it. A pull request read merged with it is the hopper's merge, after a stop too.
+ */
+export interface MergeMarker { pullRequest: string; head?: string; byHopper?: true; acting?: ActingPerson }
+
 export interface FollowUp {
   /**
    * Open: it still waits, and what was seen of it changed (`state.seen`). Merged, or closed without a merge. Checked: a
@@ -309,6 +322,8 @@ export interface FollowUp {
   pullRequest: string;
   /** Merged by the hopper itself (issue #637): yolo mode on for its repository, and it was ready. */
   byHopper?: boolean;
+  /** Merged by a person's act, as its merge marker kept it (issue #1588): who pressed it, after a stop too. */
+  acting?: ActingPerson;
   /** The pull request shipped part of the item: merged, the next part may be taken. */
   part: boolean;
   /** The job's source state from now on. */

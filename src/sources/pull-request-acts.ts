@@ -5,7 +5,9 @@
 // on the job's report chain, the source merges the pull request or closes it without a merge, and that is recorded as a
 // follow is, with who pressed it. A refusal for now waits the outbox's backoff; one GitHub refuses for good, or the last
 // attempt, records `job.pull_request_act_failed` with why. The same job's act sent again while its row is on its way (a
-// second click, another tab, the CLI) answers that one.
+// second click, another tab, the CLI) answers that one. Before the merge call the act is kept in the job's merge marker,
+// with who pressed it (issue #1588): a stop before the record, and the row sent again or a sync follows, finds the pull
+// request merged and records the merge as the act's; a merge row sent again after a sync recorded it is answered done.
 import type { OutboxActs } from '../domain/github-outbox.ts';
 import type { JobSource, PullRequestActAnswer, UserStore } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
@@ -19,6 +21,8 @@ export interface PullRequestActsContext {
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
   /** Keep what the source answered, and record the merge or the close, by `acting`. */
   record(jobId: string, r: FollowUp, acting: ActingPerson): void;
+  /** Keep the job's source state now (issue #1588: the merge marker, before the merge call). */
+  setSource(jobId: string, source: Record<string, unknown>): void;
   /** The source's outbox sends now: its act must be seen at once. */
   sendNow(source: JobSource): void;
 }
@@ -35,9 +39,11 @@ export function createPullRequestActs(c: PullRequestActsContext) {
       try {
         const job = store.jobs.get(jobId);
         const source = job && c.sourceOf(job);
+        // Merged and recorded after a stop, before this row was sent again (issue #1588): the act is done.
+        if (what === 'merge' && (job?.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'merged') return;
         if (!job || !following(job)) throw new SourceError(noPullRequest(jobId), true);
         if (!source?.follow) throw new SourceError(`job ${jobId}: its source is not running, or follows no pull request`, false);
-        const r = await source.follow(job, what);
+        const r = await source.follow(job, what, { keep: (state) => c.setSource(jobId, state), acting });
         if (!r) throw new SourceError(noPullRequest(jobId), true);
         c.record(jobId, r, acting);
       } catch (e) {

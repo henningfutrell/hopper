@@ -31,7 +31,7 @@ import { createMachineDrains, drainedMachines, type MachineDrains } from './mach
 import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
-import { wakeOn } from './wait.ts';
+import { createMissedWakes, wakeOn } from './wait.ts';
 export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
@@ -158,6 +158,15 @@ export function createEngine(o: EngineOptions): Engine {
   const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes, credentialHeld: (m: MachineSnapshot) => credentialHeldOf(c, [m]).length > 0 };
   const laneTuning = createLaneTuning(c, laneCalls);
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
+  // Issue #1571: a wake a stop lost, at start, and on each tick.
+  const missedWakes = createMissedWakes(c);
+  const wakeMissed = (): void => {
+    try {
+      if (store.tx(() => missedWakes.run()).length > 0) c.trigger('job.wait_ended');
+    } catch (e) {
+      console.error('hopper: waking the jobs whose wait a missed event settled failed', e);
+    }
+  };
 
   return {
     get executorNames() { return o.executors.names(); },
@@ -231,7 +240,9 @@ export function createEngine(o: EngineOptions): Engine {
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
       o.questions.recover();
       for (const k of REVIEW_KINDS) o.reviews[k].recover();
+      wakeMissed();
       timer = setInterval(() => {
+        wakeMissed();
         classifier.sweep();
         void paneAnswers.sweep();
         cleanups.retry();

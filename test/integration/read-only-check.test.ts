@@ -110,8 +110,9 @@ describe('the read-only check before a requested template\'s first box (issue #7
 
     const checked = await asked(a, token);
     expect(checked.check).toMatchObject({ version: checked.savedAt, state: 'passed' });
-    // Five for the cluster (kubectl and helm), five for the role (aws).
-    expect(checked.check!.probes.length).toBe(10);
+    // Six for the cluster (kubectl and helm), six for the role (aws): each with its egress probe (issue #849).
+    expect(checked.check!.probes.length).toBe(12);
+    expect(checked.check!.probes.filter((p) => p.id.startsWith('egress.')).map((p) => p.id).sort()).toEqual(['egress.aws', 'egress.kube']);
     expect(checked.check!.probes.every((p) => p.passed)).toBe(true);
     const event = (await a.events()).find((e) => e.type === 'template.checked');
     expect(event?.data).toEqual({ template: t.name, state: 'passed', failed: [], artifact: checked.check!.artifact });

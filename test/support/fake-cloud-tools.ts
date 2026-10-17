@@ -8,6 +8,9 @@
 // terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out. With the wrapper, the image's
 // provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only hashicorp/aws, as the real terraform does.
 // After an init with -backend-config (an S3 backend), a state push writes to the bucket: refused under a read-only credential.
+// Issue #849: aws and kubectl sent to a host off the allowlist (the egress probes) answer as the real tools do. `limited`
+// (the default): it cannot be reached, past the proxy or through it; `open`: it is reached either way; `proxy-open`: the
+// proxy lets it through, but the box has no route of its own.
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +19,24 @@ import type { ContainerSpec } from '../../src/domain/ports.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 
 export type CloudMode = 'read-only' | 'writable';
+/** What a box's egress lets out (issue #849). */
+export type EgressMode = 'limited' | 'open' | 'proxy-open';
+
+/** The egress probes' requests (issue #849), before any credential check: each one goes to a host off the allowlist. */
+const EGRESS: Record<string, string> = {
+  aws: `case " $* " in *" --endpoint-url https://example.com "*)
+  case "$EGRESS" in open) reached=1 ;; proxy-open) [ -n "\${HTTPS_PROXY:-}" ] && reached=1 ;; esac
+  if [ -n "\${reached:-}" ]; then echo 'aws: [ERROR]: Unable to parse response (syntax error: line 1, column 0), invalid XML received.' >&2; exit 255; fi
+  if [ -n "\${HTTPS_PROXY:-}" ]; then echo "aws: [ERROR]: Failed to connect to proxy URL: \\"$HTTPS_PROXY\\"" >&2; else echo 'aws: [ERROR]: Could not connect to the endpoint URL: "https://example.com/"' >&2; fi
+  exit 255 ;;
+esac`,
+  kubectl: `case " $* " in *" --server=https://example.com "*)
+  case "$EGRESS" in open) reached=1 ;; proxy-open) [ -n "\${HTTPS_PROXY:-}" ] && reached=1 ;; esac
+  if [ -n "\${reached:-}" ]; then echo '<!doctype html><title>Example Domain</title>'; exit 0; fi
+  if [ -n "\${HTTPS_PROXY:-}" ]; then echo 'Unable to connect to the server: Filtered' >&2; else echo 'Unable to connect to the server: dial tcp: lookup example.com: no such host' >&2; fi
+  exit 1 ;;
+esac`,
+};
 
 /** The minted credentials the tools take: an AWS session token, a Kubernetes token. */
 export interface FakeCredentials { awsSessionToken: string; kubeToken: string }
@@ -83,6 +104,8 @@ export interface FakeCloudTools {
   /** Every call, one per line: `<tool> <args>`. */
   calls(): string[];
   setMode(mode: CloudMode): void;
+  /** What a box's egress lets out (issue #849); `limited` until set. */
+  setEgress(egress: EgressMode): void;
   runScript(spec: ContainerSpec): Promise<{ exit: number; output: string }>;
   cleanup(): void;
 }
@@ -101,14 +124,17 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?
   writeFileSync(log, '');
   const setMode = (m: CloudMode): void => writeFileSync(join(dir, 'mode'), m);
   setMode(mode);
+  const setEgress = (e: EgressMode): void => writeFileSync(join(dir, 'egress'), e);
+  setEgress('limited');
   for (const [tool, body] of Object.entries(TOOLS)) {
     const path = join(dir, tool);
     const check = credentials && CHECKS[tool] ? `AWS_WANTS=${credentials.awsSessionToken} KUBE_WANTS=${credentials.kubeToken}\n${CHECKS[tool]}\n` : '';
-    writeFileSync(path, `#!/bin/sh\nMODE=$(cat ${JSON.stringify(join(dir, 'mode'))})\necho "${tool} $*" >> ${JSON.stringify(log)}\n${check}${body}\nexit 0\n`);
+    const egress = EGRESS[tool] ? `EGRESS=$(cat ${JSON.stringify(join(dir, 'egress'))})\n${EGRESS[tool]}\n` : '';
+    writeFileSync(path, `#!/bin/sh\nMODE=$(cat ${JSON.stringify(join(dir, 'mode'))})\necho "${tool} $*" >> ${JSON.stringify(log)}\n${egress}${check}${body}\nexit 0\n`);
     chmodSync(path, 0o755);
   }
   return {
-    dir, setMode,
+    dir, setMode, setEgress,
     calls: () => readFileSync(log, 'utf8').split('\n').filter((x) => x !== ''),
     runScript: (spec) => new Promise((resolve) => {
       const home = mkdtempSync(join(dir, 'box-'));

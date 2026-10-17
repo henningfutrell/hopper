@@ -23,6 +23,7 @@ import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
 import { boxImage } from './box-image.ts';
+import type { Egress } from './egress.ts';
 import { CHECK_LABEL, staleHome, sweepHomes, USER_LABEL } from './owned.ts';
 import { boxLimits } from './params.ts';
 
@@ -54,16 +55,18 @@ export interface CheckContext {
   credentials: Pick<CheckTemplates, 'credential'>;
   instanceId: string;
   network: string;
+  /** Beside the hopper with its egress set (issue #849): the check box joins its internal network, behind its proxy. */
+  egress?: Egress;
   probes: ProbeCatalog;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
 }
 
-/** Where a check runs: the machine, its runtime, and the network a check box joins there. */
-export interface CheckPlace { machine: string; runtime: ContainerRuntime; network: string }
+/** Where a check runs: the machine, its runtime, the network a check box joins there, and its egress (issue #849). */
+export interface CheckPlace { machine: string; runtime: ContainerRuntime; network: string; egress?: Egress }
 
 /** What the check pass needs: a check's context but its runtime, which `place` gives for each check. */
-export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'network'> {
+export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'network' | 'egress'> {
   /** The runtime beside the hopper, swept at each pass; undefined: none is given. */
   local?: ContainerRuntime;
   /** Where a check of the user's template runs now; undefined: nowhere, and the template waits. */
@@ -112,8 +115,9 @@ export function checkCredentialOf(profile: OperationProfile, minted: Minted, rea
  * workspace is minted nothing of its own (issue #715): it takes the AWS read session of the template's one aws-role read
  * need (`workspaceRole`), which Access allowed and the deny policy keeps read-only, state backend included.
  */
-async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<{ credentials: CheckCredential[] } | { problem: string; transient: boolean }> {
+async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<{ credentials: CheckCredential[]; reaches: MintReach[] } | { problem: string; transient: boolean }> {
   const credentials: CheckCredential[] = [];
+  const reaches: MintReach[] = [];
   const problems: string[] = [];
   // Issue #1468: whether every refusal was a network error, so the check runs again with no person.
   const refusals: string[] = [];
@@ -122,7 +126,7 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
   for (const need of needs.filter((n) => n.asset.kind !== 'terraform-workspace')) {
     const r = await c.credentials.credential(userId, t.name, name, need);
     if ('refused' in r) { noCredential(need, r.refused); refusals.push(r.refused); }
-    else credentials.push(checkCredentialOf(need, r.minted, r.reach));
+    else { credentials.push(checkCredentialOf(need, r.minted, r.reach)); reaches.push(r.reach); }
   }
   for (const workspace of needs.filter((n) => n.asset.kind === 'terraform-workspace')) {
     const role = workspaceRole(needs);
@@ -130,7 +134,7 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
     const session = typeof role === 'string' ? undefined : credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name);
     if (session) credentials.push({ ...session, asset: workspace.asset });
   }
-  return problems.length > 0 ? { problem: problems.join('; '), transient: !other && onlyNetworkErrors(refusals) } : { credentials };
+  return problems.length > 0 ? { problem: problems.join('; '), transient: !other && onlyNetworkErrors(refusals) } : { credentials, reaches };
 }
 
 /**
@@ -154,7 +158,10 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     const { image, user } = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
     if (!(await c.runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
-    id = await c.runtime.create({ name, image, network: c.network, volume, labels, user, env: checkEnv(given.credentials), limits: boxLimits(t.limits), script: checkScript(runs, given.credentials) });
+    // Issue #849: behind the egress proxy, which holds the hosts of its credentials before the box starts.
+    if (c.egress) await c.egress.allow(given.reaches);
+    const env = { ...checkEnv(given.credentials), ...(c.egress ? c.egress.env : {}) };
+    id = await c.runtime.create({ name, image, network: c.egress?.network ?? c.network, volume, labels, user, env, limits: boxLimits(t.limits), script: checkScript(runs, given.credentials) });
     await c.runtime.start(id);
     const exit = await c.runtime.wait(id, CHECK_MS);
     const probes = readResults(runs, await c.runtime.logs(id));
@@ -202,7 +209,7 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
       try {
         // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
         if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
-        const check = await runCheck({ ...c, runtime: at.runtime, network: at.network }, userId, t, name);
+        const check = await runCheck({ ...c, runtime: at.runtime, network: at.network, ...(at.egress ? { egress: at.egress } : {}) }, userId, t, name);
         // A report that cannot be kept never changes the check: it is kept with no artifact, and the log says why.
         const artifact = await templates.report(userId, t, check).catch((e: unknown) => {
           c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.state}, but its report was not kept: ${e instanceof Error ? e.message : String(e)}`);

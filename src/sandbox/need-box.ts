@@ -180,6 +180,8 @@ export interface NeedBox {
    */
   template: { image: string; tools?: readonly BoxTool[]; readOnly?: boolean; limits?: TemplateLimits };
   env: Record<string, string>;
+  /** Where its credentials reach (issue #849): a read-only box's egress proxy allows their hosts. */
+  reaches?: readonly MintReach[];
   timeoutMs: number;
   /** The step's own directory on this machine: the tars of its files are written there. */
   dir: string;

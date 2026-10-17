@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
 import type { UsagePacing } from './domain/types.ts';
 import { playgroundLimitsProblem } from './sandbox/playground.ts';
-import { SANDBOX_SETTING_HELP, SANDBOX_SETTINGS, sandboxSettings, type SandboxSettings } from './sandbox/settings.ts';
+import { egressProblem, SANDBOX_SETTING_HELP, SANDBOX_SETTINGS, sandboxSettings, type SandboxSettings } from './sandbox/settings.ts';
 import { MASTER_KEY_VARIABLES } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
@@ -164,6 +164,9 @@ const schema = z.object({
   // The playground's defaults (issue #1410) are within its maximums: a create that names nothing is never refused.
   const problem = playgroundLimitsProblem(sandboxSettings(e).playground);
   if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['HOPPER_SANDBOX_MAX_CPUS'] });
+  // A read-only box's egress (issue #849): its network, its proxy and the shared directory together, or none.
+  const egress = egressProblem(e);
+  if (egress) ctx.addIssue({ code: 'custom', message: egress, path: ['HOPPER_SANDBOX_EGRESS_NETWORK'] });
 });
 
 /** What each setting does, for `node src/main.ts --help`. Keyed by the schema: a new setting needs its line. */
