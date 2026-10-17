@@ -8,7 +8,7 @@
 // The standing read grant (issue #1472), the user's setting, off by default, is the one grant no person makes: on, a job
 // on a box of a template whose needs the read policy holds entirely as reads gets the vault with no person, one
 // `vault.granted` event for each job. It covers that box only, and that job only, until it ends; turned off, it grants
-// no job that has not asked yet.
+// no job that has not asked yet. A job whose trust stamp is below `approved` (issue #655 part 7) gets none: a person grants it.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, readsOnlyInPolicy, STANDING_READ_GRANTER, type VaultGrantAsk } from '../domain/vault-grants.ts';
@@ -33,8 +33,12 @@ export function withVaultGrants(v: Vault, o: {
   /** The jobs the standing read grant granted (issue #1472): each keeps it while at work, whatever the setting is now. */
   const standing = new Set<string>();
 
-  /** Whether the standing read grant lets `job` ask from a box of `template`: recorded once for each job. */
+  /**
+   * Whether the standing read grant lets `job` ask from a box of `template`: recorded once for each job. Never for a job
+   * below `approved` (issue #655 part 7), one it granted before too.
+   */
   function standingGrant(job: Job, template: string): boolean {
+    if (!jobs.autoApprovable(job)) return false;
     const t = v.view().templates.find((x) => x.name === template);
     if (!t || !readsOnlyInPolicy(t, o.store.settings.getReadPolicy())) return false;
     if (standing.has(job.id)) return true;

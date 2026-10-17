@@ -12,6 +12,6 @@ export const TRUST_EVENT_SCHEMAS = {
   'job.quarantined': strict({ was: z.enum(TRUST_LEVELS).optional(), reason: z.string().optional(), ...acting }),
   'job.unquarantined': strict({ level: z.enum(TRUST_LEVELS), ...acting }),
   // `person` and `via` only when `by` is `person` (part 5: a person's deny at gate 2).
-  'job.trust_lowered': strict({ from: z.enum(TRUST_LEVELS), to: z.enum(TRUST_LEVELS), reason: z.string(), by: z.enum(['jev', 'person']), person: z.string().optional(), via: z.enum(ACTION_VIAS).optional() }),
+  'job.trust_lowered': strict({ from: z.enum(TRUST_LEVELS), to: z.enum(TRUST_LEVELS), reason: z.string(), by: z.enum(['jev', 'person', 'edit']), person: z.string().optional(), via: z.enum(ACTION_VIAS).optional() }),
   'job.trust_approved': strict({ from: z.enum(TRUST_LEVELS), ...acting }),
 };

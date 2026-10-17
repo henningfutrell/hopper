@@ -33,12 +33,14 @@
 // box, burned after the step, and is recorded on the job's timeline (`step.started`, `step.finished`, `step.refused`). A
 // `secret` the host gives goes to the step, after the job's vault grant; a credential minted
 // for a need step goes to its need box only; never in an answer to the job. A template a need step asks for is saved and
-// approved only as a template request is (job-skill.ts).
+// approved only as a template request is (job-skill.ts). Below `approved` (issue #655 part 7), gate 2 gives the job no step
+// with no person: a need step is refused, and a box step runs only from a sandbox request a person approved.
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { mintKindFor } from '../domain/minting.ts';
 import { NEED_STEP_KEY } from '../domain/need-steps.ts';
+import { NO_PERSON } from '../domain/sandbox-approvals.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
 import { STEP_INPUTS_MAX_BYTES } from '../domain/windows-steps.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
@@ -96,9 +98,22 @@ const asked = (reply: FastifyReply, started: { id: string } | { status: number; 
   ('no' in started ? no(reply, started.status, started.no)
     : reply.code(202).header(STEP_HEADER.id, started.id).type('text/plain; charset=utf-8').send(`started: step ${started.id}\n`));
 
-/** The templates of the job's approved sandbox requests: the boxes its box steps may name (issue #1349). */
-const approvedSandboxes = (t: TenantParts, job: Job): string[] =>
-  t.sandboxRequests.list().filter((r) => r.jobId === job.id && r.state === 'approved').map((r) => r.template);
+/**
+ * The templates of the job's approved sandbox requests: the boxes its box steps may name (issue #1349). Below `approved`
+ * (issue #655 part 7), only the ones a person approved.
+ */
+function approvedSandboxes(t: TenantParts, job: Job): string[] {
+  const auto = t.store.jobs.autoApprovable(job);
+  return t.sandboxRequests.list()
+    .filter((r) => r.jobId === job.id && r.state === 'approved' && (auto || (r.approvedBy !== undefined && !NO_PERSON.includes(r.approvedBy))))
+    .map((r) => r.template);
+}
+
+/** Why gate 2 refuses the job a need step (issue #655 part 7): its trust stamp is below `approved`; undefined: it does not. */
+function belowApproved(t: TenantParts, job: Job, needs: string): string | undefined {
+  if (t.store.jobs.autoApprovable(job)) return undefined;
+  return `its trust stamp ${t.store.jobs.trustLevel(job) ?? 'does not verify and'} is below approved: a need step runs only for a job at approved or above. Ask for a sandbox a person approves: sh "$HOPPER_SKILL" sandbox --needs "${needs}" --why "<why the job needs it>"`;
+}
 
 /** `skillWaits`: a Linux step's template is asked for through them (issue #1007), so a wait for it ends the job's own wait. */
 export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skillWaits: SkillWaits }): void {
@@ -124,6 +139,8 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       const query = (req.query ?? {}) as Record<string, unknown>;
       const needs = one(query.needs);
       if (needs !== undefined) {
+        const below = belowApproved(who.t, who.job, needs);
+        if (below) return no(reply, 403, below);
         const read = needsOf(needs);
         if (typeof read === 'string') return no(reply, 400, read);
         // A need the vault mints nothing for is refused before any template is made for it.

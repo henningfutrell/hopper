@@ -1340,14 +1340,14 @@ Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with
 
 ## `job.trust_lowered`
 
-Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`).
+Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`). Or (part 7) a sync saw the item of a started job edited: its stamp drops to `untrusted`, `by` `edit`, with `reason` `edit:text`; the job goes on with the text it started with, and gate 2 then approves nothing for it with no person until a person approves its trust.
 
 | field | type | required |
 |---|---|---|
 | `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
 | `to` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
 | `reason` | string | yes |
-| `by` | `jev` \| `person` | yes |
+| `by` | `jev` \| `person` \| `edit` | yes |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -1362,7 +1362,7 @@ Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #
 
 ## `job.trust_approved`
 
-Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check lowered (issue #655 part 4, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
+Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check, a deny at gate 2 or an edit of its item lowered (issue #655 parts 4, 5 and 7, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
 
 | field | type | required |
 |---|---|---|

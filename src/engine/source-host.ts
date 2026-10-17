@@ -10,7 +10,7 @@ import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { changedSince, gateItem, holdForChange, recordSnapshot, refreshText } from './item-snapshots.ts';
+import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
 import { carryNotes } from './notes.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
@@ -216,6 +216,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // Only a job that has not started: a started one resumes in the pane and work tree it ran in.
         // Its item's text changed while it waits (issue #662): held, its text kept. The task text is never refreshed.
         if (refreshText(c, job, item, source)) changed = true;
+        // A started one runs the text it started with: an edit of its item lowers its trust (issue #655 part 7).
+        else if (refreshEdit(c, job, item, source)) changed = true;
         const was = job.fromConfig ?? fromSpec(job.spec);
         const waiting = job.status === 'queued' || job.status === 'held';
         if (waiting && job.attempts === 0 && job.pendingAnswer === undefined && !same(was, to)) {
