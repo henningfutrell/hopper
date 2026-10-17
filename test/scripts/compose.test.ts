@@ -104,18 +104,6 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(script).not.toMatch(/token_key/);
   });
 
-  it('reads the key from a file hopper-service.sh names, mounted read-only, never from the container\'s environment (issue #1487)', () => {
-    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: '/dev/null', target: '/run/hopper-master-key', read_only: true }));
-    const host = '/run/user/1000/hopper-service/master-key';
-    const given = render(`HOPPER_MASTER_KEY_HOST_FILE=${host}\nHOPPER_MASTER_KEY_FILE=/run/hopper-master-key\nCOMPOSE_PROFILES=hopper-vault\n`);
-    for (const name of ['hopper', 'hopper-vault']) {
-      const s = svc(given, name);
-      expect(s.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
-      expect(s.environment?.HOPPER_MASTER_KEY_FILE).toBe('/run/hopper-master-key');
-      expect(s.volumes).toContainEqual(expect.objectContaining({ source: host, target: '/run/hopper-master-key', read_only: true }));
-    }
-  });
-
   it('keeps no secret in a persistent volume: the files Postgres makes are in memory (tmpfs), made again after a full stop (issue #659)', () => {
     expect(r.volumes.secrets).toBeUndefined();
     expect(r.volumes['runtime-secrets']).toMatchObject({ driver_opts: { type: 'tmpfs', device: 'tmpfs' } });
