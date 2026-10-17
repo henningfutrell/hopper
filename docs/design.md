@@ -2175,7 +2175,8 @@ where both sides only added lines at the same
 place — no line of the merge base is in the conflict (`git merge-file --diff3`, `keepBothAdditions`): both additions are
 kept, the base branch's first. That is a `WHATS-NEW.md` line, or two design sections added at the end of
 `docs/design.md`. Any other conflict — a code file, a line one side changed or removed, a file not on all three sides —
-is a real one: nothing is pushed, and the tend job runs as before. Clean, the hopper makes the merge commit (parents: the
+is a real one: nothing is pushed, and the tend job runs as before. So is a merge git fails to make, and a resolution the
+shrink guard refuses (issue #1218, "The shrink guard"). Clean, the hopper makes the merge commit (parents: the
 head, then the base; author `hopper`, no person) and pushes it to the pull request's branch with
 `--force-with-lease=refs/heads/<branch>:<head as fetched>`: a branch that moved since the fetch, or a fork's branch that
 is not in the repository, is never written, and the refusal is logged. Pushed, `job.pull_request_base_merged` records the
@@ -20398,8 +20399,11 @@ or takes more than the guard's percent of its lines,
 - against the base branch as brought in, or
 - against the branch's head before the push, when the base branch did not shrink it,
 
-and the branch's own change (start → head) did not empty or shrink it so. So a pull request that removes or shrinks a
-file keeps doing so through a rebase, a file the base branch removed stays removed, and small edits pass. A binary file
+and the branch's own change (start → head) did not empty or shrink it so. A file the branch's own change shrank, but did
+not empty or remove, is still refused (issue #1218) when the push empties or removes it and the base branch kept it, or
+when the push takes more than the percent of the lines the branch kept and the base branch did not shrink it too. So a
+pull request that removes or shrinks a file keeps doing so through a rebase, a file the base branch removed stays
+removed, and small edits pass. A binary file
 has no lines and is not judged. `git diff --numstat` against the empty tree counts the lines, with one batch fetch of the
 blobs it needs.
 
@@ -20420,6 +20424,17 @@ push, so a change applies to the next one.
 
 **Git cannot say** (no credential, the base branch gone, git failing): the push goes on, as before the guard, and the
 mirror logs why. The guard is a net for a resolution gone wrong, not a gate a broken mirror may close on every push.
+
+**The hopper's own base merge** (issue #1218). Two merges of `main` into a pull request's branch emptied
+`docs/design.md` (19,416 lines on `main`, then 0), and yolo mode merged them into `main`. Neither was a job's: the
+hopper's base merge ("The base merge", issue #967) made and pushed them from its mirror, and the git proxy, where the
+guard is, sees only a job's push. The cause: `git merge-file` exits with the number of conflicts, and above 127 when it
+fails, with no merge printed. The base merge read any exit above 0 as conflicts, so a failure became an empty
+resolution. Now an exit above 127, or a merge with no conflict marker, resolves nothing, and the conflict goes to a tend
+job. And before the push, each file the base merge resolved is judged by the rule above, at the merge base, the pull
+request's head, the base branch and the resolution, at the default percent: a resolution the guard refuses is not
+pushed, the mirror logs the files, and the conflict goes to a tend job. Not taken: the user's own percent. The mirror
+holds no settings, and a resolution that keeps both sides' added lines never loses half of a file.
 
 
 ## Job worktrees in the workspace (issue #1103, 2026-10-14)
