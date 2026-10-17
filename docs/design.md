@@ -26326,7 +26326,7 @@ hopper, by its URL, with a key from `hopper pool-key`, and checks the machine on
 credential and no hopper restart. **Not done in CI:** a compose hopper with a cluster, and a job on the pod: no runner has
 both, and a job needs a job source. `docs/deploy.md` "Lane pods of another release" has the manual check.
 
-## The infrastructure topology (issue #1781, part 1, 2026-10-17)
+## The infrastructure topology (issue #1781, parts 1 and 2, 2026-10-17)
 
 Goal: show **which services exist** across the user's AWS accounts and Kubernetes clusters, and **what is linked to
 what**, as one graph. A list of accounts or credentials is not enough. Read-only: nothing here writes to a cloud or a
@@ -26367,18 +26367,27 @@ cluster.
   the link in words, and the out-of-band changes whose target names it (its id, name, an alias or an attr, as `vpc-1`).
   Each source says what its snapshot holds and when it was read; a stale one says why. Every node is also listed by kind.
   `GET /api/topology` reads the graph; the page reads it once, with Try again on an error.
+- **Infra changes linked to nodes** (part 2, `entryNodes` and `nodeEntries`, `ui/src/model/topology.ts`, pure). Each entry of
+  Applies and drift names what it **touched** (`subject`, `infraTimeline`): a plan, its approval and an apply their asset;
+  drift and an out-of-band write (and its mark) their target. The nodes it touched: an `aws-account` its account node; an
+  `aws-role` (`<account>/<role>`) its IAM role node and its account node, where the apply writes; a `cluster` the cluster
+  node of that name; a `namespace` (`<cluster>/<namespace>`) that namespace node of that cluster; a target each node whose id,
+  name, alias or attr it is, as before. An `argocd-app` or a `terraform-workspace` names no node. Each entry
+  (`ui/src/views/infra-timeline.tsx`) lists up to three of its nodes; a click picks the node on the Topology panel and scrolls
+  to it, so the node picked is the page's (`infra.tsx`). A node's details list every entry that touched it, newest first, at
+  most 10: plans, approvals, applies, drift and out-of-band writes, not only the out-of-band changes. In the browser, from
+  what the page reads already: no new route, nothing kept.
 
-**Not built in part 1** (left for the next parts of issue #1781):
+**Not built yet** (left for the next parts of issue #1781):
 - Discovery inside the hopper with the read-only roles the vault mints, kept as a saga ("Sagas: work that survives a
   stop"), on a schedule and on demand; it feeds the same report (`afterReport`) with the same mappers. It reads each AWS
   account with the minting credential of that account (issue #1761) and the clusters cluster discovery finds (issue #1766).
 - A ready-made topology collector script, as `scripts/out-of-band-collector.ts` is for signals.
-- Links from the Infra changes feed (plans, applies, drift) to the nodes they touched; part 1 links a node to the
-  out-of-band changes that name it, on the node's details only.
 
 Tests: `test/domain/topology.test.ts` (the mappers, the join across AWS and Kubernetes, IRSA and trust across accounts,
 a failed source keeps its snapshot, refusals), `test/integration/topology.test.ts` (the real daemon and database: an API
 token reports a test account and a test cluster, the graph holds both and the links between them, a cluster out of reach
-keeps its snapshot, the event, the scope and the refusals), `test/ui/topology.test.ts` (filters, neighbours, changes of a
-node, source words, the layout), `test/ui/topology-view.test.ts` (the panel draws, a click shows a node, a stale source,
-an empty topology).
+keeps its snapshot, the event, the scope and the refusals), `test/ui/topology.test.ts` (filters, neighbours, the nodes each
+entry touched and the entries of a node, source words, the layout), `test/ui/infra-plans.test.ts` (each entry's subject),
+`test/ui/topology-view.test.ts` (the panel draws, a click shows a node and the changes that touched it, a stale source, an
+empty topology; the feed links an entry to its nodes and a click picks one).
