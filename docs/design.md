@@ -12846,10 +12846,19 @@ viable paths; with paths but none recommended, a person selects.
 
 **The decisions** (operator role): **Continue with selected** (`accept`, `paths: [{ id, note? }]` — at least one, all
 viable, each once; none on zero paths, where the button reads Accept), **Ask for more paths** (`more_paths`, notes
-optional: the job keeps its paths and their numbers and adds new ones), **Steer** (`steer`, notes required), **Reject
-all** (`reject`, notes required; refused, 409, on zero paths). A decision that sends the proposal back may carry the
+optional: the job keeps its paths and their numbers and adds new ones), **Steer** (`steer`, notes required), **Reject**
+(`reject`, notes optional; issue #1659). A decision that sends the proposal back may carry the
 selection made so far: kept as `selection { version, paths }`, so the next version starts with it checked. A refused
 selection is 400.
+
+**Reject is of the whole proposal** (issue #1659), not of its paths: it takes no selection, and it is taken with paths or
+with none, at any stage — a reviewer level in flight is stopped — and while the proposal is sent back (`revising`). The
+proposal is signed off rejected; a job that waits on it ends finished, the decision its result, and a job at work on the
+next version is cancelled (`job.cancelled`, reason `proposal rejected`). Only a proposal already decided or cancelled is
+refused, 409. Several at once: `POST /ui/api/proposals/reject` with `ids` (1 to 100, each once) and one `notes`, each
+decided on its own, each with its own result (`{ results: [{ id, ok, item?, status?, error? }] }`): one refused does not
+stop the rest. In the UI the Reject button is always enabled; its dialog asks for the optional note and shows the server's
+error when it is refused; a person may select proposals on the Proposals page and reject them at once.
 
 **Follow-ons** (`createFollowOns`, `src/engine/follow-ons.ts`). Accepted with paths selected, outside a fork (whose
 result answers its parent's question, the selected paths named in it) and a switch that goes on (whose job is told the

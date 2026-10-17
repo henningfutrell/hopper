@@ -102,7 +102,10 @@ const goOnBrief = (p: ReviewItem): string => {
   return `[hopper ${p.kind}] Your ${REVIEW_SECTIONS[p.kind].noun} was accepted.${notes}\nGo on with what else your item asks, in this session. If it asks for nothing more, end your message with a line containing only HOPPER_DONE.`;
 };
 
-export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): ReviewHandlers {
+/** Ends a job that does not wait on its item (issue #1659: rejected while it writes the next version), as a cancel does. */
+type EndJob = (jobId: string, reason: string) => unknown;
+
+export function createReviewHandlers(c: EngineContext, cleanup: Cleanup, endJob: EndJob): ReviewHandlers {
   const { store } = c;
   /** The job, while it still waits on this item: on it, or parked on it. */
   const waitingOn = (p: ReviewItem): Job | undefined => {
@@ -119,6 +122,11 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): Review
   };
   return {
     onDecided(p) {
+      // Rejected while sent back (issue #1659): its job is queued or at work on the next version, and ends here.
+      const sentBack = store.jobs.get(p.jobId);
+      if (p.status === 'rejected' && sentBack && sentBack[REVIEW_SECTIONS[p.kind].jobField] === p.id && ['queued', 'held', 'claimed', 'running'].includes(sentBack.status)) {
+        return void endJob(sentBack.id, `${REVIEW_SECTIONS[p.kind].noun} rejected`);
+      }
       const job = waitingOn(p);
       if (!job) return;
       // A fork's result goes to its parent's question (issue #548); the fork itself ends as any job asked for one does.

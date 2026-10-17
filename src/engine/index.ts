@@ -194,7 +194,7 @@ export function createEngine(o: EngineOptions): Engine {
     ...createUsageLimitCommands(c),
     ...createQueries(c, (id) => sweep.disk(id), (id) => sweep.leftovers(id)),
     ...createAnswerHandlers(c, cleanup),
-    ...createReviewHandlers(c, cleanup),
+    ...createReviewHandlers(c, cleanup, (jobId, reason) => commands.cancel(jobId, reason)),
     askFor: (kind, id) => askFor(c, kind, id),
     async start() {
       const recovered = await recover(c);
