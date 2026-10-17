@@ -55,8 +55,8 @@ describe('the cloud/ seam (docs/design.md "Directories and what each must not kn
     expect(offenders).toEqual([]);
   });
 
-  it('cloud/ imports from src/ only the shared GitHub sign-in and the runtime secrets', () => {
-    const allowed = ['../src/connected-accounts/hopper-app.ts', '../src/connected-accounts/identity.ts', '../src/connected-accounts/web-flow.ts', '../src/secrets/runtime.ts'];
+  it('cloud/ imports from src/ only the shared GitHub sign-in, the grant deletion and the runtime secrets', () => {
+    const allowed = ['../src/connected-accounts/hopper-app.ts', '../src/connected-accounts/identity.ts', '../src/connected-accounts/revocation.ts', '../src/connected-accounts/web-flow.ts', '../src/secrets/runtime.ts'];
     const used = tsFiles('cloud').flatMap((f) => imports(f)).filter((i) => i.startsWith('../src/'));
     expect(used.filter((i) => !allowed.includes(i))).toEqual([]);
   });

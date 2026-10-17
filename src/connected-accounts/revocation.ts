@@ -29,3 +29,21 @@ export function tokenDeletion(app: HopperApp, clientSecret: string | undefined):
     });
   };
 }
+
+/**
+ * Deletes a person's whole grant of the app at GitHub (`DELETE /applications/{client_id}/grant`): every token of it,
+ * and the app leaves their Authorized GitHub Apps. hopper.io calls it when a person deletes their hopper.io account
+ * (issue #463, docs/cloud-hosting-identity.md decision 5), with the token of the sign-in that confirmed it: GitHub needs
+ * one, and hopper.io keeps none. Throws when GitHub did not accept the request.
+ */
+export function grantDeletion(app: HopperApp, clientSecret: string): TokenDeletion {
+  const request = octokitRequest.defaults({ baseUrl: app.apiUrl, headers: { 'user-agent': 'hopper', 'x-github-api-version': '2022-11-28' } });
+  return async (accessToken) => {
+    await request('DELETE /applications/{client_id}/grant', {
+      client_id: app.clientId,
+      access_token: accessToken,
+      headers: { authorization: `basic ${Buffer.from(`${app.clientId}:${clientSecret}`).toString('base64')}` },
+      request: { signal: AbortSignal.timeout(DELETE_TIMEOUT_MS) },
+    });
+  };
+}

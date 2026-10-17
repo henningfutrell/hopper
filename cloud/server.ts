@@ -8,12 +8,15 @@
 //   GET  /auth/github           to GitHub; the state also in a cookie of this browser, so only it can finish
 //   GET  /auth/github/callback  back from GitHub: the account kept, the session opened
 //   POST /auth/sign-out         ends this session only (decision 5); the account stays
+//   POST /account/delete        to GitHub to confirm; back at the callback, as the same GitHub account, the account and
+//                               its sessions go, then its grant of the hosted app at GitHub, with that sign-in's token
 //   GET  /api/account           the signed-in account as JSON, else 401
 import { randomBytes } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { hopperApps, type HopperApp } from '../src/connected-accounts/hopper-app.ts';
 import { whoIs } from '../src/connected-accounts/identity.ts';
+import { grantDeletion } from '../src/connected-accounts/revocation.ts';
 import { webFlow } from '../src/connected-accounts/web-flow.ts';
 import type { CloudConfig } from './config.ts';
 import { SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudStore } from './store.ts';
@@ -21,6 +24,8 @@ import { SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudStore } from './st
 export const SESSION_COOKIE = 'hopper_io_session';
 export const SIGN_IN_COOKIE = 'hopper_io_sign_in';
 export const CALLBACK_PATH = '/auth/github/callback';
+/** Where a person removes an app's grant at GitHub by hand, when hopper.io could not. */
+export const GITHUB_AUTHORIZATIONS = 'https://github.com/settings/apps/authorizations';
 /** Sign-ins per address (docs/hopper-io-security.md R7): a start and its callback each count. */
 export const SIGN_IN_LIMIT = { max: 30, timeWindow: '1 minute' };
 
@@ -52,6 +57,7 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
   const now = o.now ?? (() => new Date());
   const app = cloudApp(config);
   const flow = webFlow(app, config.clientSecret, `${config.publicUrl}${CALLBACK_PATH}`);
+  const deleteGrant = grantDeletion(app, config.clientSecret);
   const secure = config.publicUrl.startsWith('https:') ? '; Secure' : '';
   const cookie = (name: string, value: string, path: string, maxAgeMs: number) =>
     `${name}=${encodeURIComponent(value)}; Path=${path}; Max-Age=${Math.floor(maxAgeMs / 1000)}; HttpOnly; SameSite=Lax${secure}`;
@@ -74,15 +80,20 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
     if (!a) return page(reply, 200, '<h1>hopper.io</h1><p><a href="/auth/github">Sign in with GitHub</a></p>');
     const avatar = a.avatarUrl ? `<img src="${html(a.avatarUrl)}" alt="" width="40" height="40"> ` : '';
     return page(reply, 200, `<h1>hopper.io</h1><p>${avatar}Signed in as <strong>${html(a.login)}</strong>.</p>`
-      + '<form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>');
+      + '<form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>'
+      + '<form method="post" action="/account/delete"><p>Delete your hopper.io account. You sign in with GitHub again to confirm.</p>'
+      + '<button type="submit">Delete account</button></form>');
   });
 
-  server.get('/auth/github', { config: { rateLimit: SIGN_IN_LIMIT } }, async (_req, reply) => {
+  /** To GitHub, with the state also in this browser's cookie; `deletes`: the account the sign-in confirms the deletion of. */
+  const toGitHub = async (reply: FastifyReply, deletes?: string) => {
     const state = randomBytes(32).toString('base64url');
     const { url, verifier } = await flow.start(state);
-    await store.startSignIn(state, verifier);
+    await store.startSignIn(state, verifier, deletes);
     return reply.header('set-cookie', cookie(SIGN_IN_COOKIE, state, '/auth/github', SIGN_IN_MS)).redirect(url, 302);
-  });
+  };
+
+  server.get('/auth/github', { config: { rateLimit: SIGN_IN_LIMIT } }, (_req, reply) => toGitHub(reply));
 
   server.get(CALLBACK_PATH, { config: { rateLimit: SIGN_IN_LIMIT } }, async (req, reply) => {
     const callback = new URL(req.url, config.publicUrl);
@@ -90,15 +101,26 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
     const mine = cookiesOf(req.headers.cookie).get(SIGN_IN_COOKIE);
     const clear = cookie(SIGN_IN_COOKIE, '', '/auth/github', 0);
     if (!state || state !== mine) return page(reply.header('set-cookie', clear), 400, '<p>This sign-in was not started in this browser. <a href="/auth/github">Sign in again</a>.</p>');
-    const verifier = await store.takeSignIn(state, now());
-    if (!verifier) return page(reply.header('set-cookie', clear), 400, '<p>This sign-in expired. <a href="/auth/github">Sign in again</a>.</p>');
+    const taken = await store.takeSignIn(state, now());
+    if (!taken) return page(reply.header('set-cookie', clear), 400, '<p>This sign-in expired. <a href="/auth/github">Sign in again</a>.</p>');
     let account: CloudAccount;
+    let accessToken: string;
     try {
-      const grant = await flow.finish(callback, { verifier, state });
-      const who = await whoIs(app, grant.accessToken);
+      const grant = await flow.finish(callback, { verifier: taken.verifier, state });
+      accessToken = grant.accessToken;
+      const who = await whoIs(app, accessToken);
       account = { githubUserId: who.subject, login: who.account, ...(who.avatarUrl ? { avatarUrl: who.avatarUrl } : {}) };
     } catch {
-      return page(reply.header('set-cookie', clear), 502, '<p>GitHub did not complete the sign-in. <a href="/auth/github">Try again</a>.</p>');
+      return page(reply.header('set-cookie', clear), 502, taken.deletes ? '<p>GitHub did not confirm it. Nothing was deleted. <a href="/">Back</a>.</p>'
+        : '<p>GitHub did not complete the sign-in. <a href="/auth/github">Try again</a>.</p>');
+    }
+    if (taken.deletes) {
+      if (account.githubUserId !== taken.deletes) return page(reply.header('set-cookie', clear), 403, '<p>You confirmed as another GitHub account. Nothing was deleted. <a href="/">Back</a>.</p>');
+      await store.deleteAccount(taken.deletes);
+      const gone = await deleteGrant(accessToken).then(() => true, () => false);
+      const grantNote = gone ? '<p>hopper.io no longer has your permission at GitHub.</p>'
+        : `<p>GitHub did not remove hopper.io's permission. Remove it at <a href="${GITHUB_AUTHORIZATIONS}">${GITHUB_AUTHORIZATIONS}</a>.</p>`;
+      return page(reply.header('set-cookie', [clear, cookie(SESSION_COOKIE, '', '/', 0)]), 200, `<p>Your hopper.io account is deleted.</p>${grantNote}`);
     }
     await store.signedIn(account);
     const token = randomBytes(32).toString('base64url');
@@ -111,6 +133,13 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
     const token = cookiesOf(req.headers.cookie).get(SESSION_COOKIE);
     if (token) await store.endSession(token);
     return reply.header('set-cookie', cookie(SESSION_COOKIE, '', '/', 0)).redirect('/', 303);
+  });
+
+  server.post('/account/delete', { config: { rateLimit: SIGN_IN_LIMIT } }, async (req, reply) => {
+    if (req.headers.origin !== config.publicUrl) return reply.code(403).send({ error: 'delete only from hopper.io itself' });
+    const a = await signedIn(req);
+    if (!a) return reply.code(401).send({ error: 'not signed in' });
+    return toGitHub(reply, a.githubUserId);
   });
 
   server.get('/api/account', async (req, reply) => {
