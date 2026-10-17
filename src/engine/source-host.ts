@@ -230,14 +230,15 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         }
         // The priority is the job's live one (issue #535): a started job's follows its item too, so it is tagged and
         // listed by it everywhere — its question, its login, its lane.
+        // A new priority ends its place in the user order (issue #1776): it then waits at that priority (issue #461).
         if (job.priority !== priority) {
-          store.jobs.update(jobId, { priority });
+          store.jobs.update(jobId, { priority, userRank: undefined });
           store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: priority, reason } });
           // Its forks carry its priority (issue #548): the ones still at work follow it.
           for (const forkId of job.forks ?? []) {
             const fork = store.jobs.get(forkId);
             if (!fork || TERMINAL_STATUSES.includes(fork.status) || fork.priority === priority) continue;
-            store.jobs.update(forkId, { priority });
+            store.jobs.update(forkId, { priority, userRank: undefined });
             store.events.append({ type: 'job.reprioritized', jobId: forkId, data: { from: fork.priority, to: priority, reason: `its parent job ${jobId}: ${reason}` } });
           }
           changed = true;
