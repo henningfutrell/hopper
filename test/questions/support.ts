@@ -54,6 +54,13 @@ export function createMemoryStore(): MemoryStore {
         q.attempts.push(structuredClone(a));
         return structuredClone(q);
       },
+      finishAttempt(id: string, callKey: string, a: QuestionAttempt) {
+        const q = questions.get(id)!;
+        const at = q.attempts.findIndex((x) => x.callKey === callKey);
+        const next = structuredClone({ ...a, callKey });
+        if (at < 0) q.attempts.push(next); else q.attempts[at] = next;
+        return structuredClone(q);
+      },
     },
     // The priority lane settings never saved: the default high-priority threshold (issue #535). Auto-answer (issue #632):
     // as a test sets it, never saved by default.
@@ -139,10 +146,12 @@ export interface RigOptions {
   stageTimeoutMs?: number;
   /** The Decider's risk call (issue #679): absent, the keyword risk rules check every answer. */
   risk?: QuestionRisk;
+  /** The store of an earlier rig: a new service on it, as after a daemon restart. */
+  store?: MemoryStore;
 }
 
 export function rig(o: RigOptions = {}): Rig {
-  const mem = createMemoryStore();
+  const mem = o.store ?? createMemoryStore();
   const config = rulesConfig(o.rules === null ? undefined : (o.rules ?? 'Prefer postgres.'));
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
@@ -169,7 +178,7 @@ export function rig(o: RigOptions = {}): Rig {
     onCorrected: (q) => corrected.push({ q, depth: mem.depth() }),
     ...(o.risk ? { risk: o.risk } : {}),
   });
-  const job = mem.addJob('build the thing', 'ship it');
+  const job = o.store ? mem.store.jobs.get('job1')! : mem.addJob('build the thing', 'ship it');
   return {
     mem, svc, answered, expired, dismissed, corrected, asked, job,
     question: (text = 'Which database?', raisedBy?: RaisedBy) =>

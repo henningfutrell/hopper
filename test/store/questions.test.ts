@@ -79,6 +79,21 @@ describe('questions repository', () => {
     s.close();
   });
 
+  it('finishAttempt replaces the started attempt of its call key in place, and survives a reopen (issue #1608)', () => {
+    const path = t.url();
+    const s = t.open(path);
+    const q = s.questions.create(input(s.jobs.create(spec, 5).id));
+    s.questions.addAttempt(q.id, { tier: 'opus', role: 'level', startedAt: 'a', outcome: 'started', callKey: 'k1' });
+    s.questions.addAttempt(q.id, { tier: 'human', role: 'human', startedAt: 'b', outcome: 'accepted', answer: 'no' });
+    s.questions.finishAttempt(q.id, 'k1', { tier: 'opus', role: 'level', startedAt: 'a', finishedAt: 'c', outcome: 'escalated', reason: 'superseded' });
+    s.close();
+    const s2 = t.open(path);
+    expect(s2.questions.get(q.id)!.attempts.map((a) => [a.tier, a.outcome, a.callKey])).toEqual([['opus', 'escalated', 'k1'], ['human', 'accepted', undefined]]);
+    s2.questions.finishAttempt(q.id, 'k2', { tier: 'fable', role: 'level', startedAt: 'd', outcome: 'escalated' });
+    expect(s2.questions.get(q.id)!.attempts.map((a) => a.callKey)).toEqual(['k1', undefined, 'k2']);
+    s2.close();
+  });
+
   it('survives close and reopen, and rolls back with the transaction', () => {
     const path = t.url();
     const s = t.open(path);

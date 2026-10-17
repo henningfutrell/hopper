@@ -34,8 +34,8 @@ describe('human timers', () => {
   });
 });
 
-describe('recover: every open non-human question restarts at the first level', () => {
-  it.each(['opus', 'fable', 'some-old-assessor'])('a stored open question at tier %s climbs the levels again from the first', async (tier) => {
+describe('recover: every open non-human question goes on at its stored level (issue #1608)', () => {
+  it.each([['opus', ['opus', 'fable']], ['fable', ['fable']], ['some-old-assessor', ['opus', 'fable']]])('a stored open question at tier %s asks %j', async (tier, expected) => {
     const r = rig();
     const q = r.question();
     r.mem.store.questions.update(q.id, { tier });
@@ -46,9 +46,52 @@ describe('recover: every open non-human question restarts at the first level', (
     ]);
     r.svc.recover();
     await settle();
-    expect(asked).toEqual(['opus', 'fable']);
+    expect(asked).toEqual(expected);
     expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'fable' });
-    expect(r.eventsOf('question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable']);
+    expect(r.eventsOf('question.escalated').map((e) => e.data.target)).toEqual(expected);
+  });
+
+  it('stopped during the level-2 call: after the start the level-1 call is not made again, and the call in flight is on the trail', async () => {
+    const levels = { opus: () => UP, fable: (_req: AnswerRequest, signal: AbortSignal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))) };
+    const first = rig({ levels });
+    const q = first.question();
+    first.svc.handle(q.id);
+    await settle();
+    expect(first.asked.map((a) => a.level)).toEqual(['opus', 'fable']);
+    await first.svc.stop();
+    const stored = first.mem.store.questions.get(q.id)!;
+    expect(stored.tier).toBe('fable');
+    expect(stored.attempts.map((a) => [a.tier, a.outcome])).toEqual([['opus', 'escalated'], ['fable', 'started']]);
+    expect(stored.attempts[1]!.callKey).toBeTruthy();
+
+    const second = rig({ levels: { opus: () => UP, fable: () => ANSWERED }, store: first.mem });
+    second.svc.recover();
+    await settle();
+    expect(second.asked.map((a) => a.level)).toEqual(['fable']);
+    const after = second.mem.store.questions.get(q.id)!;
+    expect(after).toMatchObject({ status: 'answered', answeredBy: 'fable' });
+    expect(after.attempts.map((a) => [a.tier, a.outcome])).toEqual([['opus', 'escalated'], ['fable', 'interrupted'], ['fable', 'accepted']]);
+    // The level asked again reads only the replies kept, not the call the daemon stopped during.
+    expect(second.asked[0]!.req.previous.map((a) => a.tier)).toEqual(['opus']);
+  });
+
+  it('a level whose reply is kept but whose question did not climb yet is not asked again: the next level is', async () => {
+    const r = rig({ levels: { opus: () => UP, fable: () => ANSWERED } });
+    const q = r.question();
+    r.mem.store.questions.addAttempt(q.id, { tier: 'opus', role: 'level', startedAt: 'a', finishedAt: 'b', answer: 'maybe', escalate: true, reason: 'unsure', outcome: 'escalated', callKey: `${q.id}:1` });
+    r.svc.recover();
+    await settle();
+    expect(r.asked.map((a) => a.level)).toEqual(['fable']);
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'fable' });
+  });
+
+  it('each level call keeps its reply under the key of the started attempt', async () => {
+    const r = rig({ levels: { opus: () => UP, fable: () => ANSWERED } });
+    const q = r.question();
+    r.svc.handle(q.id);
+    await settle();
+    const trail = r.mem.store.questions.get(q.id)!.attempts;
+    expect(trail.map((a) => [a.tier, a.outcome, a.callKey])).toEqual([['opus', 'escalated', `${q.id}:1`], ['fable', 'accepted', `${q.id}:2`]]);
   });
 
   it('a question created at the human stage but never escalated (crash before handle) goes to the human', () => {
