@@ -20812,6 +20812,18 @@ request's head, the base branch and the resolution, at the default percent: a re
 pushed, the mirror logs the files, and the conflict goes to a tend job. Not taken: the user's own percent. The mirror
 holds no settings, and a resolution that keeps both sides' added lines never loses half of a file.
 
+**The container image's git** (issue #1624). Three more base merges emptied `docs/design.md`, and one of them also
+`docs/glossary.md` and `docs/hopper-io-security.md`, after the fix above: the hopper that made them ran a build from
+before it. The cause under both: the container image is Debian bookworm, and its git (2.39) has no
+`git merge-file --object-id` (git 2.43) and no `git check-attr --source` (git 2.40). Each exits 129 with no output, so in
+the container every base merge failed, and the build before issue #1218 read that as an empty resolution. With the fix
+above the base merge pushed nothing and resolved no conflict at all. Now the base merge uses only what git 2.39 has: each
+side of a file is read with `git cat-file blob` into a scratch file of its own in the mirrors' dir, and `git merge-file`
+merges the three files; a side that is not UTF-8 is not resolved, as it would not be written back as it was. The base
+branch's `.gitattributes` is read through a scratch index of its tree (`git read-tree`, then
+`git check-attr --cached`). The tests run each base merge also with a git that refuses the two newer options. Not taken:
+a newer git in the image only. A build on a host with an older git would fail the same way.
+
 
 ## Job worktrees in the workspace (issue #1103, 2026-10-14)
 
