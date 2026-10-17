@@ -1,18 +1,22 @@
 // Infra → Topology (issue #1781, design.md "The infrastructure topology"): the graph of the services in the user's AWS
 // accounts and Kubernetes clusters, and what is linked to what. A person filters it by account, cluster, region and kind,
-// and clicks a node to read its details, its neighbours and the out-of-band changes that name it. Each source says when it
+// and clicks a node to read its details, its neighbours and the Infra changes that touched it (plans, approvals, applies,
+// drift, out-of-band writes); a timeline entry on Infra picks its node too, so the node picked is the page's. Each source says when it
 // was read, and a stale one says why. The page loads the graph (infra.tsx) and shows this panel always: an empty graph says
 // how a check fills it. Read-only: nothing here acts on a cloud or a cluster.
 import { Network } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
-import { changeHeadline } from '@/model/out-of-band';
-import { changesOf, DRAW_MAX, filterChoices, filterGraph, layout, neighbours, sideOf, sourceName, sourceState, type TopologyFilter } from '@/model/topology';
-import type { GraphNode, NodeKind, OutOfBandView, TopologyGraph } from '../../../src/domain/types.ts';
+import type { TimelineEntry } from '@/model/infra-plans';
+import { nodeEntries, DRAW_MAX, filterChoices, filterGraph, layout, neighbours, sideOf, sourceName, sourceState, type TopologyFilter } from '@/model/topology';
+import { KIND, KIND_TONE } from './infra-timeline';
+import type { GraphNode, NodeKind, TopologyGraph } from '../../../src/domain/types.ts';
 
 const SELECT = 'h-8 rounded-md border bg-transparent px-2 text-sm';
 const SIZE = 640;
 const FILL = { aws: 'fill-warn', kubernetes: 'fill-ok', cluster: 'fill-primary' } as const;
+/** The most changes a node's details list. */
+const CHANGES_MAX = 10;
 
 function Filters({ g, f, onF }: { g: TopologyGraph; f: TopologyFilter; onF: (f: TopologyFilter) => void }) {
   const c = filterChoices(g);
@@ -56,9 +60,9 @@ function Drawing({ nodes, links, selected, onSelect }: { nodes: GraphNode[]; lin
   );
 }
 
-function Details({ g, node, changes, onSelect }: { g: TopologyGraph; node: GraphNode; changes: readonly OutOfBandView[]; onSelect: (id: string) => void }) {
+function Details({ g, node, timeline, onSelect }: { g: TopologyGraph; node: GraphNode; timeline: readonly TimelineEntry[]; onSelect: (id: string) => void }) {
   const near = neighbours(g, node.id);
-  const touched = changesOf(node, changes);
+  const touched = nodeEntries(g, node.id, timeline);
   const where = [node.account && `account ${node.account}`, node.region, node.namespace && `namespace ${node.namespace}`].filter(Boolean).join(', ');
   return (
     <div data-slot="topology-node" className="space-y-2 rounded-md border p-3 text-sm">
@@ -74,15 +78,18 @@ function Details({ g, node, changes, onSelect }: { g: TopologyGraph; node: Graph
         </ul>
       )}
       <p className="text-xs font-medium">Recent changes</p>
-      {touched.length === 0 ? <p className="text-xs text-muted-foreground">No out-of-band change names this node.</p>
-        : <ul className="space-y-0.5 text-xs">{touched.slice(0, 10).map((c) => <li key={c.id}>{c.at}: {changeHeadline(c)}</li>)}</ul>}
+      {touched.length === 0 ? <p className="text-xs text-muted-foreground">No infra change touched this node.</p> : (
+        <ul data-slot="topology-node-changes" className="space-y-0.5 text-xs">
+          {touched.slice(0, CHANGES_MAX).map((e, i) => <li key={`${e.at} ${e.kind} ${i}`}><span className={KIND_TONE[e.kind]}>{KIND[e.kind]}</span> {e.at}: {e.words}</li>)}
+        </ul>
+      )}
     </div>
   );
 }
 
-export function TopologyPanel({ g, changes }: { g: TopologyGraph; changes: readonly OutOfBandView[] }) {
+/** `selected` and `onSelect`: the node picked, the page's, so an Infra timeline entry picks its node here too. */
+export function TopologyPanel({ g, timeline, selected, onSelect: setSelected }: { g: TopologyGraph; timeline: readonly TimelineEntry[]; selected?: string; onSelect: (id: string) => void }) {
   const [f, setF] = useState<TopologyFilter>({});
-  const [selected, setSelected] = useState<string | undefined>();
   const shown = useMemo(() => filterGraph(g, f), [g, f]);
   const node = g.nodes.find((n) => n.id === selected);
   const stale = g.sources.filter((s) => sourceState(s).stale).length;
@@ -103,7 +110,7 @@ export function TopologyPanel({ g, changes }: { g: TopologyGraph; changes: reado
             : shown.nodes.length > DRAW_MAX ? <Empty>{shown.nodes.length} nodes: too many to draw. Pick an account, a cluster, a region or a kind.</Empty>
             : <Drawing nodes={shown.nodes} links={shown.links} selected={selected} onSelect={setSelected} />}
           <p className="text-xs text-muted-foreground">{shown.nodes.length} nodes, {shown.links.length} links. Orange: AWS; green: Kubernetes; blue: a cluster; faint: named by a link only. Click a node.</p>
-          {node && <Details g={g} node={node} changes={changes} onSelect={setSelected} />}
+          {node && <Details g={g} node={node} timeline={timeline} onSelect={setSelected} />}
           <KindList kinds={filterChoices(g).kinds} nodes={shown.nodes} onSelect={setSelected} />
         </>
       )}
