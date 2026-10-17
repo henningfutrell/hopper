@@ -3,6 +3,8 @@
 // hopper stops, and the other reattaches the job's pane, which is still alive on its machine. The task is sent once. A
 // person's cancel or park on the other hopper reaches the run of the hopper that drives the job. Each pass of the engine
 // over every job (here the read of a waiting job's pane) runs on one hopper at a time, and on the other once it stops.
+// The run is the saga kind `job-run` (part 4): a run left between its steps, or in its pane step, goes on from its last
+// committed step on the other hopper, with one pane and the task sent once.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
@@ -62,6 +64,56 @@ function machine() {
   });
   return { panes, sent, reattached, aborted, probed, executor };
 }
+
+/**
+ * A machine whose executor opens a job's pane apart (the `job-run` saga's `credentials` and `pane` steps): the task waits
+ * unsent in the pane until `reattach` sends it, once. `holdOpen`: the next open waits until it is let go.
+ */
+function splitMachine() {
+  const m = machine();
+  const opened: { jobId: string; by: string; again: boolean }[] = [];
+  const closed: string[] = [];
+  const unsent = new Set<string>();
+  let hold: { started: () => void; release: Promise<void> } | undefined;
+  const holdOpen = () => {
+    let started!: () => void, release!: () => void;
+    const begun = new Promise<void>((r) => { started = r; });
+    hold = { started, release: new Promise<void>((r) => { release = r; }) };
+    return { begun, release };
+  };
+  const executor = (by: string): Executor => {
+    const base = m.executor(by);
+    return {
+      ...base, name: 'split',
+      credentialsAt: (ctx) => ({ scratch: `/scratch/${ctx.job.id}`, makeWorkTree: false }),
+      async open(ctx, again) {
+        const h = hold;
+        hold = undefined;
+        if (again && m.panes.has(ctx.job.id) && !unsent.has(ctx.job.id)) closed.push(ctx.job.id);
+        opened.push({ jobId: ctx.job.id, by, again: again === true });
+        if (h) { h.started(); await h.release; }
+        let end!: () => void;
+        const ended = new Promise<void>((r) => { end = r; });
+        m.panes.set(ctx.job.id, { end, ended });
+        unsent.add(ctx.job.id);
+        ctx.saveState({ pane: ctx.job.id, by });
+        return undefined;
+      },
+      reattach(ctx) {
+        // The task saved unsent is sent once; after that the pane is watched again.
+        if (unsent.delete(ctx.job.id)) m.sent.push({ jobId: ctx.job.id, by });
+        else m.reattached.push({ jobId: ctx.job.id, by });
+        return new Promise((resolve) => {
+          void m.panes.get(ctx.job.id)!.ended.then(() => resolve({ kind: 'finished', result: 'done' }));
+          ctx.signal.addEventListener('abort', () => resolve({ kind: 'failed', error: 'aborted' }), { once: true });
+        });
+      },
+    };
+  };
+  return { ...m, opened, closed, holdOpen, executor };
+}
+
+const jobRunOf = (a: TestApp, jobId: string) => a.app.instance.sagas.open().find((s) => s.kind === 'job-run' && s.data.jobId === jobId);
 
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
 
@@ -157,6 +209,62 @@ describe('several hoppers on one database (issue #1662)', () => {
     expect(m.aborted).toEqual([{ jobId: job.id, by: 'first', reason: 'park' }]);
     expect(eventsOf(first, 'job.parked').filter((e) => e.jobId === job.id)).toHaveLength(1);
   });
+
+  it('the run is a job-run saga: left by its hopper, the other goes on from its run step, with the task sent once', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const m = splitMachine();
+    cleanups.push(() => { for (const p of m.panes.values()) p.end(); });
+    const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source: createManualSource(), seams: { executors: [m.executor('first')] } });
+    apps.push(first);
+    const job = await first.pull({}, { executor: 'split' });
+    await waitFor(() => m.sent.length === 1, { what: 'the task sent into the pane' });
+    // The saga keeps what a later step needs: the credentials placed and the executor's session state.
+    const saga = jobRunOf(first, job.id)!;
+    expect(saga).toMatchObject({ key: `${job.id}/1`, steps: [{ name: 'claim', state: 'done' }, { name: 'credentials', state: 'done' }, { name: 'pane', state: 'done' }, { name: 'run', state: 'pending' }, { name: 'checkpoint' }, { name: 'end' }] });
+    expect(saga.data).toMatchObject({ credentials: { scratch: `/scratch/${job.id}`, env: {} }, session: { executorState: { pane: job.id, by: 'first' } } });
+
+    const second = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [m.executor('second')] } });
+    apps.push(second);
+    await first.stop();
+    apps.splice(apps.indexOf(first), 1);
+    await waitFor(() => m.reattached.length === 1, { what: 'the second hopper to take the run up', timeoutMs: 8000 });
+    expect(m.reattached).toEqual([{ jobId: job.id, by: 'second' }]);
+    expect(eventsOf(second, 'job.reattached').filter((e) => e.jobId === job.id).map((e) => e.data.reason)).toEqual(['its hopper stopped']);
+
+    m.panes.get(job.id)!.end();
+    expect((await second.waitForStatus(job.id, 'finished', 8000)).attempts).toBe(1);
+    expect(m.opened).toEqual([{ jobId: job.id, by: 'first', again: false }]);
+    expect(m.sent).toEqual([{ jobId: job.id, by: 'first' }]);
+    await waitFor(() => jobRunOf(second, job.id) === undefined, { what: 'the saga to end' });
+    expect(eventsOf(second, 'job.finished').filter((e) => e.jobId === job.id)).toHaveLength(1);
+  });
+
+  it('a hopper that stops while the pane opens: the other opens it again, and the task goes into one pane once', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const m = splitMachine();
+    cleanups.push(() => { for (const p of m.panes.values()) p.end(); });
+    const held = m.holdOpen();
+    const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source: createManualSource(), seams: { executors: [m.executor('first')] } });
+    apps.push(first);
+    const second = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [m.executor('second')] } });
+    apps.push(second);
+    const job = await first.pull({}, { executor: 'split' });
+    await held.begun;
+    // The first hopper's open ends while it stops: what it did is the cut-short try the second one finds.
+    const stopped = first.stop();
+    setTimeout(held.release, 300);
+    await stopped;
+    apps.splice(apps.indexOf(first), 1);
+
+    await waitFor(() => m.sent.length === 1, { what: 'the second hopper to open the pane again and send the task', timeoutMs: 8000 });
+    expect(m.opened).toEqual([{ jobId: job.id, by: 'first', again: false }, { jobId: job.id, by: 'second', again: true }]);
+    expect(m.sent).toEqual([{ jobId: job.id, by: 'second' }]);
+    m.panes.get(job.id)!.end();
+    expect((await second.waitForStatus(job.id, 'finished', 8000)).attempts).toBe(1);
+    expect(eventsOf(second, 'job.started').filter((e) => e.jobId === job.id)).toHaveLength(1);
+  }, 30_000);
 
   it('each pass over the jobs runs on one hopper at a time: a waiting job\'s pane is read by one, by the other once it stops', async () => {
     const { m, first, start } = await twoHoppers(1);
