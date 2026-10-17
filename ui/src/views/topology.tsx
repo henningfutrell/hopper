@@ -3,10 +3,13 @@
 // and clicks a node to read its details, its neighbours and the Infra changes that touched it (plans, approvals, applies,
 // drift, out-of-band writes); a timeline entry on Infra picks its node too, so the node picked is the page's. Each source says when it
 // was read, and a stale one says why. The page loads the graph (infra.tsx) and shows this panel always: an empty graph says
-// how a check fills it. Read-only: nothing here acts on a cloud or a cluster.
-import { Network } from 'lucide-react';
+// how a check fills it. Discover now (part 3) asks the hopper to read every account and cluster its vault mints for, as its
+// schedule does every 6 hours. Read-only: nothing here acts on a cloud or a cluster.
+import { Network, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
+import { Button } from '@/components/ui/button';
+import { post } from '@/lib/api';
 import type { TimelineEntry } from '@/model/infra-plans';
 import { nodeEntries, DRAW_MAX, filterChoices, filterGraph, layout, neighbours, sideOf, sourceName, sourceState, type TopologyFilter } from '@/model/topology';
 import { KIND, KIND_TONE } from './infra-timeline';
@@ -87,16 +90,43 @@ function Details({ g, node, timeline, onSelect }: { g: TopologyGraph; node: Grap
   );
 }
 
-/** `selected` and `onSelect`: the node picked, the page's, so an Infra timeline entry picks its node here too. */
-export function TopologyPanel({ g, timeline, selected, onSelect: setSelected }: { g: TopologyGraph; timeline: readonly TimelineEntry[]; selected?: string; onSelect: (id: string) => void }) {
+/** What Discover now answers: how the run ended, and the graph after it. */
+type Discovered = { state: string; error?: string; graph: TopologyGraph };
+
+/** Discover now: the hopper's own read of every account and cluster its vault mints for, with what it said. */
+function DiscoverNow({ onGraph }: { onGraph: (g: TopologyGraph) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ ok: boolean; words: string } | undefined>();
+  const discover = async () => {
+    setBusy(true); setSaid(undefined);
+    try {
+      const r = await post<Discovered>('/ui/api/topology/discover', {});
+      onGraph(r.graph);
+      setSaid(r.state === 'done' ? { ok: true, words: 'Discovery read every account and cluster the vault mints for.' }
+        : { ok: false, words: `Discovery goes on in the background${r.error ? `: ${r.error}` : ''}.` });
+    } catch (e) {
+      setSaid({ ok: false, words: `Discovery did not run: ${(e as Error).message}` });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div data-slot="topology-discover" className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => { void discover(); }}><RefreshCw />{busy ? 'Discovering…' : 'Discover now'}</Button>
+      {said && <span role="status" className={`text-xs ${said.ok ? 'text-muted-foreground' : 'text-warn'}`}>{said.words}</span>}
+    </div>
+  );
+}
+
+/** `selected` and `onSelect`: the node picked, the page's, so an Infra timeline entry picks its node here too. `onGraph`: the graph after Discover now. */
+export function TopologyPanel({ g, timeline, selected, onSelect: setSelected, onGraph }: { g: TopologyGraph; timeline: readonly TimelineEntry[]; selected?: string; onSelect: (id: string) => void; onGraph?: (g: TopologyGraph) => void }) {
   const [f, setF] = useState<TopologyFilter>({});
   const shown = useMemo(() => filterGraph(g, f), [g, f]);
   const node = g.nodes.find((n) => n.id === selected);
   const stale = g.sources.filter((s) => sourceState(s).stale).length;
   return (
     <Panel title="Topology" icon={Network} count={g.nodes.length || ''} bodyClassName="space-y-3">
-      <p className="text-sm text-muted-foreground">The services in your AWS accounts and Kubernetes clusters, and what is linked to what. A read-only check reports each account and cluster; a source it cannot read keeps its last good snapshot.</p>
-      {g.sources.length === 0 ? <Empty>No topology yet. A read-only check reports what it finds in an AWS account or a Kubernetes cluster with POST /ui/api/topology/report and an API token with the scope topology:report.</Empty> : (
+      <p className="text-sm text-muted-foreground">The services in your AWS accounts and Kubernetes clusters, and what is linked to what. The hopper reads each account and cluster its vault mints for every 6 hours, as the read role hopper-read; a read-only check can report them too. A source that cannot be read keeps its last good snapshot.</p>
+      {onGraph && <DiscoverNow onGraph={onGraph} />}
+      {g.sources.length === 0 ? <Empty>No topology yet. Set an aws-account minting credential on Settings → Vault, then Discover now. Or a read-only check reports what it finds with POST /ui/api/topology/report and an API token with the scope topology:report.</Empty> : (
         <>
           <ul data-slot="topology-sources" className="space-y-0.5 text-xs">
             {g.sources.map((s) => {

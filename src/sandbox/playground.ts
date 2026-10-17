@@ -19,6 +19,7 @@ import type { TemplateView } from '../domain/vault.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { BOX_AGENTS, boxImage, BOX_IMAGE } from './box-image.ts';
 import { PLAYGROUND_LABEL, staleHome, USER_LABEL } from './owned.ts';
+import { liveReader, type LivePoint } from '../telemetry/live.ts';
 
 export { PLAYGROUND_LABEL };
 /** The label that names a playground sandbox's id on its container and home. */
@@ -104,6 +105,11 @@ export function createPlayground(o: {
   const label = { [PLAYGROUND_LABEL]: o.instanceId };
   let timer: ReturnType<typeof setInterval> | undefined;
   let sweeping: Promise<void> | undefined;
+  let dropReader: (() => void) | undefined;
+  /** The sandboxes that run now (issue #1486), by state; the playground's are all beside the hopper. */
+  const now = (): LivePoint[] => (['starting', 'running', 'failed', 'destroying'] as const satisfies readonly PlaygroundState[]).map((state) => ({
+    value: [...entries.values()].filter((e) => e.state === state).length, attributes: { 'hopper.sandbox.kind': 'playground', 'hopper.sandbox.place': 'local', 'hopper.sandbox.state': state },
+  }));
   const say = (e: unknown): string => (e instanceof Error ? e.message : String(e));
   const shown = ({ userId: _u, containerId: _c, volume: _v, homeMade: _h, starting: _s, ...e }: Entry): PlaygroundSandbox => structuredClone(e);
 
@@ -290,6 +296,7 @@ export function createPlayground(o: {
 
     async start() {
       if (timer) return;
+      dropReader = liveReader('hopper.sandboxes', now);
       // Nothing survives a hopper: every sandbox of this instance a restart or a crash left goes now.
       await sweep();
       timer = setInterval(() => { void sweep(); }, PLAYGROUND_PASS_MS);
@@ -300,6 +307,7 @@ export function createPlayground(o: {
     async stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
+      dropReader?.(); dropReader = undefined;
       await sweeping;
     },
   };

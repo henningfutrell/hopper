@@ -111,7 +111,7 @@ export function remoteVault(o: {
       return { refused: r.problem };
     },
     mint: (ask, machineKey) => o.local.mint(ask, machineKey, mintFrom),
-    testMint: (asset, by) => o.local.testMint(asset, by, mintFrom),
+    testMint: (asset, by) => o.local.testMint(asset, by, mintFrom), mintForDiscovery: (asset) => o.local.mintForDiscovery(asset, mintFrom),
     mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
     mintForNeedStep: (ask) => o.local.mintForNeedStep(ask, mintFrom),
     releaseMints: (box) => o.local.releaseMints(box, unbindFrom), reconcileMints: () => o.local.reconcileMints(unbindFrom),

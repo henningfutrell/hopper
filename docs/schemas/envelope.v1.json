@@ -220,6 +220,7 @@
         "vault.minted",
         "vault.mint_refused",
         "vault.mint_tested",
+        "vault.discovery_minted",
         "vault.check_minted",
         "vault.check_mint_refused",
         "vault.binding_named",

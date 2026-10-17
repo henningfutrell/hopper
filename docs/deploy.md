@@ -1147,6 +1147,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   3. In Settings → Vault, set a secret with *Mints for* `aws-account/<id>` and the access key as its value, as above.
   4. Check it: `hopper vault mint-test aws-role/<id>/hopper-read`.
 
+  The hopper's topology discovery (issue #1781, docs/design.md "The infrastructure topology") reads each account set up so
+  every 6 hours, as `hopper-read`, with list and describe calls only: EKS, EC2 VPCs, load balancers, RDS, SQS and IAM roles.
+  `ViewOnlyAccess` is enough for it. The clusters EKS lists there are read as `hopper-read` too (cluster discovery).
+
   Every read session the hopper mints carries two session policies: `ReadOnlyAccess`, and an inline policy that denies
   every `Create`, `Delete`, `Put`, `Update` and `Modify` action, IAM's other writes, and `sts:AssumeRole` on any role
   but `hopper-read` (docs/design.md "A read-only infra box"). So a read session cannot write, even when the role can. A
@@ -1287,6 +1291,16 @@ Each sync of a job source, and each batch of GitHub changes the outbox sends, is
 and a link to the request that asked for them. The metrics are `hopper_source_sync_duration_seconds` by source and
 outcome, `hopper_outbox_batch_size`, `hopper_outbox_calls_total` by result, and `hopper_outbox_rows_coalesced_total`.
 
+Two gauges show what runs now (docs/design.md "Telemetry: what runs now"): `hopper_sandboxes`, the sandboxes that run at
+the same time, by kind (`need`, `playground`), place (`local`, `machine`) and state, and `hopper_db_connections`, the
+store's open connections.
+
+The steps the hopper does for a job are spans of the job's trace (docs/design.md "Telemetry: job steps"):
+`hopper.job.worktree` (the job's worktree on its machine), `hopper.job.follow` (a follow of its pull request: the hopper's
+merge, Merge now, Close PR), `hopper.job.base_merge` and `hopper.job.tend`. Each has its outcome, and a link to the sync
+or request that ran it. A job that a tend starts links to that tend. The metric is `hopper_job_step_duration_seconds` by
+step and outcome, and the Telemetry panel lists the steps with the job spans.
+
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 
 ```sh
@@ -1305,7 +1319,8 @@ reaches its OTLP port. Open Grafana with `kubectl port-forward svc/hopper-teleme
 
 While telemetry is on, a job runs with `TRACEPARENT`: its run span (docs/design.md "Telemetry: a job's trace on its
 machine"). A tool in the job that reads it, and is set to export, puts its spans in the job's trace. The job's requests
-to the hopper through `hopper-gh`, `hopper-skill`, `hopper-login` and `hopper-artifact` are spans of that trace too. The
+to the hopper through `hopper-gh`, `hopper-skill`, `hopper-login`, `hopper-artifact` and `hopper-step`, and its git fetches
+and pushes through the hopper, are spans of that trace too. The
 job is given no `OTEL_*` variable: to export from inside a job, give the variables to its machine yourself.
 
 ## Optional services

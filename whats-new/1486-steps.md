@@ -1,0 +1,1 @@
+- Operators who send telemetry now see a job's worktree setup, and its pull request's merge, base merge and tend, as steps in the job's trace, with how long each took.

@@ -18,7 +18,7 @@ import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts'; import { userCommandBoxes } from './command-boxes.ts';
+import { createTopologyDiscovery, type DiscoverAnswer, type TopologyDiscovery } from '../infra-plans/topology-discovery.ts'; import { createTopologyReader } from '../infra-plans/topology-reader.ts'; import { readClusters } from '../vault/clusters.ts'; import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts'; import { userCommandBoxes } from './command-boxes.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -55,7 +55,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts'; import { traceJobs } from '../telemetry/jobs.ts'; import { recordOutcomes } from '../telemetry/outcomes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts'; import { stampKeyOf } from '../domain/trust-stamp.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import { stampKeyOf } from '../domain/trust-stamp.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { revokeOnQuarantine, stepsMayRun } from './quarantine.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -126,7 +126,8 @@ export interface UserRuntimeOptions {
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
   /** Begins a `job-move` saga for this user's job that moves off its lost machine (issue #1569). Absent: such a job fails. */
   /** This user's `job-run` sagas (issue #1662): a claim's run is one, driven on any hopper. Absent: each run is driven where it was claimed. */
-  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; jobRuns?: { begin(userId: string, key: string, data: JobRunData): boolean; open(userId: string, jobIds: readonly string[]): Set<string> }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
+  /** A person's topology discovery run (issue #1781 part 3): the saga begun and driven. */
+  discoverTopology?: () => Promise<DiscoverAnswer | undefined>; jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; jobRuns?: { begin(userId: string, key: string, data: JobRunData): boolean; open(userId: string, jobIds: readonly string[]): Set<string> }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -176,7 +177,7 @@ export interface UserRuntime {
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
-  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests; needSteps: NeedSteps; // a job's need steps (issue #1007)
+  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests; needSteps: NeedSteps; topologyDiscovery: UserTopologyDiscovery; // a job's need steps (issue #1007); topology discovery (issue #1781 part 3)
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -184,7 +185,8 @@ export interface UserRuntime {
 }
 
 // The direct source (issue #901) pulls nothing, its jobs come through the route: a sync only retries a report that failed.
-const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000, AT_WORK: readonly string[] = ['running', 'waiting_answer', 'waiting_on']; // AT_WORK: a job whose need steps run (issue #1568)
+/** One user's topology discovery (issue #1781 part 3): its steps, and a run a person asks for. */
+export type UserTopologyDiscovery = TopologyDiscovery & { discover(): Promise<DiscoverAnswer | undefined> }; const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000;
 /** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the decision goes on as before. */
 const JEV_TIMEOUT_MS = 30_000;
 
@@ -260,7 +262,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     for (const s of sync.statuses().filter((j) => j.kind === `${providerOfKey(key)}-account`)) void sync.syncNow(s.name).catch(() => undefined);
   } });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, gitlabUrl: () => store.settings.getGitLabAccount()?.baseUrl, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }), issueDrafter: seams.issueDrafter ?? createClaudeDrafter({ cwd: dataDir, userEnv: cliEnv }), hostname: hostname() }); // the shrink guard's (issue #1096), in the user's mirrors
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, gitlabUrl: () => store.settings.getGitLabAccount()?.baseUrl, traceparent: (jobId) => jobTraces.traceContext(jobId).TRACEPARENT, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }), issueDrafter: seams.issueDrafter ?? createClaudeDrafter({ cwd: dataDir, userEnv: cliEnv }), hostname: hostname() }); // the shrink guard's (issue #1096), in the user's mirrors
   // The user's GitLab account (issue #1448 part 2): its source comes and goes with it, and syncs at each change.
   // Who on GitLab starts the user's jobs (issue #1448 part 3): Access decides, the GitLab account told as the trusted actor.
   const gitlabAccount = createGitLabAccount({ settings: store.settings, secrets: system, clock, logger, ...(o.sourceEmailMatch ? { emailMatch: () => o.sourceEmailMatch!() } : {}),
@@ -395,7 +397,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   // Each job one trace (issue #1486, design.md "Telemetry"): built from its events; a no-op while telemetry is off.
-  const stopFailureLog = logFailures(store), jobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) });
+  const stopFailureLog = logFailures(store), jobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) }), stopQuarantineRevokes = revokeOnQuarantine({ store, vault }); // issue #655 part 6: a quarantine revokes the item's vault grant
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => uiUrl(`question-${id}`), loginsUrl: () => uiUrl('logins'), infraUrl: () => uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(linkBase(), id), deliveries: store.notifierDeliveries, ...(o.reach ? { reach: o.reach } : {}) });
@@ -403,7 +405,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, lease: lease('artifacts'), ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Steps: Windows (issue #731, over ssh), box steps (issue #1004, in a job's own box), need steps (issue #1007, one-shot need boxes).
-  const mintReconcile = reconcilePass(() => vault.reconcileMints(), logger), sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ userId: user.id, hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }), steps: o.windowsSteps?.steps ?? NO_WINDOWS_STEPS, atWork: (jobId) => AT_WORK.includes(store.jobs.get(jobId)?.status ?? 'done'), ...(o.windowsSteps ? { sagas: { begin: (step) => o.windowsSteps!.sagas.begin(step, user.id), abort: (saga, reason) => o.windowsSteps!.sagas.abort(saga, reason) } } : {}) }); const launcher = o.sandboxes, needSteps = createNeedSteps({ userId: user.id, templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), release: (box) => vault.releaseMints(box), planFile: (id) => proxy.githubProxy.infraPlans.file(id), ...(o.infraApplies ? { applies: () => o.infraApplies!() } : {}), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), steps: launcher?.steps ?? NO_NEED_STEPS, ran: (step) => launcher?.ran(step) ?? false, atWork: (jobId) => AT_WORK.includes(store.jobs.get(jobId)?.status ?? 'done'), ...(launcher ? { run: (box, io, run) => launcher.needStep(user.id, box, io, run), sagas: { begin: (step) => launcher.sagas.begin(step, user.id), abort: (saga, reason) => launcher.sagas.abort(saga, reason) } } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349); a Windows step is kept in the database and run by its saga (issue #1611)
+  const mintReconcile = reconcilePass(() => vault.reconcileMints(), logger), sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ userId: user.id, hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }), steps: o.windowsSteps?.steps ?? NO_WINDOWS_STEPS, atWork: stepsMayRun(store.jobs), ...(o.windowsSteps ? { sagas: { begin: (step) => o.windowsSteps!.sagas.begin(step, user.id), abort: (saga, reason) => o.windowsSteps!.sagas.abort(saga, reason) } } : {}) }); const launcher = o.sandboxes, needSteps = createNeedSteps({ userId: user.id, templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), release: (box) => vault.releaseMints(box), planFile: (id) => proxy.githubProxy.infraPlans.file(id), ...(o.infraApplies ? { applies: () => o.infraApplies!() } : {}), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), steps: launcher?.steps ?? NO_NEED_STEPS, ran: (step) => launcher?.ran(step) ?? false, atWork: stepsMayRun(store.jobs), ...(launcher ? { run: (box, io, run) => launcher.needStep(user.id, box, io, run), sagas: { begin: (step) => launcher.sagas.begin(step, user.id), abort: (saga, reason) => launcher.sagas.abort(saga, reason) } } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349); a Windows step is kept in the database and run by its saga (issue #1611)
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined, recovering: Promise<void> = Promise.resolve();
   return {
@@ -412,7 +414,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault, topologyDiscovery: { ...createTopologyDiscovery({ store, topology: proxy.githubProxy.topology, reader: seams.topologyReader ?? createTopologyReader(), secrets: () => vault.view().secrets, mint: (asset) => vault.mintForDiscovery(asset), overrides: () => readClusters(store.config) }), discover: () => o.discoverTopology?.() ?? Promise.resolve(undefined) }, // issues #558, #585, #586; topology discovery (issue #1781 part 3)
     machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
       tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined), leave: machineLeave({ userId: user.id, links: o.links, targets: () => host.targets(), jobsOn: (name) => jobsOnMachine(name), config: store.config, edit: (e) => host.edit(e) }) }, // issue #1284
     async start() {
@@ -436,7 +438,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
         await dispatcher.stop(); await host.stopNotifiers(); outbound.stop();
-        stopFailureLog(); jobTraces.stop(); stopOutcomes();
+        stopFailureLog(); jobTraces.stop(); stopOutcomes(); stopQuarantineRevokes();
         host.stop(); stopBackendReads();
         store.close();
       })();

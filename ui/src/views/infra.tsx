@@ -58,7 +58,7 @@ export function Infra() {
   const now = useServerNow();
   const [plans, changePlans, reloadPlans] = useLoad<Plans>('/api/infra-plans');
   const [changes, changeChanges, reloadChanges] = useLoad<OutOfBandList>('/api/out-of-band');
-  const [topology, , reloadTopology] = useLoad<TopologyGraph>('/api/topology');
+  const [topology, changeTopology, reloadTopology] = useLoad<TopologyGraph>('/api/topology');
   const [node, setNode] = useState<string | undefined>();
   const pickNode = (id: string) => {
     setNode(id);
@@ -92,7 +92,7 @@ export function Infra() {
         : <Panel title="Out-of-band changes" icon={ShieldAlert}><NotYet state={changes} what="out-of-band changes" retry={reloadChanges} /></Panel>}
       <div data-slot="topology-panel" className="scroll-mt-3">
         {topology.kind === 'ok'
-          ? <TopologyPanel g={topology.data} timeline={timeline} selected={node} onSelect={setNode} />
+          ? <TopologyPanel g={topology.data} timeline={timeline} selected={node} onSelect={setNode} onGraph={(g) => changeTopology(() => g)} />
           : <Panel title="Topology" icon={Network}><NotYet state={topology} what="topology" retry={reloadTopology} /></Panel>}
       </div>
     </div>

@@ -112,6 +112,8 @@ export interface UserGitHubProxyOptions {
   sources(): readonly SourceStatus[];
   /** The URL of the user's GitLab account (issue #1448 part 3); undefined: none attached. */
   gitlabUrl?(): string | undefined;
+  /** The job's trace parent now (issue #1486 part 6), for its git; undefined: none. */
+  traceparent?(jobId: string): string | undefined;
   /** The stack resources (issue #1077: the stack-health watcher reads them), given to the oldest user only; absent: none. */
   stack?: () => Promise<StackResources>;
   /** A push's lines, counted in the user's mirrors of the job repositories (issue #1096); absent: no shrink guard. */
@@ -223,7 +225,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         vars: {
           [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
           // A GitLab job's git (issue #1448 part 3): to its user's GitLab, through the hopper too; the job holds no GitLab token.
-          ...jobGitConfig(url, o.accounts.endpoints('github').url, gitlabOf(job)),
+          ...jobGitConfig(url, o.accounts.endpoints('github').url, gitlabOf(job), o.traceparent?.(job.id)), // the job's trace parent too (issue #1486 part 6)
         },
       };
     },

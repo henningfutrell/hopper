@@ -45,12 +45,14 @@ The hopper only tracks these changes. It reverts nothing.
 
 The topology is a map of the services in your AWS accounts and Kubernetes clusters, and of what is linked to what: a cluster in its VPC, a service behind its load balancer, a workload and the IAM role it assumes, an app and the database or queue it uses, a role that another account may assume.
 
-- A read-only check reads one AWS account in one region, or one Kubernetes cluster, and reports what it found with an API token to `POST /ui/api/topology/report`. Give its grant the scope `topology:report`.
+- The hopper reads the map itself every 6 hours. It reads each AWS account that a minting credential in Settings → Vault mints for, as the account's read role `hopper-read`. Then it reads each cluster that EKS lists in those accounts, and each cluster that has a minting credential of its own. It uses only short-lived read credentials that the vault mints, and only read calls.
+- Click **Discover now** to read the map at once. The map shows what the hopper found when the read ends.
+- A read-only check can also read one AWS account in one region, or one Kubernetes cluster, and report what it found with an API token to `POST /ui/api/topology/report`. Give its grant the scope `topology:report`.
 - Filter the map by account, cluster, region or kind. Click a node to see its details, its neighbours, and the changes that touched it: plans, approvals, applies, drift and out-of-band writes.
 - In Applies and drift, each entry names the nodes it touched. Click one to see it on the map.
-- Each source says when it was read. When a check cannot read a source, the map keeps what it found the last time, and the source says why it is stale.
+- Each source says when it was read, and who read it. When the hopper or a check cannot read a source, the map keeps what it found the last time, and the source says why it is stale. The other sources are read as usual.
 - A faint node is one that only a link names, for example an IAM role in an account that no check read.
 
 The hopper never writes to a cloud or a cluster here.
 
-The same reads and acts are in the API, under the Infra tag: `GET /api/infra-plans`, `GET /api/out-of-band`, `GET /api/topology`, `POST /ui/api/infra-plans`, `POST /ui/api/out-of-band` and `POST /ui/api/topology/report`.
+The same reads and acts are in the API, under the Infra tag: `GET /api/infra-plans`, `GET /api/out-of-band`, `GET /api/topology`, `POST /ui/api/infra-plans`, `POST /ui/api/out-of-band`, `POST /ui/api/topology/report` and `POST /ui/api/topology/discover`.

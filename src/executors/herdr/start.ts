@@ -22,7 +22,7 @@ import { windowsShellOf } from './windows-shell.ts';
 import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
-import { shellQuote } from '../ssh.ts';
+import { shellQuote } from '../ssh.ts'; import { traceJobStep } from '../../telemetry/job-steps.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
@@ -403,7 +403,8 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   const unsandboxed = await enterSandbox(d, ctx, s);
   if (unsandboxed || ctx.signal.aborted) return unsandboxed;
   if (d.jobWorktrees || p.repo) {
-    const unentered = await enterJobWorktree(d, ctx, s, p.repo, p.repoUrl);
+    const unentered = await traceJobStep(ctx.job.id, 'worktree', () => enterJobWorktree(d, ctx, s, p.repo, p.repoUrl),
+      (r) => (r === null ? (s.jobWorktree ? 'made' : 'none') : 'startTimedOut' in r ? 'timed_out' : 'failed'));
     if (unentered || ctx.signal.aborted) return unentered;
     if (restore) {
       const unrestored = await restoreCheckpoint(d, ctx, s, restore);
