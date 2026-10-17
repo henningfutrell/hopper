@@ -14,6 +14,8 @@
 // Issue #715, part 4: each ended check's report is an artifact of the job that asked for the template (check-report.ts).
 // Issue #1468: a check that failed only on a network error (a mint's ECONNRESET, a timeout) is transient: it runs again
 // after `CHECK_RETRY_MS`, with no person. Any other failure still waits for one.
+// Issue #1736: a check that failed only on probes the catalog passes now (helm list refused on secrets, on a view role)
+// runs again at the next pass, with no person (`judgedAgain`).
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
@@ -21,7 +23,7 @@ import { currentCheck, markRuns, onlyNetworkErrors, workspaceRole } from '../dom
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
-import { checkEnv, checkScript, readResults } from './check-script.ts';
+import { checkEnv, checkScript, judge, readResults } from './check-script.ts';
 import { boxImage } from './box-image.ts';
 import type { Egress } from './egress.ts';
 import { CHECK_LABEL, staleHome, sweepHomes, USER_LABEL } from './owned.ts';
@@ -85,6 +87,21 @@ export function dueForCheck(t: Template, now: Date): boolean {
   if (c?.state === 'passed') return now.getTime() - Date.parse(c.at) >= CHECK_EVERY_MS;
   if (c?.state === 'failed' && c.transient) return now.getTime() - Date.parse(c.at) >= CHECK_RETRY_MS;
   return c?.state !== 'failed';
+}
+
+/**
+ * Whether a failed check of the template's current version failed only on probes the catalog passes now, from what each
+ * did (issue #1736: one judged before a right credential's refusal passed a read). It runs again then, with no person.
+ * A check with a problem, a probe that did not run, or a failed probe the catalog no longer has, does not.
+ */
+export function judgedAgain(t: Template, probes: ProbeCatalog): boolean {
+  const c = currentCheck(t);
+  if (t.readOnly !== true || !imageApproved(t) || c?.state !== 'failed' || c.problem !== undefined || c.probes.length === 0) return false;
+  const runs = markRuns(probes.runsFor((t.profiles ?? []).filter((p) => p.operation === 'read')), t.probeMarks);
+  return c.probes.filter((p) => !p.passed).every((p) => {
+    const run = runs.find((r) => r.probe.id === p.id && r.asset === p.asset);
+    return run !== undefined && p.exit !== undefined && judge(run, p.exit, p.output).passed;
+  });
 }
 
 /** A minted credential as the check box takes it: the AWS CLI's variables, or a kubeconfig of the cluster with the token. */
@@ -196,7 +213,7 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
     if (c.local) await sweep(c.local);
     const swept = new Set<string>();
     for (const { userId, template: t } of templates.templates()) {
-      if (!dueForCheck(t, c.clock.now())) continue;
+      if (!dueForCheck(t, c.clock.now()) && !judgedAgain(t, c.probes)) continue;
       const at = await c.place(userId);
       if (!at) continue;
       const key = `${userId}\0${at.machine}`;

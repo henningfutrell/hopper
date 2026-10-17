@@ -5,7 +5,7 @@
 // a person's) is a new revision of it. A template no job asked for gets none. The page runs no script and loads nothing:
 // every text a probe wrote is escaped.
 import { isRefusal, type UserArtifacts } from '../artifacts/service.ts';
-import { failedProbes, markedProbes, type ProbeResult, type ReadOnlyCheck } from '../domain/read-only-check.ts';
+import { failedProbes, markedProbes, refusedReads, type ProbeResult, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import type { Job } from '../domain/types.ts';
 import type { Template } from '../domain/vault.ts';
 
@@ -24,7 +24,9 @@ function summaryOf(check: ReadOnlyCheck): string {
   if (check.state === 'passed') {
     // Probes a person marked (issue #916): a read that must be refused, or one not run.
     const marked = markedProbes(check);
-    return `passed: ${probes(check.probes.length)}, every write refused, every read worked${marked.length ? `, as the template marks ${marked.join('; ')}` : ''}`;
+    // Reads refused as a right credential refuses them (issue #1736).
+    const refused = refusedReads(check);
+    return `passed: ${probes(check.probes.length)}, every write refused, every read worked${refused.length ? ` but ${refused.join('; ')}, refused as a right credential refuses it` : ''}${marked.length ? `, as the template marks ${marked.join('; ')}` : ''}`;
   }
   if (check.state === 'running') return 'runs now';
   const failed = failedProbes(check);

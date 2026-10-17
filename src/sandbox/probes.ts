@@ -53,10 +53,14 @@ const WRAPPED: readonly (readonly [string, string, string])[] = [
 ];
 
 /**
- * Why `helm.list` can fail on a view role (issue #869): helm keeps each release in a Secret, so listing releases reads
- * secrets, which the built-in `view` role does not grant. A Forbidden there is expected for such a credential.
+ * Why `helm.list` can be refused on a view role (issue #869): helm keeps each release in a Secret, so listing releases
+ * reads secrets, which the built-in `view` role does not grant. A Forbidden on secrets is expected for such a credential,
+ * and passes the probe (issue #1736, `HELM_LIST_REFUSAL`).
  */
-export const HELM_LIST_NOTE = 'helm list reads the secrets helm keeps its releases in. A view role cannot read secrets, so a Forbidden here is expected on such a credential: the probe passes only with read access to secrets';
+export const HELM_LIST_NOTE = 'helm list reads the secrets helm keeps its releases in. A view role cannot read secrets, so a Forbidden on secrets here is expected on such a credential, and the probe passes';
+
+/** The refusal of `helm list` on a view role: secrets, and nothing else, are forbidden (issue #1736). */
+export const HELM_LIST_REFUSAL = /\bsecrets is forbidden: .*cannot list resource "secrets"/;
 
 const AWS = ['aws-account', 'aws-role'] as const;
 const KUBE = ['cluster', 'namespace'] as const;
@@ -145,7 +149,7 @@ esac`,
     script: `${NS}\nkubectl delete pod hopper-read-only-check -n "$ns" --dry-run=server`,
   },
   {
-    id: 'helm.list', title: 'list releases', kinds: KUBE, tool: 'helm', expect: 'allowed', note: HELM_LIST_NOTE,
+    id: 'helm.list', title: 'list releases', kinds: KUBE, tool: 'helm', expect: 'allowed', note: HELM_LIST_NOTE, rightRefusal: HELM_LIST_REFUSAL,
     script: `${NS}\ncase "$ASSET" in */*) helm list -n "$ns" ;; *) helm list -A ;; esac`,
   },
   {

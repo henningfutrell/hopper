@@ -1184,10 +1184,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
   to add. The AWS session is named `hopper-read-only-check` (or `<prefix>read-only-check`, or the fixed `SessionName`).
   Set `Region` in an AWS minting credential when the account's services are not in `us-east-1`.
-- **`helm list` needs read access to Secrets** (issue #869). helm keeps each release in a Secret, and the built-in
-  `view` role cannot read Secrets. On a view role the `helm.list` probe is Forbidden and fails: that is expected, and
-  the check report says so under it. To make it pass, give the minted role read (`get`, `list`) on `secrets` in the
-  namespaces it lists. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
+- **`helm list` reads Secrets** (issues #869, #1736). helm keeps each release in a Secret, and the built-in `view` role
+  (EKS `AmazonEKSViewPolicy`) cannot read Secrets. On a view role the `helm.list` probe is Forbidden on secrets: that is
+  right for a read credential, and the probe passes. The check report names it and says why. A refusal of anything else
+  still fails the probe. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
   each one must be refused.
 - **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
   ("Sandboxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
