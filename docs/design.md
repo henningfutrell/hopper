@@ -11516,8 +11516,9 @@ Two cases come before the rules and act on nothing (issue #517):
 
 **The same failure twice in a row** (issue #1461). The record of its item's run before it — the same job's, when it
 was continued, else that of the job it ran again (`rerunOf`), by whatever ran it again — has the same signature
-(`repeatedOf`, `chain.ts`). A run again did not help, so the item stops: `person`, `repeated`, the summary
-"Stopped: the same failure twice in a row", and no Jev pick (issue #550) runs it again. It is raised once, as one
+(`repeatedOf`, `chain.ts`). A run again did not help, so the item stops: `person`, `repeated`, and no Jev pick (issue #550) runs it
+again. One the rules would run again gets the summary "Stopped: the same failure twice in a row"; one they give to a
+person already keeps its summary, with the repeat in its reasons. It is raised once, as one
 hand-off (`retry_limit` for a `transient` class, else `person`). Not a daemon restart, a timeout (its liveness
 decides) or a `shared` cause (its problem holds the job): they say nothing of the item's work. It comes after the rules,
 the two cases above, and a hopper bug the job reported (issue #1147).
