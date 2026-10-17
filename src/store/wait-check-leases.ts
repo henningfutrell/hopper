@@ -1,4 +1,4 @@
-// The wait checks' leases (issue #1694, tenant migration 74, design.md "Wait checks"): the hopper that tests a job's wait
+// The wait checks' leases (issue #1694, tenant migration 76, design.md "Wait checks"): the hopper that tests a job's wait
 // check holds its row until `until`; another takes it only once that passed, or for a newer wait. The check itself is kept
 // with the wait, in the job. A claim is one statement, so two hoppers never both hold one.
 import type { WaitCheckLeases } from '../domain/wait-checks.ts';

@@ -128,6 +128,19 @@ describe('a wait check (issue #1694)', () => {
     expect(ended(b.store, job.id)).toHaveLength(1);
   });
 
+  it('a wait that names an item that does not exist ends at once, though its other items are open (issue #1691)', async () => {
+    const url = testDatabaseUrl();
+    const GONE = { kind: 'issue' as const, repo: 'octo/tools', number: 404 };
+    const r = reads({ ended: [{ ref: GONE, url: 'https://github.com/octo/tools/issues/404', state: 'not_found' }] });
+    const a = hopper(url, r);
+    const job = waitingJob(a.store, { for: 'octo/tools#9 and octo/tools#404 to close', on: { kind: 'outside', what: 'x' } });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ by: 'hopper', note: 'https://github.com/octo/tools/issues/404 was not found: no such repository or item, so the wait never ends on it' });
+  });
+
   it('a wait on another job ends when that job ends, read from the store with no outside read', async () => {
     const url = testDatabaseUrl();
     const r = reads();
