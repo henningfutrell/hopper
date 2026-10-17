@@ -104,10 +104,13 @@ export const STEP_DEFAULT_TIMEOUT_S = 30 * 60;
 export const STEP_MAX_TIMEOUT_S = 4 * 60 * 60;
 /**
  * The most a step's command may hold, and its inputs (a tar). The command travels in the request's URL, so it stays
- * small: a longer one is a script the job sends with its inputs (`--script FILE`).
+ * small: a longer one is a script the job sends with its inputs (`--script FILE`). The inputs are kept in the database
+ * until the step runs, so any host can run it (issue #1611).
  */
 export const STEP_COMMAND_MAX_BYTES = 4 * 1024;
-export const STEP_INPUTS_MAX_BYTES = 1024 * 1024 * 1024;
+export const STEP_INPUTS_MAX_BYTES = 32 * 1024 * 1024;
+/** The most a step's outputs (a tar) may hold: they are kept in the database until the job reads them (issue #1611). */
+export const STEP_OUTPUTS_MAX_BYTES = 32 * 1024 * 1024;
 export const STEP_MAX_OUTPUTS = 20;
 /**
  * An output: a file or directory relative to the host's working directory, as tar names it. No `..`, no drive, no
@@ -159,7 +162,8 @@ export interface StepResult {
 
 /**
  * The seam where a step runs (re-exported by ports.ts): over ssh to a Windows host in production
- * (src/windows-steps/ssh-host.ts), a double in tests. One step at a time per host: the caller serializes.
+ * (src/windows-steps/ssh-host.ts), a double in tests. One step at a time per host: the step's host lease in the database
+ * serializes (issue #1611).
  */
 export interface WindowsStepHost {
   /**
@@ -172,4 +176,69 @@ export interface WindowsStepHost {
    */
   run(host: WindowsHost, step: { id: string; command: string; dir: string; inputs: boolean; outputs: string[]; secrets?: Readonly<Record<string, string>> },
     io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
+  /**
+   * Removes the step's scratch directory from the host's working directory (issue #1611): after each step, and after a
+   * step a stopped hopper left. Rejects when the host could not be reached: the caller tries again.
+   */
+  sweep(host: WindowsHost): Promise<void>;
 }
+
+// ---- A step kept (issue #1611, design.md "Windows sandbox steps") ------------------------------
+
+/**
+ * A Windows step as the hopper keeps it, in the instance's `windows_steps` table, from the job's ask to an hour after
+ * its result: so it lives in no request and in no one hopper's memory. A `windows-step` saga runs it on any host.
+ */
+export interface WindowsStep {
+  id: string;
+  userId: string;
+  jobId: string;
+  /** The job's key for the ask: one step per job and key. */
+  key: string;
+  /** The saga that runs it, once it is begun. */
+  saga?: string;
+  host: string;
+  command: string;
+  timeoutSeconds: number;
+  outputs: string[];
+  /** The vault secrets it asks for, by name: read when it runs, never kept. */
+  secrets: string[];
+  inputsBytes: number;
+  createdAt: string;
+  /** When it took its host: from then it may have had its effect there, so it is never run a second time. */
+  leasedAt?: string;
+  /** Its host lease holds now: no other step of the user runs there until its scratch is swept. */
+  hostLeased?: true;
+  result?: StepResult;
+  endedAt?: string;
+}
+
+/** The Windows steps, in the instance's `windows_steps` table. */
+export interface WindowsStepRepository {
+  /** Keeps a new step with its inputs; a step of the same job and key kept already is answered instead, unchanged. */
+  add(step: WindowsStep, inputs: Buffer): WindowsStep;
+  get(id: string): WindowsStep | undefined;
+  /** Names the saga that runs the step. */
+  sagaIs(id: string, saga: string): void;
+  /** The inputs the job sent; undefined: none, or the step ended. */
+  inputs(id: string): Buffer | undefined;
+  /** Adds to the step's log, until it holds STEP_LOG_MAX characters. */
+  appendLog(id: string, text: string): void;
+  /** The log from character `from`, and where the next read starts. */
+  log(id: string, from: number): { text: string; next: number };
+  /** The step ended: its result and outputs kept, its inputs dropped. Only a step not ended yet: whether this end is kept. */
+  end(id: string, result: StepResult, at: string, outputs?: Buffer): boolean;
+  outputs(id: string): Buffer | undefined;
+  /**
+   * The host lease: the step takes its host, only while no other step of its user has a lease on that host and the
+   * step never had one before. Whether the step has the lease now, by this call.
+   */
+  leaseHost(id: string, at: string): boolean;
+  /** The step lets its host go: its host lease ends. */
+  releaseHost(id: string): void;
+  /** Removes the steps that ended before `before` and have no host lease. */
+  sweep(before: string): void;
+}
+
+/** The most of a step's log the database keeps: more is cut, and the log says so. */
+export const STEP_LOG_MAX = 4 * 1024 * 1024;
