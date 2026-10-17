@@ -97,7 +97,8 @@ describe('a gateway realm stays the authority', () => {
     const token = (JSON.parse(res.text) as { token: string }).token;
     await sleep(500);
     expect((await o.app.api('GET', '/api/queue', undefined, { 'x-hopper-session': token, ...good })).status).toBe(200);
-    const user = (await session(o.app, token)).user.id as string;
+    // The read carries the gateway's token too: a gateway session renews only with it, and here it renews every 360 ms.
+    const user = (await session(o.app, token, good)).user.id as string;
     await sleep(500);
     const expired = { authorization: `Bearer ${await idp.token({ sub: 'ada-1', aud: 'hopper' }, -120)}` };
     await o.app.api('GET', '/api/queue', undefined, { 'x-hopper-session': token, ...expired });

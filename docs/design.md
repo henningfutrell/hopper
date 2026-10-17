@@ -10848,9 +10848,11 @@ by the account. Now, before the check box starts, the vault mints the read crede
   answers `reach`: the minting credential's region and STS endpoint, or its API server and CA — not secrets, what the box
   needs to reach the account or cluster. `vault.check_minted` records each mint, `vault.check_mint_refused` each refusal;
   never a credential. The minting credential's `lastUsed` stays a job's.
-- **Fails closed, before the box.** A need that gets no credential — no minter for its kind, Access denied it, no
-  minting credential for the account or cluster, STS or the Kubernetes API refused — fails the check with every reason
-  (`the check box gets no credential for read on cluster lab: …`), and no check box runs.
+- **Fails closed, per need** (issue #873). A need that gets no credential — no minter for its kind, Access denied it, no
+  minting credential for the account or cluster, STS or the Kubernetes API refused — fails the check. Each of its probes
+  is `not-run`, with its reason (`not run: the check box gets no credential for read on cluster lab: …`). The probes of
+  the other needs still run in the check box, so a person sees all that is wrong in one check. With no probe left to
+  run, no check box runs. A need with no credential and no probe gives its reason as the check's `problem`.
 - **Into the box** (`checkEnv`, `checkScript`, `src/sandbox/check-script.ts`). The credentials are in the check box's
   environment, `HOPPER_CHECK_<n>_<NAME>`, never in its script. The script takes each into a shell variable and out of the
   environment at its start, and writes each kubeconfig (the server, its CA, the token; JSON) under the box's `/tmp`
@@ -11028,8 +11030,8 @@ as it got no credential: the hopper did not know which AWS account and role a wo
   of its own. Its probes run with the AWS read session of the template's one `aws-role` read need — the session Access
   allowed and the vault minted for that role, under the deny policy (`credentialsFor`, `src/sandbox/check.ts`). No new
   record, no new setting: the template that asks to read a workspace says which role reads it. A template with no
-  `aws-role` read need, or with more than one, fails the check, saying so, and runs no check box: the hopper does not
-  guess which role a workspace uses. Considered and not built: an `aws-role` in the workspace's name (it changes the
+  `aws-role` read need, or with more than one, fails the check, saying so on each workspace probe, which is not run
+  (issue #873: the probes of its other needs still run): the hopper does not guess which role a workspace uses. Considered and not built: an `aws-role` in the workspace's name (it changes the
   name of an asset that Access tuples and saved templates hold) and a mapping record (state a person keeps beside the
   template, for no case the template's own needs do not cover).
 - **The state backend is read-only under the read session already.** The deny policy matches the S3 backend's writes
