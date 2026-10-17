@@ -192,6 +192,15 @@ hopper's note naming the job and the request by id only, and gets no label or as
   `hopper`) writes the database directly: whoever runs it holds its credentials. Its operator actions
   (`job`, `queue`, `question`, issue #374) change no job, question or setting themselves: each mints a UI session in the database for one
   `POST /ui/api/*` on the running daemon, and drops it after.
+- **hopper.io runs nothing on an instance** (issue #468, `docs/hopper-io-security.md`). The **cloud link** is outbound
+  from the instance, off until its admin links it, and carries allow-listed state out only (a closed, versioned schema in
+  the instance's code). The instance acts on nothing that comes in on it but a remote action its admin turned on for that
+  instance, one kind at a time, taken as one `POST /ui/api/*` under the role of the user the hopper.io account maps to, and
+  recorded; no remote action changes sign-in, plugins, command-bearing options, the vault, remote access or the cloud link.
+  No credential goes on it: no GitHub token, database URL, master key, sealed secret, client token, machine link key,
+  proxy token, API token or session; only the public half of the **cloud link key**. At hopper.io every record and query
+  is scoped to one **hopper.io account**, with tests. A hopper.io change cites the rules (R1–R8) it touches; one that
+  cannot obey a rule changes that document first, with the owner's decision.
 - **A job's containers are its own** (issue #1295, `docs/design.md` "Each job its own container runtime"): a job's shell
   gets a podman runtime of its own (`src/client/job-runtime.ts`) — its runtime dir, storage and socket —, never the user's
   runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime. Claude, and a print-mode agent's turn,

@@ -7608,14 +7608,17 @@ secrets sat in a file on the host, beside the stack they open. The update script
 ## hopper.io: threat model, account isolation and privacy (issue #468, 2026-10-17 — a design, not built)
 
 Child of the cloud-hosting tracking issue #469. Written before any hopper.io code: `docs/hopper-io-security.md`. It
-names the assets and the trust boundaries, five threats (hopper.io compromised, a stolen **hopper.io link key**, a
-malicious install, a **hopper.io account** taken over, one account reading another's data), and eight rules every
+names the assets and the trust boundaries, five threats (hopper.io compromised, a stolen **cloud link key**, a
+malicious instance, a **hopper.io account** taken over, one account reading another's data), and eight rules every
 hopper.io change cites: R1 hopper.io runs nothing on an instance; R2 a remote action only by the admin's opt-in per
 instance, under the instance's roles, as one `POST /ui/api/*`, recorded; R3 every record and query scoped to one
-account, with tests; R4 no credential on the **hopper.io link**, a per-instance key that either side rotates or revokes;
+account, with tests; R4 no credential on the **cloud link**, a per-instance key that either side rotates or revokes;
 R5 only what the dashboard shows, a retention period, erase on delete, a privacy note; R6 link events on both sides;
 R7 rate and size caps; R8 self-hosting with no link stays complete. The open owner decisions of #469 change none of
-them; the document says where one widens a threat.
+them; the document says where one widens a threat. **They are repo law** (`AGENTS.md` "hopper.io runs nothing
+on an instance"): a hopper.io change cites the rules it touches, and one that cannot obey a rule changes the document
+first, with the owner's decision. The cloud link's record (issue #467 part 1, "The cloud link" below) is R8's switch, and
+the document's "What is built" says how it obeys R1, R4, R5 and R6.
 
 ## Self-update (issue #44, 2026-10-04)
 
