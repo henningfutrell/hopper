@@ -44,6 +44,11 @@ export const SWEEP_CHECK_MS = 60000;
 const JOBS_SWEPT = 2000;
 /** The work-kept trail read back: the newest this many events. */
 const KEPT_EVENTS = 1000;
+/**
+ * How long the sweep waits before it reaps again a job whose dir the reap could not remove (issue #1613): each pass would
+ * only fail the same way, and a reset of its container storage is slow. A scope or process of the job is stopped all the same.
+ */
+export const STUCK_RETRY_MS = 6 * 3600_000;
 
 /** A job whose processes may run: anything else of its own on a machine is a leftover. */
 const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'waiting_on', 'operator_led']);
@@ -159,8 +164,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** Each machine's last measure (issue #1120), and the machines told over the disk budget. */
   const measured = new Map<string, { paths: HopperDiskPath[]; at: string }>();
   const told = new Set<string>();
-  /** The jobs, by `<machine>/<job id>`, whose dirs the reap could not remove, told once (issue #1452). */
-  const stuck = new Set<string>();
+  /** The jobs, by `<machine>/<job id>`, whose dirs the reap could not remove, told once (issue #1452), with when to try again (issue #1613). */
+  const stuck = new Map<string, number>();
   let busy = false;
   /** Each discard's removal under way or failed, by job (issue #1194), and the reaps running. */
   const discards = new Map<string, Discarding>();
@@ -223,7 +228,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     const budget = budgetNow();
     const pressed = hopperDiskOf(found.usage, '', budget);
     if (pressed?.over) log(`hopper: the hopper's own disk use on ${m.id} is ${gb(pressed.bytes)}, over its disk budget of ${gb(budget!.bytes)}: the sweep reaps every ended job's scratch dir now, whatever its age`);
-    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, pressed?.over ? 0 : maxAgeMs(m)), jobOf, kept);
+    const running = new Set([...found.scopes, ...found.processes]);
+    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, pressed?.over ? 0 : maxAgeMs(m)), jobOf, kept, running);
     if (c.stopping()) return;
     // What the reaps freed, measured again; a survey that fails then keeps the first measure.
     const after = pressed?.over && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
@@ -233,10 +239,13 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   }
 
   /** The reaps of one pass on the machine; how many scratch dirs they removed. */
-  async function reapPlan(m: MachineSnapshot, shell: MachineShell, plan: SweepReap[], jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>): Promise<number> {
+  async function reapPlan(m: MachineSnapshot, shell: MachineShell, plan: SweepReap[], jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, running: ReadonlySet<string>): Promise<number> {
     let removed = 0;
     for (const r of plan) {
       if (c.stopping()) return removed;
+      const where = `${m.id}/${r.jobId}`;
+      // A dir the reap could not remove is tried again only after a wait (issue #1613), unless something of the job still runs.
+      if ((stuck.get(where) ?? 0) > c.clock.now().getTime() && !running.has(r.jobId)) continue;
       const reason = r.scratch !== undefined && kept.has(r.jobId) ? discardReason(jobOf(r.jobId), kept) : undefined;
       const discard = reason !== undefined;
       let said;
@@ -248,10 +257,9 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       }
       recordRemoved(r.jobId, m, said);
       // A dir the reap could not remove is still there (issue #1452): never said removed, and told once while it stays.
-      const where = `${m.id}/${r.jobId}`;
       if (said.left?.length) {
         if (!stuck.has(where)) log(`hopper: the sweep could not remove job ${r.jobId}'s scratch dir on ${m.id}: ${said.left.join(', ')} is still there`);
-        stuck.add(where);
+        stuck.set(where, c.clock.now().getTime() + STUCK_RETRY_MS);
         continue;
       }
       stuck.delete(where);
