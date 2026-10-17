@@ -34,7 +34,7 @@ export function createJoinCodeRepository(c: StoreContext): JoinCodeRepository {
         const r = c.db.get('DELETE FROM join_codes WHERE code_hash = ? RETURNING expires_at, user_id, template, pod', codeHash)
           ?? c.db.get('SELECT expires_at, user_id, template, pod FROM join_codes_spent WHERE code_hash = ? AND machine_key = ?', codeHash, machineKey);
         if (!r) return undefined;
-        c.db.run('INSERT INTO join_codes_spent (code_hash, machine_key, expires_at, user_id, template, pod) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (code_hash) DO NOTHING', codeHash, machineKey, r.expires_at, r.user_id, r.template ?? null, r.pod ?? null);
+        c.db.run('INSERT INTO join_codes_spent (code_hash, machine_key, expires_at, user_id, template, pod) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (code_hash) DO NOTHING', codeHash, machineKey, String(r.expires_at), String(r.user_id), r.template ? String(r.template) : null, r.pod ? String(r.pod) : null);
         return { userId: String(r.user_id), ...(r.template ? { template: String(r.template) } : {}), ...(r.pod ? { pod: String(r.pod) } : {}) };
       });
     },
