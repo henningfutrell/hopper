@@ -3487,6 +3487,24 @@ Version 1 (`docs/schemas/cloud_link.unlinked.v1.json`). The hopper's admin unlin
 }
 ```
 
+## `display_name.changed`
+
+Version 1 (`docs/schemas/display_name.changed.v1.json`). The hopper's admin changed the instance's display name (issue #465): what they call this hopper, shown in Settings → Version beside its instance id. `from` and `to` are the names, empty when none; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | string | yes |
+| `to` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": "",
+  "to": "Home box",
+  "by": "admin"
+}
+```
+
 ## `question.thread_held`
 
 Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.

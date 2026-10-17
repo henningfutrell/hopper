@@ -23854,3 +23854,42 @@ link agent (no inbound port, so a container install needs no change), the link k
 hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
 keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
 Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+
+## The instance's display name (issue #465, part 1, 2026-10-17)
+
+Issue #465 asks that one hopper.io account register many hoppers and see the machines of each. Each hopper keeps its own
+data. The issue says "install"; this repository's word is **instance** (glossary): "install" is the directory the daemon
+runs from. Its first need is a stable id that the instance makes once and keeps in its database, and a display name that
+its owner can change. The id is there already: `instanceId()` (issue #603, `src/store/settings.ts`), made at its first ask,
+kept in the instance's settings, and the label of the sandbox boxes the hopper launches. A restart, a new container or an
+update on the same database keeps it. This part adds the display name and shows both.
+
+**The setting** (`src/http/display-name.ts`, `src/http/ui/display-name.ts`): the instance's settings key `displayName`
+(never set: empty). `GET /api/display-name` (an instance read) answers `{ instanceId, displayName }`; `POST
+/ui/api/display-name` `{ displayName }` (the instance admin) sets it: one line, trimmed, 80 characters at most, empty clears
+it. Each change is `display_name.changed` (`from`, `to`, `by`). UI: Settings → Version → This hopper, shown to the instance
+admin only.
+
+**Decisions:**
+- **The display name is the instance's, not a user's.** The issue's terms put users inside an install; the instance admin
+  owns its settings. Whether each user links their own part to their own account is an open question of the issue.
+- **No new id.** The id of issue #603 is already made once and kept, which is what the issue asks. A second id would be
+  two names for one thing.
+- **No migration.** `displayName` is a new key of the instance's key-value settings; the build before never reads it.
+
+**Left for later parts of issue #465:** these need the hopper.io service, which is not in this repository, and the issue's
+open questions decided (who registers a multi-user instance, sharing with more than one account, a cap on instances).
+They follow the security rules of `docs/hopper-io-security.md` (issue #468) and the decisions of issue #469.
+- Registering from the instance: the admin starts it in Settings, the account owner approves it at hopper.io with a
+  short-lived, single-use code; nothing registered without approval on both sides.
+- Re-registering reuses the instance id and replaces the old registration. The cloud link (issue #467, "The cloud
+  link") makes a new `installId` at each link; the registration part makes it the instance id.
+- The link reports the instance's machines (name, online state, lanes, executors offered); machines are still added and
+  removed only on the instance.
+- Unregistering from either side: hopper.io revokes the link, or the instance unlinks and hopper.io removes it; neither
+  deletes anything on the instance.
+- The link state and last-seen time the account shows.
+
+**Verification:** `test/integration/display-name.test.ts`: a fresh hopper shows a 16-hex instance id and no name; the admin
+sets, changes and clears the name; the name and the id are kept across a restart; each change is one event; a body that is
+not one line of 80 characters at most is 400.
