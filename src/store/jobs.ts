@@ -71,10 +71,14 @@ export function createJobRepository(c: StoreContext): JobRepository {
     if (r) kept.set(id, { v: String(r.v), job: next });
     return next;
   };
-  /** The backfill's stamp: by the rules; a job a job made (a fork, a follow-on) at most its parent's rule level, never owner. */
+  /**
+   * The backfill's stamp: by the rules; a job a job made (a fork, a follow-on) at most its parent's rule level, never owner;
+   * a job with no source `approved`, so a job queued before job sources (by hand, or an older build) runs as before.
+   */
   const backfillStamp = (key: Buffer, job: Job): Job['stamp'] => {
     const parentId = job.forkOf?.jobId ?? job.followOn?.jobId;
     const parent = parentId === undefined ? undefined : get(parentId);
+    if (!parent && !job.source) return signStamp(key, job, { level: 'approved', reasons: ['source:none'], by: 'backfill', at: c.clock.now().toISOString() });
     if (!parent) return stampByRules(key, job, 'backfill');
     return signStamp(key, job, { level: childLevel(ruleCeiling(parent).level), reasons: [`parent:${parent.id}`], by: 'backfill', at: c.clock.now().toISOString() });
   };

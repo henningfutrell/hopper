@@ -17014,7 +17014,8 @@ origin pending (issue #652), a job resuming after a question too:
 Cancel and Run again are the ways out: Run again makes a new job, which intake stamps again from its item.
 
 **The backfill** (requirement 10). At each start, the store stamps every job that has not ended and has none, by the rules
-(`by: backfill`; a fork or a follow-on at most its parent's rule level), and the runtime logs how many. A job queued before
+(`by: backfill`; a fork or a follow-on at most its parent's rule level; a job with no source `approved`, reason
+`source:none`, since only the hopper's own code or an older build made it), and the runtime logs how many. A job queued before
 this build, and one a steadier channel's older build made on the same store (`docs/deploy.md` "Update channels and
 promotion"), so runs as before. No migration: `stamp` is one more field in the job's body, which the build before ignores.
 
