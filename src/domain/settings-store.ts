@@ -6,6 +6,7 @@ import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeAutoApproval } from './intake-auto-approve.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
+import type { GitLabAccountRecord } from './gitlab-account.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
@@ -32,6 +33,9 @@ export interface UserSettingsRepository {
   /** The repositories a connected account's jobs may use (issue #321), by the account's key (issue #1448); empty: none chosen. */
   getJobRepositories(key: ConnectedAccountKey): string[];
   setJobRepositories(key: ConnectedAccountKey, repositories: readonly string[]): void;
+  /** The user's GitLab account (issue #1448 part 2), never its token; absent: none attached. */
+  getGitLabAccount(): GitLabAccountRecord | undefined;
+  setGitLabAccount(account: GitLabAccountRecord | null): void;
   /** The usage graph's range and step the user chose (issue #385); absent: never chosen. */
   getUsageGraphView(): UsageGraphView | undefined;
   setUsageGraphView(view: UsageGraphView): void;

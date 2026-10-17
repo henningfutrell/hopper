@@ -36,13 +36,14 @@ export const VAULT_REFERENCE_MAX = 500;
 /** The TypeSafe API key (issue #657), the key a user's artifact content URLs are signed under (issue #673), the GitHub
  * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658), and remote access's: each
  * provider's credential and the tunnel token the hopper minted with it (issues #880, #968); and the GitHub webhook secret GitHub
- * signs its deliveries with (issue #1079). The hopper keeps no GitHub App private key (issue #1377). */
+ * signs its deliveries with (issue #1079); the GitLab account's personal access token (issue #1448). The hopper keeps no GitHub App private key (issue #1377). */
 export type SystemSecretName =
   | 'typesafe-api-key'
   | `remote-access.${'ngrok-authtoken' | 'ngrok-api-key' | 'cloudflare-api-token' | 'cloudflare-tunnel-token'}`
   | 'artifact-content-key'
   | 'github-webhook-secret'
   | `connected-account.${ConnectedAccountKey}.${'access-token' | 'refresh-token'}`
+  | 'gitlab-account.access-token'
   | `webhook.${string}.signing-secret`
   | `sign-in.${string}.${string}`;
 const SYSTEM_PREFIX = 'system/';
