@@ -92,6 +92,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   discardWork(jobId: string, by: ActingPerson): Promise<{ jobId: string; paths: string[] }>;
   /** A discard's removal under way, or why it failed (issue #1194). */
   discarding(jobId: string): Discarding | undefined;
+  /** A person keeps or removes a leftover the sweep listed on a machine (issue #1116, `Sweep.decideLeftover`). */
+  decideLeftover(machineId: string, path: string, decision: 'keep' | 'remove', by: ActingPerson): Promise<{ machineId: string; path: string; decision: 'keep' | 'remove' }>;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -156,10 +158,11 @@ export function createEngine(o: EngineOptions): Engine {
     checkpoints,
     discardWork: (jobId, by) => sweep.discard(jobId, by),
     discarding: (jobId) => sweep.discarding(jobId),
+    decideLeftover: (machineId, path, decision, by) => sweep.decideLeftover(machineId, path, decision, by),
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
-    ...createQueries(c, (id) => sweep.disk(id)),
+    ...createQueries(c, (id) => sweep.disk(id), (id) => sweep.leftovers(id)),
     ...createAnswerHandlers(c, cleanup),
     ...createReviewHandlers(c, cleanup),
     askFor: (kind, id) => askFor(c, kind, id),

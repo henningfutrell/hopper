@@ -24,12 +24,17 @@
 // after a restart, the first pass measures again, and a machine still over is told again.
 // An ended job with a container or a volume labelled with its id still on the machine (issue #1120) is reaped at once,
 // whatever its age: the reap removes them. What any reap removed of them is recorded as job.containers_removed.
-import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
+// Leftovers (issue #1116, design.md "Leftovers a person decides"): after its reaps, each pass lists what the layout before
+// issue #1188 left in the `.hopper-scratch` of each work tree the survey found, with size, age and whether it holds work not
+// pushed, and keeps, in memory, the leftovers it does not judge — a dir of no job the hopper knows, and the repository mirrors.
+// Machines shows them; a person keeps or removes each one (`decideLeftover`). The sweep removes none by itself.
+import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { discardReasonOf, hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
+import { createLeftovers } from './sweep-leftovers.ts';
 
 export const SWEEP_EVERY_MINUTES = 10;
 export const SCRATCH_MAX_AGE_HOURS = 24;
@@ -131,6 +136,15 @@ export interface Sweep {
   removals(): Promise<void>;
   /** The hopper's own disk use on the machine as the sweep last measured it, against the disk budget now (issue #1120); undefined: never measured. */
   disk(machineId: string): HopperDisk | undefined;
+  /** The leftovers on the machine the sweep last listed, with the decisions that stand (issue #1116); undefined: none listed. */
+  leftovers(machineId: string): MachineLeftovers | undefined;
+  /**
+   * A person's decision on one leftover the sweep listed on the machine (issue #1116): `keep` records it
+   * (`machine.leftover_kept`); `remove` removes it there whatever it holds, then records `machine.leftover_removed`. Throws
+   * `not_found` (no such machine), or `conflict` with why: not listed there, the machine offline or out of reach, or the
+   * removal left it there.
+   */
+  decideLeftover(machineId: string, path: string, decision: 'keep' | 'remove', by: ActingPerson): Promise<{ machineId: string; path: string; decision: 'keep' | 'remove' }>;
 }
 
 const WHY: Record<WorkDiscardReason, string> = {
@@ -161,6 +175,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     }
     return undefined;
   };
+  /** The leftovers the sweep does not judge (issue #1116), listed after each pass's reaps. */
+  const leftovers = createLeftovers(c, shellOf, log);
 
   /** Work kept and not removed since: the newest work event of each job. */
   const keptNow = (): KeptWork[] => keptWorkOf(c.store.events.recent(KEPT_EVENTS, [...WORK_EVENTS]));
@@ -212,6 +228,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     // What the reaps freed, measured again; a survey that fails then keeps the first measure.
     const after = pressed?.over && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
     measure(m, after, budget);
+    if (c.stopping()) return;
+    await leftovers.list(m, shell, found.roots ?? [], jobOf);
   }
 
   /** The reaps of one pass on the machine; how many scratch dirs they removed. */
@@ -260,6 +278,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       const m = measured.get(machineId);
       return m ? hopperDiskOf(m.paths, m.at, budgetNow()) : undefined;
     },
+    leftovers: (machineId) => leftovers.view(machineId),
+    decideLeftover: (machineId, path, decision, by) => leftovers.decide(machineId, path, decision, by),
     async discard(jobId, by) {
       const job = c.store.jobs.get(jobId);
       if (!job) throw new EngineError('not_found', `job ${jobId} not found`);

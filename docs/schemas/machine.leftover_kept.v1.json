@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "machineId",
+    "path"
+  ],
+  "additionalProperties": false
+}

@@ -7,7 +7,7 @@ import type {
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, LocalAccountView, LocalAccountsView, LocalAccountsEdit, PasskeyView, PasskeysView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
-  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
+  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, Leftover, LeftoverView, MachineLeftovers, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
   LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
   LastAccount, Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, KeptWorkView, StuckActResult, StuckCause, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
@@ -37,7 +37,7 @@ export type {
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, LocalAccountView, LocalAccountsView, LocalAccountsEdit, PasskeyView, PasskeysView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
-  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
+  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, Leftover, LeftoverView, MachineLeftovers, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
   LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
   LastAccount, Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, KeptWorkView, StuckActResult, StuckCause, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
@@ -93,7 +93,7 @@ export interface LoginsRead {
   logins: LoginView[];
 }
 
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; credentialAcceptance?: import('../../../src/domain/machine-credentials.ts').CredentialAcceptance; credentialHeld?: boolean };
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; credentialAcceptance?: import('../../../src/domain/machine-credentials.ts').CredentialAcceptance; credentialHeld?: boolean };
 
 export interface Health {
   ok: boolean;

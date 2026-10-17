@@ -68,6 +68,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/lanes/apply', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/undo', kind: 'change work on a machine' },
   { route: '/ui/api/failures/kept-work/:id/discard', kind: 'change work on a machine' }, // issue #1010: removes work not pushed
+  { route: '/ui/api/machines/leftovers', kind: 'change work on a machine' }, // issue #1116: removes a leftover on a machine
 ];
 
 const ROUTES = new Set(BOX_ACTIONS.map((b) => b.route));

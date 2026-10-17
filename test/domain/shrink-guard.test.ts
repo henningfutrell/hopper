@@ -6,6 +6,8 @@
 //     Then the file is named, against the base branch
 //   Scenario: the pull request's own change removes or shrinks the file
 //     Then nothing is named
+//   Scenario: the pull request's own change shrinks the file, and the push empties it or loses what the branch kept (issue #1218)
+//     Then the file is named, against the branch's head
 //   Scenario: a small edit, or the base branch's own shrink
 //     Then nothing is named
 import { describe, expect, it } from 'vitest';
@@ -47,6 +49,22 @@ describe('shrunkFiles (issue #1096)', () => {
       { path: 'old.ts', start: 300, head: undefined, base: 310, pushed: undefined },
       { path: 'big.md', start: 1000, head: 100, base: 1020, pushed: 110 },
     ], P)).toEqual([]);
+  });
+
+  it('the pull request shrinks the file itself, and the push empties it or loses much more (issue #1218)', () => {
+    expect(shrunkFiles([
+      { path: 'docs/design.md', start: 1000, head: 400, base: 1020, pushed: 0 },
+      { path: 'docs/glossary.md', start: 1000, head: 400, base: 1000, pushed: undefined },
+      { path: 'big.md', start: 1000, head: 400, base: 1000, pushed: 150 },
+    ], P)).toEqual([
+      { path: 'docs/design.md', from: 400, to: 0, against: 'head' },
+      { path: 'docs/glossary.md', from: 400, to: 0, against: 'head' },
+      { path: 'big.md', from: 400, to: 150, against: 'head' },
+    ]);
+  });
+
+  it('both sides shrink the file, the push keeps lines: the base branch\'s change too', () => {
+    expect(shrunkFiles([{ path: 'cut.md', start: 1000, head: 400, base: 300, pushed: 100 }], P)).toEqual([]);
   });
 
   it('small edits pass', () => {

@@ -20,11 +20,12 @@ import {
   type ContinuedBy, type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job, type WorkState, workShipped,
 } from '../domain/types.ts';
 import type { DismissedBy } from '../domain/locked.ts';
-import { ENDS_STALE, itemEnded } from './stale.ts';
+import { ENDS_STALE } from './stale.ts';
 import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
 import { handoffView, newerOf, newestOfItem, resolvableOf, type TakesBack } from './view.ts';
+import { newestOfJobs, passReads, staleEnd, staleOf } from './pass-reads.ts';
 
 export type HandoffAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
@@ -140,6 +141,9 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
   const resolving = new Set<string>();
   const view = (h: Handoff): HandoffView => handoffView(store, h, o.resumable, o.takesBack);
 
+  /** The pass of `dismissStale` the events asked for, not run yet. */
+  let dismissPass: ReturnType<typeof setImmediate> | undefined;
+
   const openOf = (jobId: string): Handoff | undefined => {
     const h = store.handoffs.forJob(jobId);
     return h?.status === 'open' ? h : undefined;
@@ -215,33 +219,18 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
     store.tx(() => { const h = openOf(jobId); if (h) close(h, 'finished'); });
   }
 
-  /** Why an open hand-off waits on nobody now, if it does not: its job gone or finished, or a newer job of its item. */
-  function staleOf(h: Handoff): { end: HandoffEnd; nextJobId?: string } | undefined {
-    const job = store.jobs.get(h.jobId);
-    if (!job) return { end: 'job_gone' };
-    if (job.status === 'finished') return { end: 'finished' };
-    const newer = newerOf(store, job);
-    return newer ? { end: 'superseded', nextJobId: newer } : undefined;
-  }
-
-  /** Why a failed job's locked entry waits on nobody any more (issue #1123), if it does not. */
-  function staleEnd(job: Job): { end: 'superseded' | 'item_closed'; nextJobId?: string } | undefined {
-    if (job.status !== 'failed' || job.dismissedAt !== undefined || !job.source) return undefined;
-    const newer = newerOf(store, job);
-    if (newer) return { end: 'superseded', nextJobId: newer };
-    const item = store.workItems.get(job.source.key);
-    return item && itemEnded(item) ? { end: 'item_closed' } : undefined;
-  }
-
   const STALE_NOTE = { superseded: 'a newer job of its item exists', item_closed: 'its item is closed at its source' } as const;
 
   function dismissStale(): string[] {
     const dismissed: string[] = [];
-    for (const job of store.jobs.list({ status: ['failed'], undismissed: true })) {
+    // A fixed number of reads for the pass (issue #1411): its transaction, and the reads in it, only for a job it acts on.
+    const failed = store.jobs.list({ status: ['failed'], undismissed: true }), newest = newestOfJobs(store, failed);
+    for (const job of failed) {
+      if (!staleEnd(store, job, newest)) continue;
       try {
         const done = store.tx(() => {
           const cur = store.jobs.get(job.id);
-          const stale = cur ? staleEnd(cur) : undefined;
+          const stale = cur ? staleEnd(store, cur) : undefined;
           const h = openOf(job.id);
           if (!stale || (h && resolving.has(h.id))) return false;
           if (h) {
@@ -283,17 +272,20 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       }
     },
     supersede() {
-      for (const r of store.failures.list({ outcome: SUPERSEDABLE, limit: 1_000_000 })) {
-        const job = r.pending ? undefined : store.jobs.get(r.jobId);
-        const newer = job ? newerOf(store, job) : undefined;
+      const records = store.failures.list({ outcome: SUPERSEDABLE, limit: 1_000_000 }).filter((r) => !r.pending), read = passReads(store, records.map((r) => r.jobId));
+      for (const r of records) {
+        const job = read.jobs.get(r.jobId);
+        const newer = job ? newerOf(store, job, read.newest) : undefined;
         if (newer) store.failures.update(r.id, { outcome: 'superseded', outcomeAt: nowIso(), nextJobId: newer, note: 'a newer job of its item exists' });
       }
     },
     settle() {
-      for (const h of store.handoffs.list({ status: 'open', limit: 1_000_000 })) {
+      const opened = store.handoffs.list({ status: 'open', limit: 1_000_000 }), read = passReads(store, opened.map((h) => h.jobId));
+      for (const h of opened) {
+        if (!staleOf(store, h, read)) continue;
         store.tx(() => {
           const cur = store.handoffs.get(h.id);
-          const stale = cur?.status === 'open' ? staleOf(cur) : undefined;
+          const stale = cur?.status === 'open' ? staleOf(store, cur) : undefined;
           if (!cur || !stale) return;
           close(cur, stale.end, stale.nextJobId);
           if (stale.end === 'superseded') settleRecord(cur, 'superseded', 'a newer job of its item exists', stale.nextJobId);
@@ -335,7 +327,9 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
         else if (e.type === 'job.finished') later(onFinished);
       }
       // After the hand-off a run again closes (onQueued, scheduled first): what the new job, or the item's close, left stale.
-      if (ENDS_STALE.has(e.type)) setImmediate(() => { if (o.live()) dismissStale(); });
+      // One pass after the last of the events that came together (issue #1411): a pass each was a pass over every
+      // failed job for each job that ended. Moved behind each such event, so it stays after that event's onQueued.
+      if (ENDS_STALE.has(e.type)) { clearImmediate(dismissPass); dismissPass = setImmediate(() => { if (o.live()) dismissStale(); }); }
     },
     resolvable,
     async resolve(id, input, by) {
