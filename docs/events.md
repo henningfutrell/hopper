@@ -3370,8 +3370,8 @@ Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a Gi
   "machine": "box",
   "as": "octocat",
   "op": "pr.create",
-  "repo": "octo/site",
-  "reason": "a job opens a pull request only on its own repository (octo/tools)"
+  "repo": "else/where",
+  "reason": "else/where is not one of the repositories the hopper works on, so it does nothing there for a job"
 }
 ```
 
