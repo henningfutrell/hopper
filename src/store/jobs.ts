@@ -164,8 +164,8 @@ export function createJobRepository(c: StoreContext): JobRepository {
         return { ...cur, stamp: quarantinedStamp(key, { ...cur, stamp }, c.clock.now().toISOString()) };
       });
     },
-    stampHold(job) {
-      return stampKey ? stampHold(stampKey, job) : undefined;
+    stampHold(job, brake) {
+      return stampKey ? stampHold(stampKey, job, brake) : undefined;
     },
     quarantine(id) {
       const key = stampKey;

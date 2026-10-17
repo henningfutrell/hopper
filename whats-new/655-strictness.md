@@ -1,0 +1,1 @@
+- In Settings → Intake you can now say how much trust a job needs before it runs: for all jobs, for one job source or for one repository. A waiting job that does not pass says why.
