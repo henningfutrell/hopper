@@ -11,6 +11,7 @@ import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews, type Sessions } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
+import { live, liveWhy } from './continued.ts';
 import { profileOf } from './profile.ts';
 import { tldrSettings } from '../tldr/service.ts';
 import { withShownTldr } from '../tldr/text.ts';
@@ -134,6 +135,13 @@ export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Hand
   if (h.status === 'closed') {
     const closed = no(h.resolution ? `already resolved: ${RESOLUTION_TEXT[h.resolution.action]}` : 'already closed');
     return { ...h, ...learn, continueResumes, card, actions: { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed } };
+  }
+  // Its job live again (issue #1777): no resolution, Done and Won't do included — they would end a job about to do the
+  // work. The hand-off closes by itself, `resumed`.
+  if (job && live(job)) {
+    const none = no(`${liveWhy(job.status)}, and this hand-off closes by itself`);
+    const actions = { continue: none, fixed: none, doneByHand: none, wontDo: none };
+    return { ...h, ...learn, continueResumes, card: { ...card, why: `Nothing to do: its job ${liveWhy(job.status).replace(/^it /, '')}.` }, actions };
   }
   const pending = record?.pending;
   const runs: Allowed = pending ? { ok: false, why: pending === 'retry' ? 'it runs again by itself' : 'it is being run again', soon: true } : runsAgain(store, h.jobId, takesBack);

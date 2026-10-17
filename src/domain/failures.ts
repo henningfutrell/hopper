@@ -217,9 +217,10 @@ export type HandoffReason = typeof HANDOFF_REASONS[number];
  * #551), a person did the work by hand (`done_by_hand`) or decided it is not to be done (`wont_do`), or its job ended
  * finished. `cleared`: closed by the build before #551, with no resolution. Or, found stale by the sweep or at start
  * (issue #529): a newer job of its item exists (`superseded`), its item is closed at its source (`item_closed`), or
- * its job is gone (`job_gone`).
+ * its job is gone (`job_gone`). Or its job is live again (`resumed`, issue #1777): a Continue or a resume by any other way
+ * took it back to the queue, so it waits on nobody.
  */
-export const HANDOFF_ENDS = ['run_again', 'continued', 'done_by_hand', 'wont_do', 'cleared', 'finished', 'superseded', 'item_closed', 'job_gone'] as const;
+export const HANDOFF_ENDS = ['run_again', 'continued', 'done_by_hand', 'wont_do', 'cleared', 'finished', 'superseded', 'item_closed', 'job_gone', 'resumed'] as const;
 export type HandoffEnd = typeof HANDOFF_ENDS[number];
 
 /**

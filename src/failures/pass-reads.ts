@@ -5,6 +5,7 @@
 // when it acts on it.
 import type { UserStore } from '../domain/ports.ts';
 import type { Handoff, HandoffEnd, Job } from '../domain/types.ts';
+import { live } from './continued.ts';
 import { itemEnded } from './stale.ts';
 import { newerOf } from './view.ts';
 
@@ -23,13 +24,14 @@ export function passReads(store: Pick<UserStore, 'jobs'>, jobIds: readonly strin
 }
 
 /**
- * Why an open hand-off waits on nobody now, if it does not: its job gone or finished, or a newer job of its item.
- * `read`: as read for a pass; else reads of its own.
+ * Why an open hand-off waits on nobody now, if it does not: its job gone or finished, live again (issue #1777: a Continue
+ * or a resume took it back to the queue), or a newer job of its item. `read`: as read for a pass; else reads of its own.
  */
 export function staleOf(store: Pick<UserStore, 'jobs'>, h: Handoff, read?: PassReads): { end: HandoffEnd; nextJobId?: string } | undefined {
   const job = read ? read.jobs.get(h.jobId) : store.jobs.get(h.jobId);
   if (!job) return { end: 'job_gone' };
   if (job.status === 'finished') return { end: 'finished' };
+  if (live(job)) return { end: 'resumed' };
   const newer = newerOf(store, job, read?.newest);
   return newer ? { end: 'superseded', nextJobId: newer } : undefined;
 }

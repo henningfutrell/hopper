@@ -5,6 +5,7 @@ import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/p
 import { SPECIALTY_LABEL } from '../domain/elbow-in.ts';
 import { asksOf, isRerunnable, machineRanOn, PUSHABLE_ENDS, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
+import { settleLiveAgain } from '../failures/continued.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
@@ -326,6 +327,9 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
           error: undefined, errorTail: undefined, liveness: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
           holdReason: undefined, waitReason: undefined, laneId: undefined, sourceState: { ...job.sourceState, sync },
         });
+        // Push it (issue #1777): its failure record waits on nothing now, so its problem's release runs nothing. A hand-off's
+        // Continue and the assessor's settle their own record.
+        if ('keptWork' in by) settleLiveAgain(store, jobId, nowIso(c));
         store.events.append({ type: 'job.continued', jobId, data: { ...by } });
         return { ok: true, job: next };
       });

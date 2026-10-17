@@ -38,6 +38,7 @@ export const HANDOFF_REASON_LABEL: Record<HandoffReason, string> = {
 const HANDOFF_END_LABEL: Record<NonNullable<HandoffView['end']>, string> = {
   run_again: 'ran again', continued: 'continued', done_by_hand: 'done by hand', wont_do: 'won\'t do', cleared: 'cleared', finished: 'its job finished',
   superseded: 'a newer job of its item', item_closed: 'its item is closed', job_gone: 'its job is gone',
+  resumed: 'its job went on again',
 };
 
 export function handoffEndText(h: HandoffView): string {

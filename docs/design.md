@@ -11995,6 +11995,14 @@ never deleted, with why (`handoffs.ts` `settle`, `checked`):
 - a newer job of its item exists that no `job.queued` closed it for — a store from the build before, or a newer job
   made while nothing followed the events (`superseded`, `nextJobId` the newer job); its record turns `superseded`;
 - its job ended finished (`finished`) or is gone (`job_gone`);
+- its job is live again (`resumed`, issue #1777): a Continue, Push it or a resume took it back to the queue by another
+  way than this hand-off. It closes at the sweep and at once on the job's `job.continued` or `job.queued`, never while a
+  person resolves it; its record turns `retried`, with the job itself as its next job. No hand-off opens for a live job.
+  A failure record whose job is live again (Push it while it waits on its problem, then the problem resolved) ends the
+  same way: Push it settles it in its own transaction, and a pending run again (`runPending`) reads the job first and
+  after a refusal, so a release runs nothing and opens no hand-off. A live job's hand-off card offers no resolution, and
+  the Run again checks (`takesBack`) say "it is already queued again: it runs when a lane is free", not "its end is not
+  reported to its source yet" — that one is for an ended job only;
 - its item is closed at its source any way but as completed, or gone (`item_closed`): the sweep's work check
   (`work-check.ts`, below "What happened, from the work") asks the source (`JobSource.workState`; GitHub: the issue's
   state, 404/410 gone) for each open hand-off, at once for a new one and then at most every 10 minutes; its record
