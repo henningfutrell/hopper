@@ -12837,6 +12837,41 @@ job is told it whatever its job rules. It says:
 
 **Verification.** `test/job-rules/delivery-path.test.ts`.
 
+## Routed children (issue #1510, 2026-10-17)
+
+Jobs whose change belonged in another repository ended in a `kind: outside` wait for a person: "a person adds the hopper
+label to <repo>#N", "or pushes the patch". The child issue sat unlabelled, so no source listed it until a person went to
+GitHub; and once its job ran and the issue closed, the parent went on waiting on free text.
+
+- **A required child is routed.** When a job files a required child (`hopper-gh issue create --repo OWNER/NAME --required`,
+  "Issue lineage") the hopper files it with the job sources' label (`ROUTE_LABEL`, `hopper`, as the Add PR checks job's)
+  and assigns it to the job's user's connected account (`FiledWith`, `src/github-proxy/api.ts`; the broker,
+  `src/github-proxy/broker.ts`). The proxy files issues only on the user's job repositories, so a routed child is always
+  in a repository the hopper works on. A follow-up is not routed: it waits for a person to triage it, as before.
+- **Trusted origin is unchanged.** The child's text keeps the note `Filed through hopper for job …` (`FILED_BY_JOB`), so it
+  is a request card (`a job filed it`) and auto-approval never takes it (issue #1268). Routing saves the trip to GitHub; the
+  approval stays a person's act in Intake. The note says so: `Routed by the hopper: Intake lists it as a request card, and
+  a person approves it before a job takes it.`
+- **The parent waits on the item.** The answer carries `routed: true` and `waitOn: "issue OWNER/NAME#N"`; the delivery
+  line tells the job to end with `HOPPER_WAITING` and that `on:` line, so the wait is a typed `item` wait that wakes when
+  the child closes ("What a wait waits on"; a child no source tracks is read at each sync, issue #1508).
+  `job.child_issue_filed` records `routed: true`.
+- **An outside wait says why a person acts** (`OutsideWhy`, `src/domain/wait-on.ts`): `on: outside: not managed: <what>`
+  (the repository is not one the hopper works on) or `on: outside: gated: <what>` (an infrastructure apply, a gitops
+  apply, a production approval), recorded as `why` (`not_managed`, `gated`) on `wait.on`, additive. The label says it:
+  `outside (gated): …`. An outside wait with neither is **flagged**: `outside (reason not given): …`. Items an outside
+  wait's text names are watched (issue #1508).
+- **What a job is told.** `DELIVERY_LINE`: the hopper labels and assigns a required child, the job waits on it, it never
+  asks a person to add the hopper label, and it waits on a person only with `not managed` or `gated`. `WAIT_LINE` lists both
+  forms.
+
+**Not done here.** A job with no issue of its own (a direct job) cannot file a required child, so its child is a follow-up
+and is not routed. An approval of a routed child stays a person's: a job-filed card is never auto-approved, and a change
+there is a change to the trusted-origin rule.
+
+**Verification.** `test/integration/routed-children.test.ts`, `test/github-proxy/proxy.test.ts` ("issue lineage"),
+`test/domain/wait-on.test.ts`, `test/ui/board.test.ts`, `test/job-rules/delivery-path.test.ts`.
+
 ## Repository job rules (issue #1472 part 4, 2026-10-16)
 
 Owner requirement: jobs do not know what done means for a repository (follow the change through its pipeline to its test
