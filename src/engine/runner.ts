@@ -37,6 +37,8 @@ interface Running {
   cancelNote?: string;
   /** Set by park() (issue #501): the job is parked once its executor has stepped aside, unless it finished meanwhile. */
   parking?: boolean;
+  /** Set by drop() (issue #1662): another hopper holds the job now; this run writes no outcome. */
+  dropped?: boolean;
   done: Promise<void>;
 }
 
@@ -56,6 +58,10 @@ export interface Runner {
   park(jobId: string): boolean;
   /** Abort everything for shutdown and wait up to `ms`. Nothing is written afterwards. */
   stopAll(ms: number): Promise<void>;
+  /** The jobs this runner drives now (issue #1662). */
+  driving(): string[];
+  /** Another hopper took the job's lease (issue #1662): its run here ends as at a shutdown, and writes no outcome. */
+  drop(jobId: string): boolean;
 }
 
 /** Abort reasons the executor reads from `ctx.signal.reason` (ports.ts ExecutionContext). */
@@ -286,8 +292,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       });
       outcome = await attempt(() => goOn!(now, finishBrief(finish)));
     }
-    // Shutdown: leave the job running in the store; restart recovery decides its fate.
-    if (c.stopping() && entry.cancelReason === undefined) return;
+    // Shutdown, or another hopper took it (issue #1662): leave the job running in the store; that recovery decides its fate.
+    if ((c.stopping() || entry.dropped) && entry.cancelReason === undefined) return;
     progress.flush();
     // Its machine lost (issue #1569): it resumes there in its kept work tree, or elsewhere from its checkpoint, when it can.
     if (lost && outcome.kind === 'failed' && entry.cancelReason === undefined && moveLost(c, job.id, claim.laneId, lost, outcome.error)) return;
@@ -299,11 +305,14 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
   }
 
   function launch(claim: Claim, how: Launch): void {
+    // Another hopper drives it (issue #1662): its lease is that hopper's.
+    if (!c.leases.take(claim.jobId)) { console.warn(`job ${claim.jobId}: another hopper holds its lease; not driven here`); return; }
     const entry: Running = { controller: new AbortController(), done: Promise.resolve() };
     running.set(claim.jobId, entry);
     entry.done = run(claim, entry, how)
       .catch((e) => console.error('job runner failed', claim.jobId, e))
-      .finally(() => { if (running.get(claim.jobId) === entry) running.delete(claim.jobId); });
+      // Its lease ends with the run (issue #1662): another hopper may take the job at once.
+      .finally(() => { if (running.get(claim.jobId) !== entry) return; running.delete(claim.jobId); try { c.leases.release(claim.jobId); } catch { /* the store closed: the lease ends by itself */ } });
   }
 
   return {
@@ -316,6 +325,14 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       entry.cancelReason = reason;
       entry.cancelNote = note;
       entry.controller.abort(CANCEL);
+      return true;
+    },
+    driving: () => [...running.keys()],
+    drop(jobId) {
+      const entry = running.get(jobId);
+      if (!entry) return false;
+      entry.dropped = true;
+      entry.controller.abort(SHUTDOWN);
       return true;
     },
     park(jobId) {

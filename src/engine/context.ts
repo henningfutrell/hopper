@@ -5,6 +5,7 @@ import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFir
 import type { Logins } from '../logins/index.ts';
 import type { Checkpoints } from './checkpoints.ts';
 import type { JobMoveData } from './lost-move.ts';
+import type { JobLeases } from './leases.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -85,10 +86,12 @@ export interface EngineOptions {
    * job whose machine stays away fails, as nothing would end the agent it left there.
    */
   jobMoves?: { begin(key: string, data: JobMoveData): void };
+  /** How long a job lease holds without a renewal (issue #1662): the most a hopper that crashed keeps its jobs from the others. Default a minute. */
+  jobLeaseMs?: number;
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'jobMoves'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'jobMoves' | 'jobLeaseMs'>> {
   fakeUsage?: SettableUsageSource;
   jobMoves?: EngineOptions['jobMoves'];
   /** Ask for a Decision; coalesces with one already running. */
@@ -97,6 +100,8 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
   stopping(): boolean;
   /** The job checkpoints (issue #921); set once the engine made them. */
   checkpoints?: Checkpoints;
+  /** This hopper's job leases (issue #1662). */
+  leases: JobLeases;
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();

@@ -16,7 +16,7 @@ import { createPaneAnswers } from './pane-answers.ts';
 import { askFor, createReviewHandlers, type ReviewHandlers } from './reviews.ts';
 import { createQueries, type Queries } from './queries.ts';
 import { createQueueGateCommands, type QueueGateCommands } from './queue-gate.ts';
-import { recover } from './recovery.ts'; import { liftLost } from './lost-move.ts';
+import { recover } from './recovery.ts'; import { liftLost } from './lost-move.ts'; import { createJobLeases, createLeaseKeeper } from './leases.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
@@ -138,10 +138,12 @@ export function createEngine(o: EngineOptions): Engine {
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
+    leases: createJobLeases({ store, clock: o.clock, ...(o.jobLeaseMs ? { leaseMs: o.jobLeaseMs } : {}) }),
   };
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
+  const leases = createLeaseKeeper(c, runner, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanups);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
@@ -214,6 +216,7 @@ export function createEngine(o: EngineOptions): Engine {
       cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
       for (const claim of recovered.awaiting) runner.reattachWhenReachable(claim);
+      leases.start();
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
         if (event.type === 'job.queued' && event.jobId) {
@@ -243,6 +246,7 @@ export function createEngine(o: EngineOptions): Engine {
       wakeMissed();
       timer = setInterval(() => {
         wakeMissed();
+        leases.tick();
         classifier.sweep();
         void paneAnswers.sweep();
         cleanups.retry();
@@ -274,6 +278,7 @@ export function createEngine(o: EngineOptions): Engine {
       if (checkpointTimer) clearInterval(checkpointTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
+      leases.stop();
       await sweep.removals();
       // In-flight classifications are not awaited: they write nothing once stopping.
       await serial.idle();
