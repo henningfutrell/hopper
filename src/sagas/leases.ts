@@ -3,7 +3,12 @@
 // holds it. The host renews every lease it holds every 10 s, and its own host lease with them, so another host sees it
 // live; it releases them all when it stops. A host that stops without that renews nothing: 30 s on, its leases end and
 // another host takes each at its next pass. The lease owner is the saga coordinator's (`sagaOwner`).
+// A pass asks its lease on each tick (issue #1662), so a lease asks the database once a second at most: between asks
+// its last answer stands. A held lease stays held by the renewal; a host that does not hold it takes it a second later.
 import { hostLease, SWEEP_LEASE_MS, SWEEP_LEASE_RENEW_MS, type SweepLease, type SweepLeaseRepository } from '../domain/leases.ts';
+
+/** How long a lease's last answer stands before it asks the database again. */
+export const LEASE_ASK_MS = 1000;
 
 export interface HostLeases {
   /** This process as a lease owner. */
@@ -12,7 +17,7 @@ export interface HostLeases {
   lease(name: string): SweepLease;
   /** Whether the host `owner` names still runs: its host lease is live. */
   live(owner: string): boolean;
-  /** Releases every lease of this host and stops renewing. */
+  /** Releases every lease of this host and stops renewing; from then on each of its leases is not held. */
   stop(): void;
 }
 
@@ -21,6 +26,7 @@ export function createHostLeases(o: { repo: SweepLeaseRepository; owner: string;
   const at = (ms = 0): string => new Date(o.clock.now().getTime() + ms).toISOString();
   /** The leases this host held at its last ask: a hold that was not among them is taken. */
   const held = new Set<string>();
+  let stopped = false;
   const hold = (name: string): boolean => repo.hold(name, owner, at(SWEEP_LEASE_MS), at());
   hold(hostLease(owner));
   const timer = setInterval(() => {
@@ -29,18 +35,26 @@ export function createHostLeases(o: { repo: SweepLeaseRepository; owner: string;
   timer.unref();
   return {
     owner,
-    lease: (name) => ({
-      hold() {
+    lease: (name) => {
+      /** The last answer, and when (a monotonic time, so a test's clock does not hold it). */
+      let last: { held: boolean; at: number } | undefined;
+      const ask = (): { held: boolean; taken: boolean } => {
+        if (stopped) return { held: false, taken: false };
+        const t = performance.now();
+        if (last && t - last.at < LEASE_ASK_MS) return { held: last.held, taken: false };
         let now: boolean;
         try { now = hold(name); } catch (e) { o.logger.warn(`hopper: the sweep lease ${name}: ${(e as Error).message}`); now = false; }
         const taken = now && !held.has(name);
         if (now) held.add(name); else held.delete(name);
+        last = { held: now, at: t };
         return { held: now, taken };
-      },
-    }),
+      };
+      return { hold: ask };
+    },
     live: (other) => other === owner || repo.live(hostLease(other), at()),
     stop() {
       clearInterval(timer);
+      stopped = true;
       held.clear();
       try { repo.release(owner); } catch (e) { o.logger.warn(`hopper: releasing the sweep leases failed: ${(e as Error).message}`); }
     },

@@ -26,7 +26,7 @@ function repo(): SweepLeaseRepository & { asks: () => number; holder: Map<string
   };
 }
 
-let leases: HostLeases[] = [];
+const leases: HostLeases[] = [];
 beforeEach(() => { vi.useFakeTimers({ now: 0 }); });
 afterEach(() => { for (const l of leases.splice(0)) l.stop(); vi.useRealTimers(); });
 

@@ -25886,7 +25886,10 @@ this host holds it. `hold()` also says whether the host took it just now (`taken
 first ask. The host's **host leases** (`createHostLeases`, `src/sagas/leases.ts`) renew every lease the host holds every 10 s,
 to 30 s on; the host releases them all when it stops. A host that stops without that renews nothing, so 30 s on its leases
 end and another host takes each at its next pass. The owner is the saga coordinator's (`sagaOwner`). A part built with no
-database of its own (a test) takes `soleLease()`: always held.
+database of its own (a test) takes `soleLease()`: always held. The engine's passes ask their leases on each tick (issue
+#1662), so a lease asks the database once a second at most (`LEASE_ASK_MS`): between asks its last answer stands. A
+statement per pass on each tick held the event loop of a busy hopper. A held lease stays held by the renewal; a host that
+does not hold one takes it at most a second after its holder released it.
 
 The leases, each one per user (`<user id>/<name>`):
 

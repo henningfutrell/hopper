@@ -25,7 +25,7 @@ import { ADMIN_ID, type ToolSignIn, type WebhookSubscription } from '../../src/d
 import { createLogins } from '../../src/logins/service.ts';
 import { createSignIns } from '../../src/logins/sign-ins.ts';
 import { createOutbound, createOutboundGuard } from '../../src/outbound/index.ts';
-import { createHostLeases, type HostLeases } from '../../src/sagas/index.ts';
+import { createHostLeases, LEASE_ASK_MS, type HostLeases } from '../../src/sagas/index.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { createWebhookDispatcher } from '../../src/webhooks/index.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
@@ -112,7 +112,7 @@ describe('two hosts on one database', () => {
     expect(guard(b).ask({ ...send, key: 'sub:event-2' })).toBe('ok');
   });
 
-  it('runs each sweep on one host at a time', () => {
+  it('runs each sweep on one host at a time', async () => {
     const { a, b } = twoHosts();
     const onA = a.leases.lease('admin/failures'), onB = b.leases.lease('admin/failures');
     expect(onA.hold()).toEqual({ held: true, taken: true });
@@ -121,6 +121,8 @@ describe('two hosts on one database', () => {
     expect(b.leases.live(a.leases.owner)).toBe(true);
     a.leases.stop();
     expect(b.leases.live(a.leases.owner)).toBe(false);
+    // B asks the database again a second after its last ask (issue #1662).
+    await new Promise((r) => setTimeout(r, LEASE_ASK_MS));
     expect(onB.hold()).toEqual({ held: true, taken: true });
     expect(onA.hold()).toEqual({ held: false, taken: false });
   });
