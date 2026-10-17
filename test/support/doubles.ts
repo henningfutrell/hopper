@@ -1,6 +1,6 @@
 // Executor doubles for engine integration tests, injected through AppSeams. They implement
 // the Executor port only; nothing in the engine is mocked.
-import type { ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
+import type { ExecutionOutcome, Executor, Reaped } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 export interface StickyExecutor extends Executor {
@@ -13,7 +13,7 @@ export interface StickyExecutor extends Executor {
 }
 
 /** Not idempotent (like herdr-claude): runs until aborted, records how it was stopped. `kept`: what its reap keeps (issue #401). */
-export function createStickyExecutor(o: { kept?: string[]; removed?: { containers: string[]; volumes: string[] } } = {}): StickyExecutor {
+export function createStickyExecutor(o: { kept?: string[]; removed?: Reaped['removed'] } = {}): StickyExecutor {
   const runs: string[] = [];
   const abortReasons: unknown[] = [];
   const cleaned: string[] = [];

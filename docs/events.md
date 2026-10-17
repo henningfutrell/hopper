@@ -948,12 +948,13 @@ Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge
 
 ## `job.containers_removed`
 
-Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.
+Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there. `details` (issue #975): what the reap said of each container before it removed it — its `name`, `image`, and when it started (`startedAt`) and stopped (`stoppedAt`), each absent when it never did —, which the job's parts list shows; absent from a client older than this.
 
 | field | type | required |
 |---|---|---|
 | `containers` | string[] | yes |
 | `volumes` | string[] | yes |
+| `details` | object[] | no |
 
 ```json
 {
@@ -962,6 +963,15 @@ Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue
   ],
   "volumes": [
     "hopper-test-db"
+  ],
+  "details": [
+    {
+      "id": "3f2a9c1b7d4e",
+      "name": "hopper-test-db",
+      "image": "docker.io/library/postgres:16",
+      "startedAt": "2026-10-08T00:02:00.000Z",
+      "stoppedAt": "2026-10-08T00:09:00.000Z"
+    }
   ]
 }
 ```

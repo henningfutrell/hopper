@@ -13,6 +13,35 @@
       "items": {
         "type": "string"
       }
+    },
+    "details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "stoppedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "image"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

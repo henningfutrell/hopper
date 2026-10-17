@@ -43,11 +43,11 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
       c.store.tx(() => {
         // Never removed silently (issue #401): what the reap kept is flagged on the job.
         if (reaped && reaped.kept.length > 0) c.store.events.append({ type: 'job.work_kept', jobId, data: { paths: reaped.kept } });
-        // The job's containers and volumes it removed (issue #1120).
+        // The job's containers and volumes it removed (issue #1120), with what it said of each container (issue #975).
         const removed = reaped?.removed;
         const machineId = machineRanOn(job);
         if (removed && (removed.containers.length > 0 || removed.volumes.length > 0)) {
-          c.store.events.append({ type: 'job.containers_removed', jobId, ...(machineId ? { machineId } : {}), data: { containers: removed.containers, volumes: removed.volumes } });
+          c.store.events.append({ type: 'job.containers_removed', jobId, ...(machineId ? { machineId } : {}), data: removed });
         }
         // Work an earlier end kept, pushed by the job that went on with it (issue #1010): no longer kept.
         const before = reaped && reaped.kept.length === 0 ? keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0] : undefined;

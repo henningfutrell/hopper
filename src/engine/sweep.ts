@@ -177,7 +177,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     if (!said.removed) return;
     const { containers, volumes } = said.removed;
     log(`hopper: removed ${count(containers.length, 'container')} and ${count(volumes.length, 'volume')} of job ${jobId} on ${m.id}`);
-    c.store.events.append({ type: 'job.containers_removed', jobId, machineId: m.id, data: { containers, volumes } });
+    c.store.events.append({ type: 'job.containers_removed', jobId, machineId: m.id, data: said.removed });
   }
 
   /** The machine's measure kept, and a person told when it goes over the budget or back within it. */
