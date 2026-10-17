@@ -33,14 +33,14 @@ import { rerunRecordOf, retryable } from './rerun.ts';
 import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
 import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
-import { createBackfill } from './backfill.ts'; import { autoPush } from './kept-work.ts';
+import { createBackfill } from './backfill.ts'; import { autoPush, type Sessions } from './kept-work.ts';
 import type { FailureAction, Failures } from './failures.ts';
 import { signatureOf } from './signature.ts';
 import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts';
 
-/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. */
-export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'>, ChecksRedOptions, Pick<UnfinishedDeps, 'unfinishedPullRequest'> {
+/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. `reopens` (`Engine.reopens`): Push it takes the job. */
+export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'>, Pick<Sessions, 'reopens'>, ChecksRedOptions, Pick<UnfinishedDeps, 'unfinishedPullRequest'> {
   store: UserStore;
   clock: Clock;
   /** The machines now: a problem's check reads them. */
@@ -277,7 +277,7 @@ export function createFailures(o: FailuresOptions): Failures {
           if (stopped) return;
           await runPending(r);
         }
-        if (!stopped) await checkWork(); if (!stopped && settings().auto.push) await autoPush({ store, resumable: o.resumable, takesBack: o.takesBack, continueJob: o.continueJob, live: () => !stopped, logger: o.logger });
+        if (!stopped) await checkWork(); if (!stopped && settings().auto.push) await autoPush({ store, resumable: o.resumable, reopens: o.reopens, takesBack: o.takesBack, continueJob: o.continueJob, live: () => !stopped, logger: o.logger });
         if (!stopped) await runChecks();
         if (!stopped) prune();
       } catch (e) {
@@ -331,7 +331,7 @@ export function createFailures(o: FailuresOptions): Failures {
     sweep,
     dismissStale: () => handoffs.dismissStale(),
     backfill,
-    view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack, o.discarding),
+    view: () => viewOf(store, settings(), now(), { resumable: o.resumable, reopens: o.reopens }, o.takesBack, o.discarding),
     blocks() {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.
