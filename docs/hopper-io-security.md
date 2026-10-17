@@ -253,8 +253,14 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     hopper.io session, so a stolen session cannot delete the account. It deletes the account and all its sessions in
     one statement, and then the person's grant of the hosted app at GitHub. It keeps nothing of the account: no
     tombstone, no login, no id.
-  - Not yet: the tombstones of an account's registrations (with hopper.io's side of #465), the R6 records of sign-in and
-    deletion, and the privacy note (R5).
+  - R6, at hopper.io: a **hopper.io record** of each sign-in, sign-out and deletion confirmed as another GitHub
+    account (issue #463 part 4), which the account owner reads at `GET /` and `GET /api/account/records`, and only
+    their own (R3). A record is its kind and its time: no address, no browser, no other person (R5).
+  - R5: records are kept 90 days and then deleted; a deleted account takes them with it. The **privacy note**
+    (`cloud/privacy.ts`, `GET /privacy`) lists each column of hopper.io's store, why and for how long;
+    `test/cloud/privacy.test.ts` fails when a column has no line in it.
+  - Not yet: the tombstones of an account's registrations, and the R6 records of registration, the cloud link and
+    remote actions at hopper.io (with hopper.io's side of #465 and #464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
   everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound
   actions, and its transport (one WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is
