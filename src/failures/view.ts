@@ -26,14 +26,20 @@ type Reads = Pick<UserStore, 'failures' | 'problems' | 'jobs' | 'workItems'>;
 
 /** Records by their job's live priority, highest first, each priority in the order given (issue #535). */
 export function highestFirst(store: Pick<UserStore, 'jobs'>, records: FailureRecord[]): FailureRecord[] {
-  const priorityOf = (r: FailureRecord): number => store.jobs.get(r.jobId)?.priority ?? 0;
+  // Their jobs in one read (issue #1411): a sort asks for each record's priority many times.
+  const jobs = store.jobs.getMany(records.map((r) => r.jobId));
+  const priorityOf = (r: FailureRecord): number => jobs.get(r.jobId)?.priority ?? 0;
   return records.map((r, i) => ({ r, i })).sort((a, b) => priorityOf(b.r) - priorityOf(a.r) || a.i - b.i).map((x) => x.r);
 }
 
-/** The newer job of its item, when the job is not its item's newest. */
-export function newerOf(store: Pick<UserStore, 'jobs'>, job: Job): string | undefined {
-  const newest = job.source ? store.jobs.getBySourceKey(job.source.key) : undefined;
-  return newest && newest.id !== job.id ? newest.id : undefined;
+/**
+ * The newer job of its item, when the job is not its item's newest. `newest`: the newest of each item as read for a pass
+ * over many jobs (`jobs.newestOfItems`, issue #1411); else a read of its own.
+ */
+export function newerOf(store: Pick<UserStore, 'jobs'>, job: Job, newest?: ReadonlyMap<string, Job>): string | undefined {
+  const key = job.source?.key;
+  const n = key === undefined ? undefined : newest ? newest.get(key) : store.jobs.getBySourceKey(key);
+  return n && n.id !== job.id ? n.id : undefined;
 }
 
 /**

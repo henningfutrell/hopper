@@ -31,8 +31,12 @@ export interface JobFilter {
 
 export interface JobRepository {
   create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
-  get(id: JobId): Job | undefined;
-  getBySourceKey(key: string): Job | undefined;
+  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined;
+  /**
+   * Many jobs in one read (issue #1411), so a pass over many jobs reads none one by one: `getMany` the jobs of `ids` that
+   * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`.
+   */
+  getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>;
   list(filter?: JobFilter): Job[];
   /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
   update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;

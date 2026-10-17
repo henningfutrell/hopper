@@ -102,3 +102,37 @@ describe('job reads (issue #1154)', () => {
     db.close();
   });
 });
+
+describe('reads of many jobs in one pass (issue #1411)', () => {
+  const src = (key: string) => ({ source: 'manual', kind: 'manual', key });
+
+  it('getMany reads the jobs that exist in one statement, and only the bodies that changed', () => {
+    const { jobs, db, sent, bodies } = openJobs();
+    const a = jobs.create(spec, 1), b = jobs.create(spec, 2);
+    sent.length = 0;
+    const got = jobs.getMany([a.id, b.id, 'none', a.id]);
+    expect([...got.keys()].sort()).toEqual([a.id, b.id]);
+    expect(got.get(b.id)).toMatchObject({ priority: 2 });
+    expect(sent).toHaveLength(1);
+    expect(bodies.n).toBe(0);
+    expect(jobs.getMany([]).size).toBe(0);
+    expect(sent).toHaveLength(1);
+    db.close();
+  });
+
+  it('newestOfItems answers the newest job of each item, as getBySourceKey does', () => {
+    const { jobs, db, sent } = openJobs();
+    jobs.create(spec, 1, src('one'));
+    const newer = jobs.create(spec, 1, src('one'));
+    const two = jobs.create(spec, 1, src('two'));
+    jobs.create(spec, 1);
+    sent.length = 0;
+    const newest = jobs.newestOfItems(['one', 'two', 'gone']);
+    expect(sent).toHaveLength(1);
+    expect(newest.get('one')?.id).toBe(newer.id);
+    expect(newest.get('one')?.id).toBe(jobs.getBySourceKey('one')?.id);
+    expect(newest.get('two')?.id).toBe(two.id);
+    expect(newest.has('gone')).toBe(false);
+    db.close();
+  });
+});

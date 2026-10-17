@@ -105,8 +105,10 @@ function apply(c: EngineContext, d: Decision): Claim[] {
     });
     claims.push({ jobId: s.jobId, laneId });
   }
+  // The held and waiting jobs in one read (issue #1411): a Decision names each waiting job.
+  const waiting = store.jobs.getMany([...d.hold.map((h) => h.jobId), ...d.wait.map((w) => w.jobId)]);
   for (const h of d.hold) {
-    const job = store.jobs.get(h.jobId);
+    const job = waiting.get(h.jobId);
     if (!job || job.holdReason === h.reason) continue;
     store.jobs.update(h.jobId, { status: 'held', holdReason: h.reason, waitReason: undefined });
     store.events.append({ type: 'job.held', jobId: h.jobId, decisionId: d.id, data: { reason: h.reason } });
@@ -114,7 +116,7 @@ function apply(c: EngineContext, d: Decision): Claim[] {
   // Waiting for a lane is not a hold (issue #381): the job stays queued, or returns to queued from a
   // hold — a job held before it for lanes alone, too — and no `job.held` is emitted.
   for (const w of d.wait) {
-    const job = store.jobs.get(w.jobId);
+    const job = waiting.get(w.jobId);
     if (!job || (job.status === 'queued' && job.waitReason === w.reason)) continue;
     store.jobs.update(w.jobId, { status: 'queued', holdReason: undefined, waitReason: w.reason });
   }
@@ -128,11 +130,14 @@ function apply(c: EngineContext, d: Decision): Claim[] {
  */
 function freeStrandedLanes(c: EngineContext): void {
   const { store } = c;
+  const held = store.lanes.list().filter((l) => l.state !== 'idle');
+  // Their jobs in one read (issue #1411), not one for each lane.
+  const jobs = store.jobs.getMany(held.flatMap((l) => (l.jobId ? [l.jobId] : [])));
   const runs = (l: Lane): boolean => {
-    const job = l.jobId ? store.jobs.get(l.jobId) : undefined;
+    const job = l.jobId ? jobs.get(l.jobId) : undefined;
     return !!job && (RUNNING as readonly string[]).includes(job.status) && job.laneId === l.id;
   };
-  const stranded = store.lanes.list().filter((l) => l.state !== 'idle' && !runs(l));
+  const stranded = held.filter((l) => !runs(l));
   if (stranded.length) store.tx(() => { for (const l of stranded) releaseLane(c, l, nowIso(c)); });
 }
 
