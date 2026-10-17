@@ -151,7 +151,7 @@ describe('pinned host keys', () => {
   });
 
   it('one known_hosts line per ssh target, under the target\'s name; container targets and unpinned ones have none', () => {
-    const r = renderKnownHosts([ssh('laptop', 'laptop', ED), ssh('other', 'user@desk', ED2), ssh('bare', 'bare'), { name: 'box', docker: 'c', lanes: 1, executors: ['command'] }]);
+    const r = renderKnownHosts([ssh('laptop', 'laptop', ED), ssh('other', 'user@desk', ED2), ssh('bare', 'bare'), { name: 'box', image: 'c', lanes: 1, executors: ['command'] }]);
     expect(r.text).toBe(`laptop ${ED}\nuser@desk ${ED2}\n`);
     expect(r.problems).toEqual(['attached machine bare: no hostKey pinned; the hopper will not connect to it']);
   });

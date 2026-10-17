@@ -113,7 +113,7 @@ function taskOf(ctx: ExecutionContext, prompt: string, cwd: string, told: string
 
 function refusal(agent: PrintAgent, ctx: ExecutionContext): string | undefined {
   const m = ctx.machine;
-  if (m.docker) return `${agent} does not run on container target ${m.id}: it has no agent`;
+  if (m.containerImage) return `${agent} does not run on container target ${m.id}: it has no agent`;
   return undefined;
 }
 
@@ -133,7 +133,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   /** One run of the turn's script on the job's machine; on a client target its output comes at its end, so no login is seen while it waits. */
   const runOn = async (ctx: ExecutionContext, script: string, timeoutMs: number, feed: (chunk: string) => void): Promise<Ran | 'aborted' | 'timeout'> => {
     if (!ctx.machine.client) {
-      const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
+      const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], o);
       return run(file, args, timeoutMs, ctx.signal, o.userEnv, feed);
     }
     if (!o.client?.(ctx.machine.id)?.link()) throw new Error(`client ${ctx.machine.id} is not dialled in`);
@@ -240,6 +240,6 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       if (!s?.cwd) return undefined;
       return shellOn(s).reap(job.id, jobScratchOf(s.cwd, job.id));
     },
-    machineShell: (machine: MachineSnapshot) => (machine.docker ? undefined : shellOn(machine.client ? { client: machine.id } : { ssh: machine.ssh })),
+    machineShell: (machine: MachineSnapshot) => (machine.containerImage ? undefined : shellOn(machine.client ? { client: machine.id } : { ssh: machine.ssh })),
   };
 }

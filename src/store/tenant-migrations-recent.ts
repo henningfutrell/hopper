@@ -27,6 +27,7 @@ import { JOB_LEASE_RELAYED_COLUMN, JOB_LEASE_TABLE } from './job-leases.ts';
 import { EVENT_CURSOR_TABLE } from './event-cursors.ts';
 import { WAIT_CHECK_LEASE_TABLE } from './wait-check-leases.ts';
 import { PROMOTION_SEND_TABLE } from './promotions.ts';
+import { containerTargets } from './migration-container-target.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -122,4 +123,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 78: A person's cancel or park of a job that another hopper drives (issue #1662), on the job's lease. A nullable column
   // only: the build before runs on it, and names its columns when it inserts.
   JOB_LEASE_RELAYED_COLUMN,
+  // 79: A container target on the sandbox module (issue #865 part C): each `docker` machine becomes a `container` machine of
+  // the same name, and `dockerBin` leaves the command executors and claude-plan sources. Config rows only: the build before
+  // lists no such machine, and its jobs wait.
+  (db) => { containerTargets(db); },
 ];

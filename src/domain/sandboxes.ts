@@ -167,3 +167,20 @@ export interface SandboxRecord {
   /** Where it runs: `local`, the computer the hopper runs on, or a client target's name. */
   machine: string;
 }
+
+/** The network a box on none joins: a container target's command box (issue #865) reaches nothing. */
+export const NO_NETWORK = 'none';
+
+/** One command of a job on a container target (issue #865): the target's image, the script, and the job's variables. */
+export interface CommandBox { jobId: string; image: string; script: string; env: Record<string, string>; timeoutMs: number }
+
+/**
+ * Container targets' commands through the sandbox module (issue #865 part C, design.md "Container targets"): each command
+ * in a one-shot box of its own, on no network, burned after it. The box's output goes to `log` as it comes.
+ */
+export interface CommandBoxes {
+  /** Why no box can start for the user now (no runtime, or it does not answer); undefined: one can. */
+  problem(): Promise<string | undefined>;
+  /** Never rejects: a failure of the box itself is `problem`, exit 125; `stopped`, the hopper stopped it. */
+  run(box: CommandBox, io: { log(chunk: string): void; signal: AbortSignal }): Promise<{ exit: number; problem?: string; stopped?: 'timed-out' | 'cancelled' }>;
+}

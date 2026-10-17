@@ -26,8 +26,8 @@ KillSignal=SIGTERM
 TimeoutStopSec=10
 NoNewPrivileges=true
 PrivateTmp=true
-# Docker only through a socket the daemon alone may open (HOPPER_DOCKER_HOST, a socket proxy:
-# scripts/docker-proxy.sh), never the root daemon's: whoever opens that one is root here (issue #59).
+# Never the root docker daemon's socket: whoever opens that one is root here (issue #59). Sandbox boxes
+# start through a rootless runtime's own socket (HOPPER_PODMAN_SOCKET, issue #708).
 InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
 
 [Install]

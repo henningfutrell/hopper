@@ -29,7 +29,11 @@ describe('the hopper\'s URL a job is given (issue #695)', () => {
 
   it('an ssh target: an address or a .local name before a bare container name', () => {
     expect(jobHopperUrl({ ...HOPPER, lanNames: ['hopper', '192.0.2.10'], machine: ssh })).toBe('http://192.0.2.10:4790');
-    expect(jobHopperUrl({ ...HOPPER, lanNames: ['hopper', 'box.local'], machine: { docker: 'c1' } })).toBe('http://box.local:4790');
+    expect(jobHopperUrl({ ...HOPPER, lanNames: ['hopper', 'box.local'], machine: { ssh: 'desk' } })).toBe('http://box.local:4790');
+  });
+
+  it('a container target: none, its command boxes join no network (issue #865)', () => {
+    expect(jobHopperUrl({ ...HOPPER, lanNames: ['hopper', 'box.local'], machine: { containerImage: 'img' } })).toBeUndefined();
   });
 
   it('an ssh target with only a bare name: that name, which only a machine in the hopper\'s network reaches (the reach check says so)', () => {

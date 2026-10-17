@@ -123,7 +123,7 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
 
   /** The machine as the first executor there that reaches it does; a container target has no shell. */
   const shellOf = (m: MachineSnapshot): MachineShell | undefined => {
-    if (m.docker) return undefined;
+    if (m.containerImage) return undefined;
     for (const name of m.executors) {
       const shell = c.executors.get(name)?.machineShell?.(m);
       if (shell) return shell;
@@ -228,7 +228,7 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
     input(machines) {
       const s = settings();
       // A machine online and not yet tried in this run: it attached, or the hopper started.
-      if (!busy && machines.some((m) => m.online && !last.has(m.id) && !m.docker)) void serially((m) => !last.has(m.id));
+      if (!busy && machines.some((m) => m.online && !last.has(m.id) && !m.containerImage)) void serially((m) => !last.has(m.id));
       const gated = machines.flatMap((m) => {
         const reason = gateOf(m.id, radiusOf(m.id, s).radius?.level, s);
         return reason ? [{ machineId: m.id, reason }] : [];

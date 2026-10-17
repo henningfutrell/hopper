@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import { optionsJsonSchema } from '../../src/plugins/options.ts';
 import { targetOf } from '../../src/plugins/machine-source/targets.ts';
+import { CONTAINER_IMAGE } from '../../src/plugins/machine-source/container/index.ts';
 import { TEST_HOST_KEY } from '../support/ssh.ts';
 
 /** A machine key: the public half of a link key (issue #308). */
@@ -25,12 +26,12 @@ const why = (f: () => unknown): string => {
 
 describe('the attached-machine plugins', () => {
   it('are built-in machine-source plugins named by their connection', () => {
-    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'machine-source').map((p) => p.id).sort()).toEqual(['client', 'docker', 'kubernetes-cluster', 'local', 'ssh']);
+    expect(BUILTIN_PLUGINS.filter((p) => p.role === 'machine-source').map((p) => p.id).sort()).toEqual(['client', 'container', 'kubernetes-cluster', 'local', 'ssh']);
   });
 
   it('what reaches the machine, what of the vault it may be given (its template, issue #558), the job pod the hopper started for it (issue #1283) and whether it is a lane pod (issue #1284) are command-bearing; lanes, executors and label are not', () => {
     expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh', 'workTree', 'workTrees']);
-    expect(commandBearing('docker')).toEqual(['docker']);
+    expect(commandBearing('container')).toEqual(['image']);
     expect(commandBearing('client')).toEqual(['key', 'pod', 'pool', 'template', 'workTree', 'workTrees']);
     expect(commandBearing('local')).toEqual(['workTree', 'workTrees']);
   });
@@ -43,8 +44,8 @@ describe('disk thresholds (issue #410)', () => {
       expect(props).toHaveProperty('diskLowBelowGiB');
       expect(props).toHaveProperty('diskLowBelowPercent');
     }
-    const docker = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === 'docker')!).properties as Record<string, unknown>;
-    expect(docker).not.toHaveProperty('diskLowBelowGiB');
+    const container = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === 'container')!).properties as Record<string, unknown>;
+    expect(container).not.toHaveProperty('diskLowBelowGiB');
   });
 
   it('ride on the attached machine when set, and are refused out of range', () => {
@@ -63,8 +64,8 @@ describe('sweep settings (issue #410)', () => {
       expect(props).toHaveProperty('reapEveryMinutes');
       expect(props).toHaveProperty('scratchMaxAgeHours');
     }
-    const docker = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === 'docker')!).properties as Record<string, unknown>;
-    expect(docker).not.toHaveProperty('reapEveryMinutes');
+    const container = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === 'container')!).properties as Record<string, unknown>;
+    expect(container).not.toHaveProperty('reapEveryMinutes');
   });
 
   it('ride on the attached machine when set, and are refused out of range', () => {
@@ -91,8 +92,9 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(targetOf({ name: 'wsl', plugin: 'ssh', options: { ssh: 'wsl', lanes: 1, executors: ['cursor'], herdr: false } })).toMatchObject({ name: 'wsl', ssh: 'wsl', executors: ['cursor'], herdr: false });
   });
 
-  it('a docker instance: no herdr, the command executor by default', () => {
-    expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', lanes: 1 } })).toEqual({ name: 'box', docker: 'hopper-target', lanes: 1, executors: ['command'] });
+  it('a container instance (issue #865): no herdr, the command executor by default, the hopper\'s box image when it names none', () => {
+    expect(targetOf({ name: 'box', plugin: 'container', options: { image: 'example/box:1', lanes: 1 } })).toEqual({ name: 'box', image: 'example/box:1', lanes: 1, executors: ['command'] });
+    expect(targetOf({ name: 'box', plugin: 'container', options: {} })).toMatchObject({ image: CONTAINER_IMAGE });
   });
 
   // Issue #365: 0 lanes rests a machine; it stays one, so a client target still dials in and shows online.
@@ -123,14 +125,14 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('workTrees');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTrees: { monolith: '~/wt' } } }))).toMatch(/owner\/name/);
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTrees: { 'acme/monolith': 'wt' } } }))).toMatch(/absolute path or start with ~/);
-    expect(why(() => targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', workTrees } }))).not.toBe('accepted');
+    expect(why(() => targetOf({ name: 'box', plugin: 'container', options: { workTrees } }))).not.toBe('accepted');
   });
 
   // Issue #372: lanes kept for jobs pinned to the machine.
   it('an attached instance carries its reserved lanes; a negative count is refused', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 4, reservedLanes: 1 } })).toMatchObject({ lanes: 4, reservedLanes: 1 });
     expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, reservedLanes: 2 } })).toMatchObject({ reservedLanes: 2 });
-    expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', reservedLanes: 1 } })).toMatchObject({ reservedLanes: 1 });
+    expect(targetOf({ name: 'box', plugin: 'container', options: { reservedLanes: 1 } })).toMatchObject({ reservedLanes: 1 });
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('reservedLanes');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reservedLanes: -1 } }))).toMatch(/reservedLanes/);
   });
@@ -156,8 +158,9 @@ describe('targetOf: an instance as the attached machine it names', () => {
     ['ssh', { ssh: 'laptop', lanes: 1, docker: 'box' }, /docker/],
     // herdr is called by name there, from its PATH: no option names a binary (issue #311).
     ['ssh', { ssh: 'laptop', lanes: 1, herdrBin: '/opt/herdr' }, /herdrBin/],
-    ['docker', { docker: '-H=tcp://x', lanes: 1 }, /docker must be a container/],
-    ['docker', { docker: 'box', lanes: 1, herdrBin: '/opt/herdr' }, /herdrBin/],
+    ['container', { image: '--privileged', lanes: 1 }, /image must be an image/],
+    ['container', { image: 'box', lanes: 1, herdrBin: '/opt/herdr' }, /herdrBin/],
+    ['container', { docker: 'box', lanes: 1 }, /docker/],
     ['client', { lanes: 1 }, /key/],
     ['client', { key: 'short', lanes: 1 }, /key must be a machine key/],
     ['client', { key: KEY, lanes: 1, session: 'jh' }, /session/],

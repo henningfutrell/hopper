@@ -36,7 +36,7 @@ function createLeaver(): Executor {
       return new Promise<ExecutionOutcome>((resolve) => ctx.signal.addEventListener('abort', () => resolve({ kind: 'failed', error: 'aborted' }), { once: true }));
     },
     async cleanup() {},
-    machineShell: (m) => (m.docker || m.client || m.ssh ? undefined : localShell()),
+    machineShell: (m) => (m.containerImage || m.client || m.ssh ? undefined : localShell()),
   };
 }
 

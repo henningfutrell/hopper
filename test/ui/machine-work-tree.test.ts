@@ -9,7 +9,7 @@ const CONFIG: MachinesConfig = {
   machines: [
     { name: 'local', connection: 'local', options: { lanes: 4 } },
     { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } },
-    { name: 'box', connection: 'docker', options: { docker: 'box', lanes: 2 } },
+    { name: 'box', connection: 'container', options: { image: 'box', lanes: 2 } },
     { name: 'odd', connection: 'custom-machines' },
   ],
   executors: ['herdr-claude', 'test'],
@@ -30,7 +30,7 @@ describe('a machine\'s work tree', () => {
     if (set.kind !== 'attached') throw new Error('attached');
     expect(editDraft(set).details.workTree).toBe('/srv/w');
     expect(editBody(set, { ...editDraft(set), details: { ...editDraft(set).details, workTree: '' } }, 'v1')?.options).toEqual({ ssh: 'desk', lanes: 1, executors: ['herdr-claude'] });
-    expect(DETAILS.docker!.map((f) => f.key)).not.toContain('workTree');
+    expect(DETAILS.container!.map((f) => f.key)).not.toContain('workTree');
   });
 
   it('editProblem: a work tree that is neither absolute nor under ~', () => {
@@ -50,7 +50,7 @@ describe('a machine\'s work tree', () => {
     const base = { id: 'desk', label: 'desk', maxLanes: 1, online: true, executors: [] };
     expect(workTreeText({ ...base, ssh: 'desk' })).toBe('~/hopper-jobs (the jobs directory)');
     expect(workTreeText({ ...base, ssh: 'desk', workTree: '/srv/w' })).toBe('/srv/w');
-    expect(workTreeText({ ...base, docker: 'c' })).toBeNull();
+    expect(workTreeText({ ...base, containerImage: 'c' })).toBeNull();
   });
 });
 

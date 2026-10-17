@@ -9,7 +9,7 @@
 // A box it cannot remove is a cleanup problem, shown on Machines.
 import { hostname } from 'node:os';
 import type { SandboxesView } from '../domain/machines.ts';
-import type { ContainerRuntime } from '../domain/sandboxes.ts';
+import { NO_NETWORK, type ContainerRuntime } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
 import { outcomeOf, type SandboxRun, type SandboxRunRepository } from '../domain/sandbox-runs.ts';
@@ -43,6 +43,8 @@ export const hopperNetwork = (c: { sandboxNetwork?: string | undefined; localMac
 export const PASS_MS = 10_000;
 /** No box holds a home. */
 const NONE: ReadonlySet<string> = new Set();
+/** A Kubernetes pod always has the pod network: a box on no network (issue #865) does not run there. */
+export const NO_OFFLINE_POD = 'a box on no network does not run on Kubernetes: a pod always joins the pod network';
 /** How many of a user's latest sandbox runs the view shows. */
 export const RUNS_IN_VIEW = 50;
 
@@ -86,9 +88,15 @@ export interface Sandboxes {
    * Run one need step (issue #1007, need-box.ts): a one-shot box of the template, its credentials in its
    * environment, beside the hopper, else on a client target of the user's dialled in with a runtime there (as a read-only
    * check runs). The box is burned after the step, and the run kept in the ledger, `run` naming its job and step (issue
-   * #1349). Never rejects: no place to run it, or a failure of its own, is `problem`.
+   * #1349). Never rejects: no place to run it, or a failure of its own, is `problem`. `offline`: the box joins no network
+   * (a container target's command, issue #865).
    */
-  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }, run: NeedRun): Promise<NeedBoxResult>;
+  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'> & { offline?: true }, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }, run: NeedRun): Promise<NeedBoxResult>;
+  /**
+   * Why no step can run for the user now (issue #865: a container target is offline while it is so); undefined: one can.
+   * `offline`: a step whose box joins no network, which a Kubernetes pod cannot be.
+   */
+  stepProblem(userId: string, o?: { offline?: true }): Promise<string | undefined>;
   /** One burn pass (burn-launched.ts): each box an older build launched, burned, and its record removed. */
   burnLaunched(): Promise<void>;
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
@@ -108,6 +116,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const down = new Map<string, string>();
   let buildsAt = -Infinity;
   const noRuntime = o.cluster ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME;
+  const noPlace = (): string => `${noRuntime}; and no machine of the user's with a container runtime is dialled in`;
   const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}), ...(o.egress ? { egress: o.egress } : {}) });
 
   /**
@@ -254,22 +263,29 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       };
     },
 
-    async needStep(userId, box, io, run) {
+    async stepProblem(userId, s) {
       const at = await places.forCheck(userId);
-      if (!at) return { exit: 125, problem: `${noRuntime}; and no machine of the user's with a container runtime is dialled in` };
+      if (!at) return noPlace();
+      return s?.offline && at.runtime.kind === 'kubernetes' ? NO_OFFLINE_POD : at.runtime.problem();
+    },
+
+    async needStep(userId, { offline, ...box }, io, run) {
+      const at = await places.forCheck(userId);
+      if (!at) return { exit: 125, problem: noPlace() };
+      if (offline && at.runtime.kind === 'kubernetes') return { exit: 125, problem: NO_OFFLINE_POD };
       const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
       o.runs.start(ledger);
       stepping.add(box.name);
       let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
       try {
         // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts.
-        const egress = box.template.readOnly ? at.egress : undefined;
+        const egress = box.template.readOnly && !offline ? at.egress : undefined;
         const held = egress ? await egress.allow(box.reaches ?? []).then(() => undefined, (e: unknown) => (e instanceof Error ? e.message : String(e))) : undefined;
         if (held) {
           r = { exit: 125, problem: held };
           return r;
         }
-        const placed = egress ? { network: egress.network, env: { ...box.env, ...egress.env } } : { network: at.network };
+        const placed = offline ? { network: NO_NETWORK } : egress ? { network: egress.network, env: { ...box.env, ...egress.env } } : { network: at.network };
         let took = '';
         r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, ...placed }, { ...io, phases: (p) => { took = phaseTimes(p); } });
         o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${took}${r.problem ? `: ${r.problem}` : ''}`);

@@ -56,11 +56,11 @@ const REVIEW: z.ZodType<ReviewReply> = REVIEW_REPLY_SCHEMA;
 /** One print-mode run: its prompt, and the reply it must give. */
 interface Call<T> { prompt: string; jsonSchema: Record<string, unknown>; schema: z.ZodType<T> }
 
-/** Why claude cannot run on this machine, and how to fix it; or undefined. Never a container target: `docker exec` here passes no stdin. */
+/** Why claude cannot run on this machine, and how to fix it; or undefined. Never a container target: it runs commands only. */
 function refusal(id: string, m: MachineSnapshot | undefined): string | undefined {
   if (!m) return notConfigured(id);
   if (!m.online) return offlineNote(id, m.client ? 'client' : m.ssh ? 'ssh' : 'other');
-  if (m.docker) return containerRefusal(id);
+  if (m.containerImage) return containerRefusal(id);
   return undefined;
 }
 
@@ -115,7 +115,6 @@ const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
       mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
       const wrap = (argv: string[]) => commandOn(m!, ['sh', '-c', ON_MACHINE, 'sh', ...argv], {
         sshBin: o.sshBin, sshControlDir, sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
-        dockerHost: () => { throw new Error('no docker'); },
       });
       try {
         return await claudePrint({ ...here, wrap }, c.schema, c.prompt, signal);

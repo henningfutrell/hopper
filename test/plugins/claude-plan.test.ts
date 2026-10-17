@@ -114,8 +114,8 @@ describe('claude-plan plugin', () => {
 
   it('is a usage source; options machine (none: the only machine there is, #442), bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude and claude, issue #533)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude', 'claude'] } });
-    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude', 'claude'] } });
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'] } });
+    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'] } });
     expect(parseOptions(claudePlan, { machine: 'local', executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
     expect(parseOptions(claudePlan, { machine: 'local', intervalSeconds: 60 }).ok).toBe(false);
     const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean; machine?: boolean }>; required?: string[] };
@@ -124,13 +124,12 @@ describe('claude-plan plugin', () => {
     expect(schema.properties.intervalSeconds!.commandBearing).toBeUndefined();
     expect(schema.properties.machine!.commandBearing).toBeUndefined();
     expect(schema.properties.sshBin!.commandBearing).toBe(true);
-    expect(schema.properties.dockerBin!.commandBearing).toBe(true);
   });
 
   it('detection never calls claude nor looks for it: claude runs on the machine the source names, this one too (#174)', async () => {
     let ran = false;
     const kit = fakeKit({ which: async () => undefined, version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', dockerBin: 'docker', executors: ['herdr-claude'] }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', executors: ['herdr-claude'] }))
       .toEqual({ status: 'available', detail: 'claude on machine laptop' });
     expect(ran).toBe(false);
   });
