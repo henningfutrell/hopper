@@ -509,6 +509,7 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
      from `systemd-creds --user encrypt --name=hopper-master-key - <file>` (under the TPM2 when the host has one), or
      `SetCredentialEncrypted=`. Only encrypted forms: never `SetCredential=` with the key in clear in the unit.
   2. `HOPPER_MASTER_KEY` given at launch: `bash hopper-service.sh start-with-key` reads it from `HOPPER_MASTER_KEY`, or
+     reads one line on stdin when stdin is no terminal (`… | bash hopper-service.sh start-with-key`, issue #1497), or
      asks for it on the terminal (nothing is shown). It puts the key in the user manager's environment from its own
      environment (`systemctl --user import-environment`, never as an argument), restarts the service, and removes it
      from the manager's environment after the start. The key is not kept: the next start (a reboot, the port check's
@@ -530,6 +531,13 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   curl -fsS -m 10 -H 'Content-Type: application/json' \
     --data "$(jq -n --arg text "$1" '{text: $text}')" "$(cat ~/.config/hopper/alert-url)"
   ```
+- **Joined containers come back with the stack** (issue #1497). A container you joined to the hopper's network
+  (`podman network connect hopper_default <container>`, "The hopper's network"), an ssh target's machine for example,
+  stops with its host, and nothing else starts it. So after the stack is up, the service's start starts each such
+  container that is stopped, and says each one in its journal. A container of the hopper's compose project, and a sandbox (a label `io.hopper.*`), is
+  never one; the master key never goes to one. To keep one stopped, take it off the network: `podman network
+  disconnect hopper_default <container>`. A machine that still does not come back is told, after two minutes offline, as
+  `machine.offline` (`docs/design.md` "The offline watch"), where webhooks and notifiers take it.
 - **`hopper-compose-check.timer`** runs `hopper-compose-check.service` every minute. It reads the port the hopper's
   container publishes (`podman port`) and connects to it from the host (loopback for `0.0.0.0`). When the container runs
   and the port does not answer, twice, 10 seconds apart (`HOPPER_SERVICE_RETRY`), it restarts `hopper-compose.service`.

@@ -13910,6 +13910,16 @@ machine-resources.test.ts` (a client's link checked), `test/machines/windows-lin
 offline), `test/integration/machine-history.test.ts` (the snapshot carries it; the event), `test/ui/windows-link.test.ts`
 (the card's line, the fix by mode, the banner's machines).
 
+**The offline watch** (issue #1497). After a host restart (a reboot, `wsl --shutdown`), a container an ssh target
+names stays stopped, and nothing told a person: the Machines view showed it offline, and that was all. At each record
+the **offline watch** (`src/machines/offline-watch.ts`) is shown every machine. A machine offline at every record for two
+minutes is told once, `machine.offline` (`machineId`, `label`, `since`), and once more when it is online again,
+`machine.back_online`. Two minutes so that a machine not probed yet after the hopper's start, or one short drop, is not
+told. Kept in memory, as the memory alert: after a restart of the hopper a machine still offline is told again. Webhooks
+and notifiers take it (the Grok Bot notifier posts both). Nothing is configured: a machine a person keeps offline is told
+once, then not again until it was online. The service starts each **joined container** again itself (`docs/deploy.md`
+"The user service"); the watch is for one it cannot start, or a machine that is no joined container.
+
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown
 sensible levels.
