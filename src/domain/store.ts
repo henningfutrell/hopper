@@ -485,7 +485,8 @@ export interface ConnectedAccountRepository {
 }
 
 export interface UserStore {
-  jobs: JobRepository;
+  /** The jobs; the job leases (issue #1662): the hopper that drives each claimed or running job. */
+  jobs: JobRepository; jobLeases: import('./job-leases.ts').JobLeaseRepository;
   lanes: LaneRepository;
   decisions: DecisionRepository;
   events: EventLog;
