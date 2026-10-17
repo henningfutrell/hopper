@@ -1097,12 +1097,13 @@ Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it na
 
 ## `job.wait_ended`
 
-Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any.
+Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any. `check` (issue #1694): the hopper's wait check ended it — its condition, as a key (`items_ended:…`, `job_ended:<id>`, `question_settled:<id>`, `command_exited`) —; a later wait of the job on the same items is not woken for them again.
 
 | field | type | required |
 |---|---|---|
 | `by` | `person` \| `hopper` | yes |
 | `note` | string | no |
+| `check` | string | no |
 
 ```json
 {
@@ -1127,7 +1128,7 @@ Version 1 (`docs/schemas/job.own_command_nudged.v1.json`). A job waiting on its 
 
 ## `job.own_command_stuck`
 
-Version 1 (`docs/schemas/job.own_command_stuck.v1.json`). A job waiting on its own background command (issue #1037) did not go on within the grace after its nudge: its wait is flagged stuck (`stuckAt`). It now waits on a person: end the wait or cancel the job.
+Version 1 (`docs/schemas/job.own_command_stuck.v1.json`). A job waiting on its own background command (issue #1037) did not go on within the grace after its nudge: its wait was flagged stuck (`stuckAt`). Before issue #1694 only; now its wait check ends such a wait.
 
 `data` is `{}`.
 
@@ -1190,6 +1191,22 @@ Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's ow
       "state": "failure"
     }
   ]
+}
+```
+
+## `job.wait_overdue`
+
+Version 1 (`docs/schemas/job.wait_overdue.v1.json`). A job's own wait passed the deadline of its wait check (issue #1694): a day after it began, four hours for a wait on its own command. Once per wait. The job stays on its wait and is listed as stuck on its own wait for a person; the hopper checks it each hour after. `deadline`: the deadline; `result`: what the last check found.
+
+| field | type | required |
+|---|---|---|
+| `deadline` | string | yes |
+| `result` | string | yes |
+
+```json
+{
+  "deadline": "2026-10-18T10:00:00.000Z",
+  "result": "not ended yet: octo/tools#9"
 }
 ```
 

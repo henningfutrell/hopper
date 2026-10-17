@@ -46,6 +46,7 @@ import { createMachineHistoryRepository } from './machine-history.ts';
 import { createVaultRepository } from './vault.ts';
 import { createWebhookRepository } from './webhooks.ts';
 import { createCredentialAcceptanceRepository } from './machine-credentials.ts';
+import { createWaitCheckLeases } from './wait-check-leases.ts';
 
 /** The database URL with `?schema=<schema>`: the user schema, created when absent. */
 export function schemaUrl(url: string, schema: string): string {
@@ -120,6 +121,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     machineHistory: createMachineHistoryRepository(ctx),
     config: createConfigRecords(ctx, USER_CONFIG),
     credentialAcceptances: createCredentialAcceptanceRepository(ctx),
+    waitCheckLeases: createWaitCheckLeases(ctx),
     tx: ctx.tx,
     close: () => db.close(),
   };

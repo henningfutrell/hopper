@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "deadline": {
+      "type": "string"
+    },
+    "result": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "deadline",
+    "result"
+  ],
+  "additionalProperties": false
+}
