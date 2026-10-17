@@ -160,7 +160,8 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   if (runs.length === 0) return ended('failed', [], 'no probe checks its needs: it cannot pass');
   const given = await credentialsFor(c, userId, t, name, needs);
   // Issue #873: a probe of a need with no credential is not run, and says why; the probes of the other needs still run.
-  const checked = runs.map((r) => (r.notRun === undefined && given.missing.has(runKey(r)) ? { ...r, notRun: given.missing.get(runKey(r))! } : r));
+  // The missing credential is its reason even when the probe lacks something else too (a state backend): it is the first fix.
+  const checked = runs.map((r) => (given.missing.has(runKey(r)) ? { ...r, notRun: given.missing.get(runKey(r))! } : r));
   // A need with no credential that no probe covers fails the check too, with its reason.
   const uncovered = [...given.missing].filter(([key]) => !checked.some((r) => runKey(r) === key)).map(([, why]) => why);
   const problem = uncovered.length > 0 ? uncovered.join('; ') : undefined;
