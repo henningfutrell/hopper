@@ -24020,12 +24020,21 @@ restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links
 link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
 UI: Settings → hopper.io.
 
-**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
-link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
-hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its key is
-a secret the hopper owns, so it is a system secret ("The vault's system scope"), named by the link record: built in part 2
-("The cloud link key").
-Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+**No outbound traffic.** The cloud link makes no connection to hopper.io at all, linked or not
+(`test/integration/cloud-link.test.ts` watches every socket of a daemon that never links). The connection — an outbound
+link agent (no inbound port, so a container install needs no change) and hopper.io's confirmation that moves `state` from
+`pending` — is the install side of issue #464 ("Cloud link (issue #464)", "Left for the install side"), filed once a
+hopper.io server and its key exist. Its key is a secret the hopper owns, so it is a system secret ("The vault's system
+scope"), named by the link record: built in part 2 ("The cloud link key").
+Open (the tracking issue's decisions, issue #469): whether the first-run flow offers the link, and a minimum version or
+channel.
+
+**Issue #467 is complete** (2026-10-17). Each of its asks is built and tested: no data moves and an unlink leaves the
+install as it was (`test/http/cloud-link-fixture.test.ts`, two users); it arrives as a normal update, with no migration of
+existing data and no outbound traffic for an install that never links; link, rotate and unlink apply live and end no
+running job (`test/integration/cloud-link.test.ts`); a container install needs no inbound port, as the link opens none.
+The agent's own tests (a link during a running job with the agent running, and no connection while not linked) belong to
+the install side of issue #464, which must keep these tests green.
 
 ## The cloud link key (issue #467, part 2, 2026-10-17)
 
@@ -24058,9 +24067,9 @@ hopper.io shows the public half and Rotate key; Settings → Vault lists the pri
   did, and Rotate key mints one.
 - **No new event type.** The vault's own events record the mint, the rotation and the drop (R6).
 
-**Left (issue #467, waiting on issue #464):** the outbound link agent and hopper.io's confirmation from `pending`; the test
-that an install that never links makes no connection, with the agent; the test that a link during a running job does not
-end it, with the agent running.
+**Left (the install side of issue #464, not of #467):** the outbound link agent and hopper.io's confirmation from
+`pending`; the rotation overlap of R4; revocation from hopper.io's side; an operator CLI command; the agent's tests (no
+connection while not linked, and a link during a running job, with the agent running).
 
 **Verification:** `test/http/cloud-link-key.test.ts` (the real instance store): a link mints an X25519 key, the record holds
 its public half, the secret its private half; a rotation replaces it, not linked is 409; an unlink drops it; no master key,
