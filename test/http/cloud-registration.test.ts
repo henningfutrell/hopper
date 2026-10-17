@@ -41,7 +41,7 @@ describe('registering the instance at hopper.io', () => {
 
     clock.set('2026-10-17T08:09:59.000Z');
     expect(link.register(minted.code, 'Octo-Cat')).toBe('registered');
-    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'registered', linkedAt: '2026-10-17T08:00:00.000Z', registeredAt: '2026-10-17T08:09:59.000Z', by: 'admin' } });
+    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'registered', linkedAt: '2026-10-17T08:00:00.000Z', registeredAt: '2026-10-17T08:09:59.000Z', by: 'admin', linkKey: expect.objectContaining({ secret: 'cloud-link.link-key' }) } });
     expect(link.register(minted.code, 'octo-cat')).toBe('no-code');
 
     expect(events.map((e) => [e.type, e.data])).toEqual([

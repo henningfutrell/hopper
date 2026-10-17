@@ -41,7 +41,7 @@ describe('unregistering the instance at hopper.io', () => {
     registered(link);
 
     expect(link.unregister('Octo-Cat')).toBe('unregistered');
-    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T08:00:00.000Z', by: 'admin' } });
+    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T08:00:00.000Z', by: 'admin', linkKey: expect.objectContaining({ secret: 'cloud-link.link-key' }) } });
     expect(events.at(-1)).toEqual({ type: 'cloud_link.unregistered', data: { installId, account: 'octo-cat' } });
     expect(link.unregister('octo-cat')).toBe('not-registered');
 

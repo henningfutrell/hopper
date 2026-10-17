@@ -81,7 +81,7 @@ describe('the hopper.io link key', () => {
 
   it('with no master key, a link is refused and writes nothing', () => {
     const { instance, link, events } = setup(null);
-    expect(() => link.link('octo-cat', 'admin')).toThrow(expect.objectContaining({ statusCode: 503 }) as Error);
+    expect(() => link.link('octo-cat', 'admin')).toThrow(expect.objectContaining({ status: 503 }) as Error);
     expect(instance.settings.getCloudLink()).toBeUndefined();
     expect(instance.vault.get(`system/${CLOUD_LINK_KEY}`)).toBeUndefined();
     expect(events).toEqual([]);
