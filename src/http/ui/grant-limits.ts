@@ -38,8 +38,18 @@ const PREFIXES: [string, TargetsOf][] = [
   }]),
 ];
 
+/** A bulk decision (issue #1659): the job of each item its body names. */
+const bulkReviews = REVIEW_KINDS.flatMap((k) => REVIEW_SECTIONS[k].decisions.filter((d) => d.effect === 'reject').map((d): [string, TargetsOf] => [
+  `/ui/api/${REVIEW_SECTIONS[k].section}/${d.route}`,
+  (_p, b, store) => (Array.isArray(b.ids) ? b.ids : []).flatMap((id) => {
+    const item = text(id) === undefined ? undefined : store.reviews[k].get(String(id));
+    return item ? jobById(item.jobId, store) : [];
+  }),
+]));
+
 /** Routes by their exact path. */
 const ROUTES: Record<string, TargetsOf> = {
+  ...Object.fromEntries(bulkReviews),
   '/ui/api/failures/:id/retry': (p, _b, store) => jobById(p.id, store),
   '/ui/api/pull-requests/merge': (_p, b, store) => jobById(b.jobId, store),
   '/ui/api/pull-requests/close': (_p, b, store) => jobById(b.jobId, store),

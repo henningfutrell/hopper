@@ -2,7 +2,7 @@
 // The Proposals view (issue #537), rendered inside the whole app against a fake of the daemon's HTTP surface. A
 // proposal waiting on a person shows its parts, the parts it left out, its review trail and its job; the nav badge
 // counts the ones waiting on a person, high-priority ones marked and first, and never the questions. An operator
-// continues with selected paths, steers or rejects all (the last two only with a reason, issue #651); a viewer sees a notice. An admin's settings
+// continues with selected paths, steers (only with a reason, issue #651) or rejects (a note optional, issue #1659); a viewer sees a notice. An admin's settings
 // offer only the escalation levels the server names.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -32,7 +32,7 @@ const TYPE = {
     { id: 'accept', route: 'accept', label: 'Continue with selected', effect: 'accept', notes: 'optional' },
     { id: 'more_paths', route: 'more-paths', label: 'Ask for more paths', effect: 'send_back', notes: 'optional' },
     { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
-    { id: 'reject', route: 'reject', label: 'Reject all', effect: 'reject', notes: 'required' },
+    { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'optional' },
   ],
 };
 
@@ -144,11 +144,11 @@ describe('the Proposals view', () => {
     expect(navBadge()!.getAttribute('data-high')).toBe('1');
   });
 
-  it('an operator continues with a selected path and a note; steering or rejecting all needs a reason', async () => {
+  it('an operator continues with a selected path and a note; steering needs a reason; Reject is always enabled', async () => {
     await boot('#proposals', { proposals: [proposal('j1')], jobs: [job('j1')] });
     const c = card('j1')!;
     expect(button(c, 'Steer')!.disabled).toBe(true);
-    expect(button(c, 'Reject all')!.disabled).toBe(true);
+    expect(button(c, 'Reject')!.disabled).toBe(false);
     await act(async () => { (c.querySelector('[data-path="1"] input[type="checkbox"]') as HTMLInputElement).click(); });
     await type(card('j1')!.querySelector('textarea')!, 'go ahead');
     await act(async () => { button(card('j1')!, 'Continue with selected')!.click(); });
