@@ -9,9 +9,11 @@
 // on a box of a template whose needs the read policy holds entirely as reads gets the vault with no person, one
 // `vault.granted` event for each job. It covers that box only, and that job only, until it ends; turned off, it grants
 // no job that has not asked yet. A job whose trust stamp is below `approved` (issue #655 part 7) gets none: a person grants it.
+// Nor does a job on a template that sandbox strictness (brake 2, part 8) asks a person for.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, readsOnlyInPolicy, STANDING_READ_GRANTER, type VaultGrantAsk } from '../domain/vault-grants.ts';
+import { DEFAULT_SANDBOX_STRICTNESS, personBrake } from '../domain/sandbox-strictness.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { AT_WORK, boxAsk, type ClientTarget } from './box.ts';
 import type { VaultResult } from './service.ts';
@@ -35,12 +37,14 @@ export function withVaultGrants(v: Vault, o: {
 
   /**
    * Whether the standing read grant lets `job` ask from a box of `template`: recorded once for each job. Never for a job
-   * below `approved` (issue #655 part 7), one it granted before too.
+   * below `approved` (issue #655 part 7), one it granted before too, nor for a template sandbox strictness (brake 2, part
+   * 8) asks a person for.
    */
   function standingGrant(job: Job, template: string): boolean {
     if (!jobs.autoApprovable(job)) return false;
     const t = v.view().templates.find((x) => x.name === template);
     if (!t || !readsOnlyInPolicy(t, o.store.settings.getReadPolicy())) return false;
+    if (personBrake(o.store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, t)) return false;
     if (standing.has(job.id)) return true;
     if (o.store.settings.getSandboxApprovals()?.standingReadGrant !== true) return false;
     for (const id of standing) if (!AT_WORK.includes(jobs.get(id)?.status ?? '')) standing.delete(id);

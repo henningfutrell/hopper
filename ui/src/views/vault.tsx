@@ -29,6 +29,7 @@ import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
 import { SandboxApprovals } from './sandbox-approvals';
+import { SandboxStrictness } from './sandbox-strictness';
 import { TemplateRequest } from './vault-template-request';
 import { sameProfile, TemplateForm } from './vault-template-form';
 import { limitsText, type TemplateLimits } from '@/model/sandbox-launch';
@@ -219,6 +220,7 @@ export function Vault() {
       </Panel>
       {view && <TemplateRequest onView={setView} />}
       {view && <SandboxApprovals approvals={view.sandboxApprovals} remembered={view.rememberedWrites ?? []} can={can} busy={busy} />}
+      {view && <SandboxStrictness />}
       {view && <ReadPolicy entries={view.readPolicy ?? []} onView={setView} />}
       {view && <SharedSecrets shared={shared} onView={setView} />}
       {view && <SystemSecrets system={view.system} backends={backends} can={can} busy={busy} send={send} />}

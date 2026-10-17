@@ -233,6 +233,7 @@
         "vault.credential_declined",
         "vault.read_policy_set",
         "vault.sandbox_approvals_set",
+        "sandbox.strictness_changed",
         "vault.sandbox_requested",
         "vault.sandbox_approved",
         "vault.sandbox_declined",

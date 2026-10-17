@@ -4721,6 +4721,36 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 }
 ```
 
+## `sandbox.strictness_changed`
+
+Version 1 (`docs/schemas/sandbox.strictness_changed.v1.json`). An admin changed the sandbox strictness in Settings → Vault (issue #655, brake 2): which sandbox runs gate 2 may approve with no person, `default`, by blast radius level (`radius`) and by template (`templates`). `relaxed` and `standard`: the approval toggles and policies decide; `strict`: a person approves each run of a medium or high radius template, or one with no rating; `locked`: a person approves each run. It applies at once. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "default": "standard",
+    "radius": {},
+    "templates": {}
+  },
+  "to": {
+    "default": "standard",
+    "radius": {
+      "high": "strict"
+    },
+    "templates": {
+      "aws-prod": "locked"
+    }
+  },
+  "by": "Ada"
+}
+```
+
 ## `vault.sandbox_requested`
 
 Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`, or `--template NAME`, issue #1471), or the hopper asked for one before the job started, as the job's prompt names the template (issue #1471): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
