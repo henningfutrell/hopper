@@ -33,7 +33,11 @@ Every row shows, also when its count is 0. The page says *Nothing waits on you* 
 
 **Intake** lists the open labelled issues your job sources list that wait on an intake decision, per source. The issues are in groups, each with a count:
 
-1. **Needs approval**: request cards. Select **Approve** to let the hopper take the issue. Select **Decline** when you do not want it done: the hopper makes no job and writes nothing on GitHub. The source shows one line with how many requests you declined. When someone edits the title or body of a declined issue, it shows here again.
+1. **Needs approval**: request cards. Select **Approve** to let the hopper take the issue. Select **Decline** when you do not want it done: the hopper makes no job. Then pick what happens to the issue, and select **Decline** again:
+   - **Close the issue**: the hopper closes it as not planned and removes its hopper labels.
+   - **Leave it open**: the issue stays open, but the hopper removes the hopper label, so no hopper queues it.
+
+   Either way the hopper posts one short comment on the issue that says what it did. The comment does not name you. To queue the issue again, add the hopper label again on GitHub (and reopen it, when it is closed). An edit to its title or body does not bring it back. An admin sets which choice shows first in **Settings → Intake**: by default, Leave it open for a request and Close the issue for a reopened issue.
 2. **Not assigned to you**: the hopper takes a labelled issue only when it is assigned to you, so nothing works on these issues. Select **Assign to me**, or **Assign all to me**.
 3. **On the backburner**: select **Take off the backburner**.
 4. **Other reasons**.

@@ -13,6 +13,7 @@ import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { useHopper } from '@/store';
 import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView } from '@/model/wire';
 import { IntakeAutoApproval } from '@/views/intake-auto-approval';
+import { IntakeDecline } from '@/views/intake-decline';
 
 const FROM_TEXT: Record<CandidateFrom, string> = {
   connected: 'connected account', collaborator: 'collaborator', member: 'org member', author: 'issue author', 'hopper-user': 'hopper user', 'api-token': 'API token',
@@ -163,6 +164,7 @@ export function IntakeActors() {
           : <p className="text-sm text-muted-foreground">Loading…</p>}
       </Panel>
       <IntakeAutoApproval />
+      <IntakeDecline />
     </div>
   );
 }

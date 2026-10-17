@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "choice": {
+      "type": "string",
+      "enum": [
+        "close",
+        "open"
+      ]
+    }
+  },
+  "required": [
+    "source",
+    "key",
+    "hash",
+    "choice"
+  ],
+  "additionalProperties": false
+}

@@ -1,11 +1,14 @@
 // Trusted origin and request cards at the GitHub source (issue #652): an issue is taken only when a trusted actor wrote
 // it, labelled it and assigned it to the user, and no job filed it; any other is a request card. Approve takes the text
-// as read, and only while the issue still hashes so; an edit after the approval shows the card again.
+// as read, and only while the issue still hashes so; an edit after the approval shows the card again. Decline closes the
+// issue or leaves it open without the label, as the person picked, and comments (issue #1710).
 import { describe, expect, it } from 'vitest';
 import { requestHash } from '../../src/domain/intake-origin.ts';
 import { DECLINED_REASON, REQUEST_REASON } from '../../src/sources/github/origin.ts';
 import { ALREADY_APPROVED, ALREADY_TAKEN, TEXT_CHANGED_SINCE_SHOWN } from '../../src/sources/github/intake-actions.ts';
 import { filedNote } from '../../src/github-proxy/index.ts';
+import { declineNote } from '../../src/domain/intake-decline.ts';
+import { GitHubApiError } from '../../src/sources/github/api.ts';
 import { REPO, setup, testTrust } from './fixtures/github-support.ts';
 
 const url = (n: number) => `https://github.com/${REPO}/issues/${n}`;
@@ -207,18 +210,75 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.flushOutbox?.();
   });
 
-  it('Decline keeps the text as read declined: the next sync lists it declined, with no action, and writes nothing to GitHub (issue #1035)', async () => {
+  it('Decline with Close closes the issue as not planned, takes off its hopper labels and comments; the next sync lists nothing (issue #1710)', async () => {
     const trust = testTrust();
     const { gh, source } = setup({}, { trust });
-    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper', 'hopper:high', 'bug'] });
     await source.discover();
     const hash = source.intake!()[0]!.request!.hash;
-    expect(await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash, acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
-    expect(trust.declines.get(url(1))).toMatchObject({ source: 'github', request: { hash } });
-    expect(await source.discover()).toEqual([]);
-    expect(source.intake!()[0]).toEqual({ key: url(1), title: 'Do it', repo: REPO, reason: DECLINED_REASON, group: 'declined' });
+    expect(await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash, choice: 'close', acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
+    expect(trust.declines.get(url(1))).toMatchObject({ source: 'github', request: { hash }, choice: 'close' });
+    // Nothing on GitHub before the outbox sends its rows (issue #1238).
+    expect((await gh.getIssue(REPO, 1)).state).toBe('open');
+    await source.flushOutbox!();
     const issue = await gh.getIssue(REPO, 1);
-    expect([issue.state, issue.labels, issue.assignees]).toEqual(['open', ['hopper'], ['owner']]);
+    expect([issue.state, issue.stateReason, issue.labels]).toEqual(['closed', 'not_planned', ['bug']]);
+    const comments = await gh.listComments(REPO, 1);
+    expect(comments).toHaveLength(1);
+    expect(comments[0]!.body).toContain(declineNote('close', false, 'hopper'));
+    expect(comments[0]!.body).not.toContain('Change the README.');
+    expect(await source.discover()).toEqual([]);
+    expect(source.intake!()).toEqual([]);
+  });
+
+  it('Decline with Leave open takes off the source label and comments; the issue stays open and no sync offers it (issue #1710)', async () => {
+    const trust = testTrust();
+    const { gh, source } = setup({}, { trust });
+    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper', 'hopper:high'] });
+    await source.discover();
+    const hash = source.intake!()[0]!.request!.hash;
+    expect(await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash, choice: 'open' })).toEqual({ done: [url(1)], failed: {} });
+    // While the rows wait, the card is declined, with no action.
+    await source.discover();
+    expect(source.intake!()[0]).toEqual({ key: url(1), title: 'Do it', repo: REPO, reason: DECLINED_REASON, group: 'declined', writeBehind: { act: 'decline', state: 'running' } });
+    await source.flushOutbox!();
+    const issue = await gh.getIssue(REPO, 1);
+    expect([issue.state, issue.labels, issue.assignees]).toEqual(['open', ['hopper:high'], ['owner']]);
+    expect((await gh.listComments(REPO, 1)).map((c) => c.body.split('\n').at(-1))).toEqual([declineNote('open', false, 'hopper')]);
+    expect(await source.discover()).toEqual([]);
+    expect(source.intake!()).toEqual([]);
+  });
+
+  it('Decline with no choice takes the user\'s default for the card: Leave open for a request card (issue #1710)', async () => {
+    const { gh, source } = setup({}, { trust: testTrust() });
+    gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    await source.discover();
+    await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash: source.intake!()[0]!.request!.hash });
+    await source.flushOutbox!();
+    expect(await gh.getIssue(REPO, 1)).toMatchObject({ state: 'open', labels: [] });
+    const other = setup({}, { trust: testTrust(undefined, { declineDefaults: { request: 'close', reopened: 'close' } }) });
+    other.gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    await other.source.discover();
+    await other.source.intakeAction!({ kind: 'decline', keys: [url(1)], hash: other.source.intake!()[0]!.request!.hash });
+    await other.source.flushOutbox!();
+    expect(await other.gh.getIssue(REPO, 1)).toMatchObject({ state: 'closed', stateReason: 'not_planned' });
+  });
+
+  it('a failed decline write waits with Retry; sent again it posts no second comment and closes once (issue #1710)', async () => {
+    const { gh, source } = setup({}, { trust: testTrust() });
+    gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    await source.discover();
+    await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash: source.intake!()[0]!.request!.hash, choice: 'close' });
+    gh.failNext('closeAsNotPlanned', new GitHubApiError('close: forbidden', true, 403));
+    await source.flushOutbox!();
+    expect(source.describe!()).toMatchObject({ outboxFailed: [{ key: url(1), act: 'decline', error: 'close: forbidden' }] });
+    expect((await gh.getIssue(REPO, 1)).state).toBe('open');
+    expect(await source.intakeAction!({ kind: 'retry_outbox', keys: [url(1)] })).toEqual({ done: [url(1)], failed: {} });
+    await source.flushOutbox!();
+    expect((await gh.getIssue(REPO, 1)).state).toBe('closed');
+    expect(await gh.listComments(REPO, 1)).toHaveLength(1);
+    expect(gh.calls.filter((c) => c.method === 'closeAsNotPlanned')).toHaveLength(2);
+    expect(gh.calls.filter((c) => c.method === 'postComment')).toHaveLength(1);
   });
 
   it('Decline refuses a text that changed since it was shown', async () => {
@@ -228,17 +288,8 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.discover();
     expect(await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash: 'f'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: TEXT_CHANGED_SINCE_SHOWN } });
     expect(trust.declines.size).toBe(0);
-  });
-
-  it('an issue edited after its decline is a request card again (issue #1035)', async () => {
-    const trust = testTrust();
-    const { gh, source } = setup({}, { trust });
-    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper'] });
-    await source.discover();
-    await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash: source.intake!()[0]!.request!.hash });
-    gh.editIssue(REPO, 1, { body: 'Change the CI.' }, 'stranger');
-    expect(await source.discover()).toEqual([]);
-    expect(source.intake!()[0]).toMatchObject({ reason: REQUEST_REASON, action: 'approve', request: { body: 'Change the CI.' } });
+    await source.flushOutbox!();
+    expect(gh.calls.filter((c) => c.method === 'postComment')).toEqual([]);
   });
 
   it('only a request card is offered Decline', async () => {
