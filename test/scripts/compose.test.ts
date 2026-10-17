@@ -96,12 +96,24 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps no master key in a volume or a file: the hopper reads HOPPER_MASTER_KEY from the launch, and the old token_key only to move it (issues #659, #894)', () => {
     expect(hopper.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
-    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
+    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE ?? '').toBe('');
     const key = 'ab'.repeat(32);
     expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
     expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();
     const script = postgres.command!.join('\n');
     expect(script).not.toMatch(/token_key/);
+  });
+
+  it('reads the key from a file hopper-service.sh names, mounted read-only, never from the container\'s environment (issue #1487)', () => {
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: '/dev/null', target: '/run/hopper-master-key', read_only: true }));
+    const host = '/run/user/1000/hopper-service/master-key';
+    const given = render(`HOPPER_MASTER_KEY_HOST_FILE=${host}\nHOPPER_MASTER_KEY_FILE=/run/hopper-master-key\nCOMPOSE_PROFILES=hopper-vault\n`);
+    for (const name of ['hopper', 'hopper-vault']) {
+      const s = svc(given, name);
+      expect(s.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
+      expect(s.environment?.HOPPER_MASTER_KEY_FILE).toBe('/run/hopper-master-key');
+      expect(s.volumes).toContainEqual(expect.objectContaining({ source: host, target: '/run/hopper-master-key', read_only: true }));
+    }
   });
 
   it('keeps no secret in a persistent volume: the files Postgres makes are in memory (tmpfs), made again after a full stop (issue #659)', () => {

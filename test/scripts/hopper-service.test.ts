@@ -3,7 +3,7 @@
 // PATH that record each call; no unit of this machine is written or started. The image prints the script: `hopper service
 // script`. Nothing leaves this process tree.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,9 +20,13 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise((done) => s.close(done))));
 });
 
+// The key compose is given as a file (issue #1487): what the file holds, and where the container reads it.
 const PODMAN = `#!/bin/sh
-printf 'podman %s | key=%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
+file=''
+[ -n "\${HOPPER_MASTER_KEY_HOST_FILE:-}" ] && file=" | file=$(cat "$HOPPER_MASTER_KEY_HOST_FILE") at \${HOPPER_MASTER_KEY_FILE:-}"
+printf 'podman %s | key=%s%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" "$file" >> "$STUB_LOG"
 case "$*" in
+  "run --rm "*" hopper master-key script") [ -n "\${STUB_MASTER_KEY_SCRIPT:-}" ] && cat "$STUB_MASTER_KEY_SCRIPT" ;;
   "ps -aq --filter label=io.podman.compose.project=hopper") [ "\${STUB_STACK:-}" = podman-compose ] && echo 0123456789ab ;;
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") [ -n "\${STUB_RUNNING:-}" ] && echo cid ;;
   "port cid") [ -n "\${STUB_PORT:-}" ] && echo "4790/tcp -> \${STUB_PORT}" ;;
@@ -44,10 +48,22 @@ printf 'loginctl %s\\n' "$*" >> "$STUB_LOG"
 case "$1" in show-user) echo "\${STUB_LINGER:-no}" ;; enable-linger) exit "\${STUB_LINGER_FAIL:-0}" ;; esac
 `;
 // master-key.sh as the service calls it: \`run <command>…\` runs the command with the unsealed key in its environment.
+// \`seal\` seals HOPPER_MASTER_KEY: the stub records the key it was given in its environment.
 const MASTER_KEY = `printf 'master-key.sh %s\\n' "$*" >> "$STUB_LOG"
+if [ "$1" = seal ]; then printf 'sealed key=%s\\n' "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"; echo sealed > hopper-master-key.enc; exit 0; fi
 [ "$1" = run ] || exit 1
 shift
 HOPPER_MASTER_KEY=${KEY} exec "$@"
+`;
+
+// The service's journal, as the alert reads it (issue #1487): the line a start that failed ended with.
+const JOURNALCTL = `#!/bin/sh
+printf 'journalctl %s\\n' "$*" >> "$STUB_LOG"
+echo 'hopper-service: start the stack'
+echo 'hopper-service: no master key is given, and the hopper keeps data (the volume hopper_postgres): the stack does not start'
+`;
+const NOTIFY_SEND = `#!/bin/sh
+printf 'notify-send %s\\n' "$*" >> "$STUB_LOG"
 `;
 
 function folder(o: { podmanCompose?: boolean } = {}) {
@@ -57,7 +73,7 @@ function folder(o: { podmanCompose?: boolean } = {}) {
   writeFileSync(join(dir, 'compose.yaml'), readFileSync(join(ROOT, 'compose.yaml')));
   const bin = join(dir, '.bin');
   mkdirSync(bin);
-  const tools: Record<string, string> = { podman: PODMAN, systemctl: SYSTEMCTL, loginctl: LOGINCTL, ...(o.podmanCompose ? { 'podman-compose': PODMAN_COMPOSE } : {}) };
+  const tools: Record<string, string> = { podman: PODMAN, systemctl: SYSTEMCTL, loginctl: LOGINCTL, journalctl: JOURNALCTL, 'notify-send': NOTIFY_SEND, ...(o.podmanCompose ? { 'podman-compose': PODMAN_COMPOSE } : {}) };
   for (const [name, body] of Object.entries(tools)) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
   const home = join(dir, '.home');
   // Short, for a socket path.
@@ -115,6 +131,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(f.calls()).toEqual([
       'systemctl --user show-environment',
       expect.stringMatching(/^podman ps -aq --filter label=io\.podman\.compose\.project=hopper/),
+      'podman run --rm ghcr.io/henningfutrell/hopper:dev hopper master-key script | key=',
       'loginctl show-user someone -p Linger --value',
       'loginctl enable-linger someone',
       'systemctl --user daemon-reload',
@@ -123,6 +140,61 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
       'systemctl --user restart hopper-compose-check.timer',
     ]);
     expect(r.err).toMatch(/turned on linger for someone/);
+    expect(r.err).toMatch(/the image gives no master-key\.sh/);
+  });
+
+  it('install puts in master-key.sh from the image when none is here, and seals the key given to it, never as an argument (issue #1487)', () => {
+    const f = folder();
+    const script = join(f.dir, '.master-key-script');
+    writeFileSync(script, MASTER_KEY);
+    const r = f.run(['install'], { HOPPER_MASTER_KEY: KEY, STUB_MASTER_KEY_SCRIPT: script, STUB_DATA: '1' });
+    expect(r.status, r.err).toBe(0);
+    expect(readFileSync(join(f.dir, 'master-key.sh'), 'utf8')).toBe(MASTER_KEY);
+    expect(f.calls()).toContain('podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script | key=');
+    expect(f.calls()).toContain(`sealed key=${KEY}`);
+    expect(existsSync(join(f.dir, 'hopper-master-key.enc'))).toBe(true);
+    expect(r.err).toMatch(/sealed the master key given to the install/);
+    for (const c of f.calls().filter((c) => !c.startsWith('sealed key='))) expect(c.split(' | ')[0]).not.toContain(KEY);
+    expect(r.err).not.toContain(KEY);
+  });
+
+  it('install keeps the master-key.sh here, and with data, no key given and none sealed, says the line that seals it (issue #1487)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    const r = f.run(['install'], { STUB_DATA: '1' });
+    expect(r.status, r.err).toBe(0);
+    expect(f.calls().filter((c) => c.startsWith('podman run'))).toEqual([]);
+    expect(r.err).toMatch(/no master key is sealed here: after a restart of this host the stack does not start by itself\. Seal it: bash master-key\.sh seal/);
+    expect(readFileSync(join(f.dir, 'master-key.sh'), 'utf8')).toBe(MASTER_KEY);
+  });
+
+  it('install makes a failed start of the stack run hopper-compose-alert.service, and uninstall removes it (issue #1487)', () => {
+    const f = folder();
+    expect(f.run(['install']).status).toBe(0);
+    expect(f.unit('hopper-compose.service')).toMatch(/^OnFailure=hopper-compose-alert\.service$/m);
+    const alert = f.unit('hopper-compose-alert.service');
+    expect(alert).toMatch(/^Type=oneshot$/m);
+    expect(alert).toMatch(/^ExecStart=.*"[^"]*\/hopper-service\.sh" alert$/m);
+    expect(f.run(['uninstall']).status).toBe(0);
+    expect(existsSync(join(f.home, '.config', 'systemd', 'user', 'hopper-compose-alert.service'))).toBe(false);
+  });
+
+  it('alert gives hopper-alert.sh and the desktop what stopped the start (issue #1487)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'hopper-alert.sh'), 'printf \'alert: %s\\n\' "$1" >> "$STUB_LOG"\n');
+    const r = f.run(['alert']);
+    expect(r.status, r.err).toBe(0);
+    const why = 'no master key is given, and the hopper keeps data (the volume hopper_postgres): the stack does not start';
+    expect(f.calls()).toContainEqual(expect.stringMatching(new RegExp(`^alert: hopper on .+: hopper-compose\\.service did not start: ${why.replace(/[()]/g, '\\$&')}$`)));
+    expect(f.calls()).toContainEqual(expect.stringMatching(/^notify-send .*hopper-compose\.service did not start/));
+  });
+
+  it('alert with no hopper-alert.sh says how to add one, and does not fail (issue #1487)', () => {
+    const f = folder();
+    const r = f.run(['alert']);
+    expect(r.status, r.err).toBe(0);
+    expect(r.err).toMatch(/hopper-compose\.service did not start/);
+    expect(r.err).toMatch(/no hopper-alert\.sh here/);
   });
 
   it('install takes podman-compose when it started the stack, and gives the rootless Podman socket when podman.socket is on', async () => {
@@ -171,9 +243,31 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(compose).toEqual([
       'podman compose -p hopper down | key=',
       expect.stringMatching(/^master-key\.sh run bash .*hopper-service\.sh up$/),
-      `podman compose -p hopper up -d | key=${KEY}`,
+      `podman compose -p hopper up -d | key= | file=${KEY} at /run/hopper-master-key`,
     ]);
     for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
+  });
+
+  it('start gives compose the key as a file in this user\'s runtime folder, never in the environment, and stop removes it (issue #1487)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    writeFileSync(join(f.dir, 'hopper-master-key.enc'), 'sealed');
+    expect(f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
+    const folderOfKey = join(f.runtime, 'hopper-service');
+    const file = join(folderOfKey, 'master-key');
+    expect(readFileSync(file, 'utf8')).toBe(KEY);
+    expect(statSync(folderOfKey).mode & 0o777).toBe(0o700);
+    // Read in the container by its own user: the folder keeps every other user of this host out.
+    expect(statSync(file).mode & 0o777).toBe(0o644);
+    expect(f.run(['stop'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('start with data, no key and no master-key.sh here says how to put master-key.sh in (issue #1487)', () => {
+    const f = folder();
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', STUB_DATA: '1' });
+    expect(r.status).toBe(1);
+    expect(r.err).toMatch(/no master-key\.sh here: bash hopper-service\.sh install puts it in/);
   });
 
   const upCalls = (f: ReturnType<typeof folder>) => f.calls().filter((c) => c.startsWith('podman compose') || c.startsWith('master-key.sh'));
@@ -186,7 +280,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', CREDENTIALS_DIRECTORY: creds, STUB_DATA: '1' });
     expect(r.status, r.err).toBe(0);
     expect(r.err).toMatch(/with the master key from the systemd credential hopper-master-key/);
-    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key=${KEY}`]);
+    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key= | file=${KEY} at /run/hopper-master-key`]);
     for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
     expect(r.err).not.toContain(KEY);
   });
@@ -199,7 +293,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', HOPPER_MASTER_KEY: other, STUB_DATA: '1' });
     expect(r.status, r.err).toBe(0);
     expect(r.err).toMatch(/with the master key from HOPPER_MASTER_KEY given at launch/);
-    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key=${other}`]);
+    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key= | file=${other} at /run/hopper-master-key`]);
     expect(r.err).not.toContain(other);
   });
 
