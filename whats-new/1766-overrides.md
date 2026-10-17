@@ -1,0 +1,1 @@
+- In Settings → Clusters you can give a cluster another name than it has in AWS, choose the account and region to look in, and name the role a change to the cluster uses. A cluster no longer needs a vault secret for this.

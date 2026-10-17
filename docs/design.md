@@ -14866,9 +14866,27 @@ account that has the cluster signs the EKS token with that session; the cluster'
 None, or several, mint nothing, and the refusal says where the vault looked. An account STS or EKS refuses is passed
 over. The vault picks no credential of several: an account with several refuses the discovery (issue #1761). A
 credential whose STS is not AWS's (`Endpoint`) asks no EKS unless it names `EksEndpoint`. A cluster's own minting
-credential wins, as before; a write on a cluster needs one, naming the role its write is granted to. `vault.minted`,
+credential wins, as before; a write on a cluster needs one, naming the role its write is granted to, or a cluster override (below) that names it. `vault.minted`,
 `vault.check_minted` and the mint test name the AWS minting credential the discovery used. A discovered cluster's
 token binds to no Secret (an EKS token cannot). The vault's container takes a discovery in its `mint` op (`discover`).
+
+**Cluster overrides** (issue #1766 part 2: config, not a vault secret, since a cluster holds no secret;
+`src/domain/clusters.ts`, `src/vault/clusters.ts`). The user's config record `clusters` (`{ "clusters": [...] }`, at
+most 100) changes how discovery finds one `cluster/<name>`. Each override names the cluster (`name`, the name templates
+and Access use) and, each optional: `eksName`, its name in EKS (an alias, so two hopper names can point at one EKS
+cluster); `account`, the one AWS account to look in (it needs an `aws-account` minting credential); `region`, in place
+of each credential's; and `writeRole`, the IAM role name (no path, not `hopper-read`) a write signs in as. With a
+`writeRole`, a write is discovered too: the vault finds the cluster as `hopper-read`, as for a read, then mints a session
+of `arn:aws:iam::<the account it was found in>:role/<writeRole>` from the same minting credential and signs the EKS
+token with it. The cluster's access entry or aws-auth mapping for that role decides what it may do; the hopper never
+changes the cluster. Access, the apply gate and a plan still come first, as for every write. A write on a cluster with no
+`writeRole` is refused, as before. A cluster's own minting credential still wins over its override. The record is read at
+each mint (`mintSourceFor` takes it; the vault's container gets the result in `discover`, with `region`), so an edit
+reaches the next mint with no restart. Edited in Settings → Clusters (`GET /api/clusters`, `POST /ui/api/clusters`,
+admin, the whole list against the version read; not a box action, as a vault edit is none) or with `hopper config set
+clusters`. Tests: `test/vault/cluster-overrides.test.ts` (the record, the source choice, a region, a write role),
+`test/integration/cluster-overrides.test.ts` (an alias through the route, the real minter and the mint test; refusals
+by the route and the CLI), `test/ui/clusters.test.ts`.
 
 **The AWS session name** (issue #781, `awsSessionName`). STS records it in the assumed role's ARN
 (`arn:aws:sts::<account>:assumed-role/<role>/<session name>`), and a role's trust policy can allow only some names

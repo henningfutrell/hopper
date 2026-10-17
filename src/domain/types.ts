@@ -569,7 +569,7 @@ export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gate
 
 // ---- Job rules (issue #172): src/domain/job-rules.ts (re-exported here) -------------------
 
-export type { JobRulesView, RepoJobRulesView } from './job-rules.ts';
+export type { JobRulesView, RepoJobRulesView } from './job-rules.ts'; export type { ClusterOverride, ClustersView } from './clusters.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
