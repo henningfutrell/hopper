@@ -5,7 +5,7 @@
 //
 // Feature: the GitLab source
 //   Scenario: an issue the account wrote, labelled and assigned to itself is a job's item: its prompt, its project, trusted
-//   Scenario: an issue another person wrote, labelled, assigned or edited is not of a trusted origin, with who did what
+//   Scenario: an issue another person wrote, labelled, assigned or edited is a request card (issue #1642), with who did what
 //   Scenario: an issue assigned to another person is not assigned to you; one with an end label or on the backburner is not taken
 //   Scenario: with no Access, nobody is a trusted actor, so no issue is taken
 //   Scenario: a report writes the hopper's labels: claimed, then hopper:pr-ready or the end label; a missing issue is a permanent error
@@ -14,7 +14,8 @@
 //   Scenario: GitLab refusing the token ends only the account: the source stops reading, pauses, and lists nothing
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGitLabAccount } from '../../src/gitlab/account.ts';
-import { createGitLabSource, NOT_TRUSTED } from '../../src/gitlab/source.ts';
+import { createGitLabSource } from '../../src/gitlab/source.ts';
+import { REQUEST_REASON } from '../../src/sources/github/origin.ts';
 import type { GitLabAccountRecord } from '../../src/domain/gitlab-account.ts';
 import type { GitLabActorRef } from '../../src/domain/access.ts';
 import { SourceError } from '../../src/domain/ports.ts';
@@ -100,12 +101,13 @@ describe('the GitLab source', () => {
       { ...mine, iid: 5, title: 'Edited by ada', editedBy: ['ada'] },
     ] });
     expect((await s.source.discover()).map((i) => i.title)).toEqual(['Edited by ada']);
-    const why = Object.fromEntries(s.source.intake!().map((x) => [x.title, x.reason]));
+    expect(s.source.intake!().filter((x) => x.reason !== undefined).every((x) => x.reason === REQUEST_REASON && x.group === 'request' && x.action === 'approve')).toBe(true);
+    const why = Object.fromEntries(s.source.intake!().map((x) => [x.title, x.request?.why]));
     expect(why).toEqual({
-      'Written by bob': `${NOT_TRUSTED}: bob wrote it, and is not a trusted actor`,
-      'Labelled by bob': `${NOT_TRUSTED}: bob added the label, and is not a trusted actor`,
-      'Assigned by bob': `${NOT_TRUSTED}: bob assigned it, and is not a trusted actor`,
-      'Edited by bob': `${NOT_TRUSTED}: bob edited its title or description, and is not a trusted actor`,
+      'Written by bob': ['bob wrote it, and is not a trusted actor'],
+      'Labelled by bob': ['bob added the label, and is not a trusted actor'],
+      'Assigned by bob': ['bob assigned it, and is not a trusted actor'],
+      'Edited by bob': ['bob edited its title or description, and is not a trusted actor'],
       'Edited by ada': undefined,
     });
   });
@@ -128,7 +130,7 @@ describe('the GitLab source', () => {
   it('takes no issue with no Access: nobody is a trusted actor', async () => {
     const s = await connected({ access: false });
     expect(await s.source.discover()).toEqual([]);
-    expect(s.source.intake!().find((x) => x.title === 'Fix the parser')?.reason).toBe(`${NOT_TRUSTED}: ada wrote it, and is not a trusted actor; ada added the label, and is not a trusted actor; ada assigned it, and is not a trusted actor`);
+    expect(s.source.intake!().find((x) => x.title === 'Fix the parser')?.request?.why).toEqual(['ada wrote it, and is not a trusted actor', 'ada added the label, and is not a trusted actor', 'ada assigned it, and is not a trusted actor']);
   });
 
   it('writes the hopper\'s labels as a job is claimed and ends', async () => {

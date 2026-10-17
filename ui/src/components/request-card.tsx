@@ -14,7 +14,7 @@ import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block';
 import { approveRequest, declineRequest, useApprovals, waitsForDaemon } from '@/store/intake';
 import { BodyDiff } from './text-change';
 
-const ROLE: Record<IntakeRequest['actors'][number]['role'], string> = { author: 'written by', labelled: 'labelled by', assigned: 'assigned by' };
+const ROLE: Record<IntakeRequest['actors'][number]['role'], string> = { author: 'written by', labelled: 'labelled by', assigned: 'assigned by', edited: 'edited by' };
 
 export function RequestCard({ request, source, itemKey, canOperate }: { request: IntakeRequest; source: string; itemKey: string; canOperate: boolean }) {
   const approval = useApprovals((s) => s[itemKey]);

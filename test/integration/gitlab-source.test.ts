@@ -11,7 +11,7 @@ import type { SourceStatus } from '../../src/domain/types.ts';
 import type { GitLabAccountStatus } from '../../src/domain/gitlab-account.ts';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
 import type { Job } from '../../src/domain/types.ts';
-import { NOT_TRUSTED } from '../../src/gitlab/source.ts';
+import { REQUEST_REASON } from '../../src/sources/github/origin.ts';
 import { createFakeGitLab } from '../support/fake-gitlab.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -46,7 +46,7 @@ const sources = async (app: TestApp) => (await app.api<{ sources: SourceStatus[]
 const gitlabSource = async (app: TestApp) => (await sources(app)).find((s) => s.kind === 'gitlab-account');
 
 describe('a GitLab source', () => {
-  it('takes the account\'s own issue as a job, labels it claimed at GitLab, and says why another person\'s is not taken', async () => {
+  it('takes the account\'s own issue as a job, labels it claimed at GitLab, and offers another person\'s as a request card a person approves', async () => {
     const { app, gitlab } = await setup();
     const token = await app.login();
     expect(await gitlabSource(app)).toBeUndefined();
@@ -63,7 +63,7 @@ describe('a GitLab source', () => {
     await waitFor(() => gitlab.issues.find((i) => i.iid === 1)!.labels.includes('hopper:claimed') || undefined, { what: 'the claimed label at GitLab' });
     const listed = await waitFor(async () => { const i = (await gitlabSource(app))?.detail.intake as IntakeOutcome[] | undefined; return i?.length === 2 ? i : undefined; }, { what: 'Intake to list the GitLab issues' });
     expect(listed.find((x) => x.key === key)).toMatchObject({ jobId: job.id });
-    expect(listed.find((x) => x.title === 'From bob')).toMatchObject({ reason: `${NOT_TRUSTED}: bob wrote it, and is not a trusted actor`, group: 'other' });
+    expect(listed.find((x) => x.title === 'From bob')).toMatchObject({ reason: REQUEST_REASON, group: 'request', action: 'approve', request: { why: ['bob wrote it, and is not a trusted actor'] } });
     expect(gitlab.requests.every((r) => r.token === 'glpat-ada')).toBe(true);
     expect(gitlab.requests.some((r) => r.path.includes('acme%2Fapi/issues'))).toBe(false);
     // The test daemon has no herdr-claude executor, so the job fails at once: its end label replaces the claim.
@@ -74,6 +74,15 @@ describe('a GitLab source', () => {
       ['/api/v4/projects/ada%2Ftools/issues/1', { add_labels: 'hopper:failed', remove_labels: 'hopper:claimed' }],
     ]);
     expect(gitlab.issues.find((i) => i.iid === 1)!.labels).toEqual(['hopper', 'hopper:failed']);
+
+    // A person approves bob's request card (issue #1642): the next sync takes its text as a job of origin approved.
+    const card = listed.find((x) => x.title === 'From bob')!;
+    const approved = await app.ui<{ done: string[] }>('/ui/api/sources/gitlab-account/intake', { kind: 'approve', keys: [card.key], hash: card.request!.hash }, { token });
+    expect(approved.body.done).toEqual([card.key]);
+    await app.sync();
+    const bobs = await waitFor(async () => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.find((j) => j.source?.key === card.key), { what: 'the approved card\'s job' });
+    expect(bobs.source).toMatchObject({ kind: 'gitlab-account', number: 2, origin: 'approved' });
+    expect(bobs.spec.payload.prompt).toContain('Do this.');
   });
 
   it('never answers the token, finds no account to pick for, and removes the source with the account', async () => {

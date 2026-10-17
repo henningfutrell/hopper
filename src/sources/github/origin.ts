@@ -186,13 +186,14 @@ const repoOfKey = (key: string): string | undefined => /^https?:\/\/[^/]+\/([^/]
  * Record `source.request_withdrawn` for each request card of this source the work-item ledger has waiting for approval that
  * this sync no longer offers (issue #1067, part 4): its issue closed, its label or assignee went, or it is of a trusted
  * origin now. Only for an issue of a repository the sync listed (`repos`, none in `repoErrors`): an issue not listed is not
- * known to be gone. `seen` forgets the withdrawn texts, so a card back in Intake opens again.
+ * known to be gone. `repoOf`: a key's repository, lowercased (a GitLab source's reads its project, issue #1642). `seen` forgets the withdrawn texts, so a card back in Intake opens again.
  */
-export function withdrawRequests(source: string, intake: IntakeContext, offered: ReadonlyMap<string, IntakeRequest>, listed: { repos: readonly string[]; repoErrors: Record<string, string> }, seen: Set<string>): void {
+export function withdrawRequests(source: string, intake: IntakeContext, offered: ReadonlyMap<string, IntakeRequest>, listed: { repos: readonly string[]; repoErrors: Record<string, string> }, seen: Set<string>,
+  repoOf: (key: string) => string | undefined = repoOfKey): void {
   const errored = new Set(Object.keys(listed.repoErrors).map((r) => r.toLowerCase()));
   const read = new Set(listed.repos.map((r) => r.toLowerCase()).filter((r) => !errored.has(r)));
   for (const key of intake.requestsWaiting()) {
-    const repo = repoOfKey(key);
+    const repo = repoOf(key);
     if (offered.has(key) || repo === undefined || !read.has(repo)) continue;
     intake.record('source.request_withdrawn', { source, key });
     for (const id of [...seen]) if (id.startsWith(`${key} `)) seen.delete(id);
