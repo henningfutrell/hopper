@@ -1,0 +1,1 @@
+- In Settings, the hopper's admin can now link this hopper to an account at hopper.io, and unlink it again. Linking moves no data and stops no running job.

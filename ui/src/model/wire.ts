@@ -133,6 +133,7 @@ export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';
 export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/job-notes.ts';
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';
+export type { CloudLinkView } from '../../../src/domain/cloud-link.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
 export type { WaitOn } from '../../../src/domain/types.ts';

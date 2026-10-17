@@ -3451,6 +3451,42 @@ Version 1 (`docs/schemas/source_email_match.changed.v1.json`). The hopper's admi
 }
 ```
 
+## `cloud_link.linked`
+
+Version 1 (`docs/schemas/cloud_link.linked.v1.json`). The hopper's admin linked this install to an account at hopper.io (issue #467): the link record is written in the instance's settings, and nothing else changes. `installId`, this install's id at hopper.io; `account`, the hopper.io account; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "account": "octo-cat",
+  "by": "admin"
+}
+```
+
+## `cloud_link.unlinked`
+
+Version 1 (`docs/schemas/cloud_link.unlinked.v1.json`). The hopper's admin unlinked this install from hopper.io (issue #467): the link record is removed, and nothing else changes. `installId` and `account`, the link that ended; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "account": "octo-cat",
+  "by": "admin"
+}
+```
+
 ## `question.thread_held`
 
 Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.

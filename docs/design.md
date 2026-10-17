@@ -23827,3 +23827,30 @@ the prompt and its check, the user text as data between markers, the shared logi
 `test/run-skills/draft.test.ts` (against a fake `claude`: the skill on stdin, locked down, the draft with its findings and
 the skill id; a tampered skill refused before claude runs; a device code to the logins, never into the answer; no file
 left in the run dir or the project dir after success, an error and an expired login, and the user's config dirs unchanged).
+
+## The cloud link (issue #467, part 1, 2026-10-17)
+
+Issue #467: an existing self-hosted install — a container or a host install, with one user or several — can be linked to
+an account at hopper.io without moving its data, rebuilding it or changing how it runs. Linking is an add-on that can be
+undone: it arrives as a normal update, applies while the hopper runs, and an install that never links behaves as before.
+
+**The link record** (`src/domain/cloud-link.ts`, `src/store/cloud-link-settings.ts`): the instance's settings key
+`cloudLink`, absent while the install is not linked: `{ installId, account, state, linkedAt, by }`. `installId` is
+random (16 bytes, hex), made at the link, so a link after an unlink is a new install at hopper.io. `account` is the
+hopper.io account name (letters, digits and single hyphens inside, at most 39 characters, kept lowercase). `state` is
+`pending`: hopper.io has not confirmed the link. The record is the only thing a link writes: no table, user, identity,
+job, machine or setting is moved, copied or changed (`test/http/cloud-link-fixture.test.ts` compares every row of every
+schema of a fixture install before and after). An unlink deletes the row, and nothing else.
+
+**Link and unlink** (`src/http/cloud-link.ts`, `src/http/ui/cloud-link.ts`): `GET /api/cloud-link` (an instance read),
+`POST /ui/api/cloud-link` `{ account }` and `POST /ui/api/cloud-link/unlink` `{}` (the instance admin; no box action).
+A second link while linked is 409: unlink first. An unlink when not linked changes nothing. Each applies at once, with no
+restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links and unlinks during a running job). A
+link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
+UI: Settings → hopper.io.
+
+**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
+link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
+hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
+keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
+Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.

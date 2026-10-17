@@ -11,6 +11,7 @@ import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MachineDrains } from './machines.ts';
+import type { CloudLinkSettings } from './cloud-link.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
@@ -198,6 +199,11 @@ export interface InstanceSettingsRepository {
   /** The source email match (issue #1380): an account connected from Sources must have its person's email verified; never set: on. */
   getSourceEmailMatch(): boolean;
   setSourceEmailMatch(on: boolean): void;
+  /** The cloud link (issue #467): this install linked to a hopper.io account; undefined: not linked. */
+  getCloudLink(): CloudLinkSettings | undefined;
+  setCloudLink(link: CloudLinkSettings): void;
+  /** Deletes the link record, and nothing else. */
+  removeCloudLink(): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */
