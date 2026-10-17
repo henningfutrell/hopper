@@ -8,9 +8,12 @@
 //   Scenario: intake and a direct job are placed by their source and repository
 //   Scenario: a device grant request names its limits; the person sees them; the grant keeps them
 //   Scenario: the mint checks the limits
+//   Scenario: the operator CLI mints a limited grant
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { rawRequest } from '../support/http.ts';
+import { runCli, type CliIo } from '../../src/cli.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
 
@@ -79,7 +82,7 @@ describe('grant limits (issue #892)', () => {
 
   it('a job source limit places a job by its source; intake by its source and its items\' repositories', async () => {
     const a = await boot();
-    const m = await mint(a, { limits: { sources: ['manual'] } });
+    const m = await mint(a, { limits: { sources: ['manual'] }, box: true });
     const manual = jobOf(a, 'k-1', 'acme/app', 'manual');
     const github = jobOf(a, 'https://github.com/acme/app/issues/2', 'acme/app', 'github');
     expect((await post(a, `/ui/api/jobs/${manual.id}/cancel`, {}, m.body.token)).status).toBe(200);
@@ -88,7 +91,7 @@ describe('grant limits (issue #892)', () => {
     expect(intake.status, intake.text).toBe(403);
     expect(intake.body.error).toMatch(/github/);
 
-    const byRepo = await mint(a, { limits: { repos: ['acme/app'] } });
+    const byRepo = await mint(a, { limits: { repos: ['acme/app'] }, box: true });
     const other = await post(a, '/ui/api/sources/manual/intake', { kind: 'dismiss', keys: ['https://github.com/acme/app/issues/2', 'https://github.com/acme/other/issues/3'] }, byRepo.body.token);
     expect(other.status, other.text).toBe(403);
     expect(other.body.error).toMatch(/acme\/other/);
@@ -117,5 +120,17 @@ describe('grant limits (issue #892)', () => {
     const empty = await mint(a, { limits: { repos: [] } });
     expect(empty.status, empty.text).toBe(200);
     expect(empty.body.view.limits).toBeUndefined();
+  });
+
+  it('the operator CLI mints a limited grant', async () => {
+    const a = await boot();
+    const out: string[] = [];
+    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
+    const code = await runCli(['token', 'mint', '--label', 'Grok Bot', '--scope', '*', '--repo', 'acme/app', '--source', 'manual', '--url', a.url], io);
+    expect(code).toBe(0);
+    const minted = JSON.parse(out.join('')) as { token: string; view: { limits?: unknown } };
+    expect(minted.view.limits).toEqual({ repos: ['acme/app'], sources: ['manual'] });
+    const theirs = jobOf(a, 'k-theirs', 'acme/other');
+    expect((await post(a, `/ui/api/jobs/${theirs.id}/cancel`, {}, minted.token)).status).toBe(403);
   });
 });

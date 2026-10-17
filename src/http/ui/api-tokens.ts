@@ -18,6 +18,7 @@ import {
 import { scopeAllows, scopeAllowsSome, scopeOfAction, scopeOfRoute, scopeProblem } from '../../domain/token-scopes.ts';
 import { presetOf, scopesOf, type ScopeRegistry } from '../../domain/scope-registry.ts';
 import { DELEGATE_PRESET, DENY_ENTRY_MAX, DENY_MAX, denyProblem } from '../../domain/delegates.ts';
+import { GRANT_LIMITS_MAX, limitsProblem, normalLimits, type GrantLimits } from '../../domain/grant-limits.ts';
 import type { Access } from '../../authz/service.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -52,6 +53,11 @@ const grantFields = {
   deny: z.array(z.string().max(DENY_ENTRY_MAX)).max(DENY_MAX).optional(),
   // The key the grant is bound to (issue #892, "Sender binding"): its JWK SHA-256 thumbprint.
   jkt: z.string().regex(JKT, 'a key\'s JWK SHA-256 thumbprint (RFC 7638): 43 base64url characters').optional(),
+  // What its tokens act on (issue #892, "Grant limits"): repositories (owner/name) and job sources, beside the scopes.
+  limits: z.strictObject({
+    repos: z.array(z.string().trim().max(200)).max(GRANT_LIMITS_MAX).optional(),
+    sources: z.array(z.string().trim().max(64)).max(GRANT_LIMITS_MAX).optional(),
+  }).optional(),
 };
 export const apiTokenBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('mint'), ...grantFields }),
@@ -206,11 +212,21 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
     if (problems.length) throw new HttpError(400, problems.join('; '));
     if (want.days === null && !roleAllows(s.role, 'admin')) throw new HttpError(403, 'only an admin mints a grant with no fixed end: name `days`');
     const box = want.box ?? preset?.box ?? false;
+    const limits = checkedLimits(want.limits);
     return {
       userId: s.userId, identity: s.identity, role, label: want.label, ...(want.holder === undefined ? {} : { holder: want.holder }), scopes, box,
       days: want.days === undefined ? GRANT_DEFAULT_DAYS : want.days, ...(want.minutes === undefined ? {} : { minutes: checkedMinutes(want.minutes) }),
       ...(delegate ? { delegate: { deny: [...new Set(deny)] } } : {}), ...(want.jkt === undefined ? {} : { jkt: want.jkt }),
+      ...(limits ? { limits } : {}),
     };
+  }
+
+  /** A grant's limits (issue #892) in their one form, or none; malformed ones are 400. */
+  function checkedLimits(l: GrantLimits | undefined): GrantLimits | undefined {
+    if (l === undefined) return undefined;
+    const problem = limitsProblem(l);
+    if (problem) throw new HttpError(400, problem);
+    return normalLimits(l);
   }
 
   /** The key of the request's DPoP proof (issue #892), or none; a proof that is no proof of this request is 401. */
@@ -316,7 +332,9 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
       // A proof on the ask binds the grant to its key (issue #892): the poll, each refresh and each use then need that key.
       const jkt = await proofKey(req, reply);
       if (jkt !== undefined && body.jkt !== undefined && body.jkt !== jkt) throw new HttpError(400, 'jkt is not the thumbprint of the key the DPoP proof is signed with');
-      const ask = { ...body, ...(jkt === undefined ? {} : { jkt }) };
+      const { limits: asked, ...rest } = body;
+      const limits = checkedLimits(asked);
+      const ask = { ...rest, ...(limits ? { limits } : {}), ...(jkt === undefined ? {} : { jkt }) };
       const from = o.caller(req);
       const r = devices.start(ask, from);
       if (!r.ok) throw new HttpError(429, r.error);

@@ -61,6 +61,7 @@ export function typesafeKeyCall(args: string[], stdin: () => string): Call {
 
 export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>]
                     [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt <thumbprint>]
+                    [--repo <owner/name>]... [--source <name>]...
                                                      mint a grant for an agent (issue #881): its refresh token and first access
                                                      token printed once. The agent trades the refresh token at
                                                      POST /ui/auth/token/refresh, each time for a new one. --scope: <area>:<act>,
@@ -70,7 +71,9 @@ export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset 
                                                      (start a job, run a command, merge, update); --preset delegate-approver
                                                      with --deny prod: a delegate approver that never approves prod (issue #1138);
                                                      --jkt: bind it to the agent's key, its JWK SHA-256 thumbprint: each refresh
-                                                     and each use then needs a DPoP proof of that key (issue #892)
+                                                     and each use then needs a DPoP proof of that key (issue #892);
+                                                     --repo, --source: limit what its tokens act on to the jobs, questions,
+                                                     pull requests and items of these repositories and job sources (issue #892)
   hopper token scopes                                every scope a grant may hold, by area, with what it does, and the presets
   hopper token list                                  the user's live grants and exchanged API tokens, and the scopes there are;
                                                      never a token
@@ -83,7 +86,7 @@ export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset 
                                                      next; its role at most --role (admin by default)
   hopper token deny <code>                           deny it: its agent is told`;
 
-const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt <thumbprint>]';
+const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt <thumbprint>] [--repo <owner/name>]... [--source <name>]...';
 
 const whole = (flag: string, v: string | undefined): number | undefined => {
   if (v === undefined) return undefined;
@@ -96,7 +99,7 @@ const whole = (flag: string, v: string | undefined): number | undefined => {
 export function tokenCall(args: string[]): Call {
   const { values, positionals } = parseArgs({
     args, allowPositionals: true,
-    options: { label: { type: 'string' }, holder: { type: 'string' }, scope: { type: 'string', multiple: true }, preset: { type: 'string' }, role: { type: 'string' }, days: { type: 'string' }, 'no-expiry': { type: 'boolean' }, minutes: { type: 'string' }, box: { type: 'boolean' }, deny: { type: 'string', multiple: true }, jkt: { type: 'string' } },
+    options: { label: { type: 'string' }, holder: { type: 'string' }, scope: { type: 'string', multiple: true }, preset: { type: 'string' }, role: { type: 'string' }, days: { type: 'string' }, 'no-expiry': { type: 'boolean' }, minutes: { type: 'string' }, box: { type: 'boolean' }, deny: { type: 'string', multiple: true }, jkt: { type: 'string' }, repo: { type: 'string', multiple: true }, source: { type: 'string', multiple: true } },
   });
   const [verb, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
@@ -123,6 +126,7 @@ export function tokenCall(args: string[]): Call {
       action: 'mint', label: values.label, ...(values.scope?.length ? { scopes: values.scope } : {}), ...(values.preset ? { preset: values.preset } : {}), role, ...(values.holder === undefined ? {} : { holder: values.holder }),
       ...(days === undefined ? {} : { days }), ...(minutes === undefined ? {} : { minutes }), ...(values.box ? { box: true } : {}),
       ...(values.deny ? { deny: values.deny } : {}), ...(values.jkt === undefined ? {} : { jkt: values.jkt }),
+      ...(values.repo?.length || values.source?.length ? { limits: { ...(values.repo?.length ? { repos: values.repo } : {}), ...(values.source?.length ? { sources: values.source } : {}) } } : {}),
     }),
   };
 }
