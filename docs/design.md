@@ -564,7 +564,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
 | `job.cleanup_deferred` | `{ error }` — issue #371, its cleanup could not reach its machine; tried again every tick ("Deferred cleanup") |
-| `job.cleaned_up` | `{ deferredAt, by? }` — issue #371, a deferred cleanup went through, or the user marked it closed (`by: "user"`) |
+| `job.cleaned_up` | `{ deferredAt?, dueAt?, by? }` — issue #371, a deferred cleanup went through, or the user marked it closed (`by: "user"`); issue #1570, `dueAt`: a cleanup a stop cut off from the job's end, done at the next start ("The cleanup record") |
+| `job.pod_removed` | `{ executor }` — issue #1570, the sweep deleted an ended job's pod that was still there ("The cleanup record") |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -5612,8 +5613,8 @@ dependency tree for them. The token is read at each call, since the kubelet rota
 the Service's host name goes in the hopper's LAN names (`HOPPER_LAN_NAMES`) and the pod network in its LAN peers
 (`HOPPER_LAN_PEERS`). The Helm chart (#1281, sub-issue 1) sets both.
 
-**Not done here** (other sub-issues of #1281): the Helm chart; lane pods; a sweep of job pods whose job ended while the
-hopper was down (until then the restart's cleanup deletes the pod of each job it fails). The agent's sign-in in a pod is
+**Not done here** (other sub-issues of #1281): the Helm chart; lane pods. The sweep of job pods whose job ended is
+"The cleanup record" (issue #1570). The agent's sign-in in a pod is
 the next section (issue #1287).
 
 **Residual risk.** The hopper's service account can create any pod in its namespace: a compromise of the hopper's process
@@ -25380,3 +25381,46 @@ pid and a nonce) and until when.
 job and its lane alone, takes it over once the first stops and reattaches its live pane, the task sent once; two hoppers
 deciding at once claim each of four jobs once), `test/store/job-leases.test.ts` (a lease held until it ends, a crashed
 hopper's lease taken after its time, a lost lease seen at the renewal, a claim's take, a release).
+
+## The cleanup record (issue #1570, follow-up of #1524, 2026-10-17)
+
+**The problem.** The cleanup after a job's end (`src/engine/cleanup.ts`: close its pane, reap its scratch dir and job
+worktree, delete its job pod) ran after the transaction that recorded the end, and was recorded only when it failed
+(`cleanupDeferred`). A stop of the hopper between the two left no record: the machine sweep removed the pane later, but
+`job.cleaned_up` and `job.work_kept` were never recorded, and a job pod stayed. A person's discard of kept work was kept
+only in memory, and a stop during its removal lost it. A job pod whose delete did not happen was never swept.
+
+**The change.**
+- **The cleanup is a record** (`Job.cleanupDue { at }`): each place that records a job's end (`outcome.ts`, a cancel, the end
+  of a wait, an expired or dismissed question, a decided review item, a rejected job that held a pane, restart recovery)
+  writes it in the same transaction (`cleanupDue(c)`). The cleanup that goes through removes it, in the transaction that
+  records what the reap kept. At start, `Cleanups.resume` does every cleanup a record says is due or deferred, before the
+  sweep; one done from a record a stop left records `job.cleaned_up { dueAt }`. Recovery's failure writes the record too; at
+  start `resume` does its cleanup, and the takeover of a job another hopper left (issue #1662) cleans up the jobs it failed
+  at once. A job no longer ended (none today) is not cleaned up.
+- **The discard is a record** (`Job.discard { at, scratch, by, error? }`): written before the removal on the machine. The
+  removal that goes through removes it with `job.work_removed`; one that fails keeps it with its `error`
+  (`job.work_discard_failed`), so Failures shows it failed and Discard writes it again. One a stop cut short (no `error`) is
+  done again by the next sweep of its machine — at the start, or once the machine is online —, before that sweep's reaps.
+  `Engine.discarding` reads the record. A stop waits for a removal under way for 5 s at most: the record carries the rest.
+- **Job pods are swept** (`Executor.sweep`, `JobPods.sweep`): at start and then every 10 minutes, the sweep asks each
+  executor that has one to remove what it started outside any machine for a job that ended and whose cleanup no record
+  still owes (`cleanupDue`, `cleanupDeferred`). The kubernetes executor lists the pods with this hopper's instance label
+  and deletes each whose job, named by the pod's name, ended, with its machine: `job.pod_removed { executor }`. A job this
+  user's store does not know is never touched: another user's, or another hopper's.
+
+**Decisions:**
+- **A field on the job, not a saga.** The cleanup reads the job's executor state, which is in the user's schema; a field
+  there is in the same transaction as the end, which a saga (the instance's table) is not. The retry with the deferral
+  (every tick) and the hold of the item's next job stay as they were.
+- **A failed discard ends.** "Done until it ends": a removal that a stop cut short is done again; one the machine refused
+  or could not reach is a failure a person sees, as before, not tried again by itself.
+- **Pods only of an ended job.** A parked job keeps its pod (its resume needs it), and a queued job's run deletes a pod
+  left from an earlier start before it creates one, so the sweep never races a start.
+
+**Verification:** `test/integration/cleanup-record.test.ts` (the real daemon, two starts over one database and one fake
+herdr: a stop while the cleanup is at the machine, then the next start closes the pane, reaps the work tree and records
+`job.cleaned_up` with `dueAt`, once; a cleanup done before the stop is not done again; a stop during a discard, then the
+next start removes the work and records who discarded it), `test/integration/kubernetes-executor.test.ts` (a pod still
+there after its job ended is deleted at the next start, `job.pod_removed`), `test/kubernetes/job-pods.test.ts` (only this
+hopper's pods of ended jobs).

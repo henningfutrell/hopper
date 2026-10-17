@@ -9,7 +9,7 @@ import type { SignedOutTool, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
-import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
+import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
@@ -143,15 +143,13 @@ export interface Job extends JobPhaseFields, JobMachineLink {
   laneId?: LaneId;
   /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
   tasks?: TaskCount;
-  progressMessage?: string;
-  result?: unknown;
+  progressMessage?: string; result?: unknown;
   /** Finished partly done (issue #579): the URL of its own pull request that ships part of its item. */
   partlyDone?: string;
   error?: string;
   createdAt: string; // ISO
   updatedAt: string;
-  startedAt?: string;
-  finishedAt?: string;
+  startedAt?: string; finishedAt?: string;
   /** Incremented on every claim. */
   attempts: number;
   /** The job's work tree on its machine, as its executor reported it (issue #166); absent for an executor with none. */
@@ -221,6 +219,16 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * again on every tick until it goes through; meanwhile a waiting job of the same item is held.
    */
   cleanupDeferred?: { at: string; error: string };
+  /**
+   * Its cleanup's record (issue #1570): written in the transaction that recorded its end, removed once the cleanup went
+   * through. A hopper that stops before then does the cleanup from it at its next start.
+   */
+  cleanupDue?: { at: string };
+  /**
+   * A person's discard of its kept work (issue #1570): kept until the removal on its machine ends. With no `error` it is
+   * under way, and a sweep of its machine does it again after a stop; with one it failed (`job.work_discard_failed`).
+   */
+  discard?: { at: string; scratch: string; by: ActingPerson; error?: string };
   /** The output tail its executor gave when it failed (issue #509), codes hidden; the assessor's evidence. */
   errorTail?: string;
   /** What it showed of its progress when it timed out (issue #630): its executor's facts, and its source's. The assessor's evidence. */

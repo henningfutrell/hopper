@@ -14,7 +14,7 @@ import {
   asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, sourceItemOf, type EventType,
   type Job, type Lane, type LaneId, type MachineSnapshot, type ReviewItem, type ReviewKind, type ReviewVersion,
 } from '../domain/types.ts';
-import type { Cleanup } from './cleanup.ts';
+import { cleanupDue, type Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { createFollowOns } from './follow-ons.ts';
@@ -142,7 +142,7 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup, endJob:
       // An accepted proposal's selected paths (issue #651), outside a fork or a switch that goes on: each a follow-on job.
       if (p.kind === 'proposal' && p.status === 'accepted' && !job.forkOf) createFollowOns(c, job, p);
       const result = decidedResult(itemsOfJob(c, store.jobs.get(p.jobId)!));
-      store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined });
+      store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined, ...cleanupDue(c) });
       store.events.append({ type: 'job.finished', jobId: p.jobId, data: { result } });
       setImmediate(() => void cleanup(p.jobId));
     },
