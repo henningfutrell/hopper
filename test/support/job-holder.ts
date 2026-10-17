@@ -49,12 +49,12 @@ export function holder(root: string) {
 
 export interface Run { code: number; stdout: string; stderr: string }
 
-/** The job runs the script it was given, on its machine: its variables, its files under `root`. */
+/** The job runs the script it was given, on its machine: its variables (its trace's too, issue #1486), its files under `root`. */
 export function hopperGh(root: string, env: Record<string, string>, args: string[]): Promise<Run> {
   const onDisk = (v: string | undefined) => (v === undefined ? undefined : join(root, v));
   return new Promise((resolve) => {
     execFile('sh', [onDisk(env.HOPPER_GH)!, ...args], {
-      env: { PATH: process.env.PATH, HOPPER_URL: env.HOPPER_URL, HOPPER_TOKEN_FILE: onDisk(env.HOPPER_TOKEN_FILE) } as NodeJS.ProcessEnv,
+      env: { PATH: process.env.PATH, HOPPER_URL: env.HOPPER_URL, HOPPER_TOKEN_FILE: onDisk(env.HOPPER_TOKEN_FILE), ...(env.TRACEPARENT ? { TRACEPARENT: env.TRACEPARENT } : {}) } as NodeJS.ProcessEnv,
     }, (err, stdout, stderr) => resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr }));
   });
 }

@@ -8,7 +8,11 @@
 // summary keeps each job span's duration, telemetry on or off (`summary.ts`).
 //
 // The spans live in memory: a restart ends no trace and starts a new one at the next event of a job still open.
-import { context, trace, type Attributes, type Span } from '@opentelemetry/api';
+//
+// A job's trace context (part 4, design.md "Telemetry: a job's trace on its machine") is the variables its processes run
+// with — `TRACEPARENT`, `TRACESTATE`: OpenTelemetry's environment carrier — naming its open run span, else its root while
+// the job is open. So what the job does, and its requests to the hopper, join its trace. Telemetry off, it is empty.
+import { context, propagation, ROOT_CONTEXT, trace, type Attributes, type Span } from '@opentelemetry/api';
 import type { DomainEvent, EventType, Job } from '../domain/types.ts';
 import { instrument, tracer } from './instruments.ts';
 import { telemetrySummary } from './summary.ts';
@@ -78,8 +82,18 @@ export interface TraceJobsOptions {
   max?: number;
 }
 
-/** Follows one user's event log; the returned function stops it and ends every open span. */
-export function traceJobs(o: TraceJobsOptions): () => void {
+export interface JobTraces {
+  /** The variables a job's processes run with to join its trace: none for a job ended or not traced, or telemetry off. */
+  traceContext(jobId: string): Record<string, string>;
+  /** Stops following the event log and ends every open span. */
+  stop(): void;
+}
+
+/** A propagator's field as an environment variable: `traceparent` → `TRACEPARENT`. */
+const envName = (field: string): string => field.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+
+/** Follows one user's event log. */
+export function traceJobs(o: TraceJobsOptions): JobTraces {
   const max = o.max ?? 2000;
   const jobs = new Map<string, OpenJob>();
   const ended = new Map<string, OpenJob>();
@@ -179,12 +193,23 @@ export function traceJobs(o: TraceJobsOptions): () => void {
     }
   };
 
+  const traceContext = (jobId: string): Record<string, string> => {
+    const open = jobs.get(jobId);
+    const span = open?.spans.get('run')?.span ?? open?.root;
+    const carrier: Record<string, string> = {};
+    if (span) propagation.inject(trace.setSpan(ROOT_CONTEXT, span), carrier, { set: (c, field, value) => { c[envName(field)] = value; } });
+    return carrier;
+  };
+
   const unsubscribe = o.subscribe(onEvent);
-  return () => {
-    unsubscribe();
-    const now = Date.now();
-    for (const [id, open] of [...jobs]) endJob(id, open, now);
-    for (const open of ended.values()) for (const key of [...open.spans.keys()]) endSpan(open, key, now, 'job.dismissed');
-    ended.clear();
+  return {
+    traceContext,
+    stop: () => {
+      unsubscribe();
+      const now = Date.now();
+      for (const [id, open] of [...jobs]) endJob(id, open, now);
+      for (const open of ended.values()) for (const key of [...open.spans.keys()]) endSpan(open, key, now, 'job.dismissed');
+      ended.clear();
+    },
   };
 }
