@@ -3,6 +3,7 @@
 // grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
 // job still at work (issue #630) — continued.
 import type { KeptWorkView } from './kept-work.ts';
+import type { ChecksState } from './pull-requests.ts';
 import type { StuckCause } from './stuck.ts';
 import type { Tldr } from './tldr.ts';
 
@@ -43,7 +44,7 @@ export interface JobLiveness { outputAt?: string; pushed?: boolean; pullRequest?
  * What continued a failed job: a person's Continue on its hand-off (issue #551), the assessor's (issue #630) on its
  * record, or a person's Push it on its work not pushed (issue #1010).
  */
-export type ContinuedBy = { handoffId: string } | { recordId: string } | { keptWork: true };
+export type ContinuedBy = { handoffId: string } | { recordId: string } | { keptWork: true; auto?: true };
 
 /** Where a problem applies: a machine, an executor on it, or (neither) every machine. */
 export interface ProblemScope { machineId?: string; executor?: string }
@@ -100,7 +101,12 @@ export interface FailureRecord {
   nextJobId?: string;
   /** The hand-off it opened (issue #516): set once, so it is never handed off twice. */
   handoffId?: string;
+  /** Jev's step to ask (issue #1608): kept until Jev answered, so a restart asks it again. */
+  jev?: JevStep;
 }
+
+/** What Jev is asked about a failed job (issue #550), kept on its record until answered (issue #1608). */
+export interface JevStep { error: string; attempt: number; ranMs?: number; machineId?: string; /** A done-check miss (issue #637). */ doneCheck?: boolean }
 
 /** A shared cause: the failures of one signature grouped, shown once with the jobs it hit. */
 export interface Problem {
@@ -158,7 +164,7 @@ export interface FailureSettings {
   groupThreshold: number;
   groupWindowMin: number;
   /** Whether each decision acts by itself; off, it waits for a person. */
-  auto: { retry: boolean; hold: boolean; redirect: boolean; continue: boolean };
+  auto: { retry: boolean; hold: boolean; redirect: boolean; continue: boolean; push: boolean };
   /** A timed-out job whose pane output changed within this many minutes before its timeout was at work (issue #630). */
   activeWindowMin: number;
   /** Failure records and resolved problems older than this are deleted. */
@@ -171,7 +177,7 @@ export interface FailureSettings {
 
 export const DEFAULT_FAILURE_SETTINGS: FailureSettings = {
   maxAttempts: 3, backoffSec: 60, backoffFactor: 2, backoffMaxSec: 1800, groupThreshold: 3, groupWindowMin: 60,
-  auto: { retry: true, hold: true, redirect: true, continue: true }, activeWindowMin: 10, retentionDays: 90,
+  auto: { retry: true, hold: true, redirect: true, continue: true, push: true }, activeWindowMin: 10, retentionDays: 90,
   handoffRetentionDays: 30, handoffNotify: true,
 };
 
@@ -273,6 +279,8 @@ export interface WorkPullRequest {
   state: 'open' | 'merged' | 'closed';
   draft: boolean;
   conflicting: boolean;
+  /** An open one's checks (issue #1522: red checks on the job's own pull request); absent: it has none, or not known. */
+  checks?: ChecksState;
 }
 
 /**
@@ -318,6 +326,8 @@ export interface Handoff {
   work?: WorkState;
   /** The TL;DR of its summary and reasons (issue #569), once a long one has one. */
   tldr?: Tldr;
+  /** The hash of the text the model failed to write a TL;DR for (issue #1608): not asked again for that text. */
+  tldrFailedOf?: string;
 }
 
 /**

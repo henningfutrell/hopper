@@ -14,14 +14,14 @@ on_http_request:
           headers:
             x-hopper-caller: "${conn.client_ip}"
   - expressions:
-      - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh') || req.url.path.startsWith('/api/events/stream')"
+      - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh' || req.url.path == '/ui/auth/device-grant' || req.url.path == '/ui/auth/device-grant/poll') || req.url.path.startsWith('/api/events/stream')"
     actions:
       - type: custom-response
         config:
           status_code: 404
           body: not found
   - expressions:
-      - "req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh'"
+      - "req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh' || req.url.path == '/ui/auth/device-grant'"
     actions:
       - type: rate-limit
         config:

@@ -94,7 +94,7 @@ containers, and goes away when that terminal or agent exits. Start, restart and 
 the stack when it does not answer. Docker needs no service: `docker compose up -d`.
 
 The container is not a machine: jobs run on attached machines ("Add machines"). No `.env`: the hopper keeps its
-settings and secrets itself, set in the UI; the master key and what compose needs are given at launch. Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the image tag; every image carries its own `compose.yaml` and the update: one command, the update notice gives it: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>` — it asks for the master key unless it is given at launch and refuses without it, uses the compose tool that started the stack, backs up the database, puts in the image's `compose.yaml`, restarts the whole stack on the new image, never the hopper alone, and checks the image, the health and the master key; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: give a setting it names at launch (`export HOPPER_BIND=0.0.0.0` for a LAN install), the rest in `compose.override.yaml`.
+settings and secrets itself, set in the UI; the master key and what compose needs are given at launch. Update: you do it, the hopper never updates a container (`docs/deploy.md` "Update": the channel is the image tag; every image carries its own `compose.yaml` and the update: one command, the update notice gives it: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>` — it asks for the master key unless it is given at launch and refuses without it, uses the compose tool that started the stack, backs up the database, puts in the image's `compose.yaml`, restarts the whole stack on the new image, never the hopper alone, and checks the image, the health and the master key; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: give a setting it names at launch (`export HOPPER_BIND=0.0.0.0` for a LAN install), the rest in `compose.override.yaml`.
 Details: `docs/deploy.md` "In containers, with Podman".
 
 The other ways each need a Postgres URL; the bundled one is `deploy/compose.yaml`.
@@ -109,7 +109,7 @@ curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
 
 It clones the source into `~/.local/share/hopper/source` and runs its `scripts/install.sh`.
 Without docker, give it a database: `curl … | HOPPER_DATABASE_URL=postgres://… bash`. Run the
-same line again to upgrade. Settings: the head of `scripts/get.sh`.
+same line again to update. Settings: the head of `scripts/get.sh`.
 
 ### On this host (systemd --user), from a clone
 
@@ -125,7 +125,7 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 `install.sh` writes the database URL to `~/.config/hopper/daemon.env` (mode 600); put secrets
 there too. The first start makes the master key and shows it once, in the UI only (**Show the key (once)**), never in the log:
 save it in your password manager and add `HOPPER_MASTER_KEY=<it>` to `daemon.env` (`docs/deploy.md` "The master key").
-The host install runs no OpenFGA: until `HOPPER_OPENFGA_URL` names one, every credential is denied (`docs/deploy.md` "Access: OpenFGA"). Run it again to upgrade. Remove with `scripts/uninstall.sh`.
+The host install runs OpenFGA too, as the `hopper-openfga` user service on loopback, unless `daemon.env` already names one in `HOPPER_OPENFGA_URL` (`docs/deploy.md` "Access: OpenFGA"). Run it again to update. Remove with `scripts/uninstall.sh`.
 
 ### From a checkout, in the foreground
 
@@ -216,54 +216,28 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 
 ## Give it jobs
 
-1. Sign in with GitHub (or **Sources → GitHub account → Connect GitHub**), then choose the job
-   repositories in **Sources → GitHub account**: the issues in them that are labelled `hopper` and
-   assigned to you are taken when a trusted actor wrote, labelled and assigned them; any other is a request
-   card in Intake with **Approve** (help page "How issues become jobs", `/help/intake`). To tune the source,
-   open the `github-account` instance in Settings → Plugins → Job sources and set its options. Which
-   repositories it lists is no option: they are the job repositories chosen in Sources.
+1. Choose the job repositories in **Sources → GitHub account**. In them, an issue labelled `hopper` and assigned to you
+   becomes a job when a trusted actor wrote, labelled and assigned it. Any other issue is a request card in Intake.
+2. Label an issue `hopper` and assign it to yourself. A job runs in the work tree of the machine that runs it
+   ([Where jobs work](#where-jobs-work)).
+3. Watch it in the UI, answer its questions, and review its pull request. The merge closes the issue.
 
-   <img src="docs/screenshots/sources.webp" width="720" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button.">
+<img src="docs/screenshots/sources.webp" width="720" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button.">
 
-   A job runs in the work tree of the machine that runs it, and the hopper fetches or clones the
-   issue's repository there first ([Where jobs work](#where-jobs-work)). Restart the daemon
-   (`systemctl --user restart hopper`, or the container).
-2. Label an issue `hopper` and assign it to yourself. Its title and body are the job's text, as first run or approved; a later edit holds the
-   job until you pick **Rerun the original** or **Accept the new text**. Unassign it
-   and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
-   **Reject** a waiting job (Queue, or the Dashboard's Waiting list), with a reason if you like: the issue is
-   left alone and not taken again until it is assigned to you again, or you run it again.
-3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:pr-ready`
-   (its pull request waits for your review), `hopper:partly-done` (it shipped a part; the rest runs once
-   that pull request merges), `hopper:done` (merged), `hopper:pr-closed` (its pull request was closed
-   without a merge), `hopper:failed`. Remove `hopper:failed` or `hopper:pr-closed` to run it again. `hopper:high` and
-   `hopper:low` set the priority; `hopper:backburner` keeps an issue out
-   ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
-   `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a
-   proposal in place of the work ([Research reports](https://henningfutrell.github.io/hopper/guide.html#research), [Proposals](https://henningfutrell.github.io/hopper/guide.html#proposals)).
-   `hopper:specialty` lets a job elbow in: when every lane is full, it may start one lane past a machine's lane cap
-   (one per machine by default, the machine's `elbowIns` option); no other job does.
-   A job is done when its pull request is open and ready for review; you review and merge it, and the
-   merge closes the issue. To let the hopper merge a ready pull request once its checks pass (or, for a
-   repository with no checks, two minutes after its last push), turn on
-   yolo mode in Settings → Yolo mode, for every repository or only some — off by default, and read
-   its warning first. The hopper also tends a waiting pull request with merge conflicts or failing checks
-   (help page "Pull requests", `/help/pull-requests`).
+The help pages tell the rest. Your hopper serves them for its own version at `/help/`; the project site shows them for
+the stable version:
 
-When a job asks a question, it climbs the escalation levels: by default one level, `level-1` (model `fable`), answers
-what it is sure of and the job gets the answer with no action from you (auto-answer; risky,
-consequential and high-priority questions always come to you, and you can correct an auto-answer
-later in Questions → History), and what it should not decide waits for you in the UI's
-Questions view ([phase shifts](https://henningfutrell.github.io/hopper/guide.html#phase-shifts) send a question to research or a proposal; small
-questions with listed options can go to [Jev](https://henningfutrell.github.io/hopper/guide.html#jev) first). The levels, their order and each one's model (picked from the models your `claude`
-offers) are yours to change in Settings → Question gates, and so is where each one runs: on this
-machine, on an attached machine you designate (`machine`), or through the Claude API with a key the
-runtime gives (`anthropic-api`, `ANTHROPIC_API_KEY`) — the way a hopper in a container answers.
+| Help page | What it tells |
+|---|---|
+| [How issues become jobs](https://henningfutrell.github.io/hopper/help/intake.html) | trusted actors, request cards, an issue that changes after its job is made, Reject, the queue gate |
+| [The Jobs view](https://henningfutrell.github.io/hopper/help/jobs.html) | stages, the job page, a note to a running job |
+| [Questions and deciders](https://henningfutrell.github.io/hopper/help/questions.html) | the escalation levels, auto-answer, the risk check, Jev |
+| [Research reports and proposals](https://henningfutrell.github.io/hopper/help/research-and-proposals.html) | `hopper:research`, `hopper:proposal`, phase shifts |
+| [Pull requests](https://henningfutrell.github.io/hopper/help/pull-requests.html) | the labels a job's issue gets, tending, Merge now, yolo mode |
+| [Lanes and lane tuning](https://henningfutrell.github.io/hopper/help/lanes.html) | usage limits, `hopper:high` and the other priority labels, priority lanes, `hopper:specialty` |
 
-<img src="docs/screenshots/question.webp" width="720" alt="A job's question in the Questions view: it escalated past both escalation levels, each with its suggested answer, and an answer is typed in the box.">
-
-With the queue gate on **review** (Queue view), every new job waits in the pre-sort until you accept it
-into your order or reject it:
+With the queue gate on **review** (Queue view), every new job waits in the pre-sort until you accept it into your
+order or reject it:
 
 <img src="docs/screenshots/queue-order.webp" width="720" alt="The Queue view: the queue gate set to review, three held jobs in the pre-sort with Accept and Reject, and the accepted jobs in the user's order.">
 
@@ -475,8 +449,8 @@ authentication".
 Settings holds the rest: the job rules every job's prompt carries, the plugins, the routing, the
 question gates, webhooks, users and sign-in.
 
-What the UI's sections are for — Questions, Proposals, Research, Logins and Failures (with Needs a person), parking,
-priority lanes, the blast-radius gate, usage limits — and what to do in each: the [user guide](https://henningfutrell.github.io/hopper/guide.html).
+What each part of the UI is for, and what to do there: the [help pages](https://henningfutrell.github.io/hopper/help/) (`/help/` on your
+hopper). Needs a person, parking, the blast-radius gate, failures and client updates: the [user guide](https://henningfutrell.github.io/hopper/guide.html).
 
 <img src="docs/screenshots/job-rules.webp" width="49%" alt="Settings → Job rules: the rules text every job's prompt carries, and the fixed part after it."> <img src="docs/screenshots/plugins.webp" width="49%" alt="Settings → Plugins: the shipped plugins, each switched on or off, with what it does.">
 
@@ -491,8 +465,8 @@ The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 
 | | |
 |---|---|
-| [User guide](https://henningfutrell.github.io/hopper/guide.html) (`site/guide.html`) | using it: research, proposals, phase shifts, Jev, Needs a person, parking, priority, client updates, usage limits |
-| Help pages, `/help/` (`help/`) | each feature, for the version you run: deploy and update, intake, lanes, questions, pull requests, the vault, sandbox boxes, artifacts, the CLI and the API |
+| [User guide](https://henningfutrell.github.io/hopper/guide.html) (`site/guide.html`) | using it: the blast-radius gate, Needs a person, parking, failures, client updates |
+| Help pages, `/help/` (`help/`; [on the site](https://henningfutrell.github.io/hopper/help/)) | each feature, for the version you run: deploy and update, intake, lanes, questions, research and proposals, pull requests, infra, the vault, sandbox boxes, artifacts, API tokens, the CLI and the API |
 | `docs/deploy.md` | deploy recipes, secrets, mounted secret files |
 | `docs/sign-in.md` | sign-in, roles, reaching the UI across the LAN or a public URL |
 | `docs/plugins.md` | writing a plugin; the plugin store |

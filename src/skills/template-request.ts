@@ -20,6 +20,8 @@
 // the plan of the job that asked for it first, for the card a person decides on.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
+import { OPERATOR_CLI_NAME } from '../domain/failures.ts';
+import { mintKindFor } from '../domain/minting.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import { AUTO_APPROVER, autoApproves, NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
@@ -73,6 +75,30 @@ export function needsOf(said: string | undefined): OperationProfile[] | string {
   }
   return [...needs.values()];
 }
+
+/** The need to ask for in place of a read the read-only check gets no credential for (issue #1468), by its asset's kind. */
+const READ_INSTEAD: Partial<Record<AssetKind, (name: string) => string>> = {
+  'aws-account': (account) => `read/aws-role/${account}/<role>`,
+};
+
+/**
+ * Why a template of these needs cannot pass its read-only check (issue #1468); undefined when it can. A template of read
+ * needs only takes the check, and the vault mints the check's read credentials for an aws-role, a cluster or a namespace
+ * only (a terraform workspace takes the aws-role's). Any other read need fails the check at every run, so it is refused
+ * when it is asked for, with the need to ask for in its place.
+ */
+function uncheckable(needs: readonly OperationProfile[]): string | undefined {
+  if (!needs.every((p) => p.operation === 'read')) return undefined;
+  const bad = needs.filter((p) => p.asset.kind !== 'terraform-workspace' && mintKindFor(p.asset.kind) === undefined);
+  if (bad.length === 0) return undefined;
+  return bad.map((p) => {
+    const instead = READ_INSTEAD[p.asset.kind]?.(p.asset.name);
+    return `${keyOf(p)}: a template of read needs only takes the read-only check, and the vault mints a read credential for an aws-role, a cluster or a namespace only. ${instead ? `Ask for ${instead} in its place` : 'Ask for read on an aws-role, a cluster or a namespace in its place'}`;
+  }).join('; ');
+}
+
+/** Where a person changed a template (issue #1468): the operator CLI keeps its own name as the saver. */
+const changedWhere = (t: TemplateView): string => (t.savedBy === OPERATOR_CLI_NAME ? 'through the operator CLI' : 'in Settings → Vault');
 
 const sameNeeds = (a: readonly OperationProfile[], b: readonly OperationProfile[]): boolean => {
   const x = a.map(keyOf).sort(), y = b.map(keyOf).sort();
@@ -166,6 +192,8 @@ function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' |
 export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals' | 'remembered'>, said: string | undefined): TemplatePreview | string {
   const needs = needsOf(said);
   if (typeof needs === 'string') return needs;
+  const cannot = uncheckable(needs);
+  if (cannot) return cannot;
   const name = requestedName(needs);
   const was = u.template(name);
   const reused = was && waitsOf(was).length === 0 && sameNeeds(was.profiles, needs) ? undefined : approvedFor(u, needs);
@@ -194,6 +222,8 @@ export interface AskAbout { purpose: string; plan?: string }
 export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string, about?: AskAbout): Promise<TemplateAnswer> {
   const needs = needsOf(said);
   if (typeof needs === 'string') return { status: 400, reason: needs };
+  const cannot = uncheckable(needs);
+  if (cannot) return { status: 400, reason: cannot };
   const asked = requestedName(needs);
   const was = u.template(asked);
   // Issue #998: the template the needs name, when it is approved for them; else another approved for them; else the one
@@ -201,7 +231,12 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   const reused = was && waitsOf(was).length === 0 && sameNeeds(was.profiles, needs) ? undefined : approvedFor(u, needs);
   const name = reused?.name ?? asked;
   if (!reused && was && !sameNeeds(was.profiles, needs)) {
-    return { status: 409, reason: `a person changed template ${name} since it was asked for: a request does not change it back. Ask a person in Settings → Vault, or find another way.` };
+    // Issue #1468: the needs it holds now, so a job can ask for those.
+    const now = (was.profiles ?? []).map(keyOf).join(' ');
+    return {
+      status: 409,
+      reason: `a person changed template ${name} ${changedWhere(was)} since it was asked for: a request does not change it back. ${now ? `It holds these needs now: ask for them with --needs "${now}".` : 'It holds no need now.'} Else ask a person in Settings → Vault, or find another way.`,
+    };
   }
   if (!reused && !was) {
     const readOnly = needs.every((p) => p.operation === 'read');

@@ -23,11 +23,13 @@
 // added or removed line without its sign; a binary file has none (`diff-lines.ts`). The blobs come on demand. More than
 // `CHANGED_LINES` lines, or a file git names that was not asked for: git cannot say.
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { BaseMerge } from '../domain/pull-requests.ts';
 import type { ChangedLines } from '../domain/change-kinds.ts';
+import { DEFAULT_SHRINK_GUARD, shrunkFiles, type PushFileLines } from '../domain/shrink-guard.ts';
 import { parseDiff } from './diff-lines.ts';
+import { mergeOne, type Blob } from './merge-file.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 /** Where git fetches a repository, and the token it fetches with; none: a public repository, fetched as anyone's. */
@@ -90,8 +92,6 @@ export const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 /** A branch name as a refspec may hold it: no option, no `..`, no glob, no `:`. */
 export const BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
 const PULL = 'refs/remotes/origin/pull/';
-/** A conflict marker of `git merge-file --diff3` at `MARKER` characters: longer than any line a file is likely to hold. */
-const MARKER = 40;
 /** Who a base merge's commit is by (issue #967): the hopper, no person. */
 const AUTHOR = { GIT_AUTHOR_NAME: 'hopper', GIT_AUTHOR_EMAIL: 'hopper@noreply.invalid', GIT_COMMITTER_NAME: 'hopper', GIT_COMMITTER_EMAIL: 'hopper@noreply.invalid' };
 /** A file whose added lines a base merge may keep from both sides (issue #967). */
@@ -103,29 +103,6 @@ const UNION = /\.md$/i;
 const ADDITIONS_ATTR = 'hopper-merge';
 const ADDITIONS = 'additions';
 
-/**
- * Both sides' additions of a `git merge-file --diff3` result (issue #967), the base branch's (`theirs`) first; undefined
- * when a conflict holds a line of the merge base: one side changed or removed a line, which is a real conflict.
- */
-export function keepBothAdditions(merged: string): string | undefined {
-  const [open, mid, sep, close] = ['<', '|', '=', '>'].map((c) => c.repeat(MARKER));
-  const out: string[] = [];
-  let ours: string[] = [], base: string[] = [], theirs: string[] = [];
-  let at: 'none' | 'ours' | 'base' | 'theirs' = 'none';
-  for (const line of merged.split('\n')) {
-    if (at === 'none' && line.startsWith(`${open!} `)) { at = 'ours'; ours = []; base = []; theirs = []; continue; }
-    if (at === 'ours' && line.startsWith(`${mid!} `)) { at = 'base'; continue; }
-    if (at === 'base' && line === sep) { at = 'theirs'; continue; }
-    if (at === 'theirs' && line.startsWith(`${close!} `)) {
-      if (base.length > 0) return undefined;
-      out.push(...theirs, ...ours);
-      at = 'none';
-      continue;
-    }
-    (at === 'ours' ? ours : at === 'base' ? base : at === 'theirs' ? theirs : out).push(line);
-  }
-  return at === 'none' ? out.join('\n') : undefined;
-}
 
 export const runGit: GitRun = (args, env) => new Promise((resolve) => {
   execFile('git', args, { env: { ...process.env, ...env }, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (e, stdout, stderr) => {
@@ -262,6 +239,13 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
       const conflicted = tree.code === 0 ? [] : [...new Set(rest.slice(0, rest.indexOf('')))];
       const resolved = await resolve(run, head, baseOid, conflicted);
       if ('files' in resolved) return { outcome: 'conflicts', files: resolved.files };
+      // The shrink guard (issue #1218): a resolution that empties or shrinks a file is not pushed; a tend job resolves it.
+      const shrunk = await shrunkResolutions(run, head, baseOid, resolved.blobs);
+      if (shrunk === undefined) return problem('could not count the lines of the resolved files');
+      if (shrunk.length > 0) {
+        o.log(`hopper: git mirror of ${repo}: base merge of #${pr.number}: the shrink guard: the resolution empties or shrinks ${shrunk.join(', ')}`);
+        return { outcome: 'conflicts', files: shrunk };
+      }
       const finalTree = await withBlobs(run, at.path, treeOid!, resolved.blobs);
       if (!finalTree) return problem('could not write the merged tree');
       const commit = await run(['commit-tree', finalTree, '-p', head, '-p', baseOid, '-m', `Merge branch '${pr.base}' into ${pr.headRef}`], AUTHOR);
@@ -309,7 +293,38 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
   };
 
   type Run = (args: string[], env?: Record<string, string>) => ReturnType<GitRun>;
-  interface Blob { path: string; mode: string; oid: string }
+
+  /** A path for a scratch file of the base merge, in the mirrors' dir: `.hopper-<kind>-<pid>-<random>`. */
+  function scratch(kind: string): string {
+    mkdirSync(o.dir, { recursive: true, mode: 0o700 });
+    return join(o.dir, `.hopper-${kind}-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  }
+
+  /**
+   * The resolved files the shrink guard refuses (issue #1218): each counted in lines at the merge base, the pull request's
+   * head and the base branch, as `git diff --numstat` against the empty tree counts them, and in the resolution; undefined:
+   * git cannot say.
+   */
+  async function shrunkResolutions(run: Run, head: string, base: string, blobs: Blob[]): Promise<string[] | undefined> {
+    if (blobs.length === 0) return [];
+    const [mb, empty] = [await run(['merge-base', head, base]), await run(['hash-object', '-t', 'tree', '/dev/null'])];
+    if (mb.code !== 0 || empty.code !== 0) return undefined;
+    const paths = blobs.map((b) => b.path);
+    const at = async (oid: string): Promise<Map<string, number> | undefined> => {
+      const n = await run(['diff', '--numstat', '-z', '--no-renames', empty.stdout.trim(), oid, '--', ...paths], { GIT_LITERAL_PATHSPECS: '1' });
+      if (n.code !== 0) return undefined;
+      const counts = new Map<string, number>();
+      for (const entry of n.stdout.split('\0')) {
+        const m = /^(\d+)\t\d+\t(.+)$/s.exec(entry);
+        if (m) counts.set(m[2]!, Number(m[1]));
+      }
+      return counts;
+    };
+    const [start, ours, theirs] = [await at(mb.stdout.trim()), await at(head), await at(base)];
+    if (!start || !ours || !theirs) return undefined;
+    const files: PushFileLines[] = blobs.map((b) => ({ path: b.path, start: start.get(b.path), head: ours.get(b.path), base: theirs.get(b.path), pushed: b.lines }));
+    return shrunkFiles(files, DEFAULT_SHRINK_GUARD.percent).map((f) => f.path);
+  }
 
   /**
    * Each conflicted file resolved by keeping both sides' additions (issue #967), as a blob written to the mirror; or the
@@ -323,44 +338,30 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
     const not: string[] = [];
     for (const path of files) {
       const may = UNION.test(path) || marked.has(path);
-      const blob = may && mb.code === 0 ? await resolveOne(run, head, mb.stdout.trim(), base, path) : undefined;
+      const blob = may && mb.code === 0 ? await mergeOne(run, scratch, head, mb.stdout.trim(), base, path) : undefined;
       if (blob) blobs.push(blob); else not.push(path);
     }
     return not.length > 0 ? { files: not } : { blobs };
   }
 
-  /** Which of `files` the base branch's `.gitattributes` marks `hopper-merge=additions` (issue #967); git failing: none. */
+  /**
+   * Which of `files` the base branch's `.gitattributes` marks `hopper-merge=additions` (issue #967); git failing: none.
+   * Read through an index of the base branch's tree: the container image's git (2.39) has no `check-attr --source` (git
+   * 2.40, issue #1624).
+   */
   async function additionsFiles(run: Run, base: string, files: string[]): Promise<Set<string>> {
-    if (files.length === 0) return new Set();
-    const r = await run(['check-attr', '-z', `--source=${base}`, ADDITIONS_ATTR, '--', ...files]);
     const marked = new Set<string>();
-    if (r.code !== 0) return marked;
-    const out = r.stdout.split('\0');
-    for (let i = 0; i + 2 < out.length; i += 3) if (out[i + 2] === ADDITIONS) marked.add(out[i]!);
-    return marked;
-  }
-
-  async function resolveOne(run: Run, head: string, mergeBase: string, base: string, path: string): Promise<Blob | undefined> {
-    const mode = (await run(['ls-tree', head, '--', path])).stdout.split(/\s/)[0];
-    if (mode !== '100644') return undefined;
-    const merged = await run(['merge-file', '-p', '--diff3', `--marker-size=${MARKER}`, '--object-id', `${head}:${path}`, `${mergeBase}:${path}`, `${base}:${path}`]);
-    if (merged.code <= 0) return undefined;
-    const text = keepBothAdditions(merged.stdout);
-    if (text === undefined) return undefined;
-    const oid = await hashBlob(run, text);
-    return oid ? { path, mode, oid } : undefined;
-  }
-
-  /** Write `text` as a blob in the mirror; undefined: git failed. */
-  async function hashBlob(run: Run, text: string): Promise<string | undefined> {
-    const file = join(o.dir, `.hopper-blob-${process.pid}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(o.dir, { recursive: true, mode: 0o700 });
-    writeFileSync(file, text);
+    if (files.length === 0) return marked;
+    const index = { GIT_INDEX_FILE: scratch('index') };
     try {
-      const r = await run(['hash-object', '-w', '--no-filters', file]);
-      return r.code === 0 ? r.stdout.trim() : undefined;
+      if ((await run(['read-tree', base], index)).code !== 0) return marked;
+      const r = await run(['check-attr', '-z', '--cached', ADDITIONS_ATTR, '--', ...files], index);
+      if (r.code !== 0) return marked;
+      const out = r.stdout.split('\0');
+      for (let i = 0; i + 2 < out.length; i += 3) if (out[i + 2] === ADDITIONS) marked.add(out[i]!);
+      return marked;
     } finally {
-      rmSync(file, { force: true });
+      rmSync(index.GIT_INDEX_FILE, { force: true });
     }
   }
 

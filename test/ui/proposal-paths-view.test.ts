@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // Issue #651, the UI: a proposal card shows its problem statement, then each path as its own sub-card — title, TL;DR,
 // tradeoff badges, a recommended badge — that expands to its full Markdown, sanitized. A person checks one or more
-// paths, adds a note to each, and continues with them; or asks for more paths, steers or rejects all. Zero paths: the
-// reason, and only accept, steer and ask for paths. After the selection, each selected path links to its follow-on job
+// paths, adds a note to each, and continues with them; or asks for more paths, steers or rejects. Zero paths: the
+// reason, and accept, steer, ask for paths and reject (issue #1659). After the selection, each selected path links to its follow-on job
 // with its live state, and the paths not selected are greyed out and kept (test 6). Rendered inside the whole app
 // against a fake of the daemon's HTTP surface.
 import { createElement } from 'react';
@@ -38,7 +38,7 @@ const TYPE = {
     { id: 'accept', route: 'accept', label: 'Continue with selected', effect: 'accept', notes: 'optional' },
     { id: 'more_paths', route: 'more-paths', label: 'Ask for more paths', effect: 'send_back', notes: 'optional' },
     { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
-    { id: 'reject', route: 'reject', label: 'Reject all', effect: 'reject', notes: 'required' },
+    { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'optional' },
   ],
 };
 
@@ -175,7 +175,7 @@ describe('a proposal card with paths', () => {
     const c = card('j1');
     expect(button(c, 'Continue with selected')!.disabled).toBe(true);
     expect(button(c, 'Steer')!.disabled).toBe(true);
-    expect(button(c, 'Reject all')!.disabled).toBe(true);
+    expect(button(c, 'Reject')!.disabled).toBe(false);
     await act(async () => { (pathCard(c, '1').querySelector('input[type="checkbox"]') as HTMLInputElement).click(); });
     await act(async () => { (pathCard(c, '3').querySelector('input[type="checkbox"]') as HTMLInputElement).click(); });
     await type(pathCard(card('j1'), '1').querySelector('[data-slot="path-note"]') as HTMLInputElement, 'oil paint');
@@ -211,14 +211,14 @@ describe('a proposal card with paths', () => {
 });
 
 describe('a proposal card with zero paths', () => {
-  it('test 2: shows the reason, with only Accept, Ask for more paths and Steer', async () => {
+  it('test 2: shows the reason, with Accept, Ask for more paths, Steer and Reject', async () => {
     const none = { paths: [], none: 'the shed was painted last year.' };
     await boot({ proposals: [proposal('j1', { versions: [{ ...proposal('j1').versions[0], paths: none }] })], jobs: [job('j1')] });
     const c = card('j1');
     expect(c.querySelector('[data-slot="no-paths"]')!.textContent).toContain('the shed was painted last year.');
     expect(c.querySelector('[data-path]')).toBeNull();
-    const shown = buttons(c).filter((b) => ['Accept', 'Ask for more paths', 'Steer', 'Reject all', 'Continue with selected'].includes(b));
-    expect(shown).toEqual(['Accept', 'Ask for more paths', 'Steer']);
+    const shown = buttons(c).filter((b) => ['Accept', 'Ask for more paths', 'Steer', 'Reject', 'Continue with selected'].includes(b));
+    expect(shown).toEqual(['Accept', 'Ask for more paths', 'Steer', 'Reject']);
     await act(async () => { button(c, 'Accept')!.click(); });
     await settle();
     expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/p-j1/accept', body: {} });

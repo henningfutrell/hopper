@@ -16,7 +16,7 @@ export const NO_KEY_PROBLEM = 'the master key is missing: the hopper is limited 
 
 let n = 0;
 /** `key`: the master key (default TEST_KEY); null: none, the hopper limited. */
-export function systemOf(s: Pick<UserStore, 'vault' | 'events' | 'tx'>, key: string | null = TEST_KEY, previous: string[] = []): SystemSecrets {
+export function systemOf(s: Parameters<typeof createSystemSecrets>[0]['store'], key: string | null = TEST_KEY, previous: string[] = []): SystemSecrets {
   return createSystemSecrets({
     store: s, keys: key ? { sealer: createSealer(key, previous) } : { problem: NO_KEY_PROBLEM }, userId: 'admin',
     clock: { now: () => new Date() }, idGen: () => `system-${process.pid}-${++n}-${Math.random().toString(36).slice(2)}`, logger: { warn: () => {} },
@@ -56,14 +56,15 @@ export function memoryAccountStore(record?: ConnectedAccount, extra: Record<stri
   const store = {
     connectedAccounts: {
       get: (p: string) => rows.get(p),
-      put: (a: StoredAccount & { accessToken?: string; refreshToken?: string }) => { const { accessToken: _a, refreshToken: _r, ...row } = a; rows.set(a.provider, row); },
+      put: (a: StoredAccount & { accessToken?: string; refreshToken?: string }, key: string = a.provider) => { const { accessToken: _a, refreshToken: _r, ...row } = a; rows.set(key, row); },
+      keys: () => [...rows.keys()].sort(),
       lockRow: (p: string) => rows.has(p),
       legacyTokens: () => undefined, dropLegacyTokens: () => undefined,
       lock: () => true, unlock: () => undefined,
       delete: (p: string) => rows.delete(p),
     },
     // Where the app is installed, as last read (issue #1250).
-    appInstallations: { get: (p: string) => installs.get(p), put: (r: { provider: string }) => { installs.set(r.provider, r); }, remove: (p: string) => { installs.delete(p); } },
+    appInstallations: { get: (p: string) => installs.get(p), put: (r: { provider: string }, key: string = r.provider) => { installs.set(key, r); }, remove: (p: string) => { installs.delete(p); } },
     vault, events: { append: (e: NewEvent) => { events.push(e); return e; } },
     tx: <T>(fn: () => T): T => fn(),
     ...extra,

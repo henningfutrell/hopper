@@ -1,5 +1,8 @@
 // Signing in (design.md "Sign-in: realms", issues #39, #53, #185): who a UI session belongs to,
 // and what its role lets it do. The same for every realm.
+import type { GrantLimits } from './grant-limits.ts';
+
+export type { GrantLimits };
 
 /** What a UI session may do. Each role includes the ones before it. */
 export type UiRole = 'viewer' | 'operator' | 'admin';
@@ -39,6 +42,13 @@ export const GRANT_DEFAULT_DAYS = 90;
 export const GRANT_MAX_DAYS = 365;
 /** How long a refresh token just rotated still answers the same pair, for a refresh retried after a network blip (issue #881). */
 export const REFRESH_GRACE_MS = 30_000;
+/**
+ * DPoP proofs (issue #892, RFC 9449, design.md "Sender binding"): a proof's `iat` may be this many seconds off the hopper's
+ * clock either way; the signing algorithms a proof may name (asymmetric only); how many `jti` are kept at once.
+ */
+export const DPOP = { maxAgeS: 60, algorithms: ['ES256', 'ES384', 'EdDSA', 'Ed25519', 'RS256', 'PS256'], jtiMost: 10_000 } as const;
+/** A key's JWK SHA-256 thumbprint (RFC 7638), as a bound grant names its agent's key (issue #892): 43 base64url characters. */
+export const JKT = /^[A-Za-z0-9_-]{43}$/;
 
 /**
  * A **grant** (issue #881) as it is listed: never a token. A person mints it once for an agent (`holder`); the agent
@@ -51,14 +61,37 @@ export interface ApiGrantView {
   createdAt: string; endsAt: string | null; idleEndsAt: string; lastUsedAt?: string; lastUsedFrom?: string; tokenMinutes?: number;
   /** A delegate approver's (issue #1138): what its approver policy denies. Absent: no delegate approver. */
   delegate?: { deny: string[] };
+  /** A bound grant's (issue #892, "Sender binding"): the thumbprint of the key its agent proves it holds at each use. */
+  jkt?: string;
+  /** A limited grant's (issue #892, "Grant limits"): the repositories and job sources its tokens act on. Absent: no limits. */
+  limits?: GrantLimits;
 }
-/** A new API token for a grant, and the grant's next refresh token: both answered once (issue #881). */
-export interface ApiTokenRefreshed { grant: string; token: string; expiresAt: string; refresh: string }
+/**
+ * A new API token for a grant, and the grant's next refresh token: both answered once (issue #881). `tokenType` `DPoP`: the
+ * grant is bound (issue #892): send the token as `Authorization: DPoP <token>`, with a DPoP proof.
+ */
+export interface ApiTokenRefreshed { grant: string; token: string; expiresAt: string; refresh: string; tokenType?: 'DPoP' }
 /** A new grant: its view and its first pair (issue #881). `warning`: it has no fixed end. */
 export interface ApiGrantMinted extends ApiTokenRefreshed { view: ApiGrantView; warning?: string }
 /** Why a grant ended (issue #881, the `api_grant.revoked` event). */
 export type GrantEndReason = 'revoked' | 'revoked-all' | 'reuse-detected' | 'expired-idle' | 'expired-absolute' | 'realm-changed' | 'refused';
 export const GRANT_END_REASONS: readonly GrantEndReason[] = ['revoked', 'revoked-all', 'reuse-detected', 'expired-idle', 'expired-absolute', 'realm-changed', 'refused'];
+/** A **device grant request** (issue #892): an agent asks for a grant, a person approves it. How long it waits, how often its agent polls, how many wait at once. */
+export const DEVICE_GRANT = { minutes: 10, intervalS: 5, most: 50 } as const;
+/** The device code an agent polls with (issue #892): this prefix and 64 hex digits, kept only as its SHA-256. */
+export const DEVICE_CODE_PREFIX = 'hopper_dc_';
+/** What a device grant request asks for (issue #892): the fields of a grant's mint. The person who approves it is the minter. */
+export interface DeviceGrantAsk {
+  label: string; holder?: string; role?: UiRole; scopes?: string[]; preset?: string; box?: boolean; days?: number | null; minutes?: number; deny?: string[];
+  /** The key the grant is bound to (issue #892, "Sender binding"): the thumbprint of a DPoP proof's key. */
+  jkt?: string;
+  /** What the grant's tokens may act on (issue #892, "Grant limits"). */
+  limits?: GrantLimits;
+}
+/** A device grant request just made (issue #892): the agent shows `userCode` and where to enter it, and polls with `deviceCode`. */
+export interface DeviceGrantStarted { deviceCode: string; userCode: string; verificationPath: string; verificationPathComplete: string; expiresAt: string; interval: number }
+/** A device grant request as a signed-in person sees it by its user code (issue #892): never its device code. `from`: who asked. */
+export interface DeviceGrantView { userCode: string; ask: DeviceGrantAsk; from: string; createdAt: string; expiresAt: string }
 /** The admin's API token settings (issue #881): the API-token lifetime, and its bounds. */
 export interface ApiTokenSettings { tokenMinutes: number; min: number; max: number }
 

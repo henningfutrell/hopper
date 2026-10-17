@@ -7,6 +7,7 @@ import type { IntakeTrust } from '../../../src/domain/intake.ts';
 import type { ItemText } from '../../../src/domain/item-snapshots.ts';
 import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
 import type { AutoApproval, IntakeAutoApproval } from '../../../src/domain/intake-auto-approve.ts';
+import type { DeclineChoice, IntakeDeclineDefaults } from '../../../src/domain/intake-decline.ts';
 import githubAccount from '../../../src/plugins/job-source/github-account/index.ts';
 import { parseOptions } from '../../../src/plugins/options.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
@@ -28,7 +29,7 @@ export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceCo
 export interface TestTrust extends IntakeTrust {
   approvals: Map<string, { text: ItemText; request: IntakeRequest; source: string }>;
   /** The request cards a person declined (issue #1035), by key: the text's request as declined. */
-  declines: Map<string, { request: IntakeRequest; source: string }>;
+  declines: Map<string, { request: IntakeRequest; source: string; choice?: DeclineChoice }>;
   /** Every set of logins asked, in order. */
   asked: string[][];
   /** Every set of acts asked, with their GitHub user ids (issue #930), in order. */
@@ -38,7 +39,7 @@ export interface TestTrust extends IntakeTrust {
 }
 
 /** `autoApproval` (issue #1268): the user's setting; absent: the trust has none, so no card is approved by the hopper. */
-export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[]; autoApproval?: IntakeAutoApproval; takenIn?: string[] } = {}): TestTrust {
+export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[]; autoApproval?: IntakeAutoApproval; takenIn?: string[]; declineDefaults?: IntakeDeclineDefaults } = {}): TestTrust {
   const approvals: TestTrust['approvals'] = new Map();
   const declines: TestTrust['declines'] = new Map();
   const asked: string[][] = [];
@@ -66,7 +67,8 @@ export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((ke
     approve: (source, key, text, request) => { approvals.set(key, { text, request, source }); },
     approvedComments: (key, comments) => { const a = approvals.get(key); if (a) a.text = { ...a.text, comments }; },
     declined: (key, hash) => declines.get(key)?.request.hash === hash,
-    decline: (source, key, request) => { declines.set(key, { request, source }); },
+    decline: (source, key, request, _acting, choice) => { declines.set(key, { request, source, ...(choice ? { choice } : {}) }); },
+    ...(o.declineDefaults ? { declineDefaults: () => o.declineDefaults! } : {}),
     assignedHere: (key) => (typeof o.assignedHere === 'function' ? o.assignedHere(key) : (o.assignedHere ?? []).includes(key)),
     originPending: (key) => (o.pending ?? []).includes(key),
   };

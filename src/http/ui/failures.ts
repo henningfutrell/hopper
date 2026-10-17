@@ -23,7 +23,7 @@ export const failureSettingsBody = z.strictObject({
   backoffFactor: z.number().min(FAILURE_SETTING_BOUNDS.backoffFactor.min).max(FAILURE_SETTING_BOUNDS.backoffFactor.max).optional(),
   backoffMaxSec: int('backoffMaxSec'), groupThreshold: int('groupThreshold'), groupWindowMin: int('groupWindowMin'), retentionDays: int('retentionDays'),
   handoffRetentionDays: int('handoffRetentionDays'), handoffNotify: z.boolean().optional(), activeWindowMin: int('activeWindowMin'),
-  auto: z.strictObject({ retry: z.boolean().optional(), hold: z.boolean().optional(), redirect: z.boolean().optional(), continue: z.boolean().optional() }).optional(),
+  auto: z.strictObject({ retry: z.boolean().optional(), hold: z.boolean().optional(), redirect: z.boolean().optional(), continue: z.boolean().optional(), push: z.boolean().optional() }).optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), { message: 'name at least one setting' });
 const signature = z.string().regex(/^[0-9a-f]{12}$/, 'signature must be 12 hex digits');
 export const failureCauseBody = z.strictObject({

@@ -6,8 +6,12 @@
 // reads its title and body and approves them, and the job runs that approved text. Pure.
 import { createHash } from 'node:crypto';
 
-/** What an actor did to the issue: wrote it, added the label, or assigned it to the user. */
-export type OriginRole = 'author' | 'labelled' | 'assigned';
+/**
+ * What an actor did to the issue: wrote it, added the label, or assigned it to the user; on GitLab (issue #1642) also edited
+ * its title or description.
+ */
+export const ORIGIN_ROLES = ['author', 'labelled', 'assigned', 'edited'] as const;
+export type OriginRole = typeof ORIGIN_ROLES[number];
 
 /** One act of an issue's origin, and whether the user's trusted actors hold it. */
 export interface OriginActor {
@@ -85,8 +89,11 @@ export interface IntakeActorsView {
 /** One who did an act on GitHub, or a trusted actor: a login, and its GitHub user id when known. */
 export interface ActorRef { login: string; id?: number }
 
-/** The hopper's note under an issue a job filed through it (src/github-proxy/policy.ts `filedNote`). */
-export const FILED_BY_JOB = /\n---\nFiled through hopper for job `[^`]+`/;
+/**
+ * The hopper's note under an issue a job filed through it (src/github-proxy/policy.ts `filedNote`): after its rule, the
+ * lineage line of a child (issue #729), when it has one, then the mark (issue #1510: a child's mark was missed).
+ */
+export const FILED_BY_JOB = /\n---\n(?:[^\n]*\n)?Filed through hopper for job `[^`]+`/;
 
 export const FILED_BY_JOB_REASON = 'a job filed it';
 
@@ -126,12 +133,13 @@ export function toldFor(actors: readonly ActorRef[], act: ActorRef): string[] {
   }))].sort();
 }
 
-const ROLE_TEXT: Record<OriginRole, string> = { author: 'written', labelled: 'labelled', assigned: 'assigned' };
+const ROLE_TEXT: Record<OriginRole, string> = { author: 'written', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
+const DID_TEXT: Record<OriginRole, string> = { author: 'wrote', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
 
 /** Why an act does not count: by an app or a bot, by nobody the events name, or by a login that is no trusted actor. */
 export function untrustedReason(a: OriginActor): string | undefined {
   if (a.trusted) return undefined;
   if (a.app) return `${ROLE_TEXT[a.role]} by an app or a bot (${a.app})`;
-  if (!a.login) return `who ${a.role === 'author' ? 'wrote' : a.role === 'labelled' ? 'labelled' : 'assigned'} it is not known`;
+  if (!a.login) return `who ${DID_TEXT[a.role]} it is not known`;
   return `${ROLE_TEXT[a.role]} by ${a.login}, not a trusted actor`;
 }

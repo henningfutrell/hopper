@@ -4,7 +4,26 @@
 // passed intake (issue #1035): their state is job progress, on Jobs, and Intake only counts them. A request a person
 // declined (issue #1035) waits for nobody: Intake counts it apart.
 import type { IntakeOutcome, NotTakenGroup } from '../../../src/domain/intake.ts';
-import type { JobStatus, SourceStatus } from './wire';
+import type { DeclineChoice, IntakeDeclineDefaults, JobStatus, SourceStatus } from './wire';
+
+/** The decline choices (issue #1710), in the order the confirm step lists them. */
+export const DECLINE_CHOICES: readonly DeclineChoice[] = ['close', 'open'];
+/** The daemon's default when no admin set one: Leave it open for a request card, Close the issue for a reopened card. */
+export const DEFAULT_DECLINE: IntakeDeclineDefaults = { request: 'open', reopened: 'close' };
+/** Each choice as the confirm step names it. */
+export const DECLINE_LABEL: Record<DeclineChoice, string> = { close: 'Close the issue', open: 'Leave it open' };
+/** What each choice does on GitHub, said before the click. */
+export const DECLINE_EFFECT: Record<DeclineChoice, string> = {
+  close: 'The hopper closes the issue as not planned, removes its hopper labels and posts a short comment that says so.',
+  open: 'The issue stays open. The hopper removes the hopper label, so no hopper queues it, and posts a short comment that says so.',
+};
+/** What a decline did, on its row once the card is gone. */
+export const DECLINED_ROW: Record<DeclineChoice, string> = { close: 'declined: issue closed on GitHub', open: 'declined: issue left open without the hopper label' };
+/** What a decline did, on the card after it. */
+export const DECLINED_DONE: Record<DeclineChoice, string> = {
+  close: 'Declined: no job. The hopper closes the issue as not planned and comments on it. Add the hopper label again to queue it',
+  open: 'Declined: no job. The issue stays open without the hopper label, with a comment. Add the hopper label again to queue it',
+};
 
 export type IntakeGroupKind = NotTakenGroup | 'taken';
 
@@ -85,6 +104,39 @@ export const issueNumber = (key: string): number | undefined => { const m = /\/i
 export const requestsWaiting = (sources: readonly SourceStatus[]): number =>
   sources.reduce((n, s) => n + (intakeGroups(intakeOf(s)).find((g) => g.kind === 'request')?.count ?? 0), 0);
 
+/**
+ * The labelled issues not assigned to the user across the sources (issue #1614): no job starts on one until a person
+ * assigns it, and nothing on the issue says so. With the request cards, the Intake badge and Needs you's Intake row.
+ */
+export const notAssignedWaiting = (sources: readonly SourceStatus[]): number =>
+  sources.reduce((n, s) => n + intakeOf(s).filter((x) => groupOf(x) === 'not-assigned').length, 0);
+
 const ENDED: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 /** A taken item's job has ended since the sync that took it: the next sync says what became of the issue. */
 export const jobEnded = (status: JobStatus | undefined): boolean => status !== undefined && ENDED.includes(status);
+
+/** The owner/repo of an outcome (issue #1463): as the source named it, else from its key (a GitHub issue URL). */
+export const repoOf = (x: IntakeOutcome): string | undefined => x.repo ?? /^https:\/\/github\.com\/([^/]+\/[^/]+)\//.exec(x.key)?.[1];
+
+/** An outcome's reference, owner/repo#number (issue #1463); undefined for an item with no issue number. */
+export function intakeRef(x: IntakeOutcome): string | undefined {
+  const n = issueNumber(x.key);
+  if (n === undefined) return undefined;
+  const repo = repoOf(x);
+  return repo ? `${repo}#${n}` : `#${n}`;
+}
+
+/**
+ * The repositories of the outcomes, in name order, with how many each has, and the name a filter shows for each
+ * (issue #1463): the repository's name alone, or owner/repo when two owners have a repository of that name.
+ */
+export function reposOf(items: readonly IntakeOutcome[]): { repo: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const x of items) { const r = repoOf(x); if (r) counts.set(r, (counts.get(r) ?? 0) + 1); }
+  const name = (r: string) => r.split('/').pop()!;
+  const repos = [...counts.keys()].sort();
+  return repos.map((repo) => ({
+    repo, count: counts.get(repo)!,
+    label: repos.filter((r) => name(r) === name(repo)).length > 1 ? repo : name(repo),
+  }));
+}

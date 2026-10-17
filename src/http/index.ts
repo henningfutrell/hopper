@@ -49,6 +49,7 @@ import { createRealmsAdmin, realmRoutes } from './realms.ts';
 import { createLocalAccountsAdmin, localAccountRoutes } from './local-accounts.ts';
 import { createPasskeys } from '../auth/passkeys.ts';
 import { createApiGrants } from './ui/api-grants.ts';
+import { createDpopProofs } from './ui/dpop.ts';
 import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
@@ -58,7 +59,9 @@ import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
 import type { AllowedHosts } from './allowed-hosts.ts';
-import type { SourceEmailMatch } from './source-email-match.ts';
+import type { SourceEmailMatch } from './source-email-match.ts'; import type { InfraApplies } from './infra-applies.ts';
+import type { CloudLink } from './cloud-link.ts';
+import type { DisplayName } from './display-name.ts';
 import type { CallerOf } from './ui/sign-in.ts';
 import type { Sandboxes } from '../sandbox/service.ts'; import type { Playground } from '../sandbox/playground.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
@@ -74,6 +77,7 @@ import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
 import { bugReportReadRoutes } from './ui/bug-reports.ts';
+import { issueDraftReadRoutes } from './ui/issue-drafts.ts';
 import { pointedJobReadRoutes } from './ui/pointed-jobs.ts';
 import { directJobReadRoutes } from './ui/direct-jobs.ts';
 import { searchReadRoutes } from './search.ts';
@@ -82,13 +86,16 @@ import { componentWatcherReadRoutes } from './ui/component-watchers.ts';
 import { landingBatchReadRoutes } from './ui/landing-batches.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
+import { instrumentHttp } from '../telemetry/http.ts'; import { telemetrySummary } from '../telemetry/summary.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
 export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveries.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
-export { createSourceEmailMatch } from './source-email-match.ts';
+export { createSourceEmailMatch } from './source-email-match.ts'; export { createInfraApplies } from './infra-applies.ts';
+export { createCloudLink } from './cloud-link.ts';
+export { createDisplayName } from './display-name.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';
 
@@ -126,7 +133,11 @@ export interface ServerOptions {
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
   /** The source email match (issue #1380): GET /api/source-email-match, POST /ui/api/source-email-match. */
-  sourceEmailMatch: SourceEmailMatch;
+  sourceEmailMatch: SourceEmailMatch; infraApplies: InfraApplies; // and infra applies (issue #1722): GET /api/infra-applies, POST /ui/api/infra-applies
+  /** The cloud link (issue #467): GET /api/cloud-link, POST /ui/api/cloud-link and /ui/api/cloud-link/unlink. */
+  cloudLink: CloudLink;
+  /** The instance's display name and instance id (issue #465): GET /api/display-name, POST /ui/api/display-name. */
+  displayName: DisplayName;
   /** The hopper runs in WSL (issue #712): GET /api/host-link says so, for Settings' Windows hint. */
   wsl: boolean;
   /** The instance's events (every user's log): an event loop stall is raised there (issue #1154). Absent: only logged. */
@@ -155,6 +166,8 @@ export interface ServerOptions {
 
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
+  // Every request a span, its latency recorded (issue #1486): first, so the guards' answers are measured too.
+  instrumentHttp(app);
   installErrorHandling(app);
   // Every answer names its hopper (issue #1295): the page drops another hopper's at the same address.
   const instanceTag = instanceTagOf(o.instance.settings.instanceId());
@@ -189,10 +202,12 @@ export function createServer(o: ServerOptions): FastifyInstance {
   });
   const g = grants.reconcile(o.signIn.roleOf);
   if (g.dropped + g.changed > 0) console.warn(`hopper: the sign-in config applied to grants: ${g.dropped} ended, ${g.changed} lowered`);
+  // DPoP proofs (issue #892, "Sender binding"): one cache of the jti seen, for the token routes and every use of a bound grant's token.
+  const proofs = createDpopProofs({ clock: o.clock });
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
   // Through a tunnel only the API, and a limit per caller (issues #795, #968): the tunnel's edge, held here too.
   installTunnelEdge(app, { tunnel: o.remoteAccess.watch, domain: () => { const u = o.remoteAccess.url(); return u ? new URL(u).hostname : undefined; } });
-  installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
+  installTenancy(app, { tenants: o.tenants, sessions, grants, proofs, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);
@@ -210,6 +225,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   webhookRoutes(app, tenant);
   vaultRoutes(app, tenant);
   bugReportReadRoutes(app, tenant); // Your reports (issue #694)
+  issueDraftReadRoutes(app, tenant); // File an issue (issue #471)
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   directJobReadRoutes(app, tenant); // Direct jobs (issue #901)
   searchReadRoutes(app, tenant); // Search (issue #945)
@@ -229,7 +245,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
-  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock, process: loop.reading });
+  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock, process: loop.reading, telemetry: telemetrySummary.read });
   componentWatcherReadRoutes(app, { ...tenant, instanceAdmin }); // Component watchers (issue #1077): the stack's only for the instance admin
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
@@ -269,8 +285,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.instance.settings, wsl: o.wsl,
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, proofs, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, infraApplies: o.infraApplies, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

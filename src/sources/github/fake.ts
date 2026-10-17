@@ -187,6 +187,10 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       enter('closeAsCompleted', [repo, n]);
       const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: stamp(), stateReason: 'completed' }); touch(i);
     },
+    async closeAsNotPlanned(repo, n) {
+      enter('closeAsNotPlanned', [repo, n]);
+      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: stamp(), stateReason: 'not_planned' }); touch(i);
+    },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);
@@ -202,7 +206,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     async referencingPullRequests(repo, n) {
       enter('referencingPullRequests', [repo, n]);
       find(repo, n);
-      return pulls.filter((p) => p.issue === key(repo, n) && p.crossReferenced !== false).map(({ issue: _i, closes: _c, headRef: _h, base: _b, crossReferenced: _x, ...p }) => ({ ...p }));
+      return pulls.filter((p) => p.issue === key(repo, n) && p.crossReferenced !== false).map(({ issue: _i, closes: _c, crossReferenced: _x, ...p }) => ({ ...p }));
     },
     crossReferences: async (repo, n) => { enter('crossReferences', [repo, n]); find(repo, n); return xrefs.of(key(repo, n), pulls); },
     async pullRequest(repo, n) {
@@ -225,7 +229,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     },
     ...acts.api,
     jobLog: jobLogs.jobLog,
-    rerunJob: jobLogs.rerunJob,
+    rerunJob: jobLogs.rerunJob, workflowRun: jobLogs.workflowRun,
     headChecks: heads.headChecks,
   };
 
@@ -279,7 +283,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setHeadChecks: heads.setHeadChecks, setJobLog: jobLogs.setJobLog, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
+    setHeadChecks: heads.setHeadChecks, setJobLog: jobLogs.setJobLog, setWorkflowRun: jobLogs.setWorkflowRun, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods, ...fakeChangedLines((m, a) => enter(m, a), (url) => diffs.get(url)),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {

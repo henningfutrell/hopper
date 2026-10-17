@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenFGA for hopper: access checks (127.0.0.1:4793; issue #791)
+# The binary, config and key install.sh set up (scripts/host-openfga.ts). Its tables are the openfga schema of the
+# hopper's database; migrate brings them up to this version before each start. Until it answers, the hopper denies
+# every credential (fail closed).
+Before=hopper.service
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.config/hopper/openfga
+ExecStartPre=%h/.local/lib/hopper/openfga/openfga migrate
+ExecStart=%h/.local/lib/hopper/openfga/openfga run
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

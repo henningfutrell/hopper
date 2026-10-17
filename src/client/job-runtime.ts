@@ -41,6 +41,15 @@ export const CONF_SH = [
  */
 export const JOB_LABEL = 'hopper.job';
 
+/**
+ * What the reap asks of a job's container before it removes it (issue #975), for the job's parts list: its name, image,
+ * and when it started and stopped, one line, space-separated (none of them holds a space). The times as JSON, so Podman's
+ * time and Docker's string read the same; a zero time is one that never came. Docker's name starts with `/`.
+ */
+export const DETAILS_FORMAT = '{{.Name}} {{.Config.Image}} {{json .State.StartedAt}} {{json .State.FinishedAt}}';
+/** The line the reap prints for a container it removes, before its details: `hopper-container-details <id> <details>`. */
+export const DETAILS_MARK = 'hopper-container-details ';
+
 // The guard, one line after its `#!/bin/sh`, named podman or docker: the job's runtime from env.sh beside its directory,
 // whatever the caller changed (HOME, XDG_*, DOCKER_HOST, a context), then the real command of that name further on PATH.
 // Refused, exit 126: a global flag that names another runtime or its storage, `podman system reset|migrate|renumber`, and
@@ -179,13 +188,17 @@ export function runtimeOutcome(screen: string): RuntimeOutcome | undefined {
  * reset — through the config written again here, with the job's storage and runtime dir named on the command line, so
  * nothing the job changed can point it at another runtime (its run state only in that config: Podman 4 refuses a
  * `--runroot` longer than 50 characters, and the runtime dir's is) —, then every process still started from it stopped, and the
- * dir removed. The scratch dir is the one given, else the one the runtime dir names, and only ever the job's own. Not a
+ * dir removed. The scratch dir is the one given, else the one the runtime dir names, and only ever the job's own; a runtime dir
+ * that is gone while the given scratch dir holds its storage is made again for this (issue #1452). Not a
  * timed-out job's (keep): it may go on there.
  */
 export const REAP_RUNTIME_SH = [
   'if [ "$k" != keep ]; then',
   HOST_RUNTIME_SH,
   `  j=$h/${RUNTIME_PREFIX}$id;`,
+  // Its runtime dir gone (a reboot clears the user's), its storage still in the scratch dir given (issue #1452): the
+  // runtime dir made again, so the storage is reset and removed as below. Else its files of the job's user namespace stay.
+  `  case $s in /*/.worktrees/@scratch/"$id"|/*/.hopper-scratch/"$id") [ ! -e "$j" ] && [ -d "$h" ] && [ -d "$s/${RUNTIME_SUBDIR}/storage" ] && [ ! -L "$s/${RUNTIME_SUBDIR}" ] && [ ! -L "$s/${RUNTIME_SUBDIR}/storage" ] && command -v podman >/dev/null 2>&1 && mkdir -m 700 "$j" 2>/dev/null;; esac;`,
   '  if [ -d "$j" ] && [ ! -L "$j" ]; then',
   '    js=$s; [ -n "$js" ] || js=$(head -n 1 "$j/scratch" 2>/dev/null);',
   '    case $js in /*/.worktrees/@scratch/"$id"|/*/.hopper-scratch/"$id") ;; *) js=;; esac;',
@@ -194,7 +207,9 @@ export const REAP_RUNTIME_SH = [
   `      ${CONF_SH}`,
   '      if conf "$j" "$c"; then',
   '        pm() { pt=$1; shift; $pt env -u CONTAINER_HOST -u CONTAINER_CONNECTION XDG_RUNTIME_DIR="$j" CONTAINERS_CONF_OVERRIDE="$c/containers.conf" CONTAINERS_STORAGE_CONF="$c/storage.conf" podman --root "$c/storage" --tmpdir "$j/libpod/tmp" "$@"; };',
-  '        ids=; for x in $(pm "$to" ps -aq 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-container %s\\n" "$x"; ids="$ids $x"; done;',
+  '        ids=; for x in $(pm "$to" ps -aq 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-container %s\\n" "$x"; ids="$ids $x";',
+  `          xd=$(pm "$to" inspect --format "${DETAILS_FORMAT}" "$x" 2>/dev/null | head -n 1); [ -n "$xd" ] && printf "${DETAILS_MARK}%s %s\\n" "$x" "$xd";`,
+  '        done;',
   '        for x in $(pm "$to" volume ls -q 2>/dev/null); do case $x in -*|*[!A-Za-z0-9_.-]*) continue;; esac; printf "hopper-removed-volume %s\\n" "$x"; done;',
   '        tr=; command -v timeout >/dev/null 2>&1 && tr="timeout 120";',
   '        pm "$tr" system reset --force >/dev/null 2>&1;',

@@ -20,7 +20,10 @@ export function mintJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clo
   return { code, expiresAt };
 }
 
-/** The user of `code` (and what it names), and the code is spent, when it was minted and has not expired; undefined else. */
-export function useJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clock, code: string): ({ userId: string } & JoinCodePlace) | undefined {
-  return /^[0-9a-f]{64}$/.test(code) ? store.joinCodes.take(hash(code), clock.now().toISOString()) : undefined;
+/**
+ * The user of `code` (and what it names), and the code is spent by `machineKey`, when it was minted and has not expired;
+ * undefined else. The machine that spent it may use it again until it expires (issue #1628): its join is idempotent.
+ */
+export function useJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clock, code: string, machineKey: string): ({ userId: string } & JoinCodePlace) | undefined {
+  return /^[0-9a-f]{64}$/.test(code) ? store.joinCodes.take(hash(code), clock.now().toISOString(), machineKey) : undefined;
 }

@@ -11,7 +11,7 @@ export const SANDBOX_REQUEST_EVENT_SCHEMAS = {
   'vault.sandbox_approvals_set': strict({
     skipTemplateApproval: z.boolean(), skipSandboxApproval: z.boolean(),
     autoApprove: strict({ low: z.boolean(), medium: z.boolean(), high: z.boolean() }).optional(),
-    rememberWritesHours: z.number().int().min(0).optional(), by: z.string(),
+    rememberWritesHours: z.number().int().min(0).optional(), standingReadGrant: z.boolean().optional(), by: z.string(),
   }),
   'vault.sandbox_requested': strict({ request: z.string(), template: z.string() }),
   'vault.sandbox_approved': strict({ request: z.string(), template: z.string(), by: z.string(), radius: level.optional() }),

@@ -27,7 +27,7 @@ export type WorkDiscardReason = typeof WORK_DISCARD_REASONS[number];
  */
 export function discardReasonOf(job: Job, itemDone: boolean, newest: Job | undefined, kept: ReadonlySet<string>): WorkDiscardReason | undefined {
   if (itemDone) return 'merged';
-  if (newest && newest.id !== job.id && newest.status === 'finished' && !newest.cleanupDeferred && !kept.has(newest.id)) return 'superseded';
+  if (newest && newest.id !== job.id && newest.status === 'finished' && !newest.cleanupDeferred && !newest.cleanupDue && !kept.has(newest.id)) return 'superseded';
   if (job.status === 'finished' && job.spec.proposal) return 'proposal';
   if (job.status === 'finished' && job.spec.research) return 'research';
   return undefined;
@@ -38,9 +38,13 @@ export interface KeptWork { jobId: string; paths: string[]; at: string }
 
 /**
  * A discard a person asked for (issue #1194): answered at once, its removal on the machine after — under way, or failed
- * with why (`job.work_discard_failed`). Kept in memory: after a restart the work shows kept, as it is.
+ * with why (`job.work_discard_failed`). Kept on the job (`Job.discard`, issue #1570): after a stop, under way still.
  */
 export type Discarding = { state: 'removing' } | { state: 'failed'; error: string };
+
+/** Pure: the job's discard as the Failures view shows it, from its record (issue #1570); undefined: none asked, or it went through. */
+export const discardingOf = (job: Job | undefined): Discarding | undefined =>
+  !job?.discard ? undefined : job.discard.error === undefined ? { state: 'removing' } : { state: 'failed', error: job.discard.error };
 
 /** Kept work as the Failures view shows it: its job, its machine, and whether each way out is taken now and why not. */
 export interface KeptWorkView extends KeptWork {
@@ -66,6 +70,26 @@ export function keptWorkOf(newestFirst: readonly DomainEvent[]): KeptWork[] {
     if (e.type === 'job.work_kept') out.push({ jobId: e.jobId, paths: [...(e.data as { paths: string[] }).paths], at: e.at });
   }
   return out;
+}
+
+/** The trail `keptAgainOf` reads: the work trail and the job going on in its work tree. */
+export const KEPT_AGAIN_EVENTS = [...WORK_EVENTS, 'job.continued'] as const;
+
+/**
+ * Pure: whether the job went on in its kept work tree (`job.continued`: Push it, a Continue) and its reap kept the same
+ * work again — no path it did not keep before (issue #1470). Then a push of it is refused or cannot be made from the job
+ * (a clone of another repository: a job pushes only to its own), and Push it again only asks the same thing again.
+ * `newestFirst`: the job's `KEPT_AGAIN_EVENTS` as the event log answers them.
+ */
+export function keptAgainOf(newestFirst: readonly DomainEvent[]): boolean {
+  const [now, ...older] = newestFirst;
+  if (now?.type !== 'job.work_kept') return false;
+  const at = older.findIndex((e) => e.type === 'job.continued');
+  if (at < 0) return false;
+  const before = older.slice(at + 1).find((e) => e.type !== 'job.continued');
+  if (before?.type !== 'job.work_kept') return false;
+  const was = new Set((before.data as { paths: string[] }).paths);
+  return (now.data as { paths: string[] }).paths.every((p) => was.has(p));
 }
 
 /**

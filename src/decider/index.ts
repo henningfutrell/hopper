@@ -7,6 +7,7 @@ import { laneSlots } from './priority-lanes.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
 import { laneEffect, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
+import { preempt } from './preempt.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
@@ -79,12 +80,18 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
-    const native = nativeHold(job, machines, inputs.unavailableExecutors, inputs.signedOut) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
-      ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius, inputs.signedOut);
+    const sandboxes = job.pendingAnswer === undefined ? inputs.sandboxesHeld?.find((h) => h.jobId === job.id) : undefined;
+    if (sandboxes) {
+      // Issue #1471: a job starts only once the sandboxes its prompt names are approved and ready, never to stop mid-run.
+      hold.push({ jobId: job.id, reason: sandboxes.reason });
+      continue;
+    }
+    const native = nativeHold(job, machines, inputs.unavailableExecutors, inputs.signedOut, inputs.credentialHeld) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
+      ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius, inputs.signedOut, inputs.credentialHeld);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
-        job, effectivePriority: effectivePriority(job, policy), note: `resume boost +${policy.resumeBoost}`,
+        job, effectivePriority: effectivePriority(job, policy), note: job.preempted ? 'preempted: no resume boost' : `resume boost +${policy.resumeBoost}`,
       });
       continue;
     }
@@ -100,7 +107,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks);
+  const ordered = order(candidates, inputs.queueOrder?.jobIds);
+  const placed = assign(ordered, states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks, inputs.credentialHeld);
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const elbowing = new Set(inputs.running.filter((j) => elbowsInAs(j) !== undefined).map((j) => j.id));
 
@@ -114,13 +122,16 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const listed = new Set(machines.map((m) => m.id));
   const gone = [...new Set(lanes.map((l) => l.machineId).filter((id) => !listed.has(id)))].sort();
   plans.push(...gone.map((id) => planGoneLanes(id, lanes)));
+  const drained = new Set(plans.flatMap((p) => p.drain));
+  const preempts = preempt(ordered, placed.wait, inputs.running, lanes, states, drained, inputs.preemption, inputs.at, inputs.priorityLanes);
 
   reasons.push(
     `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held, ${placed.wait.length} waiting for a lane`,
     ...advice.map((d) => `advice ${d.advice} on ${d.jobId}: native ${d.native}, with advice ${d.withAdvice}`),
+    ...preempts.map((p) => p.reason),
   );
   return {
     id: decisionId, at: inputs.at, trigger: inputs.trigger,
-    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, reasons, inputs,
+    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, ...(preempts.length ? { preempt: preempts } : {}), reasons, inputs,
   };
 }

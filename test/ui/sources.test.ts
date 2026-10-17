@@ -16,7 +16,7 @@ const source = (name: string, kind: string, state: SourceStatus['state'], detail
 const account = (login?: string, paused = NOT_CONNECTED) => source('github-account', 'github-account', login ? 'ok' : 'disabled', {
   ...(login ? { login } : { paused }),
 });
-const BASE = { provider: 'github', via: CONNECTED_VIA } as const;
+const BASE = { provider: 'github', key: 'github', via: CONNECTED_VIA } as const;
 const signedIn = (jobRepositories: string[] = ['o/r']): ConnectedAccountStatus =>
   ({ ...BASE, state: 'connected', account: 'octo-user', connectedAt: '2026-10-15T10:00:00Z', jobRepositories, configUrl: 'https://github.com/settings/installations' }) as ConnectedAccountStatus;
 
@@ -71,5 +71,36 @@ describe('sourcesView', () => {
     expect(v.github.map((s) => s.name)).toEqual(['gh-2']);
     expect(v.others).toEqual([other]);
     expect(v.duplicates).toEqual([second]);
+  });
+});
+
+// Issue #1448: a further GitHub account's source names its account; it is shown in that account's panel, never as a card,
+// and never taken for the first account's source.
+describe('sourcesView: a further GitHub account', () => {
+  it('keeps each further account\'s source apart, by its key, out of the cards', () => {
+    const first = account('octo-user');
+    const work = source('github-account-2', 'github-account', 'ok', { login: 'octo-work', accountKey: 'github-2' });
+    const v = sourcesView([work, first], signedIn());
+    expect(v.account).toBe(first);
+    expect(v.further).toEqual({ 'github-2': work });
+    expect(v.github).toEqual([]);
+  });
+
+  it('the header asks to connect again for a further account that ended, after the first', async () => {
+    const { connectionEnded } = await import('../../ui/src/model/sources.ts');
+    const work = source('github-account-2', 'github-account', 'disabled', { accountKey: 'github-2', expired: true, paused: 'work ended' });
+    expect(connectionEnded([account('octo-user'), work])).toBe('work ended');
+    expect(connectionEnded([work, source('github-account', 'github-account', 'disabled', { expired: true, paused: 'first ended' })])).toBe('first ended');
+  });
+});
+
+describe('sourcesView: the GitLab source (issue #1448 part 2)', () => {
+  it('shows the GitLab account\'s source in the GitLab panel, never as a card of its own', () => {
+    const gitlab = source('gitlab-account', 'gitlab-account', 'ok', { login: 'ada' });
+    const other = source('direct', 'direct', 'ok');
+    const v = sourcesView([gitlab, other], signedIn());
+    expect(v.gitlab).toBe(gitlab);
+    expect(v.others).toEqual([other]);
+    expect(sourcesView([other]).gitlab).toBeUndefined();
   });
 });

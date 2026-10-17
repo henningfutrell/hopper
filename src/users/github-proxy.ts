@@ -9,12 +9,17 @@ import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/ou
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CountPushLines } from '../git-mirror/push-lines.ts';
-import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, yoloModeFor, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
+import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
+import { everyJobRepository } from '../domain/job-repositories.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts';
+import { GITLAB_GIT_PATH } from '../gitlab/git-broker.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecks, createRepoChecksGitHub, type RepoChecksService } from '../repo-checks/index.ts';
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
+import { createIssueDrafts, type IssueDrafter, type IssueDrafts } from '../issue-drafts/index.ts';
+import { ISSUE_DRAFT_TIMEOUT_MS } from '../domain/issue-drafts.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import {
   branchChecksWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
@@ -32,8 +37,11 @@ import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from 
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
   createProxyApi, type ProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
-  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
+  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser, createSubIssueLinker, createSubIssueLinks, replayOf, type SubIssueLinks,
 } from '../github-proxy/index.ts';
+
+/** No AI connection (issue #471): File an issue says so, and drafts nothing. */
+const NO_DRAFTER: IssueDrafter = { provider: 'claude', available: async () => ({ ok: false, reason: 'no AI connection to draft with' }), draft: async () => ({ error: 'no AI connection to draft with' }) };
 
 /** A user's side of the GitHub proxy: their jobs as askers, and their GitHub connection, which acts for their jobs and their jobs' git. */
 export interface UserGitHubProxy {
@@ -42,8 +50,8 @@ export interface UserGitHubProxy {
   git: GitUser;
   /** Report a bug (issue #694): this user's own GitHub connection, so a report is filed as this user; or why there is none. */
   reports(): ReportGitHub | { problem: string };
-  /** A person's reads of a job repository's pull request (issue #1169: its diff): this user's own connection, or why there is none. */
-  reads(): ProxyApi | { problem: string };
+  /** A person's reads of a job repository's pull request (issue #1169: its diff): this user's own connection — the account of `repo` (issue #1448) —, or why there is none. */
+  reads(repo?: string): ProxyApi | { problem: string };
   /**
    * Repositories with no checks (issue #677): read with this user's own GitHub connection, kept in their store (issue
    * #1250); its schedule reads with the user's runtime.
@@ -53,6 +61,13 @@ export interface UserGitHubProxy {
   actors(): { api: ActorsGitHub; login: string } | { problem: string };
   /** Promote to GitHub (issue #946): this user's direct jobs posted with this user's own GitHub connection, never a job's. */
   promotions: Promotions;
+  /**
+   * File an issue (issue #471): drafted with this user's own signed-in Claude, filed after their confirmation with their
+   * own connection — the account of the repository —, on one of their job repositories.
+   */
+  issueDrafts: IssueDrafts;
+  /** The required children's sub-issue links GitHub refused, tried again until made (issue #1607); its loop runs with the user's runtime. */
+  subIssueLinks: SubIssueLinks;
   /** Report a bug's kept reports sent later, and the filed ones' states read (issue #694); its loop runs with the user's runtime. */
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
@@ -83,7 +98,8 @@ export interface UserGitHubProxyOptions {
   logger: { warn(line: string): void };
   /** The private half of the hopper's link key for this user (issue #308): the key its jobs' tokens are derived under. */
   linkPrivateKey: string;
-  accounts: ConnectedAccountTokens;
+  /** The user's connected accounts (issue #1448): each repository's account acts for it. */
+  accounts: ConnectedAccountTokens & { keyFor(repo: string | undefined): ConnectedAccountKey; keys(): ConnectedAccountKey[] };
   /** The hopper's URL as a job on `machine` reaches it; undefined: it cannot, and its jobs get no proxy. */
   url(machine: MachineSnapshot): string | undefined;
   /** An artifact's stable URL, and the hopper's public URL (issue #946: a promotion's links are made only on it). */
@@ -91,19 +107,31 @@ export interface UserGitHubProxyOptions {
   publicUrl(): string | undefined;
   /** The job sources' statuses, each with its last intake (issue #1077: the intake-vs-jobs watcher reads them). */
   sources(): readonly SourceStatus[];
+  /** The URL of the user's GitLab account (issue #1448 part 3); undefined: none attached. */
+  gitlabUrl?(): string | undefined;
   /** The stack resources (issue #1077: the stack-health watcher reads them), given to the oldest user only; absent: none. */
   stack?: () => Promise<StackResources>;
   /** A push's lines, counted in the user's mirrors of the job repositories (issue #1096); absent: no shrink guard. */
   pushLines?: CountPushLines;
+  /** File an issue's drafter (issue #471): the user's own AI connection; absent: none, so File an issue cannot draft. */
+  issueDrafter?: IssueDrafter;
+  /** The host name, masked in a job's context that File an issue attaches. */
+  hostname?: string;
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
   const notConnected = 'GitHub is not connected: the job\'s user connects it in Sources → Connect GitHub';
-  const api = () => createProxyApi({
-    apiUrl: o.accounts.endpoints('github').apiUrl,
-    token: () => o.accounts.token('github'),
-    renew: (refused) => o.accounts.renew('github', refused),
+  /** The connected account that acts for `repo` (issue #1448): the one whose job repositories hold it; else the first. */
+  const keyOf = (repo?: string): ConnectedAccountKey => o.accounts.keyFor(repo);
+  const api = (key: ConnectedAccountKey = 'github') => createProxyApi({
+    apiUrl: o.accounts.endpoints(key).apiUrl,
+    token: () => o.accounts.token(key),
+    renew: (refused) => o.accounts.renew(key, refused),
   });
+  /** Every connected account's job repositories (issue #1448). */
+  const jobRepositories = (): string[] => [...new Set(o.accounts.keys().flatMap((k) => o.accounts.jobRepositories(k)))];
+  /** Why the account of `key` cannot act now. */
+  const notMineAt = (key: ConnectedAccountKey, why: string): string => o.accounts.ended(key) ?? why;
   const notMine = 'your GitHub is not connected: connect it in Sources → Connect GitHub';
   /** This user's own connection, for what they do themselves: Report a bug, the Add PR checks job. */
   const mine = () => ({ apiUrl: o.accounts.endpoints('github').apiUrl, installUrl: o.accounts.endpoints('github').installUrl, token: () => o.accounts.token('github'), renew: (refused: string) => o.accounts.renew('github', refused) });
@@ -117,7 +145,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
    * percent of the user's settings. Git cannot say: the push goes on, as it did before the guard.
    */
   const shrinkGuard = (pushLines: CountPushLines): NonNullable<GitUser['shrinkGuard']> => async (push) => {
-    const remote = async () => ({ url: `${o.accounts.endpoints('github').url.replace(/\/+$/, '')}/${push.repo}.git`, token: await o.accounts.token('github') });
+    const key = keyOf(push.repo);
+    const remote = async () => ({ url: `${o.accounts.endpoints(key).url.replace(/\/+$/, '')}/${push.repo}.git`, token: await o.accounts.token(key) });
     const lines = await pushLines(push.repo, remote, push);
     if (!lines?.brings) return { ok: true };
     const shrunk = shrunkFiles(lines.files, (o.store.settings.getShrinkGuard() ?? DEFAULT_SHRINK_GUARD).percent);
@@ -129,7 +158,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
    */
   const pullRequest = (repo: string, number: number): KnownPullRequest => {
     const { store } = o;
-    const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, store.settings.getJobRepositories('github'), o.clock.now().getTime(), (id) => store.jobs.get(id));
+    const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, everyJobRepository(store), o.clock.now().getTime(), (id) => store.jobs.get(id));
     const card = view.repos.flatMap((r) => r.pullRequests).find((c) => c.pullRequest && isPullRequest(c.pullRequest.url, repo, number));
     const url = card?.pullRequest?.url ?? `${o.accounts.endpoints('github').url.replace(/\/$/, '')}/${repo}/pull/${number}`;
     const followed = card ? store.jobs.get(card.jobId) : undefined;
@@ -140,7 +169,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
   };
   const user: ProxyUser = {
     id: o.user.id,
-    holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts),
+    // A job moved off a lost machine (issue #1569) holds the token of its newest move only: the agent left there is refused.
+    holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts, o.store.jobs.get(parts.jobId)?.movedAway ?? 0),
     job: (id) => o.store.jobs.get(id),
     machineOf: (job) => o.store.lanes.list().find((l) => l.id === job.laneId)?.machineId,
     record: (event) => { o.store.events.append(event); },
@@ -154,6 +184,12 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       };
     },
     pullRequest,
+    replay: (jobId, key) => replayOf(o.store.events, jobId, key),
+  };
+  /** Where a GitLab job's git goes (issue #1448 part 3): its user's GitLab, rewritten to the hopper's GitLab git route. */
+  const gitlabOf = (job: Job): { url: string; path: string } | undefined => {
+    const at = isGitLabItem(sourceItemOf(job)) ? o.gitlabUrl?.() : undefined;
+    return at ? { url: at, path: GITLAB_GIT_PATH } : undefined;
   };
   return {
     jobProxy(job, machine) {
@@ -164,32 +200,37 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
         // (issue #624) puts what the job makes for a person to see; `hopper-step` (issue #731) runs one step on a Windows host;
         // `hopper-login` (issue #1110) says what came of a login the job asked for.
-        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT, [LOGIN_SCRIPT_FILE]: LOGIN_SCRIPT },
+        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id, job.movedAway ?? 0), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT, [LOGIN_SCRIPT_FILE]: LOGIN_SCRIPT },
         paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE, [STEP_SCRIPT_VARIABLE]: STEP_SCRIPT_FILE, [LOGIN_SCRIPT_VARIABLE]: LOGIN_SCRIPT_FILE },
         // The vault's helper (issue #558), where the machine's client serves one and the machine is a box of a template:
         // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
         vars: {
           [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
-          ...jobGitConfig(url, o.accounts.endpoints('github').url),
+          // A GitLab job's git (issue #1448 part 3): to its user's GitLab, through the hopper too; the job holds no GitLab token.
+          ...jobGitConfig(url, o.accounts.endpoints('github').url, gitlabOf(job)),
         },
       };
     },
     githubProxy: {
       user,
       connection: {
-        jobRepositories: () => o.accounts.jobRepositories('github'),
-        api: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notConnected } : api()),
+        jobRepositories,
+        api: (repo) => { const key = keyOf(repo); return !o.accounts.account(key) ? { problem: notMineAt(key, notConnected) } : api(key); },
         contribution,
-        login: () => o.accounts.account('github'),
+        login: (repo) => o.accounts.account(keyOf(repo)),
       },
       reports,
-      reads: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createProxyApi({ ...mine(), kind: 'per_job_read' })),
+      reads: (repo) => {
+        const key = keyOf(repo);
+        return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createProxyApi({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused), kind: 'per_job_read' });
+      },
       infraPlans: createInfraPlans({
         store: o.store, clock: o.clock,
         head: async (repo, ref) => {
-          if (!o.accounts.account('github')) throw new Error(o.accounts.ended('github') ?? notConnected);
-          return api().head(repo, ref);
+          const key = keyOf(repo);
+          if (!o.accounts.account(key)) throw new Error(notMineAt(key, notConnected));
+          return api(key).head(repo, ref);
         },
       }),
       outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }),
@@ -236,6 +277,14 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         ledger: o.store.workItems, events: o.store.events, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
       }),
+      subIssueLinks: createSubIssueLinks({
+        events: o.store.events, log: (l) => o.logger.warn(l),
+        link: (repo) => {
+          const key = keyOf(repo);
+          return !o.accounts.account(key) ? { problem: notMineAt(key, notConnected) }
+            : createSubIssueLinker({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) });
+        },
+      }),
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
       repoChecks: createRepoChecks({
         github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login }; },
@@ -252,21 +301,32 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         store: o.store, clock: o.clock, artifactUrl: o.artifactUrl, publicUrl: o.publicUrl,
         github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createPromotionGitHub(mine()), login }; },
       }),
+      issueDrafts: createIssueDrafts({
+        drafter: o.issueDrafter ?? NO_DRAFTER, repos: jobRepositories, timeoutMs: ISSUE_DRAFT_TIMEOUT_MS, ...(o.hostname ? { hostname: o.hostname } : {}),
+        github: (repo) => {
+          const key = keyOf(repo);
+          return o.accounts.account(key) === undefined
+            ? { problem: notMineAt(key, notMine) }
+            : { api: createPromotionGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused: string) => o.accounts.renew(key, refused) }) };
+        },
+        job: (id) => o.store.jobs.get(id), record: (e) => { o.store.events.append(e); },
+      }),
       // A job's git acts with its own user's connection (issue #652), not the hopper's oldest user's.
       git: {
         user,
-        jobRepositories: () => o.accounts.jobRepositories('github'),
+        jobRepositories,
         contribution,
-        git: () => {
-          const login = o.accounts.account('github');
+        git: (at) => {
+          const key = keyOf(at);
+          const login = o.accounts.account(key);
           return login === undefined
-            ? { problem: o.accounts.ended('github') ?? notMine }
+            ? { problem: notMineAt(key, notMine) }
             : {
-              url: o.accounts.endpoints('github').url, login,
-              token: () => o.accounts.token('github'),
-              renew: (refused) => o.accounts.renew('github', refused),
-              repo: (repo) => api().repo(repo),
-              pullRequestBase: (repo, branch) => api().pullRequestBase(repo, branch),
+              url: o.accounts.endpoints(key).url, login,
+              token: () => o.accounts.token(key),
+              renew: (refused) => o.accounts.renew(key, refused),
+              repo: (repo) => api(key).repo(repo),
+              pullRequestBase: (repo, branch) => api(key).pullRequestBase(repo, branch),
             };
         },
         // The landing batch setting's, never GitHub's default branch (issues #1142, #1147).

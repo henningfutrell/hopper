@@ -42,17 +42,37 @@ const nameOf = (item: Obj): string => {
   return `${str(m.namespace) ?? '-'}/${str(m.name) ?? '-'}`;
 };
 
-/** `kubectl get applications.argoproj.io -A -o json`: each application out of sync is drift. */
+/**
+ * The label that marks an Argo CD application as gated (issue #959): it syncs only through an approved plan, so Argo CD
+ * must not sync it by itself.
+ */
+export const ARGO_PLAN_GATE_LABEL = 'io.hopper.plan-gate';
+
+/** A gated application whose automated sync is on: each sync Argo CD makes by itself skips the plan gate. */
+function autoSyncSignal(app: Obj, at: string): Signal[] {
+  if (str(obj(obj(app.metadata).labels)[ARGO_PLAN_GATE_LABEL]) !== 'true' || !('automated' in obj(obj(app.spec).syncPolicy))) return [];
+  const name = nameOf(app);
+  return [signal({
+    source: 'gitops', key: `argocd:${name}:auto-sync`, target: `Argo CD application ${name}`, what: 'AutoSyncOnGatedApp', at,
+    detail: `the application is labelled ${ARGO_PLAN_GATE_LABEL}=true, but Argo CD syncs it by itself: turn off its automated sync, so it syncs only through an approved plan`,
+  })];
+}
+
+/**
+ * `kubectl get applications.argoproj.io -A -o json`: each application out of sync is drift, and so is a gated one that
+ * syncs by itself.
+ */
 export function argoSignals(list: unknown, at: string): Signal[] {
   return itemsOf(list).flatMap((app) => {
     const status = obj(app.status);
     const sync = obj(status.sync);
-    if (sync.status !== 'OutOfSync') return [];
+    const auto = autoSyncSignal(app, at);
+    if (sync.status !== 'OutOfSync') return auto;
     const name = nameOf(app);
     const resources = arr(status.resources).map(obj).filter((r) => r.status === 'OutOfSync')
       .map((r) => `${str(r.kind) ?? '-'} ${str(r.namespace) ?? '-'}/${str(r.name) ?? '-'} OutOfSync`);
     const text = [str(sync.revision) && `revision ${str(sync.revision)}`, ...resources].filter(Boolean).join('\n');
-    return [signal({ source: 'gitops', key: `argocd:${name}`, target: `Argo CD application ${name}`, what: 'OutOfSync', at, detail: text })];
+    return [signal({ source: 'gitops', key: `argocd:${name}`, target: `Argo CD application ${name}`, what: 'OutOfSync', at, detail: text }), ...auto];
   });
 }
 

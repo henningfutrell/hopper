@@ -4,7 +4,8 @@
 // after the mint. The list shows each live grant: holder, scopes, when it was made, last used and from where, and when it
 // ends; Revoke ends it at once, Revoke all ends every one. A box grant's tokens (issue #795) are the only ones that may do
 // a box action: a grant is one when a ticked scope is a box action. The scopes are ticked, never typed (issue #909,
-// ./scope-checklist.tsx). The hopper's admin sets how long an API token lives.
+// ./scope-checklist.tsx). The hopper's admin sets how long an API token lives. An agent may ask for a grant instead, by
+// a code the person approves here (issue #892, ./device-approval.tsx).
 import { KeySquare, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,15 +15,16 @@ import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { Label } from '@/components/vault-fields';
 import { get, post, SessionRejected } from '@/lib/api';
-import { apiTokenLine, boxPermissions, grantLine, mintableRoles } from '@/model/api-tokens';
-import type { ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenView, ScopeRegistry, UiRole } from '@/model/wire';
+import { apiTokenLine, boxPermissions, grantLine, mintableRoles, typedLimits } from '@/model/api-tokens';
+import type { ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenView, GrantLimits, ScopeRegistry, UiRole } from '@/model/wire';
 import { ScopeChecklist } from './scope-checklist';
+import { DeviceApproval } from './device-approval';
 import { useHopper } from '@/store';
 import { useCanAdminInstance } from '@/store/selectors';
 
 type Listed = { grants: ApiGrantView[]; tokens: ApiTokenView[] };
 type Edit =
-  | { action: 'mint'; label: string; holder?: string; role: UiRole; scopes: string[]; box: boolean; days: number | null; minutes?: number }
+  | { action: 'mint'; label: string; holder?: string; role: UiRole; scopes: string[]; box: boolean; days: number | null; minutes?: number; limits?: GrantLimits }
   | { action: 'revoke'; id: string } | { action: 'revoke-all' };
 
 const fail = (e: unknown): void => {
@@ -46,6 +48,8 @@ export function ApiTokens() {
   const [scopes, setScopes] = useState<string[]>(['*:read']);
   const [days, setDays] = useState(90);
   const [forever, setForever] = useState(false);
+  const [repos, setRepos] = useState('');
+  const [sources, setSources] = useState('');
   const roles = mintableRoles(role);
   const reload = () => get<Listed & { settings: ApiTokenSettings }>('/api/api-tokens').then((r) => {
     setListed({ grants: r.grants, tokens: r.tokens });
@@ -62,7 +66,7 @@ export function ApiTokens() {
     try {
       const r = await post<ApiGrantMinted | Listed>('/ui/api/api-tokens', edit);
       if ('refresh' in r) {
-        setMinted(r); setAdding(false); setLabel(''); setHolder(''); setScopes(['*:read']); setForever(false);
+        setMinted(r); setAdding(false); setLabel(''); setHolder(''); setScopes(['*:read']); setForever(false); setRepos(''); setSources('');
         if (r.warning) toast.warning(r.warning);
         await reload();
       } else setListed(r);
@@ -101,6 +105,7 @@ export function ApiTokens() {
           <span className="text-xs text-muted-foreground">Applies to API tokens issued from now on.</span>
         </form>
       )}
+      {roles.length > 0 && <DeviceApproval role={role} registry={registry} onApproved={() => void reload()} />}
       {minted && (
         <div className="space-y-2 rounded-md border border-warn p-3">
           <p className="text-sm font-medium">{minted.view.label}: copy both now. They are not shown again.</p>
@@ -114,7 +119,8 @@ export function ApiTokens() {
       {adding && (
         <form className="space-y-3 rounded-md border p-3" onSubmit={(e) => {
           e.preventDefault();
-          void send({ action: 'mint', label: label.trim(), ...(holder.trim() ? { holder: holder.trim() } : {}), role: grantRole!, scopes, box, days: forever ? null : days });
+          const limits = typedLimits(repos, sources);
+          void send({ action: 'mint', label: label.trim(), ...(holder.trim() ? { holder: holder.trim() } : {}), role: grantRole!, scopes, box, days: forever ? null : days, ...(limits ? { limits } : {}) });
         }}>
           <label className="block space-y-1"><Label>Label — what it is for</Label>
             <Input className="h-9 text-sm" value={label} required maxLength={64} placeholder="Grok Bot" onChange={(e) => setLabel(e.target.value)} /></label>
@@ -124,6 +130,11 @@ export function ApiTokens() {
             <select className="h-9 rounded-md border bg-transparent px-2 text-sm" value={grantRole} onChange={(e) => setAs(e.target.value as UiRole)}>
               {roles.map((r) => <option key={r} value={r}>{r}</option>)}
             </select></label>
+          <label className="block space-y-1"><Label>Only these repositories — owner/name, by commas; empty: any</Label>
+            <Input className="h-9 text-sm" name="limit-repos" value={repos} placeholder="acme/app, acme/api" onChange={(e) => setRepos(e.target.value)} /></label>
+          <label className="block space-y-1"><Label>Only these job sources — by commas; empty: any</Label>
+            <Input className="h-9 text-sm" name="limit-sources" value={sources} placeholder="github" onChange={(e) => setSources(e.target.value)} /></label>
+          {(repos.trim() || sources.trim()) && <p className="text-xs text-muted-foreground">Its tokens then act only on the jobs, questions, pull requests and items of these. A route that names no repository or job source, such as a setting, is refused. Reads are not limited.</p>}
           {registry ? <ScopeChecklist registry={registry} scopes={scopes} onChange={setScopes} role={grantRole!} disabled={busy} /> : <p className="text-sm text-muted-foreground">Loading the scopes…</p>}
           <div className="flex flex-wrap items-end gap-3">
             <label className="block space-y-1"><Label>Lives at most, in days — 1 to 365</Label>

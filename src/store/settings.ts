@@ -1,14 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
 import { remoteAccessRecord, type RemoteAccessSettings } from '../domain/remote-access.ts';
-import type { IntakeActorSettings } from '../domain/intake-origin.ts'; import type { IntakeAutoApproval } from '../domain/intake-auto-approve.ts';
+import type { IntakeActorSettings } from '../domain/intake-origin.ts'; import type { IntakeAutoApproval } from '../domain/intake-auto-approve.ts'; import type { IntakeDeclineDefaults } from '../domain/intake-decline.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { InfraPlanSettings } from '../domain/infra-plans.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountProvider, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
-import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { gitlabAccountSettings } from './gitlab-account-settings.ts'; import { preemptionSettings } from './preemption-settings.ts'; import { cloudLinkSettings } from './cloud-link-settings.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -22,19 +22,19 @@ function keyValues(c: StoreContext) {
     },
     write: (key: string, value: string): void => {
       c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value);
-    },
+    }, remove: (key: string): void => { c.db.run('DELETE FROM settings WHERE key = ?', key); },
   };
 }
 
-/** The settings key of a connected account's job repositories (issue #321). */
-export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
+/** The settings key of a connected account's job repositories (issue #321), by the account's key (issue #1448). */
+export const jobRepositoriesKey = (key: ConnectedAccountKey): string => `jobRepositories:${key}`;
 
 /** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522), the memory alert (issue #868), the disk budget (issue #1120), the header badges (issue #1181). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
     ...sandboxSettings(read, write), // the read policy (issue #716) and the sandbox approval toggles (issue #991)
-    ...memoryAlertSettings(read, write), ...diskBudgetSettings(read, write), ...headerBadgeSettings(read, write), ...taggedSettings(read, write), // the memory alert (issue #868), the disk budget (issue #1120), the header badges (issue #1181), tagged items (issue #1141)
+    ...memoryAlertSettings(read, write), ...machineDrainSettings(read, write), ...diskBudgetSettings(read, write), ...headerBadgeSettings(read, write), ...taggedSettings(read, write), ...preemptionSettings(read, write), ...gitlabAccountSettings(read, write), // the GitLab account (issue #1448 part 2), the memory alert (issue #868), the disk budget (issue #1120), the header badges (issue #1181), tagged items (issue #1141), preemption (issue #1525)
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;
@@ -218,7 +218,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
     // `actors` stays the logins (issue #930): the build before ids reads them; `accounts` holds each one's GitHub user id.
     setIntakeActors: (s) => write('intakeActors', JSON.stringify({ actors: s.actors, ...(s.accounts ? { accounts: s.accounts.map((a) => ({ id: a.id, login: a.login, type: a.type, ...(a.avatarUrl ? { avatarUrl: a.avatarUrl } : {}) })) } : {}) })),
-    getIntakeAutoApproval() { const text = read('intakeAutoApproval'); return text === undefined ? undefined : JSON.parse(text) as IntakeAutoApproval; }, setIntakeAutoApproval: (s) => write('intakeAutoApproval', JSON.stringify({ on: s.on, apps: s.apps })),
+    getIntakeAutoApproval() { const text = read('intakeAutoApproval'); return text === undefined ? undefined : JSON.parse(text) as IntakeAutoApproval; }, setIntakeAutoApproval: (s) => write('intakeAutoApproval', JSON.stringify({ on: s.on, apps: s.apps })), getIntakeDecline() { const text = read('intakeDecline'); return text === undefined ? undefined : JSON.parse(text) as IntakeDeclineDefaults; }, setIntakeDecline: (s) => write('intakeDecline', JSON.stringify({ request: s.request, reopened: s.reopened })),
     getRepoChecksDismissed() {
       const text = read('repoChecksDismissed');
       return text === undefined ? [] : JSON.parse(text) as string[];
@@ -260,11 +260,11 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
 /** The update settings that are on or off, and their keys: auto-update, and taking stable releases early (issue #1073 part 5). */
 const UPDATE_SWITCHES = [['autoUpdate', 'autoUpdate'], ['updateCanary', 'canary']] as const;
 
-/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445) and the store installs. */
+/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445), the store installs and the cloud link (issue #467). */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
-  const { read, write } = keyValues(c);
+  const { read, write, remove } = keyValues(c);
   return {
-    getUpdateSettings() {
+    ...cloudLinkSettings(read, write, remove), getUpdateSettings() {
       const out: Partial<UpdateSettings> = {};
       const channel = read('updateChannel');
       if (channel && (UPDATE_CHANNELS as readonly string[]).includes(channel)) out.channel = channel as UpdateChannel;
@@ -310,6 +310,6 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setRemoteAccess: (s) => write('remoteAccess', JSON.stringify(remoteAccessRecord(s))),
     getHostLinkBase: () => read('hostLinkBase') ?? '', setHostLinkBase: (base) => write('hostLinkBase', base),
     getAllowedHosts() { const text = read('allowedHosts'); return text === undefined ? [] : JSON.parse(text) as string[]; },
-    setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])), getSourceEmailMatch: () => read('sourceEmailMatch') !== 'off', setSourceEmailMatch: (on) => write('sourceEmailMatch', on ? 'on' : 'off'),
+    setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])), getSourceEmailMatch: () => read('sourceEmailMatch') !== 'off', setSourceEmailMatch: (on) => write('sourceEmailMatch', on ? 'on' : 'off'), getInfraApplies: () => read('infraApplies') !== 'off', setInfraApplies: (on) => write('infraApplies', on ? 'on' : 'off'), getDisplayName: () => read('displayName') ?? '', setDisplayName: (name) => write('displayName', name),
   };
 }

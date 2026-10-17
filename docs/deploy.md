@@ -224,7 +224,7 @@ host install, no build, nothing to set before the first start. The hopper is the
 that name; `sha-<commit>` pins one build; Intel/AMD and ARM), built and pushed by `.github/workflows/image.yml`
 on every change to those three branches ("Update channels and promotion" below). The install page serves the
 compose file. The update channel is the image tag: to run another channel, run the update with that channel's image
-(`ghcr.io/henningfutrell/hopper:dev`, `:beta` or `:stable`); it writes the image into `compose.yaml` ("Upgrade" below).
+(`ghcr.io/henningfutrell/hopper:dev`, `:beta` or `:stable`); it writes the image into `compose.yaml` ("Update" below).
 
 Needs Podman 4.7 or later with a compose provider: `podman compose` runs `docker-compose` or
 `podman-compose`, whichever is installed (Debian/Ubuntu: `sudo apt install podman podman-compose`;
@@ -316,7 +316,7 @@ is only in the hopper's environment, given at launch.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container. While the event loop is held, that read times out; the **health port** still answers inside the container (`curl 127.0.0.1:4791/api/health`: 503 and `eventLoopHeldMs`, issue #1383, docs/design.md "Reading the held event loop"). It is not published. `HOPPER_HEALTH_PORT` moves it; a host install has none unless it is set. An admin reads the process's memory and event-loop delay at `GET /api/process`.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
   nothing starts them after a reboot by itself: the user service does, with linger on ("The user service" below).
-- **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
+- **Update: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
   and Settings → Version give the command below with the selected channel's tag.
@@ -362,7 +362,9 @@ is only in the hopper's environment, given at launch.
        override setting that gives another value than one `compose.yaml` fixes is a warning: the override's value wins.
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
        data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image; when `hopper-compose.service` owns the stack
-       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Every container is made again on the new
+       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Before that restart, it takes the
+       quotes out of a `WorkingDirectory="…"` that an older `hopper-service.sh` wrote in the units, which systemd refuses,
+       and runs `systemctl --user daemon-reload` (issue #1453). Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
        `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
        the old `compose.yaml` and `compose.override.yaml` back, points the image tag the old file names at the image
@@ -485,8 +487,21 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
 
 - **`hopper-compose.service`** (in `~/.config/systemd/user`, `Type=oneshot`, `RemainAfterExit=yes`) owns the stack: the
   containers' `conmon` and `rootlessport` processes are in its cgroup. Its start takes the stack down and starts it
-  again with the master key, for compose only: never a `.env`, a file or a volume. Its stop takes the stack down; the
-  volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at the install.
+  again with the master key, for compose only: never a `.env`, a file of this folder or a volume. Its stop takes the
+  stack down; the volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at
+  the install.
+- **The key as a file in memory** (issue #1487). The start never gives compose the key as a variable, so no container's
+  config holds it (`podman inspect` shows only the file's path). It writes the key to
+  `$XDG_RUNTIME_DIR/hopper-service/master-key`: in memory, in a folder only your user opens (mode 700). Compose mounts
+  that file read-only at `/run/hopper-master-key` in the hopper's container and hopper-vault's
+  (`HOPPER_MASTER_KEY_HOST_FILE`), and `HOPPER_MASTER_KEY_FILE` names it. The file stays while the service runs, so
+  `restart: unless-stopped` can start a container again. The service's stop removes it, and a restart of the host
+  clears it, so a `podman start` of an old container does not start without the service. Whoever can act as your user
+  can read the file while the stack runs, as they could read the containers' environment before.
+- **`master-key.sh` comes with the install** (issue #1487). With none beside `hopper-service.sh`, the install puts in
+  the image's. With `HOPPER_MASTER_KEY` given to the install and no key sealed here, it seals that key: then a restart
+  of the host (a reboot, `wsl --shutdown`) brings the stack back with no person. With data, no key given and none
+  sealed, it says the line that seals it: `bash master-key.sh seal`.
 - **The master key at launch** (issue #1372). Sealing is optional. The start takes the key from the first of these:
   1. The systemd credential `hopper-master-key`. The unit imports it (`ImportCredential=hopper-master-key`, systemd 254
      and later) from the user's credential stores. Or give it in a drop-in
@@ -494,6 +509,7 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
      from `systemd-creds --user encrypt --name=hopper-master-key - <file>` (under the TPM2 when the host has one), or
      `SetCredentialEncrypted=`. Only encrypted forms: never `SetCredential=` with the key in clear in the unit.
   2. `HOPPER_MASTER_KEY` given at launch: `bash hopper-service.sh start-with-key` reads it from `HOPPER_MASTER_KEY`, or
+     reads one line on stdin when stdin is no terminal (`… | bash hopper-service.sh start-with-key`, issue #1497), or
      asks for it on the terminal (nothing is shown). It puts the key in the user manager's environment from its own
      environment (`systemctl --user import-environment`, never as an argument), restarts the service, and removes it
      from the manager's environment after the start. The key is not kept: the next start (a reboot, the port check's
@@ -504,6 +520,24 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   a new hopper makes its key and shows it once. With data and no key, the start fails before it touches the stack, says
   how to give the key, and no new key is made (`journalctl --user -u hopper-compose.service`). The hopper itself also
   refuses to start without the key when its database keeps secrets, and names the key it needs by its fingerprint.
+- **`hopper-compose-alert.service`** (issue #1487) runs when a start of `hopper-compose.service` fails
+  (`OnFailure=`). The hopper is down then and cannot say so itself. The alert takes the last line the start wrote in its
+  journal, shows it in a desktop notice (`notify-send`, when there is one), and runs `hopper-alert.sh` beside
+  `hopper-service.sh`, when there is one, with that line as its one argument. Write there what reaches you, for example
+  a webhook:
+
+  ```sh
+  # hopper-alert.sh: keep a webhook URL with a token in a file only you read (chmod 600)
+  curl -fsS -m 10 -H 'Content-Type: application/json' \
+    --data "$(jq -n --arg text "$1" '{text: $text}')" "$(cat ~/.config/hopper/alert-url)"
+  ```
+- **Joined containers come back with the stack** (issue #1497). A container you joined to the hopper's network
+  (`podman network connect hopper_default <container>`, "The hopper's network"), an ssh target's machine for example,
+  stops with its host, and nothing else starts it. So after the stack is up, the service's start starts each such
+  container that is stopped, and says each one in its journal. A container of the hopper's compose project, and a sandbox (a label `io.hopper.*`), is
+  never one; the master key never goes to one. To keep one stopped, take it off the network: `podman network
+  disconnect hopper_default <container>`. A machine that still does not come back is told, after two minutes offline, as
+  `machine.offline` (`docs/design.md` "The offline watch"), where webhooks and notifiers take it.
 - **`hopper-compose-check.timer`** runs `hopper-compose-check.service` every minute. It reads the port the hopper's
   container publishes (`podman port`) and connects to it from the host (loopback for `0.0.0.0`). When the container runs
   and the port does not answer, twice, 10 seconds apart (`HOPPER_SERVICE_RETRY`), it restarts `hopper-compose.service`.
@@ -517,12 +551,13 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   is on. Never a secret (a name with `KEY`, `TOKEN`, `SECRET` or `PASSWORD`), and never `HOPPER_IMAGE`: the update
   writes the image into `compose.yaml`. Run the install again to change them.
 - **Restarts and updates go through it.** Restart: `systemctl --user restart hopper-compose.service`, never `podman
-  compose up` by hand. The update ("Upgrade" below) restarts the stack through the service when it owns the stack, and
+  compose up` by hand. The update ("Update" below) restarts the stack through the service when it owns the stack, and
   then checks the port from the host too. It starts the stack with the key sealed here; with none sealed, with the key
   given to the update, as `start-with-key` does. It stops before it changes anything when the key given is not the one
-  sealed here. It puts in the new image's `hopper-service.sh`. On Podman with no service, it
-  says the line that installs one.
-- **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service`.
+  sealed here. It puts in the new image's `hopper-service.sh` and `master-key.sh`, also when no `master-key.sh` was
+  here (issue #1487), and with no key sealed it says the line that seals it. On Podman with no service, it says the
+  line that installs one.
+- **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service -u hopper-compose-alert.service`.
 - **Docker and Kubernetes.** Not needed and not used: Docker's daemon serves the port, and on Kubernetes ("On
   Kubernetes, with Helm") the cluster does.
 
@@ -585,10 +620,16 @@ and nothing new listens. Anyone who can run `wsl.exe` as that Windows user could
   from Windows" has the PowerShell lines). `hopper.cmd` works in both shells with no execution policy; `hopper.ps1`
   gives the CLI a terminal when PowerShell has one.
 - **The container:** found by its compose labels (`com.docker.compose.project`, `com.docker.compose.service=hopper`),
-  never by its name, which changes with the compose project.
+  never by its name, which changes with the compose project. `wsl.exe -e` runs no shell, so it reads no shell profile:
+  in a WSL terminal a profile can set `XDG_RUNTIME_DIR` to `/run/user/<uid>`, the runtime dir of the systemd user
+  session (`podman-restart.service` uses it too), while `wsl.exe -e` gives podman another one (WSLg sets
+  `/mnt/wslg/runtime-dir`). There podman sees no container run (issue #1512). So the wrapper runs `podman ps` as
+  `wsl.exe -e` starts it first, then as `env XDG_RUNTIME_DIR=/run/user/<uid> podman`, and runs the CLI with the one
+  that saw the container.
 - **`HOPPER_WSL_DISTRO`:** the WSL distro the hopper runs in; unset, WSL's default distro.
 - **`HOPPER_COMPOSE_PROJECT`:** the compose project; unset, `hopper`, the `name:` in `compose.yaml`.
-- **No hopper running:** the wrapper says so, and exits 1.
+- **No hopper running:** the wrapper says so, with what podman said (`hopper.ps1`), and exits 1. `hopper doctor`
+  checks more.
 
 ### Keep it running on Windows
 
@@ -649,7 +690,9 @@ so put both in that folder. It runs on Windows, so it needs no interop from the 
 3. **The keep-alive shortcut.** `hopper-wsl.lnk` in this Windows user's Startup folder (`shell:startup`): the one
    `hopper autostart on` makes, or the one made by hand ("Keep a hopper in WSL running" above). The fix names both.
 4. **In the distro, through `wsl.exe -e`:** `systemd=true` under `[boot]` in `/etc/wsl.conf`; linger on for the distro
-   user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`).
+   user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`); a hopper container of
+   the compose project runs, found as `hopper <command>` finds it ("The hopper CLI from Windows" above), with what
+   podman said when it finds none.
 
 Each check prints `ok`, `warn` and the hint, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
 (`ui/src/model/windows-link.ts`), by the mode it read. It exits 1 when a check fails. The distro is the one
@@ -895,6 +938,11 @@ To reach it from other machines at this host's name or address, add them to `all
 The node port must be in the cluster's node port range (30000–32767 by default). A request through the mapping comes from
 the node's network, which the default `lanPeers` holds: the browser reads the API only with a UI session.
 
+### Check the sandboxes on a real cloud
+
+To prove the sandbox module with real `aws`, `kubectl`, `helm` and `terraform` against your own AWS account and
+cluster, follow `docs/cloud-acceptance.md`: one command runs the check and writes a report you can file.
+
 ### Check the chart on kind
 
 `scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
@@ -965,6 +1013,16 @@ OpenFGA no login is a trusted actor, every issue is a request card, and Approve 
   hopper gets `HOPPER_OPENFGA_URL=http://openfga:8080` and `HOPPER_OPENFGA_KEY_FILE`. A stack from before picks
   it up with the new `compose.yaml` and `podman compose up -d`: the `postgres` service is recreated (a restart of
   the database) and writes the new files.
+- **On a host install** (issue #791) it is set up too: `scripts/install.sh` runs `scripts/host-openfga.ts`, which puts
+  the release binary of the version `compose.yaml` runs in `~/.local/lib/hopper/openfga` (its SHA-256 checked against
+  the release's `checksums.txt`), writes its config (`~/.config/hopper/openfga/config.yaml`, mode 600: the database
+  URL with `search_path=openfga`, the preshared key, every address on loopback — the API on `127.0.0.1:4793`, gRPC on
+  `127.0.0.1:4794`, metrics on `127.0.0.1:2112`) and its key (`~/.config/hopper/openfga/key`), makes the `openfga`
+  schema, and adds `HOPPER_OPENFGA_URL=http://127.0.0.1:4793` and `HOPPER_OPENFGA_KEY_FILE` to `daemon.env`.
+  `systemd/hopper-openfga.service` runs `openfga migrate`, then `openfga run`. A `daemon.env` that names another
+  OpenFGA is kept, and none is set up. Each run of the install follows the version `compose.yaml` names; a self-update
+  does not, so run the install line again after an update that moves it. `scripts/uninstall.sh` removes the unit and
+  the binary, and keeps the config, the key and the schema.
 - **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
   `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
   The key is read at each call: rotate it in OpenFGA and the runtime together.
@@ -978,8 +1036,8 @@ OpenFGA no login is a trusted actor, every issue is a request card, and Approve 
   Intake trusts nobody, so no issue becomes a job until OpenFGA is back. Your other secrets, your GitHub connection
   and your session stay as they were.
   `GET /api/access/status` answers the state to any reader.
-- **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
-  copy services into it. Run the update ("In containers, with Podman" → Upgrade, issue #697): it puts in the
+- **Update from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
+  copy services into it. Run the update ("In containers, with Podman" → Update, issue #697): it puts in the
   `compose.yaml` the image ships with, which has OpenFGA, keeps your own settings as its defaults, and starts the whole
   stack. The banner goes within a minute of OpenFGA answering.
 
@@ -1136,6 +1194,43 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
   the check box there. With neither, the template waits for its check. A client older than this release refuses the
   check box, and the check fails with that reason; run it again once the machine has the new client.
+
+### Argo CD syncs through the plan gate
+
+A gated Argo CD application syncs only for a recorded, approved, current GitOps plan (issue #959, `docs/design.md` "Infra
+plans: Argo CD syncs through the plan gate"). A job asks `$HOPPER_SECRET kube sync argocd-app/<cluster>/<app> --plan <id>`
+and gets a 10-minute token of the service account `hopper-sync` in the namespace `argocd`; with it, the job starts the
+sync (`argocd app sync --core`, or a patch of the Application's `operation`). To gate an application:
+
+1. **Turn off its automated sync.** Remove `spec.syncPolicy.automated` from the Application. Argo CD then syncs it only
+   when someone asks.
+2. **Label it** `io.hopper.plan-gate=true`. The out-of-band collector's `--argo` then reports it on Infra if its
+   automated sync is turned on again.
+3. **Make `hopper-sync`** in the namespace `argocd`, with a Role that may `get` and `patch` only the gated Applications
+   (`resourceNames`), and let the minting credential's identity `create` on `serviceaccounts/token` for it and on
+   `secrets` in `argocd`, as above:
+
+   ```yaml
+   apiVersion: v1
+   kind: ServiceAccount
+   metadata: { name: hopper-sync, namespace: argocd }
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: Role
+   metadata: { name: hopper-sync, namespace: argocd }
+   rules:
+     - { apiGroups: [argoproj.io], resources: [applications], resourceNames: [web], verbs: [get, patch] }
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: RoleBinding
+   metadata: { name: hopper-sync, namespace: argocd }
+   roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hopper-sync }
+   subjects: [{ kind: ServiceAccount, name: hopper-sync, namespace: argocd }]
+   ```
+
+4. **Take sync away from people and other tools** in Argo CD's own RBAC (`argocd-rbac-cm`): no role but an admin's for
+   break-glass may `sync` a gated application. The hopper cannot see a sync it did not mint for, other than as drift.
+5. **The template** declares `sync` on `argocd-app/<cluster>/<app>`, and a person approves it on Settings → Vault.
 ## Search
 
 Search (issue #945, docs/design.md "Search") finds your jobs, artifacts, infra plans, and the issues and pull requests your job sources see by their words, filters and facets: `GET /api/search`,
@@ -1156,6 +1251,52 @@ events.
   ask. No secret, vault value or credential is ever written to the index.
 - **Solr down**: search answers `degraded` and why, and the rest of the hopper goes on. Changes wait in the database and
   are written when Solr is back. The stack check names a missing `solr` service.
+
+## Telemetry
+
+The hopper exports OpenTelemetry traces, metrics and logs (issue #1486, docs/design.md "Telemetry"). It is off until the
+launch names an exporter, with the usual `OTEL_*` variables. Nothing else is needed, and nothing is set in a file.
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — your collector, for example `http://collector:4318`. Setting it turns telemetry on.
+- `OTEL_EXPORTER_OTLP_PROTOCOL` — `http/protobuf` (the compose default), `http/json` or `grpc`.
+- `OTEL_EXPORTER_OTLP_HEADERS` — headers for the collector, such as its API key.
+- `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` — `otlp` (the default), `console` or `none`, per
+  signal.
+- `OTEL_SERVICE_NAME` (default `hopper`), `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER` — as everywhere else.
+- `OTEL_SDK_DISABLED=true` turns it off whatever else is set.
+
+`compose.yaml` passes these through to the hopper. To see the data on this computer, start the optional viewer, Grafana's
+all-in-one OpenTelemetry image (a collector, Tempo, Prometheus, Loki and Grafana):
+
+```sh
+COMPOSE_PROFILES=telemetry OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318 podman compose up -d
+```
+
+Then open Grafana at http://127.0.0.1:3000 (`TELEMETRY_UI_PORT` moves it). Explore → Tempo shows a job's trace
+(`hopper.job`, and its job spans) and each request's; Explore → Prometheus shows the metrics, for example
+`http_server_request_duration_seconds` by `http_route` for the slowest actions, `hopper_job_span_duration_seconds` by kind,
+and `hopper_github_calls_total` by route.
+
+Other metrics show how work goes (docs/design.md "Telemetry: how work goes"): `hopper_job_assessed_total` (failures by
+class, and the assessor's decision), `hopper_job_retries_total`, `hopper_question_escalations_total` by level,
+`hopper_handoffs_total`, `hopper_sandbox_requests_total` and `hopper_sandbox_spin_up_duration_seconds`, and
+`hopper_landing_batch_ended_total` by outcome.
+
+On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
+
+```sh
+helm upgrade hopper deploy/helm/hopper --reuse-values --set telemetry.env.OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+```
+
+Keep a header with a credential in a Secret, and name it in `telemetry.envFromSecret`:
+
+```sh
+kubectl create secret generic hopper-otel --from-literal=OTEL_EXPORTER_OTLP_HEADERS='api-key=…'
+helm upgrade hopper deploy/helm/hopper --reuse-values --set telemetry.envFromSecret=hopper-otel
+```
+
+`--set telemetry.viewer.enabled=true` adds the same viewer in the release; the hopper then exports to it. Only the hopper
+reaches its OTLP port. Open Grafana with `kubectl port-forward svc/hopper-telemetry 3000`, then http://127.0.0.1:3000.
 
 ## Optional services
 
@@ -1275,11 +1416,13 @@ What it does, and what it keeps out:
   hopper and the two services share. It never forwards to the hopper's loopback: an internet request is a **public
   request**, which reads the API only with a session or an API token. No box the hopper starts is on that network, so none
   reaches an agent's local API.
-- **Only the API.** Every path but `/api/`, `/ui/api/`, `/ui/auth/api-token` and `/ui/auth/token/refresh` is `404`, and so
+- **Only the API.** Every path but `/api/`, `/ui/api/`, `/ui/auth/api-token`, `/ui/auth/token/refresh`, and
+  `/ui/auth/device-grant` with its poll (issue #892) is `404`, and so
   is the event stream (`/api/events/stream`, whose session is in the query). ngrok's edge says so in its traffic policy;
   Cloudflare's tunnel in the ingress the hopper sets; the hopper holds the same edge for every request through a tunnel.
   The UI, its sign-in pages, the installer and the services' own ask stay off the internet.
-- **A limit per caller.** 120 requests a minute per address, and 5 API-token exchanges or refreshes a minute: at ngrok's
+- **A limit per caller.** 120 requests a minute per address, and 5 API-token exchanges, refreshes or device grant
+  requests a minute: at ngrok's
   edge, and in the hopper for both providers. Each edge names the caller's address to the hopper (ngrok in
   `x-hopper-caller`, after it drops one the caller sent; Cloudflare in `cf-connecting-ip`), which the hopper reads only
   from that provider's agent. The sign-in limit (20 a minute) counts each caller too. A stranger cannot use up your
@@ -1408,6 +1551,38 @@ or an approved template's image. A job names only a template and its command, ne
 
 Turn it off: `export HOPPER_PODMAN_SOCKET_HOST=/dev/null` and run `podman compose up -d`, or turn `podman.socket` off
 and run the update.
+
+### A read-only box's egress
+
+On by default in `compose.yaml` (issue #849). A need box of a read-only template, and the read-only check box, beside
+the hopper join the internal network `hopper_egress` (`internal: true`: no route out). The only way out is the compose
+service `egress`: tinyproxy, from the hopper's image, on that network and on `hopper_default`. It lets a box CONNECT only
+to:
+
+- `*.amazonaws.com` (STS, S3, SSM and the other AWS APIs the read session reads),
+- the API server of each cluster the vault minted a credential for a read-only box (its `server`), and an STS endpoint a
+  minting credential names that is not AWS's,
+- nothing else: any other host is refused (403). The box reaches the hopper past the proxy: the hopper is on
+  `hopper_egress` too.
+
+The box gets `HTTPS_PROXY` (and `NO_PROXY=hopper`); `aws`, `kubectl`, `helm` and `terraform` obey it. A process in the box
+that unsets it has no route at all. The hopper writes the allowlist into the `egress` volume (`/run/hopper-egress`) before
+each read-only box starts and waits until the proxy loaded it; the allowlist only grows while the hopper runs. A proxy
+that does not load it in 30 seconds fails the box, with that reason: a read-only box never starts with open egress.
+
+The variables, all three together: `HOPPER_SANDBOX_EGRESS_NETWORK` (`hopper_egress`), `HOPPER_SANDBOX_EGRESS_PROXY`
+(`http://egress:3128`) and `HOPPER_SANDBOX_EGRESS_DIR` (`/run/hopper-egress`). They apply to the runtime beside the hopper
+(Podman or Docker) only.
+
+**The check proves it.** The read-only check's egress probes (`egress.aws`, `egress.kube`) send one request to
+`https://example.com`, with no credential, past the proxy and through it; each must fail to connect. Where the egress is
+open — a hopper on the host with no egress variables, or a check that runs on one of your machines ("Sandboxes on
+another machine") — the probes reach it, the check fails, and the template takes no box. A probe of a write takes no
+mark ("The read-only check" in docs/design.md), so the fix is to run the check where the egress is limited: in the
+compose stack.
+
+Check it by hand: `podman logs hopper-egress-1` shows `egress: the allowlist <version> is loaded`, and each refused host
+as `Proxying refused on filtered domain`.
 
 ### Sandboxes on another machine
 
@@ -1636,6 +1811,17 @@ installed: set `HOPPER_OPENFGA_URL` ("Access: OpenFGA"), or every credential is 
 Open the UI at `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
+
+**Updates.** This install updates itself (`docs/design.md` "Self-update"). It checks its update channel every minute.
+When a newer version is there, the UI shows a notice with What's new and **Update now**; Settings → Version has the
+same button, the channel and the **Auto-update** switch. With Auto-update on, the hopper applies an update as soon as a
+check finds it. An update builds the next install in `~/.local/lib/hopper.next` while jobs keep running, and checks that
+it loads. Then it waits while there is a **restart blocker**: a running job that cannot reattach after a restart. The
+UI shows which jobs it waits for. Then it moves the old install to `~/.local/lib/hopper.prev` (the previous `.prev`
+goes), puts the new one in its place, and exits 75: systemd starts it again (`SuccessExitStatus=75`,
+`RestartForceExitStatus=75`). `hopper-herdr` does not restart, so herdr panes and their jobs stay. A build that fails
+leaves the install as it was. To go back by hand, stop the service, move `~/.local/lib/hopper.prev` back to
+`~/.local/lib/hopper`, and start it: the next start records the update as failed.
 
 ## Sign-in set up at launch
 
@@ -1890,7 +2076,7 @@ its `compose.yaml` from `stable` only.
 A hopper picks its channel in Settings → Version (dev, beta, stable); it takes effect without a restart.
 An install from `scripts/install.sh` or the curl install starts on the branch it was installed from
 (`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by its user pulling the tag of its channel
-(`HOPPER_IMAGE`, "In containers, with Podman", "Upgrade"): the channel picked in Settings → Version only
+(`HOPPER_IMAGE`, "In containers, with Podman", "Update"): the channel picked in Settings → Version only
 decides what the update check compares against.
 
 **From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`

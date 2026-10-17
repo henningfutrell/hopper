@@ -79,7 +79,7 @@ describe('a personal access token as the GitHub source', () => {
     const s = setup();
     s.state.refused.add('github_pat_bad');
     const status = await s.service.connectToken('github', 'github_pat_bad', {});
-    expect(status).toEqual({ provider: 'github', via: 'the hopper\'s app', state: 'failed', error: 'GitHub refused the token: Bad credentials' });
+    expect(status).toEqual({ provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'failed', error: 'GitHub refused the token: Bad credentials' });
     expect(accountOf(s.store)).toBeUndefined();
   });
 

@@ -4,7 +4,7 @@
 // `/survey`), never typed into a pane where Claude may still be. They live in the client's directory because a client
 // target runs them, and a client release is the files in that directory. Imports nothing of hopper but its own directory.
 
-import { JOB_LABEL, REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
+import { DETAILS_FORMAT, DETAILS_MARK, JOB_LABEL, REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
@@ -31,6 +31,35 @@ export const SURVEY_DONE = 'hopper-surveyed';
  * before (`.hopper-scratch/<job id>`, `workspace/worktrees/<name>-<job id>`) is only found, to be removed.
  */
 export const LAYOUT = { worktrees: '.worktrees', scratch: '.worktrees/@scratch', oldScratch: '.hopper-scratch', oldWorktrees: 'workspace/worktrees' } as const;
+
+/**
+ * Shell functions the reap and the leftovers listing (leftovers.ts, issue #1116) share: whether a repository holds work no
+ * remote has, by one rule.
+ */
+export const UNPUSHED_SH: readonly string[] = [
+  // Whether the work of commit $2 in repository $1 is on a remote though its commits are not (issue #1187: a rebase, a
+  // re-run that made the commits again, a squash or rebase merge): the default branch or one of the newest remote
+  // branches has each of its patches (`git cherry`, when it holds no merge of its own), or has every file it changed from
+  // the default branch as it has it. No change from the default branch at all is on it too.
+  'landed() { ld=$1; lt=$2; la=; lm=; lo=$(git -C "$ld" rev-parse -q --verify refs/remotes/origin/HEAD 2>/dev/null);',
+  '  if [ -n "$lo" ] && lm=$(git -C "$ld" merge-base "$lo" "$lt" 2>/dev/null); then',
+  '    git -C "$ld" diff --quiet "$lm" "$lt" -- 2>/dev/null && return 0;',
+  '    la=$(git -C "$ld" diff --no-renames --name-only "$lm" "$lt" -- 2>/dev/null) || la=;',
+  '  fi;',
+  '  for lr in $lo $(git -C "$ld" for-each-ref --sort=-committerdate --count=30 --format="%(objectname)" refs/remotes 2>/dev/null); do',
+  '    if [ -n "$la" ] && lb=$(git -C "$ld" diff --no-renames --name-only "$lr" "$lt" -- 2>/dev/null) && [ -z "$(printf "%s\\n%s\\n" "$la" "$lb" | sort | uniq -d)" ]; then return 0; fi;',
+  '    [ -z "$(git -C "$ld" rev-list --merges -n 1 "$lt" --not "$lr" 2>/dev/null)" ] && lc=$(git -C "$ld" cherry "$lr" "$lt" 2>/dev/null) && ! printf "%s\\n" "$lc" | grep -q "^+" && return 0;',
+  '  done; return 1; };',
+  // Whether one of the commits $2 names in repository $1 holds work no remote has, by its commits and then by landed.
+  'unpushed() { ut=$(git -C "$1" rev-parse $2 2>/dev/null) || return 0; for u in $ut; do',
+  '  [ -n "$(git -C "$1" log --oneline -1 "$u" --not --remotes 2>/dev/null)" ] && ! landed "$1" "$u" && return 0;',
+  'done; return 1; };',
+  // Whether the checkout $1 holds work not pushed: a change, or a commit no remote has. A worktree (.git a file) answers for
+  // its own HEAD; a clone for HEAD and every branch it has. A node_modules link to the shared dependencies (issue #410) is no
+  // work of the job's.
+  'held() { hd=$1; hr="HEAD --branches"; [ -f "$hd/.git" ] && hr=HEAD;',
+  '  ! hs=$(git -C "$hd" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$hs" | grep -vx "?? node_modules")" ] || ! hu=$(git -C "$hd" log --oneline -1 $hr --not --remotes 2>/dev/null) || { [ -n "$hu" ] && unpushed "$hd" "$hr"; }; };',
+];
 
 // $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
 // job's, issue #630: it may go on there), or `discard` to remove it whatever it holds (a person discarded the work
@@ -61,7 +90,8 @@ const REAP_SCRIPT = [
   'if [ "$k" != keep ]; then to=; command -v timeout >/dev/null 2>&1 && to="timeout 30"; for rt in docker podman; do',
   '  command -v "$rt" >/dev/null 2>&1 || continue;',
   `  for c in $($to "$rt" ps -aq --filter "label=${JOB_LABEL}=$id" 2>/dev/null); do case $c in -*|*[!A-Za-z0-9_.-]*) continue;; esac;`,
-  '    $to "$rt" rm -f -v "$c" >/dev/null 2>&1 && printf "hopper-removed-container %s\\n" "$c";',
+  `    ct=$($to "$rt" inspect --format "${DETAILS_FORMAT}" "$c" 2>/dev/null | head -n 1);`,
+  `    $to "$rt" rm -f -v "$c" >/dev/null 2>&1 && printf "hopper-removed-container %s\\n" "$c" && { [ -z "$ct" ] || printf "${DETAILS_MARK}%s %s\\n" "$c" "$ct"; };`,
   '  done;',
   `  for v in $($to "$rt" volume ls -q --filter "label=${JOB_LABEL}=$id" 2>/dev/null); do case $v in -*|*[!A-Za-z0-9_.-]*) continue;; esac;`,
   '    $to "$rt" volume rm -f "$v" >/dev/null 2>&1 && printf "hopper-removed-volume %s\\n" "$v";',
@@ -74,33 +104,14 @@ const REAP_SCRIPT = [
   `n=$w/${LAYOUT.scratch}/$id; o=$w/${LAYOUT.oldScratch}/$id;`,
   // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.
   'rm -rf "$n/credentials" "$o/credentials";',
+  // Removes $1, a dir of the job's: a read-only dir in it (a Go module cache) made writable first when a plain remove left it (issue #1452).
+  'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+w "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
   'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
-  // Whether the work of commit $2 in repository $1 is on a remote though its commits are not (issue #1187: a rebase, a
-  // re-run that made the commits again, a squash or rebase merge): the default branch or one of the newest remote
-  // branches has each of its patches (`git cherry`, when it holds no merge of its own), or has every file it changed from
-  // the default branch as it has it. No change from the default branch at all is on it too.
-  'landed() { ld=$1; lt=$2; la=; lm=; lo=$(git -C "$ld" rev-parse -q --verify refs/remotes/origin/HEAD 2>/dev/null);',
-  '  if [ -n "$lo" ] && lm=$(git -C "$ld" merge-base "$lo" "$lt" 2>/dev/null); then',
-  '    git -C "$ld" diff --quiet "$lm" "$lt" -- 2>/dev/null && return 0;',
-  '    la=$(git -C "$ld" diff --no-renames --name-only "$lm" "$lt" -- 2>/dev/null) || la=;',
-  '  fi;',
-  '  for lr in $lo $(git -C "$ld" for-each-ref --sort=-committerdate --count=30 --format="%(objectname)" refs/remotes 2>/dev/null); do',
-  '    if [ -n "$la" ] && lb=$(git -C "$ld" diff --no-renames --name-only "$lr" "$lt" -- 2>/dev/null) && [ -z "$(printf "%s\\n%s\\n" "$la" "$lb" | sort | uniq -d)" ]; then return 0; fi;',
-  '    [ -z "$(git -C "$ld" rev-list --merges -n 1 "$lt" --not "$lr" 2>/dev/null)" ] && lc=$(git -C "$ld" cherry "$lr" "$lt" 2>/dev/null) && ! printf "%s\\n" "$lc" | grep -q "^+" && return 0;',
-  '  done; return 1; };',
-  // Whether one of the commits $2 names in repository $1 holds work no remote has, by its commits and then by landed.
-  'unpushed() { ut=$(git -C "$1" rev-parse $2 2>/dev/null) || return 0; for u in $ut; do',
-  '  [ -n "$(git -C "$1" log --oneline -1 "$u" --not --remotes 2>/dev/null)" ] && ! landed "$1" "$u" && return 0;',
-  'done; return 1; };',
-  // A worktree (.git a file) answers for its own HEAD; a clone for HEAD and every branch it has. A
-  // node_modules link to the shared dependencies (issue #410) is no work of the job's.
+  ...UNPUSHED_SH,
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
-  '  d=${g%/.git}; r="HEAD --branches"; [ -f "$g" ] && r=HEAD;',
-  '  if ! st=$(git -C "$d" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$st" | grep -vx "?? node_modules")" ] || ! un=$(git -C "$d" log --oneline -1 $r --not --remotes 2>/dev/null) || { [ -n "$un" ] && unpushed "$d" "$r"; }; then',
-  '    printf "hopper-kept %s\\n" "$d";',
-  '  fi;',
+  '  d=${g%/.git}; held "$d" && printf "hopper-kept %s\\n" "$d";',
   'done);',
   // What the job pushed (issue #630): a remote branch its HEAD holds that the default branch does not.
   'pushed=$(repos | while IFS= read -r g; do',
@@ -116,8 +127,10 @@ const REAP_SCRIPT = [
   '    f=; [ "$k" = discard ] && f="--force --force";',
   '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove $f "$d" 2>/dev/null;',
   '  done;',
-  '  trees | while IFS= read -r t; do rm -rf "$t"; rmdir "${t%/*}" 2>/dev/null; done;',
-  '  rm -rf "$n" "$o";',
+  '  trees | while IFS= read -r t; do gone "$t"; rmdir "${t%/*}" 2>/dev/null; done;',
+  '  gone "$n"; gone "$o";',
+  // What is still there (issue #1452) is named: the sweep then never says it removed it.
+  '  { dirs; trees; } | sed "s/^/hopper-left /";',
   'fi;',
   // The layout before issue #1188, once it holds no job's scratch dir or worktree: its scratch area (with the shared
   // dependencies and repository mirrors only its jobs used) and its worktrees dir go. Then git forgets every worktree
@@ -184,18 +197,47 @@ export const reapArgv = (jobId: string, scratch = '', keep = false, discard = fa
 /** The argv that lists what jobs left on the machine: scopes, processes, and the scratch dirs under `roots`. */
 export const surveyArgv = (roots: readonly string[]): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', SURVEY_SCRIPT, 'sh', ...roots];
 
+/** One container the reap removed, as it said it before (issue #975): its name, image, and when it started and stopped. */
+export interface ContainerDetails { id: string; name: string; image: string; startedAt?: string; stoppedAt?: string }
+
+/** A time the runtime gave as JSON, as an ISO time; undefined for a zero time (Go's year 1: it never came) or no time. */
+function timeOf(json: string | undefined): string | undefined {
+  try {
+    const t = typeof json === 'string' ? JSON.parse(json) as unknown : undefined;
+    const ms = typeof t === 'string' ? Date.parse(t) : NaN;
+    return Number.isFinite(ms) && new Date(ms).getUTCFullYear() > 1 ? new Date(ms).toISOString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A details line of the reap's, `<id> <name> <image> <started> <stopped>`; undefined when it is not one. */
+function detailsOf(line: string): ContainerDetails | undefined {
+  const [id, name, image, started, stopped, ...rest] = line.split(' ');
+  if (!id || !name || !image || rest.length) return undefined;
+  const startedAt = timeOf(started);
+  const stoppedAt = startedAt ? timeOf(stopped) : undefined;
+  return { id, name: name.replace(/^\//, ''), image, ...(startedAt ? { startedAt } : {}), ...(stoppedAt ? { stoppedAt } : {}) };
+}
+
 /**
- * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), and the containers and
- * volumes of the job it removed (issue #1120). Undefined when it did not finish.
+ * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), the dirs of the job it
+ * could not remove (issue #1452), and the containers and volumes of the job it removed (issue #1120), with what it said of
+ * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; pushed?: string[]; removed?: { containers: string[]; volumes: string[] } } | undefined {
+export function readReap(stdout: string): { kept: string[]; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] } } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
   const pushed = named('hopper-pushed ');
   const containers = named('hopper-removed-container ');
   const volumes = named('hopper-removed-volume ');
-  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}), ...(containers.length || volumes.length ? { removed: { containers, volumes } } : {}) };
+  const left = named('hopper-left ');
+  const details = [...new Map(named(DETAILS_MARK).map(detailsOf).filter((d) => d !== undefined && containers.includes(d.id)).map((d) => [d!.id, d!])).values()];
+  return {
+    kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
+    ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
+  };
 }
 
 /** One scratch dir the survey found: its job, path and age. */

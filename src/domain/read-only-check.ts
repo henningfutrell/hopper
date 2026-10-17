@@ -34,6 +34,8 @@ export interface Probe {
   backend?: true;
   /** What a person reads when it fails: why it can fail on a credential that is right (issue #869). */
   note?: string;
+  /** It probes the box, not an asset (issue #849): it runs once per check, for the first need of one of its kinds. */
+  once?: true;
 }
 
 /**
@@ -125,7 +127,18 @@ export interface ReadOnlyCheck {
   problem?: string;
   /** The artifact that holds its report (issue #715): one per template, of the job that asked for it. Absent: none kept. */
   artifact?: string;
+  /**
+   * It failed only on a network error (issue #1468: a connection reset, a timeout), not on what the account or the
+   * cluster answered: the check pass runs it again soon, with no person. Absent: a failure that waits for a person.
+   */
+  transient?: true;
 }
+
+/** A network error, as a mint's refusal or a check box's start says it (issue #1468): not a standing answer. */
+const NETWORK_ERROR = /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|EPIPE|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|timed out|timeout)\b/i;
+
+/** Whether each of these reasons is a network error only (issue #1468); false for none. */
+export const onlyNetworkErrors = (reasons: readonly string[]): boolean => reasons.length > 0 && reasons.every((r) => NETWORK_ERROR.test(r));
 
 /** Whether a template must pass a read-only check: one a job asked for with read needs only. */
 export interface CheckedTemplate { name: string; savedAt: string; readOnly?: boolean; check?: ReadOnlyCheck }
@@ -148,6 +161,7 @@ export function checkWait(t: CheckedTemplate): string | undefined {
   if (!c) return `${wait}: it has not run on this version yet`;
   if (c.state === 'running') return `${wait}: it runs now`;
   const failed = [...failedProbes(c), ...(c.problem ? [c.problem] : [])];
+  if (c.transient) return `${wait}: it failed on a network error (${failed.join('; ')}). The hopper runs it again in a few minutes`;
   return `${wait}: it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;
 }
 

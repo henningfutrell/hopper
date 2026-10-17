@@ -13,3 +13,12 @@ export interface JobRulesView {
   /** The lines after the job rules that are not edited: the work tree (named `<work tree>`) and the protocol the hopper reads back. */
   fixed: string[];
 }
+
+/**
+ * The repository job rules (issue #1472) as GET /api/repo-job-rules reports them: a text per repository (`owner/name`) or
+ * per owner (`owner/*`), sorted by name. `version`: sha-256 of the record, or `missing`; an edit carries it back.
+ */
+export interface RepoJobRulesView {
+  repos: { repo: string; text: string }[];
+  version: string;
+}

@@ -2,13 +2,23 @@
 // from it) for its size.
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
+import type { Leftover } from './leftovers.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
  * (issue #630): those whose HEAD holds a remote branch the default branch does not; absent, none. `removed` (issue #1120):
- * the containers and volumes labelled with the job's id that it removed; absent, none.
+ * the containers and volumes labelled with the job's id that it removed; absent, none. `left` (issue #1452): the job's dirs
+ * it set out to remove and could not; absent, none (or a client older than this).
  */
-export interface Reaped { kept: string[]; pushed?: string[]; removed?: { containers: string[]; volumes: string[] } }
+export interface Reaped { kept: string[]; pushed?: string[]; left?: string[]; removed?: ContainersRemoved }
+
+/**
+ * The containers and volumes a reap removed (issue #1120), as `job.containers_removed` records them; `details` (issue #975):
+ * what the reap said of each container before it removed it, for the job's parts list; absent, none (a client older than this).
+ */
+export type ContainersRemoved = { containers: string[]; volumes: string[]; details?: ContainerDetails[] };
+/** One container a reap removed (issue #975): its name, image, and when it started and stopped; a time absent never came. */
+export type ContainerDetails = { id: string; name: string; image: string; startedAt?: string; stoppedAt?: string };
 
 /** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
 export interface Survey {
@@ -67,4 +77,15 @@ export interface MachineShell {
    * shell takes none.
    */
   checkpoint?(jobId: string, worktree: string, session: string): Promise<CheckpointCapture>;
+  /**
+   * The leftovers in the `.hopper-scratch` of each work tree in `roots` (issue #1116): each dir in it but its shared
+   * dependencies, and its repository mirrors while one of those holds it, with age, size and whether it holds work not
+   * pushed. Only reads. Absent: the shell lists none.
+   */
+  leftovers?(roots: string[]): Promise<Leftover[]>;
+  /**
+   * Removes the leftover at `path` whatever it holds, a person's decision (issue #1116): `gone` when it was not there,
+   * `left` when it is still there. Absent: the shell removes none.
+   */
+  removeLeftover?(path: string): Promise<'removed' | 'gone' | 'left'>;
 }

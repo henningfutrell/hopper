@@ -61,8 +61,9 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(r.networks?.default).toMatchObject({ name: 'hopper_default' });
     expect(r.networks?.default?.external).toBeFalsy();
     // The hopper is on the tunnel's network too (issue #795); the tunnel on that one alone: no other service, and no box,
-    // reaches the tunnel agent. The same for Solr (issue #945): on search's network, with the hopper alone.
-    const nets: Record<string, string[]> = { hopper: ['default', 'search', 'tunnel'], tunnel: ['tunnel'], cloudflared: ['tunnel'], solr: ['search'] };
+    // reaches the tunnel agent. The same for Solr (issue #945): on search's network, with the hopper alone. The read-only
+    // boxes' internal network (issue #849): the hopper and the egress proxy.
+    const nets: Record<string, string[]> = { hopper: ['default', 'egress', 'search', 'tunnel'], tunnel: ['tunnel'], cloudflared: ['tunnel'], solr: ['search'], egress: ['default', 'egress'] };
     for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }).sort(), name).toEqual(nets[name] ?? ['default']);
     expect(render(undefined, { COMPOSE_PROJECT_NAME: 'other' }).networks?.default).toMatchObject({ name: 'hopper_default' });
   });
@@ -96,7 +97,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps no master key in a volume or a file: the hopper reads HOPPER_MASTER_KEY from the launch, and the old token_key only to move it (issues #659, #894)', () => {
     expect(hopper.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
-    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
+    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE ?? '').toBe('');
     const key = 'ab'.repeat(32);
     expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
     expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();
@@ -129,7 +130,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   });
 
   it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
-    expect(Object.keys(r.services).sort()).toEqual(['cloudflared', 'hopper', 'openfga', 'openfga-migrate', 'postgres', 'solr', 'tunnel']);
+    expect(Object.keys(r.services).sort()).toEqual(['cloudflared', 'egress', 'hopper', 'openfga', 'openfga-migrate', 'postgres', 'solr', 'tunnel']);
     for (const s of Object.values(r.services)) expect(Object.keys(s.depends_on ?? {})).not.toContain('openfga-migrate');
   });
 
@@ -185,7 +186,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
-    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'solr', 'tunnel-key', 'vault-token']);
+    expect(Object.keys(r.volumes).sort()).toEqual(['egress', 'home', 'postgres', 'runtime-secrets', 'solr', 'tunnel-key', 'vault-token']);
   });
 });
 

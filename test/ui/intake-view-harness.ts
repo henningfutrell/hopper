@@ -29,7 +29,7 @@ export const DETAIL = {
 };
 export const SOURCES = [{ name: 'github-account', kind: 'github-account', state: 'ok', itemsSeen: 10, jobsCreated: 2, activeJobs: 1, detail: DETAIL }];
 const ACCOUNTS = { accounts: [{
-  provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
+  provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
   installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'] }],
 }] };
 const MACHINES = { machines: [] };
@@ -49,6 +49,8 @@ function fakeDaemon() {
     '/api/questions': { questions: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
     '/api/connected-accounts': ACCOUNTS,
+    // The admin's decline defaults (issue #1710): Close for both, not the daemon's own default, so a test sees the setting win.
+    '/api/intake-decline': { request: 'close', reopened: 'close' },
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init?: RequestInit) => {

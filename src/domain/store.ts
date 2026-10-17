@@ -9,7 +9,7 @@ import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
-  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountKey, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
 
 // Report a bug (issue #694): its repository sits beside its record.
 export type { BugReportRepository } from './bug-reports.ts';
@@ -31,8 +31,12 @@ export interface JobFilter {
 
 export interface JobRepository {
   create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
-  get(id: JobId): Job | undefined;
-  getBySourceKey(key: string): Job | undefined;
+  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined;
+  /**
+   * Many jobs in one read (issue #1411), so a pass over many jobs reads none one by one: `getMany` the jobs of `ids` that
+   * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`.
+   */
+  getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>;
   list(filter?: JobFilter): Job[];
   /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
   update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
@@ -100,10 +104,14 @@ export interface WebhookRepository {
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
   delete(id: string): boolean;
   /** status `pending`, attempts 0, nextAttemptAt = now. */
-  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery;
+  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery; hasDelivery(subscriptionId: string, eventSeq: number): boolean; // a delivery of the event with this seq: one handed again at a catch-up (issue #1572)
   updateDelivery(id: string, patch: Partial<Omit<WebhookDelivery, 'id' | 'subscriptionId' | 'eventSeq' | 'eventType' | 'createdAt'>>): WebhookDelivery;
-  /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
-  dueDeliveries(now: Date): WebhookDelivery[];
+  /**
+   * `dueDeliveries`: the deliveries due at or before `now` (status pending|retrying and nextAttemptAt <= now).
+   * `claimDelivery` claims a due delivery for one attempt (issue #1627): compare-and-set, its nextAttemptAt moved to `until`
+   * only while it is still due at `now`, so of two hosts that ask at once one gets it. The claimed delivery, else undefined.
+   */
+  dueDeliveries(now: Date): WebhookDelivery[]; claimDelivery(id: string, now: Date, until: string): WebhookDelivery | undefined;
   listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
 }
 
@@ -116,8 +124,11 @@ export interface QuestionRepository {
   list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
-  /** Append one attempt to the question's trail. */
-  addAttempt(id: string, attempt: QuestionAttempt): Question;
+  /**
+   * Append one attempt to the question's trail. `finishAttempt`: replace the attempt of `callKey` (issue #1608) with
+   * `attempt`, which keeps the key; none of that key: append it.
+   */
+  addAttempt(id: string, attempt: QuestionAttempt): Question; finishAttempt(id: string, callKey: string, attempt: QuestionAttempt): Question;
 }
 
 /** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */
@@ -301,8 +312,12 @@ export interface JoinCodePlace { template?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
-  /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
-  take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
+  /**
+   * The code's user (and what it names), when it exists and `expiresAt > now`: the code is spent by `machineKey`, and
+   * taken again by that key only, until it expires (issue #1628: a join whose answer was lost is sent again). Else
+   * undefined. Expired codes are deleted first.
+   */
+  take(codeHash: string, now: string, machineKey: string): ({ userId: string } & JoinCodePlace) | undefined;
 }
 
 /** The sandbox records (issue #708, instance migration 34): one per sandbox box an older build launched, by id; names are unique. */
@@ -315,9 +330,9 @@ export interface SandboxRepository {
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins`, `rules`, `job-rules` and `windows-hosts` (issue #731), and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472) and `windows-hosts` (issue #731), and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'windows-hosts'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'windows-hosts'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];
@@ -453,36 +468,40 @@ export interface ConnectedAccount {
 export type StoredAccount = Omit<ConnectedAccount, 'accessToken' | 'refreshToken'>;
 
 export interface ConnectedAccountRepository {
-  /** The account's row, without its tokens. */
-  get(provider: ConnectedAccountProvider): StoredAccount | undefined;
-  /** Insert or replace the provider's row; tokens given with it are not kept here. */
-  put(account: StoredAccount): void;
-  /** Inside a transaction: lock the provider's row until it ends (issue #441); false when there is none. */
-  lockRow(provider: ConnectedAccountProvider): boolean;
+  /** The account's row, without its tokens, by its key (issue #1448: the first account's is its provider). */
+  get(key: ConnectedAccountKey): StoredAccount | undefined;
+  /**
+   * Insert or replace the account's row, by `key` (absent: its provider, the first account); tokens given with it are not kept
+   * here. `keys`: the keys of the rows kept (issue #1448), in key order.
+   */
+  put(account: StoredAccount, key?: ConnectedAccountKey): void; keys(): ConnectedAccountKey[];
+  /** Inside a transaction: lock the account's row until it ends (issue #441); false when there is none. */
+  lockRow(key: ConnectedAccountKey): boolean;
   /** The tokens a row kept before issue #658 (sealed by the token box, or in clear), for the move into the vault; none: none left. */
-  legacyTokens(provider: ConnectedAccountProvider): { accessToken: string; refreshToken?: string } | undefined;
+  legacyTokens(key: ConnectedAccountKey): { accessToken: string; refreshToken?: string } | undefined;
   /** The row without the tokens it kept before issue #658: once they are in the vault. */
-  dropLegacyTokens(provider: ConnectedAccountProvider): void;
+  dropLegacyTokens(key: ConnectedAccountKey): void;
   /**
    * Take the account's renewal lock, held by this connection until `unlock` or until the connection
    * ends — a crashed process lets it go (issue #441). False when another connection holds it.
    */
-  lock(provider: ConnectedAccountProvider): boolean;
-  unlock(provider: ConnectedAccountProvider): void;
+  lock(key: ConnectedAccountKey): boolean;
+  unlock(key: ConnectedAccountKey): void;
   /** True when there was one. */
-  delete(provider: ConnectedAccountProvider): boolean;
+  delete(key: ConnectedAccountKey): boolean;
 }
 
 export interface UserStore {
-  jobs: JobRepository;
+  /** The jobs; the job leases (issue #1662): the hopper that drives each claimed or running job. */
+  jobs: JobRepository; jobLeases: import('./job-leases.ts').JobLeaseRepository;
   lanes: LaneRepository;
   decisions: DecisionRepository;
-  events: EventLog;
+  events: EventLog; eventCursors: import('./event-cursors.ts').EventCursorRepository; // event cursors (issue #1572)
   webhooks: WebhookRepository;
   /** The vault (issue #558). */
   vault: VaultRepository;
-  /** The job stream's events and watches (issue #613). */
-  jobStream: JobStreamRepository;
+  /** The job stream; and the machine credential acceptances (issue #1459). */
+  jobStream: JobStreamRepository; credentialAcceptances: import('./machine-credentials.ts').CredentialAcceptanceRepository;
   /** The artifacts jobs make for a person to see, and their shares (issue #624). */
   artifacts: ArtifactRepository;
   /** The infra plans jobs record, and their approvals (issue #870). */
@@ -495,7 +514,7 @@ export interface UserStore {
   logins: LoginRepository; lastAccounts: import('./logins.ts').LastAccountRepository; // the last accounts (issue #1269)
   failures: FailureRepository;
   problems: ProblemRepository;
-  handoffs: HandoffRepository;
+  handoffs: HandoffRepository; waitCheckLeases: import('./wait-checks.ts').WaitCheckLeases; // the wait checks' leases (issue #1694)
   itemSnapshots: ItemSnapshotRepository;
   vaultGrants: VaultGrantRepository;
   bugReports: BugReportRepository;
@@ -506,7 +525,7 @@ export interface UserStore {
   /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing; the GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent; the repositories' checks as last read (issue #1250), with their answers' ETags. */
   githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; githubOutbox: import('./github-outbox.ts').GitHubOutboxRepository; repoChecks: import('./repo-checks.ts').RepoChecksReadRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
-  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
+  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; notifierDeliveries: import('./notifier-deliveries.ts').NotifierDeliveryRepository; // the send log (issue #1014); notifier deliveries (issue #1587)
   settings: UserSettingsRepository;
   /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
   connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
@@ -543,7 +562,7 @@ export interface InstanceStore {
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */
-  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
+  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; needSteps: import('./need-steps.ts').NeedStepRepository; windowsSteps: import('./windows-steps.ts').WindowsStepRepository; sagas: import('./sagas.ts').SagaRepository; sweepLeases: import('./leases.ts').SweepLeaseRepository; outboundKeys: import('./outbound.ts').OutboundKeyRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sandbox steps: each need or box step from the job's ask to its result (issue #1568); the Windows steps, likewise, with each host's hold (issue #1611); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524); the sweep leases and the outbound dedupe keys: what makes two hosts on one database run each sweep and send each send once (issue #1627)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */

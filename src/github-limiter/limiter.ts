@@ -11,13 +11,18 @@
 // An intake call (`intake`, issue #983) also waits at the intake reserve, so intake never spends the calls job work needs.
 // Each call GitHub charged — not a 304 — counts for the last hour under its kind (issue #985), a GraphQL call with the
 // points it spent: the drop in its bucket's calls left since the last answer of the same window.
+// Each call is a client span and is counted by route, status and cache use, and each bucket's calls left is a gauge
+// (issue #1486, design.md "Telemetry"): the route's template, never its URL or credential. The telemetry summary keeps them too.
 import { createHash } from 'node:crypto';
+import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import type { request as octokitRequest } from '@octokit/request';
 import {
   DEFAULT_RATE_LIMITER, bucketFromHeaders, holdAfter, resourceOf, waitBefore,
   type GitHubCallKind, type RateBucket, type RateLimiterSettings, type RateLimiterView,
 } from '../domain/github-rate-limit.ts';
+import { instrument, tracer } from '../telemetry/instruments.ts';
+import { telemetrySummary } from '../telemetry/summary.ts';
 import { githubTraffic, type GitHubTraffic } from './traffic.ts';
 
 type Request = typeof octokitRequest;
@@ -54,6 +59,10 @@ type Cached = { etag: string; response: Response };
 type Headers = Record<string, string | number | undefined>;
 
 const DEFAULT_CACHE_SIZE = 2000;
+
+const githubCalls = instrument((m) => m.createCounter('hopper.github.calls', { description: 'GitHub API calls, by route, status and cache use.' }));
+const githubDuration = instrument((m) => m.createHistogram('hopper.github.call.duration', { unit: 's', description: 'How long a GitHub API call took.' }));
+const githubLeft = instrument((m) => m.createGauge('hopper.github.rate_limit.remaining', { description: 'The calls GitHub said are left, by resource.' }));
 
 export function createGitHubLimiter(o: {
   now?: () => number; sleep?: (ms: number) => Promise<void>; cacheSize?: number; settings?: RateLimiterSettings; traffic?: GitHubTraffic;
@@ -118,6 +127,7 @@ export function createGitHubLimiter(o: {
    */
   function learn(key: string, headers: Headers | undefined, status?: number): void {
     const seen = headers ? bucketFromHeaders(headers) : undefined;
+    if (seen) githubLeft().record(seen.remaining, { 'hopper.github.resource': seen.resource });
     const b = buckets.get(key);
     if (headers && !seen && !b) {
       buckets.set(key, { resource: 'core', limit: 0, remaining: Infinity, resetAt: Infinity, pending: 0, nextAt: 0 });
@@ -164,6 +174,9 @@ export function createGitHubLimiter(o: {
     const cached = isGet ? cache.get(cacheKey) : undefined;
     const send = cached ? { ...options, headers: { ...options.headers, 'if-none-match': cached.etag } } : options;
 
+    // A bucket past its reset and its hold says nothing any more: a renewed token's old one goes (issue #1402).
+    const t = now();
+    for (const [k, b] of buckets) if (b.resetAt <= t && (b.holdUntil ?? 0) <= t && b.pending === 0) buckets.delete(k);
     const counted = await admit(key, call);
     // Octokit's merged options keep the route's template (`/repos/{owner}/{repo}/issues`): one route, whatever the repository.
     const route = String(options.url ?? parsed.url);
@@ -172,6 +185,17 @@ export function createGitHubLimiter(o: {
     const charged = (headers: Headers | undefined) => traffic.charged(parsed.method, route, query, { ...(call.kind ? { kind: call.kind } : {}), points: pointsOf(key, resource, headers) });
     let done!: () => void;
     if (!counted) probes.set(key, new Promise<void>((r) => { done = r; }));
+    const span = tracer().startSpan(`GitHub ${parsed.method} ${route}`, { kind: SpanKind.CLIENT, attributes: { 'http.request.method': parsed.method, 'url.template': route, 'hopper.github.resource': resource } });
+    const from = performance.now();
+    const measured = (status: number | undefined, cache: 'hit' | 'miss' | 'none'): void => {
+      const attributes = { 'http.request.method': parsed.method, 'http.route': route, ...(status !== undefined ? { 'http.response.status_code': status } : {}), 'hopper.github.cache': cache };
+      githubCalls().add(1, attributes);
+      const seconds = (performance.now() - from) / 1000;
+      githubDuration().record(seconds, attributes);
+      telemetrySummary.githubCall(parsed.method, route, status, cache, seconds);
+      span.setAttributes({ ...(status !== undefined ? { 'http.response.status_code': status } : {}), 'hopper.github.cache': cache });
+      if (status === undefined || status >= 400) span.setStatus({ code: SpanStatusCode.ERROR });
+    };
     try {
       // Merged options always carry the route's url.
       const response = await request(send as typeof send & { url: string });
@@ -182,6 +206,7 @@ export function createGitHubLimiter(o: {
         const etag = response.headers.etag;
         if (typeof etag === 'string' && response.status === 200) keep(cacheKey, { etag, response });
       }
+      measured(response.status, isGet ? 'miss' : 'none');
       return response;
     } catch (err) {
       const e = err as { status?: number; response?: { headers?: Headers } };
@@ -190,10 +215,13 @@ export function createGitHubLimiter(o: {
       if (e.status === 304 && cached) {
         stats.hits++;
         keep(cacheKey, cached);
+        measured(304, 'hit');
         return cached.response;
       }
+      measured(e.status, isGet ? 'miss' : 'none');
       throw err;
     } finally {
+      span.end();
       if (counted) counted.pending--;
       else { probes.delete(key); done(); }
     }

@@ -6,12 +6,12 @@
 import { z } from 'zod';
 import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS } from '../domain/types.ts';
 import { DISMISSED_BY } from '../domain/locked.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
-import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts';
+import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { MACHINE_DRAIN_EVENT_SCHEMAS } from './machine-drain-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts'; import { PREEMPTION_EVENT_SCHEMAS } from './preemption-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { GITLAB_EVENT_SCHEMAS } from './gitlab-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { ISSUE_DRAFT_EVENT_SCHEMAS } from './issue-draft-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitOn, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -132,19 +132,19 @@ export const EVENT_SCHEMAS = {
   // `partlyDone` (issue #579, additive): the URL of the job's own pull request that ships part of its item.
   'job.finished': strict({ result: z.unknown(), partlyDone: z.string().optional() }),
   'job.failed': strict({ error: z.string(), ...priority }),
-  'job.cancelled': strict({ reason: z.string() }),
+  'job.cancelled': strict({ reason: z.string(), note: z.string().optional() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional() }),
   // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`
   // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
   'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
-  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional(), keptWork: z.literal(true).optional() }),
+  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional(), keptWork: z.literal(true).optional(), auto: z.literal(true).optional() }),
   'job.reattached': strict({ reason: z.string() }),
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
-  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }),
+  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional(), check: z.string().optional() }), 'job.wait_overdue': strict({ deadline: z.string(), result: z.string() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }), 'job.waited_items_ended': strict({ items: z.array(strict({ url: z.string(), state: z.string() })).min(1) }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
@@ -218,15 +218,16 @@ export const EVENT_SCHEMAS = {
   'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), reason: z.enum(WORK_DISCARD_REASONS).optional(), ...actingIfPerson }),
   // Issue #371: the job's cleanup could not reach its machine; it is tried again until it goes through.
   'job.cleanup_deferred': strict({ error: z.string() }),
-  'job.cleaned_up': strict({ deferredAt: z.string(), by: z.enum(['user']).optional() }),
+  'job.cleaned_up': strict({ deferredAt: z.string().optional(), dueAt: z.string().optional(), by: z.enum(['user']).optional() }),
   // Assignment drift (issue #387): the started job's item is no longer, or again, assigned to the account it was taken for.
   'job.unassigned': strict({ assignee: z.string() }),
   'job.reassigned': strict({ assignee: z.string() }),
   // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
   'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
-  'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),
-  'connected_account.renewed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), expiresAt: z.string().optional() }),
-  'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), code: z.string() }),
+  // `key`: a further connected account's (issue #1448); absent: the first's.
+  'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), key: z.string().optional(), account: z.string(), reason: z.string() }),
+  'connected_account.renewed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), key: z.string().optional(), account: z.string(), expiresAt: z.string().optional() }),
+  'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), key: z.string().optional(), account: z.string(), code: z.string() }),
   // A UI session of the user's ended (issue #439), and why: early logouts can be told apart.
   'ui_session.ended': strict({ reason: z.enum(SESSION_END_REASONS), realm: z.string() }),
   // Intake (issues #440, #652): src/events/intake-schemas.ts.
@@ -328,7 +329,7 @@ export const EVENT_SCHEMAS = {
   'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), superseded: z.string().optional(), stray: z.literal(true).optional(), ...actingIfPerson }),
   'job.pull_request_abandoned': strict({ pullRequest: z.string(), part: z.boolean() }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
-  'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }), 'job.checks_rerun': strict({ recordId: z.string(), pullRequest: z.string(), head: z.string(), checks: z.array(z.string()), refused: z.string().optional() }),
+  'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }), 'job.checks_rerun': strict({ recordId: z.string(), pullRequest: z.string(), head: z.string(), checks: z.array(z.string()), refused: z.string().optional() }), 'job.checks_rerun_asked': strict({ recordId: z.string(), pullRequest: z.string(), head: z.string(), checks: z.array(z.string()) }),
   'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string(), ...actingIfPerson }), 'job.pull_request_base_merged': strict({ pullRequest: z.string(), commit: z.string(), resolved: z.array(z.string()) }), 'job.pull_request_retargeted': strict({ pullRequest: z.string(), from: z.string(), to: z.string(), stray: z.literal(true).optional() }),
   'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }), ...WORK_ITEM_EVENT_SCHEMAS, ...CHANGE_KIND_EVENT_SCHEMAS, // issue #1076
   // Yolo mode (issue #579): the settings before and after, and who changed them.
@@ -354,7 +355,7 @@ export const EVENT_SCHEMAS = {
   // A read-only check's mints (issue #797): for the check box of a template, which runs no job. Never a credential.
   'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), bound: strict({ namespace: z.string(), secret: z.string() }).optional() }),
   // A sandbox's token unbound (issue #1371): the Secret it was bound to deleted, so the token stops working. Never a token.
-  'vault.unbound': strict({ box: z.string(), job: z.string().optional(), credential: z.string(), namespace: z.string(), secret: z.string() }), 'vault.check_mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS).optional(), ...operationProfile.shape }), template: z.string(), check: z.string(), reason: z.string(), decision: z.string().optional() }),
+  'vault.binding_named': strict({ box: z.string(), job: z.string().optional(), credential: z.string(), namespace: z.string(), secret: z.string() }), 'vault.unbound': strict({ box: z.string(), job: z.string().optional(), credential: z.string(), namespace: z.string(), secret: z.string() }), 'vault.check_mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS).optional(), ...operationProfile.shape }), template: z.string(), check: z.string(), reason: z.string(), decision: z.string().optional() }),
   'vault.mint_tested': strict({ asset: z.union([asset, z.string()]), credential: z.string().optional(), sessionName: z.string().optional(), arn: z.string().optional(), user: z.string().optional(), expiresAt: z.string().optional(), reason: z.string().optional(), by: z.string() }),
   // The dynamic vault (issue #583): a credential request asked, given or declined. Never a value.
   'vault.credential_asked': strict({ request: z.string(), skill: z.string(), template: z.string(), machine: z.string(), job: z.string(), why: z.string().optional() }),
@@ -366,8 +367,9 @@ export const EVENT_SCHEMAS = {
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
   // the job's stream, or `settled` or `none`. A poll (issue #1210): `poll`, how many times the job asked the same read in the window.
+  // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it.
   'github_proxy.done': z.union([
-    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional() }),
+    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional(), key: z.string().optional(), replayed: z.literal(true).optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),
@@ -380,10 +382,10 @@ export const EVENT_SCHEMAS = {
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
-  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, // the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
+  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...MACHINE_DRAIN_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, ...PREEMPTION_EVENT_SCHEMAS, // preemption (issue #1525: preemption-schemas.ts), the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  ...THREAD_ASK_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, // issues #997, #1128: notes to a job, the job's terminal
+  ...THREAD_ASK_EVENT_SCHEMAS, ...GITLAB_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, ...ISSUE_DRAFT_EVENT_SCHEMAS, // issues #997, #1128, #471: notes to a job, the job's terminal, File an issue
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...driftEvents, ...infraPlanEvents, ...apiGrantEvents, ...windowsStepEvents, ...sandboxRequestEvents, ...landingBatchEvents,
 } satisfies Record<EventType, z.ZodType>;
 

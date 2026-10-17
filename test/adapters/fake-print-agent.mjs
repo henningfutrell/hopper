@@ -6,20 +6,26 @@
 // CLI does — JSON events, one per line, in the shapes each prints (taken from the real CLIs, 2026-10-07).
 // The reply is $FAKE_AGENT_REPLY; $FAKE_AGENT_REPLIES (a JSON array) gives the reply of each call in
 // turn. $FAKE_AGENT_MODE `error` answers the CLI's own error, `hang` never answers. Like the real CLIs, it
-// reads stdin to its end first.
+// reads stdin to its end first, and logs it. `opencode session delete <id>` (a draft's cleanup, issue #474) only
+// appends the id and the opencode variables it ran with to opencode-deleted.jsonl.
 import { spawn } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // As the real codex and opencode do when stdin is not a terminal: read it to its end before the turn.
 // A turn that hands the CLI an open stdin never starts (found on the agent boxes, issue #307).
-if (!process.stdin.isTTY) readFileSync(0);
+const stdin = process.stdin.isTTY ? '' : readFileSync(0, 'utf8');
 
 const argv = process.argv.slice(2);
+if (process.env.FAKE_AGENT_KIND === 'opencode' && argv[0] === 'session' && argv[1] === 'delete') {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('OPENCODE_')));
+  appendFileSync(join(process.env.FAKE_AGENT_DIR, 'opencode-deleted.jsonl'), `${JSON.stringify({ id: argv[2], env })}\n`);
+  process.exit(0);
+}
 const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');
 appendFileSync(log, JSON.stringify({
-  argv, cwd: process.cwd(),
-  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
+  argv, cwd: process.cwd(), stdin,
+  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, CHECKPOINT_DISABLE: process.env.CHECKPOINT_DISABLE, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
   // Where it runs (issue #1295): in the job's sandbox, with podman a client of the job's socket.
   sandbox: { sandboxed: process.env.HOPPER_SANDBOXED, containerHost: process.env.CONTAINER_HOST, pid: process.pid },
 }) + '\n');

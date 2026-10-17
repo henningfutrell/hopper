@@ -15,6 +15,7 @@ import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintEks } from './eks.ts';
 import { mintPrincipal } from '../domain/out-of-band.ts';
 import type { UnbindFrom } from './bindings.ts';
+import { appliesRefusal } from '../domain/infra-plans.ts';
 
 /** `plan` (issue #870): the plan an operation that changes infrastructure applies. */
 export interface MintAsk { mint: MintKind; operation: string; asset: string; plan?: string; token: string }
@@ -42,6 +43,10 @@ export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   clock: Clock;
   /** The apply gate (issue #870): absent, no credential that changes infrastructure is minted. */
   plans?: { gate(profile: OperationProfile, planId: string | undefined): Promise<string | undefined> };
+  /** Whether infra applies are on (issue #1722, the instance's setting, read at each ask); off, only a read is minted. Absent: on. */
+  applies?: () => boolean;
+  /** What was minted, by job: each job's mint keys. Default: a map of its own. */
+  minted?: Map<string, Set<string>>;
 }
 
 /** `namespace/lab/web` as an asset; undefined when it names no kind the model has. */
@@ -56,7 +61,7 @@ const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.ope
 export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: string, from: MintFrom) => Promise<{ value: string } | { refused: string }> {
   const { vault, events } = o.store;
   // A mint for a job and profile minted before is a renewal. Kept in memory: a restart counts the next one as a first.
-  const minted = new Set<string>();
+  const minted = o.minted ?? new Map<string, Set<string>>();
 
   /** Why Access's deny stops the mint: waiting at the first-time gate, or not declared at all. */
   const denied = (template: string, profile: OperationProfile, d: MintDecision): string => {
@@ -90,6 +95,8 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (problem) return refuse(problem);
     const target = mintTarget(ask.mint, profile);
     if (typeof target === 'string') return refuse(target);
+    const off = appliesRefusal(profile, o.applies?.() ?? true);
+    if (off) return refuse(off);
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
 
     // Access takes the template from who the job is now (issue #581): the box it runs on, joined as its template.
@@ -111,9 +118,12 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     // A vault backend's read (issue #585) or the vault's container (issue #586) takes a while: the job must still be at work.
     const still = o.store.jobs.get(job.id)?.status;
     if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): the vault mints only while it runs`, decision);
-    const key = `${job.id} ${ask.mint} ${profileInWords(profile)}`;
-    const renewal = minted.has(key);
-    minted.add(key);
+    const key = `${ask.mint} ${profileInWords(profile)}`;
+    // A job no longer at work mints no more: its keys go (issue #1402).
+    for (const id of minted.keys()) if (id !== job.id && !AT_WORK.includes(o.store.jobs.get(id)?.status ?? '')) minted.delete(id);
+    const keys = minted.get(job.id) ?? new Set<string>();
+    const renewal = keys.has(key);
+    minted.set(job.id, keys.add(key));
     const at = o.clock.now().toISOString();
     o.store.tx(() => {
       const now = vault.get(credential.name);

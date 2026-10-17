@@ -10,8 +10,9 @@
 //   Scenario: the sandbox boxes on each client target as their meter reads them; none with no box there
 //   Scenario: Solr's queries and index as its meter reads them, with the documents waiting to be indexed
 //   Scenario: with no Solr, Solr says why; Solr down: the documents waiting still show, with why Solr cannot be read
+//   Scenario: the telemetry summary answers the actions taken and the job spans of a job that ran (issue #1486)
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, RemoteBoxMeter, SolrMeter, StackResources } from '../../src/domain/types.ts';
+import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, RemoteBoxMeter, SolrMeter, StackResources, TelemetrySummary } from '../../src/domain/types.ts';
 import type { SearchIndex } from '../../src/domain/search.ts';
 import { waitFor } from '../support/wait.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -129,5 +130,18 @@ describe('stack resources', () => {
       return 'pending' in s && (s.pending ?? 0) >= 1 ? s : undefined;
     }, { timeoutMs: 15_000, what: 'a document waiting' });
     expect(solr).toEqual({ problem: 'Solr\'s metrics did not answer: ECONNREFUSED', pending: 1 });
+  });
+
+  it('the telemetry summary answers the actions taken and the job spans of a job that ran (issue #1486)', async () => {
+    const a = await boot();
+    const job = await a.pull({ op: 'echo', message: 'done' });
+    await a.waitForStatus(job.id, 'finished');
+    const r = await a.api<TelemetrySummary>('GET', '/api/telemetry');
+    expect(r.status).toBe(200);
+    expect(r.body.exporting).toBe(false);
+    expect(Date.parse(r.body.since)).not.toBeNaN();
+    expect(r.body.jobSpans.map((s) => s.name)).toContain('run');
+    for (const s of [...r.body.actions, ...r.body.jobSpans, ...r.body.github]) expect(s.count).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(r.body)).not.toContain(job.id);
   });
 });

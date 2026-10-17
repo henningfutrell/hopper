@@ -4,15 +4,19 @@
 import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeAutoApproval } from './intake-auto-approve.ts';
+import type { IntakeDeclineDefaults } from './intake-decline.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
+import type { GitLabAccountRecord } from './gitlab-account.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
+import type { MachineDrains } from './machines.ts';
+import type { CloudLinkSettings, CloudRegistrationCode } from './cloud-link.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, AutoParkSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
 } from './types.ts';
 
@@ -27,9 +31,12 @@ export interface UserSettingsRepository {
   /** The hopper's link key for this user's machines that dial in (issue #308): a secret, never answered by any route but its public half. */
   getLinkKey(): { privateKey: string; publicKey: string } | undefined;
   setLinkKey(key: { privateKey: string; publicKey: string }): void;
-  /** The repositories a connected account's jobs may use (issue #321); empty: none chosen. */
-  getJobRepositories(provider: ConnectedAccountProvider): string[];
-  setJobRepositories(provider: ConnectedAccountProvider, repositories: readonly string[]): void;
+  /** The repositories a connected account's jobs may use (issue #321), by the account's key (issue #1448); empty: none chosen. */
+  getJobRepositories(key: ConnectedAccountKey): string[];
+  setJobRepositories(key: ConnectedAccountKey, repositories: readonly string[]): void;
+  /** The user's GitLab account (issue #1448 part 2), never its token; absent: none attached. */
+  getGitLabAccount(): GitLabAccountRecord | undefined;
+  setGitLabAccount(account: GitLabAccountRecord | null): void;
   /** The usage graph's range and step the user chose (issue #385); absent: never chosen. */
   getUsageGraphView(): UsageGraphView | undefined;
   setUsageGraphView(view: UsageGraphView): void;
@@ -54,6 +61,9 @@ export interface UserSettingsRepository {
   /** Each machine's dismissed lane recommendation (issue #688); a machine absent: none dismissed. */
   getLaneDismissals(): LaneDismissals;
   setLaneDismissals(dismissals: LaneDismissals): void;
+  /** The drained machines (issue #1511); a machine absent: not drained. */
+  getMachineDrains(): MachineDrains;
+  setMachineDrains(drains: MachineDrains): void;
   /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
   getPriorityLanes(): PriorityLaneSettings | undefined;
   setPriorityLanes(settings: PriorityLaneSettings): void;
@@ -101,6 +111,9 @@ export interface UserSettingsRepository {
   /** Auto-park (issue #650): how long a question waits on a person before its job parks by itself; absent: never set. */
   getAutoPark(): AutoParkSettings | undefined;
   setAutoPark(settings: AutoParkSettings): void;
+  /** Preemption (issue #1525): whether a higher-priority job takes a running job's lane, and its minimum run time; absent: never set (on, 10 min). */
+  getPreemption(): PreemptionSettings | undefined;
+  setPreemption(settings: PreemptionSettings): void;
   /** Asking on the issue thread (issue #435): the policy for own and other repositories; absent: never set. */
   getThreadAsk(): ThreadAskSettings | undefined;
   setThreadAsk(settings: ThreadAskSettings): void;
@@ -137,6 +150,9 @@ export interface UserSettingsRepository {
   /** Auto-approval at intake (issue #1268); undefined: never set, so on, with no app listed. */
   getIntakeAutoApproval(): IntakeAutoApproval | undefined;
   setIntakeAutoApproval(settings: IntakeAutoApproval): void;
+  /** The choice Decline offers first (issue #1710); undefined: never set. */
+  getIntakeDecline(): IntakeDeclineDefaults | undefined;
+  setIntakeDecline(settings: IntakeDeclineDefaults): void;
   /** The job repositories whose "Add PR checks" recommendation the person dismissed (issue #677), `owner/repo` lowercased; none: []. */
   getRepoChecksDismissed(): string[];
   setRepoChecksDismissed(repos: string[]): void;
@@ -191,6 +207,21 @@ export interface InstanceSettingsRepository {
   /** The source email match (issue #1380): an account connected from Sources must have its person's email verified; never set: on. */
   getSourceEmailMatch(): boolean;
   setSourceEmailMatch(on: boolean): void;
+  /** Infra applies (issue #1722): whether the vault mints a write, sync or apply for an approved plan, and steps apply; never set: on. */
+  getInfraApplies(): boolean;
+  setInfraApplies(on: boolean): void;
+  /** The cloud link (issue #467): this install linked to a hopper.io account; undefined: not linked. */
+  getCloudLink(): CloudLinkSettings | undefined;
+  setCloudLink(link: CloudLinkSettings): void;
+  /** Deletes the link record, and nothing else. */
+  removeCloudLink(): void;
+  /** The open registration code of the cloud link (issue #465), hashed; undefined: none. */
+  getCloudRegistrationCode(): CloudRegistrationCode | undefined;
+  setCloudRegistrationCode(code: CloudRegistrationCode): void;
+  removeCloudRegistrationCode(): void;
+  /** The instance's display name (issue #465): what the hopper's admin calls this hopper; empty: never set, or cleared. */
+  getDisplayName(): string;
+  setDisplayName(name: string): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */

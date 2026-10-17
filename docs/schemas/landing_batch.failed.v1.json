@@ -47,6 +47,9 @@
         ],
         "additionalProperties": false
       }
+    },
+    "conflicts": {
+      "type": "boolean"
     }
   },
   "required": [

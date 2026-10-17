@@ -1,9 +1,10 @@
 // Read models for the HTTP edge.
+import { credentialHeld } from '../domain/machine-credentials.ts';
 import { isLocked } from '../domain/locked.ts';
 import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type MachineLeftovers, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
@@ -39,8 +40,11 @@ export interface QueueView {
 /** How far back `ended` reaches: the UI's cards count ended jobs over this window, and list the same jobs. */
 export const ENDED_WINDOW_MS = 24 * 3_600_000;
 
-/** `hopperDisk`: the hopper's own disk use there, as the sweep last measured it (issue #1120); absent, never measured. */
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk };
+/**
+ * `hopperDisk`: the hopper's own disk use there, as the sweep last measured it (issue #1120); absent, never measured.
+ * `leftovers`: the leftovers there the sweep does not judge, for a person to keep or remove (issue #1116); absent, none listed.
+ */
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers };
 
 export interface Queries {
   getQueue(): QueueView;
@@ -60,7 +64,7 @@ function lockedOf(all: Job[], ledger: Pick<WorkItemLedger, 'get'>): Job[] {
     .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
 }
 
-export function createQueries(c: EngineContext, diskOf: (machineId: string) => HopperDisk | undefined = () => undefined): Queries {
+export function createQueries(c: EngineContext, diskOf: (machineId: string) => HopperDisk | undefined = () => undefined, leftoversOf: (machineId: string) => MachineLeftovers | undefined = () => undefined): Queries {
   const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
   return {
@@ -90,9 +94,15 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
       const lanes = c.store.lanes.list();
+      const acceptanceMap = new Map(c.store.credentialAcceptances.list().map((a) => [a.machineKey, a]));
+      const { strict } = c.store.credentialAcceptances.settings();
       return machines.map((m) => {
         const hopperDisk = diskOf(m.id);
-        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}) };
+        const leftovers = leftoversOf(m.id);
+        const acceptance = acceptanceMap.get(m.id);
+        // Issue #1467: the decider's own rule, so the card never says other than what it does.
+        const held = credentialHeld(m.infraCredentials, acceptance, strict);
+        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(leftovers ? { leftovers } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
       });
     },
     getUsage,

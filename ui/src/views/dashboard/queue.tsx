@@ -12,9 +12,10 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { WaitsOnLink } from '@/components/waits-on';
 import { useNow } from '@/hooks/use-now';
-import { canRerun, machineName, ownWaitOf, waitOnLink, waitingRows } from '@/model/board';
+import { canRerun, machineName, ownWaitOf, waitCheckText, waitOnLink, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
+import { preemptedLine } from '@/model/preemption';
 import { act, useHopper } from '@/store';
 import { giveBack, useGivingBack } from '@/store/give-back';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
@@ -102,6 +103,13 @@ export function LockedRows({ heading = true }: { heading?: boolean }) {
   </>;
 }
 
+/** A job preempted (issue #1525): which job took its lane, and that it resumes from where it stopped. */
+function PreemptedLine({ job, className }: { job: Job; className?: string }) {
+  const by = useHopper((s) => (job.preempted ? s.jobs[job.preempted.by] : undefined));
+  const line = preemptedLine(job, by);
+  return line ? <div data-slot="preempted" className={`text-xs text-warn/90 [overflow-wrap:anywhere] ${className ?? ''}`}>{line}</div> : null;
+}
+
 /** What each waiting state means, on hover (issue #381). */
 const WAITING_MEANING: Record<string, string> = {
   queued: 'Admitted: it starts as soon as a lane is free.',
@@ -134,6 +142,7 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
           <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
         </div>
         {job.parked?.why && <div data-slot="parked-why" className="text-xs text-muted-foreground">{job.parked.why}</div>}
+        <PreemptedLine job={job} />
         {job.workTree && <div className="truncate font-mono text-xs text-muted-foreground" title={`work tree ${job.workTree}`}>{job.workTree}</div>}
       </div>
     ))}
@@ -172,6 +181,19 @@ function WaitBadge({ job }: { job: Job }) {
   return <StatusBadge status="waiting_on" label="waiting" title="Waiting on something it named: no question, its lane is free, its pane stays on its machine. It goes on by itself when it happens, or when you end the wait." />;
 }
 
+/** The wait's check (issue #1694): what the hopper checks of it, when next, the last result; overdue past its deadline. */
+function WaitCheckLine({ job }: { job: Job }) {
+  const now = useNow();
+  const check = job.wait?.check;
+  if (!check) return null;
+  const t = waitCheckText(check, now);
+  return (
+    <div data-slot="wait-check" className="text-xs text-muted-foreground [overflow-wrap:anywhere]" title={`Checked ${check.attempts} times. Deadline ${new Date(check.deadline).toLocaleString()}.`}>
+      {t.overdue && <span className="font-medium text-warn">overdue · </span>}{t.what} · {t.next}{t.last && <> · last check: {t.last}</>}
+    </div>
+  );
+}
+
 /** What the wait waits on (issue #1245): a link where it is a page; "nothing recorded" for a wait from before. */
 function WaitsOn({ job }: { job: Job }) {
   if (!waitOnLink(job)) return null;
@@ -197,6 +219,7 @@ export function WaitingOnRows({ heading = true }: { heading?: boolean }) {
         <WaitsOn job={job} />
         {job.wait && <div className="text-xs">waits for <span data-slot="waits-for" className="font-medium text-foreground/90">{job.wait.for}</span></div>}
         {job.wait?.until && <div className="text-xs text-muted-foreground">knows by <span data-slot="wait-until">{job.wait.until}</span></div>}
+        <WaitCheckLine job={job} />
         <UnassignedFlag job={job} />
       </div>
     ))}
@@ -233,6 +256,7 @@ export function WaitingPanel() {
           {job.holdReason && <div data-slot="hold-reason" className="pl-7 text-xs text-warn/90 [overflow-wrap:anywhere]" title={job.holdReason}>{heldAtGate(job) ? gateHoldText(job.holdReason, machines) : job.holdReason}</div>}
           {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
           {job.status === 'queued' && job.waitReason && <div className="pl-7 text-xs text-muted-foreground [overflow-wrap:anywhere]">{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
+          <PreemptedLine job={job} className="pl-7" />
           <div data-slot="waiting-actions" className="flex flex-wrap items-center gap-1.5 pl-7 empty:hidden">
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
             {job.originPending && <a href="#intake" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Intake">approve in Intake →</a>}

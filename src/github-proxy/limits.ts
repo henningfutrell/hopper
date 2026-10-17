@@ -36,23 +36,24 @@ export interface ProxyLimiter {
   take(op: LimitedOp, job: string, machine: string | undefined): string | undefined;
 }
 
-export function createProxyLimiter(clock: Clock, limits = PROXY_LIMITS): ProxyLimiter {
-  const seen = new Map<string, number[]>();
-  const recent = (key: string, now: number, windowMs: number): number[] => {
-    const kept = (seen.get(key) ?? []).filter((t) => now - t < windowMs);
-    if (kept.length > 0) seen.set(key, kept); else seen.delete(key);
-    return kept;
-  };
+export function createProxyLimiter(clock: Clock, limits = PROXY_LIMITS, seen = new Map<string, { windowMs: number; times: number[] }>()): ProxyLimiter {
+  const recent = (key: string): number[] => seen.get(key)?.times ?? [];
+  const count = (key: string, windowMs: number, now: number) => seen.set(key, { windowMs, times: [...recent(key), now] });
   return {
     take(op, job, machine) {
       const now = clock.now().getTime();
+      // Drop what left its window, every key's (as polls.ts): an ended job's counts do not stay.
+      for (const [k, kept] of seen) {
+        const times = kept.times.filter((t) => now - t < kept.windowMs);
+        if (times.length > 0) seen.set(k, { windowMs: kept.windowMs, times }); else seen.delete(k);
+      }
       const [windowMs, window] = limits[op].day ? [DAY_MS, 'day'] : [HOUR_MS, 'hour'];
       const jobKey = `job\0${job}\0${op}`;
       const machineKey = machine === undefined ? undefined : `machine\0${machine}\0${op}`;
-      if (recent(jobKey, now, windowMs).length >= limits[op].job) return `this job asked for ${op} ${limits[op].job} times in the last ${window}, its limit`;
-      if (machineKey && recent(machineKey, now, windowMs).length >= limits[op].machine) return `jobs on its machine asked for ${op} ${limits[op].machine} times in the last ${window}, its limit`;
-      seen.set(jobKey, [...recent(jobKey, now, windowMs), now]);
-      if (machineKey) seen.set(machineKey, [...recent(machineKey, now, windowMs), now]);
+      if (recent(jobKey).length >= limits[op].job) return `this job asked for ${op} ${limits[op].job} times in the last ${window}, its limit`;
+      if (machineKey && recent(machineKey).length >= limits[op].machine) return `jobs on its machine asked for ${op} ${limits[op].machine} times in the last ${window}, its limit`;
+      count(jobKey, windowMs, now);
+      if (machineKey) count(machineKey, windowMs, now);
       return undefined;
     },
   };

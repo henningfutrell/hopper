@@ -1,9 +1,12 @@
 // The bodies of the job and question actions of the UI session.
 import { z } from 'zod';
+import { DECLINE_CHOICES } from '../../domain/intake-decline.ts';
 import { MAX_REWORK_NOTES } from '../../domain/pull-requests.ts';
 import { MAX_NOTE_CHARS } from '../../domain/job-notes.ts';
 
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
+/** Cancel's optional reason (issue #1460): a person's own words why, kept on job.cancelled as its note, never written to the issue. */
+export const cancelBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() }).strict();
 /** Reject's optional reason (issue #387): kept on the job and in its timeline, never written to the issue. */
 export const rejectBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() });
 /** Rework's notes (issue #724): what the new job is told to change in the pull request sent back. Required. */
@@ -37,7 +40,10 @@ export const intakeActionBody = z.object({
   kind: z.enum(['assign', 'release', 'approve', 'unbackburner', 'decline', 'dismiss', 'take_in', 'retry_outbox']),
   keys: z.array(z.string().min(1)).min(1, 'name at least one item').max(100, 'at most 100 items at once'),
   hash: z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256, hex').optional(),
+  /** `decline` (issue #1710): close the issue or leave it open; absent, the user's default. */
+  choice: z.enum(DECLINE_CHOICES).optional(),
 }).strict()
   .refine((b) => !hashed(b.kind) || (b.keys.length === 1 && b.hash !== undefined), { message: 'approve and decline name one item and its hash' })
-  .refine((b) => hashed(b.kind) || b.hash === undefined, { message: 'only approve and decline take a hash' });
+  .refine((b) => hashed(b.kind) || b.hash === undefined, { message: 'only approve and decline take a hash' })
+  .refine((b) => b.kind === 'decline' || b.choice === undefined, { message: 'only decline takes a choice' });
 export const sourceParams = z.object({ name: z.string().min(1) });

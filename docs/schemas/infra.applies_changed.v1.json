@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "on": {
+      "type": "boolean"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "on",
+    "by"
+  ],
+  "additionalProperties": false
+}

@@ -82,7 +82,12 @@ export interface ReviewEntry {
   paths?: { added: string[]; notViable: string[] };
   startedAt: string;
   finishedAt: string;
+  /** The level's call it records (issue #1608): the key of the item's `call` when it was asked. */
+  callKey?: string;
 }
+
+/** A reviewer level's call in flight (issue #1608): its key, the level, and the version it reviews. */
+export interface ReviewCall { key: string; stage: string; version: number; startedAt: string }
 
 /** Who signed a review item off, and when. */
 export interface ReviewSignOff {
@@ -129,6 +134,10 @@ export interface ReviewItem {
   selection?: PathSelection;
   /** The TL;DR of its newest version (issue #569), once a long one has one. */
   tldr?: Tldr;
+  /** The hash of the text the model failed to write a TL;DR for (issue #1608): not asked again for that text. */
+  tldrFailedOf?: string;
+  /** A reviewer level's call in flight (issue #1608): set before the model is asked, cleared when its review is recorded. */
+  call?: ReviewCall;
   createdAt: string;
   updatedAt: string;
 }
@@ -258,11 +267,12 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
     marker: 'HOPPER_PROPOSAL', label: 'hopper:proposal', heading: 'proposal', askPath: 'propose',
     parts: PROPOSAL_PARTS,
     // Accept is "Continue with selected" (issue #651): it takes the selected paths, or none on a proposal of zero paths.
+    // Reject (issue #1659) rejects the whole proposal, with or without paths, in review or sent back; its note is optional.
     decisions: [
       { id: 'accept', route: 'accept', label: 'Continue with selected', effect: 'accept', notes: 'optional' },
       { id: 'more_paths', route: 'more-paths', label: 'Ask for more paths', effect: 'send_back', notes: 'optional' },
       { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
-      { id: 'reject', route: 'reject', label: 'Reject all', effect: 'reject', notes: 'required' },
+      { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'optional' },
     ],
     protocol: `When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. ${MARKDOWN_PARTS} End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, or a combination of paths that go together, inside the standing rules, and need no person, the hopper continues with them at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.`,
     ask: '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as a set of alternative paths, as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_PROPOSAL. Give the real alternatives, mark the recommended path or combination, and say why. Change nothing, and open no pull request.',

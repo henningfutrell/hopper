@@ -85,9 +85,9 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #991: a box for what the job's work needs: the template, made or reused, then a box of it the hopper starts.
     name: 'sandbox',
-    line: 'a box for what the work needs (--needs "read/cluster/NAME" or plain words)',
+    line: 'a box for the needs (--needs "read/cluster/NAME") or a template (--template NAME)',
     // Issue #1001: --why is required; --plan too when a need changes an asset. The person who approves reads both.
-    text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] --needs "<operation>/<kind>/<asset> ..." [--wait]',
+    text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] (--needs "<operation>/<kind>/<asset> ..." | --template NAME) [--wait]\nA brief that names a template: give --template NAME. The hopper asks for the sandboxes a brief names before the job starts, so they are often approved already.',
   },
   {
     // Issue #716: the template a job's work needs, made by the hopper (src/skills/template-request.ts answers it).

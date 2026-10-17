@@ -5,19 +5,14 @@ import type { GiveBackRegistry } from './give-back.ts'; import type { IntakeActi
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
+  Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountKey, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
-import type { UserStore } from './store.ts';
-import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
+import type { UserStore } from './store.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
-import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
-export type { SourceItem, SourceRef } from './source-item.ts';
-import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
-export type * from './escalation-ports.ts';
-export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
-export { authorizationServerRefusal, isRefusal } from './access.ts';
-export type { CredentialMinter } from './minting.ts';
+import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts'; export type { SourceItem, SourceRef } from './source-item.ts';
+import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
+export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
+export { authorizationServerRefusal, isRefusal } from './access.ts'; export type { CredentialMinter } from './minting.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 
@@ -73,6 +68,11 @@ export interface ExecutionContext {
    * can read text: as it starts, at a turn boundary, with an answer it types in. Absent → none.
    */
   notes?: { waiting(): boolean; take(how: NoteDelivery): string | undefined };
+  /**
+   * A missed heartbeat of the job's machine (issue #1569): a watch of its work that failed while the link is up, or a PING
+   * of its link not answered in time. The engine takes the job's checkpoint at once, at most once a minute. Absent → none.
+   */
+  missedHeartbeat?(): void;
 }
 
 /**
@@ -173,6 +173,8 @@ export interface Executor extends ExecutorTerminal {
    * shows none, or its pane or agent is gone; null when that cannot be told now. Must not throw. Absent → never asked.
    */
   ownCommandRuns?(job: Job): Promise<boolean | null>;
+  /** A job on its own wait (issue #1508): true when its pane is gone, so what ran in it stopped; null when that cannot be told now. Must not throw. */
+  paneLost?(job: Job): Promise<boolean | null>;
   /** Type `text` into a waiting job's pane (issue #1037), as a message to its agent; the job stays as it is. False: not delivered. Must not throw. */
   nudgeInPane?(job: Job, text: string): Promise<boolean>;
   /**
@@ -181,6 +183,15 @@ export interface Executor extends ExecutorTerminal {
    * cannot park. Rejects only when it could not reach the job's machine: the sweep stops what runs there later.
    */
   park?(job: Job): Promise<void>;
+  /**
+   * The lost-machine move (issue #1569): end the agent a job left on a machine it moved off, its pane named by `left` (the
+   * job's executor state there), so it does no more work beside the job's new run. Its work tree stays. Idempotent; when
+   * the job runs on that machine again, only the old pane closes. Rejects when that machine cannot be reached yet.
+   * `left` is what `leftOf` gave as the job moved: present exactly when `endLeft` is.
+   */
+  endLeft?(job: Job, left: Job['executorState']): Promise<void>;
+  /** What of the job's executor state names the pane it leaves on its machine, and no more (no text it sent): kept with its move. */
+  leftOf?(job: Job): Job['executorState'];
   /**
    * Take a running job's checkpoint (issue #921): its agent session and its work not pushed, read on its machine.
    * Undefined when the job has none to take (no agent session, no worktree of its own). Rejects when its machine
@@ -201,6 +212,11 @@ export interface Executor extends ExecutorTerminal {
    * that machine. Absent → the sweep reaches no machine through it.
    */
   machineShell?(machine: MachineSnapshot): MachineShell | undefined;
+  /**
+   * Removes what it started outside any machine for a job that `ended` says ended (issue #1570: a job pod), for the
+   * sweep: the jobs it removed something of. Rejects when it cannot tell (its API not reached). Absent → nothing to sweep.
+   */
+  sweep?(ended: (jobId: string) => boolean): Promise<string[]>;
 }
 
 import type { MachineShell, Reaped } from './machine-shell.ts';
@@ -250,8 +266,11 @@ export interface NotifierEvents {
   tldr?(q: Question): string | undefined;
   /** Where the hopper is reached from outside now (issues #795, #880): the remote access URL while its tunnel is up. Absent or undefined: not reached. */
   reach?(): string | undefined;
-  /** A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan. */
-  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined;
+  /**
+   * A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan.
+   * `deliveries`: the user's notifier deliveries (issue #1587), where a notifier keeps each notification until it is delivered. Absent: kept in memory.
+   */
+  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined; deliveries?: import('./notifier-deliveries.ts').NotifierDeliveryRepository;
 }
 
 /**
@@ -432,14 +451,13 @@ export interface QuestionService {
 
 /**
  * What a source observed about a job it owns. Questions are answered in the UI, never through a source.
- * `unassigned` (issue #387): a started job's item is no longer assigned to the account it was taken for —
- * the job is flagged, and the user decides whether to stop it; `reassigned`: a flagged job's item is
- * assigned to it again.
+ * `unassigned` (issue #387): a started job's item is no longer assigned to the account it was taken for — the job is flagged,
+ * and the user decides whether to stop it; `reassigned`: a flagged job's item is assigned to it again. `finish` (issue #1460):
+ * a job on its own wait whose item closed by its own work (the done-check passes) ends finished, `reason` its result.
  */
 export type SourceSignal =
-  | { kind: 'cancel'; jobId: JobId; reason: string }
-  | { kind: 'unassigned'; jobId: JobId }
-  | { kind: 'reassigned'; jobId: JobId };
+  | { kind: 'cancel' | 'finish'; jobId: JobId; reason: string }
+  | { kind: 'unassigned' | 'reassigned'; jobId: JobId };
 
 /**
  * What happened to a job, reported back to its source: the claim and the end. Progress and questions
@@ -606,6 +624,7 @@ export interface SourceHost extends AnswersFromThread {
    */
   changedSince(item: SourceItem, jobId?: JobId): string | undefined;
   cancel(jobId: JobId, reason: string): void;
+  finishWaiting(jobId: JobId, result: string): void; // the `finish` signal (issue #1460); late or ended: nothing
   /**
    * The item offered again for a job not ended (issue #375): its priority, from the item or a routing rule, as
    * now (job.reprioritized) — a started job's too, the live priority (issue #535); and, while it waits and has not
@@ -774,11 +793,12 @@ export interface Connection {
 /** A user's connected accounts (issue #214): GET /api/connected-accounts, POST /ui/api/connected-accounts. */
 export interface ConnectedAccounts {
   /**
-   * `status`: every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed, as last read
+   * Each takes the account's key (issue #1448): the first account's is its provider. `status`: every account's, the first at
+   * each provider in CONNECTED_ACCOUNT_PROVIDERS order, then the further ones; GitHub's with where the app is installed, as last read
    * (issue #1250): never reads GitHub. `refresh`: reads where the app is installed from GitHub again, in the background;
    * answers at once, `installationsReading` while it reads.
    */
-  status(): Promise<ConnectedAccountStatus[]>; refresh(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  status(): Promise<ConnectedAccountStatus[]>; refresh(key: ConnectedAccountKey): ConnectedAccountStatus;
   /**
    * Keep the connection a GitHub sign-in made: it replaces the account there was, unless that one is healthy — then it is
    * held until the person takes or drops it (issue #647).
@@ -788,43 +808,51 @@ export interface ConnectedAccounts {
    * Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. `email`:
    * the email the person signed in with (issue #1380): with the source email match on, the account must have it verified.
    */
-  connect(provider: ConnectedAccountProvider, by?: { email?: string }): Promise<ConnectedAccountStatus>;
+  connect(key: ConnectedAccountKey, by?: { email?: string }): Promise<ConnectedAccountStatus>;
   /**
    * Connect with a personal access token the person gives (issue #1380): no GitHub App. GitHub must take it; the source email
    * match applies as for `connect`. Kept as the connection's access token, in the user's vault; never renewed, never deleted at
    * GitHub. Answers the status: connected, or failed with why.
    */
-  connectToken(provider: ConnectedAccountProvider, token: string, by?: { email?: string }): Promise<ConnectedAccountStatus>;
-  /** End a waiting device code. */
-  cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
-  /** Replace the connection with the held grant of a sign-in (issue #647); running jobs are handed its token. */
-  takeHeld(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  connectToken(key: ConnectedAccountKey, token: string, by?: { email?: string }): Promise<ConnectedAccountStatus>;
+  /** Replace the connection with the held grant of a sign-in (issue #647); running jobs are handed its token. `cancel`: end a waiting device code. */
+  takeHeld(key: ConnectedAccountKey): Promise<ConnectedAccountStatus>; cancel(key: ConnectedAccountKey): ConnectedAccountStatus;
   /** Drop the held grant of a sign-in (issue #647), its token deleted at GitHub (best effort); the connection stays. */
-  dropHeld(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  dropHeld(key: ConnectedAccountKey): Promise<ConnectedAccountStatus>;
   /** Whether the account's sign-in ended (issue #513): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
-  expired(provider: ConnectedAccountProvider): boolean;
+  expired(key: ConnectedAccountKey): boolean;
   /** Revoke the account's grant at GitHub (best effort; issue #514), then forget the account and its token; its job repositories stay chosen. */
-  disconnect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
-  /** Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. */
-  choose(provider: ConnectedAccountProvider, repositories: readonly string[]): Promise<ConnectedAccountStatus>;
+  disconnect(key: ConnectedAccountKey): Promise<ConnectedAccountStatus>;
+  /**
+   * Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. A repository is a
+   * job repository of one account only (issue #1448): one chosen for another account already is refused.
+   */
+  choose(key: ConnectedAccountKey, repositories: readonly string[]): Promise<ConnectedAccountStatus>;
+  /**
+   * `add`: a further account at `provider` with a personal access token (issue #1448): GitHub must take it, the source email
+   * match applies, and its login must not be one connected already. With no first account, the token connects the first.
+   * Answers its status: connected under its new key, or failed with why, and then nothing is kept. `keys`: every account's
+   * key, the first at each provider, then the further ones kept, in order.
+   */
+  add(provider: ConnectedAccountProvider, token: string, by?: { email?: string }): Promise<ConnectedAccountStatus>; keys(): ConnectedAccountKey[];
 }
 
 /** What a connected account's job source asks (issue #214): who the account is, a token for a call, where its provider is. */
 export interface ConnectedAccountTokens {
   /** The connected account's login, or undefined while none is connected or its sign-in expired. */
-  account(provider: ConnectedAccountProvider): string | undefined;
+  account(key: ConnectedAccountKey): string | undefined;
   /** What to do now that the account's sign-in expired (issue #358), or its tokens cannot be opened (issue #514); undefined while it lives, or none is connected. */
-  ended(provider: ConnectedAccountProvider): string | undefined;
+  ended(key: ConnectedAccountKey): string | undefined;
   /** Whether the account's sign-in ended (issues #513, #514): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
-  expired(provider: ConnectedAccountProvider): boolean;
+  expired(key: ConnectedAccountKey): boolean;
   /** Its access token now, renewed first when it is near its expiry (issue #358); throws while none is connected, or once its sign-in expired. */
-  token(provider: ConnectedAccountProvider): Promise<string>;
+  token(key: ConnectedAccountKey): Promise<string>;
   /** A token GitHub refused (a 401): renewed, unless it was already; throws once the sign-in expired. */
-  renew(provider: ConnectedAccountProvider, refused: string): Promise<string>;
+  renew(key: ConnectedAccountKey, refused: string): Promise<string>;
   /** The provider's web origin and REST API base, and the hopper's app's install link when its slug is known (issue #1351). */
-  endpoints(provider: ConnectedAccountProvider): { url: string; apiUrl: string; installUrl?: string };
+  endpoints(key: ConnectedAccountKey): { url: string; apiUrl: string; installUrl?: string };
   /** The repositories the account's jobs may use, as chosen now (issue #321); empty: none. */
-  jobRepositories(provider: ConnectedAccountProvider): string[];
+  jobRepositories(key: ConnectedAccountKey): string[];
 }
 
 // ---- Sandbox boxes the hopper launches: src/domain/sandboxes.ts (re-exported here, one vocabulary) ----
@@ -841,5 +869,5 @@ export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
-export type * from './store.ts'; export type * from './local-accounts.ts'; // local accounts (issue #1380)
+export type * from './store.ts'; export type * from './local-accounts.ts'; export type * from './event-cursors.ts'; // local accounts (issue #1380), event cursors (issue #1572)
 export { CONFIG_NAMES, INSTANCE_CONFIG, USER_CONFIG } from './store.ts';

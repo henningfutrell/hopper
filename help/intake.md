@@ -42,6 +42,8 @@ These never count as trusted actors:
 
 An issue that a job filed is never of a trusted origin. A job cannot make work for itself.
 
+When a job needs a change in another repository the hopper works on, it files a **required child** there. The hopper adds the source label to that issue and assigns it to you, so it shows in **Intake** as a request card. You do not add the label on GitHub. Approve the card, and a job of that repository does the change. The job that filed it waits until the child closes, then goes on.
+
 Access decides each login. The hopper asks OpenFGA (`intake#can_start_jobs`) and tells it your list of trusted actors at each check.
 
 ### Request cards
@@ -74,6 +76,8 @@ Every later job of the same issue runs the snapshot, not the live issue. This in
 
 If you did all of these steps yourself, the issue has a trusted origin. The job goes into the queue.
 
+To tune the source, open the `github-account` instance in **Settings → Plugins → Job sources** and set its options. Which repositories it lists is no option: they are the job repositories you chose in Sources.
+
 ### Let other people start jobs
 
 1. Sign in as an admin.
@@ -98,6 +102,18 @@ The next sync takes the issue. The source syncs at once after an approval.
 Approve works only when the text has not changed since the hopper showed it to you. If someone edited the issue after you read it, the hopper refuses: `its title or body changed since it was shown: read it again`. Reload the page and read the card again.
 
 If the issue changes after you approved it, but before its job is made, the card shows again. It shows the approved text and the change line by line, with **Approve the new text**.
+
+### Issues on GitLab
+
+Connect a GitLab account in Sources → GitLab with a personal access token, and pick its projects. Intake then lists the open
+issues labelled `hopper` in those projects.
+
+An issue becomes a job when your GitLab account wrote it, added the `hopper` label and assigned it to itself, and nobody
+else edited its title or description. Any other GitLab issue shows why it is not taken. The job fetches and pushes its
+project through the hopper with your GitLab account's token, and opens a merge request with "Closes #N" in its
+description. The hopper writes only its labels to the issue: `hopper:claimed` while a job works on it, then
+`hopper:done`, `hopper:failed` or `hopper:rejected`. Remove the end label to offer the issue again. A person reviews
+and merges the merge request on GitLab.
 
 ### Issues not assigned to you
 

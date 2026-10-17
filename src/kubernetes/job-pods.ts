@@ -1,10 +1,11 @@
 // One pod per job (issue #1283, design.md "Job pods on Kubernetes"): the pod is started through the Kubernetes API with a
 // one-time join line, joins as a client target named after it — a machine only its job runs on —, and dials out to the
 // hopper. The job runs there as on any client target. When the job ends, or its start fails or is cancelled, the pod is
-// deleted and its machine removed.
-import type { KubernetesPods } from '../domain/pods.ts';
+// deleted and its machine removed. The sweep (issue #1570) deletes this hopper's pods whose job ended, which a stop of the
+// hopper between the job's end and its cleanup, or a delete that failed, left.
+import { POD_INSTANCE_LABEL, type KubernetesPods } from '../domain/pods.ts';
 import type { MachineSnapshot } from '../domain/types.ts';
-import { jobPod, jobPodName, type WorkVolume } from './pod-spec.ts';
+import { JOB_POD_PREFIX, jobPod, jobPodName, labelValue, type WorkVolume } from './pod-spec.ts';
 
 export interface JobPodsOptions {
   pods: KubernetesPods;
@@ -40,7 +41,10 @@ export interface JobPods {
   alive(jobId: string): Promise<boolean>;
   /** Deletes the job's pod and removes its machine. Idempotent; rejects when the API refused the delete. */
   remove(jobId: string): Promise<void>;
+  /** Removes each pod of this hopper (its instance label) whose job `ended` says ended, with its machine: those jobs. */
+  sweep(ended: (jobId: string) => boolean): Promise<string[]>;
 }
+
 
 export function createJobPods(o: JobPodsOptions): JobPods {
   const url = new URL(o.hopperUrl);
@@ -95,5 +99,15 @@ export function createJobPods(o: JobPodsOptions): JobPods {
       return state !== undefined && state.phase !== 'Failed' && state.phase !== 'Succeeded';
     },
     remove,
+    async sweep(ended) {
+      const out: string[] = [];
+      for (const name of await o.pods.list({ [POD_INSTANCE_LABEL]: labelValue(o.instanceId()) })) {
+        const jobId = name.startsWith(JOB_POD_PREFIX) ? name.slice(JOB_POD_PREFIX.length) : '';
+        if (!jobId || !ended(jobId)) continue;
+        await remove(jobId);
+        out.push(jobId);
+      }
+      return out;
+    },
   };
 }

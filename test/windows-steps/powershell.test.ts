@@ -33,6 +33,10 @@ describe('the PowerShell a step runs', () => {
     expect(s).toContain("$outputs = @('bin\\Release', 'build log.txt')");
     expect(s).toContain("tar -cf 'C:\\work\\app\\.hopper-step\\outputs.tar' -- @present");
     expect(s.trim().split('\n').at(-1)).toBe('exit $code');
+    // Issue #1255: a tar that fails leaves no archive behind, and one that packs says how large the archive is.
+    expect(s).toContain("if ($LASTEXITCODE) { [Console]::Error.WriteLine('hopper-step: the outputs could not be packed on the host: tar exited ' + $LASTEXITCODE)");
+    expect(s).toContain("Remove-Item -LiteralPath 'C:\\work\\app\\.hopper-step\\outputs.tar' -Force -ErrorAction SilentlyContinue");
+    expect(s).toContain("[Console]::Error.WriteLine('hopper-step: outputs packed, ' + (Get-Item -LiteralPath 'C:\\work\\app\\.hopper-step\\outputs.tar').Length + ' bytes')");
     const bare = runScript({ workDir: 'C:\\w', inputs: false, outputs: [] });
     expect(bare).not.toContain('tar ');
     expect(bare).not.toContain('[Console]::In');

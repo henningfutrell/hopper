@@ -106,14 +106,13 @@ describe('a proposal with three paths (test 1)', () => {
 });
 
 describe('a proposal with zero paths (test 2)', () => {
-  it('shows its reason; it is accepted, steered or asked for paths, never selected from or rejected', async () => {
+  it('shows its reason; it is accepted, steered, asked for paths or rejected (issue #1659), never selected from', async () => {
     const a = await start();
     const token = await a.login();
     const job = await a.pull(propose(NO_PATHS));
     const p = await forPerson(a, job.id);
     expect(p.versions[0]!.paths).toEqual({ paths: [], none: 'the shed was painted last year.' });
     expect((await post(a, token, p.id, 'accept', { paths: [{ id: '1' }] })).status).toBe(400);
-    expect((await post(a, token, p.id, 'reject', { notes: 'no' })).status).toBe(409);
     const r = await post(a, token, p.id, 'accept', { notes: 'agreed' });
     expect(r.body).toMatchObject({ status: 'accepted', signOff: { decision: 'accept', notes: 'agreed' } });
     expect(r.body.signOff!.selected).toBeUndefined();
@@ -121,11 +120,11 @@ describe('a proposal with zero paths (test 2)', () => {
     expect(await followOnsOf(a, job.id)).toEqual([]);
   });
 
-  it('the proposal section declares its decisions: accept, ask for more paths, steer, reject all', async () => {
+  it('the proposal section declares its decisions: accept, ask for more paths, steer, reject', async () => {
     const a = await start();
     const type = (await a.api<{ type: { decisions: { id: string; route: string; label: string }[] } }>('GET', '/api/proposals')).body.type;
     expect(type.decisions.map((d) => [d.id, d.route, d.label])).toEqual([
-      ['accept', 'accept', 'Continue with selected'], ['more_paths', 'more-paths', 'Ask for more paths'], ['steer', 'steer', 'Steer'], ['reject', 'reject', 'Reject all'],
+      ['accept', 'accept', 'Continue with selected'], ['more_paths', 'more-paths', 'Ask for more paths'], ['steer', 'steer', 'Steer'], ['reject', 'reject', 'Reject'],
     ]);
   });
 });
@@ -173,7 +172,7 @@ describe('ask for more paths (test 3)', () => {
     expect(v2.versions[1]!.text).toContain('think about the cost of paint');
   });
 
-  it('reject all ends the job with the rejection', async () => {
+  it('reject ends the job with the rejection', async () => {
     const a = await start();
     const token = await a.login();
     const job = await a.pull(propose(THREE_PATHS));
@@ -240,7 +239,7 @@ describe('the operator CLI (test 4)', () => {
     expect((await hopper(a, ['proposal', 'select', pc.id])).code).toBe(2);
   });
 
-  it('asks for more paths, steers and rejects all from the CLI', async () => {
+  it('asks for more paths, steers and rejects from the CLI', async () => {
     const a = await start();
     const one = await a.pull(propose(THREE_PATHS));
     const p = await forPerson(a, one.id);
@@ -249,7 +248,7 @@ describe('the operator CLI (test 4)', () => {
     expect(JSON.parse(more.out)).toMatchObject({ status: 'revising', selection: { paths: [{ id: '2' }] } });
     const v2 = await waitForProposal(a, one.id, (x) => x.versions.length === 2 && x.stage === 'human');
     expect((await hopper(a, ['proposal', 'steer', v2.id])).code).toBe(2);
-    expect(JSON.parse((await hopper(a, ['proposal', 'reject', v2.id, '--note', 'not now'])).out)).toMatchObject({ status: 'rejected' });
+    expect(JSON.parse((await hopper(a, ['proposal', 'reject', v2.id])).out)).toMatchObject({ status: 'rejected' });
   });
 });
 

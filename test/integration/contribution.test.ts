@@ -228,7 +228,7 @@ describe('the contribution flow (issue #429)', () => {
     const at = await work('owner/x', 'x');
     const pushed = await git(['push', 'origin', 'HEAD:refs/heads/fix/empty-input'], at);
     expect(pushed.code).not.toBe(0);
-    expect(pushed.stderr).toContain('a job pushes only to its own repository (upstream/lib), or to its user\'s fork of it');
+    expect(pushed.stderr).toContain('a job pushes only to its own repository (upstream/lib) or another of the repositories the hopper works on, or to its user\'s fork of its own');
     expect(await branchesOf(t, 'owner/x')).toEqual(['dev']);
     const issue = await gh(['issue', 'create', '--repo', 'owner/x', '--title', 'x', '--body', 'y']);
     expect(issue.answer.error).toBe('refused: owner/x is not one of the repositories the hopper works on, so it does nothing there for a job');
@@ -255,7 +255,7 @@ describe('the contribution flow (issue #429)', () => {
     await turnOn(t, false);
     const pushed = await git(['push', 'origin', 'HEAD:refs/heads/fix/empty-input'], at);
     expect(pushed.code).not.toBe(0);
-    expect(pushed.stderr).toContain('a job pushes only to its own repository (upstream/lib)');
+    expect(pushed.stderr).toContain('a job pushes only to its own repository (upstream/lib) or another of the repositories the hopper works on');
     expect(await branchesOf(t, 'owner/lib')).toEqual(['dev']);
     const pr = await gh(['pr', 'create', '--repo', 'upstream/lib', '--head', 'owner:fix/empty-input', '--title', 'x', '--body', 'y']);
     expect(pr.answer.error).toBe(`refused: ${OFF}`);

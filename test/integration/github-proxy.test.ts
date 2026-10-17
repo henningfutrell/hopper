@@ -14,7 +14,7 @@
 //   Scenario: a job asks for a repository the hopper does not work on
 //     Then it is refused with the reason, nothing reaches GitHub, and the refusal is on its timeline
 //   Scenario: the hopper's own job comments, reads, and opens a pull request from its branch on its own repository
-//   Scenario: a pull request on another repository than the job's own is refused
+//   Scenario: a pull request on another of the user's job repositories opens; one elsewhere is refused (issue #1275)
 //   Scenario: a job asks the hopper, not GitHub (issue #1074: repo queries)
 //     When the job reads its pull request's diff, commits and checks, and its issue's comments, twice
 //     Then GitHub is read once for each: the second answer comes from the hopper's repo-query cache (`source: cache`)
@@ -30,6 +30,7 @@
 //     Then the issue's text names octo/tools#7 as its parent, and the lineage is on the job's timeline (`job.child_issue_filed`)
 //     And with --required the hopper links it as a GitHub sub-issue of octo/tools#7: a required part of it
 //     And a link GitHub refuses leaves the issue filed: the job and the timeline say why
+//     And a required child is routed (issue #1510, test/integration/routed-children.test.ts)
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
 //   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
@@ -244,12 +245,14 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(json(ready)).toMatchObject({ ok: true, op: 'pr.ready', number: pr.number, draft: false });
   });
 
-  it('opens a pull request only on the job\'s own repository', async () => {
+  it('opens a pull request on another of its user\'s job repositories, and none on a repository the hopper does not work on (issue #1275)', async () => {
     const t = await start();
     const { env } = await running(t, 'octo/tools');
-    const r = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/site', '--head', 'x', '--title', 'x', '--body', 'x']);
-    expect(json(r).error).toBe('refused: a job opens a pull request only on its own repository (octo/tools)');
-    expect(t.github.requests.filter((q) => q.path.endsWith('/pulls'))).toEqual([]);
+    const r = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/site', '--head', 'issue-7-site', '--title', 'Site', '--body', 'Closes octo/tools#7']);
+    expect(json(r)).toMatchObject({ ok: true, op: 'pr.create', head: 'issue-7-site', url: expect.stringContaining('/octo/site/pull/') });
+    expect(json(await hopperGh(t.root, env, ['pr', 'ready', String(json(r).number), '--repo', 'octo/site']))).toMatchObject({ ok: true, op: 'pr.ready' });
+    const elsewhere = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'else/where', '--head', 'x', '--title', 'x', '--body', 'x']);
+    expect(json(elsewhere).error).toBe('refused: else/where is not one of the repositories the hopper works on, so it does nothing there for a job');
   });
 
   it('acts for another user\'s job with that user\'s own connection, never the first user\'s; each event names who acted (issue #1380)', async () => {
@@ -365,6 +368,7 @@ describe('issue lineage through the hopper (issue #729)', () => {
       jobId: job.id, data: expect.objectContaining({ parent: { repo: 'octo/tools', number: 7 }, child: expect.objectContaining({ number: 8 }), required: true, subIssue: true }),
     })]);
   });
+
 
   it('a sub-issue link GitHub refuses leaves the issue filed: the job and the timeline say why', async () => {
     const { t, env } = await parented();

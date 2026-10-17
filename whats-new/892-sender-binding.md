@@ -1,0 +1,1 @@
+- An agent can now tie its access to a key that only it holds. Then a copied token alone no longer works for anyone else, and the access list says which grants are tied to a key.

@@ -32,14 +32,14 @@ import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from 
 import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
-import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { REMOVED, detailOf, dropRetries, followSources, joined, keepNotRerun, newSlot, notAssignedTold, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
 import { needsWork, pauseTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
 import { createThreadAsks } from './thread-asks.ts';
-import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts';
+import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts'; import { watchedEnds } from './watched-ends.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
 import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts';
@@ -139,17 +139,17 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     try {
       const source = await slot.source.report(build(job));
       write(jobId, mark(flagsOf(store.jobs.get(jobId) ?? job)), source);
-      slot.retrying.delete(jobId);
-      return true;
     } catch (e) {
-      if (e instanceof SourceError && e.permanent) {
-        const f = flagsOf(store.jobs.get(jobId) ?? job);
-        write(jobId, mark({ ...f, permanentErrors: [...(f.permanentErrors ?? []), { kind, message: e.message }] }));
-        return true;
+      if (!(e instanceof SourceError && e.permanent)) {
+        slot.retrying.set(jobId, message(e));
+        return false;
       }
-      slot.retrying.set(jobId, message(e));
-      return false;
+      const f = flagsOf(store.jobs.get(jobId) ?? job);
+      write(jobId, mark({ ...f, permanentErrors: [...(f.permanentErrors ?? []), { kind, message: e.message }] }));
     }
+    // Reported, or never to be (issue #1402): no retry is left.
+    slot.retrying.delete(jobId);
+    return true;
   }
 
 
@@ -241,7 +241,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       slot.loggedNotRerun.add(n.key);
       console.warn(`hopper: ${n.key} not run again: job ${n.job} ${n.status}, ${n.reason}`);
     }
-    slot.notRerun = notRerun;
+    keepNotRerun(slot, notRerun);
     return { seen: items.length, created };
   }
 
@@ -275,6 +275,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
       // Issue #1433: a pull request a job waits on that no follow records the end of; read at every sync, not only a round's.
       await waitedEnds(slot.source, jobsOf(slot));
+      // Issue #1508: the other items a job's wait names — issues, pull requests, workflow runs —, ended or not.
+      await watchedItemEnds(slot.source, jobsOf(slot));
     };
     try {
       await (slot.source.pass ? slot.source.pass(pass, paused) : pass()); // its line says why it takes nothing new (issue #1351)
@@ -288,10 +290,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
+    dropRetries(slot, (id) => { const j = store.jobs.get(id); return !!j && needsWork(j); });
     delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
+    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length); notAssignedTold(slot, paused);
     afterSync(slot, { changed: all || st.state !== 'ok' || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
@@ -344,7 +347,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob, kept: (s) => { const slot = slots.get(s.name); if (slot && running) outbox.soon(slot); } });
   const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
-  const waitedEnds = waitedPullRequestEnds(store);
+  const waitedEnds = waitedPullRequestEnds(store), watchedItemEnds = watchedEnds(store);
   const afterDone = createAfterDone({
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },

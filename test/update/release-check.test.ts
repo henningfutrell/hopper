@@ -63,16 +63,28 @@ afterEach(async () => { for (const s of servers.splice(0)) await new Promise((r)
 type Account = { token(): Promise<string>; renew(refused: string): Promise<string> } | { problem: string };
 const connected: Account = { token: async () => TOKEN, renew: async () => TOKEN };
 
-async function check(gh: ReturnType<typeof fakeGitHub>, now = { t: 0 }, github: () => Account = () => connected) {
+async function check(gh: ReturnType<typeof fakeGitHub>, now = { t: 0 }, github: () => Account = () => connected, kept?: number) {
   servers.push(gh.server);
   await new Promise<void>((r) => gh.server.listen(0, '127.0.0.1', r));
   const { port } = gh.server.address() as AddressInfo;
   // Its own limiter on the test's clock: a rate-limit refusal holds the bucket until the fake's reset time.
   const limiter = createGitHubLimiter({ now: () => now.t, sleep: async (ms) => { now.t += ms; } });
-  return createReleaseCheck({ apiUrl: `http://127.0.0.1:${port}`, clock: { now: () => new Date(now.t) }, retryMs: 60_000, github, limiter });
+  return createReleaseCheck({ apiUrl: `http://127.0.0.1:${port}`, clock: { now: () => new Date(now.t) }, retryMs: 60_000, github, limiter, ...(kept ? { kept } : {}) });
 }
 
 describe('the release check (issue #652)', () => {
+  it('keeps the answers of at most its cap of commits, the oldest out first (issue #1402)', async () => {
+    const OTHER = 'o'.repeat(40);
+    const gh = fakeGitHub({ pulls: { [MERGE]: [merged(7)], [OTHER]: [{ ...merged(8), merge_commit_sha: OTHER }] }, runs: { [HEAD]: [run('pr / test', 'success')] } });
+    const c = await check(gh, { t: 0 }, () => connected, 1);
+    await c.verify(REPO, MERGE);
+    await c.verify(REPO, MERGE);
+    const once = gh.asked.length;
+    await c.verify(REPO, OTHER);
+    await c.verify(REPO, MERGE);
+    expect(gh.asked.filter((p) => p.includes(MERGE)).length).toBe(2 * gh.asked.slice(0, once).filter((p) => p.includes(MERGE)).length);
+  });
+
   it('passes a commit that is the merge of a pull request whose checks passed, and names the pull request', async () => {
     const c = await check(fakeGitHub({ pulls: { [MERGE]: [merged(7)] }, runs: { [HEAD]: [run('pr / test', 'success'), run('lint', 'skipped')] } }));
     expect(await c.verify(REPO, MERGE)).toEqual({ passed: true, pullRequest: { number: 7, url: 'https://github.com/o/r/pull/7' } });

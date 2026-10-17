@@ -1,7 +1,7 @@
 {{- if .Values.networkPolicy.enabled -}}
 {{- /*
-Who reaches each part: Postgres the hopper, OpenFGA, its migration and the vault pod; OpenFGA, Solr, the vault pod and the
-tunnel services the hopper alone; the local KMS the pod the vault runs in; the lane pods no one.
+Who reaches each part: Postgres the hopper, OpenFGA, its migration and the vault pod; OpenFGA, Solr, the vault pod, the
+tunnel services and the telemetry viewer's OTLP port the hopper alone; the local KMS the pod the vault runs in; the lane pods no one.
 */ -}}
 {{- $parts := list (list "openfga" 8080 (list "hopper")) (list "lanes" 0 list) -}}
 {{- if .Values.postgres.bundled -}}
@@ -13,6 +13,9 @@ tunnel services the hopper alone; the local KMS the pod the vault runs in; the l
 {{- end -}}
 {{- if .Values.solr.enabled -}}
 {{- $parts = append $parts (list "solr" 8983 (list "hopper")) -}}
+{{- end -}}
+{{- if .Values.telemetry.viewer.enabled -}}
+{{- $parts = append $parts (list "telemetry" 4318 (list "hopper")) -}}
 {{- end -}}
 {{- if .Values.hopperVault.enabled -}}
 {{- $parts = append $parts (list "vault" 4791 (list "hopper")) -}}

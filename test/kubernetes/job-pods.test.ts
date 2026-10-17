@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { createJobPods, type JobPodsOptions } from '../../src/kubernetes/job-pods.ts';
+import { jobPod } from '../../src/kubernetes/pod-spec.ts';
 import { createFakeKubernetes, podEnv, type FakeKubernetes } from '../support/fake-kubernetes.ts';
 
 const JOB = '0f8e3c2a-1111-4222-8333-444455556666';
@@ -85,5 +86,25 @@ describe('a job pod', () => {
     await s.pods.start(JOB, new AbortController().signal);
     expect(s.fake.created).toHaveLength(2);
     expect(s.fake.removed).toEqual([POD]);
+  });
+
+  // Issue #1570: a pod a stop of the hopper, or a delete that failed, left after its job ended.
+  it('the sweep deletes this hopper\'s pods whose job ended, with their machines, and no other pod', async () => {
+    const s = setup();
+    const ENDED = '1a2b3c4d-1111-4222-8333-444455556666';
+    const OTHER = '9f8e7d6c-1111-4222-8333-444455556666';
+    const pod = (jobId: string, instanceId: string) => jobPod({ name: `hopper-job-${jobId}`, jobId, instanceId, image: 'box:claude', joinLine: 'http://h#c', volume: { emptyDir: {} }, cpus: 1, memoryMb: 1024 });
+    await s.fake.create(pod(ENDED, 'inst-1'));
+    await s.pods.start(JOB, new AbortController().signal);
+    // Another hopper's pod of a job that ended: its instance label is not this hopper's.
+    await s.fake.create(pod(OTHER, 'inst-2'));
+    const asked: string[] = [];
+    const removed = await s.pods.sweep((jobId) => { asked.push(jobId); return jobId !== JOB; });
+    expect(removed).toEqual([ENDED]);
+    expect(asked.sort()).toEqual([JOB, ENDED].sort());
+    expect(s.fake.removed).toEqual([`hopper-job-${ENDED}`]);
+    // The start removed a pod left from an earlier start first (none here); the sweep, only the ended job's.
+    expect(s.left).toEqual([POD, `hopper-job-${ENDED}`]);
+    expect([...s.fake.pods.keys()].sort()).toEqual([POD, `hopper-job-${OTHER}`].sort());
   });
 });

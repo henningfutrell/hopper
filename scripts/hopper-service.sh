@@ -11,7 +11,12 @@
 #   bash hopper-service.sh uninstall   stop the stack and remove the units (the data stays)
 #   bash hopper-service.sh start-with-key
 #                                      restart the service with the master key given at launch: HOPPER_MASTER_KEY, else
-#                                      asked on the terminal. No key needs to be sealed here
+#                                      one line on stdin when it is no terminal (a key piped in), else asked on the
+#                                      terminal. No key needs to be sealed here
+#
+# The install puts in master-key.sh from the image when none is here, and seals the key given to it as HOPPER_MASTER_KEY
+# (issue #1487): then a restart of this host brings the stack back with no person. With data and no key sealed, it says
+# the line that seals it.
 #
 # The units, in ${XDG_CONFIG_HOME:-~/.config}/systemd/user:
 #   hopper-compose.service       owns the stack. Its start takes the stack down and starts it again with the master key,
@@ -23,7 +28,21 @@
 #                                With none of them, it starts the stack with no key only when the hopper has no data yet
 #                                (no volume hopper_postgres): a new hopper makes one. With data and no key, the start
 #                                fails and says how to give the key: a new key would open none of the secrets.
-#                                Its stop takes the stack down; the volumes and the data stay.
+#                                Compose gets the key as a file, never as a variable (issue #1487): written to
+#                                $XDG_RUNTIME_DIR/hopper-service/master-key (in memory, a folder only this user opens),
+#                                mounted read-only into the hopper's container (and hopper-vault's), and named by
+#                                HOPPER_MASTER_KEY_FILE. No container's config holds the key, and after a restart of this
+#                                host the file is gone, so a `podman start` of an old container does not start.
+#                                After the stack is up, it starts each joined container that is stopped (issue #1497): a
+#                                container a person joined to the hopper's network (hopper_default), an ssh target's
+#                                machine for example, which stops with its host and which nothing else starts. A container
+#                                of the hopper's compose project, and a sandbox (a label io.hopper.*), is never one. One to
+#                                keep stopped: take it off the network (podman network disconnect hopper_default <name>).
+#                                Its stop takes the stack down and removes the file; the volumes and the data stay.
+#   hopper-compose-alert.service runs when the start fails (OnFailure=, issue #1487): it says what stopped the start in a
+#                                desktop notice (notify-send, when there is one) and gives it to hopper-alert.sh beside
+#                                this file, when there is one, as its one argument: write there what reaches you (a
+#                                webhook, a mail, a phone notice). The hopper is down then, so it cannot tell you itself.
 #   hopper-compose-check.timer   every minute, hopper-compose-check.service checks the published port from this host.
 #                                When the hopper's container runs and its port does not answer, twice, 10 s apart, it
 #                                restarts hopper-compose.service.
@@ -38,10 +57,13 @@ set -euo pipefail
 
 UNIT=hopper-compose.service
 CHECK=hopper-compose-check
+ALERT=hopper-compose-alert
 PROJECT=hopper
 # The systemd credential the service reads the master key from, and the volume that holds the hopper's data.
 CREDENTIAL=hopper-master-key
 DATA_VOLUME=${PROJECT}_postgres
+# The hopper's network (compose.yaml): a joined container is a container on it that is not of the stack.
+NETWORK=hopper_default
 
 main() {
   local command="${1:-}"
@@ -53,12 +75,17 @@ main() {
     start) start ;;
     stop) stop ;;
     check) check ;;
-    up) compose up -d </dev/null ;;
-    *) fail 'usage: bash hopper-service.sh install | uninstall | start-with-key (start, stop and check are the units'"'"' own)' ;;
+    alert) alert ;;
+    up) up ;;
+    *) fail 'usage: bash hopper-service.sh install | uninstall | start-with-key (start, stop, check and alert are the units'"'"' own)' ;;
   esac
 }
 
 unit_dir() { printf '%s/systemd/user' "${XDG_CONFIG_HOME:-$HOME/.config}"; }
+
+# The folder the key compose reads is written to (issue #1487): in this user's runtime folder, in memory, gone at a
+# restart of this host. Empty when there is no runtime folder.
+key_dir() { [ -z "${XDG_RUNTIME_DIR:-}" ] || printf '%s/hopper-service' "$XDG_RUNTIME_DIR"; }
 
 # The compose tool that sees the stack (issue #1063): podman-compose when its containers carry podman-compose's label,
 # else `podman compose`. As words, for the unit.
@@ -85,6 +112,14 @@ quoted() {
   printf '"%s"' "${v//%/%%}"
 }
 
+# A path setting of a unit file (WorkingDirectory=): systemd takes its value as it is, with no quotes (issue #1453).
+unit_path() {
+  local v=$1
+  [[ "$v" == /* && "$v" != *$'\n'* && "$v" != *'"'* && "$v" != *'\'* && "$v" != *[[:space:]] ]] \
+    || fail "this path cannot go in a unit file (not absolute, a newline, a quote, a backslash or a space at its end): $v"
+  printf '%s' "${v//%/%%}"
+}
+
 # An argument of a command line in a unit file: quoted, and $ kept as it is too.
 argument() {
   local v; v="$(quoted "$1")"
@@ -102,6 +137,36 @@ settings() {
   done
 }
 
+# The image compose.yaml runs: HOPPER_IMAGE, else the default the file names.
+image_ref() {
+  [ -z "${HOPPER_IMAGE:-}" ] || { printf '%s' "$HOPPER_IMAGE"; return; }
+  sed -n 's/^ *image: \${HOPPER_IMAGE:-\([^}]*\)}.*/\1/p' compose.yaml | head -n 1
+}
+
+# master-key.sh beside this file (issue #1487): put in from the image when none is here, then the key given to the install
+# sealed to this host, so a restart of the host needs no person. The key goes to master-key.sh in its environment only.
+master_key_script() {
+  if [ ! -f master-key.sh ]; then
+    local image; image="$(image_ref)"
+    if [ -n "$image" ] && env -u HOPPER_MASTER_KEY podman run --rm "$image" hopper master-key script </dev/null >master-key.sh.next 2>/dev/null && [ -s master-key.sh.next ]; then
+      mv master-key.sh.next master-key.sh
+      say "put in master-key.sh from $image"
+    else
+      rm -f master-key.sh.next
+      say "the image gives no master-key.sh: give the master key at launch (bash hopper-service.sh start-with-key, or the systemd credential $CREDENTIAL), or put it in and seal the key: podman run --rm <image> hopper master-key script > master-key.sh && bash master-key.sh seal"
+      return 0
+    fi
+  fi
+  sealed && return 0
+  if [ -n "${HOPPER_MASTER_KEY:-}" ]; then
+    check_key "$HOPPER_MASTER_KEY" 'HOPPER_MASTER_KEY'
+    bash master-key.sh seal </dev/null || fail 'the seal of the master key failed (above): nothing changed'
+    say 'sealed the master key given to the install to this host: the stack starts with it, also after a restart of this host'
+  elif podman volume exists "$DATA_VOLUME" </dev/null >/dev/null 2>&1; then
+    say 'no master key is sealed here: after a restart of this host the stack does not start by itself. Seal it: bash master-key.sh seal (it asks for the key), then systemctl --user restart hopper-compose.service'
+  fi
+}
+
 install() {
   [ -f compose.yaml ] || fail 'no compose.yaml here: run it in the folder that holds the hopper'"'"'s compose.yaml'
   command -v podman >/dev/null || fail 'needs podman on PATH. With Docker, its daemon serves the port: no service is needed'
@@ -111,7 +176,7 @@ install() {
   local bash; bash="$(command -v bash)"
   local tool; tool="$(compose_tool)"
   local units; units="$(unit_dir)"
-  [ -f master-key.sh ] || say 'no master-key.sh here: give the master key at launch (bash hopper-service.sh start-with-key, or the systemd credential hopper-master-key), or seal it (docs/deploy.md "The master key sealed to the host")'
+  master_key_script
   mkdir -p "$units"
   local env
   env="$(printf 'Environment=%s\nEnvironment=%s\n' "$(quoted "PATH=$PATH")" "$(quoted "HOPPER_SERVICE_COMPOSE=$tool")"; settings)"
@@ -124,11 +189,12 @@ install() {
 [Unit]
 Description=hopper: the compose stack
 After=podman.socket
+OnFailure=$ALERT.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=$(quoted "$dir")
+WorkingDirectory=$(unit_path "$dir")
 $env
 ImportCredential=$CREDENTIAL
 ExecStart=$exec start
@@ -146,7 +212,7 @@ Description=hopper: check the published port from this host
 
 [Service]
 Type=oneshot
-WorkingDirectory=$(quoted "$dir")
+WorkingDirectory=$(unit_path "$dir")
 $env
 ExecStart=$exec check
 EOF
@@ -162,10 +228,22 @@ OnUnitActiveSec=1min
 [Install]
 WantedBy=timers.target
 EOF
+  cat >"$units/$ALERT.service.next" <<EOF
+# Made by hopper-service.sh install (issue #1487): runs when $UNIT fails, and says so where a person sees it.
+[Unit]
+Description=hopper: say that the compose stack did not start
+
+[Service]
+Type=oneshot
+WorkingDirectory=$(quoted "$dir")
+$env
+ExecStart=$exec alert
+EOF
   mv "$units/$UNIT.next" "$units/$UNIT"
   mv "$units/$CHECK.service.next" "$units/$CHECK.service"
   mv "$units/$CHECK.timer.next" "$units/$CHECK.timer"
-  say "wrote $units/$UNIT, $CHECK.service and $CHECK.timer (compose: $tool)"
+  mv "$units/$ALERT.service.next" "$units/$ALERT.service"
+  say "wrote $units/$UNIT, $CHECK.service, $CHECK.timer and $ALERT.service (compose: $tool)"
 
   # Linger: the user manager, and with it the service, starts at boot and stays after the last logout.
   local user="${USER:-$(id -un)}"
@@ -188,7 +266,7 @@ EOF
 uninstall() {
   local units; units="$(unit_dir)"
   systemctl --user disable --now "$CHECK.timer" "$UNIT" >/dev/null 2>&1 || true
-  rm -f "$units/$UNIT" "$units/$CHECK.service" "$units/$CHECK.timer"
+  rm -f "$units/$UNIT" "$units/$CHECK.service" "$units/$CHECK.timer" "$units/$ALERT.service"
   systemctl --user daemon-reload
   say "removed $UNIT and $CHECK.timer: the stack is stopped, its data stays. Start it again with: bash hopper-service.sh install"
 }
@@ -230,7 +308,9 @@ start() {
   if [ -n "$given" ]; then from="${given%%$'\n'*}"; key="${given#*$'\n'}"; fi
   unset HOPPER_MASTER_KEY
   if [ -z "$key" ] && ! sealed && podman volume exists "$DATA_VOLUME" </dev/null >/dev/null 2>&1; then
-    fail "no master key is given, and the hopper keeps data (the volume $DATA_VOLUME): the stack does not start, and no new key is made. Give the key at launch: bash hopper-service.sh start-with-key (it asks for the key, or reads HOPPER_MASTER_KEY), or the systemd credential $CREDENTIAL, or seal it to this host: bash master-key.sh seal, then systemctl --user restart $UNIT (docs/deploy.md \"The user service\")"
+    local script=''
+    [ -f master-key.sh ] || script=' (no master-key.sh here: bash hopper-service.sh install puts it in)'
+    fail "no master key is given, and the hopper keeps data (the volume $DATA_VOLUME): the stack does not start, and no new key is made. Give the key at launch: bash hopper-service.sh start-with-key (it asks for the key, or reads HOPPER_MASTER_KEY), or the systemd credential $CREDENTIAL, or seal it to this host: bash master-key.sh seal$script, then systemctl --user restart $UNIT (docs/deploy.md \"The user service\")"
   fi
   compose down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
   clear_one_shot
@@ -243,15 +323,56 @@ start() {
     exec bash master-key.sh run bash "$0" up
   fi
   say 'no master key given and none sealed here, and the hopper has no data yet: the stack starts with no key (a new hopper makes one; save it, then give it at launch or seal it: bash master-key.sh seal)'
-  compose up -d </dev/null
+  up
 }
 
-# The key a person gives: HOPPER_MASTER_KEY, else asked on the terminal (nothing is shown).
+# The stack started. The key, given as HOPPER_MASTER_KEY, goes to compose as a file (issue #1487): written where only this
+# user opens it, in memory, and mounted read-only into the containers that read it. No container's config holds it.
+# Then the joined containers that are stopped (issue #1497): no joined container gets the key.
+up() {
+  local dir; dir="$(key_dir)"
+  [ -z "$dir" ] || rm -f "$dir/master-key"
+  if [ -n "${HOPPER_MASTER_KEY:-}" ]; then
+    [ -n "$dir" ] || fail 'no XDG_RUNTIME_DIR: the master key has no place in memory to go to the containers from, and the stack does not start. Start it from the user service (systemctl --user restart hopper-compose.service)'
+    (umask 077 && mkdir -p "$dir") && chmod 700 "$dir" || fail "cannot make $dir for the master key"
+    # The folder keeps out every other user of this host; the file is readable by the container's own user.
+    (umask 022 && printf '%s' "$HOPPER_MASTER_KEY" >"$dir/master-key.next") && mv "$dir/master-key.next" "$dir/master-key" \
+      || fail "cannot write the master key to $dir"
+    export HOPPER_MASTER_KEY_HOST_FILE="$dir/master-key" HOPPER_MASTER_KEY_FILE=/run/hopper-master-key
+    unset HOPPER_MASTER_KEY
+  fi
+  compose up -d </dev/null
+  start_joined
+}
+
+# The joined containers that are stopped, started again (issue #1497): after a host restart nothing else starts them. A
+# container of the hopper's compose project, or a sandbox (a label io.hopper.*), is not one. One that does not start is
+# said, and the others still start.
+start_joined() {
+  local id labels name
+  for id in $(podman ps -aq --filter "network=$NETWORK" --filter status=exited --filter status=stopped </dev/null 2>/dev/null || true); do
+    labels="$(podman inspect --format '{{json .Config.Labels}}' "$id" </dev/null 2>/dev/null || true)"
+    [[ "$labels" == *'"com.docker.compose.project":"'"$PROJECT"'"'* || "$labels" == *'"io.podman.compose.project":"'"$PROJECT"'"'* ]] && continue
+    [[ "$labels" == *'"io.hopper.'* ]] && continue
+    name="$(podman inspect --format '{{.Name}}' "$id" </dev/null 2>/dev/null || printf '%s' "$id")"
+    if podman start "$id" </dev/null >/dev/null 2>&1; then
+      say "started the joined container $name: it is on the hopper's network ($NETWORK) and was stopped"
+    else
+      say "the joined container $name did not start: see podman start $name"
+    fi
+  done
+}
+
+# The key a person gives: HOPPER_MASTER_KEY, else one line on stdin when it is no terminal (issue #1497: a key piped
+# in), else asked on the terminal (nothing is shown).
 given_key() {
   local key="${HOPPER_MASTER_KEY:-}"
+  if [ -z "$key" ] && [ ! -t 0 ]; then
+    IFS= read -r -t "${HOPPER_KEY_STDIN_WAIT:-10}" key || true
+  fi
   if [ -z "$key" ]; then
     local tty="${HOPPER_KEY_TTY:-/dev/tty}"
-    { : <"$tty"; } 2>/dev/null || fail 'no master key: give it as HOPPER_MASTER_KEY, or run this in a terminal'
+    { : <"$tty"; } 2>/dev/null || fail 'no master key: give it as HOPPER_MASTER_KEY, pipe it in on stdin, or run this in a terminal'
     printf 'hopper-service: paste the master key from your password manager (nothing is shown): ' >&2
     IFS= read -rs key <"$tty" || true
     printf '\n' >&2
@@ -272,9 +393,29 @@ start_with_key() {
   say "done: $UNIT started the stack with the key. It is not kept: give it again at the next start, or seal it (bash master-key.sh seal)"
 }
 
-# ExecStop: the containers go, the volumes and the data stay.
+# ExecStop: the containers go, and the key's file; the volumes and the data stay.
 stop() {
-  compose down </dev/null
+  local status=0 dir; dir="$(key_dir)"
+  compose down </dev/null || status=$?
+  [ -z "$dir" ] || rm -f "$dir/master-key"
+  return "$status"
+}
+
+# OnFailure (issue #1487): the start failed, and the hopper is down, so it cannot say so itself. What stopped the start
+# (the last line this script wrote in the service's journal) goes to a desktop notice and to hopper-alert.sh here.
+alert() {
+  local why
+  why="$(journalctl --user -u "$UNIT" -n 50 -o cat --no-pager </dev/null 2>/dev/null | sed -n 's/^hopper-service: //p' | tail -n 1 || true)"
+  local text="hopper on $(uname -n): $UNIT did not start: ${why:-see journalctl --user -u $UNIT -n 50}"
+  say "$text"
+  if command -v notify-send >/dev/null; then
+    notify-send --urgency=critical 'hopper is down' "$text" </dev/null >/dev/null 2>&1 || true
+  fi
+  if [ -f hopper-alert.sh ]; then
+    bash hopper-alert.sh "$text" </dev/null || say 'hopper-alert.sh failed (above)'
+  else
+    say 'no hopper-alert.sh here: write one beside hopper-service.sh that sends its one argument where you see it (a webhook, a mail), so a failed start reaches you (docs/deploy.md "The user service")'
+  fi
 }
 
 # The address the hopper's port is published on, as "host port": loopback for every interface.

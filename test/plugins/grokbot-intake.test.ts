@@ -104,4 +104,35 @@ describe('Grok Bot routine: intake stopped', () => {
     expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.memory_low', ...free, since: '2026-10-07T20:30:00.000Z' }));
     expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.memory_recovered', ...free, freeBytes: 9e9 }));
   });
+  it('posts machine.offline and machine.back_online (issue #1497): a seat stays offline, and is back', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const seat = { machineId: 'seat-l1', label: 'seat l1', since: '2026-10-16T22:33:00.000Z' };
+    for (const l of listeners) l(event('machine.offline', seat));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    for (const l of listeners) l(event('machine.back_online', seat));
+    await waitFor(() => r.hits.length === 2, { what: 'two posts' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.offline', ...seat }));
+    expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.back_online', ...seat }));
+  });
+  it('posts machine.disk_over_budget and machine.disk_within_budget (issue #1203): a machine stays over its disk budget, and is back within it', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const over = { machineId: 'desk', usedBytes: 62e9, budgetBytes: 50e9, paths: [{ path: '/w/.worktrees', bytes: 62e9 }] };
+    const e = event('machine.disk_over_budget', over);
+    for (const l of listeners) l(e);
+    for (const l of listeners) l(e);
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    for (const l of listeners) l(event('machine.disk_within_budget', { machineId: 'desk', usedBytes: 41e9, budgetBytes: 50e9 }));
+    await waitFor(() => r.hits.length === 2, { what: 'two posts' });
+    await n.stop();
+    expect(r.hits).toHaveLength(2);
+    expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.disk_over_budget', ...over }));
+    expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.disk_within_budget', machineId: 'desk', usedBytes: 41e9, budgetBytes: 50e9 }));
+  });
 });

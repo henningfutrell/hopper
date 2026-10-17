@@ -12,7 +12,10 @@
 // `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
 // `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
 // `POST /checkpoint {jobId, worktree, session}` takes a running job's checkpoint (issue #921, checkpoint.ts): it only reads; `{code, stdout, stderr}`;
+// `POST /leftovers {roots}` lists what the layout before left in each work tree's .hopper-scratch, and `POST /leftover-remove {path}` removes one leftover a
+// person chose to remove (issue #1116, leftovers.ts); `{code, stdout, stderr}`;
 // `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
+// a create of a box or a herdr tab sent again is answered with the first answer for its name (issue #1628, once.ts);
 // `POST /claude {args, timeoutMs?, token?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else, with a lane pod's setup token when it carries one (issue #1287) — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
@@ -40,6 +43,7 @@ import { reachOf } from './reach.ts';
 import { CHECKPOINT_TIMEOUT_MS, checkpointOf } from './checkpoint.ts';
 import { runArgv } from './run.ts';
 import { readReap, REAP_TIMEOUT_MS, reapArgv, scriptArgvOf } from './reap.ts';
+import { leftoverArgvOf, LEFTOVER_REMOVE_TIMEOUT_MS, LEFTOVERS_TIMEOUT_MS } from './leftovers.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
 import { createSignInRoute, startSignIn } from './sign-in.ts';
@@ -48,6 +52,7 @@ import { createResourceMeter, diskOfHome } from './resources.ts';
 import { infraCredentialsAt } from './infra-credentials.ts';
 import type { WindowsLink } from './windows-link.ts';
 import { workTreeCall } from './work-tree.ts';
+import { createKeyOf, createOnce, type Creates } from './once.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -88,6 +93,8 @@ export interface ClientOptions {
   maxIsolationMs?: number;
   /** How often it checks how long it has not heard the hopper; default 15 s. */
   isolationCheckMs?: number;
+  /** Where the jobs the hopper named are kept, so a restart while cut off still stops them (issue #1627). Absent: memory only. */
+  isolationFile?: string;
   /** The Windows link (windows-link.ts, issue #712): said in `/release` with the resources, once tested. */
   windowsLink?: () => WindowsLink | undefined;
 }
@@ -138,7 +145,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in', '/leftovers', '/leftover-remove']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -154,7 +161,7 @@ type SignInRoute = ReturnType<typeof createSignInRoute>;
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
 
-async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, signIn: SignInRoute, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
+async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, signIn: SignInRoute, creates: Creates, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
   const body = await readBody(stream);
   let nonce = '';
   const answer = (status: number, payload: unknown): void => {
@@ -177,12 +184,17 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   watch.heard();
   if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), infraCredentials: infraCredentialsAt(homedir()), resources: withWindowsLink(resources(), o.windowsLink?.()), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
   if (path === '/load') return load(o, releases, stream, body, answer);
-  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint') return fixed(path, body, answer);
+  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint' || path === '/leftovers' || path === '/leftover-remove') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   if (path === '/sign-in') { const r = await signIn(body); return answer(r.status, r.payload); }
-  if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
+  // A create is keyed by the name it makes (issue #1628, once.ts): sent again, it is answered as the first.
+  const key = createKeyOf(path, body);
+  if (path === '/runtime') {
+    const r = await creates(key, () => runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body), (a) => a.status === 200 && ok((a.payload as { status?: unknown }).status));
+    return answer(r.status, r.payload);
+  }
   let parsed: { args?: unknown; timeoutMs?: unknown; token?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
@@ -194,22 +206,27 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs, '', env));
   }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
-  answer(200, await herdr(o, parsed.args, timeoutMs));
+  const args = parsed.args;
+  answer(200, await creates(key, () => herdr(o, args, timeoutMs), (a) => a.code === 0));
 }
+
+const ok = (status: unknown): boolean => typeof status === 'number' && status >= 200 && status < 300;
 
 /**
  * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
  * body; a running job's credential (issue #441), its content on stdin; the machine's work tree made (issue #361); the reach check (issue #695); or a checkpoint (issue #921).
  */
-async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach' | '/checkpoint', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach' | '/checkpoint' | '/leftovers' | '/leftover-remove', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
   if (path === '/work-tree') { const r = workTreeCall(parsed, homedir()); return answer(r.status, r.payload); }
   // The reach check (issue #695): the fixed script, its one argument a URL.
   // A checkpoint (issue #921): the fixed script, which only reads the job's own worktree and session.
-  const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed) : scriptArgvOf(path, parsed);
+  // The leftovers (issue #1116): the listing only reads; a removal takes one leftover's path in a work tree's .hopper-scratch.
+  const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed)
+    : path === '/leftovers' || path === '/leftover-remove' ? leftoverArgvOf(path, parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
+  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
   answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 
@@ -238,6 +255,7 @@ export function startClient(o: ClientOptions): Client {
   const running = readRelease(o.installDir).id;
   const releases: Releases = { running, installed: running };
   const nonces = createNonceCache();
+  const creates = createOnce();
   const signIn = createSignInRoute((argv) => startSignIn(o.claudeBin ?? 'claude', argv, { cwd: homedir() }));
   const log = o.log ?? (() => {});
   const backoff = o.backoffMs ?? BACKOFF_MS;
@@ -273,7 +291,7 @@ export function startClient(o: ClientOptions): Client {
       link = socket;
       const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping, watch.heard);
       session.on('stream', (stream, headers) => {
-        serve(o, nonces, releases, watch, signIn, stream, headers).catch((e: unknown) => {
+        serve(o, nonces, releases, watch, signIn, creates, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);
           if (!stream.destroyed) stream.close();
         });

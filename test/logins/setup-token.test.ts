@@ -63,6 +63,25 @@ describe('startSetupToken: claude setup-token in a pseudo-terminal', () => {
     expect(readdirSync(dir)).toEqual([]);
   });
 
+  it('keep: the token is kept as soon as it is printed, before the CLI ends; once only', async () => {
+    writeFileSync(join(control, 'linger'), '');
+    const kept: string[] = [];
+    let ended = false;
+    const run = await startSetupToken({ file: CLAUDE, dir, env: { FAKE_SETUP_DIR: control }, pasteMs: 3000, keep: async (token) => { kept.push(token); return undefined; } });
+    const end = run.paste('good-code').finally(() => { ended = true; });
+    for (let i = 0; i < 100 && kept.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(kept).toEqual([TOKEN]);
+    expect(ended).toBe(false);
+    expect(await end).toEqual({ ok: true, token: TOKEN });
+    expect(kept).toEqual([TOKEN]);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('keep: why it could not keep the token fails the run', async () => {
+    const run = await startSetupToken({ file: CLAUDE, dir, env: { FAKE_SETUP_DIR: control }, keep: async () => 'the vault is sealed' });
+    expect(await run.paste('good-code')).toEqual({ ok: false, reason: 'the token was not kept: the vault is sealed' });
+  });
+
   it('a binary that is not there: the start says so', async () => {
     await expect(startSetupToken({ file: join(control, 'no-claude'), dir, urlMs: 3000 })).rejects.toThrow(/before it showed its URL|showed no URL/);
     expect(readdirSync(dir)).toEqual([]);

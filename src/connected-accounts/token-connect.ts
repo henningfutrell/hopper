@@ -2,7 +2,7 @@
 // of their own, with no GitHub App. GitHub must take it (who it belongs to), and the source email match applies as for a
 // device code. It is kept as the connection's access token, with no refresh token, marked `grantedBy: 'token'`. A refusal
 // keeps nothing, deletes nothing at GitHub — the token is the person's —, and leaves a connection there was as it was.
-import { CONNECTED_VIA, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
+import { CONNECTED_VIA, type ConnectedAccountKey, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { NO_KEY, PROVIDER_NAME } from './at-rest.ts';
 import type { Grant } from './device-flow.ts';
 import type { createEmailMatch } from './email-match.ts';
@@ -26,6 +26,8 @@ export interface TokenConnectOptions {
   link?(provider: ConnectedAccountProvider, subject: string): void;
   onChange?(provider: ConnectedAccountProvider): void;
   clock: { now(): Date };
+  /** The account's key (issue #1448); absent: its provider. */
+  accountKey?: ConnectedAccountKey;
   logger: { info(line: string): void; warn(line: string): void };
 }
 
@@ -36,7 +38,7 @@ export function createTokenConnect(o: TokenConnectOptions) {
     const refuse = (why: string): ConnectedAccountStatus => {
       o.fail(provider, why);
       o.logger.warn(`hopper: connecting ${PROVIDER_NAME[provider]} with a token refused: ${why}`);
-      return { provider, via: CONNECTED_VIA, state: 'failed', error: why }; // said even over a connection there is: it stays as it was
+      return { provider, key: o.accountKey ?? provider, via: CONNECTED_VIA, state: 'failed', error: why }; // said even over a connection there is: it stays as it was
     };
     if (!o.keeps()) return refuse(NO_KEY);
     let who: AccountIdentity;

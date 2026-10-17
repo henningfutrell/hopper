@@ -32,7 +32,7 @@ export function reportRequest(d: BugReportDraft, o: { jobId?: string; commentOn?
 export const sentLine = (a: { kind: 'filed' | 'commented'; number: number }): string =>
   (a.kind === 'filed' ? `Report filed as issue #${a.number}.` : `Your report was added to issue #${a.number}.`);
 
-/** A report in Your reports (GET /api/bug-reports): `waiting` is kept, not on GitHub yet. Never its text. */
+/** A report in Your reports (GET /api/bug-reports): `sending` is on its way to GitHub, `waiting` is kept, not on GitHub yet. Never its text. */
 export interface BugReportView {
   id: string;
   createdAt: string;
@@ -40,7 +40,7 @@ export interface BugReportView {
   jobId?: string;
   fromJob?: boolean;
   title: string;
-  state: 'waiting' | 'open' | 'closed';
+  state: 'sending' | 'waiting' | 'open' | 'closed';
   kind: 'issue' | 'comment';
   number?: number;
   url?: string;
@@ -49,14 +49,14 @@ export interface BugReportView {
   checkedAt?: string;
 }
 
-const STATE_LABELS: Record<BugReportView['state'], string> = { waiting: 'Waiting to send', open: 'Open', closed: 'Closed' };
+const STATE_LABELS: Record<BugReportView['state'], string> = { sending: 'Sending', waiting: 'Waiting to send', open: 'Open', closed: 'Closed' };
 
 /** The state in words. */
 export const stateLabel = (r: Pick<BugReportView, 'state'>): string => STATE_LABELS[r.state];
 
 /** The report's line: its issue's number when it has one, then its title; a comment says where it went. */
 export const reportLine = (r: Pick<BugReportView, 'title' | 'number' | 'kind' | 'state'>): string =>
-  (r.number === undefined ? r.title : r.kind === 'comment' && r.state === 'waiting' ? `${r.title} (to add to #${r.number})` : `#${r.number} ${r.title}`);
+  (r.number === undefined ? r.title : r.kind === 'comment' && (r.state === 'waiting' || r.state === 'sending') ? `${r.title} (to add to #${r.number})` : `#${r.number} ${r.title}`);
 
 /** Who filed it, when a job did. */
 export const filedBy = (r: Pick<BugReportView, 'fromJob' | 'jobId'>): string | undefined => (r.fromJob && r.jobId ? `Filed by job ${r.jobId}` : undefined);

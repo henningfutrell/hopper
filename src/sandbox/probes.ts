@@ -63,6 +63,53 @@ const KUBE = ['cluster', 'namespace'] as const;
 /** The namespace a probe on a `namespace` asset acts in; a cluster's probes act in `default`. */
 const NS = 'ns=default; case "$ASSET" in */*) ns="${ASSET#*/}" ;; esac';
 
+/**
+ * The host the egress probes try to reach (issue #849): one no read-only box needs, and that answers whenever it is
+ * reached. The probe sends it no credential.
+ */
+export const EGRESS_PROBE_URL = 'https://example.com';
+/** The variables a request sent past the egress proxy is made without. */
+const NO_PROXY_VARS = '-u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u ALL_PROXY -u all_proxy';
+/** The words of a request the egress refused: the probe prints them only when the request failed both ways. */
+export const EGRESS_DENIAL = /egress refused/;
+
+/**
+ * An egress probe (issue #849): the tool sends one request to a host that is not on the allowlist, past the egress proxy
+ * (its variables unset, as a process in the box can do) and through it. Each must fail to connect: `blocked` matches the
+ * tool's words for that. A request that got an answer of any kind reached the host, and the probe fails.
+ */
+function egressProbe(request: string, blocked: string): string {
+  return `blocked() { case "$1" in ${blocked}) return 0 ;; esac; return 1; }
+past=$(env ${NO_PROXY_VARS} ${request} 2>&1); a=$?
+via=$(${request} 2>&1); b=$?
+printf 'past the proxy (exit %s): %s\\nthrough the proxy (exit %s): %s\\n' "$a" "$past" "$b" "$via"
+if [ "$a" -ne 0 ] && blocked "$past" && [ "$b" -ne 0 ] && blocked "$via"; then echo 'egress refused: ${EGRESS_PROBE_URL} is not on the allowlist'; exit 1; fi
+exit 0`;
+}
+
+/**
+ * The egress probes (issue #849): once per check, with the box's AWS CLI or kubectl. Neither request carries a credential
+ * of the check: the AWS CLI signs with a fixed key and reads no profile, kubectl sends a fixed token.
+ */
+export const EGRESS_PROBES: readonly Probe[] = [
+  {
+    id: 'egress.aws', title: `reach ${EGRESS_PROBE_URL}, not on the allowlist, past the egress proxy and through it (aws)`, kinds: [...AWS, 'terraform-workspace'], tool: 'aws', expect: 'denied', once: true,
+    denial: EGRESS_DENIAL,
+    script: egressProbe(
+      `env -u AWS_SESSION_TOKEN -u AWS_PROFILE -u AWS_ENDPOINT_URL -u AWS_ENDPOINT_URL_STS AWS_ACCESS_KEY_ID=hopper-egress-probe AWS_SECRET_ACCESS_KEY=hopper-egress-probe AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null AWS_REGION=us-east-1 aws --cli-connect-timeout 10 --cli-read-timeout 10 --endpoint-url ${EGRESS_PROBE_URL} sts get-caller-identity`,
+      `*'Could not connect to the endpoint URL'*|*'Failed to connect to proxy URL'*|*'Connect timeout on endpoint URL'*`,
+    ),
+  },
+  {
+    id: 'egress.kube', title: `reach ${EGRESS_PROBE_URL}, not on the allowlist, past the egress proxy and through it (kubectl)`, kinds: [...KUBE, 'argocd-app'], tool: 'kubectl', expect: 'denied', once: true,
+    denial: EGRESS_DENIAL,
+    script: egressProbe(
+      `kubectl --kubeconfig=/dev/null --server=${EGRESS_PROBE_URL} --token=hopper-egress-probe --insecure-skip-tls-verify --request-timeout=10s get --raw /`,
+      `*'Unable to connect to the server'*`,
+    ),
+  },
+];
+
 export const PROBES: readonly Probe[] = [
   { id: 'aws.caller-identity', title: 'read who the session is', kinds: AWS, tool: 'aws', expect: 'allowed', script: 'aws sts get-caller-identity' },
   {
@@ -175,6 +222,8 @@ terraform {
 TF
 terraform init -input=false -no-color`,
   },
+  // Issue #849: a read-only box reaches out only through the egress proxy, to the allowlist.
+  ...EGRESS_PROBES,
 ];
 
 /** A probe that writes to the need's state backend: its environment, or why it is not run (issue #715). */
@@ -190,7 +239,7 @@ export function probeCatalog(probes: readonly Probe[]): ProbeCatalog {
     runsFor(needs: readonly OperationProfile[]): ProbeRun[] {
       const seen = new Set<string>();
       return needs.flatMap((n) => probes.filter((p) => p.kinds.includes(n.asset.kind)).flatMap((probe) => {
-        const key = `${probe.id} ${n.asset.kind} ${n.asset.name}`;
+        const key = probe.once ? probe.id : `${probe.id} ${n.asset.kind} ${n.asset.name}`;
         if (seen.has(key)) return [];
         seen.add(key);
         return [{ probe, kind: n.asset.kind, asset: n.asset.name, ...(probe.backend ? backendOf(n) : {}) }];

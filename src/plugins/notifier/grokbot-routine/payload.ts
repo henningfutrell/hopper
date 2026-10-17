@@ -56,7 +56,7 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
 }
 
 /**
- * A stop of intake (issue #358), a request card waiting for approval (issue #798), an out-of-band change (issue #871), or a machine low on free memory (issue #868). `source` is the sender (the hopper):
+ * A stop of intake (issue #358), a request card waiting for approval (issue #798), an out-of-band change (issue #871), a machine low on free memory (issue #868), or a machine over its disk budget (issue #1203). `source` is the sender (the hopper):
  * the job source's name goes as `sourceName`.
  */
 export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: string): Record<string, unknown> {
@@ -74,6 +74,17 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
   if (e.type === 'machine.memory_low' || e.type === 'machine.memory_recovered') {
     const d = e.data as { machineId: string; of: string; freeBytes: number; totalBytes: number; thresholdBytes: number; since?: string };
     return { ...b, machineId: d.machineId, of: d.of, freeBytes: d.freeBytes, totalBytes: d.totalBytes, thresholdBytes: d.thresholdBytes, ...(d.since ? { since: d.since } : {}) };
+  }
+  // The hopper's own disk use on a machine over the disk budget, and back within it (issue #1203): what it uses, the budget, and
+  // for an over the places that use it.
+  if (e.type === 'machine.disk_over_budget' || e.type === 'machine.disk_within_budget') {
+    const d = e.data as { machineId: string; usedBytes: number; budgetBytes: number; paths?: { path: string; bytes: number }[] };
+    return { ...b, machineId: d.machineId, usedBytes: d.usedBytes, budgetBytes: d.budgetBytes, ...(d.paths ? { paths: d.paths } : {}) };
+  }
+  // A machine offline for two minutes, and back (issue #1497): its id, its name, since when it is offline.
+  if (e.type === 'machine.offline' || e.type === 'machine.back_online') {
+    const d = e.data as { machineId: string; label: string; since: string };
+    return { ...b, machineId: d.machineId, label: d.label, since: d.since };
   }
   return b;
 }

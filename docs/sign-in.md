@@ -345,6 +345,45 @@ hopper's GitHub App is not needed for it.
 - **When it ends.** Nothing renews a token. When GitHub refuses it (it expired, or you deleted it), the
   source pauses and Sources asks to connect again. You stay signed in.
 
+## A second GitHub account
+
+A person can work from more than one GitHub account, for example a work account beside a personal one (issue
+#1448). Connect the first account as above. Then add each other account with a personal access token of that account.
+
+1. Make a token of the other account at https://github.com/settings/tokens, with the same access as above.
+2. In Sources → GitHub account, under **Add another GitHub account**, paste the token and click **Add with a token**.
+3. In the new panel, **GitHub account 2**, choose its job repositories.
+
+- **One account per repository.** A repository is a job repository of one account only. A job of that repository
+  acts as that account, for its GitHub requests and its git, and the job page names it in **GitHub as**.
+- **Intake.** Each account has its own job source, `github-account-2` and so on. The hopper adds it. It is not in the
+  plugins config.
+- **Checks.** GitHub must take the token, and the source email match applies. An account connected already is refused.
+- **When it ends.** Only that account pauses. Its panel asks for a new token. The other accounts go on.
+- **Remove this account** forgets the account, its token and its job repositories. Delete the token at GitHub yourself.
+
+## A GitLab account
+
+A person can also attach a GitLab account, at https://gitlab.com or at a GitLab of their own (issue #1448, parts 2 and 3).
+The hopper lists the issues labelled `hopper` in the projects picked for it in Intake. An issue of a trusted origin, assigned
+to the account, becomes a job: it fetches and pushes through the hopper with the account's token, and opens a merge request
+(design.md "Jobs through GitLab").
+
+1. Make a personal access token at GitLab (on gitlab.com: https://gitlab.com/-/user_settings/personal_access_tokens), with
+   the scopes `api` (the hopper's labels on an issue), `read_user` (the source email match) and `write_repository` (a
+   job's git fetch and push).
+2. In Sources → GitLab, give the GitLab URL (`https://gitlab.com` when it is not your own), paste the token and click
+   **Connect GitLab**.
+3. Pick the projects whose issues Intake lists, and click **Save**.
+
+- **Checks.** GitLab must take the token, and the source email match applies: one confirmed email of the GitLab account
+  must be the email you signed in with. A token that may not read the account's emails is refused while the match is on.
+- **The token** is kept in your vault as a system secret, sealed under the master key. No route answers it.
+- **The URL** is https, or http only on this machine (`localhost`, `127.0.0.1`).
+- **When it ends.** When GitLab refuses the token, only the GitLab account pauses. Its panel says **reconnect needed** and
+  asks for a new token. The GitHub accounts go on.
+- **Remove this account** forgets the account and its token. Revoke the token at GitLab yourself.
+
 ## LDAP realm
 
 People sign in on the same username and password form with their directory account. The hopper
@@ -499,21 +538,41 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
   it makes no new user. A GitHub token reads only as the user whose connected GitHub account it is:
   once it is forgotten (Sources → **Stop working through GitHub**, offered to a user signed in another
   way) it no longer does.
-- **Reads only.** This door only reads. To change anything, exchange the same sign-in for an API token at
-  `POST /ui/auth/api-token`, or mint a grant in Settings → API tokens, and send `Authorization: Bearer hopper_at_…`
-  (help page "The operator CLI and the API", `/help/cli-and-api`).
+- **Reads only.** This door only reads. To change anything, use an API token ("API tokens", below).
 - The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
   this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an
   issuer or GitHub that could not be asked is 502.
 - A GitHub token revoked at GitHub may still read for up to a minute.
+
+### API tokens
+
+An API token (`Authorization: Bearer hopper_at_…`) reads `GET /api/*` and changes through `POST /ui/api/*`, as a UI
+session does. How to make, use and revoke one, step by step: help page "API tokens and grants" (`/help/api-tokens`).
+What sign-in decides about it:
+
+- **Mint.** A person mints a **grant** from a UI session: Settings → API tokens, `POST /ui/api/api-tokens`, or
+  `hopper token mint`. The grant gives a refresh token (`hopper_rt_…`) and an API token. The agent trades the refresh
+  token at `POST /ui/auth/token/refresh` for a new pair before the API token ends. An API token never mints a grant.
+- **Exchange.** An agent with no UI session sends a sign-in this door accepts (a connected account's GitHub token, or
+  a gateway's JWT) to `POST /ui/auth/api-token`, and gets one API token with no refresh token. It makes no new user,
+  and it never gives a box token (`"box": true` is 400).
+- **Role cap.** A token's role is never higher than its minter's. A grant follows its minter's sign-in: a lower role
+  lowers the grant, and no role ends it. An exchanged token's role is at most the one the role rules give that
+  sign-in. A token lives the admin's API-token lifetime at most (5–15 minutes).
+- **Scopes.** A grant's token uses only the routes its scopes name (deny by default, 403). A box action also needs a
+  box grant, which only a person mints.
+- **OpenFGA decides each use** (`api_token#can_view|can_operate|can_administer`). Without OpenFGA, no grant is minted
+  and no token is used: 503.
 
 ## UI roles and role rules
 
 | UI role | may |
 |---|---|
 | `viewer` | read everything the UI shows |
-| `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
+| `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen; decide proposals and research reports; approve request cards; Merge now and Close PR (`hopper pr merge\|close`); share, revise and remove artifacts and revoke a share; submit and promote direct jobs; approve a low-risk infra plan; Report a bug |
 | `admin` | + change their own user's configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate; hand out device links; as [the instance admin](#the-instance-admin), also sign-in realms, users, updates, the plugin store, making others admin |
+
+Each route's least role is in the API reference (`/docs/`).
 
 A **super admin** is an admin who may also make others super admin or hand that over ([Super admins](#super-admins)).
 

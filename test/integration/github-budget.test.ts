@@ -111,7 +111,7 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
       endpoints: () => ({ url: 'https://github.com', apiUrl }), jobRepositories: () => REPOS.map((r) => `${OWNER}/${r}`),
     };
     const source = createAccountSource({
-      name: 'github-account', clock, trust: testTrust(), provider: 'github', accounts,
+      name: 'github-account', clock, trust: testTrust(), key: 'github', accounts,
       knownKeys: (ks) => new Set(ks.filter((k) => keys.has(k))), rerunnable: () => new Set(),
       yoloMode: (repo) => repo === `${OWNER}/${REPOS[2]}`,
     }, parsed.options as GitHubAccountOptions);

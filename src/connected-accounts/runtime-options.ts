@@ -1,6 +1,7 @@
 // What the runtime gives the connected accounts: the renewal and token deletion with the app's client secret (issues
 // #358, #441, #597), and the events they record (issues #358, #647). The tokens are kept in the vault (issue #658).
 import type { EventLog } from '../domain/ports.ts';
+import { furtherAccount, providerOfKey, type ConnectedAccountKey } from '../domain/types.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import type { HopperApps } from './hopper-app.ts';
 import { renewal } from './renewal.ts';
@@ -24,10 +25,14 @@ export function fromRuntime(apps: HopperApps, env: Record<string, string | undef
 
 /**
  * What the connected accounts record in the user's event log (issues #358, #647): the end of a connection, each
- * renewal (with the new expiry) and each failed renewal (with its error code). Facts only, never a token.
+ * renewal (with the new expiry) and each failed renewal (with its error code). Facts only, never a token. A further account's
+ * (issue #1448) names its key too.
  */
-export const accountEvents = (events: Pick<EventLog, 'append'>): Pick<ConnectedAccountsOptions, 'onExpired' | 'onRenewed' | 'onRenewalFailed'> => ({
-  onExpired: (provider, account, reason) => { events.append({ type: 'connected_account.expired', data: { provider, account, reason } }); },
-  onRenewed: (provider, { account, expiresAt }) => { events.append({ type: 'connected_account.renewed', data: { provider, account, ...(expiresAt ? { expiresAt } : {}) } }); },
-  onRenewalFailed: (provider, { account, code }) => { events.append({ type: 'connected_account.renewal_failed', data: { provider, account, code } }); },
-});
+export const accountEvents = (events: Pick<EventLog, 'append'>): Pick<ConnectedAccountsOptions, 'onExpired' | 'onRenewed' | 'onRenewalFailed'> => {
+  const of = (key: ConnectedAccountKey) => ({ provider: providerOfKey(key), ...(furtherAccount(key) ? { key } : {}) });
+  return {
+    onExpired: (key, account, reason) => { events.append({ type: 'connected_account.expired', data: { ...of(key), account, reason } }); },
+    onRenewed: (key, { account, expiresAt }) => { events.append({ type: 'connected_account.renewed', data: { ...of(key), account, ...(expiresAt ? { expiresAt } : {}) } }); },
+    onRenewalFailed: (key, { account, code }) => { events.append({ type: 'connected_account.renewal_failed', data: { ...of(key), account, code } }); },
+  };
+};

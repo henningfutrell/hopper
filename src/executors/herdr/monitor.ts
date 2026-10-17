@@ -7,6 +7,7 @@ import { hideCodes, recogniseDeviceCode } from '../../logins/recognise.ts';
 import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
+import { restoredByHerdr, type PaneRestored } from './restored.ts';
 import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
@@ -77,6 +78,8 @@ export interface TurnWatch {
   ctx: ExecutionContext;
   agentName: string;
   paneId: string;
+  /** The pane's terminal when the hopper opened it (issue #1465); absent: not checked. */
+  terminal?: string;
   /** Last line of what was sent, as Claude echoes it. */
   anchor: string;
   /** state_change_seq read just before the send. */
@@ -136,7 +139,23 @@ export async function blockedQuestion(w: Pick<TurnWatch, 'herdr' | 'paneId' | 'c
   return { kind: 'question', question: { text: hideCodes(text, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'blocked', ...lapsesAt } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting> {
+type Watched = ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting | PaneRestored;
+
+/**
+ * Watches the turn. A missed heartbeat while it does (issue #1569) — a poll that failed on a live link, or a PING of the
+ * machine's link not answered in time — is told to the engine, which takes the job's checkpoint while the machine may
+ * still answer.
+ */
+export async function watchTurn(w: TurnWatch): Promise<Watched> {
+  const off = w.herdr.onLinkLate?.(() => w.ctx.missedHeartbeat?.());
+  try {
+    return await watch(w);
+  } finally {
+    off?.();
+  }
+}
+
+async function watch(w: TurnWatch): Promise<Watched> {
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
@@ -163,6 +182,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       const agent = await herdr.getAgent(w.agentName);
       if (ctx.signal.aborted) continue;
       if (!agent) return { kind: 'failed', error: await exitedError(w) };
+      if (restoredByHerdr(agent, w.terminal)) return { paneRestored: true };
       let recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
       if (isScrolledUp(recent)) {
         // The reply sits below the viewport (seen after long prompts): scroll, then read again.
@@ -221,8 +241,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       } else if (turn.lastMarker === 'wait' && turn.wait) {
         // The job's own wait (issue #483): no question, no nudge. It goes on by itself, or a person ends the wait.
         w.onQuestion?.(agent.stateChangeSeq, undefined, turn.outputLines);
-        const { for: what, until, on } = turn.wait;
-        return { kind: 'wait', wait: { for: hideCodes(what, recent), ...(until ? { until: hideCodes(until, recent) } : {}), ...(on ? { on: hideCodes(on, recent) } : {}) } };
+        const { for: what, until, on, check } = turn.wait;
+        return { kind: 'wait', wait: { for: hideCodes(what, recent), ...(until ? { until: hideCodes(until, recent) } : {}), ...(on ? { on: hideCodes(on, recent) } : {}), ...(check ? { check: hideCodes(check, recent) } : {}) } };
       } else if (turn.lastMarker === 'auth') {
         return { authPending: turn.auth ?? {} };
       } else {
@@ -245,6 +265,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       // The machine's link is down (issue #752): the engine holds the job until it is back. Only errors on a live link count.
       if (herdr.linkDown?.()) return { kind: 'failed', error: `herdr: ${(err as Error).message}`, linkLost: true };
       if (++errors >= MAX_CONSECUTIVE_ERRORS) return { kind: 'failed', error: `herdr: ${(err as Error).message}` };
+      ctx.missedHeartbeat?.();
     }
     await w.sleep(w.pollMs, ctx.signal);
   }

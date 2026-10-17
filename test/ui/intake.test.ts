@@ -35,7 +35,7 @@ const DETAIL = {
 };
 const SOURCES = [{ name: 'github-account', kind: 'github-account', state: 'ok', itemsSeen: 5, jobsCreated: 1, activeJobs: 1, detail: DETAIL }];
 const ACCOUNTS = { accounts: [{
-  provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
+  provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
   installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper', 'octo-user/other'] }],
 }] };
 const MACHINES = { machines: [{ id: 'm1', label: 'm1', maxLanes: 2, online: true, executors: ['test'], usage: [], lanes: [

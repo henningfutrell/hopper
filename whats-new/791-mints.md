@@ -1,0 +1,1 @@
+- From the command line you can now say which AWS account or cluster a minting credential is for.

@@ -139,13 +139,13 @@ describe('assess', () => {
   });
 
   it('automatic actions off: the decision stands, but waits for a person', () => {
-    const off = { auto: { retry: false, hold: false, redirect: false, continue: false } };
+    const off = { auto: { retry: false, hold: false, redirect: false, continue: false, push: false } };
     expect(assess(input('read ECONNRESET', {}, off))).toMatchObject({ decision: 'retry', auto: false });
     expect(assess(input('no space left on device', {}, off))).toMatchObject({ decision: 'hold', auto: false });
   });
 
   it('redirect off: held instead', () => {
-    expect(assess(input('no space left on device', {}, { auto: { retry: true, hold: true, redirect: false, continue: true } }))).toMatchObject({ decision: 'hold', auto: true });
+    expect(assess(input('no space left on device', {}, { auto: { retry: true, hold: true, redirect: false, continue: true, push: true } }))).toMatchObject({ decision: 'hold', auto: true });
   });
 
   it('a job with no machine is held, never redirected', () => {
@@ -289,5 +289,42 @@ describe('assess: a timed-out job, from its liveness (issue #630)', () => {
     const a = timedOut({ liveness: { pushed: true } }, { auto: { ...DEFAULT_FAILURE_SETTINGS.auto, continue: false } });
     expect(a).toMatchObject({ decision: 'continue', auto: false });
     expect(a.summary).toMatch(/^Continue recommended\./);
+  });
+});
+
+// Issue #1461: the same failure on the same item twice in a row stops the item. It goes to a person once, and nothing runs it
+// again by itself: no retry, no Continue, no Jev pick.
+describe('assess: the same failure as its run before', () => {
+  it('a transient failure under the retry limit stops, for a person', () => {
+    const a = assess(input('read ECONNRESET', { attempt: 2, repeated: true }));
+    expect(a).toMatchObject({ decision: 'person', auto: true, repeated: true });
+    expect(a.retryInMs).toBeUndefined();
+    expect(a.reasons.join(' ')).toMatch(/the same failure as the run before it/);
+    // The retry it would have had is not on it: nothing runs it again.
+    expect(a.reasons.join(' ')).not.toMatch(/transient: retry/);
+    expect(a.summary).toMatch(/^Stopped: the same failure twice in a row\./);
+  });
+
+  it('a failure the rules give to a person is marked, so that Jev does not run it again', () => {
+    expect(assess(input('HOPPER_FAILED the tests do not pass', { repeated: true }))).toMatchObject({ decision: 'person', repeated: true });
+  });
+
+  it('red checks of its own pull request stop too: the fix before did not help', () => {
+    const a = assess(input('not complete: PR #12: checks failed: test', { repeated: true, checksFixes: 1 }));
+    expect(a).toMatchObject({ decision: 'person', repeated: true });
+  });
+
+  it('a daemon restart, a timeout and a shared cause are not stopped: they say nothing of the work', () => {
+    expect(assess(input('interrupted by daemon restart', { attempt: 2, repeated: true })).decision).toBe('retry');
+    expect(assess(input('write: ENOSPC: no space left on device', { repeated: true })).decision).toBe('redirect');
+    expect(assess(input('timed out', { repeated: true, liveness: { pushed: true } })).decision).toBe('continue');
+  });
+
+  it('not repeated: as before', () => {
+    expect(assess(input('read ECONNRESET', { attempt: 2, repeated: false })).decision).toBe('retry');
+  });
+
+  it('superseded first: a newer job of its item exists', () => {
+    expect(assess(input('read ECONNRESET', { repeated: true, newer: 'j2' }))).toMatchObject({ superseded: 'j2' });
   });
 });

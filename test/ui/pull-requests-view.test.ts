@@ -54,6 +54,14 @@ describe('Pull requests view', () => {
     expect(text('[data-slot="pr-merge-error"]', cardOf('j4'))).toContain('Base branch was modified');
   });
 
+  it('a direct job\'s card (issue #1068) links its direct job, not an issue, and has no Merge now or Close PR', async () => {
+    const { issue: _i, ...noIssue } = card({ jobId: 'd1', directJob: { url: 'https://hopper.test/#direct-jobs/x1' } });
+    await boot({ ...fixture, repos: [{ repo: 'owner/a', yolo: false, pullRequests: [noIssue, card({})] }] });
+    expect(cardOf('d1').querySelector('a[href="https://hopper.test/#direct-jobs/x1"]')!.textContent).toBe('direct job');
+    expect(cardOf('d1').querySelector('[data-slot="pr-actions"]')).toBeNull();
+    expect(cardOf('j1').querySelector('[data-slot="pr-actions"]')).not.toBeNull();
+  });
+
   it('why a card waits, in plain words (issue #677)', () => {
     expect(waitsText(card({ waits: 'conflicts', base: 'dev' }))).toBe('conflicts with dev');
     expect(waitsText(card({ waits: 'conflicts' }))).toBe('conflicts with its base branch');

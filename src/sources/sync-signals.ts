@@ -1,4 +1,5 @@
-// The sync loop's signals (sync.ts): what a source's check observed about its active jobs. A cancel ends the job.
+// The sync loop's signals (sync.ts): what a source's check observed about its active jobs. A cancel ends the job; a
+// finish ends a job on its own wait finished, its item closed by its own work (issue #1460).
 // Assignment drift (issue #387) only marks it: `unassigned` sets `unassignedAt` and records `job.unassigned` once;
 // `reassigned` clears the mark and records `job.reassigned`. The user decides whether to stop a flagged job.
 import type { Clock, JobSource, SourceHost, SourceSignal } from '../domain/ports.ts';
@@ -19,7 +20,7 @@ export interface SyncFlags {
 
 export interface SignalsContext {
   store: SourceHost['store'];
-  host: Pick<SourceHost, 'cancel'>;
+  host: Pick<SourceHost, 'cancel' | 'finishWaiting'>;
   clock: Clock;
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
   write(jobId: string, flags: SyncFlags): void;
@@ -37,6 +38,8 @@ export function signalsApplier(c: SignalsContext) {
     if (s.kind === 'cancel') {
       write(job.id, { ...flags, cancelReason: s.reason });
       host.cancel(job.id, s.reason);
+    } else if (s.kind === 'finish') {
+      host.finishWaiting(job.id, s.reason);
     } else if (s.kind === 'unassigned' && flags.unassignedAt === undefined) {
       write(job.id, { ...flags, unassignedAt: clock.now().toISOString() });
       store.events.append({ type: 'job.unassigned', jobId: job.id, data: { assignee } });

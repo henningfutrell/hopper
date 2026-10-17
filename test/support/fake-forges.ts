@@ -24,7 +24,7 @@ import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsFor
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
-import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
+import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { GRANTED, orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
 import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
@@ -73,14 +73,14 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
   /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
-  issuesRefused?: number;
+  issuesRefused?: number; /** GitHub: a new issue or comment is made, then its answer is lost: this status (issue #1591: a stop or a timeout). */ answerLost?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
   /** The credentials revoke requests named (issue #514), in order. */
   revoked: string[][];
   /** Called as a revoke request arrives, before GitHub answers it. */
   onRevoke?: (credentials: string[]) => void;
-  /** GitHub: the revoke endpoint answers this status, revoking nothing. */
+  /** GitHub: the revoke endpoint and the grant deletion (`DELETE /applications/{client_id}/grant`, issue #463) answer this status, revoking nothing. */
   revokeDown?: number;
   /**
    * GitHub's git over HTTP (issue #652), when made with `gitRoot`: the bare repositories `<gitRoot>/<owner>/<name>.git`,
@@ -245,6 +245,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         for (const c of credentials) { tokens.delete(c); refreshTokens.delete(c); }
         return { status: 202, body: {} };
       }
+      if (r.method === 'DELETE' && r.path === `/api/v3/applications/${o.clientId}/grant`) { if (forge?.revokeDown) return { status: forge.revokeDown, body: { message: 'Server Error' } }; if (!o.clientSecret || r.auth !== `basic ${Buffer.from(`${o.clientId}:${o.clientSecret}`).toString('base64')}`) return { status: 404, body: { message: 'Not Found' } }; const who = tokens.get(String(r.body.access_token)); if (!who) return { status: 404, body: { message: 'Not Found' } }; for (const g of grants.filter((x) => x.login === who)) drop(g); return { status: 204 }; } // the grant and every token of it (issue #463)
       if (!r.path.startsWith('/api/v3/')) return jobLogBlobRoute(forge, r.method, r.path) ?? { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
@@ -252,7 +253,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       // A repository listing (issue #985: first, it asks check rollups too); a repository's checks (issue #677); the accounts GitHub knows (issue #930).
       const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query) ?? orgAppsRoute(forge, base, r.method, path, r.query);
       if (checks) return checks;
-      if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
+      if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name`, avatar_url: `${base}/avatars/${login}` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] }; if (r.method === 'GET' && path === '/user/repos') return tagged(pageOf([...new Set(issues.map((i) => i.repo))].map((full_name) => ({ full_name, owner: { login: full_name.split('/')[0] } })), r.query)); // the repositories a personal access token reaches (issue #1380): every repository the issues are in
       if (r.method === 'GET' && path === '/user/installations') {
         if (forge?.installationsDown) return { status: 503, body: { message: 'Service Unavailable' } };
@@ -260,8 +261,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         const page = pageOf(on.map((a, i) => ({
           id: i + 1, account: { login: a }, html_url: `${base}/settings/installations/${i + 1}`,
           repository_selection: forge?.chosenRepos?.[a] ? 'selected' : 'all',
-          // What the installation grants, as GitHub answers it: the shipped app's permissions.
-          permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
+          // What the installation grants, as GitHub answers it: the shipped app's permissions, unless the test says otherwise.
+          permissions: forge?.installationPermissions?.[a] ?? GRANTED,
         })), r.query);
         return tagged({ total_count: on.length, installations: page }); // with an ETag (issue #1250)
       }
@@ -300,9 +301,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const rest = m[2] ?? '';
       const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
-      if (r.method === 'GET' && rest === 'issues') {
-        return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };
-      }
+      // A repository's issues by label, or by `creator` (issue #1591: a post key looked for), `state=all` too; `since` is not read.
+      if (r.method === 'GET' && rest === 'issues') { const { state = 'open', labels, creator } = r.query; return { status: 200, body: issues.filter((i) => i.repo === repo && (state === 'all' || (i.state ?? 'open') === state) && (labels ?? '').split(',').every((l) => i.labels.includes(l) || (!labels && !!creator)) && (creator === undefined || i.author === creator)).map(restIssue) }; }
       // Filing an issue and opening a pull request (the GitHub proxy, issue #563): GitHub numbers both in one sequence per repository.
       const nextNumber = () => Math.max(0, ...issues.filter((i) => i.repo === repo).map((i) => i.number), ...pulls.filter((p) => p.repo === repo).map((p) => p.number)) + 1;
       const repoAnswer = forksRoute(forge, o.gitRoot, base, login, r.method, repo, rest, r.body); if (repoAnswer) return repoAnswer;
@@ -312,7 +312,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           repo, number: nextNumber(), title: String(r.body.title), body: String(r.body.body ?? ''), author: login,
           labels: (r.body.labels as string[] | undefined) ?? [], assignees: (r.body.assignees as string[] | undefined) ?? [],
         };
-        issues.push(issue);
+        issues.push(issue); if (forge?.answerLost) return { status: forge.answerLost, body: { message: 'Bad Gateway' } };
         return { status: 201, body: restIssue(issue) };
       }
       if (r.method === 'POST' && rest === 'pulls') {
@@ -344,7 +344,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (r.method === 'POST' && im[2] === 'comments' && !im[3]) {
         const id = ++n;
         const comment = { id, body: r.body.body, user: { login }, created_at: '2026-10-09T00:00:00Z', html_url: `${base}/${repo}/issues/${issue.number}#issuecomment-${id}` };
-        (issue.comments ??= []).push(comment);
+        (issue.comments ??= []).push(comment); if (forge?.answerLost) return { status: forge.answerLost, body: { message: 'Bad Gateway' } };
         return { status: 201, body: comment };
       }
       if (r.method === 'POST' && im[2] === 'labels') {

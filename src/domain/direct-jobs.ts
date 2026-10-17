@@ -4,13 +4,34 @@
 // kept as a record, the job is made from it by the `direct` job source, and the record reads back with its job. Pure.
 import type { ActingPerson } from './failures.ts';
 import { promotionOffer, type PromotionArtifact, type PromotionView } from './promotions.ts';
-import type { Job, JobStatus } from './types.ts';
+import type { FollowsPullRequests } from './pull-requests.ts';
+import type { DomainEvent, Job, JobStatus } from './types.ts';
 
 /** The name and kind of the job source that makes a direct job's job: its jobs are keyed by it. */
 export const DIRECT_SOURCE = 'direct';
 
 /** The source key of a direct job's item. */
 export const directKey = (id: string): string => `${DIRECT_SOURCE}:${id}`;
+
+/**
+ * How the `direct` source follows a direct job's own pull request (issue #1068): with the GitHub connection of the user
+ * whose direct job it is — the one its job opened the pull request with through the hopper. Absent: nothing is followed.
+ * The ends of the pull requests and items its jobs' waits name are read with it too (issue #1721): no other source lists a
+ * direct job, so the sync asks the direct source.
+ */
+export type DirectPullRequests = Required<Pick<FollowsPullRequests, 'follow' | 'mergesOnReady' | 'tendStarted' | 'checkLogs' | 'endedPullRequests' | 'endedWatched'>>;
+
+/**
+ * The pull request a direct job opened on its repository `repo` through the hopper's GitHub proxy (issue #1068): the
+ * newest `github_proxy.done` of op `pr.create` among `events`, the job's own. Undefined: it opened none there.
+ */
+export function openedPullRequest(events: readonly DomainEvent[], repo: string): string | undefined {
+  const opened = events
+    .filter((e) => e.type === 'github_proxy.done' && e.data.op === 'pr.create' && typeof e.data.url === 'string'
+      && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase())
+    .sort((a, b) => b.seq - a.seq);
+  return opened[0]?.data.url as string | undefined;
+}
 
 /** What a person submits. */
 export interface DirectJobInput {

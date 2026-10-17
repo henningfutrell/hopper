@@ -27,7 +27,7 @@ async function cli(url: string | undefined, argv: string[], o: { stdin?: string 
   return { code, out: out.join(''), err: err.join('') };
 }
 
-function recordIn(url: string, name: 'plugins' | 'rules' | 'job-rules'): unknown {
+function recordIn(url: string, name: 'plugins' | 'rules' | 'job-rules' | 'repo-job-rules'): unknown {
   const s = openAdminStore(url);
   try { return s.config.read(name); } finally { s.close(); }
 }
@@ -54,7 +54,7 @@ describe('hopper config', () => {
   });
 
   it('refuses an unknown record or command', async () => {
-    expect((await cli(db(), ['config', 'get', 'plugins.yaml'])).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, windows-hosts, sign-in/);
+    expect((await cli(db(), ['config', 'get', 'plugins.yaml'])).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, repo-job-rules, windows-hosts, sign-in/);
     expect((await cli(db(), ['deploy'])).code).toBe(2);
   });
 
@@ -82,6 +82,15 @@ describe('hopper config', () => {
     expect(await cli(url, ['config', 'set', 'job-rules', '--if-version', version], { stdin: json({ rules: [] }) }))
       .toMatchObject({ code: 2, err: expect.stringMatching(/job-rules refused, nothing written: the job rules are a text/) });
     expect(recordIn(url, 'job-rules')).toBe('Be brief.\n');
+  });
+
+  it('repo-job-rules is a record: a map of repository to text; anything else is refused (issue #1472)', async () => {
+    const url = db();
+    expect((await cli(url, ['config', 'set', 'repo-job-rules', '--if-version', 'missing'], { stdin: json({ 'acme/*': 'Be brief.' }) })).code).toBe(0);
+    const version = (await cli(url, ['config', 'version', 'repo-job-rules'])).out.trim();
+    expect(await cli(url, ['config', 'set', 'repo-job-rules', '--if-version', version], { stdin: json({ acme: 'x' }) }))
+      .toMatchObject({ code: 2, err: expect.stringMatching(/repo-job-rules refused, nothing written: acme is no repository/) });
+    expect(recordIn(url, 'repo-job-rules')).toEqual({ 'acme/*': 'Be brief.' });
   });
 
   it('get plugins prints the plugins config as JSON', async () => {
@@ -321,8 +330,8 @@ describe('hopper join-code (issue #308)', () => {
     try {
       const hash = createHash('sha256').update(code).digest('hex');
       const now = new Date().toISOString();
-      expect(s.joinCodes.take(hash, now)).toMatchObject({ userId: expect.any(String) });
-      expect(s.joinCodes.take(hash, now)).toBeUndefined();
+      expect(s.joinCodes.take(hash, now, 'key-a')).toMatchObject({ userId: expect.any(String) });
+      expect(s.joinCodes.take(hash, now, 'key-b')).toBeUndefined();
     } finally { s.close(); }
   });
 

@@ -11,7 +11,7 @@ afterEach(unmount);
 
 const SOURCES = { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] };
 const TOKEN_CONNECTED = {
-  provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-15T00:00:00.000Z', jobRepositories: [],
+  provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-15T00:00:00.000Z', jobRepositories: [],
   grantedBy: 'token', connectedBy: 'sources', installations: [{ account: 'octo-user', repositorySelection: 'selected', repositories: ['octo-user/tools'] }],
   installationsCheckedAt: '2026-10-15T00:00:00.000Z',
 };
@@ -34,7 +34,9 @@ describe('Sources view: GitHub through a personal access token', () => {
     });
     await act(async () => { (panel()!.querySelector('[data-token-connect]') as HTMLButtonElement).click(); });
     expect(posts()).toEqual([{ action: 'connect-token', token: 'github_pat_1', provider: 'github' }]);
-    await vi.waitFor(() => expect(panel()?.querySelector('[data-token-input]')).toBeNull());
+    // Connected: no field to connect it; only Add another GitHub account takes a token (issue #1448).
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-add-account]')).not.toBeNull());
+    expect([...panel()!.querySelectorAll('[data-token-input]')].filter((i) => !i.closest('[data-add-account]'))).toEqual([]);
   });
 
   it('a token connection lists the repositories the token reaches, with no app install link', async () => {

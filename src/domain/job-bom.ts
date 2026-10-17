@@ -8,16 +8,18 @@
 // commit of its pull request and the files it changes (as the hopper's mirror last said, kept on the followed pull
 // request), the help pages and What's new lines among them, and its place in the merge order (what holds it).
 // Its GitHub calls (issue #1072): what the hopper did on GitHub for it, and the reads it answered with no call.
+// Its test databases (issue #975): each container its reap removed, from `job.containers_removed`, as the reap said it.
 import type { Artifact } from './artifacts.ts';
 import type { JobRun } from './job-costs.ts';
 import type { PullRequestSeen } from './pull-requests.ts';
 import type { QueueHead } from './tending-queue.ts';
 import type { Handoff } from './failures.ts';
 import { issueNodeId, jobNodeId, pullRequestNodeId, pullRequestOf, stageOf } from './job-graph.ts';
-import { nextWords, stageWords, waitsOnYou, type Worded } from './job-words.ts';
+import { nextWords, preempterLabel, preemptedByOf, stageWords, waitsOnYou, type Worded } from './job-words.ts';
 import { ownWaitOf } from './own-command.ts';
 import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
+import { testDatabases } from './test-databases.ts';
 import type { DomainEvent, Job } from './types.ts';
 
 /** The groups of a parts list, in the order it shows them. */
@@ -62,6 +64,8 @@ export interface JobBomInput {
   related: readonly Job[];
   /** Its job runs that ended, with what the machine and usage samples show (part 2); absent or empty: none ended yet. */
   runs?: readonly JobRun[];
+  /** The job that took its lane, when it was preempted (issue #1525). */
+  preempter?: Job;
   now: string;
 }
 
@@ -325,7 +329,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
-    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...code(job, own), ...outputs(job, own, input.artifacts),
+    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))
@@ -336,7 +340,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const pr = pullRequestOf(job);
   const ownWait = ownWaitOf(job);
   const worded: Worded = { kind: 'job', stage, status: job.status, ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}), ...(pr ? { pullRequest: pr } : {}),
-    ...(job.status === 'waiting_on' && job.wait?.on ? { waitOn: job.wait.on } : {}) };
+    ...(job.status === 'waiting_on' && job.wait?.on ? { waitOn: job.wait.on } : {}), ...preemptedByOf(job, (by) => preempterLabel(input.preempter, by)) };
   const s = job.source;
   const title = s?.title || job.spec.goal || job.id;
   return {

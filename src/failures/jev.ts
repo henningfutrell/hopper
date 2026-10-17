@@ -5,9 +5,10 @@
 // permissions, or a machine the blast-radius gate keeps. Otherwise the hand-off to a person stands. A done-check miss
 // (issue #637) is the same decision, asked in its own words: its source said not done three times, so whether it is
 // done is GitHub's to say, never Jev's — Jev picks only run it again or a person.
-import type { RerunBy } from '../domain/ports.ts';
-import type { Job, MinorDecisionOption, JevFirst } from '../domain/types.ts';
+import type { RerunBy, UserStore } from '../domain/ports.ts';
+import type { Job, JevStep, MinorDecisionOption, JevFirst } from '../domain/types.ts';
 import { consequentialOf } from '../minor-decisions/guard.ts';
+import { STALE_AFTER_MS } from './assess.ts';
 
 const OPTIONS: MinorDecisionOption[] = [
   { id: 'retry', label: 'Run it again: the failure looks passing — a flake, a timeout, a lost connection, a busy machine' },
@@ -22,7 +23,7 @@ const DONE_CHECK_INSTRUCTIONS = 'A job run by a coding agent said it was done, b
 const TEXT_MAX = 2000;
 
 /** A failed job the rules handed to a person with no known cause: what Jev is asked about. */
-export interface JevCase { recordId: string; job: Job; error: string; attempt: number; ranMs?: number; machineId?: string; /** A done-check miss (issue #637). */ doneCheck?: boolean }
+export interface JevCase extends JevStep { recordId: string; job: Job }
 
 export interface JevStepDeps {
   first: JevFirst;
@@ -46,4 +47,37 @@ export async function askJev(d: JevStepDeps, c: JevCase): Promise<void> {
   if (!d.live() || !out.asked || !out.applied || out.pick !== 'retry') return;
   const done = await d.rerun(c.recordId, 'assessor', 'run again: Jev picked it');
   if (!done.ok) d.logger.warn(`hopper: Jev's run again of job ${c.job.id} was refused: ${done.message}`);
+}
+
+export interface JevSteps {
+  /** Inside the assessment's tx: the case's step kept on its record until Jev answers. */
+  keep(c: JevCase): void;
+  /** Ask Jev now; its record keeps the step until Jev answered, unless the daemon stopped first. */
+  ask(c: JevCase): void;
+  /** At start: the steps a restart left unasked, asked again — of a job still failed, its newest record, within a day. */
+  askLeft(): void;
+}
+
+/** Jev's steps kept as records (issue #1608): a daemon that stops while Jev is asked asks again at its start. */
+export function createJevSteps(d: Omit<JevStepDeps, 'first' | 'gated'> & { store: UserStore; minorDecisions?: { first: JevFirst; gated(machineId: string): boolean }; now(): Date }): JevSteps {
+  const { store } = d;
+  async function step(c: JevCase): Promise<void> {
+    if (!d.minorDecisions) return;
+    try { await askJev({ ...d, ...d.minorDecisions }, c); } finally {
+      if (d.live() && store.failures.get(c.recordId)?.jev) store.failures.update(c.recordId, { jev: undefined });
+    }
+  }
+  const ask = (c: JevCase) => { void step(c).catch((e: unknown) => d.logger.warn(`hopper: Jev's step for job ${c.job.id} failed: ${(e as Error).message}`)); };
+  return {
+    keep({ recordId, job: _job, ...s }) { if (d.minorDecisions) store.failures.update(recordId, { jev: s }); },
+    ask,
+    askLeft() {
+      for (const r of store.failures.list({ since: new Date(d.now().getTime() - STALE_AFTER_MS).toISOString() })) {
+        if (!r.jev) continue;
+        const job = store.jobs.get(r.jobId);
+        if (job?.status === 'failed' && store.failures.forJob(job.id)?.id === r.id) ask({ recordId: r.id, job, ...r.jev });
+        else store.failures.update(r.id, { jev: undefined });
+      }
+    },
+  };
 }

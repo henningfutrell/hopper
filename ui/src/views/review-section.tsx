@@ -12,7 +12,8 @@
 // text links to by its URL is embedded below it (issue #624). Every part and every note is rendered as Markdown,
 // sanitized; a long item shows its summary — its first part: a proposal's Goal, a report's Question — and the rest
 // behind Show all (issue #569).
-// A proposal is a set of paths (issue #651): its card is the selection form of proposal-paths.tsx.
+// A proposal is a set of paths (issue #651): its card is the selection form of proposal-paths.tsx. Reject (issue #1659)
+// rejects a whole proposal, open or sent back; a person may select several and reject them at once.
 import { ArtifactEmbeds } from '@/components/artifacts';
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +36,7 @@ import { actFor, useHopper } from '@/store';
 import { refreshReviews } from '@/store/reviews';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
 import { PathsDecide, PathsView } from './proposal-paths';
+import { RejectProposals } from './proposal-reject';
 import { ReviewHistory, ReviewSettingsPanel } from './review-settings';
 
 const ICON: Record<ReviewKind, LucideIcon> = { proposal: FileCheck, research: Telescope };
@@ -221,7 +223,12 @@ function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type
         <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Review trail</div>{p.reviews.map((r, i) => <Review key={i} r={r} />)}</div>
       )}
       {p.status === 'open' && canAct && kind !== 'proposal' && <Decide kind={kind} p={p} type={type} />}
-      {p.status === 'revising' && <div className="text-sm text-muted-foreground">Sent back: its job is writing version {latest.number + 1}.</div>}
+      {p.status === 'revising' && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          Sent back: its job is writing version {latest.number + 1}.
+          {kind === 'proposal' && canAct && type.decisions.some((d) => d.effect === 'reject') && <RejectProposals ids={[p.id]} />}
+        </div>
+      )}
       {p.status === 'open' && !canAct && (
         <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           <Lock className="size-4" />Your role ({role}) cannot decide on {ui.noun}s; an operator or admin can.
@@ -245,11 +252,33 @@ export function ReviewSection({ kind }: { kind: ReviewKind }) {
   const { items, decided, settings, type } = useHopper((s) => s.reviews[kind]);
   const ordered = useMemo(() => reviewOrder(items), [items]);
   const canAdmin = useCanAdmin();
-  useMarkSeen(kind, items, useCanOperate());
+  const canAct = useCanOperate();
+  useMarkSeen(kind, items, canAct);
+  // Several proposals rejected at once (issue #1659): the ones selected that are still listed.
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const bulk = kind === 'proposal' && canAct && (type?.decisions.some((d) => d.effect === 'reject') ?? false);
+  const selected = ordered.filter((p) => picked.has(p.id)).map((p) => p.id);
+  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
     <div className="space-y-3">
+      {bulk && selected.length > 0 && (
+        <div data-slot="bulk-reject" className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm">
+          <span className="text-muted-foreground">{selected.length} selected</span>
+          <RejectProposals ids={selected} label={`Reject selected (${selected.length})`} onDone={() => setPicked(new Set())} />
+          <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Clear</Button>
+        </div>
+      )}
       {ordered.length && type
-        ? ordered.map((p) => <div key={p.id} data-item={p.id}><ItemCard kind={kind} p={p} type={type} /></div>)
+        ? ordered.map((p) => (
+          <div key={p.id} data-item={p.id} className="space-y-1">
+            {bulk && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" data-select={p.id} checked={picked.has(p.id)} onChange={() => toggle(p.id)} />Select
+              </label>
+            )}
+            <ItemCard kind={kind} p={p} type={type} />
+          </div>
+        ))
         : <Panel title={ui.label} icon={ICON[kind]}><Empty>no open {ui.noun}s</Empty></Panel>}
       {decided.length > 0 && <ReviewHistory kind={kind} items={decided} type={type} />}
       {canAdmin && settings && <ReviewSettingsPanel kind={kind} settings={settings} />}

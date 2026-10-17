@@ -24,7 +24,9 @@
 //   hopper master-key status [--url <hopper URL>]     the master key's source and fingerprint, never the key (issue #685, cli-operator.ts)
 //   hopper master-key rotate [--url <hopper URL>]     a new master key, every secret sealed again under it; prints it once (issue #659)
 //   hopper cluster script                             the host's cluster script: bootstrap, migrate, rollback (issue #1373)
-//   hopper lanes plan|tune …                          lane recommendations and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
+//   hopper lanes plan|costs|tune|apply|dismiss|undo …
+//                                                     lane recommendations, job cost profiles and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
+//   hopper machine list|drain|undrain …               the machines, drained or not; drain or undrain one (issue #1511, cli-operator-machine.ts)
 //   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
 //   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)
 //   hopper update drift [--url <hopper URL>]          the running stack's drift from its compose file (issue #1017, cli-update-drift.ts)
@@ -45,6 +47,7 @@ import type { User } from './domain/types.ts';
 import { signInConfigProblem } from './auth/config.ts';
 import { withHeldSecrets } from './auth/sealed-secrets.ts';
 import { jobRulesProblem } from './job-rules/index.ts';
+import { repoJobRulesProblem } from './job-rules/repo-rules.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -91,16 +94,16 @@ ${UPDATE_USAGE}
                                                      (docs/kubernetes.md). No daemon needed
   hopper help                                        this text
 
-With ${REFRESH_TOKEN_FILE} set, the operator actions (job … search) open no database: they act with the grant whose
+With ${REFRESH_TOKEN_FILE} set, the operator actions (job … windows-link) open no database: they act with the grant whose
 refresh token that file holds (a delegate approver's, minted on Access requests), on the hopper HOPPER_URL or --url names.
 Each use writes the grant's new refresh token to the file. The grant's scopes decide what it may do.
 
-The job, queue, question, problem, handoff and failure commands act on the running daemon, through its own checks
+The operator actions, every command from job to windows-link above, act on the running daemon, through its own checks
 and events, as the UI does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
 No sign-in is needed: the CLI holds the database's credentials. Each prints the daemon's answer as JSON; the events
 say the operator CLI acted (via cli).
 
-records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules and windows-hosts are one user's; sign-in is shared. Every one is edited
+records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules, repo-job-rules and windows-hosts are one user's; sign-in is shared. Every one is edited
 in the UI too.
 --user <id> on config, ssh-key, ledger and the commands on the running daemon names the user (default: the one user, while there is one).
 
@@ -126,11 +129,12 @@ function recordName(raw: string | undefined): ConfigName {
 export function recordProblem(name: ConfigName, value: unknown, held: readonly string[] = []): string | undefined {
   if (name === 'rules') return rulesProblem(value);
   if (name === 'job-rules') return jobRulesProblem(value);
+  if (name === 'repo-job-rules') return repoJobRulesProblem(value);
   if (name === 'windows-hosts') return windowsHostsProblem(value);
   return name === 'sign-in' ? signInConfigProblem(withHeldSecrets(value, held)) : pluginsConfigProblem(value);
 }
 
-/** One config record wherever it lives: a user's (plugins, rules, job-rules, windows-hosts) or the instance's (sign-in). */
+/** One config record wherever it lives: a user's (plugins, rules, job-rules, repo-job-rules, windows-hosts) or the instance's (sign-in). */
 type Records = ConfigRecords<ConfigName>;
 
 function put(records: Records, name: ConfigName, json: string, version: string, held: readonly string[]): void {

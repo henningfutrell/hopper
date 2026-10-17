@@ -1,6 +1,6 @@
 // Issue #652: a job holds no GitHub token. Its git fetch and push go to the hopper, which does them on GitHub with the
-// connection of the job's own user; a push changes only a branch of the job's own repository, never its default or a
-// release branch. The daemon, store and HTTP edge are real; GitHub is a fake on loopback whose git is git's own
+// connection of the job's own user; a push changes only a branch of the job's own repository or of another of its user's
+// job repositories (issue #1275), never its default or a release branch. The daemon, store and HTTP edge are real; GitHub is a fake on loopback whose git is git's own
 // `git-http-backend` over bare repositories (test/support/fake-forges.ts); the job runs the real git with the variables
 // it was given, and the credential files the hopper kept for it on its machine.
 //
@@ -13,7 +13,12 @@
 //     And the push is on the job's timeline
 //   Scenario: a job pushes to the default branch, or a release branch
 //     Then the push is refused with the reason, nothing changes on GitHub, and the refusal is on its timeline
-//   Scenario: a job pushes to another repository than its own
+//   Scenario: a job pushes to another of its user's job repositories (issue #1275)
+//     Given a job of octo/tools whose change belongs in octo/site, another job repository its user can push to
+//     When the job pushes a new branch to octo/site, then pushes it again with --force-with-lease
+//     Then both pushes are on GitHub, and on the job's timeline
+//     But a push to octo/site's default branch, or to a job repository its user cannot push to, is refused
+//   Scenario: a job pushes to a repository that is neither its own nor a job repository
 //     Then the push is refused with the reason
 //   Scenario: a job of a repository outside the job repositories pushes to its own repository (issue #1131)
 //     Given a job whose own repository is no job repository (a source other than the account's, or one chosen no more)
@@ -103,16 +108,37 @@ describe('git through the hopper (issue #652)', () => {
     ]));
   });
 
-  it('refuses a push to another repository than the job\'s own', async () => {
+  it('pushes a branch to another of its user\'s job repositories, forced too, on its timeline (issue #1275)', async () => {
     const t = await start();
+    const { job, home, git } = await running(t, 'octo/tools');
+    expect((await git(['clone', '--quiet', `${t.github.url}/octo/site.git`, 'site'])).code).toBe(0);
+    const work = join(home, 'site');
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'The change belongs here'], work);
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/issue-7-site'], work)).toMatchObject({ code: 0 });
+    await git(['commit', '--quiet', '--amend', '--allow-empty', '-m', 'The change belongs here, rebased'], work);
+    expect(await git(['push', '--force-with-lease', 'origin', 'HEAD:refs/heads/issue-7-site'], work)).toMatchObject({ code: 0 });
+    const head = (await git(['rev-parse', 'HEAD'], work)).stdout.trim();
+    expect((await branchesOf(t, 'octo/site')).stdout).toContain(`issue-7-site ${head}`);
+    expect(eventsOf(t.app, 'github_proxy.done')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'octo/site', refs: ['refs/heads/issue-7-site'] }) }),
+    ]));
+
+    const toDev = await git(['push', 'origin', 'HEAD:refs/heads/dev'], work);
+    expect(toDev.code).not.toBe(0);
+    expect(toDev.stderr).toContain('a job pushes only to a branch of its own work, never to dev');
+  });
+
+  it('refuses a push to another job repository its user cannot push to', async () => {
+    const t = await start();
+    t.github.notPushable = ['octo/site'];
     const { home, git } = await running(t, 'octo/tools');
     expect((await git(['clone', '--quiet', `${t.github.url}/octo/site.git`, 'site'])).code).toBe(0);
     const work = join(home, 'site');
-    await git(['commit', '--quiet', '--allow-empty', '-m', 'Not mine'], work);
-    const r = await git(['push', 'origin', 'HEAD:refs/heads/issue-7-elsewhere'], work);
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Not pushable'], work);
+    const r = await git(['push', 'origin', 'HEAD:refs/heads/issue-7-site'], work);
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain('a job pushes only to its own repository (octo/tools)');
-    expect((await branchesOf(t, 'octo/site')).stdout).not.toContain('issue-7-elsewhere');
+    expect(r.stderr).toContain('your user cannot push to octo/site');
+    expect((await branchesOf(t, 'octo/site')).stdout).not.toContain('issue-7-site');
   });
 
   it('pushes to the job\'s own repository when it is no job repository, forced too (issue #1131)', async () => {
@@ -141,7 +167,7 @@ describe('git through the hopper (issue #652)', () => {
     await git(['commit', '--quiet', '--allow-empty', '-m', 'Not mine'], work);
     const r = await git(['push', 'origin', 'HEAD:refs/heads/issue-7-elsewhere'], work);
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain('a job pushes only to its own repository (octo/tools)');
+    expect(r.stderr).toContain('a job pushes only to its own repository (octo/tools) or another of the repositories the hopper works on');
     expect(t.github.gitRequests.filter((x) => x.path.startsWith('/elsewhere/lib') && x.path.endsWith('/git-receive-pack'))).toEqual([]);
   });
 

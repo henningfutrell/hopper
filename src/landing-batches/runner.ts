@@ -6,16 +6,20 @@
 // tested branch start a back-merge of it into the landing branch (`back-merge.ts`); with none of these at work,
 // a batch run starts when due (`batchDue`), its text closing the issues of its job pull requests (issue #1175). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
+// Each GitHub write follows the record of its intent (issue #1589): a batch run is recorded due before its branch and pull
+// request, a failure before its close; a pass that stopped between the two finds what it made (`once.ts`) and closes
+// what it ended.
 import {
   BATCH_BRANCH_PREFIX, batchBody, closingReferences, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
-  type BatchCheckRun, type LandingBatchRepo, type LandingBatchRepoView, type LandingBatchSettings, type LandingBatchStuck, type RunningBatch,
+  type BatchCheckRun, type DueBatch, type LandingBatchRepo, type LandingBatchRepoView, type LandingBatchSettings, type LandingBatchStuck, type RunningBatch,
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
 import { retargetNote } from '../sources/github/pr-notes.ts';
 import { canaryPass } from './canary.ts';
-import { bisectPass, culpritPass, startBisect, type RedPass } from './red.ts';
+import { openOnce } from './once.ts';
+import { bisectPass, bisectStart, culpritPass, type RedPass } from './red.ts';
 
 /** How often the runner passes: 2 minutes. */
 export const LANDING_BATCH_PASS_MS = 2 * 60_000;
@@ -34,8 +38,8 @@ export interface LandingBatchGitHub {
   close(repo: string, number: number): Promise<void>;
   /** GitHub's merge of `head` into the branch `base`: its merge commit, nothing to merge, or a conflict it cannot merge. */
   mergeInto(repo: string, base: string, head: string, message: string): Promise<{ kind: 'merged'; sha: string } | { kind: 'nothing' } | { kind: 'conflict' }>;
-  /** The open pull requests into `base`, with the branch each comes from. */
-  openPullRequests(repo: string, base: string): Promise<{ number: number; url: string; head: string }[]>;
+  /** The open pull requests into `base`, with the branch each comes from and its title. */
+  openPullRequests(repo: string, base: string): Promise<{ number: number; url: string; head: string; title: string }[]>;
   retarget(repo: string, number: number, base: string): Promise<void>;
   /** One comment on pull request `number`: what the hopper did with it (issue #1143). */
   comment(repo: string, number: number, body: string): Promise<void>;
@@ -46,6 +50,8 @@ export interface LandingBatchGitHub {
   /** The log of a GitHub Actions job, by its check run's id. */
   checkLog(repo: string, checkRunId: number): Promise<string>;
   fileIssue(repo: string, issue: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<{ number: number; url: string }>;
+  /** The open issue with this title and label, changed since `since` (issue #1589): one a pass filed before it was recorded. */
+  findIssue(repo: string, f: { title: string; label: string; since: string }): Promise<{ number: number; url: string } | undefined>;
   /** The bug reports (issues labelled `user-report`) filed since `since` whose text names the commit `sha` (12 characters). */
   bugReports(repo: string, sha: string, since: string): Promise<number[]>;
   /** Moves the branch to `sha`, only as a fast-forward. */
@@ -96,20 +102,31 @@ export function createLandingBatches(o: {
   // A run of passes that failed the same way (issue #1333), per repository: recorded stuck once, at LANDING_BATCH_STUCK_PASSES.
   const failing = new Map<string, LandingBatchStuck & { recorded: boolean }>();
 
+  /** A batch or bisect run's pull request closed and its branch removed; a refusal is logged, and a later pass tries again. */
+  async function closeRun(gh: LandingBatchGitHub, repo: string, pullRequest: number | undefined, branch: string): Promise<void> {
+    if (pullRequest !== undefined) await gh.close(repo, pullRequest).catch((e: unknown) => o.log(`hopper: landing batches: #${pullRequest} of ${repo} not closed: ${(e as Error).message}`));
+    await gh.deleteBranch(repo, branch).catch((e: unknown) => o.log(`hopper: landing batches: ${branch} of ${repo} not removed: ${(e as Error).message}`));
+  }
+
   /** The batch run at work: read, and merged on green or ended on red. */
   async function runningPass(gh: LandingBatchGitHub, repo: string, tested: string, landing: string, run: RunningBatch, red: RedPass): Promise<void> {
     const pr = await gh.pullRequest(repo, run.pullRequest);
     const ended = { repo, tested, tip: run.tip, pullRequest: run.pullRequest, url: run.url };
-    const fail = async (reason: string, checks: FailedCheck[], close: boolean): Promise<void> => {
-      if (close) await gh.close(repo, run.pullRequest);
-      await gh.deleteBranch(repo, run.branch).catch((e: unknown) => o.log(`hopper: landing batches: ${run.branch} of ${repo} not removed: ${(e as Error).message}`));
-      o.record({ type: 'landing_batch.failed', data: { ...ended, reason, checks: checks.map((c) => c.name), ...(checks.length > 0 ? { checkRuns: checks } : {}) } });
+    const fail = async (reason: string, checks: FailedCheck[], close: boolean, conflicts = false): Promise<void> => {
+      // Only failing checks say the batch itself fails: a bisect finds the first change that does. Its points are read
+      // first, so its start is recorded with the failure, and both before the close (issue #1589).
+      const bisect = checks.length > 0 ? await bisectStart(red, { tested, tip: run.tip, checks, reason, pullRequest: run.pullRequest, url: run.url }) : undefined;
+      o.record({ type: 'landing_batch.failed', data: { ...ended, reason, checks: checks.map((c) => c.name), ...(checks.length > 0 ? { checkRuns: checks } : {}), ...(conflicts ? { conflicts } : {}) } });
+      if (bisect) o.record(bisect);
       note(repo, { why: reason });
-      // Only failing checks say the batch itself fails: a bisect finds the first change that does.
-      if (checks.length > 0) await startBisect(red, { tested, tip: run.tip, checks, reason, pullRequest: run.pullRequest, url: run.url });
+      await closeRun(gh, repo, close ? run.pullRequest : undefined, run.branch);
+      // Merge conflicts: the tested branch has a change the landing branch lacks, merged into it by a back-merge.
+      if (conflicts) await startBackMerge(red, { tip: run.tip, batch: run.pullRequest });
     };
     if (pr.merged) {
-      o.record({ type: 'landing_batch.promoted', data: ended });
+      // Merged by a person, or by a pass that stopped before its record.
+      await closeRun(gh, repo, undefined, run.branch);
+      o.record({ type: 'landing_batch.promoted', data: { ...ended, ...(pr.mergeSha ? { merge: pr.mergeSha } : {}) } });
       note(repo, { why: `batch run #${run.pullRequest} was merged` });
       return;
     }
@@ -117,24 +134,20 @@ export function createLandingBatches(o: {
     if (pr.headSha !== run.tip) return fail(`its branch moved from ${run.tip.slice(0, 12)}`, [], true);
     const checks = batchChecks(await gh.checkRuns(repo, run.tip), pr, run.startedAt, o.now());
     if (checks.kind === 'pending') { note(repo, { why: `batch run #${run.pullRequest} waits for its checks` }); return; }
-    if (checks.kind === 'red') {
-      await fail(checks.reason, checks.checks, true);
-      // Merge conflicts: the tested branch has a change the landing branch lacks, merged into it by a back-merge.
-      if (pr.mergeable === false) await startBackMerge(red, { tip: run.tip, batch: run.pullRequest });
-      return;
-    }
+    if (checks.kind === 'red') return fail(checks.reason, checks.checks, true, pr.mergeable === false);
     const merged = await gh.merge(repo, run.pullRequest, run.tip, batchTitle({ landing, tested, tip: run.tip }));
     await gh.deleteBranch(repo, run.branch).catch((e: unknown) => o.log(`hopper: landing batches: ${run.branch} of ${repo} not removed: ${(e as Error).message}`));
     o.record({ type: 'landing_batch.promoted', data: { ...ended, merge: merged.sha } });
     note(repo, { why: `batch run #${run.pullRequest} moved ${tested} to ${run.tip.slice(0, 12)}` });
   }
 
-  /** A job's pull request lands on the landing branch, never on the tested branch. */
-  async function moveJobPullRequests(gh: LandingBatchGitHub, repo: string, tested: string, landing: string): Promise<void> {
+  /** A job's pull request lands on the landing branch, never on the tested branch. Answers the open pull requests on it. */
+  async function moveJobPullRequests(gh: LandingBatchGitHub, repo: string, tested: string, landing: string): Promise<{ number: number; head: string }[]> {
     // The hopper's own (a batch run, a bisect, a back-merge) stays there, even when a job named it (issue #1311): its
     // branch is a landing branch tip.
     const jobs = new Set(o.jobPullRequests());
-    for (const p of await gh.openPullRequests(repo, tested)) {
+    const open = await gh.openPullRequests(repo, tested);
+    for (const p of open) {
       if (!jobs.has(p.url) || p.head.startsWith(BATCH_BRANCH_PREFIX)) continue;
       // One refusal skips that pull request only: the others move, and the batch run goes on (issue #1311).
       const moved = await gh.retarget(repo, p.number, landing).then(() => true, (e: unknown) => {
@@ -150,13 +163,16 @@ export function createLandingBatches(o: {
       await gh.comment(repo, p.number, retargetNote(tested, landing))
         .catch((e: unknown) => o.log(`hopper: landing batches: the note on ${p.url} was not posted: ${(e as Error).message}`));
     }
+    return open;
   }
 
   /** A batch run starts when due; else the merges that wait for one are recorded. */
   async function startPass(gh: LandingBatchGitHub, repo: string, cfg: LandingBatchRepo, landing: string): Promise<void> {
+    const fresh = landingBatchStates(o.events())[repo];
+    // A batch run recorded due and not started: a pass stopped on its way (issue #1589). The same one starts.
+    if (fresh?.due) return start(gh, repo, cfg.tested, fresh.due);
     const cmp = await gh.compare(repo, cfg.tested, landing);
     const merges = mergedPullRequests(cmp.commits.map((c) => c.message));
-    const fresh = landingBatchStates(o.events())[repo];
     const due = batchDue(fresh, { tip: cmp.tip, aheadBy: cmp.aheadBy, merges: merges.length }, cfg, o.now());
     if (!due.due) {
       // The merges that wait for it, for the work-item ledger: once per change.
@@ -164,12 +180,18 @@ export function createLandingBatches(o: {
       note(repo, { why: due.why });
       return;
     }
-    const branch = batchBranch(cmp.tip);
-    await gh.createBranch(repo, branch, cmp.tip);
-    const b = { landing, tested: cfg.tested, tip: cmp.tip, merges, closes: await batchCloses(gh, repo, merges) };
-    const pr = await gh.openPullRequest(repo, { head: branch, base: cfg.tested, title: batchTitle(b), body: batchBody(b) });
-    o.record({ type: 'landing_batch.started', data: { repo, landing, tested: cfg.tested, tip: cmp.tip, branch, pullRequest: pr.number, url: pr.url, merges, why: due.why } });
-    note(repo, { why: due.why });
+    const d: DueBatch = { tip: cmp.tip, branch: batchBranch(cmp.tip), landing, merges, closes: await batchCloses(gh, repo, merges), why: due.why };
+    o.record({ type: 'landing_batch.due', data: { repo, tested: cfg.tested, ...d } });
+    await start(gh, repo, cfg.tested, d);
+  }
+
+  /** A due batch run's branch and pull request, or the pull request a stopped pass opened on that branch. */
+  async function start(gh: LandingBatchGitHub, repo: string, tested: string, d: DueBatch): Promise<void> {
+    await gh.createBranch(repo, d.branch, d.tip);
+    const b = { landing: d.landing, tested, tip: d.tip, merges: d.merges, closes: d.closes };
+    const pr = await openOnce(gh, repo, { head: d.branch, base: tested, title: batchTitle(b), body: batchBody(b) });
+    o.record({ type: 'landing_batch.started', data: { repo, landing: d.landing, tested, tip: d.tip, branch: d.branch, pullRequest: pr.number, url: pr.url, merges: d.merges, why: d.why } });
+    note(repo, { why: d.why });
   }
 
   /**
@@ -189,8 +211,11 @@ export function createLandingBatches(o: {
     const step = async (what: string, f: () => Promise<void>): Promise<void> => {
       try { await f(); } catch (e) { problems.push(`${what}: ${(e as Error).message}`); }
     };
-    await step(`the move of job pull requests to ${landing}`, () => moveJobPullRequests(gh, repo, cfg.tested, landing));
+    let open: { number: number; head: string }[] = [];
+    await step(`the move of job pull requests to ${landing}`, async () => { open = await moveJobPullRequests(gh, repo, cfg.tested, landing); });
     const state = landingBatchStates(o.events())[repo];
+    // A batch or bisect run recorded ended and still open: a pass stopped before it closed it (issue #1589).
+    for (const p of open) if (state?.closedRuns?.includes(p.number) && p.head.startsWith(BATCH_BRANCH_PREFIX)) await closeRun(gh, repo, p.number, p.head);
     const red: RedPass = { gh, repo, landing, tested: cfg.tested, record: o.record, state: () => landingBatchStates(o.events())[repo], note: (f: { why?: string; problem?: string }) => note(repo, f), login: o.login, now: o.now, log: o.log };
     const run = state?.running;
     if (run) {
@@ -205,7 +230,7 @@ export function createLandingBatches(o: {
     const culprit = state?.culprit;
     if (culprit) await step('the culprit\'s revert', () => culpritPass(red, culprit));
     const backMerge = state?.backMerge;
-    if (backMerge) await step('the back-merge', () => backMergePass(red, backMerge));
+    if (backMerge) await step('the back-merge', () => (backMerge.state === 'due' ? startBackMerge(red, { tip: backMerge.tip, batch: backMerge.batch ?? 0 }) : backMergePass(red, backMerge)));
     await step('the start of a batch run', () => startPass(gh, repo, cfg, landing));
     return problems;
   }
@@ -266,8 +291,9 @@ export function createLandingBatches(o: {
   /**
    * A person's way out of a stuck batch (issue #1333). Recorded at once: `landing_batch.restarted` ends the batch run and
    * the bisect at work, so the next batch run starts at the landing branch's tip, the same tip too. Then, after the pass
-   * in flight, their pull requests are closed and their branches removed, and a pass starts it. A close or a removal
-   * GitHub refuses is logged: the restart goes on, and the removed branch closes the pull request all the same.
+   * in flight, a pass closes their pull requests and removes their branches, as for every run that ended (issue #1589),
+   * and starts it. A close or a removal GitHub refuses is logged: the restart goes on, the removed branch closes the pull
+   * request all the same, and a later pass tries again.
    */
   function restart(repo: string, by: string): { closed: number[]; done: Promise<void> } {
     const key = repo.toLowerCase();
@@ -281,10 +307,6 @@ export function createLandingBatches(o: {
     failing.delete(key);
     const done = (async () => {
       await running?.catch(() => undefined);
-      for (const r of at) {
-        await gh.close(key, r.pullRequest).catch((e: unknown) => o.log(`hopper: landing batches: #${r.pullRequest} of ${key} not closed: ${(e as Error).message}`));
-        await gh.deleteBranch(key, r.branch).catch((e: unknown) => o.log(`hopper: landing batches: ${r.branch} of ${key} not removed: ${(e as Error).message}`));
-      }
       await pass();
     })();
     return { closed, done };

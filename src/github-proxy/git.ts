@@ -3,7 +3,7 @@
 // push may change is read from the ref updates at the head of git's receive-pack request, before anything reaches
 // GitHub: a branch of the job's own work, never the default branch, a release branch, a tag or a delete. Pure: no I/O.
 
-import { BATCH_BRANCH_PREFIX } from '../domain/landing-batches.ts';
+import { BATCH_BRANCH_PREFIX, RELEASE_BRANCHES } from '../domain/landing-batches.ts';
 
 /** The route on the hopper's URL a job's git goes to: `<HOPPER_URL>/job/git/<owner>/<name>.git/…`. */
 export const GIT_PATH = '/job/git/';
@@ -13,9 +13,6 @@ export type GitService = 'git-upload-pack' | 'git-receive-pack';
 
 /** One ref update of a push: the ref, from `old` to `new` (40 zeros: none). */
 export interface RefUpdate { old: string; new: string; ref: string }
-
-/** Branches no job pushes to, whatever the repository's default branch is: the release branches, and the canary (issue #1073 part 5). */
-export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'canary', 'stable'];
 
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
@@ -76,17 +73,21 @@ export function checkPush(commands: readonly RefUpdate[], at: { defaultBranch?: 
  * The variables that send a job's git to the hopper (`git config` from the environment): every GitHub remote — https,
  * ssh and scp-like — is rewritten to `<hopperUrl>/job/git/`, and git's credential ask there is answered from the job's
  * token file (`HOPPER_TOKEN_FILE`), read when git asks: the token is never in a variable. Any other credential helper is
- * cleared for that URL first.
+ * cleared for that URL first. `gitlab` (issue #1448 part 3, a GitLab job's): its GitLab's https URL is rewritten to
+ * `<hopperUrl>/<gitlab.path>` the same way.
  */
-export function jobGitConfig(hopperUrl: string, webUrl: string): Record<string, string> {
-  const to = `${hopperUrl.replace(/\/+$/, '')}${GIT_PATH}`;
+export function jobGitConfig(hopperUrl: string, webUrl: string, gitlab?: { url: string; path: string }): Record<string, string> {
+  const hopper = hopperUrl.replace(/\/+$/, '');
+  const to = `${hopper}${GIT_PATH}`;
   const web = new URL(webUrl);
   const from = [`${web.origin}/`, `git@${web.hostname}:`, `ssh://git@${web.hostname}/`];
   const helper = '!f() { test "$1" = get || exit 0; echo username=hopper-job; printf \'password=%s\\n\' "$(cat "$HOPPER_TOKEN_FILE")"; }; f';
+  const via = (url: string): [string, string][] => [[`credential.${url}.helper`, ''], [`credential.${url}.helper`, helper]];
+  const toGitLab = gitlab ? `${hopper}${gitlab.path}` : undefined;
   const entries: [string, string][] = [
     ...from.map((f): [string, string] => [`url.${to}.insteadOf`, f]),
-    [`credential.${to}.helper`, ''],
-    [`credential.${to}.helper`, helper],
+    ...via(to),
+    ...(gitlab && toGitLab ? [[`url.${toGitLab}.insteadOf`, `${gitlab.url.replace(/\/+$/, '')}/`] as [string, string], ...via(toGitLab)] : []),
   ];
   return {
     GIT_CONFIG_COUNT: String(entries.length),

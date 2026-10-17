@@ -1,6 +1,7 @@
 // The reap at a job's end (issue #401): what it kept for uncommitted or unpushed work is flagged on the
 // job's trail as job.work_kept, never removed silently; a reap that kept nothing records nothing.
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Reaped } from '../../src/domain/ports.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createStickyExecutor } from '../support/doubles.ts';
 import { createManualSource } from '../support/manual-source.ts';
@@ -15,7 +16,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function cancelled(kept?: string[], removed?: { containers: string[]; volumes: string[] }) {
+async function cancelled(kept?: string[], removed?: Reaped['removed']) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(removed ? { removed } : {}) });
@@ -45,10 +46,11 @@ describe('work the reap kept (issue #401)', () => {
 
 describe('the containers and volumes the reap removed (issue #1120)', () => {
   it('are recorded on the job: job.containers_removed with each one', async () => {
-    const { a, job } = await cancelled(undefined, { containers: ['c0ffee01'], volumes: ['vol-db'] });
+    const details = [{ id: 'c0ffee01', name: 'db-1', image: 'postgres:16', startedAt: '2026-10-01T00:05:00.000Z' }];
+    const { a, job } = await cancelled(undefined, { containers: ['c0ffee01'], volumes: ['vol-db'], details });
     await waitFor(async () => (await a.events('types=job.containers_removed')).length === 1);
     const [e] = await a.events('types=job.containers_removed');
-    expect(e).toMatchObject({ jobId: job.id, data: { containers: ['c0ffee01'], volumes: ['vol-db'] } });
+    expect(e).toMatchObject({ jobId: job.id, data: { containers: ['c0ffee01'], volumes: ['vol-db'], details } });
   });
 
   it('records nothing when it removed none', async () => {

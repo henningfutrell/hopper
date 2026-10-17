@@ -159,11 +159,16 @@ export async function startTestApp(o: {
     ...(o.realLevels ? {} : fakeLevels()),
     // No model in tests (issue #569): a long card has no TL;DR unless a test puts a double here.
     tldrWriter: async () => ({ error: 'no TL;DR model in tests' }),
+    // No AI connection in tests (issue #471): File an issue cannot draft unless a test puts a double here.
+    issueDrafter: { provider: 'claude', available: async () => ({ ok: false, reason: 'no drafter in tests' }), draft: async () => ({ error: 'no drafter in tests' }) },
     // OpenFGA, as a deploy runs it (issue #652: no issue is of a trusted origin without it); a test of a hopper without
     // OpenFGA names `authorizationServer: undefined`.
     authorizationServer: createFakeAuthorizationServer(),
     // No tailnet (issue #1024): a test never reads this machine's tailscaled; a test that wants one puts a double here.
     tailnet: null,
+    // No held-loop thread (issue #1717): it pauses the main thread through the inspector, and a test process starts and
+    // stops many daemons; test/http/event-loop.test.ts tests it.
+    held: null,
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     // Each user's own manual source and fake usage; the seams' sources run for admin only.
@@ -221,11 +226,16 @@ export async function startTestApp(o: {
     async pull(op, over = {}, userId = ADMIN_ID) {
       const item = manualItem({ prompt: JSON.stringify(op), ...over });
       const s = sourceOf(userId);
+      const jobsOf = async () => (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs
+        // The item's own jobs: a proposal's follow-ons share its source (issue #859).
+        .filter((j) => j.source?.key === item.key && !j.followOn);
+      // A new item has no jobs yet; one offered again (its key given) has.
+      const before = new Set(over.key === undefined ? [] : (await jobsOf()).map((j) => j.id));
       s.add(item);
       await app.user(userId).sources.syncNow(s.name);
-      const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs;
-      // The item's own job: a proposal's follow-ons share its source (issue #859).
-      const found = jobs.find((j) => j.source?.key === item.key && !j.followOn);
+      // The job this pull made: the oldest new one (the list is newest first). A fast run again of it is newer (issue #1461).
+      const jobs = await jobsOf();
+      const found = jobs.filter((j) => !before.has(j.id)).at(-1) ?? jobs[0];
       if (!found) throw new Error(`no job was pulled for ${item.key}`);
       return found;
     },

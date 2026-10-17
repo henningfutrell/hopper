@@ -249,3 +249,29 @@ describe('a job\'s GitHub calls (issue #1072)', () => {
     expect(part(jobBom(input({ events: [] })), 'github')).toBeUndefined();
   });
 });
+
+describe('a job\'s test databases (issue #975)', () => {
+  it('lists each container its reap removed under machines: a database image as a test database, with its machine, image, start, run time and removal', () => {
+    const bom = jobBom(input({ job: job('finished', { finishedAt: '2026-10-01T01:00:00.000Z' }), events: [
+      event('job.containers_removed', { containers: ['c1', 'c2', 'c3', 'c4'], volumes: ['v1'], details: [
+        { id: 'c1', name: 'db-1', image: 'docker.io/library/postgres:16', startedAt: '2026-10-01T00:20:00.000Z', stoppedAt: '2026-10-01T00:35:00.000Z' },
+        { id: 'c2', name: 'ryuk', image: 'testcontainers/ryuk:0.11', startedAt: '2026-10-01T00:19:00.000Z' },
+        { id: 'c3', name: 'made', image: 'alpine:3' },
+      ] }, { machineId: 'm1', at: '2026-10-01T01:01:00.000Z' }),
+    ] }));
+    expect(part(bom, 'container:c1')).toEqual({
+      id: 'container:c1', group: 'machines', kind: 'test_database', label: 'Test database db-1', status: 'recorded', at: '2026-10-01T00:20:00.000Z',
+      detail: 'docker.io/library/postgres:16 on m1, ran 15m, removed by its reap', href: '#machines',
+    });
+    expect(part(bom, 'container:c2')).toMatchObject({ kind: 'container', label: 'Container ryuk', at: '2026-10-01T00:19:00.000Z', detail: 'testcontainers/ryuk:0.11 on m1, ran 42m until its reap, removed by its reap' });
+    expect(part(bom, 'container:c3')).toMatchObject({ kind: 'container', label: 'Container made', detail: 'alpine:3 on m1, never started, removed by its reap' });
+    // A reap of a client older than this says only its id.
+    expect(part(bom, 'container:c4')).toMatchObject({ kind: 'container', label: 'Container c4', at: '2026-10-01T01:01:00.000Z', detail: 'on m1, removed by its reap' });
+  });
+
+  it('a container two reaps name (the sweep after its end) is one part', () => {
+    const removed = { containers: ['c1'], volumes: [], details: [{ id: 'c1', name: 'db-1', image: 'postgres:16' }] };
+    const bom = jobBom(input({ events: [event('job.containers_removed', removed, { machineId: 'm1' }), event('job.containers_removed', removed, { machineId: 'm1' })] }));
+    expect(bom.parts.filter((p) => p.id === 'container:c1')).toHaveLength(1);
+  });
+});

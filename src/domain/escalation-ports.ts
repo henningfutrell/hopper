@@ -102,7 +102,7 @@ export interface ReviewReply {
 
 export type ReviewActionResult =
   | { ok: true; item: ReviewItem }
-  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched' | 'bad_selection' | 'no_paths'; message: string };
+  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched' | 'bad_selection'; message: string };
 
 /**
  * Runs one review section's review (issues #537, #543): reviewer levels, lowest first, then a person. Every write is

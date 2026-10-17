@@ -8,6 +8,8 @@
 import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
 import type { GitHubCallKind } from '../domain/github-rate-limit.ts';
 import { webOriginOf } from '../sources/github/api.ts';
+import { ACCOUNT_CONNECTION, checksLack } from '../sources/github/checks-fallback.ts';
+import { explained, notAccessible, permissionsOfError } from '../sources/github/http/refusal.ts';
 import { jobLog } from '../sources/github/http/rest.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/http/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
@@ -43,12 +45,16 @@ export class ProxyGitHubError extends Error {
 /** Where a filed issue is linked as a sub-issue (issue #729: a job's required child, under the job's own issue). */
 export interface SubIssueOf { repo: string; number: number }
 
+/** What a filed issue is given beside its text: its sub-issue link, and, routed (issue #1510), its labels and assignees. */
+export interface FiledWith { subIssueOf?: SubIssueOf; labels?: string[]; assignees?: string[] }
+
 export interface ProxyApi {
   /**
-   * Does the request on GitHub. `body` is the text to send (an issue's, with the hopper's note added). `subIssueOf`: a
-   * filed issue is then linked as its sub-issue; a link GitHub refuses leaves the issue filed (`subIssue: false`, why).
+   * Does the request on GitHub. `body` is the text to send (an issue's, with the hopper's note added). `filed.subIssueOf`:
+   * a filed issue is then linked as its sub-issue; a link GitHub refuses leaves the issue filed (`subIssue: false`, why).
+   * `filed.labels`, `filed.assignees`: a routed child's (issue #1510), set as it is filed.
    */
-  perform(req: ProxyRequest, subIssueOf?: SubIssueOf): Promise<ProxyResult>;
+  perform(req: ProxyRequest, filed?: FiledWith): Promise<ProxyResult>;
   /** The repository as the user sees it (issue #652: its default branch, which a job's push never changes; issue #429: the rest). */
   repo(repo: string): Promise<RepoFacts>;
   /** The commit `ref` (a branch) of `repo` is at now (issue #870: the apply gate's check that the code did not move). */
@@ -143,18 +149,40 @@ async function pullDiff(req: Request, token: string, r: { repo: string; number: 
   };
 }
 
-/** The check runs and the statuses of a pull request's head commit (issue #1074): each run's id is its `check log` job. */
+/** GitHub refused the read to the connection (403, 404), not a rate limit: a permission is missing (issue #1244). */
+const refusedRead = (err: unknown): boolean => {
+  const s = statusOf(err);
+  return (s === 403 || s === 404) && !/rate limit/i.test(String((err as { message?: unknown }).message ?? ''));
+};
+
+/**
+ * The check runs and the statuses of a pull request's head commit (issue #1074): each run's id is its `check log` job.
+ * One of the two GitHub refuses (issue #1279): the other, with `unreadable` and why (`checksWhy`); both: the refusal, with why.
+ */
 async function pullChecks(req: Request, token: string, r: { repo: string; number: number }): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
   const pull = (await req('GET /repos/{owner}/{repo}/pulls/{pull_number}', { ...at, pull_number: r.number, headers })).data as RestPull;
   const sha = pull.head.sha ?? '';
-  const runs = await paginate<RestCheckRun>(req, 'GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...at, ref: sha, per_page: 100 }, `token ${token}`, (d) => (d as { check_runs: RestCheckRun[] }).check_runs);
-  const statuses = ((await req('GET /repos/{owner}/{repo}/commits/{ref}/status', { ...at, ref: sha, headers })).data as { statuses?: RestStatus[] }).statuses ?? [];
+  const [runs, statuses] = await Promise.allSettled([
+    paginate<RestCheckRun>(req, 'GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...at, ref: sha, per_page: 100 }, `token ${token}`, (d) => (d as { check_runs: RestCheckRun[] }).check_runs),
+    req('GET /repos/{owner}/{repo}/commits/{ref}/status', { ...at, ref: sha, headers }).then((d) => (d.data as { statuses?: RestStatus[] }).statuses ?? []),
+  ]);
+  const unreadable: ('checks' | 'statuses')[] = [];
+  for (const [got, what] of [[runs, 'checks'], [statuses, 'statuses']] as const) {
+    if (got.status === 'rejected' && !refusedRead(got.reason)) throw got.reason;
+    if (got.status === 'rejected') unreadable.push(what);
+  }
+  const why = unreadable.length ? { unreadable, checksWhy: checksLack(ACCOUNT_CONNECTION, unreadable) } : {};
+  if (runs.status === 'rejected' && statuses.status === 'rejected') {
+    const message = String((runs.reason as { response?: { data?: { message?: unknown } } }).response?.data?.message ?? (runs.reason as Error).message);
+    throw new ProxyGitHubError(`${message} (${why.checksWhy})`, statusOf(runs.reason));
+  }
   return {
     number: pull.number, url: pull.html_url, state: pull.state, merged: pull.merged === true, head: pull.head.ref, headSha: sha,
-    checks: runs.map((c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, ...(c.html_url ? { url: c.html_url } : {}), ...(c.started_at ? { startedAt: c.started_at } : {}), ...(c.completed_at ? { completedAt: c.completed_at } : {}) })),
-    statuses: statuses.map((x) => ({ context: x.context, state: x.state, ...(x.target_url ? { url: x.target_url } : {}), ...(x.description ? { description: x.description } : {}) })),
+    checks: (runs.status === 'fulfilled' ? runs.value : []).map((c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, ...(c.html_url ? { url: c.html_url } : {}), ...(c.started_at ? { startedAt: c.started_at } : {}), ...(c.completed_at ? { completedAt: c.completed_at } : {}) })),
+    statuses: (statuses.status === 'fulfilled' ? statuses.value : []).map((x) => ({ context: x.context, state: x.state, ...(x.target_url ? { url: x.target_url } : {}), ...(x.description ? { description: x.description } : {}) })),
+    ...why,
   };
 }
 
@@ -180,14 +208,15 @@ const FAILED_RUN = new Set(['failure', 'timed_out', 'startup_failure']);
 
 /**
  * A commit's checks from its check runs (issue #1072): failing once one failed, pending while one runs, none with no run.
- * GitHub refusing them (403, 404: the connection may not read checks, issue #855) is `unknown`, never a failure of the read.
+ * GitHub refusing them (403, 404: the connection may not read checks, issue #855) is `unknown`, never a failure of the read,
+ * and says why and the fix (`checksWhy`, issue #1279).
  */
-async function checksOf(req: Request, headers: Record<string, string>, repo: string, sha: string): Promise<Pick<PullRequestStatus, 'checks' | 'failedChecks'>> {
+async function checksOf(req: Request, headers: Record<string, string>, repo: string, sha: string): Promise<Pick<PullRequestStatus, 'checks' | 'failedChecks' | 'checksWhy'>> {
   let runs: RestCheckRun[];
   try {
     runs = ((await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...splitRepo(repo), ref: sha, per_page: 100, headers })).data as { check_runs?: RestCheckRun[] }).check_runs ?? [];
   } catch (err) {
-    if (statusOf(err) === 403 || statusOf(err) === 404) return { checks: 'unknown', failedChecks: [] };
+    if (refusedRead(err)) return { checks: 'unknown', failedChecks: [], checksWhy: checksLack(ACCOUNT_CONNECTION, ['checks']) };
     throw err;
   }
   const failed = runs.filter((r) => FAILED_RUN.has(r.conclusion ?? ''));
@@ -207,7 +236,7 @@ async function pullStatus(req: Request, headers: Record<string, string>, repo: s
   };
 }
 
-async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
+async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, filed: FiledWith = {}): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
   switch (r.op) {
@@ -232,8 +261,9 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
     case 'repo.fork': return fork(req, headers, r.repo);
     case 'check.log': return checkLog(req, token, webOrigin, r.repo, r.number);
     case 'issue.create': {
-      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, headers })).data as RestIssue;
-      return { number: d.number, url: d.html_url, ...(subIssueOf ? await linkSubIssue(req, headers, subIssueOf, d.id) : {}) };
+      const routed = { ...(filed.labels ? { labels: filed.labels } : {}), ...(filed.assignees ? { assignees: filed.assignees } : {}) };
+      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, ...routed, headers })).data as RestIssue;
+      return { number: d.number, url: d.html_url, ...(filed.subIssueOf ? await linkSubIssue(req, headers, filed.subIssueOf, d.id) : {}) };
     }
     case 'issue.comment': {
       const d = (await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: r.number, body: r.body, headers })).data as { html_url: string };
@@ -270,16 +300,23 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
 }
 
 /** GitHub's message for a failed call to `what`, as the job reads it. */
-function messageOf(err: unknown, what: string): string {
+export function messageOf(err: unknown, what: string): string {
   const e = err as { message?: unknown; response?: { data?: { message?: unknown; errors?: { message?: unknown }[] } } };
   const detail = e.response?.data?.errors?.map((x) => (typeof x.message === 'string' ? x.message : '')).filter(Boolean).join('; ');
   const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : typeof e.message === 'string' ? e.message : String(err);
   return `GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${message}${detail ? ` (${detail})` : ''}`;
 }
 
-/** GitHub's failure as the job reads it; for a check's log (issue #993), why the hopper could not read it. */
+/**
+ * GitHub's failure as the job reads it; a refusal of the app says what it needs and the fix (issue #1279, as #1351); for a
+ * check's log (issue #993), why the hopper could not read it.
+ */
 function errorOf(err: unknown, r: ProxyRequest): ProxyGitHubError {
-  if (r.op !== 'check.log') return new ProxyGitHubError(messageOf(err, `${r.op} on ${r.repo}`), statusOf(err));
+  if (r.op !== 'check.log') {
+    const message = messageOf(err, `${r.op} on ${r.repo}`);
+    const why = err instanceof ProxyGitHubError || !notAccessible(message) ? message : explained(message, permissionsOfError(err));
+    return new ProxyGitHubError(why, statusOf(err));
+  }
   const e = err as { message?: unknown; response?: { data?: { message?: unknown } } };
   const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : typeof e.message === 'string' ? e.message : String(err);
   return new ProxyGitHubError(`the log of Actions job ${r.number} of ${r.repo}: ${whyNoLog(statusOf(err), message)}`, statusOf(err));
@@ -313,7 +350,7 @@ export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & To
   const req = makeRequest(o.apiUrl, undefined, { kind: o.kind ?? 'job' });
   const withToken = tokenCaller(o);
   return {
-    perform: (r, subIssueOf) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), subIssueOf), (err) => errorOf(err, r)),
+    perform: (r, filed) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), filed), (err) => errorOf(err, r)),
     repo: (repo) => withToken(
       (token) => readRepo(req, { authorization: `token ${token}` }, repo),
       (err) => new ProxyGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} reading ${repo}: ${(err as Error).message}`, statusOf(err)),

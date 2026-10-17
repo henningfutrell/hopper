@@ -1,6 +1,8 @@
 // Report a bug's GitHub calls (issue #694), with the person's own GitHub connection, so a report is filed as that person:
-// the duplicate search over the open reports, filing one, a comment on one, and a report's state. The same `@octokit/request` binding and
+// the duplicate search over the open reports, filing one, a comment on one, a report's state, and the look-up for a report's
+// post key (issue #1591). The same `@octokit/request` binding and
 // token renewal as the GitHub proxy (src/github-proxy/api.ts).
+import { hasPostKey } from '../domain/post-key.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts';
 
@@ -14,6 +16,12 @@ export interface ReportGitHub {
   comment(repo: string, number: number, body: string): Promise<{ number: number; url: string }>;
   /** The issue's state now (Your reports); closed: when, and why (issue #1147: `completed`, its fix landed). */
   state(repo: string, number: number): Promise<ReportState>;
+  /**
+   * The issue the connection's account made, or the comment on issue `number`, whose text carries the post key `key`, made
+   * or changed since `since` (issue #1591); undefined: none. By its author, not its label: GitHub drops the label of a
+   * person who may not triage.
+   */
+  find(repo: string, key: string, where: { kind: 'issue' } | { kind: 'comment'; number: number }, since: string): Promise<{ number: number; url: string } | undefined>;
 }
 
 export type ReportState = { state: 'open' } | { state: 'closed'; closedAt?: string; closedAs?: string };
@@ -61,5 +69,17 @@ export function createReportGitHub(o: { apiUrl: string } & TokenSource): ReportG
       if (d.state !== 'closed') return { state: 'open' };
       return { state: 'closed', ...(d.closed_at ? { closedAt: d.closed_at } : {}), ...(d.state_reason ? { closedAs: d.state_reason } : {}) };
     }, failed(`the state of ${repo}#${number}`)),
+    find: (repo, key, where, since) => withToken(async (token) => {
+      const at = { ...splitRepo(repo), since, per_page: 100, headers: headers(token) };
+      if (where.kind === 'comment') {
+        const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: where.number })).data as { body?: string | null; html_url: string }[];
+        const c = d.find((x) => hasPostKey(x.body, key));
+        return c ? { number: where.number, url: c.html_url } : undefined;
+      }
+      const creator = ((await req('GET /user', { headers: headers(token) })).data as { login: string }).login;
+      const d = (await req('GET /repos/{owner}/{repo}/issues', { ...at, creator, state: 'all' })).data as { number: number; body?: string | null; html_url: string; pull_request?: unknown }[];
+      const i = d.find((x) => x.pull_request === undefined && hasPostKey(x.body, key));
+      return i ? { number: i.number, url: i.html_url } : undefined;
+    }, failed(`the post key on ${repo}`)),
   };
 }

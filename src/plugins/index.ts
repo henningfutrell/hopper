@@ -170,7 +170,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       o.logger.info(`hopper: escalation levels ${names.length ? names.join(' → ') : 'none'} → owner`);
     }
     await applyExecutorSpecs(executors, spec.executors, deps);
-    await applyJobSourceSpecs(jobSources, spec.jobSources, deps, o.jobSourcesChanged);
+    await applyJobSourceSpecs(jobSources, [...spec.jobSources, ...(o.derivedJobSources?.(spec.jobSources) ?? [])], deps, o.jobSourcesChanged);
     await applyMachineSpecs(machines, spec.machines, deps);
     await applyUsageSpecs(usageSources, spec.usageSources, deps);
     await followSpecs(notifiers, spec.notifiers, {

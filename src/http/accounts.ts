@@ -59,6 +59,7 @@ export function toolAccountsOf(o: {
       machineId, label: o.labels.get(machineId) ?? machineId, source: s.name, login,
       ...(problem ? { problem } : {}), ...(s.accountReadAt ? { readAt: s.accountReadAt } : {}), ...(lastUsedAt ? { lastUsedAt } : {}), ...(s.signIn ? { signIn: true as const } : {}),
       ...(creds?.length ? { infraCredentials: [...creds] } : {}), ...(lastAccount !== undefined ? { lastAccount } : {}),
+      ...(login === 'signed-in' && a.expiresAt ? { expiresAt: a.expiresAt } : {}),
     };
     // Signed in as nobody, or not known: one entry per service, so a machine signed out is seen beside the accounts.
     const key = `${a.service}\u0000${login === 'signed-in' ? a.identity : `\u0000${login}`}`;
@@ -86,7 +87,7 @@ export function toolAccountsOf(o: {
 
 /** Its operation in the API reference: its scope is in the State and usage section. */
 export const TOOL_ACCOUNT_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/tool-accounts', tag: 'State', summary: 'The tool accounts: who each machine\'s agent tool is signed in as', description: 'Per service and identity, from the usage sources\' accounts: the machines that use it, whether each is signed in, signed out or not known, when its source last read it, when a job last started there, the infra credentials its job user holds (`infraCredentials`, names only: any makes the machine not ready), on a machine not signed in who it was last signed in as (`lastAccount`, the label only, `null` when none is known), and the account\'s week windows. Machines signed out are one entry with no identity. Never a token.', returns: '`{ accounts: ToolAccount[] }`' },
+  { method: 'get', path: '/api/tool-accounts', tag: 'State', summary: 'The tool accounts: who each machine\'s agent tool is signed in as', description: 'Per service and identity, from the usage sources\' accounts: the machines that use it, whether each is signed in, signed out or not known, when its source last read it, when a job last started there, the infra credentials its job user holds (`infraCredentials`, names only: a warning, issue #1467), on a machine not signed in who it was last signed in as (`lastAccount`, the label only, `null` when none is known), and the account\'s week windows. Machines signed out are one entry with no identity. Never a token.', returns: '`{ accounts: ToolAccount[] }`' },
 ];
 
 export function accountRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {

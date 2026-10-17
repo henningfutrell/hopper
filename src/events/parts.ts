@@ -80,7 +80,8 @@ export const waitOn = z.discriminatedUnion('kind', [
   strict({ kind: z.literal('approval'), of: z.enum(['sandbox', 'template']) }),
   strict({ kind: z.literal('grant') }),
   strict({ kind: z.literal('own_command') }),
-  strict({ kind: z.literal('outside'), what: z.string() }),
+  // Additive (issue #1510): why a person acts; absent, the job did not say.
+  strict({ kind: z.literal('outside'), what: z.string(), why: z.enum(['not_managed', 'gated']).optional() }),
 ]);
 /** A lane plan as decision.made v1 and v2 carried it. */
 export const legacyLanePlan = strict({
@@ -108,6 +109,7 @@ export const repoChecksEvents = {
 const issueRef = strict({ repo: z.string(), number: z.number().int() });
 /** Contribution (issue #429): an admin turned it on or off, and who. */
 export const contributionEvents = {
+  'credential_check.changed': strict({ from: strict({ strict: z.boolean() }), to: strict({ strict: z.boolean() }), by: z.string() }),
   'contribution.changed': strict({ from: strict({ on: z.boolean() }), to: strict({ on: z.boolean() }), by: z.string() }),
   // The shrink guard's percent (issue #1096).
   'shrink_guard.changed': strict({ from: strict({ percent: z.number().int() }), to: strict({ percent: z.number().int() }), by: z.string() }),
@@ -117,7 +119,11 @@ export const issueLineageEvents = {
   'job.child_issue_filed': strict({
     requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }), required: z.boolean(),
     subIssue: z.boolean().optional(), subIssueError: z.string().optional(),
+    // Additive (issue #1510): the hopper labelled the required child and assigned it to the job's user.
+    routed: z.literal(true).optional(),
   }),
+  // A required child's sub-issue link made at a later try (issue #1607): GitHub refused it, or the hopper stopped, as it was filed.
+  'job.sub_issue_linked': strict({ requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }) }),
 };
 
 // Vault grants (issue #652, src/vault/grants.ts): a job on a box asked the vault with no grant, a person granted its item
@@ -145,7 +151,14 @@ export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
   'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, credential: z.enum(['set', 'removed']).optional(), by: z.string() }),
   'allowed_hosts.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'cloud_link.linked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
+  'cloud_link.unlinked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
+  'cloud_link.registration_code_minted': strict({ installId: z.string(), account: z.string(), expiresAt: z.string(), by: z.string() }),
+  'cloud_link.registered': strict({ installId: z.string(), account: z.string() }),
+  'cloud_link.unregistered': strict({ installId: z.string(), account: z.string() }),
+  'cloud_link.message_refused': strict({ reason: z.enum(['too-large', 'not-json', 'unknown-type', 'bad-shape']) }),
   'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
+  'display_name.changed': strict({ from: z.string(), to: z.string(), by: z.string() }),
 };
 
 // Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.

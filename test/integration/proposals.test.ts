@@ -204,12 +204,12 @@ describe('a person signs off', () => {
     expect((await decide(a, token, p.id, 'reject', { notes: 'no' })).status).toBe(409);
   });
 
-  it('reject needs a reason; the job ends with the rejection', async () => {
+  it('reject takes an optional reason (issue #1659); the job ends with the rejection', async () => {
     const a = await start();
     const token = await a.login();
     const job = await a.pull(propose());
     const p = await waitForProposal(a, job.id, (x) => x.stage === 'human');
-    expect((await decide(a, token, p.id, 'reject')).status).toBe(400);
+    expect((await decide(a, token, p.id, 'reject', { notes: 1 })).status).toBe(400);
     expect((await decide(a, token, p.id, 'reject', { notes: 'too costly' })).body).toMatchObject({ status: 'rejected', signOff: { decision: 'reject', notes: 'too costly' } });
     expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ proposal: { id: p.id, version: 1, decision: 'reject' } });
     expect(ofJob(await a.events(), job.id).find((e) => e.type === 'proposal.rejected')!.data).toMatchObject({ proposalId: p.id, notes: 'too costly' });

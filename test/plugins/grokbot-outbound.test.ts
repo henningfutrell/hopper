@@ -46,11 +46,12 @@ describe('Grok Bot routine: the outbound guard (issue #1014)', () => {
     const r = await receiver();
     const s = setup(r.url, { burst: 3, perSecond: 1, runawayAsks: 10 });
     for (let i = 1; i <= 2000; i++) s.feed(finished(i));
-    await waitFor(() => s.sends.length > 0 && r.hits.length === 3, { what: 'three posts' });
+    const count = (o: string) => s.sends.filter((x) => x.outcome === o).reduce((n, x) => n + x.count, 0);
+    // The receiver counts a hit before it answers; the send log has the post only after the answer.
+    await waitFor(() => r.hits.length === 3 && count('sent') === 3, { what: 'three posts in the send log' });
     await s.n.stop();
     s.outbound.stop();
     expect(r.hits).toHaveLength(3);
-    const count = (o: string) => s.sends.filter((x) => x.outcome === o).reduce((n, x) => n + x.count, 0);
     expect(count('sent')).toBe(3);
     expect(count('sent') + count('rate-limited') + count('circuit-open')).toBe(2000);
     expect(count('circuit-open')).toBeGreaterThan(1900);

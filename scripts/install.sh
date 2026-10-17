@@ -147,6 +147,23 @@ mkdir -p "$UNIT_DIR"
 install -m 0644 "$APP_DIR/systemd/hopper.service" "$UNIT_DIR/hopper.service"
 install -m 0644 "$APP_DIR/systemd/hopper-herdr.service" "$UNIT_DIR/hopper-herdr.service"
 
+# OpenFGA (issue #791, docs/deploy.md "Access: OpenFGA"): without it every credential is denied and no login is a
+# trusted actor. The release binary of the version compose.yaml runs, its config and key, the schema, and the
+# daemon.env lines; a daemon.env that names another OpenFGA is the operator's own, and is kept (exit 3).
+step "OpenFGA: the binary in $DEST/openfga, its config in $CONFIG_DIR/openfga, unless daemon.env names your own (node $DEST/scripts/host-openfga.ts)"
+OPENFGA=ours
+if [ -n "$(env_line HOPPER_DATABASE_URL_FILE)" ]; then
+  HOPPER_DATABASE_URL_FILE="$(env_line HOPPER_DATABASE_URL_FILE)" node "$DEST/scripts/host-openfga.ts" "$CONFIG_DIR" "$DEST" "$APP_DIR/compose.yaml" || OPENFGA=$?
+else
+  HOPPER_DATABASE_URL="$(env_line HOPPER_DATABASE_URL)" node "$DEST/scripts/host-openfga.ts" "$CONFIG_DIR" "$DEST" "$APP_DIR/compose.yaml" || OPENFGA=$?
+fi
+case "$OPENFGA" in
+  ours)
+    install -m 0644 "$APP_DIR/systemd/hopper-openfga.service" "$UNIT_DIR/hopper-openfga.service" ;;
+  3) ;;
+  *) echo "OpenFGA was not set up (exit $OPENFGA): access checks stay off until it is. Run the install again, or run your own and set HOPPER_OPENFGA_URL in $ENV_FILE" >&2 ;;
+esac
+
 PLUGIN_DIR="$(env_line HOPPER_PLUGIN_DIR)"
 if [ -n "$PLUGIN_DIR" ]; then
   step "plugin types: $PLUGIN_DIR/tsconfig.json maps hopper/plugin to $DEST/src/plugins/sdk.ts (an owner-edited one is kept)"
@@ -158,6 +175,12 @@ systemctl --user daemon-reload
 
 step "systemctl --user enable hopper-herdr hopper"
 systemctl --user enable hopper-herdr hopper
+
+if [ "$OPENFGA" = ours ]; then
+  step "systemctl --user enable hopper-openfga; restart it (migrate, then run, on the version installed)"
+  systemctl --user enable hopper-openfga
+  systemctl --user restart hopper-openfga
+fi
 
 if systemctl --user is-active --quiet hopper-herdr; then
   step "hopper-herdr is active: NOT restarted (restarting it would kill every waiting pane and its Claude job)"

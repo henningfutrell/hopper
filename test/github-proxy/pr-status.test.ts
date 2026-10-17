@@ -32,6 +32,12 @@ describe('a pull request\'s status from what the hopper knows (issue #1072)', ()
     });
   });
 
+  it('checks the hopper may not read: unknown, with why and the fix as the Pull requests list says it (issue #1279)', () => {
+    const why = 'the connected GitHub account lacks Checks: read: accept its new permissions';
+    expect(knownPullRequest(8, URL, { card: card({ checks: 'unknown', checksWhy: why, waits: 'checks unknown' }), seen: { ...seen, checks: 'unknown' } }))
+      .toMatchObject({ checks: 'unknown', checksWhy: why });
+  });
+
   it('a merged or closed one the ledger knows, with no card: its end; nothing about checks', () => {
     expect(knownPullRequest(8, URL, { item: item({ state: 'done', eventState: 'done', pullRequestState: 'merged', waitingOn: undefined }) }))
       .toEqual({ number: 8, url: URL, state: 'merged', draft: false, mergeable: 'unknown', checks: 'unknown', failedChecks: [], item: { key: 'https://github.com/octo/tools/issues/7', state: 'done' } });

@@ -13,6 +13,8 @@ const LONG: FakeTurn = {
   steps: Array.from({ length: 60 }, (_, i) => `● Painting plank ${i + 1}`),
   output: ['● Painted the shed.', '  HOPPER_DONE'],
 };
+/** The resumed session's turn. */
+const DONE: FakeTurn = { output: ['● Painted the last planks.', '  HOPPER_DONE'] };
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp' };
 
 let app: TestApp | undefined;
@@ -86,17 +88,29 @@ describe('herdr-claude job when its machine\'s link drops', () => {
     await waitFor(() => herdr.closed.includes(paneId), { what: 'the pane closed' });
   });
 
-  it('Claude gone from its pane when the link is back: failed, never watched again', async () => {
-    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
+  // Issue #1569: its machine answers, its work does not; it resumes its agent session in its kept work tree, there.
+  it('Claude gone from its pane when the link is back: it resumes its agent session on the same machine and finishes', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG, DONE] });
     const { app: a, jobId, agentName } = await running(herdr, 30000);
+    const session = (await a.job(jobId)).agentSession;
+    expect(session).toBeDefined();
     herdr.setUnreachable(true);
     await waitFor(async () => (await eventsOf(a, jobId)).find((e) => e.type === 'job.link_lost'), { what: 'job.link_lost' });
     herdr.killAgent(agentName);
 
     herdr.setUnreachable(false);
-    const failed = await a.waitForStatus(jobId, 'failed', 8000);
-    expect(failed.error).toBe('interrupted while the link to machine local was down');
-    expect((await eventsOf(a, jobId)).some((e) => e.type === 'job.reattached')).toBe(false);
+    const done = await a.waitForStatus(jobId, 'finished', 8000);
+    expect(done.parked).toBeUndefined();
+    const events = await eventsOf(a, jobId);
+    expect(events.some((e) => e.type === 'job.reattached' || e.type === 'job.failed')).toBe(false);
+    expect(events.find((e) => e.type === 'job.parked')!.data).toMatchObject({ from: 'running', machineId: 'local', auto: true, why: 'interrupted while the link to machine local was down' });
+    expect(events.find((e) => e.type === 'job.unparked')!.data).toEqual({ to: 'queued' });
+    expect(events.filter((e) => e.type === 'job.started')).toHaveLength(2);
+    // The same session, resumed and told why: never a second start of the task.
+    expect(herdr.agentStarts.at(-1)!.args.join(' ')).toContain(session);
+    expect(herdr.prompts).toHaveLength(2);
+    expect(herdr.prompts[1]!.text).toContain('This job\'s run was cut off: interrupted while the link to machine local was down.');
+    expect(herdr.prompts[1]!.text).not.toContain('Paint the shed');
   });
 
   it('cancelled while held: cancelled, never watched again', async () => {

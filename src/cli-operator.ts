@@ -1,9 +1,9 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject, run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
+// show a job, and list the waiting jobs, each held one with why it is held (issue #874, cli-operator-queue.ts); accept, reject, cancel (issue #1460), run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
-// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
+// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
 // the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
 // API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
@@ -18,7 +18,7 @@
 // say — trading the refresh token that file holds for an API token, and keeping the new refresh token in the file.
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
+import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, type FailuresView, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
 import { OPERATOR_CLI_NAME } from './domain/failures.ts';
 import { OperatorRefusal, perform, sender, usage, type Call } from './cli-operator-call.ts';
@@ -32,8 +32,10 @@ import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCal
 import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
+import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
+import { QUEUE_USAGE, queueCall } from './cli-operator-queue.ts';
 import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
@@ -41,18 +43,19 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
-export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
+export const OPERATOR_USAGE = `  hopper job show <id>                               one job: its state, and why it is held or waits (holdReason, waitReason)
+  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
+  hopper job cancel <id> [--reason <text>]           any job that has not ended ends cancelled, the reason kept on it
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
 ${DISMISS_USAGE}
 ${DIRECT_USAGE}
-  hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
-  hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
+${QUEUE_USAGE}
   hopper question list [--reason <reason>]           the open questions; --reason keeps those sent to a person for it: ${ESCALATION_REASONS.join(', ')}
   hopper question answer <id> <text>                 answer an open question; the job waiting on it resumes
   hopper question close <id>                         close an open question without answering
@@ -84,7 +87,7 @@ ${REPO_USAGE}
   hopper proposal more-paths <id> [--note <text>] [--select <path>]...
                                                      Ask for more paths; the paths named stay selected for the next version
   hopper proposal steer <id> --note <text>           Steer: the note goes back to the job
-  hopper proposal reject <id> --note <why>           Reject all: the job ends with the rejection
+  hopper proposal reject <id> [--note <why>]         Reject the whole proposal: the job ends with the rejection
   hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
   hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
@@ -93,6 +96,7 @@ ${ARTIFACT_USAGE}
 ${REPORT_USAGE}
 ${SEARCH_USAGE}
 ${LANES_USAGE}
+${MACHINE_USAGE}
 ${ACCOUNTS_USAGE}
 ${TERMINAL_USAGE}
 ${VAULT_USAGE}
@@ -121,13 +125,14 @@ function jobCall(args: string[]): Call {
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
-  const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
-  const notes = values.notes;
+  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
+  const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes;
+  // The whole job as the job view reads it; a held job's `holdReason` says why it is held.
+  if (verb === 'show' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}` };
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
   if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
-  if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
-  if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
+  if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
+  if (values.reason !== undefined) throw usage('job reject|cancel <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
   if (verb === 'rerun' || verb === 'keep-original' || verb === 'accept-new-text') return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
@@ -137,34 +142,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
-}
-
-function perHour(raw: string): number | null {
-  if (raw === 'none') return null;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1) throw new OperatorRefusal(`--per-hour must be a whole number of at least 1, or none; not ${raw}`);
-  return n;
-}
-
-function queueCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'per-hour': { type: 'string' } } });
-  const [verb, ...rest] = positionals;
-  if (verb === 'order' && values['per-hour'] === undefined) {
-    if (rest.length === 0) throw usage('queue order <id>...');
-    return { role: 'operator', path: '/ui/api/queue/order', body: async () => ({ jobIds: rest }) };
-  }
-  if (verb === 'gate' && rest.length === 1) {
-    const mode = rest[0]!;
-    if (!(QUEUE_GATE_MODES as readonly string[]).includes(mode)) throw new OperatorRefusal(`unknown queue gate ${mode}; one of ${QUEUE_GATE_MODES.join(', ')}`);
-    const raw = values['per-hour'];
-    const limit = raw === undefined ? undefined : perHour(raw);
-    // Without --per-hour the throttle stays as it is.
-    return { role: 'admin', path: '/ui/api/queue-gate', body: async (get) => ({
-      mode, autoAcceptPerHour: limit !== undefined ? limit : ((await get('/api/queue')) as { gate: QueueGate }).gate.autoAcceptPerHour,
-    }) };
-  }
-  throw usage('queue order <id>... | hopper queue gate <mode> [--per-hour <n>|none]');
+  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */
@@ -254,7 +232,8 @@ function proposalCall(args: string[]): Call {
   if (rest.length > 0 || values['path-note'] !== undefined || (values.select !== undefined && verb !== 'more-paths')) throw usage(PROPOSAL_USAGE);
   if (verb === 'accept') return { role: 'operator', path: `${at}/accept`, body: async () => note };
   if (verb === 'more-paths') return { role: 'operator', path: `${at}/more-paths`, body: async () => ({ ...note, ...(values.select ? { paths: values.select.map((p) => ({ id: p })) } : {}) }) };
-  if ((verb === 'steer' || verb === 'reject') && values.note?.trim()) return { role: 'operator', path: `${at}/${verb}`, body: async () => note };
+  if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => note };
+  if (verb === 'steer' && values.note?.trim()) return { role: 'operator', path: `${at}/steer`, body: async () => note };
   throw usage(PROPOSAL_USAGE);
 }
 
@@ -262,6 +241,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'update') return driftCall(args);
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
+  if (command === 'machine') return machineCall(args);
   if (command === 'accounts') return accountsCall(args, stdin);
   if (command === 'terminal') return terminalCall(args, stdin);
   if (command === 'token') return tokenCall(args);
@@ -316,7 +296,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|machine|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON; the exit code the call gives it.
  */
 export async function runOperatorAction(

@@ -5,6 +5,7 @@
 // tree line and the protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
+import { AUTH_PENDING_LINE } from '../domain/auth-pending.ts';
 import { SCRATCH_AREA, WORKTREES_DIR } from '../domain/job-layout.ts';
 import { asksOfSpec, followOnBrief, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type FollowOnOf, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
@@ -58,8 +59,15 @@ export const OUT_OF_REACH_LINE = 'When an answer says "the hopper is out of reac
 /** The protocol line on skills (issue #582; artifacts, issue #624): the catalog first, a skill loaded only when needed, a no taken as it is. */
 export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential (a read-only link to a cluster or an AWS account, a token for another service, and the like), or a place to show a person a visual you made (a diagram or a chart: the artifacts skill), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question. When the hopper says no, it says why: find another way.';
 
+/**
+ * The protocol line on infrastructure tools (issue #1502): run only in a job's sandbox, never on the machine. Run there,
+ * they write credentials and caches into the job user's home (terraform's `~/.terraform.d`), and the credential check
+ * then holds the machine (issue #1467).
+ */
+export const INFRA_TOOLS_LINE = '[hopper infra tools] Run infrastructure tools (terraform, aws, kubectl, helm, and the like) only in a sandbox the hopper starts for the job: ask for one with sh "$HOPPER_SKILL". Never run them on this machine itself: they write credentials and caches into its home, and a machine whose home holds credentials takes no new job. With no sandbox, read and edit infrastructure code only.';
+
 /** The protocol line on a job's own wait (issue #483); a wait on its own command says so in `until:` (issue #1037). */
-export const WAIT_LINE = 'When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, one line: on: <what you wait on>, one of: pr <number> merge, pr <number> checks, pr <number> review, job <id>, issue <number>, question <id>, sandbox approval, template approval, vault grant, own command, outside: <what>, and, if you can, one line: until: <how you will know it happened>. The hopper wakes you when a pull request you wait on is merged or closed. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends. A poll is never a command of your own: never write own command for it. Never wait in a loop for the hopper to tend, rebase or merge a pull request: it does that by itself, so go on with your work or end the job.';
+export const WAIT_LINE = 'When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, one line: on: <what you wait on>, one of: pr <number> merge, pr <number> checks, pr <number> review, job <id>, issue <number>, question <id>, sandbox approval, template approval, vault grant, own command, outside: not managed: <what>, outside: gated: <what>, outside: <what>, and, if you can, one line: until: <how you will know it happened>. You can add one line to say when the hopper checks: check: in <time> (when it checks next, for example in 20m), or check: after <time> or check: at <ISO time> (it wakes you then, if nothing else did before). The hopper wakes you when a pull request you wait on is merged or closed. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends. A poll is never a command of your own: never write own command for it. Never wait in a loop for the hopper to tend, rebase or merge a pull request: it does that by itself, so go on with your work or end the job.';
 
 /** The protocol line on a job's task count (issue #794): the job's progress is its tasks done of its task list. */
 export const TASKS_LINE = 'Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.';
@@ -70,6 +78,14 @@ export const TASKS_LINE = 'Keep a task list for the job: the tasks that take it 
  */
 export const DECIDE_LINE = '[hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.';
 
+/**
+ * The protocol line on the delivery path (issue #1458): where a job's change lands, how a change another repository needs
+ * gets there (a required child a job of that repository delivers), what delivered means, and that production waits for a
+ * person. A job that knew none of it asked a person to pick a delivery path; the repository's own stages (its landing
+ * branch, its test environments) are its rules' to name, so the line names none.
+ */
+export const DELIVERY_LINE = '[hopper delivery] Your change lands in the job\'s own repository, through its pull request. A change that another repository needs is not yours to push or to hand to a person: file it as an issue on that repository with sh "$HOPPER_GH" issue create --repo OWNER/NAME --required, with what to change and why, and a job of that repository delivers it. Your issue is not done while that child is open, so follow it. The hopper labels a required child and assigns it to your user, so Intake lists it as a request card for a person to approve: when you have nothing else to do, end with HOPPER_WAITING with on: issue OWNER/NAME#N, as the hopper\'s answer says, and the hopper wakes you when it closes. A job with no issue of its own files it with no --required, and names it in its result. Do not ask a person to apply a patch. Do not ask a person to add the hopper label. Wait on a person only when the repository is not one the hopper works on (on: outside: not managed: <what>) or the step is gated, such as an infrastructure apply, a gitops apply or a production approval (on: outside: gated: <what>). A change is delivered only when it is merged on its repository\'s landing branch, its checks passed there, and it moved through the next stages the repository names (for example a deploy to a test environment). A pull request, a patch or an artifact is not delivered. Read the branch and the stages in the repository\'s own rules and documents (AGENTS.md, CONTRIBUTING.md, design and deploy documents). A release to production waits for a person\'s approval, and nothing short of that approval releases it: never release to production yourself. Do not ask a person to choose a delivery path: ask only about a real decision, as the decisions line says.';
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   // Decide and proceed (issue #1059): before the question line, so a job reads when not to ask first.
@@ -79,14 +95,18 @@ export const PROTOCOL_LINES: readonly string[] = [
   SUGGEST_PROTOCOL,
   // Each review section's (issues #537, #543): how to come back with a research report, a proposal.
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
+  // The delivery path (issue #1458): where a change lands, a required child for another repository, production waits.
+  DELIVERY_LINE,
   // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
   GITHUB_PROXY_LINE,
   // A short outage (issue #752): the client door holds, then says since when; the job works on locally.
   OUT_OF_REACH_LINE,
   // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
   SKILL_LINE,
+  // Infrastructure tools (issue #1502): only in the job's sandbox, never on the machine.
+  INFRA_TOOLS_LINE,
   // A login (issue #476); its outcome, said by the job that asked for it (issue #1110, `hopper-login`).
-  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in. Only you know whether a login worked: when it goes through, also tell the hopper: sh "$HOPPER_LOGIN" completed <tool>. When it fails, or a later check shows that it does not work, tell the hopper why: sh "$HOPPER_LOGIN" failed <tool> --reason "<why>".',
+  AUTH_PENDING_LINE,
   // A job's task count (issue #794): its progress, x/y, as each task completes; never a clock.
   TASKS_LINE,
   // A job's own wait (issue #483): blocked on a person or the outside world, it says so; never a question only to wait.

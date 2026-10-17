@@ -32,7 +32,7 @@ export const PLAN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 /** What a job says about a plan when it records one. */
 export interface PlanInput {
   tool: PlanTool;
-  /** The asset the apply mints a credential for: an `aws-role`, a `cluster`, a `namespace`. */
+  /** The asset the apply mints a credential for: an `aws-role`, a `cluster`, a `namespace`, an `argocd-app` (a gitops plan's sync). */
   asset: Asset;
   /** The workspace or app the plan changes, in the tool's words (`uat-network`, `argocd app web`). */
   target: string;
@@ -108,6 +108,8 @@ export function planInputProblem(p: PlanInput): string | undefined {
   if (!(PLAN_TOOLS as readonly string[]).includes(p.tool)) return `tool must be one of ${PLAN_TOOLS.join(', ')}`;
   const asset = profileProblem({ operation: 'apply', asset: p.asset });
   if (asset) return asset;
+  // Argo CD applies what git says (issue #959): the plan of its sync is the GitOps diff.
+  if (p.asset.kind === 'argocd-app' && p.tool !== 'gitops') return `a plan for an argocd-app is a gitops plan (argocd app diff), not ${p.tool}`;
   if (!p.target.trim() || p.target.length > 200 || /[\n\r]/.test(p.target)) return 'target must be one line of 1 to 200 characters: the workspace or app the plan changes';
   if (!REPO.test(p.repo)) return 'repo must be owner/name';
   if (!REF.test(p.ref)) return 'ref must be the branch the plan was made from';
@@ -150,6 +152,18 @@ export function applyRefusal(profile: OperationProfile, planId: string | undefin
   if (!approval) return `plan ${plan.id} is not approved: a person approves it on Infra, then the job asks again`;
   return undefined;
 }
+
+/**
+ * Why the vault mints nothing for `profile` while **infra applies** are off (issue #1722), or undefined: on, or a read.
+ * Off, the hopper is read-only on infrastructure: no write, sync or apply is minted, plan or not, and no step applies.
+ */
+export function appliesRefusal(profile: OperationProfile, on: boolean): string | undefined {
+  if (on || profile.operation === 'read') return undefined;
+  return `infra applies are off on this hopper: it mints no credential for ${profileInWords(profile)}. ${THROUGH_CI}. Ask for read only`;
+}
+const THROUGH_CI = 'An infrastructure change goes through CI: push it to the infrastructure repository, and its pipeline applies it after its environment approval';
+/** Why a need or box step that applies (a plan, or a need but read) does not run while infra applies are off (issue #1722). */
+export const APPLY_STEP_OFF = `infra applies are off on this hopper: it runs no step that applies (one with a plan, or with a need of write, sync or apply). ${THROUGH_CI}. Run read steps only`;
 
 /** The words of the checks a plan failed (the MAP tag), or undefined: such a plan is never approved or applied. */
 export const failedChecks = (plan: Pick<InfraPlan, 'summary'>): string | undefined =>

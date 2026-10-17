@@ -3,6 +3,7 @@
 // test/integration/github-proxy.test.ts.
 import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
+import { FILED_BY_JOB } from '../../src/domain/intake-origin.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
 import {
   checkRequest, createGitHubProxy, createProxyLimiter, filedNote, holdsProxyToken, parseProxyToken, PROXY_LIMITS, proxyRequest, proxyToken,
@@ -21,6 +22,16 @@ describe('a job\'s proxy token', () => {
     expect(holdsProxyToken(mintLinkKey().privateKey, parts)).toBe(false);
     expect(holdsProxyToken(key, { ...parts, jobId: 'job-2' })).toBe(false);
     expect(holdsProxyToken(key, { ...parts, userId: 'u2' })).toBe(false);
+  });
+
+  it('is a new one after each move away of its job, and the one before no longer holds (issue #1569)', () => {
+    const before = parseProxyToken(proxyToken(key, 'u1', 'job-1'))!;
+    const moved = parseProxyToken(proxyToken(key, 'u1', 'job-1', 1))!;
+    expect(moved.mac).not.toBe(before.mac);
+    expect(holdsProxyToken(key, moved, 1)).toBe(true);
+    expect(holdsProxyToken(key, before, 1)).toBe(false);
+    expect(holdsProxyToken(key, moved, 2)).toBe(false);
+    expect(holdsProxyToken(key, before, 0)).toBe(true);
   });
 
   it('parses only its own shape', () => {
@@ -47,17 +58,23 @@ describe('who may ask what', () => {
   const create: ProxyRequest = { op: 'issue.create', repo: 'octo/tools', title: 't', body: 'b' };
   const own = { jobId: 'j', repo: 'octo/tools' };
 
-  it('a job: every operation on its user\'s job repositories, a pull request only on its own', () => {
+  it('a job: every operation on its user\'s job repositories, a pull request too (issue #1275)', () => {
     expect(checkRequest(create, own, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'issue.comment', repo: 'octo/site', number: 1, body: 'b' }, own, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'pr.create', repo: 'octo/tools', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
-    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, own, repos))
-      .toEqual({ ok: false, reason: 'a job opens a pull request only on its own repository (octo/tools)' });
-    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, { jobId: 'j' }, repos))
-      .toEqual({ ok: false, reason: 'a job opens a pull request only on its own repository, and this job has none' });
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, { jobId: 'j' }, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.create', repo: 'else/where', head: 'x', title: 't', body: 'b' }, own, repos)).toMatchObject({ ok: false });
   });
 
-  it('a job closes only its own issue, and marks a pull request ready only on its own repository (issue #652)', () => {
+  it('a job opens a pull request from its user\'s fork only on its own repository (issue #1275)', () => {
+    const forking = { ...own, contribution: true, login: 'me' };
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/tools', head: 'me:x', title: 't', body: 'b' }, forking, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'me:x', title: 't', body: 'b' }, forking, repos))
+      .toEqual({ ok: false, reason: 'a job opens a pull request from its user\'s fork only on its own repository (octo/tools)' });
+  });
+
+  it('a job closes only its own issue, and marks a pull request ready on its user\'s job repositories (issues #652, #1275)', () => {
     const mine = { ...own, issue: 7 };
     expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 7 }, mine, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 8 }, mine, repos))
@@ -66,8 +83,8 @@ describe('who may ask what', () => {
     expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 7 }, own, repos))
       .toEqual({ ok: false, reason: 'a job closes only its own issue, and this job has none' });
     expect(checkRequest({ op: 'pr.ready', repo: 'octo/tools', number: 9 }, mine, repos)).toEqual({ ok: true });
-    expect(checkRequest({ op: 'pr.ready', repo: 'octo/site', number: 9 }, mine, repos))
-      .toEqual({ ok: false, reason: 'a job marks a pull request ready only on its own repository (octo/tools)' });
+    expect(checkRequest({ op: 'pr.ready', repo: 'octo/site', number: 9 }, mine, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.ready', repo: 'else/where', number: 9 }, mine, repos)).toMatchObject({ ok: false });
     expect(proxyRequest.safeParse({ op: 'issue.close', repo: 'o/r', number: 1, reason: 'not_planned' }).success).toBe(false);
   });
 
@@ -121,11 +138,17 @@ describe('issue lineage: an issue a job files is a child of the job\'s issue (is
       .toEqual({ ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' });
   });
 
-  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done', () => {
+  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done and is routed (issue #1510)', () => {
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: false })).toBe(
       '\n\n---\nFollow-up of octo/tools#7.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true })).toBe(
-      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.');
+    // Every child keeps the mark that a job filed it, its lineage line before it (issue #1510): it is never of a trusted
+    // origin, so a person approves a routed child.
+    for (const parent of [undefined, { repo: 'octo/tools', number: 7, required: false }, { repo: 'octo/tools', number: 7, required: true }]) {
+      expect(FILED_BY_JOB.test(`The text.${filedNote('job-1', 'r1', parent)}`)).toBe(true);
+    }
+    expect(FILED_BY_JOB.test('The text.\n\n---\nA line.\nAnother line.\nFiled through hopper for job `j`')).toBe(false);
     expect(filedNote('job-1', 'r1')).toBe('\n\n---\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
   });
 });
@@ -143,6 +166,20 @@ describe('the rate limits', () => {
     expect(limiter.take('issue.create', 'j-new', 'other')).toBeUndefined();
     now += 60 * 60 * 1000;
     expect(limiter.take('issue.create', 'j1', 'm')).toBeUndefined();
+  });
+
+  it('drops the counts of every job whose window passed, not only of the key asked again (issue #1402)', () => {
+    let now = Date.parse('2026-05-01T12:00:00Z');
+    const seen = new Map<string, { windowMs: number; times: number[] }>();
+    const limiter = createProxyLimiter({ now: () => new Date(now) }, PROXY_LIMITS, seen);
+    limiter.take('issue.view', 'ended-job', 'm');
+    limiter.take('report.bug', 'ended-job', 'm');
+    now += 60 * 60 * 1000;
+    limiter.take('issue.view', 'j2', 'm2');
+    expect([...seen.keys()].filter((k) => k.includes('ended-job'))).toEqual(['job\0ended-job\0report.bug']);
+    now += 24 * 60 * 60 * 1000;
+    limiter.take('issue.view', 'j3', 'm3');
+    expect([...seen.keys()]).toEqual(['job\0j3\0issue.view', 'machine\0m3\0issue.view']);
   });
 });
 
@@ -225,5 +262,42 @@ describe('a job acts with its own user\'s GitHub connection (issue #1380)', () =
     const r = await proxy.handle(`Bearer ${proxyToken(keys.u2, 'u2', 'job-u2')}`, { op: 'issue.create', repo: 'u2/app', title: 't', body: 'b' });
     expect(r).toMatchObject({ status: 503, body: { error: 'refused: GitHub is not connected: Sources → Connect GitHub' } });
     expect(sent).toEqual([]);
+  });
+});
+
+// Issue #1448: one user with two GitHub accounts. A request acts with the account whose job repositories hold the repository
+// it names; for any other repository (a repo query, its fork), the account of the job's own repository.
+describe('a job acts with the account of its repository (issue #1448)', () => {
+  const key = mintLinkKey().privateKey;
+  const recorded: NewEvent[] = [];
+  const jobOn = (repo: string) => ({ id: `job-${repo.replace('/', '-')}`, status: 'running', laneId: 'm/lane-1', source: { source: 's', kind: 'k', key: 'x', repo } } as Job);
+  const jobs = [jobOn('home/tools'), jobOn('acme/api')];
+  const user: ProxyUser = { id: 'u1', holds: (p) => holdsProxyToken(key, p), job: (j) => jobs.find((x) => x.id === j), machineOf: () => 'm', record: (e) => { recorded.push(e); } };
+  const accounts: Record<string, { login: string; repos: string[] }> = { github: { login: 'ada-home', repos: ['home/tools'] }, 'github-2': { login: 'ada-work', repos: ['acme/api', 'acme/web'] } };
+  const keyFor = (repo?: string) => Object.keys(accounts).find((k) => repo !== undefined && accounts[k]!.repos.some((r) => r.toLowerCase() === repo.toLowerCase())) ?? 'github';
+  const sent: { as: string; op: string; repo: string }[] = [];
+  const connection: ProxyConnection = {
+    jobRepositories: () => Object.values(accounts).flatMap((a) => a.repos), contribution: () => false,
+    login: (repo) => accounts[keyFor(repo)]!.login,
+    api: (repo) => ({
+      perform: async (req) => { sent.push({ as: accounts[keyFor(repo)]!.login, op: req.op, repo: req.repo }); return { number: 1, url: `https://github.example/${req.repo}/issues/1` }; },
+      repo: async () => { throw new Error('not read'); }, head: async () => { throw new Error('not read'); }, pullRequestBase: async () => { throw new Error('not read'); },
+    }),
+  };
+  const proxy = createGitHubProxy({ user: (id) => (id === 'u1' ? user : undefined), connection: () => connection, limiter: createProxyLimiter({ now: () => new Date() }), log: () => {} });
+  const ask = (repo: string, body: Record<string, unknown>) => proxy.handle(`Bearer ${proxyToken(key, 'u1', `job-${repo.replace('/', '-')}`)}`, body);
+
+  it('a job of the further account\'s repository acts as that account, and its events name it', async () => {
+    expect(await ask('acme/api', { op: 'issue.comment', repo: 'acme/api', number: 1, body: 'b' })).toMatchObject({ status: 200, body: { as: 'ada-work' } });
+    expect(await ask('home/tools', { op: 'issue.comment', repo: 'home/tools', number: 1, body: 'b' })).toMatchObject({ status: 200, body: { as: 'ada-home' } });
+    expect(sent).toEqual([{ as: 'ada-work', op: 'issue.comment', repo: 'acme/api' }, { as: 'ada-home', op: 'issue.comment', repo: 'home/tools' }]);
+    expect(recorded.map((e) => [e.jobId, e.data.as])).toEqual([['job-acme-api', 'ada-work'], ['job-home-tools', 'ada-home']]);
+  });
+
+  it('another job repository acts as its own account; a repository of no account as the job\'s own repository\'s', async () => {
+    sent.length = 0;
+    await ask('acme/api', { op: 'issue.create', repo: 'home/tools', title: 't', body: 'b' });
+    await ask('acme/api', { op: 'issue.view', repo: 'else/where', number: 3 });
+    expect(sent).toEqual([{ as: 'ada-home', op: 'issue.create', repo: 'home/tools' }, { as: 'ada-work', op: 'issue.view', repo: 'else/where' }]);
   });
 });

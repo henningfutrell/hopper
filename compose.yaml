@@ -19,6 +19,8 @@
 #   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
 #   bash master-key.sh seal                                           (paste the key; nothing is shown)
 #   systemctl --user restart hopper-compose.service                   (each start: it unseals the key for compose only)
+# The service's install puts in master-key.sh, and seals the key given to it as HOPPER_MASTER_KEY (issue #1487). It gives
+# the key to the containers as a file in memory, never in their config, and runs hopper-alert.sh here when a start fails.
 # Without the service: bash master-key.sh run podman compose up -d --force-recreate. Or give it at launch yourself — in the environment compose starts with, never in a file (issue #894):
 #   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY      (paste the 64 hex digits; nothing is shown)
 #   podman compose up -d --force-recreate --no-deps hopper
@@ -135,8 +137,11 @@ services:
         condition: service_healthy
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
-      # The master key (issue #659), given at launch, never in a file (issue #894): see the top of this file.
+      # The master key (issue #659), given at launch, never in a file of this folder (issue #894): see the top of this file.
+      # hopper-compose.service gives it as a file in memory, HOPPER_MASTER_KEY_FILE, mounted below (issue #1487): then no
+      # container's config holds it.
       HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}
+      HOPPER_MASTER_KEY_FILE: ${HOPPER_MASTER_KEY_FILE:-}
       HOPPER_MASTER_KEY_PREVIOUS: ${HOPPER_MASTER_KEY_PREVIOUS:-}
       # How this host sealed the key (master-key.sh run sets it, issue #1296): the hopper then rotates only with the host.
       HOPPER_MASTER_KEY_SEALED: ${HOPPER_MASTER_KEY_SEALED:-}
@@ -184,12 +189,31 @@ services:
       HOPPER_SANDBOX_MAX_CPUS: ${HOPPER_SANDBOX_MAX_CPUS:-4}
       HOPPER_SANDBOX_MAX_MEMORY_MB: ${HOPPER_SANDBOX_MAX_MEMORY_MB:-8192}
       HOPPER_SANDBOX_MAX_TTL_MINUTES: ${HOPPER_SANDBOX_MAX_TTL_MINUTES:-1440}
+      # A read-only box's egress (issue #849, docs/deploy.md "A read-only box's egress"): a read-only box and the read-only
+      # check box join the internal network `egress` below, with no way out, and reach out only through the `egress`
+      # service, to AWS and the clusters the vault mints for. The hopper writes the allowlist into the `egress` volume.
+      HOPPER_SANDBOX_EGRESS_NETWORK: hopper_egress
+      HOPPER_SANDBOX_EGRESS_PROXY: http://egress:3128
+      HOPPER_SANDBOX_EGRESS_DIR: /run/hopper-egress
+      # OpenTelemetry (issue #1486, docs/deploy.md "Telemetry"): off unless an exporter or an OTLP endpoint is set. With the
+      # `telemetry` profile below: OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-hopper}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
       - vault-token:/run/hopper-vault:ro
       - tunnel-key:/run/hopper-tunnel:ro
       # Its home: the claude sign-in.
       - home:/home/node
+      # The egress proxy's allowlist (issue #849): the hopper writes it, the `egress` service reads it.
+      - egress:/run/hopper-egress
       # Your rootless Podman socket (docs/deploy.md "Sandbox boxes the hopper starts"): HOPPER_PODMAN_SOCKET_HOST, its path
       # on this computer. The update writes it in when podman.socket is on (`systemctl --user enable --now podman.socket`),
       # as $XDG_RUNTIME_DIR/podman/podman.sock; unset, /dev/null: compose cannot mount a file that is not there, so no
@@ -198,6 +222,12 @@ services:
       - type: bind
         source: ${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}
         target: /run/podman/podman.sock
+      # The master key's file (issue #1487): HOPPER_MASTER_KEY_HOST_FILE, its path on this computer, in memory, written by
+      # hopper-compose.service at each start and removed at its stop. Unset, /dev/null: the key comes as HOPPER_MASTER_KEY.
+      - type: bind
+        source: ${HOPPER_MASTER_KEY_HOST_FILE:-/dev/null}
+        target: /run/hopper-master-key
+        read_only: true
     # podman.socket makes the socket readable and writable by your group (mode 0660). In a rootless container your group is
     # group 0, so the hopper's user joins group 0 to reach the socket.
     group_add: ["0"]
@@ -209,8 +239,9 @@ services:
       # localhost from Windows").
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
     # `tunnel` (issues #795, #880): the network the hopper shares with the tunnel alone (below). `search` (issue #945): the
-    # one it shares with Solr alone.
-    networks: [default, tunnel, search]
+    # one it shares with Solr alone. `egress` (issue #849): the internal network of the read-only boxes, where they reach
+    # the hopper past the proxy.
+    networks: [default, tunnel, search, egress]
 
   # OpenFGA (issue #559): access asks it before every credential a job is given. Its tables are the `openfga` schema of
   # the hopper's Postgres; its config is the file postgres writes, read from its working directory. On no host port:
@@ -274,14 +305,21 @@ services:
         condition: service_healthy
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
-      # The hopper's master key (issue #659), given at launch.
+      # The hopper's master key (issue #659), given at launch: as the hopper's, a variable or a file (issue #1487).
       HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}
+      HOPPER_MASTER_KEY_FILE: ${HOPPER_MASTER_KEY_FILE:-}
       HOPPER_MASTER_KEY_PREVIOUS: ${HOPPER_MASTER_KEY_PREVIOUS:-}
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
       HOPPER_KMS_KEY: ${HOPPER_KMS_KEY:-}
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
+      - type: bind
+        source: ${HOPPER_MASTER_KEY_HOST_FILE:-/dev/null}
+        target: /run/hopper-master-key
+        read_only: true
+    # The key's file is not one SELinux lets a container open (Fedora and the like); without SELinux this changes nothing.
+    security_opt: [label=disable]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4791/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 30s
@@ -308,7 +346,8 @@ services:
   # no ngrok. It forwards to http://hopper over the `tunnel` network, which only the
   # hopper shares, never to the hopper's loopback: an internet request is a public request (the API only with a session
   # or an API token), and no box reaches the agent's local API. Its edge lets only the API through (/api/ but the event
-  # stream, /ui/api/, /ui/auth/api-token, and /ui/auth/token/refresh where a grant's agent trades its refresh token):
+  # stream, /ui/api/, /ui/auth/api-token, /ui/auth/token/refresh where a grant's agent trades its refresh token, and
+  # /ui/auth/device-grant with its poll, where an agent asks for a grant a person approves):
   # never the UI, its sign-in pages, the installer or /tunnel/agent; and it limits
   # each caller's requests a minute. It names each caller to the hopper in `x-hopper-caller` (one a caller sent is
   # dropped), which the hopper reads from this agent alone, so its own sign-in limit counts each caller, not the agent
@@ -343,14 +382,14 @@ services:
                   headers:
                     x-hopper-caller: "$${conn.client_ip}"
           - expressions:
-              - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh') || req.url.path.startsWith('/api/events/stream')"
+              - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh' || req.url.path == '/ui/auth/device-grant' || req.url.path == '/ui/auth/device-grant/poll') || req.url.path.startsWith('/api/events/stream')"
             actions:
               - type: custom-response
                 config:
                   status_code: 404
                   body: not found
           - expressions:
-              - "req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh'"
+              - "req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh' || req.url.path == '/ui/auth/device-grant'"
             actions:
               - type: rate-limit
                 config:
@@ -456,6 +495,43 @@ services:
         done
     networks: [tunnel]
 
+  # The egress proxy of the read-only boxes (issue #849, docs/deploy.md "A read-only box's egress"): tinyproxy, from the
+  # hopper's image, on the internal network `egress` and on the hopper's. It lets a box CONNECT only to the hosts of the
+  # allowlist the hopper writes into the `egress` volume — `filter` (a regular expression per host), `ports`, then
+  # `version` — and refuses every other host (403). It checks `version` each second; when it changes, it loads the
+  # allowlist and writes that version into `loaded`, which the hopper waits for before a read-only box starts. It holds no
+  # secret and reaches nothing of the hopper's.
+  egress:
+    image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
+    restart: unless-stopped
+    volumes:
+      - egress:/run/hopper-egress
+    # The image's own check asks the hopper's daemon, which does not run here.
+    healthcheck:
+      disable: true
+    entrypoint: [sh, -eu, -c]
+    command:
+      - |
+        d=/run/hopper-egress; c=/tmp/egress
+        mkdir -p $$c
+        pid=; last=
+        trap '[ -z "$$pid" ] || kill "$$pid" 2>/dev/null || true; exit 0' TERM INT
+        while :; do
+          v=$$(cat $$d/version 2>/dev/null || true)
+          if [ -n "$$v" ] && [ "$$v" != "$$last" ]; then
+            cp $$d/filter $$c/filter
+            { printf 'Port 3128\nListen 0.0.0.0\nTimeout 600\nMaxClients 200\nLogLevel Connect\nDisableViaHeader Yes\nFilterType ere\nFilterDefaultDeny Yes\nFilterURLs Off\nFilter "%s/filter"\n' $$c
+              grep -E '^[0-9]+$$' $$d/ports | sed 's/^/ConnectPort /'; } > $$c/conf
+            if [ -n "$$pid" ]; then kill -USR1 "$$pid"; sleep 1; else tinyproxy -d -c $$c/conf & pid=$$!; sleep 1; fi
+            last=$$v
+            printf '%s\n' "$$v" > $$d/.loaded.tmp && mv $$d/.loaded.tmp $$d/loaded
+            echo "egress: the allowlist $$v is loaded"
+          fi
+          if [ -n "$$pid" ] && ! kill -0 "$$pid" 2>/dev/null; then echo 'egress: tinyproxy ended' >&2; exit 1; fi
+          sleep 1 & wait $$! || true
+        done
+    networks: [default, egress]
+
   # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
   # asked for, and the hopper never needs it — without it the hopper starts and its own vault works:
   #   podman compose --profile vault up -d
@@ -502,6 +578,21 @@ services:
       - vault-keys:/vault/keys
       - vault-token:/run/hopper-vault
 
+  # A telemetry viewer (issue #1486, docs/deploy.md "Telemetry"), optional: Grafana's all-in-one OpenTelemetry stack — an
+  # OpenTelemetry collector, Tempo for traces, Prometheus for metrics, Loki for logs, and Grafana to see them. It starts
+  # only when asked for, and the hopper never needs it:
+  #   COMPOSE_PROFILES=telemetry OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318 podman compose up -d
+  # Grafana is on this computer's loopback only, at http://127.0.0.1:3000 (TELEMETRY_UI_PORT). Its data is in the
+  # `telemetry` volume.
+  telemetry:
+    image: docker.io/grafana/otel-lgtm:0.37.0
+    profiles: [telemetry]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TELEMETRY_UI_PORT:-3000}:3000"
+    volumes:
+      - telemetry:/data
+
 # The hopper's network (issue #711): made by this file, under this name, on every `up`, whatever the project is called.
 # Every service is on it, and so is each box the hopper starts (HOPPER_SANDBOX_NETWORK): there `http://hopper:<port>`
 # reaches the hopper, with no HOPPER_PUBLIC_URL. A container started apart joins it:
@@ -518,6 +609,11 @@ networks:
   # Search's (issue #945): the hopper and Solr only.
   search:
     name: hopper_search
+  # The read-only boxes' (issue #849): internal, so it has no way out. The hopper and the egress proxy are on it too: a
+  # box on it reaches the hopper, and every other host only through the proxy.
+  egress:
+    name: hopper_egress
+    internal: true
 
 volumes:
   # The files Postgres makes at each start (the database password and URL, OpenFGA's and hopper-vault's preshared keys):
@@ -544,3 +640,7 @@ volumes:
   vault-keys:
   vault-token:
   kms:
+  # The egress proxy's allowlist (issue #849): written by the hopper at each read-only box's start, made again after a loss.
+  egress:
+  # The telemetry viewer's data (issue #1486), profile `telemetry`: traces, metrics, logs and Grafana's own.
+  telemetry:

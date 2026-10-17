@@ -2,8 +2,8 @@
 // operations, the request's shape, and the check against who asks. Pure: no I/O, no clock.
 //
 // The hopper acts for a job with the GitHub connection of the job's own user (issue #1380): a job may file and read
-// issues, comment, open a pull request from its pushed branch on its own repository, mark one ready for review there,
-// close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
+// issues, comment, open a pull request from its pushed branch, mark one ready for review (issue #1275: on its own
+// repository or another job repository, where its change may belong), close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
 // check's log (issue #993), on its user's job repositories; it reads (`READS`) on any repository the connection sees
 // (issue #1015): the job repositories decide intake and where a job writes, not what it reads.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
@@ -27,13 +27,15 @@ const text = (max: number) => z.string().min(1).max(max);
 const branch = z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/, 'a branch name: letters, digits, . _ / -');
 /** A pull request's head: a branch, or `<owner>:<branch>` for a branch of a fork (issue #429). */
 const head = z.string().regex(/^(?:[A-Za-z0-9-]{1,39}:)?[A-Za-z0-9._/-]{1,200}$/, 'a branch name, or owner:branch for a fork\'s');
+/** A resend key (issue #1607): hopper-gh makes one for each issue create and comment, the same each time it sends it. */
+const key = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'a resend key: 8 to 64 letters, digits, _ or -');
 /** A flag: from a form it comes as the text `true`. */
 const flag = z.union([z.literal('true'), z.literal(true)]).transform(() => true as const);
 
 /** One request, as the hopper takes it: the operation and only the fields it uses. GitHub's limits on titles and bodies. */
 export const proxyRequest = z.discriminatedUnion('op', [
-  z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000), required: flag.optional() }),
-  z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000) }),
+  z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000), required: flag.optional(), key: key.optional() }),
+  z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000), key: key.optional() }),
   z.strictObject({ op: z.literal('issue.view'), repo, number }),
   z.strictObject({ op: z.literal('issue.comments'), repo, number }),
   z.strictObject({ op: z.literal('issue.close'), repo, number }),
@@ -127,16 +129,13 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
     if (!asker.contribution) return { ok: false, reason: CONTRIBUTION_OFF };
     if (asker.canPush) return { ok: false, reason: `your user can push to ${req.repo}: push a branch there, with no fork` };
   }
-  if (req.op === 'pr.create' && !ownRepo) {
-    return { ok: false, reason: `a job opens a pull request only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
-  }
   const forkOwner = req.op === 'pr.create' && req.head.includes(':') ? req.head.split(':')[0]! : undefined;
+  if (forkOwner !== undefined && !ownRepo) {
+    return { ok: false, reason: `a job opens a pull request from its user's fork only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
+  }
   if (forkOwner !== undefined && !asker.contribution) return { ok: false, reason: CONTRIBUTION_OFF };
   if (forkOwner !== undefined && !(asker.login && same(asker.login, forkOwner))) {
     return { ok: false, reason: `a job opens a pull request from a fork only from its user's own (${asker.login ?? 'no login'}), not ${forkOwner}` };
-  }
-  if (req.op === 'pr.ready' && !ownRepo) {
-    return { ok: false, reason: `a job marks a pull request ready only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
   }
   if (req.op === 'issue.create' && req.required && (asker.repo === undefined || asker.issue === undefined)) {
     return { ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' };
@@ -151,15 +150,25 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
 export interface IssueParent { repo: string; number: number; required: boolean }
 
 /**
+ * The label a routed child gets (issue #1510): the job sources' default label, as the Add PR checks job's
+ * (src/repo-checks/service.ts), so a source of that repository lists it.
+ */
+export const ROUTE_LABEL = 'hopper';
+
+/**
  * What every issue filed through the hopper carries at its end: its parent, the job's issue (issue #729: GitHub links
- * the mention back on the parent), that the hopper filed it for a job, which one, and that it waits for a person. Ids
+ * the mention back on the parent), that the hopper filed it for a job, which one, and that it waits for a person: to triage
+ * a follow-up, or, for a required child the hopper routed (issue #1510), to approve its request card. Ids
  * only — GitHub text names no person and no machine (repo law); the hopper's event log has who asked and from where,
  * under the request id.
  */
 export function filedNote(jobId: string, requestId: string, parent?: IssueParent): string {
   const ref = parent && `${parent.repo}#${parent.number}`;
   const lineage = !parent ? '' : parent.required ? `Required child of ${ref}: that issue is not done while this one is open.\n` : `Follow-up of ${ref}.\n`;
-  return `\n\n---\n${lineage}Filed through hopper for job \`${jobId}\` (request \`${requestId}\`). It is not a job: it waits for a person to triage it.`;
+  const waits = parent?.required
+    ? 'Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.'
+    : 'It is not a job: it waits for a person to triage it.';
+  return `\n\n---\n${lineage}Filed through hopper for job \`${jobId}\` (request \`${requestId}\`). ${waits}`;
 }
 
 /**

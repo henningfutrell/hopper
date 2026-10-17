@@ -38,19 +38,26 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   code names — the code minted through an admin's UI session or the operator CLI, kept hashed, spent by the join — and
   a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,
   `docs/design.md` "GitHub through the hopper"): `POST /job/github`, with the job's proxy token — derived, never stored,
-  honoured only while the job is at work — asks the hopper to act on GitHub with the job's own user's connection (issue #1380); it changes no job,
+  honoured only while the job is at work, and after a lost-machine move only the new run's (issue #1569) — asks the hopper to act on GitHub with the job's own user's connection (issue #1380) — the connected account of the repository it names, else of the job's own (issue #1448) —; it changes no job,
   question, webhook or setting, only records what it did. A running job's git (issue #652, `docs/design.md` "Git through the
   hopper"): `GET`/`POST /job/git/<owner>/<name>.git/…`, git's smart HTTP with the job's proxy token as its password, fetches
-  and pushes on GitHub with the job's own user's connection — a push only to a branch of the job's own repository, or, with
+  and pushes on GitHub with the job's own user's connection (the account of the repository, issue #1448) — a push only to a branch of the job's own repository or of another of its user's job repositories (issue #1275), or, with
   the user's **Contribution** on (issue #429, `docs/design.md` "The contribution flow"), of the user's fork of it, never its
   default or a release branch, and never a push that brings in its base branch (its pull request's, else the landing branch) and empties or shrinks a file the branch's own change
-  did not (the shrink guard, issue #1096, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. **A job holds no
-  GitHub token** (issue #652): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
+  did not, or empties a file it only shrank (the shrink guard, issues #1096, #1218; the hopper's own base merge is judged so too, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. A running
+  GitLab job's git (issue #1448, `docs/design.md` "Jobs through GitLab"): `GET`/`POST /job/gitlab-git/<project>.git/…`, the same
+  with the job's proxy token, fetches and pushes on GitLab with the token of its own user's GitLab account — a push only to a
+  branch of the job's own project, never its default or a release branch, its push options (the merge request) as git sent them —;
+  it changes no job, question, webhook or setting, only records a push. **A job holds no
+  GitHub or GitLab token** (issues #652, #1448): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
   sealed to that request; it records only the delivery or refusal. **The vault gives only to a job a person granted it**
   (issue #652, `docs/design.md` "Vault grants"): a box job's item with no **vault grant** is refused and becomes a grant
   ask; Grant and Revoke are a person's acts through the UI session, after Access (`vault_grant#can_grant`); a job asks,
-  never grants. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
+  never grants. One exception, the user's own setting: the **standing read grant** (issue #1472, off by default), an admin's
+  toggle with the sandbox approvals, grants a job on a box of a template whose needs the read policy holds entirely as reads,
+  with no vault secret, and records it as `vault.granted` by the setting; a template with a write, sync or apply, a read
+  outside the policy or a secret still waits for a person's grant, and turned off it grants no job that has not asked yet. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
   with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential
@@ -96,13 +103,19 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   box step (issue #1004, `docs/design.md` "Box steps"): the same routes with `box=`, run one command in a sandbox box the job's own
   sandbox request started, through that box's container runtime beside the hopper, and answer its output, exit code and outputs; it
   changes no job, question, webhook or setting, only records the step. While it runs, the box's vault helper asks for that job, as for
-  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. Every other mutation is the UI's
+  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. A Windows, need or box step is kept
+  (issues #1568, #1611, `docs/design.md` "Need steps kept as sagas", "Windows steps kept as sagas"): its ask carries the job's key and is answered 202, its saga runs it on
+  any host, and the job reads `GET /job/step/:id/log` and stops it with `DELETE /job/step/:id`, its own step only. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
   `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most
   (5–15 minutes), its role no higher than its minter's, refreshed from a **grant** a person minted from a UI session (issue
   #881, `docs/design.md` "Grants and refresh tokens": `POST /ui/auth/token/refresh` with a one-time refresh token, only
-  its hash kept; a spent one sent again ends the grant) or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
+  its hash kept; a spent one sent again ends the grant; or one an agent asked for at `POST /ui/auth/device-grant`, which a
+  person approved by its user code through the UI session, never an API token, and the agent takes once at its poll, issue
+  #892, `docs/design.md` "Grants by device approval"; a **bound grant**'s refresh and each use of its tokens, `Authorization: DPoP`,
+  need a DPoP proof of its agent's key, `docs/design.md` "Sender binding"; a **limited grant**'s mutations act only on the
+  repositories and job sources it names, `docs/design.md` "Grant limits") or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
   accepts, never by another API token; a grant's token uses only the routes its scopes name, deny by default; Access decides
   each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it. A
   **box action** (issue #795: starts a job, runs a command, approves or merges, updates, changes the work on a machine) also
@@ -118,21 +131,24 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Jobs come only from a trusted origin** (issue #652, `docs/design.md` "Trusted origin and request cards"): an issue
   becomes a job only when the user's trusted actors — Access decides (OpenFGA `intake#can_start_jobs`) — wrote, labelled
   and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
-  its job runs the approved text. Approve is a person's act through the UI session, never a job's. One exception, the
+  its job runs the approved text. A GitLab issue (issue #1448, `docs/design.md` "Jobs through GitLab") becomes a job only when
+  the user's GitLab account — Access decides (`intake#can_start_jobs`, a `gitlab_account` by its GitLab and user id) — wrote,
+  labelled and assigned it, and nobody else edited its title or description; any other is a request card a person approves, as on GitHub, and its job runs the approved text (issue #1642). Approve is a person's act through the UI session, never a job's. One exception, the
   user's own setting: **auto-approval** (issue #1268, `docs/design.md` "Auto-approval", on by default) approves a card a
   trusted actor reopened, wrote or labelled `hopper:high`, or a listed app wrote, and records it as an approval; a card a
-  job filed, that someone else edited, or that a person took into Intake still waits. The origin gates the job,
+  job filed, that someone else edited, or that a person took into Intake still waits; a GitLab card only when a trusted actor wrote it or labelled it `hopper:high` (issue #1642). The origin gates the job,
   not its merge: yolo mode merges a job's ready pull request whatever its origin (issue #805). No OpenFGA trusts nobody.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
-  one (the merge of a job's pull request does), and posts no comments. Ten exceptions, each the user's own act or setting: with
+  one (the merge of a job's pull request does), and posts no comments. On GitLab (issue #1448) it writes only its labels to an
+  issue, with no exception, and a GitLab job's merge request text is under the publishing rule; with yolo mode on (issue #1642), the hopper merges a done GitLab job's ready merge request it follows — not a draft, no merge conflicts, its pipeline passed, or none started within two minutes of its last change —, at the head it read. Eleven exceptions, each the user's own act or setting: with
   yolo mode on for a repository (issue #637), the hopper merges a done job's ready pull request that it follows — not a draft, no
   merge conflicts, its checks passed — or it has none, and none started within two minutes of its last push (issue #677; issue #652 had none wait) —, a merge commit, and that merge closes the issue as a person's would; Merge now and Close PR on a Pull requests card or `hopper pr merge|close`
   (issue #677) merge, on the same path whatever yolo mode and the checks say, or close without a merge, a job's open pull request, as a person's act; after either merge — yolo mode or Merge now — of a pull request that did not close its issue and is no part ("Part of #N"), the hopper closes the issue as completed and posts one comment that links the pull request (issue #677), so the merge finishes the issue as the user's setting or act asked; Run again
   (issue #354) reopens the job's closed issue, so the new job can finish against it, and assigns it to the user's connected account when it is no longer (issue #1010) — so does tending, which runs it again; Assign to me in Sources (issue #440)
-  assigns a labelled issue to the user's connected account; Take into Intake on a Not tracked pull request (issue #1176) gives the issue it closes, which is no work item, the hopper label and assigns it so, and Intake lists it as a request card; resolving a hand-off in Needs a person (issue #551) posts one
+  assigns a labelled issue to the user's connected account; Take into Intake on a Not tracked pull request (issue #1176) gives the issue it closes, which is no work item, the hopper label and assigns it so, and Intake lists it as a request card; Decline on a request card (issue #1710, `docs/design.md` "Decline") takes the source's label off the issue — with the person's choice Close, also its priority labels and `hopper:done`, and closes it as not planned — and posts one fixed comment that says what the hopper did and how to queue it again, naming no person and never quoting the issue; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
-  label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first; a running job's report on itself (`hopper-gh report bug`) goes the same way through its user's connection, its text masked whole, marked as the job's; Queue job for a job repository with no checks (issue #677) files "Add PR checks to <repo>" on that repository through the person's own connection — an issue with the hopper label, assigned to their connected account, its text fixed —, once: an open one of that title is answered instead. Promote to GitHub (issue #946, `docs/design.md` "Promote to GitHub") posts a finished direct job as an issue, or a comment on an issue the person picks, on a repository they choose, through their own connection, never a job's — the text they read, edited and confirmed in a preview, scanned first: never a secret, personal data only on a private repository they allow it for, a public repository only when they confirm it; it names who promoted it, and the requester only when they ask; its links need a hopper sign-in, but a small text artifact the person ticks, scanned the same way, is committed to the promotion's own branch `hopper-promotion/<direct job>` (never the default branch) and linked there; promoted again it edits what it posted and updates what it committed. With the user's **drift issues** setting on (issue #1077,
+  label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first; a running job's report on itself (`hopper-gh report bug`) goes the same way through its user's connection, its text masked whole, marked as the job's; File an issue (issue #471, `docs/design.md` "File an issue") files the person's own issue, drafted by their own signed-in Claude and read, edited and confirmed by them, on one of their job repositories through their own connection (the account of the repository), with no label and no assignee, its text scanned first as Promote to GitHub's (never a secret; personal data only on a private repository they allow it for; a public repository only when they confirm it) and ending with a fixed note that names no person; Queue job for a job repository with no checks (issue #677) files "Add PR checks to <repo>" on that repository through the person's own connection — an issue with the hopper label, assigned to their connected account, its text fixed —, once: an open one of that title is answered instead. Promote to GitHub (issue #946, `docs/design.md` "Promote to GitHub") posts a finished direct job as an issue, or a comment on an issue the person picks, on a repository they choose, through their own connection, never a job's — the text they read, edited and confirmed in a preview, scanned first: never a secret, personal data only on a private repository they allow it for, a public repository only when they confirm it; it names who promoted it, and the requester only when they ask; its links need a hopper sign-in, but a small text artifact the person ticks, scanned the same way, is committed to the promotion's own branch `hopper-promotion/<direct job>` (never the default branch) and linked there; promoted again it edits what it posted and updates what it committed. With the user's **drift issues** setting on (issue #1077,
 `docs/design.md` "Component watchers"), a **component watcher** files one issue per kind of drift on the hopper's own repository through
 the user's own connection — labelled `user-report`, no assignee, each item only a short hash of its key — and edits that issue's body
 while the drift lasts, never filing a second. With **landing batches** on for a repository (issue #1073, `docs/design.md`
@@ -146,13 +162,13 @@ a conflict GitHub cannot merge files one issue the same way as a fix issue, its 
 (`landing_batch.back_merge_issue_filed`). **Pull request housekeeping** (issue #1143, `docs/design.md` "Pull request housekeeping") is the hopper's
 care of a job's open pull request it follows, or a **stray** one (a job named it, no job follows it, no job of its item
 works on it; part 4), or an **untracked** one of an item the ledger holds, on a branch named for its issue (issue #1176,
-`docs/design.md` "Untracked pull requests"; only the move): it moves one based off the landing branch to it, closes one with nothing
+`docs/design.md` "Untracked pull requests"; only the move, and the close of a **second pull request** on a branch named for its issue with merge conflicts, issue #1208): it moves one based off the landing branch to it, closes one with nothing
 left to land, and posts on the pull request one fixed comment for each such act and for each tend job it starts,
 naming no person; the batch runner's move of a job's pull request from the tested branch, followed or not, posts the same
 comment. A job's own request through the GitHub proxy (issue #563) is
 the job's act, as when it pushes: its text is the job's, under the publishing rule; so are, with the user's Contribution on
 (issue #429), the fork of a repository its user cannot push to and the pull request it opens there from that fork; an issue filed that way ends with the
-hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
+hopper's note naming the job and the request by id only, and gets no label or assignee — but a **routed child** (issue #1510, `docs/design.md` "Routed children"): a required child, which the hopper labels with the job sources' label and assigns to the job's user's connected account, so Intake lists it as a request card; a job filed it, so it is never of a trusted origin, and a person approves it. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config records in it — JSON values
   (`plugins`, `rules`, `job-rules`, `sign-in`), every setting edited in the UI, none set only in a file, no YAML
@@ -166,7 +182,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   in an event, and never answered by any route but, once, a secret the hopper made in the answer that made
   it. A value that cannot be opened is said so, never read as no secret. A token or code it mints is only
   hashed. **Every secret the hopper owns for itself is a system secret** (issues #657, #658, `docs/design.md`
-  "The vault's system scope"): the GitHub connection's access and refresh tokens, each webhook signing secret, each
+  "The vault's system scope"): the GitHub connection's access and refresh tokens, the GitLab account's personal access token (issue #1448), each webhook signing secret, each
   user's TypeSafe API key in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
   from the `HOPPER_SIGN_IN_*` environment) and remote access's — each tunnel provider's credential and the tunnel token the hopper
   minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — and the GitHub webhook secret (issue #1079, made in Settings → GitHub webhook) in the instance's vault — rows named `system/<name>`, sealed, written only
@@ -185,6 +201,15 @@ hopper's note naming the job and the request by id only, and gets no label or as
   `hopper`) writes the database directly: whoever runs it holds its credentials. Its operator actions
   (`job`, `queue`, `question`, issue #374) change no job, question or setting themselves: each mints a UI session in the database for one
   `POST /ui/api/*` on the running daemon, and drops it after.
+- **hopper.io runs nothing on an instance** (issue #468, `docs/hopper-io-security.md`). The **cloud link** is outbound
+  from the instance, off until its admin links it, and carries allow-listed state out only (a closed, versioned schema in
+  the instance's code). The instance acts on nothing that comes in on it but a remote action its admin turned on for that
+  instance, one kind at a time, taken as one `POST /ui/api/*` under the role of the user the hopper.io account maps to, and
+  recorded; no remote action changes sign-in, plugins, command-bearing options, the vault, remote access or the cloud link.
+  No credential goes on it: no GitHub token, database URL, master key, sealed secret, client token, machine link key,
+  proxy token, API token or session; only the public half of the **cloud link key**. At hopper.io every record and query
+  is scoped to one **hopper.io account**, with tests. A hopper.io change cites the rules (R1–R8) it touches; one that
+  cannot obey a rule changes that document first, with the owner's decision.
 - **A job's containers are its own** (issue #1295, `docs/design.md` "Each job its own container runtime"): a job's shell
   gets a podman runtime of its own (`src/client/job-runtime.ts`) — its runtime dir, storage and socket —, never the user's
   runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime. Claude, and a print-mode agent's turn,
@@ -204,8 +229,13 @@ hopper's note naming the job and the request by id only, and gets no label or as
   names them with closing keywords, issue #1175); a red batch's culprit is reverted from `main`, and the rest of the batch moves on;
   `beta` and `canary` move only by `scripts/promote.sh`, one step at a time; `stable` moves to the canary's candidate
   when its canary window passes with no bug report that names it (the batch runner, part 5), or by `scripts/promote.sh stable`.
-- **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
-  by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+- **The UI is the daemon's one built part; `cloud/` is the second part, and not the daemon's.** `ui/` → `npm run build:ui`
+  → `ui/dist` (gitignored), served by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+  `cloud/` is **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), its own service with its own database, run by Node
+  as the daemon is (`npm run cloud`): the daemon never serves it, its image does not carry it, and nothing in `src/` imports
+  it. It imports of `src/` only the GitHub sign-in it shares with an instance (`src/connected-accounts/hopper-app.ts`,
+  `web-flow.ts`, `identity.ts`) and `src/secrets/runtime.ts`; `test/cloud/config.test.ts` checks both ways. It signs in
+  through a GitHub App of its own, never the shipped one, and keeps no GitHub token.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,
   never served by the daemon; it takes its look from `ui/src/index.css` and nothing of `src/`.
 - **What's new.** A change people who use the hopper would notice adds one line in a new file

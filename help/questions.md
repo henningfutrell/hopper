@@ -13,7 +13,7 @@ A job asks a question in one of these ways:
 
 While a job waits on a question, its status is `waiting_answer`. It holds no lane. Its pane and its agent session stay open.
 
-A job that only waits for something outside (a review, a release) does not ask a question. It ends with `HOPPER_WAITING` and shows as on its own wait.
+A job that only waits for something outside (a review, a release) does not ask a question. It ends with `HOPPER_WAITING` and shows as on its own wait. When the wait names issues or pull requests (`owner/name#12`, `name#12`, `issue 12`) or a workflow run (`<repo> run 123456`, or its link), the hopper reads them at each sync. When all of them are closed, merged or finished, the hopper ends the wait. When the job's pane is lost (a restart) and only a background command in that pane could end the wait, the hopper ends the wait too, and the job goes on in a new pane.
 
 ### The escalation ladder
 
@@ -89,9 +89,11 @@ Each point has a mode in **Settings → Decider**:
 
 Jev never decides a consequential choice: one that deletes, deploys or publishes, force-pushes, spends money, touches credentials, sends a message, changes permissions, or runs on a gated machine. Its pick is recorded as consequential and not applied. Jev never answers a question: it only checks the risk of a level's answer.
 
-Each pick shows on **Decisions**, in the panel **Decider picks**: its options, what Jev picked and how sure it was, and what was decided. Select **Override** to say what it should have been. An override counts in the agreement rate.
+Each pick shows on **Decisions**, in the panel **Decider picks**: its options, what Jev picked and how sure it was, and what was decided. Select **Override** to say what it should have been. An override changes nothing that was already done. It counts only in the agreement rate.
 
-Jev needs your TypeSafe API key. Set it in **Settings → Decider**, or with `hopper typesafe-key set` (it reads the key from standard input). Without a key, Jev is off and every decision is made as before.
+For each decision point, Settings → Decider shows the last 30 days: *Asked*, *Picked*, *Applied*, *Compared*, *Agreement* and *Overridden*. A pick that was not applied is compared with what was decided later. When the agreement is high enough for you, set that point to Active. A change applies from the next decision.
+
+Jev needs your TypeSafe API key. Set it in **Settings → Decider**, or with `hopper typesafe-key set` (it reads the key from standard input). The hopper checks the key once with TypeSafe, and keeps it only when TypeSafe accepts it. The key is kept sealed in the hopper's vault and is never shown again: the page shows only that it is set, its last 4 characters, and when it was set. **Replace** and **Remove** change it, with no restart. Without a key, Jev is off and every decision is made as before.
 
 ## How to use it
 
@@ -161,21 +163,11 @@ In **Settings → Issue thread**, set what happens for repositories you own and 
 
 ### Research this and Propose this
 
-Some questions need research or a proposal first. On a question card, select **Research this** or **Propose this**, give an optional note, and pick a mode:
-
-- **Fork**: a separate job does the research or the proposal. The first job waits on its question, or is parked. The accepted result answers the question.
-- **Switch**: the same job, in its own session, does the research or the proposal first. At **Accept**, you pick what it does next.
-
-A job or an escalation level can suggest a shift. The card then offers it as one click. An admin sets the default mode and which levels may shift a job in the **Phase shifts** settings at the bottom of the Questions view.
+Some questions need research or a proposal first. On a question card, select **Research this** or **Propose this**: a separate job (**Fork**) or the same job (**Switch**) does it first. See [Phase shifts](research-and-proposals.md#phase-shifts).
 
 ### Research reports and proposals
 
-A job can write a document in place of the work:
-
-- A **research report** ends with `HOPPER_RESEARCH_REPORT`. It has Question, Findings, Sources and evidence, Confidence, Open threads and Next step. It shows in **Research**: **Accept**, **Dig deeper** or **Steer**.
-- A **proposal** ends with `HOPPER_PROPOSAL`. It has a TL;DR, a Problem, one or more paths, the recommended path, and Context. It shows in **Proposals**: **Continue with selected**, **Ask for more paths**, **Steer** or **Reject all**. Each selected path continues as its own follow-on job.
-
-Ask for one with the label `hopper:research` or `hopper:proposal`, a `Research` or `Proposal` heading in the issue body, or **Research** or **Propose** on a job in the Queue that has not started. An admin can have escalation levels review these before you, in the settings at the bottom of each view.
+A job can write a research report or a proposal in place of the work. Ask for one with the label `hopper:research` or `hopper:proposal`. See [Research reports and proposals](research-and-proposals.md).
 
 ## What the hopper does for you
 

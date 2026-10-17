@@ -44,8 +44,16 @@ export interface QuestionAttempt extends AttemptPhaseFields {
   holds?: AnswerHold[];
   reason?: string;
   error?: string;
-  /** accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. */
-  outcome: 'accepted' | 'escalated';
+  /**
+   * A level's call (issue #1608): written as `started` before the model is asked, and its reply kept under the same key
+   * when it comes, so a call in flight leaves a record. Absent on a row with no model call.
+   */
+  callKey?: string;
+  /**
+   * accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. started: the
+   * level's call is in flight (issue #1608). interrupted: the daemon stopped during the call, and the level is asked again.
+   */
+  outcome: 'accepted' | 'escalated' | 'started' | 'interrupted';
 }
 
 /** Why a question came to a person (issue #679). */
@@ -60,6 +68,14 @@ export const LOGIN_SCREEN_MARK = 'Select login method';
 export const SIGNED_IN_BY = 'sign-in';
 /** The answer it gets: at Claude's prompt nothing is typed, and the job's text goes once Claude shows it is signed in. */
 export const SIGNED_IN_ANSWER = 'Claude is signed in on this machine now.';
+/**
+ * Who answers a not-signed-in question when the hopper moves its job to a machine signed in (issue #1211, design.md "The
+ * signed-out move"): its trail's tier and `answeredBy`.
+ */
+export const SIGNED_OUT_MOVE_BY = 'signed-out-move';
+/** The answer it gets: what a job resuming elsewhere is told after its brief. */
+export const signedOutMoveAnswer = (from: string, service: string): string =>
+  `${service} was signed out on machine ${from}. The hopper moved this job to a machine where ${service} is signed in.`;
 
 export const ESCALATION_REASONS = ['guard', 'low_confidence', 'no_answer', 'frontier_escalated', 'high_priority', 'auto_answer_off', 'fork'] as const;
 /**
@@ -172,6 +188,8 @@ export interface Question extends QuestionPhaseFields {
   seenAt?: string;
   /** Its TL;DR (issue #569), once a long question has one. */
   tldr?: Tldr;
+  /** The hash of the text the model failed to write a TL;DR for (issue #1608): not asked again for that text. */
+  tldrFailedOf?: string;
   createdAt: string;
   updatedAt: string;
 }

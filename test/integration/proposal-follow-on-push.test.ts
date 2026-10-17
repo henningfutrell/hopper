@@ -111,7 +111,7 @@ describe('a proposal\'s follow-on ships on its parent\'s repository (issue #859)
     const pr = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'issue-7-brush', '--title', 'Brush two coats', '--body', 'Closes #7']);
     expect(JSON.parse(pr.stdout)).toMatchObject({ ok: true, op: 'pr.create', head: 'issue-7-brush', base: 'dev' });
 
-    const elsewhere = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/site', '--head', 'x', '--title', 'x', '--body', 'x']);
-    expect(JSON.parse(elsewhere.stdout).error).toBe('refused: a job opens a pull request only on its own repository (octo/tools)');
+    const elsewhere = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'else/where', '--head', 'x', '--title', 'x', '--body', 'x']);
+    expect(JSON.parse(elsewhere.stdout).error).toBe('refused: else/where is not one of the repositories the hopper works on, so it does nothing there for a job');
   });
 });

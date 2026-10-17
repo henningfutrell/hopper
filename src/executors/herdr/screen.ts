@@ -11,7 +11,7 @@ export { SCRATCH_DIR } from '../../job-rules/index.ts';
  * What the hopper types into a job whose turn ended without a marker (issue #163): that turn was a
  * status note, so nothing answers it and no question opens. One line: it is its own turn anchor.
  */
-export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you are blocked on something only a person or the outside world can do, end your message with a line containing only HOPPER_WAITING, then a line for: <what you wait for>. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
+export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you are blocked on something only a person or the outside world can do, end your message with a line containing only HOPPER_WAITING, then a line for: <what you wait for>. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. If you were asked for a proposal or a research report, end it with a line containing only HOPPER_PROPOSAL or HOPPER_RESEARCH_REPORT. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
 
 /**
  * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
@@ -33,9 +33,9 @@ export type Marker = 'done' | 'question' | ReviewKind | 'failed' | 'auth' | 'wai
 export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval', 'account', 'scopes'] as const;
 export type AuthFields = Partial<Record<typeof AUTH_FIELDS[number], string>>;
 
-/** The fields a job names its own wait with, after HOPPER_WAITING (issue #483): `for` is needed; `until` and `on` (issue #1245) are not. */
-const WAIT_FIELDS = ['for', 'until', 'on'] as const;
-export interface WaitFields { for: string; until?: string; on?: string }
+/** The fields a job names its own wait with, after HOPPER_WAITING (issue #483): `for` is needed; `until`, `on` (issue #1245) and `check` (issue #1694) are not. */
+const WAIT_FIELDS = ['for', 'until', 'on', 'check'] as const;
+export interface WaitFields { for: string; until?: string; on?: string; check?: string }
 
 export interface TurnView {
   /** The last marker after the anchor, or null. */
@@ -115,11 +115,11 @@ function authAt(lines: string[], index: number): AuthFields | undefined {
   return fields;
 }
 
-/** The wait in the lines after a wait marker (issue #483): its `for:` line, and `until:` and `on:` lines, when present. None without `for:`. */
+/** The wait in the lines after a wait marker (issue #483): its `for:` line, and `until:`, `on:` and `check:` lines, when present. None without `for:`. */
 export function waitFields(after: string[]): WaitFields | undefined {
   const fields: Partial<WaitFields> = {};
   for (const f of after.filter((x) => stripGutter(x) !== '').map((l) => fieldOf(l, WAIT_FIELDS))) { if (!f) break; fields[f[0]] = f[1]; }
-  return fields.for ? { for: fields.for, ...(fields.until ? { until: fields.until } : {}), ...(fields.on ? { on: fields.on } : {}) } : undefined;
+  return fields.for ? { for: fields.for, ...(fields.until ? { until: fields.until } : {}), ...(fields.on ? { on: fields.on } : {}), ...(fields.check ? { check: fields.check } : {}) } : undefined;
 }
 
 /** True if `line` sits in a user echo block: a ❯ line and its continuation, no assistant line between. */
@@ -203,14 +203,25 @@ function isChrome(line: string): boolean {
 const isSpinner = (line: string): boolean => STATUS_LINE.test(line) || SPINNER_VARIANT.test(line);
 
 /**
+ * Where the transcript ends (issue #850): the rule above the input box (a rule, the ❯ line, a rule below), else the last
+ * rule (a dialog's top), else the end. A rule inside the agent's own words — a Markdown rule or table drawn with ─ — is
+ * part of the transcript, so a marker after it is still read.
+ */
+function transcriptEnd(lines: string[]): number {
+  const last = lines.findLastIndex((l) => SEPARATOR.test(l));
+  if (last < 0) return lines.length;
+  const above = lines.findLastIndex((l, i) => i < last && SEPARATOR.test(l));
+  return above >= 0 && USER_ECHO.test(lines[above + 1] ?? '') ? above : last;
+}
+
+/**
  * Output lines of the turn: after the anchor, up to the input box. What hangs under a spinner — tips and
  * their wrapped lines, notices (issue #360) — is the CLI's chrome, up to the next ● or ❯ line.
  */
 function turnLines(lines: string[], from: number): string[] {
   const out: string[] = [];
   let underSpinner = false;
-  for (const l of lines.slice(from + 1)) {
-    if (SEPARATOR.test(l)) break;
+  for (const l of lines.slice(from + 1, transcriptEnd(lines))) {
     if (isSpinner(l)) underSpinner = true;
     else if (ASSISTANT_START.test(l) || USER_ECHO.test(l)) underSpinner = false;
     if (!underSpinner && !isChrome(l)) out.push(l);
@@ -325,23 +336,6 @@ export function inputBoxText(text: string): string {
   if (start < 0 || !USER_ECHO.test(lines[start + 1] ?? '')) return '';
   const typed = lines.slice(start + 1, end).map((l, i) => (i === 0 ? l.replace(USER_ECHO, '') : l).trim()).filter(Boolean).join('\n');
   return PLACEHOLDER.test(typed) ? '' : typed;
-}
-
-/** A PowerShell prompt (`PS C:\\Users\\dev>`), or Windows PowerShell 5.1 refusing `&&`. */
-const POWERSHELL = /^PS [A-Za-z]:\\[^>]*>|is not a valid statement separator/;
-/** A cmd prompt: `C:\\Users\\dev>`. */
-const CMD = /^[A-Za-z]:\\[^>]*>/;
-
-/**
- * The Windows shell a pane's screen shows (issue #367), else undefined. herdr opens a pane in the
- * machine's default shell, PowerShell on Windows; the hopper's pane commands are POSIX shell, which
- * neither PowerShell nor cmd runs. Git Bash and every other POSIX shell name nothing.
- */
-export function windowsShellOf(text: string): 'PowerShell' | 'cmd' | undefined {
-  const lines = text.split('\n').map((l) => l.trim());
-  if (lines.some((l) => POWERSHELL.test(l))) return 'PowerShell';
-  if (lines.some((l) => CMD.test(l))) return 'cmd';
-  return undefined;
 }
 
 /**
@@ -474,11 +468,12 @@ export function typedAfterQuestion(text: string, anchor: string): string | undef
   const lines = text.split('\n');
   const at = anchorLine(lines, anchor);
   if (at < 0) return undefined;
+  const end = transcriptEnd(lines);
   let i = at + 1;
   // Skip the rest of the echo holding the anchor, then Claude's reply, up to the next echo.
-  while (i < lines.length && !ASSISTANT_START.test(lines[i]!) && !SEPARATOR.test(lines[i]!)) i++;
-  while (i < lines.length && !USER_ECHO.test(lines[i]!) && !SEPARATOR.test(lines[i]!)) i++;
-  if (i >= lines.length || SEPARATOR.test(lines[i]!)) return undefined;
+  while (i < end && !ASSISTANT_START.test(lines[i]!)) i++;
+  while (i < end && !USER_ECHO.test(lines[i]!)) i++;
+  if (i >= end) return undefined;
   const typed = [lines[i]!.replace(USER_ECHO, '').trim()];
   for (let k = i + 1; k < lines.length; k++) {
     const l = lines[k]!;

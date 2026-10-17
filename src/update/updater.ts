@@ -2,7 +2,8 @@
 // newer target on the channel, and apply one without losing work — build it beside the running
 // install, prove it loads, wait while a restart would lose a running job, swap it in, restart.
 // Restart recovery (src/engine/recovery.ts) reattaches running jobs and re-drives open questions;
-// the boot after reports `update.applied` from the pending file this loop leaves behind.
+// each phase of an apply is kept in the apply record (`update/pending.json`), so the boot after settles an apply the
+// process stopped in: `update.applied` when it runs the target, else `update.failed`, and no half-built install is left.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,7 +32,7 @@ const INSTALLED_WHATS_NEW = 5;
 export interface UpdaterOptions {
   /** The install this process runs from (holds install.json and src/). */
   appDir: string;
-  /** Holds update/: the repository mirror, the unpacked source, the pending file. */
+  /** Holds update/: the repository mirror, the unpacked source, the apply record. */
   dataDir: string;
   /** The instance's update settings. */
   settings: Pick<InstanceSettingsRepository, 'getUpdateSettings' | 'setUpdateSettings'>;
@@ -67,7 +68,12 @@ interface Checked {
   checkedAt?: string;
 }
 
-interface Pending { from: string; to: string; ref: string }
+/**
+ * The apply record (issue #1626), written as each phase starts and removed when the apply ends in this process. An
+ * older build wrote it only just before the restart, with no `phase`: that one reads as `restarting`.
+ */
+type ApplyPhase = 'building' | 'waiting' | 'swapping' | 'restarting';
+interface ApplyRecord { from: string; to: string; ref: string; phase?: ApplyPhase }
 
 const short = (sha: string): string => sha.slice(0, 7);
 const firstLine = (s: string | undefined): string => (s ?? '').trim().split('\n').find((l) => l.trim()) ?? '';
@@ -99,7 +105,7 @@ export interface RunningUpdater extends Updater {
 
 export function createUpdater(o: UpdaterOptions): RunningUpdater {
   const updateDir = join(o.dataDir, 'update');
-  const pendingFile = join(updateDir, 'pending.json');
+  const recordFile = join(updateDir, 'pending.json');
   const mirror = o.mirror ?? createGitMirror(join(updateDir, 'repo.git'));
   const now = () => o.clock.now().toISOString();
   // Until the first check: what install.json says, or why there is none.
@@ -218,20 +224,28 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     }
   }
 
+  const keep = (installed: InstallInfo, target: { commit: string; ref: string }, phase: ApplyPhase): void => {
+    mkdirSync(updateDir, { recursive: true });
+    writeFileSync(recordFile, JSON.stringify({ from: installed.commit, to: target.commit, ref: target.ref, phase } satisfies ApplyRecord));
+  };
+
   async function run(installed: InstallInfo, target: { commit: string; ref: string }): Promise<void> {
     // The install now comes from the channel's branch.
     await build({ kind: 'install', repo: installed.repo, branch: target.ref, commit: target.commit, installedAt: now() });
-    for (;;) {
+    for (let waiting = false; ;) {
+      // A stopped process swaps nothing: the next start settles the apply from its record.
+      if (stopped) throw new Error('stopped while waiting to restart');
       const blockers = o.restartBlockers();
       if (blockers === 0) break;
-      if (stopped) throw new Error('stopped while waiting to restart');
+      if (!waiting) keep(installed, target, 'waiting');
+      waiting = true;
       applying = { ...applying!, phase: 'waiting', detail: `waiting for ${blockers} running job${blockers === 1 ? '' : 's'}: a restart would lose ${blockers === 1 ? 'it' : 'them'}` };
       await new Promise((r) => setTimeout(r, o.waitMs ?? 5000));
     }
     applying = { ...applying!, phase: 'restarting', detail: `restarting on ${target.ref} ${short(target.commit)}` };
+    keep(installed, target, 'swapping');
     swapInstall(o.appDir);
-    mkdirSync(updateDir, { recursive: true });
-    writeFileSync(pendingFile, JSON.stringify({ from: installed.commit, to: target.commit, ref: target.ref } satisfies Pending));
+    keep(installed, target, 'restarting');
     o.logger.info(`hopper: update ${short(installed.commit)} → ${short(target.commit)} in place; restarting`);
     await o.restart();
   }
@@ -241,37 +255,49 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     const { installed, target } = checked;
     if (checked.state !== 'available' || !installed || !target) return { ok: false, error: 'no update available' };
     // An image is replaced by pulling or rebuilding it (issue #409): its files are not the hopper's to swap.
-    if (installed.kind === 'image') return { ok: false, error: 'this hopper runs from a container image: pull or rebuild the image to update it (docs/deploy.md "Upgrade")' };
+    if (installed.kind === 'image') return { ok: false, error: 'this hopper runs from a container image: pull or rebuild the image to update it (docs/deploy.md "Update")' };
     applying = { phase: 'building', detail: `building ${target.ref} ${short(target.commit)} beside the running install`, target: target.commit, startedAt: now() };
     applyError = undefined;
+    keep(installed, target, 'building');
     append('update.started', { from: installed.commit, to: target.commit, ref: target.ref });
     o.logger.info(`hopper: applying update ${short(installed.commit)} → ${target.ref} ${short(target.commit)}`);
     run(installed, target).catch((e: unknown) => {
       applying = undefined;
       applyError = e instanceof Error ? e.message : String(e);
       o.logger.warn(`hopper: update to ${short(target.commit)} failed, install unchanged: ${applyError}`);
+      // Stopped, the event log is closed: the record stays, and the next start records the failure.
+      if (stopped) return;
       append('update.failed', { to: target.commit, error: applyError });
+      rmSync(recordFile, { force: true });
     });
     return { ok: true, status: status() };
   }
 
-  /** The boot after an apply: is this install the commit it swapped in? */
-  function settlePending(): void {
-    if (!existsSync(pendingFile)) return;
-    let pending: Pending;
+  /** The start after an apply that did not end in its process: is this install the commit it swapped in? */
+  function settleApply(): void {
+    if (!existsSync(recordFile)) return;
+    let record: ApplyRecord;
     try {
-      pending = JSON.parse(readFileSync(pendingFile, 'utf8')) as Pending;
+      record = JSON.parse(readFileSync(recordFile, 'utf8')) as ApplyRecord;
     } finally {
-      rmSync(pendingFile, { force: true });
+      rmSync(recordFile, { force: true });
+      // A build the process stopped in, or one never swapped in: nothing runs from it.
+      rmSync(nextDirOf(o.appDir), { recursive: true, force: true });
     }
     const read = readInstallInfo(o.appDir);
-    if (read.ok && read.info.commit === pending.to) {
-      append('update.applied', { from: pending.from, to: pending.to, ref: pending.ref });
-      o.logger.info(`hopper: running the applied update ${pending.ref} ${short(pending.to)}`);
+    if (read.ok && read.info.commit === record.to) {
+      append('update.applied', { from: record.from, to: record.to, ref: record.ref });
+      o.logger.info(`hopper: running the applied update ${record.ref} ${short(record.to)}`);
       return;
     }
     const on = read.ok ? short(read.info.commit) : 'an install without install.json';
-    append('update.failed', { to: pending.to, error: `the boot after the update runs ${on}, not ${short(pending.to)}` });
+    const phase = record.phase ?? 'restarting';
+    const error = phase === 'building' ? `the hopper stopped while building ${short(record.to)}; install unchanged`
+      : phase === 'waiting' ? `the hopper stopped while waiting to restart on ${short(record.to)}; install unchanged`
+      : `the boot after the update runs ${on}, not ${short(record.to)}`;
+    applyError = error;
+    o.logger.warn(`hopper: update to ${short(record.to)} failed: ${error}`);
+    append('update.failed', { to: record.to, error });
   }
 
   // A commit's history never changes: computed once per installed commit.
@@ -307,7 +333,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
       return status();
     },
     start() {
-      settlePending();
+      settleApply();
       let every = o.checkMs;
       if (every <= 0) {
         every = DEFAULT_CHECK_MS;

@@ -1,6 +1,6 @@
 // The GitHub outbox of one source (issue #1238, design.md "GitHub outbox"): the GitHub changes a person's intake action
 // asks for — Approve's comment read and `hopper:done`, Assign to me's assignment, Release claim's and Take off the
-// backburner's labels, Take into Intake's label and assignment — kept as rows in the user's store, in the transaction of
+// backburner's labels, Take into Intake's label and assignment, Decline's labels, note and close (issue #1710) — kept as rows in the user's store, in the transaction of
 // the action's own local change, and sent after the answer by `flush`: the rows due, coalesced per issue
 // (`coalesce`, src/domain/github-outbox.ts), one call per change left. A row's event is recorded once GitHub took it. A
 // failed call waits its backoff and is tried again; a permanent refusal, or the last attempt, leaves it `failed` until the
@@ -15,6 +15,9 @@
 // `pullRequest`); one failed for good is said once (`gaveUp`). So is a person's act that gives an ended job's item back
 // (`giveBackAct`: Run again and Rework, part 4; Retry, Continue, I fixed it, Push it and Tend again, part 5), op
 // `give_back`, sent by `giveBack`, and said once by `giveBackFailed`.
+// A comment is posted once (issue #1590): its first line is a hidden key made from its first row, and a comment that
+// already carries it (a post whose row a stop left `sending`) answers the send in place of a second one.
+import { createHash } from 'node:crypto';
 import type { ActingPerson } from '../../domain/failures.ts';
 import type { IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
 import { SourceError, type Clock } from '../../domain/ports.ts';
@@ -30,8 +33,12 @@ import { GitHubApiError, type GitHubApi } from './api.ts';
 
 export type GitHubOutbox = ReturnType<typeof createGitHubOutbox>;
 
-/** Sends one coalesced change on one issue. */
-export type OutboxSend = (repo: string, key: string, change: OutboxChange) => Promise<void>;
+/** Sends one coalesced change on one issue. `once`: a comment's hidden key, the same at each send of its rows. */
+export type OutboxSend = (repo: string, key: string, change: OutboxChange, once?: string) => Promise<void>;
+
+/** A comment's hidden first line, from its call's first row: the same after a restart, another for each row kept. */
+const onceMarker = (r: OutboxRow): string =>
+  `<!-- job-hopper v1 kind=outbox id=${createHash('sha256').update(`${r.source}\n${r.id}\n${r.createdAt}`).digest('hex').slice(0, 16)} -->`;
 
 /** A row failed for good, and why: what its act says once. */
 export type OutboxGaveUp = (row: OutboxRow, error: string) => void;
@@ -120,7 +127,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       for (const call of plan.calls) {
         const startedAt = performance.now();
         try {
-          await send(plan.repo, plan.key, call.change);
+          await send(plan.repo, plan.key, call.change, call.change.op === 'comment' ? onceMarker(byId.get(Math.min(...call.rows))!) : undefined);
         } catch (e) {
           const endedAt = performance.now();
           for (const r of failed([...left.keys()].map((id) => byId.get(id)!), e)) { time(r, startedAt, endedAt); gaveUp?.(r, message(e)); }
@@ -215,6 +222,8 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       const error = mine.find((r) => r.lastError !== undefined)?.lastError;
       return { state: 'pending', ...(error !== undefined ? { error } : {}) };
     },
+    /** An item with a decline's rows not sent (issue #1710), failed ones too: declined, whatever the sync made of it. */
+    declining: (key: string): boolean => openOf(key).some((r) => r.act === 'decline'),
     /** An item with rows not sent: a discover does not take it until they are. */
     held: (key: string): boolean => openOf(key).some((r) => r.state !== 'failed'),
     /** At a discover's start: its round. Never waits for the outbox. */
@@ -256,17 +265,21 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
  * sync loop's: without it, it waits.
  */
 export function outboxSend(
-  api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment'>,
+  api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment' | 'listComments' | 'closeAsNotPlanned'>,
   readComments: (repo: string, key: string) => Promise<void>,
   ensureLabels: (repo: string, labels: readonly string[]) => Promise<void> = async () => {},
   acts?: OutboxActs,
 ): OutboxSend {
-  return async (repo, key, change) => {
+  return async (repo, key, change, once) => {
     const n = Number(key.slice(key.lastIndexOf('/') + 1));
     if (change.op === 'add_labels') { await ensureLabels(repo, change.labels); await api.addLabels(repo, n, change.labels); }
     else if (change.op === 'remove_labels') await api.removeLabels(repo, n, change.labels);
     else if (change.op === 'add_assignees') await api.addAssignees(repo, n, change.assignees);
-    else if (change.op === 'comment') await api.postComment(repo, n, change.body);
+    else if (change.op === 'close_not_planned') await api.closeAsNotPlanned(repo, n);
+    else if (change.op === 'comment') {
+      if (once && (await api.listComments(repo, n)).some((c) => c.body.trimStart().startsWith(once))) return;
+      await api.postComment(repo, n, once ? `${once}\n${change.body}` : change.body);
+    }
     else if (change.op === 'pull_request' || change.op === 'give_back') {
       if (!acts) throw new SourceError('the sync loop does not run: the act waits', false);
       await (change.op === 'pull_request' ? acts.pullRequest(change) : acts.giveBack(change));

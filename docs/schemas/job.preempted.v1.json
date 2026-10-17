@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "by": {
+      "type": "string"
+    },
+    "byPriority": {
+      "type": "number"
+    },
+    "priority": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "by",
+    "byPriority",
+    "priority",
+    "reason"
+  ],
+  "additionalProperties": false
+}

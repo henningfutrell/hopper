@@ -9,6 +9,7 @@
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { CHECKPOINT_TIMEOUT_MS } from '../client/checkpoint.ts';
 import { REAP_TIMEOUT_MS } from '../client/reap.ts';
+import { LEFTOVER_REMOVE_TIMEOUT_MS, LEFTOVERS_TIMEOUT_MS } from '../client/leftovers.ts';
 import { infraCredentialsOf } from '../client/infra-credentials.ts';
 import { SIGN_IN_PASTE_MS, SIGN_IN_URL_MS, type SignInRun } from '../client/sign-in.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
@@ -42,6 +43,25 @@ export interface ClientAnswer { code: number; stdout: string; stderr: string }
 export class ClientError extends Error {}
 
 const sessions = new WeakMap<Duplex, Promise<ClientHttp2Session>>();
+/** Who is told of each machine's missed heartbeats (issue #1569), by the machine's name: a link that dials in again keeps them. */
+const lateListeners = new Map<string, Set<() => void>>();
+
+/** Calls `fn` at each missed heartbeat of the machine's link (src/client/keepalive.ts); returns the call that stops it. */
+export function onClientLinkLate(t: ClientTransport, fn: () => void): () => void {
+  const set = lateListeners.get(t.machine) ?? new Set();
+  lateListeners.set(t.machine, set);
+  set.add(fn);
+  return () => {
+    set.delete(fn);
+    if (!set.size && lateListeners.get(t.machine) === set) lateListeners.delete(t.machine);
+  };
+}
+
+const saidLate = (machine: string): void => {
+  for (const fn of [...lateListeners.get(machine) ?? []]) {
+    try { fn(); } catch (e) { console.warn(`client ${machine}: a missed heartbeat's listener failed: ${(e as Error).message}`); }
+  }
+};
 
 /** The HTTP/2 session on the machine's link, opened once per link. */
 function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
@@ -53,7 +73,7 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
     const s = connect('http://hopper-client', { createConnection: () => link });
     s.once('connect', () => {
       // A dead or half-open link is dropped within seconds (issue #752): the machine is then not dialled in.
-      keepAlive(s, () => { console.warn(`client ${t.machine}: no answer to a PING; dropping its link`); link.destroy(); }, t.ping);
+      keepAlive(s, () => { console.warn(`client ${t.machine}: no answer to a PING; dropping its link`); link.destroy(); }, t.ping, undefined, () => saidLate(t.machine));
       resolve(s);
     });
     s.once('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));
@@ -149,8 +169,9 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach' | '/checkpoint', body: Record<string, unknown>): Promise<ClientAnswer> {
-  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS + 15000 : path === '/reap' ? REAP_TIMEOUT_MS + 15000 : 60000);
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach' | '/checkpoint' | '/leftovers' | '/leftover-remove', body: Record<string, unknown>): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS + 15000 : path === '/reap' ? REAP_TIMEOUT_MS + 15000
+    : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS + 15000 : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS + 15000 : 60000);
 }
 
 /**

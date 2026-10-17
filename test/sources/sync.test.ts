@@ -91,7 +91,7 @@ describe('re-run', () => {
       const { world, source, sync } = await setup();
       source.items = [item('k1')];
       await sync.syncNow();
-      source.reportErrors = [new SourceError('boom', false, 502), new SourceError('boom', false, 502)];
+      source.reportErrors = Array.from({ length: 10 }, () => new SourceError('boom', false, 502));
       world.patchJob('job-1', { status: 'finished' });
       world.emit('job.finished', 'job-1', {});
       await settle();
@@ -99,8 +99,15 @@ describe('re-run', () => {
       expect(world.jobs.size).toBe(1);
       expect(sync.statuses()[0]!.detail).toMatchObject({ notRerun: [{ key: 'k1', job: 'job-1', status: 'finished', reason: 'its end is not reported to the source yet' }] });
       await sync.syncNow();
-      const lines = spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('k1'));
-      expect(lines).toEqual(['hopper: k1 not run again: job job-1 finished, its end is not reported to the source yet']);
+      const lines = () => spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('k1'));
+      expect(lines()).toEqual(['hopper: k1 not run again: job job-1 finished, its end is not reported to the source yet']);
+      // Issue #1402: a key no longer offered is forgotten, so it is logged again when it comes back.
+      source.items = [];
+      await sync.syncNow();
+      source.items = [item('k1')];
+      await sync.syncNow();
+      expect(world.jobs.size).toBe(1);
+      expect(lines()).toHaveLength(2);
     } finally {
       spy.mockRestore();
     }
@@ -149,6 +156,28 @@ describe('reports', () => {
     await sync.syncNow();
     expect(kinds(source)).toEqual([]);
     expect(sync.statuses()[0]!.detail).toMatchObject({ permanentErrors: 1 });
+  });
+
+  it('a permanent failure after a transient one leaves no report retry behind (issue #1402)', async () => {
+    const { source, sync } = await setup();
+    source.reportErrors = [new SourceError('boom', false, 502), new SourceError('issue gone', true, 404)];
+    source.items = [item('k1')];
+    await sync.syncNow();
+    expect(sync.statuses()[0]!.detail).toMatchObject({ reportRetries: 1 });
+    await sync.syncNow();
+    expect(sync.statuses()[0]!.detail).toMatchObject({ reportRetries: 0, permanentErrors: 1 });
+  });
+
+  it('a job that ended with nothing left to report holds no report retry (issue #1402)', async () => {
+    const { world, source, sync } = await setup();
+    source.reportErrors = [new SourceError('boom', false, 502)];
+    source.items = [item('k1')];
+    await sync.syncNow();
+    expect(sync.statuses()[0]!.detail).toMatchObject({ reportRetries: 1 });
+    world.patchJob('job-1', { status: 'finished', sourceState: { sync: { claimReported: true, finalReported: true } } });
+    source.items = [];
+    await sync.syncNow();
+    expect(sync.statuses()[0]!.detail).toMatchObject({ reportRetries: 0 });
   });
 
   it('reports a job that ended while the daemon was down (crash after finish)', async () => {

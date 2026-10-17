@@ -1,0 +1,113 @@
+// Issue #1508: a job's own wait that names other items — an issue or a pull request of any repository, a workflow run —
+// is watched by the hopper: at each sync of the job's source each named item is read, and once every one ended (closed,
+// merged, the run completed) the job wakes, though it ended before the watch began. A wait the hopper watches no other
+// way, and its pane carries (a background poll in it), wakes when its pane is lost. Pure.
+import { describe, expect, it } from 'vitest';
+import type { Job } from '../../src/domain/types.ts';
+import { settledBy, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
+import { endedNote, paneCarriesWait, watchedItems, watchedOf, watchKey, type WatchedEnd } from '../../src/domain/watched-items.ts';
+
+const since = '2026-10-16T21:00:00.000Z';
+type W = Pick<Job, 'id' | 'status' | 'wait' | 'source'>;
+const waiting = (id: string, w: { for: string; until?: string; on?: WaitOn }, repo = 'acme/platform-workflows', number = 7): W =>
+  ({ id, status: 'waiting_on', source: { source: 'github', kind: 'github-account', key: `https://github.com/${repo}/issues/${number}`, repo, number }, wait: { ...w, since } });
+
+describe('what a wait watches (issue #1508)', () => {
+  it('an issue or pull request named by its repository, its name alone (the job\'s owner), or a link', () => {
+    expect(watchedOf(waiting('a', { for: 'identity work', on: { kind: 'outside', what: 'until identity#199 closes' } }))).toEqual([
+      { kind: 'issue', repo: 'acme/identity', number: 199 },
+    ]);
+    expect(watchedOf(waiting('b', { for: 'the two changes', on: { kind: 'outside', what: 'until ops-tools#360 and platform#113 close with merged pull requests' } }))).toEqual([
+      { kind: 'issue', repo: 'acme/ops-tools', number: 360 }, { kind: 'issue', repo: 'acme/platform', number: 113 },
+    ]);
+    expect(watchedOf(waiting('c', { for: 'other/thing#4 and https://github.com/x/y/pull/9', on: { kind: 'outside', what: 'them' } }))).toEqual([
+      { kind: 'issue', repo: 'other/thing', number: 4 }, { kind: 'issue', repo: 'x/y', number: 9 },
+    ]);
+  });
+
+  it('"issue N" in the job\'s own repository; the job\'s own issue is left out (its close ends the job, issue #1460)', () => {
+    expect(watchedOf(waiting('a', { for: 'the fix', until: 'issue 1250 is closed', on: { kind: 'outside', what: 'the fix' } }))).toEqual([
+      { kind: 'issue', repo: 'acme/platform-workflows', number: 1250 },
+    ]);
+    expect(watchedOf(waiting('b', { for: 'my issue', on: { kind: 'outside', what: 'until issue 7 is closed' } }))).toEqual([]);
+  });
+
+  it('a wait on an item is watched, also one the work-item ledger does not hold', () => {
+    expect(watchedOf(waiting('a', { for: 'the other issue', on: { kind: 'item', repo: 'acme/identity', number: 3 } }))).toEqual([
+      { kind: 'issue', repo: 'acme/identity', number: 3 },
+    ]);
+    expect(watchedOf(waiting('b', { for: 'the other issue', on: { kind: 'item', number: 12 } }))).toEqual([
+      { kind: 'issue', repo: 'acme/platform-workflows', number: 12 },
+    ]);
+  });
+
+  it('a workflow run: by its link, "<repo> run N", or "workflow run N" in the job\'s own repository', () => {
+    expect(watchedOf(waiting('a', { for: 'approval', on: { kind: 'outside', what: "the Production approver's decision on platform run 37998997248" } }))).toEqual([
+      { kind: 'run', repo: 'acme/platform', runId: 37998997248 },
+    ]);
+    expect(watchedOf(waiting('b', { for: 'https://github.com/x/y/actions/runs/123456789 to end', on: { kind: 'outside', what: 'it' } }))).toEqual([
+      { kind: 'run', repo: 'x/y', runId: 123456789 },
+    ]);
+    expect(watchedOf(waiting('c', { for: 'the deploy', on: { kind: 'outside', what: 'the workflow run 5551234 to finish' } }))).toEqual([
+      { kind: 'run', repo: 'acme/platform-workflows', runId: 5551234 },
+    ]);
+    expect(watchedOf(waiting('d', { for: 'the deploy', on: { kind: 'outside', what: 'run 3 times' } }))).toEqual([]);
+  });
+
+  it('nothing for a wait the hopper settles another way, or one that names no item', () => {
+    expect(watchedOf(waiting('a', { for: 'PR 5', on: { kind: 'pull_request', number: 5, about: 'merge' } }))).toEqual([]);
+    expect(watchedOf(waiting('b', { for: 'background probe bs9rrvy1v', on: { kind: 'outside', what: 'background probe bs9rrvy1v' } }))).toEqual([]);
+    expect(watchedOf({ ...waiting('c', { for: 'identity#199', on: { kind: 'outside', what: 'x' } }), status: 'running' })).toEqual([]);
+  });
+
+  it('the items of all waits, each once, with the jobs that watch it', () => {
+    const jobs = [
+      waiting('a', { for: 'identity#199', on: { kind: 'outside', what: 'identity#199 closes' } }),
+      waiting('b', { for: 'acme/identity#199 and ops-tools#1', on: { kind: 'outside', what: 'both' } }),
+    ];
+    expect(watchedItems(jobs)).toEqual([
+      { ref: { kind: 'issue', repo: 'acme/identity', number: 199 }, jobIds: ['a', 'b'] },
+      { ref: { kind: 'issue', repo: 'acme/ops-tools', number: 1 }, jobIds: ['b'] },
+    ]);
+    expect(watchKey({ kind: 'issue', repo: 'Acme/Identity', number: 199 })).toBe(watchKey({ kind: 'issue', repo: 'acme/identity', number: 199 }));
+  });
+});
+
+describe('waking on what it watches (issue #1508)', () => {
+  const ended: WatchedEnd[] = [
+    { ref: { kind: 'issue', repo: 'acme/identity', number: 199 }, url: 'https://github.com/acme/identity/issues/199', state: 'closed' },
+    { ref: { kind: 'run', repo: 'acme/platform', runId: 42 }, url: 'https://github.com/acme/platform/actions/runs/42', state: 'failure' },
+  ];
+
+  it('says what ended in a few words', () => {
+    expect(endedNote(ended)).toBe('https://github.com/acme/identity/issues/199 was closed; https://github.com/acme/platform/actions/runs/42 completed (failure)');
+  });
+
+  it('says an item that does not exist was not found (issue #1691)', () => {
+    expect(endedNote([{ url: 'https://github.com/acme/gss/issues/330', state: 'not_found' }]))
+      .toBe('https://github.com/acme/gss/issues/330 was not found: no such repository or item, so the wait never ends on it');
+  });
+
+  it('job.waited_items_ended wakes that job only', () => {
+    const s = settledBy({ type: 'job.waited_items_ended', jobId: 'a', data: { items: ended.map(({ url, state }) => ({ url, state })) } });
+    expect(s).toEqual({ kind: 'watched', jobId: 'a', note: endedNote(ended) });
+    expect(waitsFor(waiting('a', { for: 'x', on: { kind: 'outside', what: 'identity#199' } }), s!)).toBe(true);
+    expect(waitsFor(waiting('b', { for: 'x', on: { kind: 'outside', what: 'identity#199' } }), s!)).toBe(false);
+    expect(waitsFor({ ...waiting('a', { for: 'x', on: { kind: 'outside', what: 'identity#199' } }), status: 'queued' }, s!)).toBe(false);
+  });
+});
+
+describe('a wait its pane carries (issue #1508)', () => {
+  it('its own command, an outside event that names nothing watched, or nothing recorded', () => {
+    expect(paneCarriesWait(waiting('a', { for: 'tests', on: { kind: 'own_command' } }))).toBe(true);
+    expect(paneCarriesWait(waiting('b', { for: 'background poll bqehqv96k', on: { kind: 'outside', what: 'background poll bqehqv96k' } }))).toBe(true);
+    expect(paneCarriesWait(waiting('c', { for: 'legacy' }))).toBe(true);
+  });
+
+  it('not a wait the hopper settles itself', () => {
+    expect(paneCarriesWait(waiting('a', { for: 'identity#199', on: { kind: 'outside', what: 'identity#199 closes' } }))).toBe(false);
+    expect(paneCarriesWait(waiting('b', { for: 'PR 5', on: { kind: 'pull_request', number: 5, about: 'merge' } }))).toBe(false);
+    expect(paneCarriesWait(waiting('c', { for: 'q', on: { kind: 'question', questionId: 'q1' } }))).toBe(false);
+    expect(paneCarriesWait({ ...waiting('d', { for: 'tests', on: { kind: 'own_command' } }), status: 'running' })).toBe(false);
+  });
+});

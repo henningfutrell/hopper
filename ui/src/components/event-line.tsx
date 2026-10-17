@@ -22,9 +22,9 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.claimed_by_operator': 'operator',
   'minor_decision.picked': 'question', 'minor_decision.overridden': 'warn',
   'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
-  'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'thread_ask.settings_changed': 'warn', 'tldr.settings_changed': 'warn', 'github_rate_limiter.settings_changed': 'warn', 'allowed_hosts.changed': 'warn', 'source_email_match.changed': 'warn', 'github_watch.settings_changed': 'warn',
+  'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'preemption.settings_changed': 'warn', 'job.preempted': 'warn', 'thread_ask.settings_changed': 'warn', 'tldr.settings_changed': 'warn', 'github_rate_limiter.settings_changed': 'warn', 'allowed_hosts.changed': 'warn', 'source_email_match.changed': 'warn', 'infra.applies_changed': 'warn', 'cloud_link.linked': 'warn', 'cloud_link.unlinked': 'warn', 'cloud_link.registration_code_minted': 'warn', 'cloud_link.registered': 'ok', 'cloud_link.unregistered': 'warn', 'cloud_link.message_refused': 'warn', 'display_name.changed': 'warn', 'github_watch.settings_changed': 'warn',
   'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
-  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
+  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'gitlab_proxy.done': 'ok', 'gitlab_proxy.refused': 'warn', 'gitlab_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
   'skill.loaded': 'ok', 'skill.refused': 'warn', 'hopper.event_loop_stalled': 'warn',
   'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
   'landing_batch.promoted': 'ok', 'landing_batch.failed': 'bad', 'landing_batches.changed': 'warn',
@@ -65,6 +65,10 @@ export function detailOf(e: DomainEvent): string {
     const at = (i: unknown) => { const r = i as { repo?: unknown; number?: unknown }; return `${String(r.repo)}#${String(r.number)}`; };
     return `${d.required === true ? 'required child' : 'follow-up'} ${at(d.child)} of ${at(d.parent)}${typeof d.subIssueError === 'string' ? `; not linked: ${d.subIssueError}` : ''}`;
   }
+  // Git through the hopper for GitLab (issue #1448 part 3): a GitLab job's push, where, or why not.
+  if (e.type === 'gitlab_proxy.done') return `git push to GitLab ${String(d.project)}: ${Array.isArray(d.refs) ? d.refs.join(', ') : ''}`;
+  if (e.type === 'gitlab_proxy.refused') return `git push to GitLab refused: ${String(d.reason)}`;
+  if (e.type === 'gitlab_proxy.failed') return `git push to GitLab ${String(d.project)}: ${String(d.error)}`;
   if (e.type === 'github_proxy.failed') return `${String(d.op)} ${String(d.repo)}: ${String(d.error)}`;
   // Skills (issue #582): what the job asked the hopper to set up, and the answer.
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';

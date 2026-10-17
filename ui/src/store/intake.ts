@@ -3,19 +3,21 @@
 // waiting for the daemon, which records the approval and answers, then syncs the source after (issue #1194); done; or
 // refused, with why.
 // Intake reads it (issue #897): the button waits at once and sends once, a refusal shows on the card, and an approved
-// issue stays where it was. Decline (issue #1035) is kept the same way: a person's decision on the card.
+// issue stays where it was. Decline (issue #1035) is kept the same way: a person's decision on the card, with its choice
+// (issue #1710): close the issue or leave it open. The choice offered first is the admin's decline defaults, read once.
 // The daemon is the source of truth (issue #1178): each decision keeps the hash of the text it decided, and the source's
 // list resets it when it asks again — a request card with other text, or one with no approved text — or when the item's
 // job ended, so a card never hides Approve on an old decision and an item that is done never stays in Needs approval.
 // A refusal stays when the card's text changes (issue #1316): it says why the new text shows, until the next decision.
 import { create } from 'zustand';
 import type { IntakeActionResult, IntakeOutcome } from '../../../src/domain/intake.ts';
-import { jobEnded } from '@/model/intake';
-import type { JobStatus } from '@/model/wire';
+import { get } from '@/lib/api';
+import { DEFAULT_DECLINE, jobEnded } from '@/model/intake';
+import type { DeclineChoice, IntakeDeclineDefaults, JobStatus } from '@/model/wire';
 import { actFor } from './index';
 
 export type Approval = { hash: string } & (
-  { state: 'pending' } | { state: 'approved' } | { state: 'declining' } | { state: 'declined' } | { state: 'refused'; error: string });
+  { state: 'pending' } | { state: 'approved' } | { state: 'declining'; choice?: DeclineChoice } | { state: 'declined'; choice?: DeclineChoice } | { state: 'refused'; error: string });
 
 export const useApprovals = create<Record<string, Approval>>(() => ({}));
 
@@ -35,22 +37,36 @@ export const waitsForDaemon = (a: Approval | undefined): boolean => a?.state ===
  */
 const alreadyTaken = (why: string): boolean => why.startsWith('already ');
 
-async function decide(source: string, key: string, hash: string, kind: 'approve' | 'decline'): Promise<void> {
+async function decide(source: string, key: string, hash: string, kind: 'approve' | 'decline', choice?: DeclineChoice): Promise<void> {
   if (waitsForDaemon(useApprovals.getState()[key])) return;
   const put = (a: Approval) => useApprovals.setState({ [key]: a });
-  put({ hash, state: kind === 'approve' ? 'pending' : 'declining' });
-  const r = await actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [key], hash }, kind === 'approve' ? 'Approved' : 'Declined', (answer) => {
+  const chose = choice ? { choice } : {};
+  put(kind === 'approve' ? { hash, state: 'pending' } : { hash, state: 'declining', ...chose });
+  const r = await actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [key], hash, ...chose }, kind === 'approve' ? 'Approved' : 'Declined', (answer) => {
     const why = intakeRefusal([key])(answer);
     return why !== undefined && kind === 'approve' && alreadyTaken(why) ? undefined : why;
   });
-  put(r.ok ? { hash, state: kind === 'approve' ? 'approved' : 'declined' } : { hash, state: 'refused', error: r.error });
+  put(!r.ok ? { hash, state: 'refused', error: r.error } : kind === 'approve' ? { hash, state: 'approved' } : { hash, state: 'declined', ...chose });
 }
 
 /** Approves the request card's text; a second click while one waits sends nothing. */
 export const approveRequest = (source: string, key: string, hash: string): Promise<void> => decide(source, key, hash, 'approve');
 
-/** Declines the request card's text (issue #1035); a second click while one waits sends nothing. */
-export const declineRequest = (source: string, key: string, hash: string): Promise<void> => decide(source, key, hash, 'decline');
+/** Declines the request card's text (issue #1035), closing the issue or leaving it open (issue #1710); a second click while one waits sends nothing. */
+export const declineRequest = (source: string, key: string, hash: string, choice: DeclineChoice): Promise<void> => decide(source, key, hash, 'decline', choice);
+
+/** The admin's decline defaults (issue #1710): the daemon's default until they are read. */
+export const useDeclineDefaults = create<IntakeDeclineDefaults>(() => DEFAULT_DECLINE);
+let defaultsRead = false;
+
+/** Reads the decline defaults once; a failed read is tried again next time, and the daemon's default stays meanwhile. */
+export function loadDeclineDefaults(): void {
+  if (defaultsRead) return;
+  defaultsRead = true;
+  get<IntakeDeclineDefaults>('/api/intake-decline').then((v) => {
+    if ((v?.request === 'close' || v?.request === 'open') && (v.reopened === 'close' || v.reopened === 'open')) useDeclineDefaults.setState(v, true);
+  }, () => { defaultsRead = false; });
+}
 
 /** A decision that keeps its issue in place: one waiting (the sync it runs can list the issue taken first) or done. */
 export const keepsPlace = (a: Approval | undefined): boolean => a !== undefined && a.state !== 'refused';

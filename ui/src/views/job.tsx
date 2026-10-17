@@ -7,7 +7,10 @@
 // as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997). Its
 // transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169). Its facts name the GitHub
-// identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account.
+// identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account; for a
+// GitLab job (issue #1448 part 3), the GitLab username its pushes named, else its user's GitLab account. A held
+// job says why it is held (issue #874), a gate hold with the machines' names. File an issue beside its state opens with
+// this job as the context (issue #471).
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { JobTitle, LinkLostFlag, Since } from '@/components/job';
@@ -18,12 +21,14 @@ import { StatusBadge } from '@/components/status';
 import { WaitsOnLink } from '@/components/waits-on';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
-import { actingIdentity, actingText } from '@/model/acting-identity';
+import { gateHoldText, heldAtGate } from '@/model/blast-radius';
+import { accountFor, actingIdentity, actingText, forgeOf, gitlabActingIdentity } from '@/model/acting-identity';
 import { directJobOf } from '@/model/promotions';
-import type { ConnectedAccountStatus, DomainEvent, Job, JobBom } from '@/model/wire';
+import type { ConnectedAccountStatus, DomainEvent, GitLabAccountStatus, Job, JobBom } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
+import { FileIssueButton } from '@/app/file-issue';
 import { JobPromotion } from './direct-job-promotion';
 import { JobNotes } from './job-notes';
 import { JobTerminal } from './job-terminal';
@@ -60,14 +65,26 @@ function useJobEvents(id: string, read: readonly DomainEvent[]): DomainEvent[] {
 
 const NONE: DomainEvent[] = [];
 
-/** The user's connected GitHub account, read once (issue #1380); undefined until read, or when the read fails. */
-function useGitHubAccount(): ConnectedAccountStatus | undefined {
-  const [account, setAccount] = useState<ConnectedAccountStatus>();
+/** The user's connected GitHub accounts, read once (issues #1380, #1448); empty until read, or when the read fails. */
+function useGitHubAccounts(): ConnectedAccountStatus[] {
+  const [accounts, setAccounts] = useState<ConnectedAccountStatus[]>([]);
   useEffect(() => {
     let gone = false;
-    get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((r) => { if (!gone) setAccount(r.accounts.find((a) => a.provider === 'github')); }, () => {});
+    get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((r) => { if (!gone) setAccounts(r.accounts.filter((a) => a.provider === 'github')); }, () => {});
     return () => { gone = true; };
   }, []);
+  return accounts;
+}
+
+/** The user's GitLab account (issue #1448 part 3), read once while `on`; undefined until read, or when the read fails. */
+function useGitLabAccount(on: boolean): GitLabAccountStatus | undefined {
+  const [account, setAccount] = useState<GitLabAccountStatus>();
+  useEffect(() => {
+    if (!on) return;
+    let gone = false;
+    get<{ account: GitLabAccountStatus }>('/api/gitlab-account').then((r) => { if (!gone) setAccount(r.account); }, () => {});
+    return () => { gone = true; };
+  }, [on]);
   return account;
 }
 
@@ -83,7 +100,9 @@ export function JobView() {
   const read = useJob(id);
   const bom = useJobBom(id);
   const events = useJobEvents(id, bom?.events ?? NONE);
-  const acting = actingIdentity(events, useGitHubAccount());
+  const forge = forgeOf(read.state === 'found' ? read.job.source : undefined);
+  const github = useGitHubAccounts(), gitlab = useGitLabAccount(forge === 'GitLab');
+  const acting = forge === 'GitLab' ? gitlabActingIdentity(events, gitlab) : actingIdentity(events, accountFor(github, read.state === 'found' ? read.job.source?.repo : undefined));
   const machines = useHopper((s) => s.machines);
   const jobs = useHopper((s) => s.jobs);
   const locked = useHopper((s) => s.locked);
@@ -105,12 +124,16 @@ export function JobView() {
             <div className="flex items-start gap-2">
               <JobTitle job={read.job} className="flex-1" />
               <StatusBadge status={read.job.status} />
+              <FileIssueButton jobId={read.job.id} />
             </div>
             <LinkLostFlag job={read.job} />
             <JobAct jobId={read.job.id} />
             <Fact label="job">{read.job.id}</Fact>
+            {read.job.status === 'held' && read.job.holdReason && (
+              <Fact label="held"><span data-slot="job-hold-reason" className="text-warn">{heldAtGate(read.job) ? gateHoldText(read.job.holdReason, machines) : read.job.holdReason}</span></Fact>
+            )}
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
-            <Fact label="GitHub as"><span data-slot="job-acting-as" className={acting.kind === 'acted' ? 'font-mono' : 'text-muted-foreground'}>{actingText(acting)}</span></Fact>
+            <Fact label={`${forge} as`}><span data-slot="job-acting-as" className={acting.kind === 'acted' ? 'font-mono' : 'text-muted-foreground'}>{actingText(acting, forge)}</span></Fact>
             <Fact label="created">{read.job.createdAt}</Fact>
             {read.job.startedAt && <Fact label="started">{read.job.startedAt}</Fact>}
             {read.job.finishedAt && <Fact label="ended">{read.job.finishedAt}</Fact>}

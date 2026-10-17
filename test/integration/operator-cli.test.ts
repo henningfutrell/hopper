@@ -40,6 +40,32 @@ function sessionsIn(a: TestApp): number {
 
 const queue = async (a: TestApp) => (await a.api('GET', '/api/queue')).body;
 
+describe('a held job says why, from the CLI (issue #874)', () => {
+  it('queue list and job show give a held job\'s hold reason; an accepted job has none', async () => {
+    const a = await boot();
+    await hopper(a, ['queue', 'gate', 'review']);
+    const held = await a.pull({ op: 'echo' });
+    await a.waitForStatus(held.id, 'held');
+
+    const list = await hopper(a, ['queue', 'list']);
+    expect(list.code).toBe(0);
+    expect(JSON.parse(list.out)).toEqual([expect.objectContaining({ id: held.id, status: 'held', accepted: false, holdReason: 'awaiting acceptance' })]);
+
+    const show = await hopper(a, ['job', 'show', held.id]);
+    expect(show.code).toBe(0);
+    expect(JSON.parse(show.out)).toMatchObject({ id: held.id, status: 'held', holdReason: 'awaiting acceptance' });
+
+    await hopper(a, ['job', 'accept', held.id]);
+    await a.waitForStatus(held.id, 'finished');
+    expect(JSON.parse((await hopper(a, ['job', 'show', held.id])).out).holdReason).toBeUndefined();
+  });
+
+  it('job show of a job the hopper does not know is a refusal', async () => {
+    const a = await boot();
+    expect((await hopper(a, ['job', 'show', 'no-such-job'])).code).toBe(2);
+  });
+});
+
 describe('operator actions from the CLI (issue #374)', () => {
   it('queue gate, accept and order go through the daemon, with its events; no session is left behind', async () => {
     const a = await boot();

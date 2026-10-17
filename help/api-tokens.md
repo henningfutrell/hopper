@@ -113,6 +113,78 @@ hopper token revoke-all
 
 `--preset` gives a preset's scopes, and its box flag unless you give `--box`. `--scope` adds more. `--role` is `admin` when you leave it out. `--days` sets its end (1 to 365); `--no-expiry` (an admin's only) gives it no fixed end; `--minutes` gives its API tokens a shorter life than the admin's setting.
 
+## Let an agent ask for a grant
+
+An agent can ask for a grant itself, with no token. You approve the ask in the UI. You do not copy a token to the agent.
+
+1. The agent asks for the grant it needs. It names the same fields as a mint: `label`, `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`.
+
+   ```sh
+   curl -X POST http://localhost:4790/ui/auth/device-grant \
+     -H 'content-type: application/json' \
+     -d '{"label": "Grok Bot", "holder": "grok-bot", "preset": "agent-intake", "role": "operator"}'
+   ```
+
+   The answer holds a `deviceCode` (the agent keeps it and shows it to nobody), a `userCode` such as `BCDF-GHJK`, and `verificationPathComplete`, a link to **Settings → API tokens** that holds the code.
+2. The agent shows you the code, or the link at the hopper's URL.
+3. In **Settings → API tokens → Approve a device**, enter the code, or open the link. You see what the agent asks for and from where it asked. Approve only a code that the agent showed to you yourself.
+4. Click **Approve** or **Deny**. When you approve, the grant is yours, as if you minted it: its role is at most yours, and its scopes are checked as at a mint.
+5. The agent polls every `interval` seconds (5):
+
+   ```sh
+   curl -X POST http://localhost:4790/ui/auth/device-grant/poll \
+     -H 'content-type: application/json' \
+     -d '{"deviceCode": "hopper_dc_…"}'
+   ```
+
+   It gets `{"state": "waiting"}` until you answer. After you approve, it gets `{"state": "granted"}` with the grant's first API token and refresh token, one time. After you deny, it gets `403`.
+
+An ask ends after 10 minutes, and when the hopper restarts. Then the agent asks again. At most 50 asks wait at one time.
+
+From the command line:
+
+```sh
+hopper token device BCDF-GHJK     # what the ask is for
+hopper token approve BCDF-GHJK    # --role sets the most role it can get (admin when you leave it out)
+hopper token deny BCDF-GHJK
+```
+
+## Tie a grant to the agent's key
+
+A refresh token is a password for the grant: whoever copies it can use the grant. You can tie a grant to a key that only the agent holds. Then a copied token alone does not work. This is DPoP (RFC 9449).
+
+1. The agent makes a key pair (for example ES256 or Ed25519) and keeps the private key.
+2. For each request that uses the grant, the agent signs a short proof with that key and sends it in the `DPoP` header. The proof names the method (`htm`), the full URL (`htu`), the time (`iat`, at most 60 seconds off the hopper's clock), a new random id (`jti`), and, with an API token, the token's SHA-256 in base64url (`ath`). DPoP libraries make it, for example `dpop` on npm.
+3. The grant is tied to the key in one of three ways:
+   - The agent sends a proof with its device grant request. The approval form then says **bound to the asking agent's key**.
+   - You mint with the key's thumbprint: `"jkt": "<thumbprint>"`, or `hopper token mint --jkt <thumbprint>`. The thumbprint is the key's JWK SHA-256 thumbprint (RFC 7638), 43 characters.
+   - The agent sends a proof with its first refresh.
+
+After that, the grant works only with a proof of that key:
+
+- A refresh without the proof gets `401`. The grant stays: a copied refresh token cannot end it.
+- An API token of the grant goes as `Authorization: DPoP <token>`, with a proof. `Bearer` gets `401`.
+- The refresh answer says `"tokenType": "DPoP"`.
+
+The list shows **bound to its agent's key** for such a grant. To use a new key, revoke the grant and make a new one.
+
+## Limit a grant to repositories or job sources
+
+The scopes say which actions a grant can do. Limits say on what. A grant with limits changes only the work of the repositories and job sources that you name.
+
+- In Settings → API tokens, fill in **Only these repositories** (`owner/name`, separated by commas), **Only these job sources**, or both.
+- In the API, add `"limits": { "repos": ["acme/app"], "sources": ["github"] }` to the mint or to a device grant request.
+- From the command line: `hopper token mint ... --repo acme/app --source github`. Repeat a flag for more.
+
+Each action of the grant must then act on a job, question, research report, proposal, pull request or item of these repositories and job sources:
+
+- An action on a job of another repository gets `403`.
+- With repositories named, an action on a job with no repository gets `403`.
+- An action that is not about one job or item, for example a change to a setting, gets `403`.
+- Reads are not limited. The scopes alone decide what the grant reads.
+
+The list shows the limits, for example **only acme/app**. An agent that asks by device code can name limits too. You see them before you approve.
+
 ## Exchange a sign-in for a token
 
 An agent with no UI session can exchange a sign-in for one API token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.

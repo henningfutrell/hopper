@@ -66,9 +66,21 @@ describe('herdr CLI client', () => {
     expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'list']);
   });
 
-  it('createTab returns tab and root pane ids and passes each env var as --env K=V', async () => {
+  it('findTab finds the tab by its label in the workspace, with its pane, that pane\'s terminal and its agent (issue #1569)', async () => {
+    process.env.FAKE_HERDR_PANE_LIST = '1';
+    expect(await herdr().findTab({ workspaceId: 'w7', label: 'local/lane-1 · abcd1234 · 1.1' }))
+      .toEqual({ tabId: 'w7:t3', paneId: 'w7:p5', terminalId: 'term_a1', agent: 'claude' });
+    expect(calls().map((c) => c.argv.slice(2))).toEqual([['tab', 'list', '--workspace', 'w7'], ['pane', 'list']]);
+  });
+
+  it('findTab answers null for a label no tab has, and lists no pane', async () => {
+    expect(await herdr().findTab({ workspaceId: 'w7', label: 'local/lane-1 · abcd1234 · 2.1' })).toBeNull();
+    expect(calls()).toHaveLength(1);
+  });
+
+  it('createTab returns tab and root pane ids, the pane\'s terminal (issue #1465), and passes each env var as --env K=V', async () => {
     expect(await herdr().createTab({ workspaceId: 'w7', cwd: '/tmp/a', label: 'local/lane-1 · abcd1234', env: { HOPPER_JOB_ID: 'j1', HOPPER_REPO: 'o/r' } }))
-      .toEqual({ tabId: 'w7:t3', paneId: 'w7:p5' });
+      .toEqual({ tabId: 'w7:t3', paneId: 'w7:p5', terminalId: 'term_a1' });
     expect(calls()[0]!.argv.slice(2)).toEqual([
       'tab', 'create', '--workspace', 'w7', '--cwd', '/tmp/a', '--label', 'local/lane-1 · abcd1234',
       '--env', 'HOPPER_JOB_ID=j1', '--env', 'HOPPER_REPO=o/r', '--no-focus',
@@ -92,8 +104,8 @@ describe('herdr CLI client', () => {
     expect(err).toMatchObject({ code: 'pane_not_found', message: 'pane w7:p404 not found' });
   });
 
-  it('getAgent maps status and state_change_seq, and null when the agent is gone', async () => {
-    expect(await herdr().getAgent('jh-a')).toEqual({ status: 'idle', stateChangeSeq: 4, paneId: 'w7:p5' });
+  it('getAgent maps status, state_change_seq and its pane\'s terminal (issue #1465), and null when the agent is gone', async () => {
+    expect(await herdr().getAgent('jh-a')).toEqual({ status: 'idle', stateChangeSeq: 4, paneId: 'w7:p5', terminalId: 'term_a1' });
     expect(await herdr().getAgent('jh-gone')).toBeNull();
   });
 

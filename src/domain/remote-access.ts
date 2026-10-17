@@ -164,20 +164,24 @@ export const AGENT_REPORT: Record<RemoteAccessProvider, RegExp> = {
 };
 
 /**
- * The paths the tunnel lets through (issue #795): the API, and the two token routes an agent signs in with. Never the UI,
+ * The paths the tunnel lets through (issue #795): the API, the two token routes an agent signs in with, and the device
+ * grant request with its poll (issue #892). Never the UI,
  * its sign-in pages, the installer, the event stream (its session is in the query) or the tunnel service's own ask.
  */
 export function throughTheTunnel(path: string): boolean {
   const p = path.split('?')[0] ?? '';
   if (p.startsWith('/api/events/stream')) return false;
-  return p.startsWith('/api/') || p.startsWith('/ui/api/') || p === '/ui/auth/api-token' || p === '/ui/auth/token/refresh';
+  return p.startsWith('/api/') || p.startsWith('/ui/api/') || tokenPath(p) || p === '/ui/auth/device-grant/poll';
 }
 
-/** Whether a path is one of the token routes: they have their own, lower limit through the tunnel. */
-export const tokenPath = (path: string): boolean => {
+/**
+ * Whether a path is one of the token routes: they have their own, lower limit through the tunnel. A device grant
+ * request is one (issue #892); its poll is not, as a poll each interval passes that limit.
+ */
+export function tokenPath(path: string): boolean {
   const p = path.split('?')[0] ?? '';
-  return p === '/ui/auth/api-token' || p === '/ui/auth/token/refresh';
-};
+  return p === '/ui/auth/api-token' || p === '/ui/auth/token/refresh' || p === '/ui/auth/device-grant';
+}
 
 /** Requests a minute per caller through the tunnel, and token exchanges or refreshes a minute (issue #795). */
 export const TUNNEL_RATE = { requests: 120, tokens: 5 } as const;

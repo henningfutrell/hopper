@@ -11,7 +11,7 @@
 //     When the job runs `run build-host --input src --command "msbuild App.sln" --output bin --into out`
 //     Then the host gets the inputs as a tar and the command
 //     And the job sees the step's output as it streams, exits with the step's exit code, and finds the outputs in out
-//     And `step.started` and `step.finished` are on the job's timeline
+//     And `step.started` and `step.finished` are on the job's timeline, and the host's scratch is swept after
 //   Scenario: a long command goes as a script with the inputs
 //   Scenario: a no is clear: an unknown host, a bad output, a token that is no job's — exit 125, `step.refused`
 //   Scenario: a step past its timeout is stopped: exit 125, and why
@@ -19,12 +19,13 @@
 //   Scenario: a step gets a vault secret only when its host gives it and a person granted the job the vault
 //     Given the vault secret NUGET_TOKEN, and a host that gives it
 //     When the job runs a step with `--secret NUGET_TOKEN` and has no vault grant
-//     Then the step does not run, exit 125, and the Vault page asks a person to grant the job the vault
+//     Then the step does not run on the host, exit 125, and the Vault page asks a person to grant the job the vault
 //     When a person grants it
 //     Then the step gets NUGET_TOKEN in its environment, the job's copy of the log has it masked, and
 //       `vault.step_delivered` names the secret, the host and the job, never the value
 //     And a secret the host does not give is refused before the vault is asked
 import { execFile, execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,11 +44,12 @@ const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: 
 interface Seen { host: string; command: string; inputs: string[]; outputs: string[]; secrets?: Record<string, string> }
 
 /** A Windows host double: it lists the inputs it got, streams two lines, packs `bin/App.exe` as the outputs, exits 3. */
-function fakeHost(o: { hang?: boolean } = {}): { host: WindowsStepHost; seen: Seen[] } {
-  const seen: Seen[] = [];
+function fakeHost(o: { hang?: boolean; exeBytes?: number } = {}): { host: WindowsStepHost; seen: Seen[]; swept: string[] } {
+  const seen: Seen[] = [], swept: string[] = [];
   return {
-    seen,
+    seen, swept,
     host: {
+      async sweep(host) { swept.push(host.name); },
       async run(host, step, io) {
         const inputs = step.inputs ? execFileSync('tar', ['-tf', join(step.dir, 'inputs.tar')], { encoding: 'utf8' }).trim().split('\n') : [];
         seen.push({ host: host.name, command: step.command, inputs, outputs: step.outputs, ...(step.secrets ? { secrets: { ...step.secrets } } : {}) });
@@ -62,7 +64,7 @@ function fakeHost(o: { hang?: boolean } = {}): { host: WindowsStepHost; seen: Se
         if (step.outputs.length === 0) return { exit: 3 };
         const made = mkdtempSync(join(tmpdir(), 'win-out-'));
         mkdirSync(join(made, 'bin'));
-        writeFileSync(join(made, 'bin', 'App.exe'), 'MZ');
+        writeFileSync(join(made, 'bin', 'App.exe'), o.exeBytes ? randomBytes(o.exeBytes) : 'MZ');
         execFileSync('tar', ['-cf', join(step.dir, 'outputs.tar'), '-C', made, 'bin']);
         return { exit: 3, outputsBytes: statSync(join(step.dir, 'outputs.tar')).size };
       },
@@ -130,6 +132,19 @@ describe('Windows sandbox steps (issue #731)', () => {
     expect(started[0]!.data).toMatchObject({ host: 'build-host', command: 'msbuild App.sln /p:Configuration=Release', timeoutSeconds: 1800, outputs: ['bin'] });
     expect((started[0]!.data as { inputsBytes: number }).inputsBytes).toBeGreaterThan(0);
     expect(eventsOf(a, 'step.finished')[0]!.data).toMatchObject({ host: 'build-host', exit: 3, outputsBytes: expect.any(Number) });
+    // The host's scratch is swept after the step (issue #1611): the step's saga ends once it is.
+    await expect.poll(() => fake.swept).toEqual(['build-host']);
+  }, 60_000);
+
+  it('brings back outputs of many megabytes whole (issue #1255)', async () => {
+    const fake = fakeHost({ exeBytes: 8 * 1024 * 1024 });
+    const { a, session, job } = await h.boot({ seams: { windowsStepHost: fake.host } });
+    expect((await saveHosts(a, session, [HOST])).status).toBe(200);
+    const cwd = workTree();
+    const r = await step(a, job, ['run', 'build-host', '--command', 'msbuild App.sln', '--output', 'bin', '--into', 'out'], { cwd });
+    expect(r.stderr).not.toContain('could not be unpacked');
+    expect(r.code).toBe(3);
+    expect(statSync(join(cwd, 'out', 'bin', 'App.exe')).size).toBe(8 * 1024 * 1024);
   }, 60_000);
 
   it('sends a script of any size with the inputs, and runs it from the step\'s scratch directory', async () => {
@@ -203,9 +218,10 @@ describe('Windows sandbox steps (issue #731)', () => {
     expect((await saveHosts(a, session, [{ ...HOST, secrets: ['NUGET_TOKEN'] }])).status).toBe(200);
     expect((await step(a, job, ['hosts'])).stdout).toBe('build-host  C:\\work\\app  .NET builds  secrets: NUGET_TOKEN\n');
 
+    // The secret is read when the step runs (issue #1611): the step is kept, then ends with why, never run on the host.
     const ungranted = await step(a, job, ['run', 'build-host', '--secret', 'NUGET_TOKEN', '--command', 'nuget push']);
     expect(ungranted.code).toBe(STEP_NOT_RUN);
-    expect(ungranted.stdout).toMatch(/^no: NUGET_TOKEN: job [0-9a-f]{8} has no vault grant/);
+    expect(ungranted.stderr).toMatch(/hopper-step: NUGET_TOKEN: job [0-9a-f]{8} has no vault grant/);
     expect(fake.seen).toEqual([]);
     const asks = (await a.api<{ grantAsks?: unknown[] }>('GET', '/api/vault', undefined, { 'x-hopper-session': session })).body.grantAsks;
     expect(asks).toEqual([expect.objectContaining({ job, windowsHost: 'build-host', names: ['NUGET_TOKEN'] })]);

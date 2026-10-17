@@ -4,68 +4,40 @@ A sandbox box is a locked-down container that runs jobs and reaches nothing of y
 
 ## What a sandbox box is
 
-A **sandbox box** is a machine of its own: a container that joins the hopper as a client target and runs jobs. The hopper starts it with the sandbox flags:
+A **sandbox box** is a container that runs one step of a job, and is then burned. It is not a machine: it does not join the hopper, it takes no lane, and no job runs in it. The job runs on its own machine and sends each command to a new box (see [Sandboxes jobs start](#sandboxes-jobs-start)). The hopper starts each box with the sandbox flags:
 
 - every capability dropped, and no new privileges;
 - a read-only root, with `/tmp` in memory;
-- its home a volume of its own (`<name>-home`, at `/home/agent`);
+- a home of its own, at `/home/agent`, removed with the box;
 - the image's own user, never root (the hopper refuses an image that runs as root);
 - CPU and memory limits;
 - nothing of the computer mounted.
 
-A box runs the published box image (agent `claude`), or the image of its **template**. Its name is `hopper-sandbox-<template>`, or `hopper-sandbox-claude` with no template; the hopper adds `-2`, `-3`, … when the name is taken.
+A box runs the published box image, or the image of its **template**. Nothing is kept between two steps: a job brings back with `--output` what its next step needs.
 
-A box needs a **rootless** container runtime: Podman (the default) or Docker. The hopper refuses a rootful one.
+A box needs a **rootless** container runtime: Podman (the default) or Docker, beside the hopper or on a machine that joined as **A computer**. The hopper refuses a rootful one.
 
 ## What a box gets, and what it does not
 
-| A job on a box | |
+| A box step | |
 |---|---|
-| Agent sign-in | The box starts signed in when its template has an **agent credential** and the launch gives it. Else you sign the box's agent in once, and the sign-in stays in the box's home volume. Nothing of your own sign-in is copied in. |
-| GitHub | No token. `git` and `gh` go through the hopper, which acts for the job and refuses pushes to release branches. |
+| Credentials | The short-lived credentials the vault mints for the template's read profiles, and with an approved plan for each of its profiles. A `--secret` is refused. See [The vault](vault.md). |
+| GitHub | No token. |
 | Your ssh agent and keys | Never. |
-| Vault secrets | Only through `$HOPPER_SECRET`, only on a box of an approved template, and only after a vault grant. See [The vault](vault.md). |
 | Network | The hopper's network. It still reaches the internet. |
 
-## Start a box
+## Try a template: the sandbox playground
 
-Jobs start their own boxes: see [Sandboxes jobs start](#sandboxes-jobs-start). Start a box by hand only to test a template or a machine.
+Jobs start their own boxes: see [Sandboxes jobs start](#sandboxes-jobs-start). To try an image or a template by hand, an admin uses the **Sandbox playground** panel on **Machines**:
 
-### The hopper starts it
+1. Set **How many**, a **Template** (or an agent's published image), **CPUs**, **Memory (MiB)** and **Time limit (minutes)**.
+2. Click **Start**.
 
-When the hopper has a rootless Podman (or Docker) socket, it starts boxes itself:
+A playground sandbox runs its image idle, with no secret. It is not a machine: it takes no lane and gets no job. It runs beside the hopper only. Destroy one, a selection or all from the panel. The hopper destroys each one when its time limit passes, and after a restart it removes what is left.
 
-1. Open **Machines → Add machine**, and pick **A sandbox box**.
-2. Pick a **template**, or **none**.
-3. Under **on**, pick **the hopper's computer** or another machine that is online now.
-4. Set the launch parameters: **CPUs**, **Memory in GiB**, **Time limit in minutes**, which secrets, one **Operation profile**, and which tools. The form starts at the template's defaults and shows the maximum of each.
-5. Click **Start the box**.
-6. Sign its agent in once, on the computer the box runs on: `podman exec -it hopper-sandbox-<name> claude`.
+A template must be approved, and its read-only check must have passed, before the playground starts a sandbox of it.
 
-Before the launch answers, the box runs its **start check**: from inside the box, it fetches the hopper at the box's address. When the check does not pass in 30 seconds, the launch fails with what the check wrote, and the hopper removes what it made.
-
-From the command line:
-
-```sh
-hopper sandbox launch --template kube --secret KUBE_TOKEN --cpus 2 --memory-mb 4096 --ttl-minutes 120 --profile read/cluster/lab
-hopper sandbox list
-```
-
-A value outside what the template allows is refused, with what it allows. It is never cut down to fit.
-
-### You run the line
-
-When the hopper has no runtime socket, Add machine says why and shows a line:
-
-1. Pick **A sandbox box**, a template, and **podman** or **docker**.
-2. Set **CPUs** and **Memory in GiB**. The form starts at the template's defaults and shows the maximum of each. **Show the line** stays off while a value is more than the template allows.
-3. Click **Show the line**.
-4. Run the line on the computer the hopper runs on. The join code in it works once, for 10 minutes.
-5. Sign its agent in once: `podman exec -it hopper-sandbox-<name> claude` (or `docker exec`).
-
-The hopper does not own a box that you started from the line: it never stops or removes it. The hopper keeps no record of it, so the line takes only CPUs and memory: no time limit, secrets, profile or tools.
-
-### On another machine
+### A machine that holds boxes
 
 A machine that joined as **A computer** can hold boxes too. On that machine, once:
 
@@ -74,7 +46,7 @@ systemctl --user enable --now podman.socket
 loginctl enable-linger "$USER"
 ```
 
-Then pick that machine under **on**. The hopper starts the box in that machine's own rootless Podman (or Docker), through its client. The client checks each call again: it creates only a box with the sandbox flags, and it stops or removes only the boxes the hopper made. While the machine is away, its boxes stay; the hopper checks them when it dials in again.
+The hopper then can start a box in that machine's own rootless Podman (or Docker), through its client. It builds a template's tools image there too. The client checks each call again: it creates only a box with the sandbox flags, it builds only a tools image, and it stops or removes only the boxes the hopper made. While the machine is away, the boxes there stay; the hopper burns them when it dials in again.
 
 ## Templates
 
@@ -87,14 +59,14 @@ A **template** is a kind of box. It has:
 | **Secrets its boxes may ask for** | Vault secrets and `shared/<name>` shared secrets. A minting credential is never listed. |
 | **Tools** | `aws`, `helm`, `kubectl`, `terraform`. The hopper adds them to the image, each pinned and checked by its SHA-256. |
 | **Operation profiles** | An operation (`read`, `write`, `sync`, `apply`) on an asset (`cluster`, `namespace`, `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role`). Its jobs may ask for minted credentials for these. |
-| **Limits** | The default and the maximum of CPUs, memory and time limit, and whether a box's home volume stays when the box goes. |
-| **Agent credential** | Optional. One of its secrets: a Claude token. A box of the template starts with its agent signed in. See [Start a box signed in](#start-a-box-signed-in). |
+| **Limits** | The default and the maximum of CPUs and memory. A template sets no time limit. A box's home volume is removed with the box. |
+| **Agent credential** | Not used. No box starts signed in: see [No box starts signed in](#no-box-starts-signed-in). |
 
 Make one in **Settings → Vault**, panel **Templates**, with **Add template**, or:
 
 ```sh
 hopper template save kube --image ghcr.io/example/box:1 --secret KUBE_TOKEN --profile read/cluster/lab \
-  --tool kubectl --cpus 2:4 --memory-mb 4096:8192 --ttl-minutes 60:240 --keep-home on
+  --tool kubectl --cpus 2:4 --memory-mb 4096:8192
 hopper template list
 ```
 
@@ -102,36 +74,22 @@ A save keeps what it leaves out. Each template shows its **blast radius** rating
 
 ## Approval
 
-No box of a template takes a job or gets anything from the vault until a person approves the template. A template that waits shows on **Access requests**, panel **Template approvals**, with its approve buttons. You edit, revoke and remove templates on **Settings → Vault**.
+No step runs in a box of a template, and no box of it gets anything from the vault, until a person approves the template. A template that waits shows on **Access requests**, panel **Template approvals**, with its approve buttons. You edit, revoke and remove templates on **Settings → Vault**.
 
 - **Approve** approves the image, the tools, the secrets and the **read** profiles.
 - A **write**, **sync** or **apply** profile is high-radius. It needs an explicit approval: the card shows one **Approve all listed** action that approves the template and each listed profile, or `hopper template approve-profile <name> <operation>/<kind>/<asset>`.
 - A new secret, a new image, a change of tools or a new profile waits for approval again. Until then, boxes get only what was approved. A profile you remove loses its approval at once.
 - Limits are not part of the approval. A change of limits applies to the next box.
-- **Revoke** stops it at once: its boxes take no new job and get nothing from the vault. Jobs that run there now keep running.
+- **Revoke** stops it at once: no new step starts in a box of it, and its boxes get nothing from the vault.
 - **Remove** is refused while a box of the template is attached.
 
-While a template waits, its boxes show on **Machines** as *waiting for template approval*, and their jobs wait for another machine.
+While a template waits, the hopper refuses a step in a box of it, and the job is told that the template waits for a person or for its read-only check.
 
-Each launch fixes its own set of secrets and its one profile. A secret added to the template later reaches new boxes, not running ones.
+Each step gets a new box, which the hopper burns when the step ends. Credentials minted for the step stop working when it ends. A change to the template reaches the next step, not a step that runs now.
 
-## Start a box signed in
+## No box starts signed in
 
-A template can give its boxes an **agent credential**. Then a box starts with Claude signed in, and no person runs `/login` in it.
-
-1. On a computer where you use Claude Code, run `claude setup-token`. It prints a token that starts with `sk-ant-oat`. The token is good for one year.
-2. Set the token as a vault secret, for example `CLAUDE`: `hopper vault set CLAUDE` (the value from stdin), or **Settings → Vault**.
-3. Add the secret to the template's secrets. In the template's form, set **Agent credential** to it. Or: `hopper template save <name> --image <image> --secret CLAUDE --agent-credential CLAUDE`.
-4. Approve the template.
-
-A launch gives the token to the box as `CLAUDE_CODE_OAUTH_TOKEN`. Every job on the box uses it.
-
-- Use only a token from `claude setup-token`. The hopper refuses a `/login` credentials file: its refresh token changes when one box renews it, and that signs the other boxes out.
-- A launch that leaves the secret out of its secrets starts a box that is not signed in. Sign it in once by hand.
-- While the agent credential waits for approval, no box of the template starts.
-- A box keeps the token it started with. After you set a new token, launch the boxes again.
-- Every process on the box can read the token, as every job could read a sign-in made by hand.
-- `--agent-credential none` takes it off the template.
+A box runs one command of a job, and Claude does not run in it. So no box starts signed in. The **Agent credential** of a template has no effect: the hopper gives it to no box. You can leave it empty.
 
 ## Sandboxes jobs start
 
@@ -148,9 +106,7 @@ The job must say why it needs the sandbox (`--why`). When a need changes an asse
 1. The hopper finds the template for these needs and uses it again. When there is none, the hopper makes it (see [Templates a job asks for](#templates-a-job-asks-for)).
 2. A new template waits for a person on **Access requests → Template approvals**, unless the read policy approves it, the auto-approve policy holds its blast radius, or **Skip template approval** is on. By default, a template that only reads is approved with no person.
 3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless the auto-approve policy holds the template's blast radius, a remembered write approval covers each change, **Skip sandbox approval** is on, or a person approved the template this job asked for. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
-4. The hopper starts the box with the template's defaults. The box joins as a machine of that template. The job's `--wait` ends with the box's name and the skills the box loads. **Approve** answers at once; the box starts in the background. A box that has not started in 20 minutes fails the run with that reason, and the job is told.
-
-The same job that asks again gets the same box. A box ends at the template's time limit. A run that did not start says why; a person can start a box with `hopper sandbox launch --template <name>`.
+4. An approval starts nothing. The job's `--wait` ends with how to run each command: `sh "$HOPPER_STEP" box <template> --command '<the command>'`. Each command runs in a new box of the template, which the hopper burns when the command ends.
 
 ### Skip approvals and YOLO
 
@@ -213,7 +169,7 @@ Or: `hopper template read-policy set cluster/lab 'namespace/lab/*'`. `set` with 
 
 ### The read-only check
 
-A template that a job asked for with read needs only must pass the **read-only check** before its first box. The hopper runs probes in a one-shot check box of the template: each write must be refused, and each read must work. Until the check of its current version passed, no box of it starts, and its boxes take no job. A save makes the check stale.
+A template that a job asked for with read needs only must pass the **read-only check** before its first box. The hopper runs probes in a one-shot check box of the template: each write must be refused, and each read must work. Until the check of its current version passed, no box of it starts. A save makes the check stale.
 
 The template shows the result in its **Read-only check** row. A failed check does not run again by itself: click **Run the check again**, or run `hopper template check <name>`.
 
@@ -237,10 +193,10 @@ To prove that, the check needs the workspace's **state backend**: the S3 bucket 
 
 ## What the hopper does for you
 
-- It checks every box every 10 seconds. It runs the start check again. A box that cannot reach the hopper shows on **Machines** under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and its jobs wait.
-- When you remove the box's machine, or its time limit passes, the hopper stops and removes the box. Its home volume stays, unless the template's limits say not to keep it.
+- Every 10 seconds, beside the hopper and on each machine that dialled in, it burns each box that no step holds: it stops it and removes it with its home.
 - A box that it cannot remove shows on **Machines** under *Sandbox boxes not removed*. The hopper tries again.
-- It builds an image with the template's tools once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`.
+- `hopper sandbox list` lists your latest box steps: the job, the template, the box, the machine, when each started and ended, and the outcome.
+- It builds an image with the template's tools once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`, on the runtime the box starts on: beside the hopper, or on the machine that holds the box. A runtime that builds nothing (Kubernetes) runs the tools image CI publishes.
 
 ## Windows sandbox steps
 
@@ -254,11 +210,9 @@ One step runs on a host at a time. A step gets no credential and no GitHub token
 
 ## Limits and troubleshooting
 
-- **The start check fails** with `the hopper does not answer at <address>`: the rest is curl's own words from inside the box. `Could not resolve host`: the name is not known on that network. `Failed to connect`: nothing listens there. `403` or `421`: the hopper refused the box; check `HOPPER_LAN_PEERS` and `HOPPER_LAN_NAMES`.
-- **No "Start the box" button**: the hopper has no rootless runtime socket. The deploy guide has the steps; or run the line.
+- **The playground says it has no runtime**: the hopper has no rootless runtime socket. The deploy guide has the steps.
 - **The read-only check of a Terraform workspace needs its state backend.** Without it, `terraform.state-push-direct` is *not run* and the check fails. Set the backend on the workspace's profile (see above).
 - **The read-only check of a Terraform workspace needs one AWS role.** A workspace uses the read session of the template's one `aws-role` read need. A template with no such need, or with more than one, fails the check and says why.
-- **Not built.** A box with tools on another machine (the image build is not carried there). The read-only check on another machine's runtime. Other agents than `claude` in a box.
-- **One job at a time.** Jobs on one box share its user. A box of a template with secrets is best run with one lane.
+- **Not built.** A playground sandbox on another machine: the playground starts them beside the hopper only.
 
 See also: [The vault](vault.md), [Lanes](lanes.md), [Deploy and update](deploy-and-update.md), [CLI and API](cli-and-api.md).

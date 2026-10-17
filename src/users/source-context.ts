@@ -42,10 +42,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
-    yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
-    // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
-    landingBranch: (repo) => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
-    changeRule: (repo) => changeRuleFor(store.settings.getYoloMode()?.changeKinds, repo),
+    ...pullRequestSettings(store),
     // Each read kept names its issues and pull requests to search (issue #945), once the store has it.
     issueGraph: {
       record: (issue, graph, readAt) => { store.issueGraph.record(issue, graph, readAt); graphRead?.(graphKeys(graph)); },
@@ -56,3 +53,11 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),
   };
 }
+
+/** The user's settings a followed pull request is merged and moved by: yolo mode, the landing branch, the change rule. */
+export const pullRequestSettings = (store: UserStore) => ({
+  yoloMode: (repo: string): boolean => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+  // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
+  landingBranch: (repo: string): string | undefined => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
+  changeRule: (repo: string) => changeRuleFor(store.settings.getYoloMode()?.changeKinds, repo),
+});

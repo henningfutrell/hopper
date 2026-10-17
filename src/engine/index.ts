@@ -2,19 +2,21 @@
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
 import { settledBy } from '../domain/wait-on.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
+import { createSignedOutMove } from './signed-out-move.ts';
+import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
 import type { EngineContext, EngineOptions } from './context.ts';
-import { decisionStep } from './decision-step.ts';
+import { credentialHeldOf, decisionStep } from './decision-step.ts';
 import { createPaneAnswers } from './pane-answers.ts';
 import { askFor, createReviewHandlers, type ReviewHandlers } from './reviews.ts';
 import { createQueries, type Queries } from './queries.ts';
 import { createQueueGateCommands, type QueueGateCommands } from './queue-gate.ts';
-import { recover } from './recovery.ts';
+import { recover } from './recovery.ts'; import { liftLost } from './lost-move.ts'; import { createJobLeases, createLeaseKeeper } from './leases.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
@@ -22,13 +24,16 @@ import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limit
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
+import { soleLease } from '../domain/leases.ts';
 import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
+import { createMachineDrains, drainedMachines, type MachineDrains } from './machine-drains.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
-import { wakeOn } from './wait.ts';
+import { createMissedWakes, wakeOn } from './wait.ts';
+import { createWaitChecks } from './wait-checks.ts';
 export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
@@ -83,6 +88,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly blastRadius: BlastRadius;
   /** Lane tuning (issue #688): every machine's lane recommendation, recorded; an admin's apply, dismiss and undo; each machine's settings. */
   readonly laneTuning: LaneTuningService;
+  /** Drained machines (issue #1511): a person drains or undrains a machine; every machine the engine lists carries it. */
+  readonly machineDrains: MachineDrains;
   /** Job checkpoints (issue #921): a pass every minute takes those due; a park takes one. */
   readonly checkpoints: Checkpoints;
   /**
@@ -92,6 +99,13 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   discardWork(jobId: string, by: ActingPerson): Promise<{ jobId: string; paths: string[] }>;
   /** A discard's removal under way, or why it failed (issue #1194). */
   discarding(jobId: string): Discarding | undefined;
+  /**
+   * The `job-move` saga's step (issue #1569): ends the agent the job left on the machine it moved off, its pane named by
+   * `left`. Nothing when the job or its executor's `endLeft` is gone. Rejects while that machine cannot be reached.
+   */
+  endLeft(jobId: string, left: Job['executorState']): Promise<void>;
+  /** A person keeps or removes a leftover the sweep listed on a machine (issue #1116, `Sweep.decideLeftover`). */
+  decideLeftover(machineId: string, path: string, decision: 'keep' | 'remove', by: ActingPerson): Promise<{ machineId: string; path: string; decision: 'keep' | 'remove' }>;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -112,36 +126,53 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks);
+    const { claims, preempts } = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks);
     for (const claim of claims) runner.start(claim);
+    for (const jobId of preempts) preemptRunning(c, runner, jobId);
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {
-    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines, configuredMachines: o.configuredMachines ?? (() => undefined),
+    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: drainedMachines(o.machines, { store }), configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
     jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
-    ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
+    ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
+    leases: createJobLeases({ store, clock: o.clock, ...(o.jobLeaseMs ? { leaseMs: o.jobLeaseMs } : {}) }),
   };
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
+  const leases = createLeaseKeeper(c, runner, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanups);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
   const checkpoints = createCheckpoints(c);
   c.checkpoints = checkpoints;
+  // The signed-out move (issue #1211): a job held on a not-signed-in question goes on at a signed-in machine.
+  const signedOutMove = createSignedOutMove(c);
+  let moving = false;
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
-  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine.
-  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes };
+  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine; nor for a machine the credential check holds (issue #1467).
+  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes, credentialHeld: (m: MachineSnapshot) => credentialHeldOf(c, [m]).length > 0 };
   const laneTuning = createLaneTuning(c, laneCalls);
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
+  // Issue #1571: a wake a stop lost, at start, and on each tick.
+  const missedWakes = createMissedWakes(c);
+  // Issue #1694: each job's own wait gets its wait check, tested on each tick when due.
+  const waitChecks = createWaitChecks(c);
+  const wakeMissed = (): void => {
+    try {
+      if (store.tx(() => missedWakes.run()).length > 0) c.trigger('job.wait_ended');
+    } catch (e) {
+      console.error('hopper: waking the jobs whose wait a missed event settled failed', e);
+    }
+  };
 
   return {
     get executorNames() { return o.executors.names(); },
@@ -153,22 +184,34 @@ export function createEngine(o: EngineOptions): Engine {
     priorityLanes,
     blastRadius,
     laneTuning,
+    machineDrains: createMachineDrains(c),
     checkpoints,
     discardWork: (jobId, by) => sweep.discard(jobId, by),
     discarding: (jobId) => sweep.discarding(jobId),
+    decideLeftover: (machineId, path, decision, by) => sweep.decideLeftover(machineId, path, decision, by),
+    async endLeft(jobId, left) {
+      const job = store.jobs.get(jobId);
+      const executor = job ? o.executors.get(job.spec.executor) : undefined;
+      if (job && executor?.endLeft) await executor.endLeft(job, left);
+      if (!stopping) liftLost(c, jobId);
+    },
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
-    ...createQueries(c, (id) => sweep.disk(id)),
+    ...createQueries(c, (id) => sweep.disk(id), (id) => sweep.leftovers(id)),
     ...createAnswerHandlers(c, cleanup),
-    ...createReviewHandlers(c, cleanup),
+    ...createReviewHandlers(c, cleanup, (jobId, reason) => commands.cancel(jobId, reason)),
     askFor: (kind, id) => askFor(c, kind, id),
     async start() {
       const recovered = await recover(c);
-      // The reap of each job recovery ended, then the sweep of every machine (issue #410): what a hopper
+      // Each cleanup a record says is due (issue #1570) — of a job recovery ended, or one whose end a stop cut off from
+      // its cleanup — and each deferred one (issue #371), then the sweep of every machine (issue #410): what a hopper
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
-      void Promise.all(recovered.toClean.map((jobId) => cleanup(jobId))).then(() => sweep.run(true));
-      sweepTimer = setInterval(() => { void sweep.run(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
+      // On two hosts on one database (issue #1627), only the sweep lease's holder sweeps; a host that takes it sweeps every machine.
+      const sweepLease = o.sweepLease ?? soleLease();
+      const sweepIfHeld = (): Promise<void> => { const h = sweepLease.hold(); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
+      void cleanups.resume().then(sweepIfHeld);
+      sweepTimer = setInterval(() => { void sweepIfHeld(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
       // Discovery (issue #542): each machine again every `everyMinutes`; one that comes online, at the next Decision.
       discoverTimer = setInterval(() => { void blastRadius.run(); }, DISCOVER_CHECK_MS);
       // Checkpoints (issue #921): one pass at a time; a pass still reading machines skips this one.
@@ -177,10 +220,9 @@ export function createEngine(o: EngineOptions): Engine {
         checkpointing = true;
         void checkpoints.run().catch((e: unknown) => console.error('hopper: checkpoints failed', e)).finally(() => { checkpointing = false; });
       }, CHECKPOINT_CHECK_MS);
-      // Deferred before this start (issue #371): tried again now, and on every tick.
-      cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
       for (const claim of recovered.awaiting) runner.reattachWhenReachable(claim);
+      leases.start();
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
         if (event.type === 'job.queued' && event.jobId) {
@@ -207,9 +249,13 @@ export function createEngine(o: EngineOptions): Engine {
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
       o.questions.recover();
       for (const k of REVIEW_KINDS) o.reviews[k].recover();
+      wakeMissed();
       timer = setInterval(() => {
+        wakeMissed();
+        leases.tick();
         classifier.sweep();
         void paneAnswers.sweep();
+        void waitChecks.run();
         cleanups.retry();
         o.logins.sweep();
         o.questions.sweep();
@@ -219,6 +265,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (!autoParking) {
           autoParking = true;
           void autoPark(c).catch((e: unknown) => console.error('hopper: auto-park failed', e)).finally(() => { autoParking = false; });
+        }
+        if (!moving) {
+          moving = true;
+          void signedOutMove().catch((e: unknown) => console.error('hopper: the signed-out move failed', e)).finally(() => { moving = false; });
         }
         c.trigger('tick');
       }, o.tickMs);
@@ -235,7 +285,9 @@ export function createEngine(o: EngineOptions): Engine {
       if (checkpointTimer) clearInterval(checkpointTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
-      await sweep.removals();
+      leases.stop();
+      // A discard under way is a record (issue #1570), done again after the next start: the stop waits for it a while only.
+      await Promise.race([sweep.removals(), new Promise((r) => setTimeout(r, SHUTDOWN_WAIT_MS).unref())]);
       // In-flight classifications are not awaited: they write nothing once stopping.
       await serial.idle();
     },

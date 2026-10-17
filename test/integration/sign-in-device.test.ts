@@ -30,6 +30,9 @@ const h = harness();
 afterEach(() => stopAll(h));
 
 const BINDING = 'b'.repeat(43);
+// A test that restarts the daemon starts it twice and stops it once: about 14 s on a loaded CI runner,
+// over the 15 s default (issue #1255's pull request check).
+const RESTART_TIMEOUT_MS = 40_000;
 
 async function forge(): Promise<FakeForge> {
   const github = await createFakeGitHub({ clientId: 'gh-app-client' });
@@ -108,7 +111,7 @@ describe('sign in with GitHub through the hopper\'s GitHub App', () => {
     expect((await signInAs(app.url, origin, github, 'second')).body.user.role).toBe('viewer');
     const again = await restartSame(h, app, ENV(github));
     expect((await signInAs(again.url, originOf(again), github, 'octo-user')).body.user.role).toBe('admin');
-  });
+  }, RESTART_TIMEOUT_MS);
 
   it('a hopper where someone signed in with GitHub before makes nobody admin', async () => {
     const github = await forge();
@@ -119,7 +122,7 @@ describe('sign in with GitHub through the hopper\'s GitHub App', () => {
     const again = await restartWithAuth(h, app, auth, ENV(github));
     expect((await signInAs(again.url, originOf(again), github, 'second')).body.user.role).toBe('viewer');
     expect(again.app.auth().githubAdmin).toBeNull();
-  });
+  }, RESTART_TIMEOUT_MS);
 
   it('role rules grant a role by GitHub username', async () => {
     const github = await forge();

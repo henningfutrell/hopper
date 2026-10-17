@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor } from '../../src/domain/ports.ts';
-import type { JobRulesView } from '../../src/domain/types.ts';
+import type { JobRulesView, RepoJobRulesView } from '../../src/domain/types.ts';
 import { DEFAULT_JOB_RULES, FIXED_JOB_LINES } from '../../src/job-rules/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeConfig } from '../support/files.ts';
@@ -36,11 +36,11 @@ async function start(o: { jobRules?: string } = {}) {
   return t;
 }
 const stored = (a: TestApp) => a.user().store.config.read('job-rules');
-const sha = (text: string) => createHash('sha256').update(JSON.stringify(text)).digest('hex');
+const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const view = async (a: TestApp) => (await a.api<JobRulesView>('GET', '/api/job-rules')).body;
-const runJob = async (a: TestApp) => {
+const runJob = async (a: TestApp, repo?: string) => {
   const before = seen.length;
-  await a.pull({}, { executor: 'recorder' });
+  await a.pull({}, { executor: 'recorder', ...(repo ? { repo } : {}) });
   await waitFor(async () => seen.length > before, { what: 'the job to start' });
   return seen.at(-1);
 };
@@ -101,5 +101,41 @@ describe('a job starts with the job rules as they are then', () => {
     const token = await a.login();
     expect((await a.ui('/ui/api/job-rules', { text: 'Always write in French.', version: 'missing' }, { token })).status).toBe(200);
     expect(await runJob(a)).toBe('Always write in French.');
+  });
+});
+
+// Issue #1472 part 4: rules per repository (`owner/name`) or per owner (`owner/*`), told after the job rules.
+describe('the repository job rules', () => {
+  const repoView = async (a: TestApp) => (await a.api<RepoJobRulesView>('GET', '/api/repo-job-rules')).body;
+
+  it('GET: none yet, version `missing`; saved: each repository\'s, sorted', async () => {
+    const a = await start();
+    expect(await repoView(a)).toEqual({ repos: [], version: 'missing' });
+    writeConfig(a.dbPath, 'repo-job-rules', { 'b/x': '2', 'a/*': '1' });
+    expect(await repoView(a)).toEqual({ repos: [{ repo: 'a/*', text: '1' }, { repo: 'b/x', text: '2' }], version: sha({ 'b/x': '2', 'a/*': '1' }) });
+  });
+
+  it('POST saves them against the version read; stale is 409, invalid 400, without a session 403', async () => {
+    const a = await start();
+    expect((await a.ui('/ui/api/repo-job-rules', { repos: { 'acme/app': 'x' }, version: 'missing' })).status).toBe(403);
+    const token = await a.login();
+    expect((await a.ui('/ui/api/repo-job-rules', { repos: { acme: 'x' }, version: 'missing' }, { token })).status).toBe(400);
+    const res = await a.ui<RepoJobRulesView>('/ui/api/repo-job-rules', { repos: { 'acme/app': 'x' }, version: 'missing' }, { token });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ repos: [{ repo: 'acme/app', text: 'x' }], version: sha({ 'acme/app': 'x' }) });
+    expect((await a.ui('/ui/api/repo-job-rules', { repos: {}, version: 'missing' }, { token })).status).toBe(409);
+    expect(a.user().store.config.read('repo-job-rules')).toEqual({ 'acme/app': 'x' });
+  });
+
+  it('a job of the repository gets them after the job rules; a job of another repository does not', async () => {
+    const a = await start({ jobRules: 'Be brief.' });
+    const token = await a.login();
+    expect((await a.ui('/ui/api/repo-job-rules', { repos: { 'acme/*': 'Production stays with a person.', 'acme/app': 'Follow it to qa.' }, version: 'missing' }, { token })).status).toBe(200);
+    expect(await runJob(a, 'acme/app')).toBe([
+      'Be brief.',
+      '[hopper repository rules] Rules set in the hopper for every job of acme/*:', 'Production stays with a person.',
+      '[hopper repository rules] Rules set in the hopper for every job of acme/app:', 'Follow it to qa.',
+    ].join('\n'));
+    expect(await runJob(a, 'other/app')).toBe('Be brief.');
   });
 });

@@ -5,25 +5,45 @@
 // job. A person grants or revokes through the UI session, after Access (the route's); the grant is kept for the item, so
 // Run again and Rework keep it. The template's approved scope still bounds what a granted job gets: the vault decides that.
 // A person, or a delegate approver (issue #1138), may deny an ask instead: it goes, and that job asks no more.
+// The standing read grant (issue #1472), the user's setting, off by default, is the one grant no person makes: on, a job
+// on a box of a template whose needs the read policy holds entirely as reads gets the vault with no person, one
+// `vault.granted` event for each job. It covers that box only, and that job only, until it ends; turned off, it grants
+// no job that has not asked yet.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
-import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, type VaultGrantAsk } from '../domain/vault-grants.ts';
+import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, readsOnlyInPolicy, STANDING_READ_GRANTER, type VaultGrantAsk } from '../domain/vault-grants.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { AT_WORK, boxAsk, type ClientTarget } from './box.ts';
 import type { VaultResult } from './service.ts';
 import type { Vault } from './vault.ts';
 
 export function withVaultGrants(v: Vault, o: {
-  store: Pick<UserStore, 'events' | 'jobs' | 'vaultGrants' | 'tx' | 'directJobs'>;
+  store: Pick<UserStore, 'events' | 'jobs' | 'vaultGrants' | 'tx' | 'directJobs' | 'settings'>;
   clock: Clock;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
+  /** The jobs a person denied. Default: a set of its own. */
+  denied?: Set<string>;
 }): Vault {
   const { events, jobs, vaultGrants } = o.store;
   /** The open asks, by job. */
   const asks = new Map<string, VaultGrantAsk>();
   /** The jobs whose ask a person denied (issue #1138): still refused, they ask no more. */
-  const denied = new Set<string>();
+  const denied = o.denied ?? new Set<string>();
+  /** The jobs the standing read grant granted (issue #1472): each keeps it while at work, whatever the setting is now. */
+  const standing = new Set<string>();
+
+  /** Whether the standing read grant lets `job` ask from a box of `template`: recorded once for each job. */
+  function standingGrant(job: Job, template: string): boolean {
+    const t = v.view().templates.find((x) => x.name === template);
+    if (!t || !readsOnlyInPolicy(t, o.store.settings.getReadPolicy())) return false;
+    if (standing.has(job.id)) return true;
+    if (o.store.settings.getSandboxApprovals()?.standingReadGrant !== true) return false;
+    for (const id of standing) if (!AT_WORK.includes(jobs.get(id)?.status ?? '')) standing.delete(id);
+    standing.add(job.id);
+    events.append({ type: 'vault.granted', jobId: job.id, data: { job: job.id, key: grantKeyOf(job), by: STANDING_READ_GRANTER } });
+    return true;
+  }
 
   /** Records that `job` asked for `name` with no grant, from `where`: one ask per job, one event. */
   function ask(job: Job, name: string, where: { machine: string; template: string } | { windowsHost: string }): void {
@@ -42,7 +62,7 @@ export function withVaultGrants(v: Vault, o: {
     const box = boxAsk({ targets: o.targets, holds: o.holds, job: (id) => jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, token, machineKey);
     if ('refused' in box) return undefined;
     const { machine: m, job } = box;
-    if (vaultGrants.get(grantKeyOf(job))) return undefined;
+    if (vaultGrants.get(grantKeyOf(job)) || standingGrant(job, m.template)) return undefined;
     ask(job, name, { machine: m.name, template: m.template });
     return { machine: m.name, template: m.template, job: job.id, reason: noGrant(job.id) };
   }
@@ -124,6 +144,8 @@ export function withVaultGrants(v: Vault, o: {
       if (!job) return missing(jobId);
       if (!open().some((a) => a.job === job.id)) return { ok: false, code: 'conflict', error: `no grant ask waits for job ${jobId}` };
       asks.delete(job.id);
+      // A job no longer at work asks no more: its denial goes (issue #1402).
+      for (const id of denied) if (!AT_WORK.includes(jobs.get(id)?.status ?? '')) denied.delete(id);
       denied.add(job.id);
       events.append({ type: 'vault.grant_denied', jobId: job.id, data: { job: job.id, key: grantKeyOf(job), by } });
       return { ok: true };

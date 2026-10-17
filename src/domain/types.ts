@@ -7,9 +7,9 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
+import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
-import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
+import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
@@ -47,11 +47,12 @@ export const JOBS_DIR = '~/hopper-jobs';
  * review); `until`, how it will know it happened (a check it runs in the background, an event), as it wrote it.
  * `ownCommand` (issue #1037): `until` names the job's own background command, so it waits on nothing outside the job and
  * shows as running. Then, while its pane shows no background work: `goneSince`, when that was first seen; `nudgedAt`, when
- * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge. `on` (issue #1245): what it
- * waits on, typed; every wait since has one, and one without is a legacy wait, stuck work. `polledAt` (issue #1210): when the
- * hopper first saw its own command poll hopper state; `on` then says what it polls.
+ * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge (a wait from before issue
+ * #1694: its wait check ends it now). `on` (issue #1245): what it waits on, typed; every wait since has one, and one without is
+ * a legacy wait, stuck work. `polledAt` (issue #1210): when the hopper first saw its own command poll hopper state; `on` then
+ * says what it polls. `check` (issue #1694): what the hopper tests of the wait and when, kept with it (wait-checks.ts).
  */
-export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -143,15 +144,13 @@ export interface Job extends JobPhaseFields, JobMachineLink {
   laneId?: LaneId;
   /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
   tasks?: TaskCount;
-  progressMessage?: string;
-  result?: unknown;
+  progressMessage?: string; result?: unknown;
   /** Finished partly done (issue #579): the URL of its own pull request that ships part of its item. */
   partlyDone?: string;
   error?: string;
   createdAt: string; // ISO
   updatedAt: string;
-  startedAt?: string;
-  finishedAt?: string;
+  startedAt?: string; finishedAt?: string;
   /** Incremented on every claim. */
   attempts: number;
   /** The job's work tree on its machine, as its executor reported it (issue #166); absent for an executor with none. */
@@ -191,7 +190,8 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
-  continued?: { at: string } & ContinuedBy;
+  /** `preempted`: a job of higher priority took its lane (issue #1525, design.md "Preemption"), kept until it runs again. */
+  continued?: { at: string } & ContinuedBy; preempted?: import('./preemption.ts').JobPreempted;
   /**
    * Its latest checkpoint (issue #921): its agent session and its work not pushed, copied from its machine while it ran.
    * The patch and the session are in the store's checkpoints.
@@ -220,6 +220,16 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * again on every tick until it goes through; meanwhile a waiting job of the same item is held.
    */
   cleanupDeferred?: { at: string; error: string };
+  /**
+   * Its cleanup's record (issue #1570): written in the transaction that recorded its end, removed once the cleanup went
+   * through. A hopper that stops before then does the cleanup from it at its next start.
+   */
+  cleanupDue?: { at: string };
+  /**
+   * A person's discard of its kept work (issue #1570): kept until the removal on its machine ends. With no `error` it is
+   * under way, and a sweep of its machine does it again after a stop; with one it failed (`job.work_discard_failed`).
+   */
+  discard?: { at: string; scratch: string; by: ActingPerson; error?: string };
   /** The output tail its executor gave when it failed (issue #509), codes hidden; the assessor's evidence. */
   errorTail?: string;
   /** What it showed of its progress when it timed out (issue #630): its executor's facts, and its source's. The assessor's evidence. */
@@ -293,8 +303,8 @@ export interface Lane {
   idleSince?: string; pastCap?: true;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials and leaving: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials, leaving and drained: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving`, `MachineDrained` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving, MachineDrained {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
@@ -373,9 +383,13 @@ export interface DecisionInputs {
    * Issue #688. `expectedCosts`: each waiting job's expected cost, where one is known: a machine where it does not fit is
    * passed over. `placementPicks`: Jev's applied picks of a waiting job's machine (`job-machine`), taken first where the
    * job may go. Absent on Decisions stored before them: none. `signedOut` (issue #1128 part 5): the machines whose agent tool
-   * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none.
+   * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none. `credentialHeld` (issue #1467):
+   * the machines the credential check holds (an admin stopped them, or strict mode is on and no admin acknowledged them); a
+   * machine with infra credentials that is not named takes jobs. Absent: none. `sandboxesHeld` (issue #1471): the waiting jobs
+   * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none.
    */
-  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[];
+  /** Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it. */
+  preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 
@@ -432,7 +446,8 @@ export interface Decision {
   /** Admitted jobs no lane is free for: they stay queued (issue #381). Decisions recorded before it lack it. */
   wait: WaitPlan[];
   /** Divergences: jobs where the advice differs from the native verdict. */
-  advice: Divergence[];
+  /** `preempt`: running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. */
+  advice: Divergence[]; preempt?: import('./preemption.ts').PreemptPlan[];
   /** Plain-language reasons, in the order the decider reached them. */
   reasons: string[];
   inputs: DecisionInputs;
@@ -488,7 +503,7 @@ export type { DeliveryStatus, WebhookDelivery, WebhooksEdit } from './webhooks.t
 // ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 
 export type * from './questions.ts';
-export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY } from './questions.ts';
+export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY, SIGNED_OUT_MOVE_BY, signedOutMoveAnswer } from './questions.ts';
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
@@ -496,20 +511,20 @@ export type { AfterAnswerTimed, AfterAnswerTiming, SourceCallLog, SourceCalls, S
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView, type PlaygroundLimits, type PlaygroundSandbox, type PlaygroundSize, type PlaygroundState, type PlaygroundView } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type MachineDrain, type MachineDrains, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView, type PlaygroundLimits, type PlaygroundSandbox, type PlaygroundSize, type PlaygroundState, type PlaygroundView } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
-export * from './machine-history.ts'; export * from './hopper-disk.ts';
-export * from './stack-resources.ts';
+export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
+export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts';
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
-export * from './check-logs.ts';
+export * from './check-logs.ts'; export type { WaitCheck, WaitCondition } from './wait-checks.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 
@@ -533,7 +548,7 @@ export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
 export * from './auto-answer.ts';
-export * from './auto-park.ts';
+export * from './auto-park.ts'; export * from './preemption.ts';
 export * from './thread-ask.ts';
 export * from './access.ts';
 export * from './state-backend.ts';
@@ -550,12 +565,12 @@ export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gate
 
 // ---- Job rules (issue #172): src/domain/job-rules.ts (re-exported here) -------------------
 
-export type { JobRulesView } from './job-rules.ts';
+export type { JobRulesView, RepoJobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
-export type { ApiGrantMinted, ApiGrantView, ApiTokenMinted, ApiTokenRefreshed, ApiTokenSettings, ApiTokenView, GrantEndReason, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionKind, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, LocalAccountView, LocalAccountsView, LocalAccountsEdit, PasskeyView, PasskeysView } from './sign-in.ts';
-export { API_TOKEN_MINUTES, API_TOKEN_PREFIX, GRANT_DEFAULT_DAYS, GRANT_END_REASONS, GRANT_IDLE_DAYS, GRANT_MAX_DAYS, REFRESH_GRACE_MS, REFRESH_TOKEN_PREFIX, DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, lowerRole, roleAllows } from './sign-in.ts';
+export type { ApiGrantMinted, ApiGrantView, GrantLimits, DeviceGrantAsk, DeviceGrantStarted, DeviceGrantView, ApiTokenMinted, ApiTokenRefreshed, ApiTokenSettings, ApiTokenView, GrantEndReason, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionKind, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, LocalAccountView, LocalAccountsView, LocalAccountsEdit, PasskeyView, PasskeysView } from './sign-in.ts';
+export { API_TOKEN_MINUTES, API_TOKEN_PREFIX, DEVICE_CODE_PREFIX, DEVICE_GRANT, DPOP, JKT, GRANT_DEFAULT_DAYS, GRANT_END_REASONS, GRANT_IDLE_DAYS, GRANT_MAX_DAYS, REFRESH_GRACE_MS, REFRESH_TOKEN_PREFIX, DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, lowerRole, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
@@ -567,7 +582,7 @@ export { isUpdateChannel, UPDATE_CHANNELS, type ClusterInstall, type InstallInfo
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
-export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type AppInstallationsRead, type AppInstallationsReadRepository, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
+export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, furtherAccount, isConnectedAccountKey, providerOfKey, type AppInstallation, type AppInstallationsRead, type AppInstallationsReadRepository, type ConnectedAccountKey, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
 export * from './vault.ts';
 export type { SandboxApprovals, SandboxRequestState, SandboxRequestView } from './sandbox-approvals.ts';
 export type { RememberedWrite, RememberedWriteView } from './remembered-writes.ts';

@@ -68,7 +68,8 @@ describe('a transient failure', () => {
     const token = await a.login();
     // Settings apply without a restart.
     await settings(a, token, { maxAttempts: 2, backoffSec: 1, backoffFactor: 1 });
-    const first = await a.pull(fail('read ECONNRESET'));
+    // A daemon restart: the same failure twice in a row does not stop it (issue #1461), so the retries run to the limit.
+    const first = await a.pull(fail('interrupted by daemon restart'));
     const key = first.source!.key;
     const jobs = await waitFor(async () => { const c = await chain(a, key); return c.length === 3 && c[2]!.status === 'failed' ? c : undefined; }, { timeoutMs: 10_000, what: 'two retries' });
     const reruns = (await a.events('types=job.rerun&limit=1000')).filter((e) => jobs.some((j) => j.id === e.jobId));
@@ -89,7 +90,7 @@ describe('a transient failure', () => {
   it('automatic retry off: recommended, and run again only by a person', async () => {
     const a = await boot();
     const token = await a.login();
-    await settings(a, token, { auto: { retry: false, hold: true, redirect: true, continue: true } });
+    await settings(a, token, { auto: { retry: false, hold: true, redirect: true, continue: true, push: true } });
     const job = await a.pull(fail('read ECONNRESET'));
     expect((await assessedOf(a, job.id)).data).toMatchObject({ decision: 'retry', auto: false });
     const record = await waitFor(async () => (await failuresOf(a)).recent.find((r) => r.jobId === job.id && r.actions.retry.ok));
@@ -151,7 +152,7 @@ describe('one shared cause on several jobs', () => {
   it('an automatic hold switched off: still one problem, but queued jobs run', async () => {
     const a = await boot();
     const token = await a.login();
-    await settings(a, token, { auto: { retry: true, hold: false, redirect: false, continue: true } });
+    await settings(a, token, { auto: { retry: true, hold: false, redirect: false, continue: true, push: true } });
     const job = await a.pull(fail('claude: Not logged in · Please run /login'));
     await waitFor(async () => (await failuresOf(a)).problems.find((p) => p.jobIds.includes(job.id)));
     const queued = await a.pull({ op: 'echo' });
@@ -226,7 +227,7 @@ describe('settings and known causes', () => {
   it('defaults, validated edits, an admin\'s only', async () => {
     const a = await boot();
     const token = await a.login();
-    expect((await failuresOf(a)).settings).toMatchObject({ maxAttempts: 3, auto: { retry: true, hold: true, redirect: true, continue: true } });
+    expect((await failuresOf(a)).settings).toMatchObject({ maxAttempts: 3, auto: { retry: true, hold: true, redirect: true, continue: true, push: true } });
     expect((await a.ui('/ui/api/failures/settings', { maxAttempts: 99 }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/failures/settings', {}, { token })).status).toBe(400);
     expect((await settings(a, token, { retentionDays: 30 })).retentionDays).toBe(30);
@@ -303,11 +304,11 @@ describe('every failed job is processed', () => {
     const a = await boot();
     // No retry of its first assessment races the test: automatic retry is off until it is taken back.
     const token = await a.login();
-    await settings(a, token, { auto: { retry: false, hold: true, redirect: true, continue: true } });
+    await settings(a, token, { auto: { retry: false, hold: true, redirect: true, continue: true, push: true } });
     const job = await a.pull(fail('read ECONNRESET'));
     await a.waitForStatus(job.id, 'failed');
     await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'first assessed' });
-    await settings(a, token, { auto: { retry: true, hold: true, redirect: true, continue: true } });
+    await settings(a, token, { auto: { retry: true, hold: true, redirect: true, continue: true, push: true } });
     unassess(a, job.id, new Date(Date.now() - 3 * 86_400_000).toISOString());
     const record = await waitFor(async () => recordOf(a, job.id), { what: 'the old failure assessed' });
     expect(record).toMatchObject({ decision: 'retry', auto: false, outcome: 'surfaced' });

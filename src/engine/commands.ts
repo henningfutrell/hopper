@@ -6,7 +6,7 @@ import type { DismissedBy } from '../domain/locked.ts';
 import type { ActingPerson, Job, JobNote, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import type { Cleanups } from './cleanup.ts';
+import { cleanupDue, type Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
 import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
@@ -24,8 +24,13 @@ function existing(c: EngineContext, id: string): Job {
 }
 
 export interface Commands {
-  /** Cancel a non-terminal job; `reason` is recorded on job.cancelled (and told to its source). */
-  cancel(id: string, reason: string): Job;
+  /**
+   * Cancel a non-terminal job; `reason` is recorded on job.cancelled (and told to its source). `note` (issue #1460): a
+   * person's own words why, kept on job.cancelled beside the reason; never told to the source.
+   */
+  cancel(id: string, reason: string, note?: string): Job;
+  /** A job on its own wait whose item closed by its own work (issue #1460): it ends finished, `result` its result. 409 for any other. */
+  finishWaiting(id: string, result: string): Job;
   approve(id: string): Job;
   /**
    * Claim a waiting job as operator-led (issue #318): an operator does its work by hand, outside the
@@ -78,19 +83,32 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
   const { store } = c;
   const cleanup = cleanups.run;
   return {
-    cancel(id, reason) {
+    cancel(id, reason, note) {
       const job = existing(c, id);
       if (job.status === 'claimed' || job.status === 'running') {
         // The runner ends it `cancelled` once the executor has stopped.
-        if (runner.cancel(id, reason)) return job;
+        if (runner.cancel(id, reason, note)) return job;
       }
       // A waiting_answer or parked job's question is cancelled in the same tx; a job on a question or about to
       // resume holds a pane, and a parked job its work tree, released after the commit by the normal reap.
       const next = store.tx(() => {
         if ((job.status === 'waiting_answer' || job.status === 'parked') && job.questionId) c.questions.cancel(job.questionId);
-        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
-        store.events.append({ type: 'job.cancelled', jobId: id, data: { reason } });
+        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined, ...cleanupDue(c) });
+        store.events.append({ type: 'job.cancelled', jobId: id, data: { reason, ...(note ? { note } : {}) } });
         return cancelled;
+      });
+      void cleanup(id);
+      return next;
+    },
+
+    finishWaiting(id, result) {
+      // Its pane, kept on its machine for the wait, is released after the commit by the normal reap.
+      const next = store.tx(() => {
+        const job = existing(c, id);
+        if (job.status !== 'waiting_on') throw new EngineError('conflict', `job ${id} is ${job.status}: only a job on its own wait ends finished when its item closes`);
+        const finished = store.jobs.update(id, { status: 'finished', finishedAt: nowIso(c), result, wait: undefined, pendingAnswer: undefined, ...cleanupDue(c) });
+        store.events.append({ type: 'job.finished', jobId: id, data: { result } });
+        return finished;
       });
       void cleanup(id);
       return next;

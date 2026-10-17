@@ -8,7 +8,7 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { scrubbedEnv, userProcessEnv } from '../env.ts';
-import { clientHerdr, type ClientTransport } from '../client.ts';
+import { clientHerdr, onClientLinkLate, type ClientTransport } from '../client.ts';
 import { clientShell, localShell, sshShell } from '../machine-shell.ts';
 import type { MachineShell } from '../../domain/ports.ts';
 import { REMOTE_HERDR, SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
@@ -53,7 +53,7 @@ function failure(code: number, stderr: string, fallback: string): HerdrError {
 export function createHerdrCliClient(o: CliOptions | ClientOptions): HerdrCliClient {
   if ('client' in o) {
     const link = o.client.link;
-    return { ...withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client)), linkDown: () => link()?.destroyed !== false };
+    return { ...withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client)), linkDown: () => link()?.destroyed !== false, onLinkLate: (fn) => onClientLinkLate(o.client, fn) };
   }
   if (!o.session) throw new Error('herdr session is required (never the default session)');
   return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, o.ssh ? sshShell(o.ssh) : localShell(o.userEnv));
@@ -126,7 +126,16 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     async createTab({ workspaceId, cwd, label, env }) {
       const envArgs = Object.entries(env).flatMap(([k, v]) => ['--env', `${k}=${v}`]);
       const r = await run(['tab', 'create', '--workspace', workspaceId, '--cwd', cwd, '--label', label, ...envArgs, '--no-focus']);
-      return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: (r.root_pane as { pane_id: string }).pane_id };
+      const pane = r.root_pane as { pane_id: string; terminal_id?: string };
+      return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}) };
+    },
+    async findTab({ workspaceId, label }) {
+      const list = await run(['tab', 'list', '--workspace', workspaceId]);
+      const tab = (list.tabs as { tab_id: string; label?: string }[] | undefined)?.find((t) => t.label === label);
+      if (!tab) return null;
+      const panes = (await run(['pane', 'list'])).panes as HerdrListedPane[] | undefined;
+      const pane = panes?.find((x) => x.tab_id === tab.tab_id);
+      return pane ? { tabId: tab.tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}), ...(pane.agent ? { agent: pane.agent } : {}) } : null;
     },
     async startAgent({ name, paneId, args, timeoutMs }) {
       try {
@@ -141,8 +150,8 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     async getAgent(name): Promise<AgentInfo | null> {
       try {
         const r = await run(['agent', 'get', name]);
-        const a = r.agent as { agent_status: AgentStatus; state_change_seq: number; pane_id: string };
-        return { status: a.agent_status, stateChangeSeq: a.state_change_seq, paneId: a.pane_id };
+        const a = r.agent as { agent_status: AgentStatus; state_change_seq: number; pane_id: string; terminal_id?: string };
+        return { status: a.agent_status, stateChangeSeq: a.state_change_seq, paneId: a.pane_id, ...(a.terminal_id ? { terminalId: a.terminal_id } : {}) };
       } catch (err) {
         if (err instanceof HerdrError && err.code === 'agent_not_found') return null;
         throw err;
@@ -177,7 +186,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
 }
 
 /** A pane as `herdr pane list` gives it: only what the machine's terminal shows, never its working directory. */
-interface HerdrListedPane { pane_id: string; tab_id: string; workspace_id: string; terminal_title_stripped?: string; terminal_title?: string; agent?: string; agent_status?: AgentStatus }
+interface HerdrListedPane { pane_id: string; tab_id: string; workspace_id: string; terminal_id?: string; terminal_title_stripped?: string; terminal_title?: string; agent?: string; agent_status?: AgentStatus }
 const paneOf = (p: HerdrListedPane): HerdrPane => {
   const title = p.terminal_title_stripped ?? p.terminal_title;
   return { paneId: p.pane_id, tabId: p.tab_id, workspaceId: p.workspace_id, ...(title ? { title } : {}), ...(p.agent ? { agent: p.agent } : {}), agentStatus: p.agent_status ?? 'unknown' };

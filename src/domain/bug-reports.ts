@@ -2,10 +2,12 @@
 // later, so Settings → Your reports can list it with its state on GitHub.
 
 /**
- * `waiting`: kept, not on GitHub yet — the GitHub connection was down or had no access; the hopper sends it later.
- * `open`, `closed`: the issue on GitHub (for a comment: the issue it was added to), as last read.
+ * `sending`: kept before GitHub is asked (issue #1591), its id the post key in the text; a stop leaves it so, and the next
+ * start makes it `waiting`. `waiting`: kept, not on GitHub yet — the GitHub connection was down or had no access, or its
+ * answer was lost; the hopper looks for its post key, then sends it later. `open`, `closed`: the issue on GitHub (for a
+ * comment: the issue it was added to), as last read.
  */
-export type BugReportState = 'waiting' | 'open' | 'closed';
+export type BugReportState = 'sending' | 'waiting' | 'open' | 'closed';
 
 export interface BugReport {
   id: string;
@@ -21,7 +23,7 @@ export interface BugReport {
   /** The issue on GitHub; with `kind: comment` and `waiting`, the issue it goes to. */
   number?: number;
   url?: string;
-  /** While `waiting`: the body to send, as the person left it. Dropped once sent. */
+  /** While `sending` or `waiting`: the body to send, as the person left it, without its post key. Dropped once sent. */
   body?: string;
   /** While `waiting`: why it was not sent, from the last try. */
   problem?: string;
@@ -44,4 +46,6 @@ export interface BugReportRepository {
   inState(state: BugReportState): BugReport[];
   /** Shallow-merge; `undefined` clears. */
   update(id: string, patch: Partial<Omit<BugReport, 'id'>>): BugReport;
+  /** A report GitHub refused for itself goes (issue #1591): it was kept only to be sent. */
+  remove(id: string): void;
 }

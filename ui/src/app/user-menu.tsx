@@ -2,9 +2,10 @@
 // with who you are (issue #167: the user the session acts for, with its role), the theme, the device link for
 // another browser (an admin's, on a local sign-in), and last, set apart, Sign out. Sign out needs a second tap,
 // so a stray tap on a phone signs nobody out; the menu closes on an outside tap or Escape, and asks again when
-// it opens again. Every target is at least 44 px. Report a bug (issue #694) opens the report form.
+// it opens again. Every target is at least 44 px. Report a bug (issue #694) opens the report form; File an issue (issue #471)
+// its dialog, off with the reason while no provider can draft — on a phone the only place it is.
 // Help (issue #782) opens the help pages of this version in a new tab, for every role.
-import { Bug, CircleHelp, LogOut, MonitorSmartphone, Moon, Sun } from 'lucide-react';
+import { Bug, CircleHelp, FilePlus, LogOut, MonitorSmartphone, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/status';
@@ -12,6 +13,7 @@ import { setTheme, useTheme } from '@/hooks/use-theme';
 import { logout, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate } from '@/store/selectors';
 import { useBugReport } from './bug-report';
+import { useFileIssue } from './file-issue';
 import { useDeviceLink } from './device-link';
 
 /** Up to two letters: the first of the first and last words of the name. */
@@ -32,6 +34,7 @@ export function UserMenu() {
   const theme = useTheme();
   const device = useDeviceLink();
   const report = useBugReport();
+  const fileIssue = useFileIssue();
   const [armed, setArmed] = useState(false);
   if (!user) return null;
   const next = theme === 'dark' ? 'light' : 'dark';
@@ -57,6 +60,9 @@ export function UserMenu() {
           {canAdmin && local && (
             <DropdownMenuItem className={ITEM} onSelect={device.open}><MonitorSmartphone />Log in another device</DropdownMenuItem>
           )}
+          {fileIssue.state.show && (
+            <DropdownMenuItem className={ITEM} disabled={fileIssue.state.disabled} title={fileIssue.state.title} onSelect={() => fileIssue.open()}><FilePlus />File an issue</DropdownMenuItem>
+          )}
           {canOperate && <DropdownMenuItem className={ITEM} onSelect={() => report.open()}><Bug />Report a bug</DropdownMenuItem>}
           <DropdownMenuSeparator />
           <DropdownMenuItem className={ITEM} variant="destructive"
@@ -67,6 +73,7 @@ export function UserMenu() {
       </DropdownMenu>
       {device.dialog}
       {report.dialog}
+      {fileIssue.dialog}
     </>
   );
 }

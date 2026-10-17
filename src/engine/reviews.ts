@@ -14,7 +14,7 @@ import {
   asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, sourceItemOf, type EventType,
   type Job, type Lane, type LaneId, type MachineSnapshot, type ReviewItem, type ReviewKind, type ReviewVersion,
 } from '../domain/types.ts';
-import type { Cleanup } from './cleanup.ts';
+import { cleanupDue, type Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { createFollowOns } from './follow-ons.ts';
@@ -102,7 +102,10 @@ const goOnBrief = (p: ReviewItem): string => {
   return `[hopper ${p.kind}] Your ${REVIEW_SECTIONS[p.kind].noun} was accepted.${notes}\nGo on with what else your item asks, in this session. If it asks for nothing more, end your message with a line containing only HOPPER_DONE.`;
 };
 
-export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): ReviewHandlers {
+/** Ends a job that does not wait on its item (issue #1659: rejected while it writes the next version), as a cancel does. */
+type EndJob = (jobId: string, reason: string) => unknown;
+
+export function createReviewHandlers(c: EngineContext, cleanup: Cleanup, endJob: EndJob): ReviewHandlers {
   const { store } = c;
   /** The job, while it still waits on this item: on it, or parked on it. */
   const waitingOn = (p: ReviewItem): Job | undefined => {
@@ -119,6 +122,11 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): Review
   };
   return {
     onDecided(p) {
+      // Rejected while sent back (issue #1659): its job is queued or at work on the next version, and ends here.
+      const sentBack = store.jobs.get(p.jobId);
+      if (p.status === 'rejected' && sentBack && sentBack[REVIEW_SECTIONS[p.kind].jobField] === p.id && ['queued', 'held', 'claimed', 'running'].includes(sentBack.status)) {
+        return void endJob(sentBack.id, `${REVIEW_SECTIONS[p.kind].noun} rejected`);
+      }
       const job = waitingOn(p);
       if (!job) return;
       // A fork's result goes to its parent's question (issue #548); the fork itself ends as any job asked for one does.
@@ -134,7 +142,7 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): Review
       // An accepted proposal's selected paths (issue #651), outside a fork or a switch that goes on: each a follow-on job.
       if (p.kind === 'proposal' && p.status === 'accepted' && !job.forkOf) createFollowOns(c, job, p);
       const result = decidedResult(itemsOfJob(c, store.jobs.get(p.jobId)!));
-      store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined });
+      store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined, ...cleanupDue(c) });
       store.events.append({ type: 'job.finished', jobId: p.jobId, data: { result } });
       setImmediate(() => void cleanup(p.jobId));
     },

@@ -90,7 +90,7 @@ describe('a user connects their own GitHub', () => {
   it('connects through the OAuth app, with the client id and no secret, and its issues become jobs', async () => {
     const f = await forges({ github: [{ repo: 'octo-user/tools', number: 7, title: 'Add a flag', body: SLEEP, author: 'octo-user', labels: ['hopper'] }] });
     const app = await start(f);
-    expect(await account(app, 'github')).toEqual({ provider: 'github', state: 'not-connected', via: 'the hopper\'s app' });
+    expect(await account(app, 'github')).toEqual({ provider: 'github', key: 'github', state: 'not-connected', via: 'the hopper\'s app' });
     // Not connected is said out loud where the sources are.
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused === 'GitHub is not connected: Sources → Connect GitHub', { what: 'github-account to say so' });
     // A mutation: a UI session, never a bare request.
@@ -145,8 +145,24 @@ describe('a user connects their own GitHub', () => {
     const connected = await account(app, 'github');
     const permissions = { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' };
     expect(connected.state === 'connected' && connected.installations).toEqual([
-      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions },
-      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions },
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions, permissionRequest: {} },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions, permissionRequest: {} },
+    ]);
+  });
+
+  it('says, for each account, the new permissions the app asks for that its owner has not accepted yet (#1378)', async () => {
+    const f = await forges({ github: [{ repo: 'octo-user/tools', number: 7, title: 'x', body: SLEEP, author: 'octo-user', labels: [] }] });
+    const granted = { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' };
+    f.github.installedOn = ['octo-user', 'octo-org'];
+    // The app's owner added Checks (read) and raised nothing else: GitHub asked each owner to accept it. octo-user accepted.
+    f.github.appPermissions = { ...granted, checks: 'read' };
+    f.github.installationPermissions = { 'octo-user': { ...granted, checks: 'read' } };
+    const app = await start(f);
+    await connect(app, f.github, 'github', 'octo-user', await app.login());
+    const connected = await account(app, 'github');
+    expect(connected.state === 'connected' && connected.installations?.map((i) => [i.account, i.permissionRequest])).toEqual([
+      ['octo-user', {}],
+      ['octo-org', { checks: 'read' }],
     ]);
   });
 
@@ -233,7 +249,7 @@ describe('a user connects their own GitHub', () => {
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.state === 'ok', { what: 'the source to sync' });
 
     f.github.issues.push({ repo: 'octo-user/tools', number: 8, title: 'x', body: SLEEP, author: 'octo-user', labels: ['hopper'] });
-    expect((await act(app, token, 'disconnect', 'github')).body).toEqual({ provider: 'github', state: 'not-connected', via: 'the hopper\'s app' });
+    expect((await act(app, token, 'disconnect', 'github')).body).toEqual({ provider: 'github', key: 'github', state: 'not-connected', via: 'the hopper\'s app' });
     expect(await account(app, 'github')).toMatchObject({ state: 'not-connected' });
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused !== undefined, { what: 'the source to pause' });
     expect((await sourceOf(app, 'github-account'))?.detail.paused).toBe('GitHub is not connected: Sources → Connect GitHub');

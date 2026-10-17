@@ -2,8 +2,9 @@
 // it as it reaches an ssh target ("Target authentication"): its own key, public-key authentication only, the pinned
 // host key only — here one known_hosts file per Windows host, written before each step —, nothing forwarded. Four
 // calls per step: prepare the scratch directory, copy the inputs and the step's script, run it (its output streamed;
-// its vault secrets, when it has any, on that call's stdin only), bring the outputs back; then the scratch directory is
-// removed.
+// its vault secrets, when it has any, on that call's stdin only), bring the outputs back. The sweep, a call of its own,
+// removes the scratch directory after: the step's saga sweeps after each step, and after a step a stopped hopper left
+// (issue #1611).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,7 +12,7 @@ import type { WindowsStepHost } from '../domain/ports.ts';
 import type { StepResult, WindowsHost } from '../domain/windows-steps.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import { scpArgv, sshArgv, SSH_FAILED, type SshAuth, type SshTransport } from '../executors/ssh.ts';
-import { cleanupScript, encodedCommand, prepareScript, runScript, scpScratch, secretsInput, stepFile } from './powershell.ts';
+import { cleanupScript, encodedCommand, packedBytes, prepareScript, runScript, scpScratch, secretsInput, stepFile } from './powershell.ts';
 
 export interface SshStepHostOptions {
   /** How the hopper proves itself (the same key as to its ssh targets); its known_hosts is replaced by the host's own pin. */
@@ -24,6 +25,8 @@ export interface SshStepHostOptions {
 
 /** How long the calls around the step may take: the copy of large inputs included. */
 const SIDE_CALL_MS = 10 * 60 * 1000;
+/** How long the sweep of a host's scratch directory may take. */
+const SWEEP_MS = 60_000;
 
 interface Ran { code: number; stderr: string; aborted: boolean }
 
@@ -76,23 +79,39 @@ export function createSshStepHost(o: SshStepHostOptions): WindowsStepHost {
         const sent = await run(scp, scpArgv(t, { to: true, from: [...(step.inputs ? [join(step.dir, 'inputs.tar')] : []), join(step.dir, 'step.ps1')], remote: `${scpScratch(host.workDir)}/` }), { signal: io.signal, timeoutMs: SIDE_CALL_MS });
         if (sent.code !== 0) return failed('the inputs could not be copied to the host', sent);
         const secrets = step.secrets && Object.keys(step.secrets).length > 0 ? step.secrets : undefined;
-        const ran = await remote(runScript({ workDir: host.workDir, inputs: step.inputs, outputs: step.outputs, secrets: secrets !== undefined }), { out: io.log, ...(secrets ? { stdin: secretsInput(secrets) } : {}) });
+        // The run's log as it passes, its tail kept: the line that says the outputs archive's size may come in two chunks.
+        let tail = '';
+        let packed: number | undefined;
+        const out = (c: string) => {
+          io.log(c);
+          tail = `${tail}${c}`;
+          packed = packedBytes(tail) ?? packed;
+          tail = tail.slice(-200);
+        };
+        const ran = await remote(runScript({ workDir: host.workDir, inputs: step.inputs, outputs: step.outputs, secrets: secrets !== undefined }), { out, ...(secrets ? { stdin: secretsInput(secrets) } : {}) });
         if (ran.aborted) return { exit: ran.code, problem: 'stopped before it ended' };
         const result: StepResult = { exit: ran.code };
         if (ran.code === SSH_FAILED) result.problem = `ssh ended with ${SSH_FAILED}: the connection to ${host.name} failed, or the command exited ${SSH_FAILED}`;
         if (step.outputs.length > 0) {
           const local = join(step.dir, 'outputs.tar');
           const back = await run(scp, scpArgv(t, { to: false, remote: `${scpScratch(host.workDir)}/outputs.tar`, local }), { signal: io.signal, timeoutMs: SIDE_CALL_MS });
-          if (back.code === 0 && existsSync(local)) result.outputsBytes = statSync(local).size;
-          else result.problem = result.problem ?? `no outputs came back: ${back.stderr || `scp exit ${back.code}`}`;
+          if (back.code === 0 && existsSync(local)) {
+            // Issue #1255: a copy smaller than the archive the host packed is no outputs, and says so.
+            const bytes = statSync(local).size;
+            if (packed !== undefined && bytes !== packed) result.problem = result.problem ?? `the outputs came back cut short: ${bytes} of ${packed} bytes`;
+            else result.outputsBytes = bytes;
+          } else result.problem = result.problem ?? `no outputs came back: ${back.stderr || `scp exit ${back.code}`}`;
         }
         return result;
       } catch (e) {
         return { exit: SSH_FAILED, problem: (e as Error).message };
-      } finally {
-        // The scratch directory goes even when the step was stopped: a call of its own, with its own short deadline.
-        try { await remote(cleanupScript(host.workDir), { signal: new AbortController().signal, timeoutMs: 60_000 }); } catch { /* the next step's prepare removes it */ }
       }
+    },
+
+    async sweep(host) {
+      const t = transport(host);
+      const r = await run(ssh, sshArgv(t, encodedCommand(cleanupScript(host.workDir))), { signal: new AbortController().signal, timeoutMs: SWEEP_MS });
+      if (r.code !== 0) throw new Error(`the scratch directory on ${host.name} could not be removed: ${r.aborted ? 'timed out' : r.stderr || `exit ${r.code}`}`);
     },
   };
 }

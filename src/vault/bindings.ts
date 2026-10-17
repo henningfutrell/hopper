@@ -1,8 +1,8 @@
 // A sandbox's credentials end with it (issue #1371, decision #1394, design.md "Sandboxes are fresh and leave nothing"
 // part 7). Each Kubernetes token minted for a need box or a check box is bound to a Secret of its own (`bindTo`); the
 // sandbox holds that binding until it ends, whatever its outcome, and its release deletes the Secret, so the API server
-// refuses the token at once. Each binding is in its mint's event (`vault.minted`, `vault.check_minted`: `bound`), and
-// each unbind is `vault.unbound`: a binding that a hopper that stopped, or an unbind that failed, left is unbound by the
+// refuses the token at once. Each binding is recorded before the minter makes its Secret (`vault.binding_named`, issue
+// #1628) and again in its mint's event (`vault.minted`, `vault.check_minted`: `bound`), and each unbind is `vault.unbound`: a binding that a hopper that stopped, or an unbind that failed, left is unbound by the
 // reconcile pass, at start and then periodically. An AWS session and an EKS token are bound to nothing: STS cannot end
 // one session, so each lives to its floor (15 and 14 minutes).
 import { randomUUID } from 'node:crypto';
@@ -33,6 +33,11 @@ export interface MintBindings {
   name(): string;
   /** A binding of the sandbox `box` (a need box or a check box), held until its release; `job`: the job it serves. */
   hold(box: string, b: MintBinding, job?: string): void;
+  /**
+   * A binding held as `hold` does, and recorded (`vault.binding_named`), before the minter makes its Secret (issue #1628):
+   * a hopper that stops in between leaves a Secret the reconcile pass still knows.
+   */
+  named(box: string, b: MintBinding, job?: string): void;
   /** The sandbox ended: each Secret its tokens are bound to is deleted. Never rejects; one that fails waits for the reconcile pass. */
   release(box: string, from?: UnbindFrom): Promise<void>;
   /** Unbinds each binding a mint of the last `RECONCILE_DAYS` recorded that no sandbox holds now and no `vault.unbound` ended. */
@@ -64,10 +69,17 @@ export function mintBindings(o: {
     o.events.append({ type: 'vault.unbound', ...(h.job ? { jobId: h.job } : {}), data: { box: h.box, ...(h.job ? { job: h.job } : {}), ...h.binding } });
   };
 
+  const hold = (box: string, binding: MintBinding, job?: string): void => {
+    held.set(box, [...(held.get(box) ?? []), { box, binding, ...(job ? { job } : {}) }]);
+  };
+
   return {
     name: o.newName ?? (() => `hopper-mint-${randomUUID()}`),
-    hold(box, binding, job) {
-      held.set(box, [...(held.get(box) ?? []), { box, binding, ...(job ? { job } : {}) }]);
+    hold,
+    named(box, binding, job) {
+      // Held first: a reconcile pass that reads the event while the minter runs leaves the Secret to the sandbox.
+      hold(box, binding, job);
+      o.events.append({ type: 'vault.binding_named', ...(job ? { jobId: job } : {}), data: { box, ...(job ? { job } : {}), ...binding } });
     },
     async release(box, from = o.unbindFrom) {
       const mine = held.get(box) ?? [];
@@ -76,15 +88,16 @@ export function mintBindings(o: {
     },
     async reconcile(from = o.unbindFrom) {
       const since = new Date(o.clock.now().getTime() - RECONCILE_DAYS * 86_400_000).toISOString();
-      const events = o.events.between(['vault.minted', 'vault.check_minted', 'vault.unbound'], since);
+      const events = o.events.between(['vault.binding_named', 'vault.minted', 'vault.check_minted', 'vault.unbound'], since);
       const ended = new Set(events.filter((e) => e.type === 'vault.unbound').map((e) => (e.data as { secret?: unknown }).secret));
       const holding = new Set([...held.values()].flat().map((h) => h.binding.secret));
       for (const e of events) {
-        const d = e.data as { bound?: { namespace?: unknown; secret?: unknown }; credential?: unknown; machine?: unknown; check?: unknown; job?: unknown };
-        const { namespace, secret } = d.bound ?? {};
+        const d = e.data as { bound?: { namespace?: unknown; secret?: unknown }; namespace?: unknown; secret?: unknown; credential?: unknown; machine?: unknown; check?: unknown; box?: unknown; job?: unknown };
+        // A named binding carries its Secret at the top; a mint's event, as `bound`.
+        const { namespace, secret } = e.type === 'vault.binding_named' ? d : d.bound ?? {};
         if (typeof namespace !== 'string' || typeof secret !== 'string' || typeof d.credential !== 'string') continue;
         if (ended.has(secret) || holding.has(secret)) continue;
-        const box = typeof d.machine === 'string' ? d.machine : typeof d.check === 'string' ? d.check : 'a sandbox';
+        const box = typeof d.machine === 'string' ? d.machine : typeof d.check === 'string' ? d.check : typeof d.box === 'string' ? d.box : 'a sandbox';
         await unbind({ box, binding: { credential: d.credential, namespace, secret }, ...(typeof d.job === 'string' ? { job: d.job } : {}) }, from);
         ended.add(secret);
       }

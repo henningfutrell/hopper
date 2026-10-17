@@ -59,7 +59,7 @@ function AccountCard({ a, now }: { a: ToolAccount; now: number }) {
               <div className="num text-xs text-muted-foreground">{machineLine(m, now)}</div>
               {m.problem && <div className="text-xs break-words text-warn">{m.problem}</div>}
               {m.lastAccount !== undefined && <div data-slot="last-account" className="text-xs break-words">{lastAccountText(m.lastAccount, m.label)}</div>}
-              {m.infraCredentials?.length ? <div data-slot="infra-credentials" className="text-xs break-words text-warn">not ready, takes no new job: its job user holds {m.infraCredentials.join(', ')}</div> : null}
+              {m.infraCredentials?.length ? <div data-slot="infra-credentials" className="text-xs break-words text-warn">its job user holds credentials a job could use: {m.infraCredentials.join(', ')}</div> : null}
               {canOperate && m.signIn && <div className="pt-1"><SignIn m={m} /></div>}
             </li>
           ))}

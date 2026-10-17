@@ -21,12 +21,11 @@ Open the vault at **Settings → Vault**. Every user can read the page. An admin
 
 A job gets a vault secret, a shared secret or a minted credential only when **all** of these are true:
 
-1. The job runs on a **sandbox box** that joined as an instance of a **template**. A job on a computer, an ssh target or this host gets nothing from the vault, and it has no `$HOPPER_SECRET`.
+1. The ask comes from a **sandbox box** that the hopper started for one step of the job, from a **template**. The job itself runs on its own machine: there it gets nothing from the vault, and it has no `$HOPPER_SECRET`.
 2. A person **approved** the template, and the secret or operation profile is in its approved scope now.
 3. A person gave the job's item a **vault grant**.
 4. The job is at work: it runs, or it waits and still holds its pane. An ended, failed or parked job gets nothing.
-5. For a box the hopper started with only some secrets or one operation profile: the ask is inside that launch.
-6. For a minted credential or a shared secret: **Access** allows it.
+5. For a minted credential or a shared secret: **Access** allows it.
 
 Templates and approvals are explained in [Sandboxes](sandboxes.md).
 
@@ -135,6 +134,16 @@ The hopper decides *whether* a job gets the credential. The role's IAM policy or
    - AWS: `{"AccessKeyId": "…", "SecretAccessKey": "…"}`. Optional: `SessionToken`, `Region`, `Endpoint` (an STS other than AWS's), and `SessionName` or `SessionNamePrefix` (below).
    - Kubernetes: `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`. The token needs `create` on `serviceaccounts/token`, and `create` and `delete` on `secrets` in the same namespace: each token a sandbox gets is bound to a Secret the hopper deletes when the sandbox ends, so the token stops working at once.
 4. In a template, add the operation profile, for example `read` on `aws-role` `123456789012/diag`. Approve it (see [Sandboxes](sandboxes.md)).
+
+From the command line, `--mints` sets **Mints for**. The value comes from standard input:
+
+```sh
+hopper vault set AWS_UAT --mints aws-account/123456789012 < aws-credential.json
+hopper vault set LAB_KUBE --mints cluster/lab < kube-credential.json
+hopper vault set AWS_UAT --mints none < aws-credential.json   # a plain secret again
+```
+
+A `set` without `--mints` keeps what the secret mints for. A shared secret mints nothing: `--mints` with `--shared` is refused.
 
 A minting credential is never given to a box. No template can list it in its scope.
 

@@ -55,7 +55,9 @@
 // base branch moves (issue #1143 part 3): each sync, before the tends, the source says the commit that base is at
 // (`JobSource.baseTip`, the hopper's mirror); the first is kept (`tended.baseAt`), and another one marks it moved
 // (`tended.baseMoved`), which makes the same step due (`tendRetryAt`), at most `MAX_TEND_RETRIES` in a row. A source that
-// cannot say leaves it to a person, as before. A throw is only logged. Strays (issue #1143 part 4, `strays.ts`): in a round
+// cannot say leaves it to a person, as before. A throw is only logged. A tend starts only on an open pull request (issue
+// #1456): before each, the source says whether it ended on GitHub (`JobSource.endedPullRequests`); ended, the job follows
+// it again at once, and that follow records its end. Strays (issue #1143 part 4, `strays.ts`): in a round
 // of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
 // The census (issue #1176, `census.ts`): after the strays, at most once an hour, the source lists every open pull request of its job repositories that no job
 // names and the ledger does not hold, each with why (`JobSource.censusPullRequests`, `untrackedPullRequests`).
@@ -135,13 +137,15 @@ export function createAfterDone(c: AfterDoneContext) {
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
     keepFollowed(c, jobId, r);
+    // Who merged it: the act's, else as its merge marker kept it, after a stop (issue #1588).
+    const who = acting ?? r.acting;
     if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
       data: {
         pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(r.superseded ? { superseded: r.superseded } : {}),
-        ...(acting ? { person: acting.person, via: acting.via } : {}),
+        ...(who ? { person: who.person, via: who.via } : {}),
       },
     });
   }
@@ -173,7 +177,8 @@ export function createAfterDone(c: AfterDoneContext) {
     if (!job || !(following(job) || rechecks(job))) return;
     if (all) await crossReference(source, job);
     job = store.jobs.get(jobId) ?? job;
-    const r = await source.follow!(job);
+    // The merge marker is kept before the hopper's merge call (issue #1588).
+    const r = await source.follow!(job, undefined, { keep: (state) => c.setSource(jobId, state) });
     if (r) return record(jobId, r);
     // Nothing changed: the ledger may not hold what it waits on yet (it was seen before the ledger read it).
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
@@ -181,7 +186,7 @@ export function createAfterDone(c: AfterDoneContext) {
   }
 
   /** A person's Merge now or Close PR (issue #677), answered at once; it runs on the job's report chain after (issue #1194). */
-  const prActs = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record, sendNow: c.sendNow });
+  const prActs = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record, sendNow: c.sendNow, setSource: c.setSource });
 
   async function judgeAgain(source: JobSource, jobId: string): Promise<void> {
     const job = store.jobs.get(jobId);
@@ -231,6 +236,8 @@ export function createAfterDone(c: AfterDoneContext) {
   async function tendIfDue(source: JobSource, jobId: string, acting?: ActingPerson): Promise<RerunResult | undefined> {
     const due = tendDue(store.jobs.get(jobId));
     if (!due) return undefined;
+    const ended = await endedBeforeTend(source, jobId, due.url);
+    if (ended) return { ok: false, reason: 'conflict', message: `job ${jobId}'s pull request is not tended: it was ${ended} on GitHub` };
     const checks = due.step === 'fix_checks' && source.checkLogs && due.checks.failed?.length
       ? { ...due.checks, failed: await source.checkLogs(due.checks.failed) } : due.checks;
     const r = await c.tend(jobId, tendBrief(due.url, due.step, checks));
@@ -249,6 +256,24 @@ export function createAfterDone(c: AfterDoneContext) {
     // The pull request says the hopper works on it (issue #1143).
     await source.tendStarted?.(job, due.url, due.step);
     return r;
+  }
+
+  /**
+   * Whether the pull request a tend is due for ended on GitHub since it was last seen (issue #1456): a tend works from what
+   * was last seen, and a failed tend's job follows its pull request no more, so a pull request closed or merged meanwhile
+   * was rebased again and again. Ended: the job follows it again at once, and that follow records its end as any follow
+   * does. A read that fails, or a source that cannot say, tends it as before.
+   */
+  async function endedBeforeTend(source: JobSource, jobId: string, url: string): Promise<'merged' | 'closed' | undefined> {
+    const m = /([^/]+\/[^/]+)\/pull\/(\d+)$/.exec(url);
+    if (!source.endedPullRequests || !source.follow || !m) return undefined;
+    const state = await source.endedPullRequests([{ repo: m[1]!, number: Number(m[2]) }]).then((e) => e[0]?.state, (e: unknown) =>
+      void console.warn(`hopper: ${source.name}: whether ${url} ended was not read, it is tended: ${(e as Error).message}`));
+    if (!state) return undefined;
+    const { tended: _t, ...was } = (store.jobs.get(jobId)?.sourceState?.source ?? {}) as Record<string, unknown>;
+    c.setSource(jobId, { ...was, pullRequest: url, follow: 'open' });
+    await follow(source, jobId, false).catch((e: unknown) => { c.failed(jobId, e); });
+    return state;
   }
 
   const again = createTendAgain({ store, sourceOf: c.sourceOf, finalReported: c.finalReported, setSource: c.setSource, now: c.now, tendIfDue });

@@ -27,7 +27,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
-import { ready } from '../../src/sandbox/need-steps.ts';
+import { templateReady as ready } from '../../src/domain/sandboxes-before-start.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeCloudTools } from '../support/fake-cloud-tools.ts';

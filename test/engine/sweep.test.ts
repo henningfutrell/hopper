@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import type { Survey } from '../../src/domain/ports.ts';
-import { planSweep } from '../../src/engine/sweep.ts';
+import { planSweep, STUCK_RETRY_MS } from '../../src/engine/sweep.ts';
 import { HOUR, job, none, rig } from './sweep-rig.ts';
 
 describe('what the sweep reaps (issue #410)', () => {
@@ -137,6 +137,48 @@ describe('the sweep runner (issue #410)', () => {
     const first = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 30 * HOUR }] }, keeps: ['done'] });
     await first.sweep.run(true);
     expect(first.logs).toEqual([expect.stringContaining('kept: it holds work not pushed')]);
+  });
+});
+
+describe('a scratch dir the reap could not remove (issue #1452)', () => {
+  const found = { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 30 * HOUR }] };
+
+  it('is never said removed: it is told once while it stays', async () => {
+    const r = rig({ found, lefts: ['done'] });
+    for (let i = 0; i < 3; i++) { await r.sweep.run(true); r.advance(STUCK_RETRY_MS); }
+    expect(r.reaps).toHaveLength(3);
+    expect(r.logs).toEqual([expect.stringContaining('could not remove job done\'s scratch dir on m: /w/.worktrees/@scratch/done is still there')]);
+    expect(r.logs.some((l) => /reaped job done/.test(l))).toBe(false);
+  });
+
+  it('is not reaped again on each pass (issue #1613): only once the retry wait passed', async () => {
+    const r = rig({ found, lefts: ['done'] });
+    for (let i = 0; i < 6; i++) { await r.sweep.run(true); r.advance(10 * 60_000); }
+    expect(r.reaps).toHaveLength(1);
+    r.advance(STUCK_RETRY_MS);
+    await r.sweep.run(true);
+    expect(r.reaps).toHaveLength(2);
+  });
+
+  it('what still runs of a job whose dir is stuck is stopped all the same', async () => {
+    const again = rig({ surveys: [found, { ...found, processes: ['done'] }], lefts: ['done'] });
+    await again.sweep.run(true);
+    again.advance(10 * 60_000);
+    await again.sweep.run(true);
+    expect(again.reaps).toHaveLength(2);
+  });
+
+  it('kept work it could not remove records no job.work_removed', async () => {
+    const r = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.worktrees/@scratch/old', ageMs: HOUR }] }, kept: ['old'], lefts: ['old'] });
+    await r.sweep.run(true);
+    expect(r.events.map((e) => e.type)).toEqual(['job.work_kept']);
+  });
+
+  it('a discard it could not remove fails, and says what is still there', async () => {
+    const r = rig({ kept: ['old'], lefts: ['old'] });
+    await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
+    await r.sweep.removals();
+    expect(r.sweep.discarding('old')).toEqual({ state: 'failed', error: 'the machine m could not remove /w/.worktrees/@scratch/old' });
   });
 });
 
@@ -277,7 +319,7 @@ describe('a job\'s containers and volumes (issue #1120)', () => {
     const r = rig({ found: { ...none, containers: ['done', 'run'] }, containers: ['done'] });
     await r.sweep.run(true);
     expect(r.reaps).toEqual([{ jobId: 'done' }]);
-    expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'] } }]);
+    expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'], details: [{ id: 'c-done', name: 'db', image: 'postgres:16' }] } }]);
     expect(r.logs).toContainEqual(expect.stringContaining('removed 1 container and 1 volume of job done on m'));
   });
 
@@ -292,6 +334,6 @@ describe('a job\'s containers and volumes (issue #1120)', () => {
     r.events[0]!.data = { paths: ['/w/.worktrees/@scratch/old/repo'] };
     await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
     await r.sweep.removals();
-    expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'] } }]);
+    expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'], details: [{ id: 'c-old', name: 'db', image: 'postgres:16' }] } }]);
   });
 });

@@ -2,7 +2,9 @@
 // fetch or its push — done on GitHub with the connection of the job's own user. In order: the job's proxy token (git
 // sends it as the password of Basic auth, from the job's credential helper) and its job at work; the repository: a push
 // only to the job's own one, whether or not it is one of the user's job repositories (issue #1131: a job of the app
-// source, or of a repository chosen no more, has its own repository still), and only when the user can push to it; then
+// source, or of a repository chosen no more, has its own repository still), or to another of the user's job repositories
+// (issue #1275: a job whose issue is in one repository and whose change belongs in another), and only when the user can
+// push to it; then
 // a push's ref updates, read before anything reaches GitHub (`checkPush`). A fetch goes to GitHub with the user's connection whatever the
 // repository (issue #1015): the job repositories decide intake and where a job pushes, not what it reads, so a job reads
 // any repository its user sees; git's fetch (`git-upload-pack`) only reads, and the token never leaves the hopper. A push is an event on the job's timeline (`github_proxy.done`, `.refused`,
@@ -19,6 +21,7 @@ import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts';
 import type { RepoFacts } from './api.ts';
 import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
 import { CONTRIBUTION_OFF } from './policy.ts';
@@ -47,11 +50,13 @@ export interface GitConnection {
 /** One user's side: their jobs, their Contribution (issue #429), and their GitHub connection for git, or why there is none. */
 export interface GitUser {
   user: ProxyUser;
+  /** Every connected account's job repositories (issue #1448). */
   jobRepositories(): string[];
   contribution(): boolean;
   /** The repository's landing branch while it has landing batches (issue #1073); undefined: it has none. */
   landingBranch?(repo: string): string | undefined;
-  git(): GitConnection | { problem: string };
+  /** The connection of the account that acts for `repo` (issue #1448): the one whose job repositories hold it; else the first. */
+  git(repo?: string): GitConnection | { problem: string };
   /**
    * The shrink guard (issue #1096): one ref update of a push, from `old` to `new`, with the push's pack, judged against
    * the base branch `base`. Refused: the files and why. Absent: no guard.
@@ -97,8 +102,11 @@ const UNAUTHORIZED = text(401, 'refused: the token is not a job\'s of this hoppe
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
-const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
+/**
+ * A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). A GitLab job's
+ * (issue #1448 part 3) is a GitLab project, so it has no own repository on GitHub.
+ */
+const repoOf = (job: Job): string | undefined => { const s = sourceItemOf(job); return isGitLabItem(s) ? undefined : s?.repo; };
 
 const pkt = (s: string | Buffer): Buffer => {
   const b = typeof s === 'string' ? Buffer.from(s) : s;
@@ -109,7 +117,7 @@ const pkt = (s: string | Buffer): Buffer => {
  * git's own answer to a push it refused, as receive-pack writes one: `unpack ok`, then `ng <ref> <reason>` for every ref,
  * in side band 1 when the push asked for a side band. git shows each as `! [remote rejected] … (<reason>)`.
  */
-function refusedReport(body: Buffer, commands: readonly RefUpdate[], reason: string): GitAnswer {
+export function refusedReport(body: Buffer, commands: readonly RefUpdate[], reason: string): GitAnswer {
   const caps = body.toString('utf8', 4, Math.min(body.length, 4 + parseInt(body.toString('latin1', 0, 4), 16))).split('\0')[1] ?? '';
   const report = Buffer.concat([pkt('unpack ok\n'), ...commands.map((c) => pkt(`ng ${c.ref} ${reason}\n`)), Buffer.from('0000')]);
   const band = /\bside-band(-64k)?\b/.test(caps);
@@ -166,8 +174,11 @@ export function createGitProxy(o: GitProxyOptions) {
       const push = at.service === 'git-receive-pack';
       const machine = side.user.machineOf(job);
       const requestId = newId();
-      const git = side.git();
-      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380).
+      const own = repoOf(job);
+      const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
+      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380): the account of the job repository it
+      // fetches or pushes (issue #1448); for any other repository — its fork — the account of the job's own repository.
+      const git = side.git(usedHere ? at.repo : own);
       const acting = 'problem' in git ? {} : { as: git.login };
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
         const event: NewEvent = { type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, op: 'git.push', repo: at.repo, ...data } };
@@ -177,9 +188,7 @@ export function createGitProxy(o: GitProxyOptions) {
         if (push) record('github_proxy.refused', { reason });
         return text(403, `refused: ${reason}`);
       };
-      const own = repoOf(job);
       const toOwn = own !== undefined && same(own, at.repo);
-      const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
       const contribution = side.contribution();
       // The job's fork (issue #429): read only when it can be one — Contribution on, the user's own, no job repository.
       let facts: RepoFacts | undefined;
@@ -187,13 +196,17 @@ export function createGitProxy(o: GitProxyOptions) {
         try { facts = await git.repo(at.repo); } catch { facts = undefined; }
       }
       const fork = facts !== undefined && facts.fork && [facts.parent, facts.source].some((p) => p !== undefined && same(p, own!));
-      if (push && !toOwn && !fork) return refuse(`a job pushes only to its own repository${own ? ` (${own})${contribution ? ', or to its user\'s fork of it' : ''}` : ', and this job has none'}`);
+      if (push && !toOwn && !usedHere && !fork) {
+        const where = own ? `its own repository (${own}) or another of the repositories the hopper works on${contribution ? ', or to its user\'s fork of its own' : ''}` : 'the repositories the hopper works on';
+        return refuse(`a job pushes only to ${where}`);
+      }
       if ('problem' in git) {
         if (push || usedHere) return refuse(git.problem);
         return text(503, `refused: ${git.problem}`);
       }
-      if (push && toOwn) {
+      if (push && !fork) {
         try { facts = await git.repo(at.repo); } catch (e) { return refuse(`${at.repo} could not be read: ${(e as Error).message}`); }
+        if (!facts.canPush && !toOwn) return refuse(`your user cannot push to ${at.repo}`);
         if (!facts.canPush) {
           return refuse(contribution
             ? `your user cannot push to ${at.repo}: contribute through a fork: sh "$HOPPER_GH" repo fork --repo ${at.repo}, then push your branch to the fork`

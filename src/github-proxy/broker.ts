@@ -19,16 +19,20 @@
 // opens a watch on the job's stream (`wait`, pr-waits.ts) and answers 202; the job is told there when they end.
 // A poll (issue #1210, polls.ts): the same read of one job again and again is still answered, with a `poll` note that names
 // the hopper's wait; for a job on a wait for its own command, the engine is told (`polled`).
+// A resend key (issue #1607, sub-issue-links.ts): an issue create or comment sent again with the key it was sent with is
+// answered the first answer, from its events (`replayed`), or, while the first is still at GitHub, the same answer as it.
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
 import { prWaitOver, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
+import type { ProxyReplay } from './sub-issue-links.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -46,16 +50,22 @@ export interface ProxyUser {
   ledger?(url: string): LedgerView | undefined;
   /** What this user's records know of pull request `number` of `repo` (issue #1072). Absent: nothing; GitHub is read. */
   pullRequest?(repo: string, number: number): KnownPullRequest;
+  /** The first answer to the job's request with resend key `key` (issue #1607); undefined: none yet. Absent: none is kept. */
+  replay?(jobId: string, key: string): ProxyReplay | undefined;
 }
 
-/** A user's GitHub connection: the repositories their jobs work on, and its calls; or why it has none. */
+/**
+ * A user's GitHub connection: the repositories their jobs work on — every connected account's job repositories (issue
+ * #1448) —, and its calls; or why it has none. `api` and `login` name a repository: the connected account whose job
+ * repositories hold it acts; for any other, or none, the user's first account.
+ */
 export interface ProxyConnection {
   jobRepositories(): string[];
-  api(): ProxyApi | { problem: string };
+  api(repo?: string): ProxyApi | { problem: string };
   /** Its user's Contribution (issue #429), read at each request. */
   contribution(): boolean;
-  /** Its user's GitHub login; undefined: not connected. */
-  login(): string | undefined;
+  /** The GitHub login of the account that acts for `repo`; undefined: not connected. */
+  login(repo?: string): string | undefined;
 }
 
 export interface ProxyAnswer { status: number; body: Record<string, unknown> }
@@ -96,16 +106,27 @@ const BEARER = /^Bearer\s+(\S+)$/i;
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
-const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
+/** A request that carries a resend key: its job's token and the key; undefined: none. */
+const resendOf = (authorization: string | undefined, body: unknown): string | undefined => {
+  const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+  return (raw.op === 'issue.create' || raw.op === 'issue.comment') && typeof raw.key === 'string' ? `${authorization ?? ''}\0${raw.key}` : undefined;
+};
+
+/**
+ * A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). A GitLab job's
+ * (issue #1448 part 3) is a GitLab project, so it has no own repository on GitHub.
+ */
+const repoOf = (job: Job): string | undefined => { const s = sourceItemOf(job); return isGitLabItem(s) ? undefined : s?.repo; };
 
 export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
   const newId = o.newId ?? (() => randomUUID());
   const cache = o.cache ?? createRepoQueryCache();
   const now = o.now ?? (() => Date.now());
   const polls = o.polls ?? createPollWatch();
-  return {
-    async handle(authorization, body) {
+  /** The requests with a resend key at GitHub now: the same one sent again meanwhile waits for the same answer. */
+  const inflight = new Map<string, Promise<ProxyAnswer>>();
+  const proxy = {
+    async handle(authorization: string | undefined, body: unknown): Promise<ProxyAnswer> {
       const parts = parseProxyToken(BEARER.exec(authorization ?? '')?.[1] ?? '');
       const user = parts ? o.user(parts.userId) : undefined;
       const job = parts && user?.holds(parts) ? user.job(parts.jobId) : undefined;
@@ -120,9 +141,10 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const requestId = newId();
       const machine = user.machineOf(job);
       const connection = o.connection(user.id);
-      const login = connection?.login();
-      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380).
-      const acting = login ? { as: login } : {};
+      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380): the account of its repository (issue
+      // #1448), or, once the request is read, of the job repository it names.
+      let login = connection?.login(repoOf(job));
+      let acting: { as?: string } = login ? { as: login } : {};
       // Who asked and from where stay in the hopper: the job's timeline.
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
         user.record({ type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, ...data } });
@@ -155,7 +177,12 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const issue = job.source?.number;
       const jobRepo = repoOf(job);
       const contribution = connection.contribution();
-      const api = connection.api();
+      // The account that acts (issue #1448): the one of the repository the request names, when it is a job repository; else
+      // the one of the job's own repository — its fork, a repo query elsewhere.
+      const actingRepo = connection.jobRepositories().some((r) => same(r, req.repo)) ? req.repo : jobRepo;
+      login = connection.login(actingRepo);
+      acting = login ? { as: login } : {};
+      const api = connection.api(actingRepo);
       // What the contribution flow decides on, read from GitHub only when it can matter (issue #429).
       const facts: Pick<ProxyAsker, 'fork' | 'canPush'> = {};
       const maybeFork = contribution && jobRepo !== undefined && login !== undefined && same(req.repo.split('/')[0]!, login)
@@ -180,6 +207,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       if ('problem' in api && req.op !== 'pr.status') return refuse(503, api.problem, req);
       const allowed = checkRequest(req, asker, connection.jobRepositories());
       if (!allowed.ok) return refuse(403, allowed.reason, req);
+      const resendKey = 'key' in req ? req.key : undefined;
+      const replay = resendKey !== undefined ? user.replay?.(job.id, resendKey) : undefined;
+      if (replay) return replayed(req, replay, resendKey!, acting, record);
       // Where a pull request stands (issue #1072): the hopper's records first; it costs GitHub nothing, so no limit.
       const knownPr = req.op === 'pr.status' ? user.pullRequest?.(req.repo, req.number) ?? {} : undefined;
       const prItem = knownPr?.item ? { item: knownPr.item } : {};
@@ -215,7 +245,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
       if (over) return refuse(429, over, req);
-      // An issue says the hopper filed it, for which job: never labelled or assigned, so a person triages it (issue #597: mask tokens).
+      // An issue says the hopper filed it, for which job (issue #597: mask tokens). A follow-up is never labelled or
+      // assigned, so a person triages it; a required child is routed (issue #1510): labelled and assigned to the job's
+      // user, so a source lists it as a request card, which a person approves (it is never of a trusted origin).
       const maskRequest = (r: ProxyRequest): ProxyRequest => {
         if (r.op === 'issue.create' || r.op === 'pr.create') return { ...r, title: maskGitHubTokens(r.title), body: maskGitHubTokens(r.body) };
         if (r.op === 'issue.comment') return { ...r, body: maskGitHubTokens(r.body) };
@@ -243,21 +275,26 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         if (kept && answersNow(req.op, kept, now(), ledgerOf(kept.result.url))) return answered(kept.result, 'cache', kept.at);
       }
       try {
-        const result = await api.perform(sent, parent?.required ? parent : undefined);
+        const routeTo = parent?.required && login ? { labels: [ROUTE_LABEL], assignees: [login] } : undefined;
+        const result = await api.perform(sent, parent?.required ? { subIssueOf: parent, ...routeTo } : undefined);
         if (read) {
           const at = now();
           cache.put(key, result, at);
           return answered(result, 'github', at);
         }
         if ('number' in req) cache.forget(req.repo, req.number);
-        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}) });
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}), ...(resendKey ? { key: resendKey } : {}) });
         if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result } };
         const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
-          ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}),
+          ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}), ...(routeTo ? { routed: true } : {}),
         } });
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required } };
+        // A routed child: the job is told the `on:` line that wakes it when the child closes.
+        const routed = routeTo ? { routed: true, waitOn: `issue ${req.repo}#${String(result.number)}` } : {};
+        // A link GitHub refused is kept, and tried again until it is made (issue #1607).
+        const later = parent.required && subIssue === false ? { subIssueLater: true } : {};
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required, ...later, ...routed } };
       } catch (e) {
         const status = e instanceof ProxyGitHubError ? e.status : undefined;
         const error = (e as Error).message;
@@ -266,4 +303,29 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       }
     },
   };
+  return {
+    handle(authorization, body) {
+      const k = resendOf(authorization, body);
+      if (k === undefined) return proxy.handle(authorization, body);
+      const running = inflight.get(k);
+      if (running) return running;
+      const answer = proxy.handle(authorization, body).finally(() => inflight.delete(k));
+      inflight.set(k, answer);
+      return answer;
+    },
+  };
+}
+
+/** The first answer to a request sent again with its resend key (issue #1607), recorded as done again; nothing reaches GitHub. */
+function replayed(
+  req: ProxyRequest, replay: ProxyReplay, key: string, acting: { as?: string },
+  record: (type: 'github_proxy.done', data: Record<string, unknown>) => void,
+): ProxyAnswer {
+  record('github_proxy.done', { op: req.op, repo: req.repo, ...(replay.number !== undefined ? { number: replay.number } : {}), url: replay.url, key, replayed: true });
+  const c = replay.child;
+  const lineage = !c ? {} : {
+    parent: `${c.parent.repo}#${c.parent.number}`, required: c.required, ...(c.subIssue !== undefined ? { subIssue: c.subIssue } : {}),
+    ...(c.required && c.subIssue === false ? { subIssueLater: true } : {}), ...(c.routed ? { routed: true, waitOn: `issue ${req.repo}#${String(replay.number)}` } : {}),
+  };
+  return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId: replay.requestId, ...acting, ...(replay.number !== undefined ? { number: replay.number } : {}), url: replay.url, ...lineage, replayed: true } };
 }

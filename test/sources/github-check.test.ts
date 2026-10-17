@@ -27,6 +27,29 @@ describe('GitHub source check', () => {
     expect(await source.check([running, asking, queued])).toEqual([{ kind: 'cancel', jobId: queued.id, reason: 'issue closed' }]);
   });
 
+  // Issue #1460: a job on its own wait does not run on to its own end; it waits for something that the close made moot.
+  it('an issue closed by its own work gives a job on its own wait a finish: by the merge of its own pull request, or as completed (issue #1460)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
+    gh.closeIssue(REPO, 2, 'owner', { at: '2026-10-02T11:00:00.000Z' });
+    const wait = { for: 'the other change to land', on: { kind: 'outside' as const, what: 'the other change' }, since: '2026-10-02T10:40:00.000Z' };
+    const [merged, completed] = [jobForIssue(1, { status: 'waiting_on', wait }), jobForIssue(2, { status: 'waiting_on', wait })];
+    expect(await source.check([merged, completed])).toEqual([
+      { kind: 'finish', jobId: merged.id, reason: 'issue closed as complete' },
+      { kind: 'finish', jobId: completed.id, reason: 'issue closed as complete' },
+    ]);
+  });
+
+  it('an issue closed as not planned cancels a job on its own wait (issue #1460)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
+    gh.closeIssue(REPO, 1, 'owner', { at: '2026-10-02T11:00:00.000Z', reason: 'not_planned' });
+    const job = jobForIssue(1, { status: 'waiting_on', wait: { for: 'a person', on: { kind: 'outside', what: 'a person' }, since: '2026-10-02T10:40:00.000Z' } });
+    expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'issue closed' }]);
+  });
+
   it('an issue closed as not planned cancels a started job', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });

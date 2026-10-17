@@ -52,8 +52,8 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     kind: 'podman',
     // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
     ...(via === socketCall ? copyInCall(socket, API, 'podman') : {}),
-    // The images on the machine (issue #1120): only over the socket here, never through a machine's relay.
-    ...(via === socketCall ? imageCalls('podman', (method, path) => call(method, path)) : {}),
+    // The images on the machine (issue #1120), over the socket here or through a machine's relay (issue #1202).
+    ...imageCalls('podman', (method, path) => call(method, path)),
 
     async problem() {
       let a: Answer;

@@ -112,8 +112,8 @@ describe('the Accounts view', () => {
     const flagged: ToolAccount = { ...SIGNED_IN, machines: [{ ...SIGNED_IN.machines[0]!, infraCredentials: ['.aws', '.keycloak'] }, SIGNED_IN.machines[1]!] };
     await render({ accounts: [flagged] });
     const [desk, laptop] = machines();
-    expect(desk).toContain('not ready, takes no new job: its job user holds .aws, .keycloak');
-    expect(laptop).not.toContain('not ready');
+    expect(desk).toContain('its job user holds credentials a job could use: .aws, .keycloak');
+    expect(laptop).not.toContain('its job user holds');
   });
 
   it('no tool account: says where to add a usage source', async () => {
@@ -139,7 +139,14 @@ describe('the Accounts model', () => {
   });
 
   it('Needs you names each machine signed in as nobody, by its tool and label (issue #1128)', () => {
-    expect(signedOutLines([SIGNED_IN, SIGNED_OUT])).toEqual(['Claude on Server: signed in as nobody — sign it in from Accounts']);
-    expect(signedOutLines([SIGNED_IN])).toEqual([]);
+    expect(signedOutLines([SIGNED_IN, SIGNED_OUT], NOW)).toEqual(['Claude on Server: signed in as nobody — sign it in from Accounts']);
+    expect(signedOutLines([SIGNED_IN], NOW)).toEqual([]);
+  });
+
+  it('Needs you names a sign-in the tool says ends within a day, and one that has ended (issue #1211)', () => {
+    const ends = (m: number): ToolAccount => ({ ...SIGNED_IN, machines: [{ ...SIGNED_IN.machines[0]!, expiresAt: new Date(NOW + m * 60_000).toISOString() }] });
+    expect(signedOutLines([ends(90)], NOW)).toEqual(['Claude on Desk: its sign-in ends in 1h 30m — sign it in again from Accounts']);
+    expect(signedOutLines([ends(-5)], NOW)).toEqual(['Claude on Desk: its sign-in has ended — sign it in again from Accounts']);
+    expect(signedOutLines([ends(25 * 60)], NOW)).toEqual([]);
   });
 });
