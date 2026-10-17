@@ -58,7 +58,18 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
     machines: { list: async () => machines },
     executors: { get: (n: string) => (n === 'x' ? executor : undefined), names: () => ['x'] } as never,
     store: {
-      jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id), getBySourceKey: (key: string) => jobs.findLast((j) => j.source?.key === key) },
+      jobs: {
+        list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id), getBySourceKey: (key: string) => jobs.findLast((j) => j.source?.key === key),
+        // A discard is a record on the job (issue #1570): a patch's undefined removes the field.
+        update: (id: string, patch: Partial<Job>) => {
+          const i = jobs.findIndex((j) => j.id === id);
+          const next = { ...jobs[i]!, ...patch } as Job;
+          for (const [k, v] of Object.entries(patch)) if (v === undefined) delete (next as unknown as Record<string, unknown>)[k];
+          jobs[i] = next;
+          return next;
+        },
+      },
+      tx: <T>(fn: () => T): T => fn(),
       events: {
         recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
         append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
@@ -67,5 +78,5 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, jobs, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }
