@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecutorRegistry, UserStore } from '../../src/domain/ports.ts';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import type { WatchedEnd, WatchedRef } from '../../src/domain/watched-items.ts';
-import { DEADLINE_MS, FIRST_CHECK_MS } from '../../src/domain/wait-checks.ts';
+import { DEADLINE_MS, FIRST_CHECK_MS, type WaitedChecks } from '../../src/domain/wait-checks.ts';
 import { createWaitChecks, LEASE_MS, type WaitReads } from '../../src/engine/wait-checks.ts';
 import { openUserStore } from '../../src/store/user-store.ts';
 import { testDatabaseUrl } from '../support/database.ts';
@@ -197,5 +197,59 @@ describe('a wait check (issue #1694)', () => {
     expect(again.wait!.check).toMatchObject({ overdueAt: new Date(now).toISOString() });
     expect(ended(a.store, job.id)).toHaveLength(1);
     expect(a.store.events.recent(50, ['job.wait_overdue'], job.id)).toHaveLength(1);
+  });
+
+  it('a time the job named: a wait the hopper cannot test ends at it, and not before (part 2)', async () => {
+    const url = testDatabaseUrl();
+    const a = hopper(url, reads());
+    const job = waitingJob(a.store, { for: 'the deploy window', on: { kind: 'outside', what: 'the deploy window' }, checkLine: 'after 2h' });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({ condition: { kind: 'time_passed' }, attempts: 0 });
+
+    // The hopper restarts: the check is kept, and another hopper ends the wait at the time.
+    const b = hopper(url, reads());
+    now = T0 + 2 * 3600_000;
+    await b.checks.run();
+    expect(b.store.jobs.get(job.id)!.status).toBe('queued');
+    expect(ended(b.store, job.id)[0]!.data).toMatchObject({ by: 'hopper', note: `the time you named passed (${new Date(now).toISOString()})` });
+  });
+
+  it('a time the job named beside a condition: the wait ends at it, though the condition is not met', async () => {
+    const url = testDatabaseUrl();
+    const r = reads();
+    const a = hopper(url, r);
+    const job = waitingJob(a.store, { checkLine: 'after 3m' });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    now = T0 + 2 * 60_000;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({ attempts: 2, nextCheckAt: new Date(T0 + 3 * 60_000).toISOString() });
+    now = T0 + 3 * 60_000;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ note: `the time you named passed (${new Date(now).toISOString()}); not ended yet: octo/tools#9` });
+  });
+
+  it('a wait on a pull request\'s checks: not met while they run, then ended when they pass (part 2)', async () => {
+    const url = testDatabaseUrl();
+    const r = reads();
+    const states: WaitedChecks[] = [];
+    const a = hopper(url, { ...r, async pullRequestChecks(_job, repo, number) { states.push({ url: `https://github.com/${repo}/pull/${number}`, state: 'open' }); return { ...states.at(-1)!, ...pr }; } });
+    let pr: Partial<WaitedChecks> = { checks: 'pending' };
+    const job = waitingJob(a.store, { for: 'the checks of PR 8', on: { kind: 'pull_request', number: 8, about: 'checks' } });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({ result: 'the checks of https://github.com/octo/tools/pull/8 run', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString() });
+
+    pr = { checks: 'passing' };
+    now += FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ note: 'the checks of https://github.com/octo/tools/pull/8 passed', check: 'pr_checks_ended:octo/tools#8' });
+    expect(r.asked).toEqual([]);
   });
 });
