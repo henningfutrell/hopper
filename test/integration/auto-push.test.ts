@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor } from '../../src/domain/ports.ts';
 import type { FailuresView, FailureSettings } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
+import { jobWorktreeOf } from '../../src/executors/herdr/job-worktree.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -93,6 +94,42 @@ describe('Push it by itself (issue #1472)', () => {
     expect(told).toContain('fresh session');
     await a.waitForStatus(job.id, 'finished', 8000);
     expect(await continuedOf(a, job.id)).toEqual([expect.objectContaining({ data: { keptWork: true, auto: true } })]);
+  });
+
+  it('a finished job with no pane state goes on in a fresh session in the job worktree its kept work names', { timeout: 30_000 }, async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE, DONE], reapKeeps: [KEPT] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    await a.ui<FailureSettings>('/ui/api/failures/settings', { auto: { push: false } }, { token });
+    const job = await a.pull({}, herdrItem);
+    await a.waitForStatus(job.id, 'finished', 8000);
+    await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id), { what: 'its work kept' });
+    // As a job whose pane state was never recorded: its work tree is known only from what its reap kept.
+    const tree = jobWorktreeOf('/tmp', job.id);
+    a.user().store.jobs.update(job.id, { executorState: undefined, agentSession: undefined, workTree: undefined });
+    a.user().store.events.append({ type: 'job.work_kept', jobId: job.id, data: { paths: [tree, KEPT] } });
+    expect((await failuresOf(a)).keptWork.find((k) => k.jobId === job.id)).toMatchObject({ actions: { push: { ok: true } } });
+
+    await a.ui<FailureSettings>('/ui/api/failures/settings', { auto: { push: true } }, { token });
+    await waitFor(() => herdr.prompts.length === 2, { what: 'the push brief sent by itself' });
+    expect(herdr.agentStarts[1]!.args).not.toContain('--resume');
+    const told = herdr.prompts[1]!.text;
+    expect(told).toContain('Paint the shed');
+    expect(told).toContain('fresh session');
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect((await a.job(job.id)).workTree).toBe(tree);
+  });
+
+  it('a finished job with no pane state whose kept work names no job worktree: Push it is refused, and says why', { timeout: 30_000 }, async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE], reapKeeps: [KEPT] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    await a.ui<FailureSettings>('/ui/api/failures/settings', { auto: { push: false } }, { token });
+    const job = await a.pull({}, herdrItem);
+    await a.waitForStatus(job.id, 'finished', 8000);
+    await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id), { what: 'its work kept' });
+    a.user().store.jobs.update(job.id, { executorState: undefined });
+    expect((await failuresOf(a)).keptWork.find((k) => k.jobId === job.id)!.actions.push).toEqual({ ok: false, why: expect.stringContaining('its work tree cannot reopen') });
   });
 
   it('a failed job whose work was kept is not pushed by itself: its failure goes to the assessor and a person', { timeout: 30_000 }, async () => {
