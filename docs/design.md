@@ -7811,8 +7811,13 @@ line too; never the UI).
    cannot reattach, which restart recovery would fail. herdr-claude jobs reattach and idempotent
    jobs re-run, so neither blocks. The status says which jobs it waits for.
 5. Swap: `<install>` → `<install>.prev` (the previous `.prev` removed), `<install>.next` →
-   `<install>`; `<data dir>/update/pending.json` names from, to and ref.
+   `<install>`.
 6. Restart (below).
+
+The **apply record** `<data dir>/update/pending.json` (issue #1626) names from, to, ref and the phase: written when the
+apply starts (`building`) and again as it starts to wait (`waiting`), to swap (`swapping`) and to restart
+(`restarting`); removed when the apply fails in its process. An older build wrote it only after the swap, with no phase:
+that one reads as `restarting`.
 
 A failure in steps 1-3 or the swap → `update.failed`, the install unchanged, state `error` with the
 reason until the next check.
@@ -7832,8 +7837,10 @@ lanes (`job.reattached`); idempotent jobs are requeued; `waiting_answer` jobs ke
 an open question in the answer or assess stage restarts there, one at the human stage keeps its
 timers; UI sessions are in the database; schema migrations run at boot as on any start.
 
-**The boot after** reads pending.json: install.json on `to` → `update.applied`; otherwise (rolled back
-by hand) → `update.failed`. The UI reloads itself when `GET /api/update` names another installed
+**The boot after** — or any start that finds an apply record, from a process stopped mid-apply — removes the record
+and `<install>.next`: install.json on `to` → `update.applied`; otherwise → `update.failed`, which says the hopper
+stopped while building or waiting (install unchanged), or that the boot runs another commit (rolled back by hand). A
+stopped updater never swaps, and records no `update.failed` itself: its event log is closed, so the next start does. The UI reloads itself when `GET /api/update` names another installed
 commit than the page was loaded with — the new UI bundle.
 
 **Settings** in the store's `settings` table (`updateChannel`, `autoUpdate`, `updateCanary`; key/value, no
@@ -8005,7 +8012,7 @@ code that reads the old names is `src/update/rename.ts` (the hopper's host), `re
 
 **What moves on the hopper's host.** The config dir; `daemon.env` (every `JOB_HOPPER_*` key renamed, every
 value naming the old config or work dir pointed at the new one: token files, key files); the work dir
-(pinned host keys, client sockets, the update mirror and its pending file); in `~/.ssh/authorized_keys`
+(pinned host keys, client sockets, the update mirror and its apply record); in `~/.ssh/authorized_keys`
 the client targets' lines (`job-hopper-client:<name>`), whose forced command runs the relay from the
 install dir and opens its socket in the work dir; the CLI link; the units (old ones disabled, stopped and
 removed); the install dir (removed once the new daemon answers `/api/health`). A dir whose new place
@@ -8029,7 +8036,7 @@ session `job-hopper` on this machine (not ssh, not a client target).
   (`systemd-run --user`; the handover stops the unit the boot runs in) and waits to be stopped. The
   handover copies the install to `~/.local/lib/hopper`, moves the state, installs and starts the new
   units, and removes the old install dir once the new daemon answers. With a pane job, the boot puts
-  `<install>.prev` back, records `update.failed` with the jobs it waits for (the pending file removed,
+  `<install>.prev` back, records `update.failed` with the jobs it waits for (the apply record removed,
   so the old boot does not report it again), and exits 75: the old daemon runs on, and its updater
   offers the update again at the next check — taken once the panes are gone (auto-update), or from
   the UI.
