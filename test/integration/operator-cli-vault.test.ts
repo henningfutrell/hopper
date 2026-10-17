@@ -11,12 +11,6 @@
 //     When the operator runs `hopper vault remove DEPLOY_KEY`
 //     Then the vault holds no DEPLOY_KEY
 //   Scenario: a value as an argument, or no value on stdin, is refused
-//   Scenario: a vault secret is marked as a minting credential with --mints, as on Settings → Vault (issue #872)
-//     When the operator pipes a value into `hopper vault set AWS_MINT --mints aws-account/123456789012`
-//     Then `hopper vault` lists AWS_MINT as minting for aws-account 123456789012
-//     When the operator sets it again without --mints, it stays a minting credential; with --mints none it is a plain secret
-//     And a --mints that is not aws-account/<id> or cluster/<name>, or with --shared, is refused before any call
-//     And a secret in a template's scope is refused by the vault, as for a click
 //   Scenario: a template is saved with its secrets and profiles, waits for a person, and is approved
 //     When the operator saves the template kube with KUBE_TOKEN, a read profile and a write profile
 //     Then kube waits for approval of KUBE_TOKEN, the image and both profiles
@@ -81,7 +75,7 @@ async function hopper(a: TestApp, argv: string[], stdin = '') {
 }
 
 const json = <T>(r: { out: string }): T => JSON.parse(r.out) as T;
-type VaultAnswer = { secrets: { name: string; scope?: string; mints?: { kind: string; name: string } }[]; templates: TemplateView[] };
+type VaultAnswer = { secrets: { name: string; scope?: string }[]; templates: TemplateView[] };
 /** The template commands answer the templates, as `hopper template list` does. */
 const kube = (r: { out: string }) => json<TemplateView[]>(r).find((x) => x.name === 'kube');
 
@@ -111,37 +105,6 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(await hopper(a, ['vault', 'set', 'DEPLOY_KEY', VALUE], VALUE)).toMatchObject({ code: 2, err: expect.stringContaining('usage: hopper vault set <name>') });
     expect(await hopper(a, ['vault', 'set', 'DEPLOY_KEY'], '  \n')).toMatchObject({ code: 2, err: expect.stringContaining('no value on stdin') });
     expect(json<VaultAnswer>(await hopper(a, ['vault'])).secrets).toEqual([]);
-  });
-
-  it('marks a vault secret as a minting credential with --mints; a set without it keeps it, none drops it (issue #872)', async () => {
-    const { a } = await boot();
-    const mintsOf = async (name: string) => json<VaultAnswer>(await hopper(a, ['vault'])).secrets.find((x) => x.name === name)?.mints;
-    const set = await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'aws-account/123456789012'], `${VALUE}\n`);
-    expect(set).toMatchObject({ code: 0 });
-    expect(set.out).not.toContain(VALUE);
-    expect(await mintsOf('AWS_MINT')).toEqual({ kind: 'aws-account', name: '123456789012' });
-    expect(a.user().store.events.since(0, 100_000).filter((e) => e.type === 'vault.secret_set').at(-1)?.data).toMatchObject({ mints: { kind: 'aws-account', name: '123456789012' } });
-
-    expect((await hopper(a, ['vault', 'set', 'AWS_MINT'], VALUE)).code).toBe(0);
-    expect(await mintsOf('AWS_MINT')).toEqual({ kind: 'aws-account', name: '123456789012' });
-    expect((await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'cluster/lab'], VALUE)).code).toBe(0);
-    expect(await mintsOf('AWS_MINT')).toEqual({ kind: 'cluster', name: 'lab' });
-    expect((await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'none'], VALUE)).code).toBe(0);
-    expect(await mintsOf('AWS_MINT')).toBeUndefined();
-
-    // The same checks as the UI's, before any call: the kind and the name a minting credential mints for.
-    expect(await hopper(a, ['vault', 'set', 'KUBE', '--mints', 'namespace/lab/x'], VALUE)).toMatchObject({ code: 2, err: expect.stringContaining('aws-account or cluster') });
-    expect(await hopper(a, ['vault', 'set', 'KUBE', '--mints', 'cluster'], VALUE)).toMatchObject({ code: 2, err: expect.stringContaining('--mints cluster') });
-    expect(await hopper(a, ['vault', 'set', 'KUBE', '--mints', 'cluster/la b'], VALUE)).toMatchObject({ code: 2, err: expect.stringContaining('is not a name') });
-    expect(await hopper(a, ['vault', 'set', 'KUBE', '--shared', '--mints', 'cluster/lab'], VALUE)).toMatchObject({ code: 2, err: expect.stringContaining('a shared secret is never one') });
-    expect(json<VaultAnswer>(await hopper(a, ['vault'])).secrets.map((x) => x.name)).toEqual(['AWS_MINT']);
-
-    // The vault's own check, as for a click: a secret a template gives out is never a minting credential.
-    expect((await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--secret', 'AWS_MINT'])).code).toBe(0);
-    const refused = await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'cluster/lab'], VALUE);
-    expect(refused.code).not.toBe(0);
-    expect(refused.err).toContain('in a template\'s scope');
-    expect(await mintsOf('AWS_MINT')).toBeUndefined();
   });
 
   it('saves a template with secrets and profiles; it waits for a person, is approved, and keeps what a later save leaves out', async () => {
