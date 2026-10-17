@@ -9,7 +9,7 @@ import type { PlaygroundView } from '../../src/domain/types.ts';
 import { PLAYGROUND_LIMITS } from '../../src/sandbox/playground.ts';
 
 const VIEW: PlaygroundView = {
-  limits: PLAYGROUND_LIMITS, running: { all: 1, yours: 1 },
+  agents: ['claude', 'codex'], limits: PLAYGROUND_LIMITS, running: { all: 1, yours: 1 },
   sandboxes: [{ id: '1', name: 'hopper-playground-1', agent: 'claude', size: { cpus: 1, memoryMb: 2048, ttlMinutes: 60 }, state: 'starting', createdAt: '2026-10-15T12:00:00Z', expiresAt: '2026-10-15T13:00:00Z' }],
 };
 
@@ -42,6 +42,12 @@ describe('the sandbox playground panel', () => {
   it('lists the hopper\'s playground sandboxes', async () => {
     await boot(VIEW);
     expect(document.querySelector('[data-slot="playground-sandboxes"]')?.textContent).toContain('hopper-playground-1');
+  });
+
+  it('offers each harness\'s box to start', async () => {
+    await boot(VIEW);
+    const agents = [...document.querySelectorAll<HTMLOptionElement>('[data-slot="playground-agent"] option')].map((o) => o.value);
+    expect(agents).toEqual(['claude', 'codex']);
   });
 
   it('hides itself when the answer is no playground view, and does not throw', async () => {
