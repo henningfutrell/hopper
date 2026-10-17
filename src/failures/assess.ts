@@ -154,7 +154,7 @@ function stopsOnRepeat(cause: KnownCause | undefined, a: Assessment): boolean {
  * rules give to a person already keeps its summary: the repeat only says so, and keeps Jev from running it again.
  */
 function stopped(i: AssessInput, a: Assessment): Assessment {
-  const reasons = [...a.reasons.filter((r) => !r.startsWith('automatic ')), `the same failure as the run before it (signature ${i.signature}): it stops here, for a person`];
+  const reasons = [...a.reasons.filter((r) => !r.startsWith('automatic ') && !r.startsWith('transient: retry ')), `the same failure as the run before it (signature ${i.signature}): it stops here, for a person`];
   if (a.decision === 'person') return { ...a, reasons, repeated: true };
   return { cls: a.cls, decision: 'person', reasons, auto: true, repeated: true, summary: summaryOf(i, 'person', true, undefined, undefined, 'Stopped: the same failure twice in a row') };
 }

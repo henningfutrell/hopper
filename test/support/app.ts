@@ -221,11 +221,16 @@ export async function startTestApp(o: {
     async pull(op, over = {}, userId = ADMIN_ID) {
       const item = manualItem({ prompt: JSON.stringify(op), ...over });
       const s = sourceOf(userId);
+      const jobsOf = async () => (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs
+        // The item's own jobs: a proposal's follow-ons share its source (issue #859).
+        .filter((j) => j.source?.key === item.key && !j.followOn);
+      // A new item has no jobs yet; one offered again (its key given) has.
+      const before = new Set(over.key === undefined ? [] : (await jobsOf()).map((j) => j.id));
       s.add(item);
       await app.user(userId).sources.syncNow(s.name);
-      const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs;
-      // The item's own job: a proposal's follow-ons share its source (issue #859), and a run again of it (a fast retry) is newer.
-      const found = jobs.find((j) => j.source?.key === item.key && !j.followOn && !j.rerunOf);
+      // The job this pull made: the oldest new one (the list is newest first). A fast run again of it is newer (issue #1461).
+      const jobs = await jobsOf();
+      const found = jobs.filter((j) => !before.has(j.id)).at(-1) ?? jobs[0];
       if (!found) throw new Error(`no job was pulled for ${item.key}`);
       return found;
     },
