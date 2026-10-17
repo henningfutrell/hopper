@@ -10,6 +10,7 @@ import type { UserStore } from '../domain/ports.ts';
 import type { OperationProfile, VaultAccess } from '../domain/access.ts';
 import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
+import { readClusters } from './clusters.ts';
 import { AT_WORK } from './box.ts';
 import { fromOf, principalOf, usedOf, type MintFrom, type MintingOptions } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
@@ -26,7 +27,7 @@ export interface NeedMinting {
   mintForNeedStep(ask: NeedMintAsk, from?: MintFrom): Promise<NeedMintAnswer>;
 }
 
-export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; plans?: MintingOptions['plans']; applies?: MintingOptions['applies']; bindings?: MintBindings }): NeedMinting {
+export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'config'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; plans?: MintingOptions['plans']; applies?: MintingOptions['applies']; bindings?: MintBindings }): NeedMinting {
   const { vault, events } = store;
   return {
     async mintForNeedStep({ template, step, job, profile, plan }, from = o.mintFrom) {
@@ -54,7 +55,7 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       // No change without a plan (issue #870): every operation but read changes infrastructure.
       const planNo = o.plans ? await o.plans.gate(profile, plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
       if (planNo) return refuse(planNo, decision.id);
-      const source = mintSourceFor(vault.list(), target, profile.operation);
+      const source = mintSourceFor(vault.list(), target, profile.operation, readClusters(store.config));
       if (typeof source === 'string') return refuse(source, decision.id);
       // Held and recorded before the minter makes the Secret (issue #1628): the step's end releases it, whatever the
       // outcome, and a hopper that stops meanwhile leaves it to the reconcile pass. A discovered cluster's EKS token binds to nothing.

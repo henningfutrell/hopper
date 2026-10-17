@@ -13,6 +13,9 @@
         "owner"
       ]
     },
+    "reason": {
+      "type": "string"
+    },
     "person": {
       "type": "string"
     },

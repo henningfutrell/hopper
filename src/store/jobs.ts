@@ -1,6 +1,8 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
-import { childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, verifiedLevel, type StampedBy } from '../domain/trust-stamp.ts';
+import {
+  checkDue, checkedStamp, deniedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy,
+} from '../domain/trust-stamp.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
@@ -141,9 +143,11 @@ export function createJobRepository(c: StoreContext): JobRepository {
         const next = { ...cur, spec };
         if (!stampKey) return next;
         // Stamped again for the new spec, at the level it had or lower; a stamp that does not verify now stays as it is.
+        // Jev's check was on the old text: the new one is checked again.
         const had = verifiedLevel(stampKey, cur);
         if (had === undefined || !cur.stamp) return next;
-        const stamp = signStamp(stampKey, next, { ...cur.stamp, level: had, by: 'respecify', at: c.clock.now().toISOString() });
+        const { check: _old, ...was } = cur.stamp;
+        const stamp = signStamp(stampKey, next, { ...was, level: had, by: 'respecify', at: c.clock.now().toISOString() });
         return { ...next, stamp };
       });
     },
@@ -174,6 +178,30 @@ export function createJobRepository(c: StoreContext): JobRepository {
     liftQuarantine(id) {
       const key = stampKey;
       return key ? write(id, (cur) => ({ ...cur, stamp: liftedStamp(key, cur, c.clock.now().toISOString()) })) : get(id)!;
+    },
+    checkDue(job) {
+      return stampKey ? checkDue(stampKey, job) : false;
+    },
+    checkTrust(id, out) {
+      const key = stampKey;
+      const cur = get(id);
+      // Written only while the check is still due: another hopper's check, a new spec or a person's act came first.
+      if (!key || !cur || TERMINAL_STATUSES.includes(cur.status) || !checkDue(key, cur)) return undefined;
+      const stamp = checkedStamp(key, cur, out, c.clock.now().toISOString());
+      return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
+    },
+    approveTrust(id) {
+      const key = stampKey;
+      const cur = get(id);
+      if (!key || !cur || !trustApprovable(key, cur)) return undefined;
+      return write(id, (j) => ({ ...j, stamp: trustApprovedStamp(key, j, c.clock.now().toISOString()) }));
+    },
+    deny(id) {
+      const key = stampKey;
+      const cur = get(id);
+      if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
+      const stamp = deniedStamp(key, cur, c.clock.now().toISOString());
+      return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
     },
     trustLevel(job) {
       return stampKey ? verifiedLevel(stampKey, job) : undefined;

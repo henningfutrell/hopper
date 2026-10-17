@@ -105,7 +105,7 @@ export type SetSecret = { name: string; scope?: string; mints?: Asset | null } &
 const fail = (code: 'invalid' | 'not_found' | 'conflict' | 'unavailable', error: string): VaultResult => ({ ok: false, code, error });
 
 export function createVaultService(o: {
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings' | 'config'>;
   keys: SealerState;
   clock: Clock;
   idGen: () => string;
@@ -385,7 +385,7 @@ export function createVaultService(o: {
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
 export function openVault(o: {
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; userId?: string; access?: VaultAccess; minter?: CredentialMinter; keys: SealerState; clock: Clock;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings' | 'config'>; userId?: string; access?: VaultAccess; minter?: CredentialMinter; keys: SealerState; clock: Clock;
   logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
   backends: () => ConfiguredBackend[];
 }): VaultService {

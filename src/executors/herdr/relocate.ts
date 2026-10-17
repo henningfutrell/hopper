@@ -13,7 +13,7 @@ import { jobScratchOf, type PaneState } from './start.ts';
 /** Why herdr-claude does not run on the claimed machine, or undefined. */
 export function notHere(m: ExecutionContext['machine']): ExecutionOutcome | undefined {
   // A container target (issue #58) has no herdr; without this the job would run on this machine.
-  if (m.docker) return { kind: 'failed', error: `herdr-claude does not run on container target ${m.id}: it has no herdr; give it the command executor` };
+  if (m.containerImage) return { kind: 'failed', error: `herdr-claude does not run on container target ${m.id}: it has no herdr; give it the command executor` };
   // An ssh target that runs no herdr (issue #142): without this the job would run in this machine's herdr.
   if (m.ssh && !m.herdr) return { kind: 'failed', error: `herdr-claude does not run on ${m.id}: it runs no herdr; give it another executor` };
   return undefined;

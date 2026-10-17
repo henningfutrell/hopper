@@ -4,7 +4,7 @@
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a decider call. */
-export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order'] as const;
+export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order', 'intake-trust'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
 /**
  * A point the hopper no longer asks at, which events from before still name: `question-answer`, Jev picking a question's
@@ -32,6 +32,7 @@ export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
   'job-machine': { mode: 'shadow', threshold: 0.85 },
   'intake-order': { mode: 'shadow', threshold: 0.85 },
   'merge-order': { mode: 'shadow', threshold: 0.85 },
+  'intake-trust': { mode: 'shadow', threshold: 0.85 },
 };
 
 /** What each point is, in plain words (issue #217): the UI's labels. */
@@ -59,6 +60,10 @@ export const DECISION_POINT_TEXT: Readonly<Record<DecisionPoint, { label: string
   'merge-order': {
     label: 'The pull request to rebase and merge next',
     describe: 'More than one waiting pull request of a repository needs tending. The hopper tends one at a time, so that each merge comes before the next rebase. Jev picks the next one.',
+  },
+  'intake-trust': {
+    label: 'The trust of a job before it starts',
+    describe: 'A job would start on the trust rules alone. Jev reads its text and where it came from, and keeps its trust level or lowers it, with a reason. Jev can never raise it. Active, the job waits for the check, and a check with no sure answer lowers it: a person then approves its trust on the job.',
   },
 };
 

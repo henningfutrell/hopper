@@ -1,7 +1,7 @@
 // The sandbox flags (issue #708): built here, once, for every way a box is made — the libpod create body, the Docker
 // Engine create body, and the Kubernetes pod (issue #1286). Nothing a request carries reaches them but the resource
 // limits, which the step checked against its template first.
-import type { ContainerSpec } from '../domain/sandboxes.ts';
+import { NO_NETWORK, type ContainerSpec } from '../domain/sandboxes.ts';
 
 /** Where a box's home volume is mounted: the box image's agent user's home. */
 export const HOME = '/home/agent';
@@ -29,7 +29,7 @@ export function libpodCreateBody(spec: ContainerSpec): Record<string, unknown> {
     },
     // A one-shot container (issue #716): its script on a terminal, in place of the entrypoint, never restarted.
     ...(spec.script !== undefined ? { entrypoint: ['/bin/sh'], command: ['-c', spec.script], terminal: true, restart_policy: 'no' } : { restart_policy: 'unless-stopped' }),
-    ...(spec.network === 'host' ? { netns: { nsmode: 'host' } } : { netns: { nsmode: 'bridge' }, networks: { [spec.network]: {} } }),
+    ...(spec.network === 'host' || spec.network === NO_NETWORK ? { netns: { nsmode: spec.network } } : { netns: { nsmode: 'bridge' }, networks: { [spec.network]: {} } }),
   };
 }
 

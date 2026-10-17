@@ -1,9 +1,10 @@
 // The infrastructure topology on Infra (issue #1781, design.md "The infrastructure topology"), pure: the filters a person
-// picks (account, cluster, region, kind) and the graph they leave, a node's neighbours, the out-of-band changes that name a
-// node, each source's state in words, and where each node is drawn (d3's force layout, run to its end, so the same graph
+// picks (account, cluster, region, kind) and the graph they leave, a node's neighbours, the nodes each Infra changes entry
+// touched and the entries that touched a node, each source's state in words, and where each node is drawn (d3's force layout, run to its end, so the same graph
 // is drawn the same way).
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3';
-import type { GraphNode, LinkKind, NodeKind, OutOfBandView, SourceView, TopologyGraph, TopologyLink } from '../../../src/domain/types.ts';
+import type { GraphNode, LinkKind, NodeKind, SourceView, TopologyGraph, TopologyLink } from '../../../src/domain/types.ts';
+import type { TimelineEntry } from './infra-plans.ts';
 
 export type TopologyFilter = { account?: string; cluster?: string; region?: string; kind?: NodeKind };
 
@@ -46,11 +47,40 @@ export function neighbours(g: TopologyGraph, id: string): Neighbour[] {
   });
 }
 
-/** The out-of-band changes whose target names this node: its id, its name, an alias or one of its attrs. Newest first. */
-export function changesOf(n: GraphNode, changes: readonly OutOfBandView[]): OutOfBandView[] {
-  const names = new Set([n.id, n.name, ...(n.aliases ?? []).map((a) => a.replace(/^(dns|url):/, '')), ...Object.values(n.attrs ?? {})].map((s) => s.toLowerCase()));
-  return changes.filter((c) => names.has(c.target.toLowerCase())).sort((a, b) => b.at.localeCompare(a.at));
+/** The names a change's target may give a node: its id, its name, an alias without its prefix, an attr (`vpc-1`). */
+const namesOf = (n: GraphNode): Set<string> =>
+  new Set([n.id, n.name, ...(n.aliases ?? []).map((a) => a.replace(/^(dns|url):/, '')), ...Object.values(n.attrs ?? {})].map((s) => s.toLowerCase()));
+
+/**
+ * The nodes an Infra changes entry touched (issue #1781). An out-of-band change or drift: each node its target names. A
+ * plan, its approval or an apply, by its asset: an AWS account; an AWS role and the account it writes in; a cluster by its
+ * name; a namespace (`<cluster>/<namespace>`) of that cluster. An Argo CD app or a Terraform workspace names no node.
+ */
+export function entryNodes(g: TopologyGraph, e: TimelineEntry): string[] {
+  const s = e.subject;
+  if (!s) return [];
+  if ('target' in s) {
+    const t = s.target.toLowerCase();
+    return g.nodes.filter((n) => namesOf(n).has(t)).map((n) => n.id);
+  }
+  const { kind, name } = s.asset;
+  const slash = name.indexOf('/');
+  const [head, rest] = slash < 0 ? [name, ''] : [name.slice(0, slash), name.slice(slash + 1)];
+  const clusters = (named: string): string[] => g.nodes.filter((n) => n.kind === 'cluster' && (n.name === named || n.id === named)).map((n) => n.id);
+  const hit = (keep: (n: GraphNode) => boolean): string[] => g.nodes.filter(keep).map((n) => n.id);
+  if (kind === 'aws-account') return hit((n) => n.kind === 'aws-account' && n.account === name);
+  if (kind === 'aws-role') return hit((n) => n.account === head && (n.kind === 'aws-account' || (n.kind === 'iam-role' && n.name === rest.split('/').pop())));
+  if (kind === 'cluster') return clusters(name);
+  if (kind === 'namespace') {
+    const of = new Set(clusters(head));
+    return hit((n) => n.kind === 'namespace' && n.namespace === rest && !!n.cluster && of.has(n.cluster));
+  }
+  return [];
 }
+
+/** The Infra changes entries that touched this node, newest first. */
+export const nodeEntries = (g: TopologyGraph, id: string, timeline: readonly TimelineEntry[]): TimelineEntry[] =>
+  timeline.filter((e) => entryNodes(g, e).includes(id)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 
 /** A source's name: `AWS 123456789012 eu-west-1`, `Kubernetes prod`. */
 export const sourceName = (s: SourceView): string =>

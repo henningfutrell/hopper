@@ -13,7 +13,7 @@ import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
 import { recordNote } from './notes.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
-import { recordLiftQuarantine, recordQuarantine } from './quarantine.ts';
+import { recordApproveTrust, recordDeny, recordLiftQuarantine, recordQuarantine } from './quarantine.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
 
@@ -82,6 +82,10 @@ export interface Commands {
    */
   quarantine(id: string, acting: ActingPerson): Job;
   liftQuarantine(id: string, acting: ActingPerson): Job;
+  /** Issue #655 part 4: a person approves the trust of a job Jev's trust check lowered: `approved`, never more. job.trust_approved. */
+  approveTrust(id: string, acting: ActingPerson): Job;
+  /** Issue #655 part 5: a person denied the job's request at gate 2: its trust one level lower, the second deny quarantines it. */
+  denied(id: string, acting: ActingPerson): Job | undefined;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
@@ -188,6 +192,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     acceptNewText: (id, acting) => store.tx(() => acceptNewText(c, id, acting)),
     quarantine: (id, acting) => store.tx(() => recordQuarantine(c, id, acting)),
     liftQuarantine: (id, acting) => store.tx(() => recordLiftQuarantine(c, id, acting)),
+    denied: (id, acting) => { const job = store.tx(() => recordDeny(c, id, acting)); if (job) c.trigger('job.trust_lowered'); return job; },
+    approveTrust: (id, acting) => { const job = store.tx(() => recordApproveTrust(c, id, acting)); c.trigger('job.trust_approved'); return job; },
 
     setFakeUsage(reading) {
       if (!c.fakeUsage) throw new EngineError('not_found', 'no fake usage source is configured');

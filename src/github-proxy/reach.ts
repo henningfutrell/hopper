@@ -4,17 +4,19 @@
 import { reachBase, type HopperReach } from '../artifacts/links.ts';
 
 /** What the choice reads of a machine: its connection, and a client target's door. */
-export interface ReachingMachine { ssh?: unknown; docker?: unknown; client?: { door?: string } }
+export interface ReachingMachine { ssh?: unknown; containerImage?: unknown; client?: { door?: string } }
 
 /**
  * This machine: loopback. A client target: its client door, on loopback there, so its jobs resolve no name; a client
- * with no door (older than issue #695) the URL it dialled in at. Anything else — an ssh or container target, or a client
+ * with no door (older than issue #695) the URL it dialled in at. A container target: none. Anything else — an ssh target, or a client
  * not dialled in yet — `reachBase`: the link base, the public URL, an address or a `.local` name before a bare name.
  * Undefined: the machine reaches the hopper at no URL the hopper knows, and its jobs get no way to it.
  */
 export function jobHopperUrl(o: HopperReach & { machine: ReachingMachine; dialled?: string | undefined }): string | undefined {
   const m = o.machine;
   if (m.client) return m.client.door ?? o.dialled ?? reachBase(o);
-  if (!m.ssh && !m.docker) return `http://127.0.0.1:${o.port}`;
+  // A container target's command boxes join no network (issue #865): they reach the hopper at no URL.
+  if (m.containerImage) return undefined;
+  if (!m.ssh) return `http://127.0.0.1:${o.port}`;
   return reachBase(o);
 }

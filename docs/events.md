@@ -1303,11 +1303,12 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
 
 ## `job.quarantined`
 
-Version 1 (`docs/schemas/job.quarantined.v1.json`). A person, or an agent over the API, quarantined the job (issue #655, `POST /ui/api/jobs/:id/quarantine`): its trust stamp is signed `quarantined`, so the decider holds it, and its proxy token opens no door of the hopper (the GitHub proxy, git, the vault, skills, steps, artifacts, its stream) — a running job keeps its pane, but reaches nothing through the hopper. `was`: its trust level before, the level a lift gives back; absent when its stamp did not verify. Who (`person`) and how (`via`).
+Version 1 (`docs/schemas/job.quarantined.v1.json`). A person, or an agent over the API, quarantined the job (issue #655, `POST /ui/api/jobs/:id/quarantine`): its trust stamp is signed `quarantined`, so the decider holds it, and its proxy token opens no door of the hopper (the GitHub proxy, git, the vault, skills, steps, artifacts, its stream) — a running job keeps its pane, but reaches nothing through the hopper. `was`: its trust level before, the level a lift gives back; absent when its stamp did not verify. `reason` `deny:sandbox`: a person's second deny at gate 2 in the job quarantined it (part 5: a declined sandbox request), or a deny of a job at `untrusted`. Who (`person`) and how (`via`).
 
 | field | type | required |
 |---|---|---|
 | `was` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `reason` | string | no |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
 
@@ -1332,6 +1333,46 @@ Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with
 ```json
 {
   "level": "trusted",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
+## `job.trust_lowered`
+
+Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`).
+
+| field | type | required |
+|---|---|---|
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `to` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `reason` | string | yes |
+| `by` | `jev` \| `person` | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "from": "trusted",
+  "to": "untrusted",
+  "reason": "jev:touches_ci",
+  "by": "jev"
+}
+```
+
+## `job.trust_approved`
+
+Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check lowered (issue #655 part 4, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
+
+| field | type | required |
+|---|---|---|
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "from": "untrusted",
   "person": "ada",
   "via": "ui"
 }
@@ -3170,12 +3211,12 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -3222,7 +3263,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -3246,7 +3287,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -3265,7 +3306,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 

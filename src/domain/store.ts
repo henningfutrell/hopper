@@ -51,8 +51,13 @@ export interface JobRepository {
    * stamped again by the rules, for an origin judged after it was made (issue #652, the backfill); a quarantine stays.
    * Quarantine: `quarantine` stamps the job `quarantined`, its level before kept; `liftQuarantine` gives that level back
    * (the rules' with none). `trustLevel`: its verified level. `opensDoors`: its proxy token opens the hopper's doors.
+   * Jev's trust check (part 4): `checkDue`, the job is due for it; `checkTrust`, the stamp after Jev's answer, the point
+   * active — undefined, and nothing written, when the check is no longer due; `approveTrust`, a person approves the trust
+   * of a job the check (or a deny) lowered, to `approved` — undefined when it may not. `deny` (part 5): a person's deny at
+   * gate 2 lowers the job's level one step, the second quarantines it — undefined, and nothing written, when it ended, is
+   * quarantined already, or its stamp does not verify.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
 }
 
 export interface LaneRepository {
@@ -341,9 +346,9 @@ export interface SandboxRepository {
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472) and `windows-hosts` (issue #731), and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472), `windows-hosts` (issue #731) and `clusters` (issue #1766), and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'windows-hosts'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'windows-hosts', 'clusters'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];

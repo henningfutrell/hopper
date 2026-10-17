@@ -5,8 +5,8 @@
 // The session and the week of all models throttle the jobs of `executors` — the Claude executors, not
 // every job (issue #140); a window of one model is informational. `claude auth status` gives the
 // account, refreshed with the usage. Both run on the source's `machine` — this machine, the `local`
-// one in the list, or an attached one through its connection (ssh or docker exec, as the command
-// executor; a client target through its client, which runs its own claude, issue #366) — and the
+// one in the list, or an attached one through its connection (ssh, as the command executor; a client
+// target through its client, which runs its own claude, issue #366; never a container target, issue #865) — and the
 // readings are that machine's: its own Claude account (issue #139). The machine is named, never a default
 // (issue #174); a source stored with none reads the only machine there is, at each read (issue #442).
 // `signIn` (issue #1128, design.md "Tool sign-in") starts `claude auth login` on that machine, the same way, with its stdin open:
@@ -19,7 +19,6 @@ import { join } from 'node:path';
 import { clientClaude, clientSignIn } from '../../../executors/client.ts';
 import { signInArgs, startSignIn } from '../../../client/sign-in.ts';
 import { commandOn } from '../../../executors/command.ts';
-import { dockerArgv, dockerHost } from '../../../executors/docker.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { pickMachine } from '../../../domain/machine-pick.ts';
 import { ON_MACHINE, scrubbedEnv, withoutRunMarks } from '../../claude-print.ts';
@@ -29,7 +28,7 @@ import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
 import { runCli, type CliRun } from '../run.ts';
 import { parseAuthStatus, parseUsageEnvelope } from './parse.ts';
 
-export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; dockerBin: string; executors: string[] }
+export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[] }
 
 /** Each claude call is killed after this long. */
 const TIMEOUT_MS = 45_000;
@@ -52,7 +51,6 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     intervalSeconds: z.number().int().min(120).default(600).meta({ description: 'seconds between reads (each is a local command: no tokens)' }),
     machine: z.string().min(1).optional().meta({ machine: true, description: 'the machine to read the Claude account of (its usage caps that machine only): this one, or an attached one' }),
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for an ssh target' }),
-    dockerBin: z.string().min(1).default('docker').meta({ commandBearing: true, description: 'the docker CLI, for a container target' }),
     // The built-in Claude Code executor instance; name the others that run Claude.
     executors: z.array(z.string().min(1)).min(1).default(['herdr-claude', 'claude']).meta({ description: EXECUTORS_DESCRIPTION }),
   }),
@@ -77,13 +75,13 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
       if (!m) return { error: `machine ${id} is not configured` };
       if (!m.online) return { error: `machine ${id} is offline` };
       if (m.client) return runOnClient(id, args);
-      if (!m.ssh && !m.docker) return runHere(args, signal);
+      if (m.containerImage) return { error: `machine ${id} is a container target: claude does not run there` };
+      if (!m.ssh) return runHere(args, signal);
       let file: string;
       let argv: string[];
       try {
         [file, argv] = commandOn(m, ['sh', '-c', ON_MACHINE, 'sh', o.bin, ...args], {
-          sshBin: o.sshBin, dockerBin: o.dockerBin, sshControlDir: join(ctx.dataDir, 'ssh'),
-          sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }), dockerHost: () => dockerHost(ctx.env),
+          sshBin: o.sshBin, sshControlDir: join(ctx.dataDir, 'ssh'), sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
         });
       } catch (e) {
         return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
@@ -104,7 +102,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     };
     /**
      * The sign-in on the machine the source reads (issue #1128). A client target's client runs its own claude; elsewhere the
-     * hopper runs it as a read does, with stdin open (docker exec -i, so the code reaches it).
+     * hopper runs it as a read does, with stdin open, so the code reaches it. Never on a container target.
      */
     const signIn = async ({ email }: { email?: string }): Promise<ToolSignIn> => {
       const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });
@@ -119,12 +117,11 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         const t = ctx.client(id);
         if (!t) throw new Error(`machine ${id}: client ${id} is not dialled in`);
         run = await clientSignIn(t, email);
-      } else if (m.docker) {
-        run = await startSignIn(o.dockerBin, dockerArgv(dockerHost(ctx.env), ['exec', '-i', '--', m.docker, 'sh', '-c', ON_MACHINE, 'sh', o.bin, ...args]), { cwd: ctx.scratchDir });
+      } else if (m.containerImage) {
+        throw new Error(`machine ${id} is a container target: claude does not run there`);
       } else if (m.ssh) {
         const [file, argv] = commandOn(m, ['sh', '-c', ON_MACHINE, 'sh', o.bin, ...args], {
-          sshBin: o.sshBin, dockerBin: o.dockerBin, sshControlDir: join(ctx.dataDir, 'ssh'),
-          sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }), dockerHost: () => dockerHost(ctx.env),
+          sshBin: o.sshBin, sshControlDir: join(ctx.dataDir, 'ssh'), sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
         });
         run = await startSignIn(file, argv, { cwd: ctx.scratchDir });
       } else {

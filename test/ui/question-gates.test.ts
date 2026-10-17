@@ -56,7 +56,7 @@ describe('escalationMachineChoices (#442)', () => {
       { role: 'machine-source', instance: { name: 'here', plugin: 'local' } },
       { role: 'machine-source', instance: { name: 'desk', plugin: 'ssh' } },
       { role: 'machine-source', instance: { name: 'phone', plugin: 'client' } },
-      { role: 'machine-source', instance: { name: 'box', plugin: 'docker' } },
+      { role: 'machine-source', instance: { name: 'box', plugin: 'container' } },
       { role: 'escalation-level', instance: { name: 'level-1', plugin: 'claude-cli' } },
     ] } as unknown as PluginsReport;
     expect(escalationMachineChoices(report)).toEqual(['here', 'desk', 'phone']);

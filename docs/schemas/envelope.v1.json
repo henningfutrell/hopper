@@ -89,6 +89,8 @@
         "job.note_carried",
         "job.quarantined",
         "job.unquarantined",
+        "job.trust_lowered",
+        "job.trust_approved",
         "terminal.opened",
         "terminal.typed",
         "source.stalled",

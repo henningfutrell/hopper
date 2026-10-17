@@ -27,7 +27,7 @@ const TOKEN = mintToken();
 const HERE: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 1, online: true, executors: [] };
 const DESK: MachineSnapshot = { id: 'desk', label: 'desk', maxLanes: 1, online: true, executors: [], ssh: 'desk' };
 const STUDIO: MachineSnapshot = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: [], client: {} };
-const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], docker: 'box' };
+const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], containerImage: 'box' };
 
 const DRAFT = { title: 'Export button does nothing', body: '## Summary\n\nThe export button does nothing.', notes: 'rephrased' };
 const input = { repo: 'acme/widgets', text: 'The export button does nothing.' };

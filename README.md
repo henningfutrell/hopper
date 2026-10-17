@@ -252,7 +252,7 @@ that is online, runs the job's executor, and has the most room left — unless a
 | [a computer, with one line](#a-computer-one-line) | the computer the hopper's container runs on, a laptop, a desktop: it dials in | its own connection to the hopper's URL | Node.js ≥ 24, herdr, `claude` |
 | [this host](#this-host) | the start: jobs on the hopper's own machine | nothing to reach | herdr and `claude`; set up by the install |
 | [ssh target](#an-ssh-target) | a computer that cannot run the client (no Node.js 24) | ssh, with its own key | sshd, and herdr with `claude` or [Cursor's agent](#cursors-agent) |
-| [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | `docker exec`, through a socket proxy | docker on the hopper's host |
+| [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | a new sandbox box for each command | the container runtime the hopper starts sandboxes with |
 
 Every command below runs on the hopper's host, as the user the daemon runs as, from the install
 (`~/.local/lib/hopper`). Each script prints what to add next. The UI's Machines view shows each
@@ -330,34 +330,25 @@ Within 30 s the Machines view shows it online.
 
 ### A container target
 
-A container on the hopper's host with no network, a read-only root and no capabilities. No agent
-runs in it: the `command` executor runs an issue's first fenced code block (else its whole body) with
-`sh -c` and reports the exit code and output.
+A machine with no agent that runs plain shell commands. The `command` executor runs an issue's first
+fenced code block (else its whole body) with `sh -c`, and reports the exit code and output. Each
+command runs in a new sandbox box of the target's image: no network, a read-only root, no
+capabilities, a user other than root. The hopper removes the box when the command ends. The box
+starts through the container runtime the hopper starts its sandboxes with ([docs/deploy.md
+"Sandboxes the hopper starts"](docs/deploy.md)); while it has none, the target is offline.
 
-1. Start the container (`alpine:latest`; another image: `HOPPER_TARGET_IMAGE`):
-
-   ```sh
-   bash ~/.local/lib/hopper/scripts/container-target.sh box 1      # 1 lane
-   ```
-
-2. Start the docker socket proxy, naming every container target (run it again when you add one):
-
-   ```sh
-   bash ~/.local/lib/hopper/scripts/docker-proxy.sh box
-   ```
-
-3. Add the line it prints (`HOPPER_DOCKER_HOST=unix://…`) to `~/.config/hopper/daemon.env`.
-4. Attach it in the UI, as the script prints:
+1. Attach it in the UI:
    - Settings → Plugins → Executors: **Add** a `command` instance named `command`.
-   - Settings → Plugins → Machine sources: **Add** a `docker` instance named `box`, and set its
-     options `docker: box`, `lanes: 1`, `executors: command`.
+   - Settings → Plugins → Machine sources: **Add** a `container` instance named `box`, and set its
+     options `lanes: 1`, `executors: command`. Its `image` is the hopper's box image by default;
+     another image must run as a user other than root.
    - Keep commands off this host: on the `local` instance there, set `executors` to the others
      (`test`, `herdr-claude`).
-5. Send labelled issues to the container: a routing rule in Settings → Routing, named
+2. Send labelled issues to the container target: a routing rule in Settings → Routing, named
    `commands to the box`, matching the label `on-box`, setting machine `box` and executor
    `command`. No restart: executors and machines follow the plugins config.
 
-An issue labelled `hopper` and `on-box` now runs its script in the container.
+An issue labelled `hopper` and `on-box` now runs its script in a sandbox box.
 
 ### Cursor's agent
 

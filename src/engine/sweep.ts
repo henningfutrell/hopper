@@ -388,7 +388,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
           podsAt = now;
           await sweepPods();
         }
-        const due = (await c.machines.list()).filter((m) => m.online && !m.docker && (all || now - (last.get(m.id) ?? -Infinity) >= minutes(m) * 60_000));
+        const due = (await c.machines.list()).filter((m) => m.online && !m.containerImage && (all || now - (last.get(m.id) ?? -Infinity) >= minutes(m) * 60_000));
         if (due.length === 0) return;
         const recent = c.store.jobs.list({ limit: JOBS_SWEPT });
         const byId = new Map(recent.map((j) => [j.id, j]));

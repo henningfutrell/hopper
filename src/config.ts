@@ -278,11 +278,11 @@ Read on: README.md, docs/deploy.md, docs/sign-in.md, docs/plugins.md.
 /** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
 const SECRET_SETTINGS = ['HOPPER_DATABASE_URL'];
 /**
- * Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket;
+ * Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key;
  * and the GitHub App's client secret, read by sign-in at each use (issue #258).
  */
 const PART_SETTINGS = [
-  'HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE',
+  'HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE',
   // The master key and the old token key, read at start (src/secrets/master-key.ts, issue #659).
   ...MASTER_KEY_VARIABLES,
   // Read by access at each call to OpenFGA (src/authz/openfga.ts, issue #559).

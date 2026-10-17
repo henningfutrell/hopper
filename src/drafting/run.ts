@@ -109,7 +109,6 @@ async function runOn(host: DraftHost, m: MachineSnapshot, call: DraftCall, timeo
         mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
         const opts = {
           ...(host.sshBin ? { sshBin: host.sshBin } : {}), sshControlDir, sshAuth: host.sshAuth ?? (() => hopperSshAuth({ env: host.env, dataDir: host.dataDir })),
-          dockerHost: () => { throw new Error('no docker'); },
         };
         there = (a) => commandOn(m, a, opts);
       } else {

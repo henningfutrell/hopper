@@ -1,9 +1,10 @@
 // Infra (issue #896, design.md "The Infra page"): plans and applies of infrastructure changes, a top-level view on par with
 // Jobs. Plans (infra-plans.tsx): each plan, its state and who it waits for, approve by risk, auto-approve, and the applies
 // minted against it, and the environment watchers (part 4). Infra applies (infra-applies.tsx, issue #1722): off, changes go through CI.
-// Applies and drift: one timeline of plans recorded and approved, applies, drift and out-of-band writes, newest first.
-// Out-of-band changes (out-of-band.tsx). Topology (topology.tsx, issue #1781): the graph of the services in the AWS
-// accounts and Kubernetes clusters, linked to the out-of-band changes that name each node. Every panel always shows: loading, an error with Try again, or an empty list
+// Applies and drift (infra-timeline.tsx): one timeline of plans recorded and approved, applies, drift and out-of-band
+// writes, newest first. Out-of-band changes (out-of-band.tsx). Topology (topology.tsx, issue #1781): the graph of the
+// services in the AWS accounts and Kubernetes clusters; each timeline entry links to the nodes it touched, and a node
+// lists the entries that touched it. Every panel always shows: loading, an error with Try again, or an empty list
 // that says how a job fills it.
 import { AlertTriangle, FileDiff, History, Network, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -17,6 +18,7 @@ import { useServerNow } from '@/store/selectors';
 import { AutoApprove, PlanList, Watchers } from './infra-plans';
 import { InfraApplies } from './infra-applies';
 import { OutOfBandChanges, type OutOfBandList } from './out-of-band';
+import { InfraTimeline } from './infra-timeline';
 import { TopologyPanel } from './topology';
 import type { TopologyGraph } from '../../../src/domain/types.ts';
 
@@ -52,14 +54,16 @@ function NotYet({ state, what, retry }: { state: Load<unknown>; what: string; re
   return null;
 }
 
-const KIND = { plan: 'Plan', approved: 'Approved', apply: 'Apply', drift: 'Drift', 'out-of-band': 'Out of band', marked: 'Marked' } as const;
-const KIND_TONE = { plan: 'text-muted-foreground', approved: 'text-ok', apply: 'text-ok', drift: 'text-warn', 'out-of-band': 'text-warn', marked: 'text-muted-foreground' } as const;
-
 export function Infra() {
   const now = useServerNow();
   const [plans, changePlans, reloadPlans] = useLoad<Plans>('/api/infra-plans');
   const [changes, changeChanges, reloadChanges] = useLoad<OutOfBandList>('/api/out-of-band');
   const [topology, , reloadTopology] = useLoad<TopologyGraph>('/api/topology');
+  const [node, setNode] = useState<string | undefined>();
+  const pickNode = (id: string) => {
+    setNode(id);
+    document.querySelector('[data-slot="topology-panel"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
   const onPlan = (plan: PlanView) => changePlans((d) => ({ ...d, plans: d.plans.map((p) => (p.id === plan.id ? plan : p)) }));
   const onSettings = (settings: InfraPlanSettings) => changePlans((d) => ({ ...d, settings }));
   const onWatchers = (watchers: InfraWatchers) => changePlans((d) => ({ ...d, watchers }));
@@ -81,25 +85,16 @@ export function Infra() {
       <Panel title="Applies and drift" icon={History} count={timeline.length || ''} list>
         {plans.kind !== 'ok' ? <NotYet state={plans} what="plans" retry={reloadPlans} />
           : changes.kind !== 'ok' ? <NotYet state={changes} what="out-of-band changes" retry={reloadChanges} />
-          : timeline.length === 0 ? <Empty>Nothing yet. Each plan, approval, apply and out-of-band change shows here, newest first.</Empty>
-          : (
-            <ul data-slot="infra-timeline" className="space-y-1.5 text-sm">
-              {timeline.map((e, i) => (
-                <li key={`${e.at} ${e.kind} ${i}`} className="flex gap-2">
-                  <span className={`w-24 shrink-0 text-xs ${KIND_TONE[e.kind]}`}>{KIND[e.kind]}</span>
-                  <span className="min-w-0 flex-1 break-words">{e.words}</span>
-                  <time className="num shrink-0 text-xs text-muted-foreground" dateTime={e.at}>{e.at}</time>
-                </li>
-              ))}
-            </ul>
-          )}
+          : <InfraTimeline timeline={timeline} g={topology.kind === 'ok' ? topology.data : undefined} onNode={pickNode} />}
       </Panel>
       {changes.kind === 'ok'
         ? <OutOfBandChanges view={changes.data} onView={changeChanges} />
         : <Panel title="Out-of-band changes" icon={ShieldAlert}><NotYet state={changes} what="out-of-band changes" retry={reloadChanges} /></Panel>}
-      {topology.kind === 'ok'
-        ? <TopologyPanel g={topology.data} changes={changes.kind === 'ok' ? changes.data.changes : []} />
-        : <Panel title="Topology" icon={Network}><NotYet state={topology} what="topology" retry={reloadTopology} /></Panel>}
+      <div data-slot="topology-panel" className="scroll-mt-3">
+        {topology.kind === 'ok'
+          ? <TopologyPanel g={topology.data} timeline={timeline} selected={node} onSelect={setNode} />
+          : <Panel title="Topology" icon={Network}><NotYet state={topology} what="topology" retry={reloadTopology} /></Panel>}
+      </div>
     </div>
   );
 }

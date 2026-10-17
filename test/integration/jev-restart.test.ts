@@ -15,13 +15,20 @@ afterEach(async () => {
   cleanup?.();
 });
 
-/** Jev as a double: answers each pick with `answer` (a pick that never ends: undefined), records every ask. */
+/**
+ * Jev as a double: answers each pick with `answer` (a pick that never ends: undefined), records every ask. The trust check
+ * of each job pulled (issue #655 part 4, in shadow) gets no pick, and is not recorded.
+ */
 function fakeJev(answer?: (ask: MinorDecisionAsk) => JevPick): JevChooser & { asks: MinorDecisionAsk[] } {
   const asks: MinorDecisionAsk[] = [];
   return {
     asks,
     available: () => ({ available: true }),
-    pick: (ask) => { asks.push(ask); return answer ? Promise.resolve(answer(ask)) : new Promise<JevPick>(() => {}); },
+    pick: (ask) => {
+      if (ask.point === 'intake-trust') return Promise.resolve({ ok: false, why: 'unused' });
+      asks.push(ask);
+      return answer ? Promise.resolve(answer(ask)) : new Promise<JevPick>(() => {});
+    },
     choose: async () => ({ ok: false, why: 'unused' }),
     check: async () => ({ ok: true }),
   };

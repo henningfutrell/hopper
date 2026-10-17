@@ -17,11 +17,10 @@ import { logFailures } from '../engine/failure-log.ts'; import { createJobTermin
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
-import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts';
+import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts'; import { userCommandBoxes } from './command-boxes.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
+import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
@@ -219,6 +218,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
+  const commandBoxes = o.sandboxes && userCommandBoxes(user.id, o.sandboxes, join(dataDir, 'command-boxes')); // a container target's commands, each in a box of its own (issue #865)
   // The addresses an ssh target's probe asks (issues #695, #698): the user's link base (Settings → Artifacts) first, when
   // set, then the hopper's own; a job there gets only the one the probe found it reaches, the link base too.
   const wslAsked = (u = o.wslHopperUrl?.()): { wsl?: { url: string } } => (u ? { wsl: { url: u } } : {}); const sshCandidates = (urls: string[]): string[] => { const b = store.artifacts.settings().linkBase.replace(/\/+$/, ''); return b ? [b, ...urls.filter((u) => u !== b)] : urls; };
@@ -241,8 +241,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
         ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name)).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
-        : 'docker' in m
-          ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
+        : 'image' in m
+          // A container target (issue #865): online while a sandbox box can start for the user.
+          ? (commandBoxes?.problem() ?? Promise.resolve('no sandbox module')).then((problem) => ({ online: problem === undefined }))
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
           // and its work tree is made there (issue #361); which of the hopper's addresses it reaches (issue #698). One
           // after the other, over the one shared ssh connection.
@@ -277,7 +278,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     builtins: withSeams(seams, outbound),
     jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts, gitlabAccount },
     machineContext: { executors: () => executorNames(), target },
-    executorContext: { client: clientNamed, ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
+    executorContext: { client: clientNamed, ...(commandBoxes ? { boxes: commandBoxes } : {}), ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
     usageSourceContext: { agentSignIn: (machine) => lanePodSignIn(machine) }, intervalMs: o.pluginsConfigIntervalMs,
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),
