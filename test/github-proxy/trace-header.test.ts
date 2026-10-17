@@ -1,5 +1,5 @@
 // A job's scripts carry its trace (issue #1486 part 4, design.md "Telemetry: a job's trace on its machine"): when the job
-// runs with `TRACEPARENT`, hopper-gh, hopper-skill, hopper-login and hopper-artifact send it as the `traceparent` header,
+// runs with `TRACEPARENT`, hopper-gh, hopper-skill, hopper-login, hopper-artifact and hopper-step (part 6) send it as the `traceparent` header,
 // so the hopper's span for the request is a child of the job's run span. A value that is not a W3C trace parent (only
 // lowercase hex and dashes) is not sent: the variable cannot add a header. The real scripts (sh and curl) run against a
 // stand-in on loopback.
@@ -14,6 +14,7 @@ import { ARTIFACT_SCRIPT } from '../../src/artifacts/index.ts';
 import { PROXY_SCRIPT } from '../../src/github-proxy/index.ts';
 import { LOGIN_SCRIPT } from '../../src/logins/script.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
+import { STEP_SCRIPT } from '../../src/windows-steps/index.ts';
 
 const servers: Server[] = [];
 const dirs: string[] = [];
@@ -52,6 +53,7 @@ const SCRIPTS = [
   { name: 'hopper-skill', script: SKILL_SCRIPT, args: [] },
   { name: 'hopper-login', script: LOGIN_SCRIPT, args: ['completed', 'codex'] },
   { name: 'hopper-artifact', script: ARTIFACT_SCRIPT, args: ['put', 'page.html', '--title', 'T', '--summary', 'S'] },
+  { name: 'hopper-step', script: STEP_SCRIPT, args: ['hosts'] },
 ] as const;
 
 const PARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';

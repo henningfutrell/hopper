@@ -8,6 +8,8 @@
 //     Then the job runs with TRACEPARENT naming its run span, in its job's trace
 //     When the job runs `sh "$HOPPER_GH" issue view …`
 //     Then the hopper's span for `POST /job/github` is a child of the job's run span, in the same trace
+//     And the job's git sends the same trace parent to the hopper's git route only (part 6)
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -55,6 +57,10 @@ describe('a job\'s trace reaches its machine (issue #1486)', () => {
     const env = await waitFor(async () => h.held.get(job.id)?.env, { what: `job ${job.id} to run` });
     const [, traceId, runSpanId] = /^00-([0-9a-f]{32})-([0-9a-f]{16})-01$/.exec(env.TRACEPARENT ?? '') ?? [];
     expect(traceId).toBeDefined();
+    // Part 6: the job's git sends the same trace parent to the hopper's git route, and to nothing else.
+    const gitHeader = (url: string) => spawnSync('/usr/bin/git', ['config', '--get-urlmatch', 'http.extraheader', url], { env: { PATH: process.env.PATH, HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', ...env }, encoding: 'utf8' }).stdout.trim();
+    expect(gitHeader(`${env.HOPPER_URL}/job/git/octo/tools.git`)).toBe(`traceparent: ${env.TRACEPARENT}`);
+    expect(gitHeader(`${github.url}/octo/tools.git`)).toBe('');
 
     const r = await hopperGh(root, env, ['issue', 'view', '1', '--repo', 'octo/tools']);
     expect(r).toMatchObject({ code: 0 });

@@ -2,6 +2,7 @@
 // GitHub with its own connection; the job holds no GitHub token. What a push may change is read from the ref updates
 // at the head of git's receive-pack request, before anything reaches GitHub. The whole path through the daemon, with a
 // real git and a real git server, is test/integration/git-proxy.test.ts.
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { checkPush, gitPath, jobGitConfig, receivePackCommands } from '../../src/github-proxy/index.ts';
 import { GITHUB_PROXY_LINE } from '../../src/job-rules/index.ts';
@@ -90,6 +91,30 @@ describe('the git config a job runs with', () => {
     expect([vars.GIT_CONFIG_KEY_5, vars.GIT_CONFIG_VALUE_5]).toEqual(['url.http://hopper:4790/job/gitlab-git/.insteadOf', 'https://gitlab.example/']);
     expect([vars.GIT_CONFIG_KEY_6, vars.GIT_CONFIG_VALUE_6]).toEqual(['credential.http://hopper:4790/job/gitlab-git/.helper', '']);
     expect([vars.GIT_CONFIG_KEY_7, vars.GIT_CONFIG_VALUE_7]).toEqual(['credential.http://hopper:4790/job/gitlab-git/.helper', vars.GIT_CONFIG_VALUE_4]);
+  });
+});
+
+describe('a job\'s git carries its trace (issue #1486 part 6)', () => {
+  const PARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+  /** What git reads as the extra header for `url`, with the job's variables: real git, no repository. */
+  const extraHeader = (vars: Record<string, string>, url: string): string =>
+    spawnSync('/usr/bin/git', ['config', '--get-urlmatch', 'http.extraheader', url], { env: { PATH: process.env.PATH, HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', ...vars }, encoding: 'utf8' }).stdout.trim();
+
+  it('sends the job\'s trace parent as the traceparent header to the hopper, GitHub and GitLab routes alike, and to nothing else', () => {
+    const vars = jobGitConfig('http://hopper:4790', 'https://github.com', { url: 'https://gitlab.example/', path: '/job/gitlab-git/' }, PARENT);
+    expect(extraHeader(vars, 'http://hopper:4790/job/git/o/r.git')).toBe(`traceparent: ${PARENT}`);
+    expect(extraHeader(vars, 'http://hopper:4790/job/gitlab-git/g/p.git')).toBe(`traceparent: ${PARENT}`);
+    expect(extraHeader(vars, 'https://github.com/o/r.git')).toBe('');
+    expect(extraHeader(vars, 'https://elsewhere.example/o/r.git')).toBe('');
+  });
+
+  it('sends none with no trace parent, or one that is not a W3C trace parent', () => {
+    expect(jobGitConfig('http://hopper:4790', 'https://github.com')).toEqual(jobGitConfig('http://hopper:4790', 'https://github.com', undefined, undefined));
+    for (const bad of [`${PARENT}\nx-added: 1`, 'NOT A PARENT', '']) {
+      const vars = jobGitConfig('http://hopper:4790', 'https://github.com', undefined, bad);
+      expect(vars.GIT_CONFIG_COUNT).toBe('5');
+      expect(extraHeader(vars, 'http://hopper:4790/job/git/o/r.git')).toBe('');
+    }
   });
 });
 
