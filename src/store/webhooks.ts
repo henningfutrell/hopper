@@ -93,6 +93,16 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
         "SELECT body FROM deliveries WHERE status IN ('pending', 'retrying') AND next_attempt_at <= ? ORDER BY next_attempt_at, seq",
         now.toISOString()).map((r) => parse<WebhookDelivery>(r.body));
     },
+    claimDelivery(id, now, until) {
+      return c.tx(() => {
+        const r = c.db.get("UPDATE deliveries SET next_attempt_at = ? WHERE id = ? AND status IN ('pending', 'retrying') AND next_attempt_at <= ? RETURNING body",
+          until, id, now.toISOString());
+        if (!r) return undefined;
+        const d: WebhookDelivery = { ...parse<WebhookDelivery>(r.body), nextAttemptAt: until, updatedAt: c.clock.now().toISOString() };
+        saveDelivery(d, false);
+        return d;
+      });
+    },
     listDeliveries(filter) {
       const where = filter?.subscriptionId !== undefined ? 'WHERE subscription_id = ?' : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';

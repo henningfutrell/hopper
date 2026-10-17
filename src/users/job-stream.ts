@@ -3,6 +3,7 @@
 // of a job at work on its stream: they start and stop with it.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { SealerState } from '../secrets/sealer.ts';
+import type { SweepLease } from '../domain/leases.ts';
 import { userArtifactKey } from './artifact-key.ts';
 import { TERMINAL_STATUSES } from '../domain/types.ts';
 import { createJobStream, createStreamTypes, registerHopperTypes, type JobStream } from '../job-stream/index.ts';
@@ -14,13 +15,15 @@ type Options = {
   userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; inlineMax?: number;
   /** The hopper's sealer: the key the user's content URLs are signed under is kept with it (issue #673). */
   keys: SealerState;
+  /** The artifacts' retention sweep's lease (issue #1627). */
+  lease?: SweepLease;
 };
 
 /** The job stream, and the artifacts that emit on it: the stream's start and stop are theirs too (the retention sweep, the events). */
 export function openJobStream(o: Options): { jobStream: JobStream; artifacts: UserArtifacts } {
   const stream = openStream(o);
   const artifacts = createUserArtifacts({
-    userId: o.userId, store: o.store, clock: o.clock, logger: o.logger,
+    userId: o.userId, store: o.store, clock: o.clock, logger: o.logger, ...(o.lease ? { lease: o.lease } : {}),
     contentKey: userArtifactKey({ userId: o.userId, store: o.store, keys: o.keys, clock: o.clock, logger: o.logger }),
   });
   let unsubscribe = (): void => {};

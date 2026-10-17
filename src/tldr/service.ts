@@ -6,6 +6,7 @@
 // With the setting off, nothing is asked.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { DEFAULT_TLDR, REVIEW_OPEN_STATUSES, type CardKind, type Handoff, type Question, type ReviewItem, type TldrKind, type TldrSettings, type TldrWriter } from '../domain/types.ts';
+import { soleLease, type SweepLease } from '../domain/leases.ts';
 import { hashOf, isLong, tldrOrSummary, plainText, sourceOf, tldrPrompt } from './text.ts';
 
 export interface TldrsOptions {
@@ -17,6 +18,8 @@ export interface TldrsOptions {
   sweepMs: number;
   /** Ceiling on one TL;DR; past it, none. */
   timeoutMs: number;
+  /** The sweep's lease (issue #1627): on two hosts on one database, only its holder asks the model. Absent: this host alone. */
+  lease?: SweepLease;
 }
 
 export interface Tldrs {
@@ -90,7 +93,9 @@ export function createTldrs(o: TldrsOptions): Tldrs {
     }
   }
 
+  const lease = o.lease ?? soleLease();
   const sweep = (): Promise<void> => {
+    if (!sweeping && !lease.hold().held) return Promise.resolve();
     sweeping ??= pass().catch((e: unknown) => o.logger.warn(`hopper: TL;DR sweep failed: ${(e as Error).message}`)).finally(() => { sweeping = undefined; });
     return sweeping;
   };

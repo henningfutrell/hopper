@@ -46,7 +46,7 @@ import { createUserLink, type UserLink } from './link.ts';
 
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts'; import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
-import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts'; import { createOutbound, type Outbound, type OutboundGuard } from '../outbound/index.ts';
+import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts'; import { createOutbound, type Outbound, type OutboundGuard } from '../outbound/index.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts'; import type { HostLeases } from '../sagas/index.ts';
 import { approvalWait, clientTargets as vaultTargets, openUserVault, reconcilePass, type Vault } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
@@ -126,7 +126,7 @@ export interface UserRuntimeOptions {
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
   /** Begins a `job-move` saga for this user's job that moves off its lost machine (issue #1569). Absent: such a job fails. */
-  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
+  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -202,7 +202,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const { jev, typesafeKey, secret: withTypesafe } = userTypesafeKey({ user, store, env: o.env, runtime, system, ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger });
   const secret = withTypesafe;
   const dataDir = userWorkDir(config.workDir, user);
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 }); const outbound = createOutbound({ guard: o.outboundGuard, clock, log: store.outboundSends }); // deliveries and notifier posts, into the send log (issue #1014)
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 }); const outbound = createOutbound({ guard: o.outboundGuard, clock, log: store.outboundSends }), lease = (name: string): SweepLease => o.leases?.lease(`${user.id}/${name}`) ?? soleLease(); // deliveries and notifier posts, into the send log (issue #1014)
   // The CLIs' logins of a user added later are their own (GH_CONFIG_DIR, CLAUDE_CONFIG_DIR in their work dir).
   const cliEnv = userCliEnv(config.workDir, user);
   for (const dir of Object.values(cliEnv)) mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -315,15 +315,15 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
   // And the tool sign-ins (issue #1128): started by the usage sources that read each machine's tool. One that completes answers
   // the not-signed-in questions on its machine (`onSignedIn`, reached only after `questions` exists).
-  const logins = createLogins({ store, clock, lastAccounts: createLastAccounts({ repo: store.lastAccounts, sources: () => host.usageSources().map((u) => ({ name: u.name, ...u.state?.() })) }) }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, onSignedIn: (s) => { answerSignedOut({ store, questions }, s); }, setupToken: setupTokenSignIn({ ...seams.setupToken, dir: dataDir, set: (x, by) => vault.set(x, by) }) }); // the Claude sign-in for pods (issue #1287)
+  const logins = createLogins({ store, clock, lastAccounts: createLastAccounts({ repo: store.lastAccounts, sources: () => host.usageSources().map((u) => ({ name: u.name, ...u.state?.() })) }) }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, ...(o.leases ? { hosts: o.leases } : {}), onSignedIn: (s) => { answerSignedOut({ store, questions }, s); }, setupToken: setupTokenSignIn({ ...seams.setupToken, dir: dataDir, set: (x, by) => vault.set(x, by) }) }); // the Claude sign-in for pods (issue #1287)
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
-  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) });
+  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) });
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
-    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, gated, risk: minorDecisions,
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, gated, risk: minorDecisions, lease: lease('questions'),
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: (id) => uiUrl(`question-${id}`),
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -345,7 +345,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
   const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
+    store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter, sweepLease: lease('engine-sweep'),
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() }, configuredMachines: () => host.configuredMachineIds(),
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
@@ -380,7 +380,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
   const failures = createFailures({
-    store, clock, logger, sweepMs: config.tickMs,
+    store, clock, logger, sweepMs: config.tickMs, lease: lease('failures'),
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
     resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
@@ -397,7 +397,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => uiUrl(`question-${id}`), loginsUrl: () => uiUrl('logins'), infraUrl: () => uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(linkBase(), id), deliveries: store.notifierDeliveries, ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
-  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, lease: lease('artifacts'), ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Steps: Windows (issue #731, over ssh), box steps (issue #1004, in a job's own box), need steps (issue #1007, one-shot need boxes).
   const mintReconcile = reconcilePass(() => vault.reconcileMints(), logger), sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ userId: user.id, hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }), steps: o.windowsSteps?.steps ?? NO_WINDOWS_STEPS, atWork: (jobId) => AT_WORK.includes(store.jobs.get(jobId)?.status ?? 'done'), ...(o.windowsSteps ? { sagas: { begin: (step) => o.windowsSteps!.sagas.begin(step, user.id), abort: (saga, reason) => o.windowsSteps!.sagas.abort(saga, reason) } } : {}) }); const launcher = o.sandboxes, needSteps = createNeedSteps({ userId: user.id, templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), release: (box) => vault.releaseMints(box), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), steps: launcher?.steps ?? NO_NEED_STEPS, ran: (step) => launcher?.ran(step) ?? false, atWork: (jobId) => AT_WORK.includes(store.jobs.get(jobId)?.status ?? 'done'), ...(launcher ? { run: (box, io, run) => launcher.needStep(user.id, box, io, run), sagas: { begin: (step) => launcher.sagas.begin(step, user.id), abort: (saga, reason) => launcher.sagas.abort(saga, reason) } } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349); a Windows step is kept in the database and run by its saga (issue #1611)
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.

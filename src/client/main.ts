@@ -23,7 +23,7 @@ import { dialIn } from './dial.ts';
 import { startDoor, type Door } from './door.ts';
 import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
 import { drain, leaveHopper, type LeaveAnswer } from './leave.ts';
-import { maxIsolationOf } from './isolation.ts';
+import { ISOLATION_FILE, maxIsolationOf } from './isolation.ts';
 import { linkToken } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
 import { askHopper, HELPER_FILE, startVault } from './vault.ts';
@@ -48,7 +48,7 @@ export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herd
   const door = startDoor({ url: link.url, ...(o.log ? { log: o.log } : {}) }).then((d) => { open = d; return d; });
   door.catch((e: unknown) => o.log?.(`hopper-client: the client door could not be opened: ${(e as Error).message}`));
   const client = startClient({
-    ...rest, vaultHelper: join(dir, HELPER_FILE), door: () => open?.url, token: () => token,
+    ...rest, vaultHelper: join(dir, HELPER_FILE), door: () => open?.url, token: () => token, isolationFile: join(dir, ISOLATION_FILE),
     dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }),
     windowsLink: createWindowsLinkCheck({ url: link.url }),
   });

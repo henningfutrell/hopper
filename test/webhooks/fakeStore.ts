@@ -59,6 +59,13 @@ export function createFakeStore(): FakeStore {
         [...deliveries.values()].filter(
           (d) => (d.status === 'pending' || d.status === 'retrying') && new Date(d.nextAttemptAt!) <= now,
         ).map((d) => ({ ...d })),
+      claimDelivery(id: string, now: Date, until: string): WebhookDelivery | undefined {
+        const d = deliveries.get(id);
+        if (!d || (d.status !== 'pending' && d.status !== 'retrying') || new Date(d.nextAttemptAt!) > now) return undefined;
+        const next = { ...d, nextAttemptAt: until, updatedAt: iso() };
+        deliveries.set(id, next);
+        return { ...next };
+      },
       listDeliveries: () => [...deliveries.values()],
     },
     // No cursor kept: the fake follows from now on.

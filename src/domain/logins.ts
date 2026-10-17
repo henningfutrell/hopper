@@ -66,6 +66,11 @@ export interface LoginBlocks {
   run: string;
   /** Whether that run can ask its tool for a new code: a herdr job can, a print-mode run cannot. */
   renewable: boolean;
+  /**
+   * The hopper host that runs it, as a lease owner (issue #1627): a tool sign-in is held in that host's memory only, so only
+   * that host, or any host once that one stopped, fails it as left behind.
+   */
+  hostOwner?: string;
 }
 
 /** A login as the hopper keeps it: never its URL or code. */
