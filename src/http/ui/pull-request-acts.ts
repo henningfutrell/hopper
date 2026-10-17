@@ -6,6 +6,7 @@
 // hopper gave up on — its tend job ended failed, cancelled or rejected —: the same step is tended, with who pressed it,
 // after the answer (issue #1194). A pull request's diff (issue #1169): a person reads it with their own connection, for a
 // job repository only; it changes and records nothing.
+import { everyJobRepository } from '../../domain/job-repositories.ts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { PULL_REQUEST_ACTS, type PullRequestAct } from '../../domain/types.ts';
@@ -60,10 +61,10 @@ export function registerPullRequestActRoutes(app: FastifyInstance, o: { operator
     const b = parseWith(pullRequestDiffBody, req.body);
     const t = o.tenant(req);
     // Read as the job repository is spelled in the settings.
-    const repo = t.store.settings.getJobRepositories('github').find((r) => r.toLowerCase() === b.repo.toLowerCase());
+    const repo = everyJobRepository(t.store).find((r) => r.toLowerCase() === b.repo.toLowerCase());
     if (!repo) throw new HttpError(404, `${b.repo} is not a job repository`);
     const { number } = b;
-    const api = t.githubProxy.reads();
+    const api = t.githubProxy.reads(repo); // the account of the repository (issue #1448)
     if ('problem' in api) throw new HttpError(503, api.problem);
     try {
       const d = await api.perform({ op: 'pr.diff', repo, number });

@@ -27,8 +27,9 @@ const actsOf = (request: IntakeRequest) => request.actors.map((a) => ({ role: a.
 export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | undefined): IntakeTrust {
   return {
     async trusted(acts, connected) {
-      const account = store.connectedAccounts.get('github');
-      const id = account && account.account.toLowerCase() === connected.toLowerCase() && /^\d+$/.test(account.subject) ? Number(account.subject) : undefined;
+      // The connected account the source reads (issue #1448: the first, or a further one), by its login.
+      const account = store.connectedAccounts.keys().map((k) => store.connectedAccounts.get(k)).find((a) => a?.account.toLowerCase() === connected.toLowerCase());
+      const id = account && /^\d+$/.test(account.subject) ? Number(account.subject) : undefined;
       const actors = trustedActors(store.settings.getIntakeActors(), { login: connected, ...(id !== undefined ? { id } : {}) });
       const answers = new Map<string, AccessAnswer>();
       for (const act of acts) {

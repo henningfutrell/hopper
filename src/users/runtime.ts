@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
-import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
+import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, furtherAccount, providerOfKey, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { pullRequestSettings, storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -40,10 +40,9 @@ import type { SystemSecrets } from '../vault/system.ts';
 import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createDirectPullRequests, createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
-import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
+import type { AccountSet } from '../connected-accounts/account-set.ts'; import { userAccounts } from './connected-accounts.ts'; import { furtherAccountSources } from './further-sources.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
-import { installations, tokenRepositories, whoIs } from '../connected-accounts/identity.ts';
 
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts'; import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
@@ -156,7 +155,7 @@ export interface UserRuntime {
   dispatcher: WebhookDispatcher; executors: ExecutorRegistry; outbound: Outbound; // the user's outbound sends (issue #1014)
   directJobs: DirectJobs; // issue #901: jobs a person submits straight to the hopper, with no GitHub issue
   /** The user's connected GitHub account (issue #214). */
-  connectedAccounts: ConnectedAccountsService;
+  connectedAccounts: AccountSet;
   webhooksEditor: WebhooksEditor;
   /** Why a webhook subscription has no secret to sign with (issue #451); undefined when it has one. Never the secret. */
   secretProblem: (sub: WebhookSubscription) => string | undefined;
@@ -248,21 +247,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
             ...(m.herdr ? await probeOwnedHerdr(keepHerdr, { target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }, () => jobsOnMachine(m.name).length > 0) : { online: true }),
           })))),
   });
-  // The GitHub account the user's work comes through (issue #214): from signing in with it, or
-  // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.
-  const connectedAccounts = createConnectedAccounts({
-    // GitHub App user tokens expire after 8 h (issues #358, #441): renewed with the refresh token, sealed at rest.
-    store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env), secrets: system,
-    whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
-    installations: (token, answers) => installations(config.hopperApps.github, token, answers), tokenRepositories: (token, answers) => tokenRepositories(config.hopperApps.github, token, answers), // a personal access token's (issue #1380)
-    // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
-    ...accountEvents(store.events),
-    ...(o.linkIdentity ? { link: o.linkIdentity } : {}), ...(o.sourceEmailMatch ? { sourceEmailMatch: o.sourceEmailMatch } : {}),
-    // Reached only after `sync` exists: a connection is made long after the runtime starts.
-    onChange: (provider) => {
-      for (const s of sync.statuses().filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);
-    },
-  });
+  // The user's connected accounts (src/users/connected-accounts.ts). Reached only after `sync` exists: a connection is made long
+  // after the runtime starts; a further account (issue #1448) changes which job sources there are, and the plugins follow at once.
+  const connectedAccounts = userAccounts({ store, apps: config.hopperApps, clock, logger, secrets: system, env: o.env, events: store.events, link: o.linkIdentity, sourceEmailMatch: o.sourceEmailMatch, onChange: (key) => {
+    if (furtherAccount(key)) void host.reload().catch(() => undefined);
+    for (const s of sync.statuses().filter((j) => j.kind === `${providerOfKey(key)}-account`)) void sync.syncNow(s.name).catch(() => undefined);
+  } });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
   const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }) }); // the shrink guard's (issue #1096), in the user's mirrors
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
@@ -279,6 +269,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     usageSourceContext: { agentSignIn: (machine) => lanePodSignIn(machine) }, intervalMs: o.pluginsConfigIntervalMs,
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),
+    derivedJobSources: (configured) => furtherAccountSources(configured, connectedAccounts.keys()), // a source for each further GitHub account (issue #1448)
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: {
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),

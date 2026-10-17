@@ -49,6 +49,11 @@ export interface PluginHostOptions {
   intervalMs?: number;
   /** Hears of each change of the job sources after start (issue #356): the instances built now, in the plugins config order. */
   jobSourcesChanged?(built: BuiltJobSource[]): void;
+  /**
+   * The job sources the hopper adds after the configured ones (issue #1448): one per further connected account. Never part
+   * of the plugins config, so never edited or written there. Read at each reload; default: none.
+   */
+  derivedJobSources?(configured: readonly InstanceSpec[]): InstanceSpec[];
   /** Jobs that need executor `name` (not ended): its removal is refused while any do (issue #142). Default: none. */
   executorInUse?(name: string): string[];
   /** What attaching a machine, or removing one, needs (issues #18, #74). */

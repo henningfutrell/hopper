@@ -3,12 +3,15 @@
 // connection's sync — the panel shows it, never a card beside it. The summary line says what the sign-in does now, from
 // the sign-in itself and its job repositories, never from whether a source status exists: signed in with no repositories,
 // it asks to choose them; signed in with an expired token, to sign in again; signed in while the source cannot run, why.
-// Pure; the view renders it.
+// A further GitHub account (issue #1448) has a source of its own, which names its account (`detail.accountKey`): shown in
+// that account's panel, never as a card. Pure; the view renders it.
 import type { ConnectedAccountStatus, SourceStatus } from './wire.ts';
 
 export interface SourcesView {
   /** The connected account's source (`github-account`), shown in the GitHub connection panel. */
   account?: SourceStatus;
+  /** Each further account's source (issue #1448), by the account's key, shown in its panel. */
+  further: Record<string, SourceStatus>;
   /** GitHub is connected and its source reads issues. */
   connected: boolean;
   /** The other connected-account sources (issue #1264): each a card of its own, marked as the duplicate it is. */
@@ -57,13 +60,18 @@ function summary(account: SourceStatus | undefined, connected: boolean, signIn: 
   return 'Reading the GitHub connection.';
 }
 
+/** The key of the further account a source reads (issue #1448); undefined: the first account's. */
+const accountKeyOf = (s: SourceStatus): string | undefined => (typeof s.detail.accountKey === 'string' ? s.detail.accountKey : undefined);
+
 export function sourcesView(sources: SourceStatus[], signIn?: ConnectedAccountStatus): SourcesView {
+  const firsts = sources.filter((s) => s.kind === ACCOUNT && accountKeyOf(s) === undefined);
   // A second connected-account source (issue #1264) is a card of its own, marked as the duplicate it is.
-  const account = sources.find((s) => s.kind === ACCOUNT && !s.duplicateOf) ?? sources.find((s) => s.kind === ACCOUNT);
+  const account = firsts.find((s) => !s.duplicateOf) ?? firsts[0];
   const connected = isConnected(account);
+  const further = Object.fromEntries(sources.flatMap((s) => { const k = accountKeyOf(s); return s.kind === ACCOUNT && k !== undefined ? [[k, s]] : []; }));
   return {
-    ...(account ? { account } : {}), connected, summary: summary(account, connected, signIn),
-    github: sources.filter((s) => s.kind === ACCOUNT && s !== account),
+    ...(account ? { account } : {}), further, connected, summary: summary(account, connected, signIn),
+    github: firsts.filter((s) => s !== account),
     others: sources.filter((s) => s.kind !== ACCOUNT),
     duplicates: sources.filter((s) => s.duplicateOf !== undefined),
   };
@@ -72,9 +80,10 @@ export function sourcesView(sources: SourceStatus[], signIn?: ConnectedAccountSt
 /**
  * Why the GitHub connection ended (issue #441), while it has — its sign-in expired or its stored token
  * cannot be read — for the header to ask to connect again on every screen. Undefined while it lives, or
- * was never connected.
+ * was never connected. Any account's (issue #1448): the first's first, then a further one's.
  */
 export function connectionEnded(sources: SourceStatus[]): string | undefined {
-  const account = sources.find((s) => s.kind === ACCOUNT);
-  return account?.detail.expired === true && typeof account.detail.paused === 'string' ? account.detail.paused : undefined;
+  const ended = sources.filter((s) => s.kind === ACCOUNT && s.detail.expired === true && typeof s.detail.paused === 'string')
+    .sort((a, b) => Number(accountKeyOf(a) !== undefined) - Number(accountKeyOf(b) !== undefined));
+  return ended[0]?.detail.paused as string | undefined;
 }

@@ -49,11 +49,13 @@ export interface GitConnection {
 /** One user's side: their jobs, their Contribution (issue #429), and their GitHub connection for git, or why there is none. */
 export interface GitUser {
   user: ProxyUser;
+  /** Every connected account's job repositories (issue #1448). */
   jobRepositories(): string[];
   contribution(): boolean;
   /** The repository's landing branch while it has landing batches (issue #1073); undefined: it has none. */
   landingBranch?(repo: string): string | undefined;
-  git(): GitConnection | { problem: string };
+  /** The connection of the account that acts for `repo` (issue #1448): the one whose job repositories hold it; else the first. */
+  git(repo?: string): GitConnection | { problem: string };
   /**
    * The shrink guard (issue #1096): one ref update of a push, from `old` to `new`, with the push's pack, judged against
    * the base branch `base`. Refused: the files and why. Absent: no guard.
@@ -168,8 +170,11 @@ export function createGitProxy(o: GitProxyOptions) {
       const push = at.service === 'git-receive-pack';
       const machine = side.user.machineOf(job);
       const requestId = newId();
-      const git = side.git();
-      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380).
+      const own = repoOf(job);
+      const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
+      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380): the account of the job repository it
+      // fetches or pushes (issue #1448); for any other repository — its fork — the account of the job's own repository.
+      const git = side.git(usedHere ? at.repo : own);
       const acting = 'problem' in git ? {} : { as: git.login };
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
         const event: NewEvent = { type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, op: 'git.push', repo: at.repo, ...data } };
@@ -179,9 +184,7 @@ export function createGitProxy(o: GitProxyOptions) {
         if (push) record('github_proxy.refused', { reason });
         return text(403, `refused: ${reason}`);
       };
-      const own = repoOf(job);
       const toOwn = own !== undefined && same(own, at.repo);
-      const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
       const contribution = side.contribution();
       // The job's fork (issue #429): read only when it can be one — Contribution on, the user's own, no job repository.
       let facts: RepoFacts | undefined;

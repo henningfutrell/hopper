@@ -224,9 +224,10 @@ export const EVENT_SCHEMAS = {
   'job.reassigned': strict({ assignee: z.string() }),
   // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
   'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
-  'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),
-  'connected_account.renewed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), expiresAt: z.string().optional() }),
-  'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), code: z.string() }),
+  // `key`: a further connected account's (issue #1448); absent: the first's.
+  'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), key: z.string().optional(), account: z.string(), reason: z.string() }),
+  'connected_account.renewed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), key: z.string().optional(), account: z.string(), expiresAt: z.string().optional() }),
+  'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), key: z.string().optional(), account: z.string(), code: z.string() }),
   // A UI session of the user's ended (issue #439), and why: early logouts can be told apart.
   'ui_session.ended': strict({ reason: z.enum(SESSION_END_REASONS), realm: z.string() }),
   // Intake (issues #440, #652): src/events/intake-schemas.ts.
