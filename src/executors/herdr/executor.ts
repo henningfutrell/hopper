@@ -5,14 +5,14 @@ import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from
 import type { Job, LaneId, MachineSnapshot } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
-import { RESTORED_NOTE, restartInNewPane, restoredByHerdr } from './restored.ts';
+import { LOST_NOTE, RESTORED_NOTE, restartInNewPane, restoredByHerdr, resumeLostPane } from './restored.ts';
 import { afterStatusNote, nudgeGapMs } from './nudge.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './screen.ts';
-import { ownCommandProbes, paneSessionOn, readPaneAnswer, terminalProbes } from './pane-answer.ts';
+import { ownCommandProbes, paneLostProbe, paneSessionOn, readPaneAnswer, terminalProbes } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
 import { paneEnds } from './pane-ends.ts';
@@ -320,7 +320,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
         const herdr = herdrOn(state);
         const agent = await herdr.getAgent(state.agentName);
-        if (!agent) return { kind: 'failed', error: 'pane lost' };
+        // Lost while it waited (issue #1508): the answer goes to Claude resumed in a new pane.
+        if (!agent) return resumeLostPane({ reap: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), startAndSend }, ctx, { ...state, laneId: ctx.laneId }, p, `${LOST_NOTE}\n\n${withNotes(ctx, answer)}`);
         // Restored by herdr while the job waited (issue #1465): the answer goes to Claude resumed in a new pane.
         if (restoredByHerdr(agent, state.terminal)) return restartRestored(ctx, { ...state, laneId: ctx.laneId }, p, `${RESTORED_NOTE}\n\n${withNotes(ctx, answer)}`);
         lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
@@ -377,7 +378,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     },
 
     // A job waiting on its own background command (issue #1037).
-    ...ownCommandProbes(herdrOn), ...terminalProbes(herdrOn),
+    ...ownCommandProbes(herdrOn), ...paneLostProbe(herdrOn), ...terminalProbes(herdrOn),
 
     // Claude exits as at a close, its scope and processes stop, its pane closes; its worktree and session stay.
     async park(job) {

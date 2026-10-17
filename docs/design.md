@@ -21683,7 +21683,8 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
   it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
   event would end the wait before that answer, and the answer would then find no wait to end. Checks keep `pr wait`
-  (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person. Issue #1210
+  (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person; since issue #1508 also by
+  the items an outside wait names ("Watched items"), and by the loss of the pane a poll ran in. Issue #1210
   carries the waits on hopper state a job polls for.
 - **A pull request no follow holds (issue #1433).** Only a followed pull request records `job.pull_request_merged` or
   `job.pull_request_closed`. One whose follow ended (a tend took it, a newer job of its item), a stray a person closed, or
@@ -21711,6 +21712,47 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   `test/domain/job-graph.test.ts` (the node's `waitOn` and words), `test/ui/jobs-view.test.ts` (the node's words and its
   details' link), `test/ui/board.test.ts` (`waitOnLinkOf`), `test/integration/skill-wait-wakes-job.test.ts` (an approval
   still ends the wait with the skill's answer).
+
+## Watched items (issue #1508, 2026-10-16)
+
+Jobs stayed `waiting_on` after what they waited for had happened: an issue of another repository closed ("until
+identity#199 closes"), two issues closed, a workflow run completed after its deployment was rejected. Each was a wait on an
+outside event, or on an item the work-item ledger does not hold, so no event came. Jobs that waited on a background poll in
+their own pane waited for ever once a host restart killed the pane, and one failed with `pane lost` when it was woken.
+
+- **What a wait watches** (`watchedOf`, `src/domain/watched-items.ts`). A wait on an item, and a wait on an outside event (or
+  one with nothing recorded) whose `for:`, `until:` or `what` text names items: `owner/name#N`, `name#N` (a repository of
+  the job's owner), `issue N` or `item N` (the job's own repository), a link to an issue or a pull request; a workflow run
+  as `<repo> run N`, `workflow run N` (the job's own repository) or a link to `actions/runs/N`, its id five digits or more.
+  The job's own issue is left out: its close ends the job (issue #1460).
+- **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
+  Each item is read by its number, the pull request first and then the issue, and a run through Actions
+  (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
+  request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began,
+  `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
+  only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
+- **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
+  memory, the items each job was last woken for. After a restart such a job is woken once more.
+- **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
+  run ends. A run that waits for its approval is not ended.
+- **A wait its pane carries** (`paneCarriesWait`): on its own command, on an outside event that names nothing watched (the
+  background poll of the wait line), or a legacy wait. On every tick (`src/engine/pane-answers.ts` `wakeLost`) such a job is
+  asked `paneLost` (herdr-claude: no pane state, its agent or pane gone, or restored by herdr in another terminal). Lost:
+  the hopper ends the wait, `job.wait_ended { by: hopper, note: "its pane was lost" }`, told to check what it waited for and
+  start the poll again. So a job is woken after a daemon start and after a seat's restart alike. Before, a wait on its own
+  command whose pane was gone was nudged, then flagged stuck: now it is woken. A wait the hopper watches (a pull request, an
+  item, a job, a question, a grant, watched items) is left to that watch.
+- **Resumed in a new pane.** A job resumed whose pane is gone (`resume`, herdr-claude) no longer fails `pane lost`: as for a
+  pane herdr restored (issue #1465), what is left of the job is reaped, a new pane opens as at the start, Claude resumes the
+  agent session, told `LOST_NOTE` and then its answer (`resumeLostPane`, `src/executors/herdr/restored.ts`). With no agent
+  session recorded it still fails `pane lost`.
+- **Cancel with a reason** is issue #1460's: `hopper job cancel <id> --reason <text>`, `POST /ui/api/jobs/:id/cancel`.
+- **Persisted state.** No schema change: the watch is read from each wait's text, so waits recorded before this build are
+  watched too.
+- **Verification.** `test/domain/watched-items.test.ts` (what a wait watches, the wake, a wait its pane carries),
+  `test/integration/watched-items.test.ts` (an issue closed before the wait, two issues, a workflow run; no second wake),
+  `test/integration/job-wait.test.ts` (a lost pane wakes a wait on its own command and on a poll, and the job resumes in a
+  new pane), `test/herdr/executor-herdr-lost.test.ts` (the resume and the probe).
 
 ## Lane pods (issue #1284, 2026-10-15)
 

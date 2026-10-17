@@ -196,6 +196,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.endedPullRequests ? s.endedPullRequests(pulls) : Promise.reject(new SourceError(why(), false));
     },
+    endedWatched(refs) {
+      const s = current();
+      return s?.endedWatched ? s.endedWatched(refs) : Promise.reject(new SourceError(why(), false));
+    },
     censusPullRequests(facts) {
       const s = current();
       return s?.censusPullRequests ? s.censusPullRequests(facts) : Promise.reject(new SourceError(why(), false));
