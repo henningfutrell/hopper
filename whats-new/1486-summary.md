@@ -1,0 +1,1 @@
+- The Resources page now shows the slowest actions, how long each part of a job takes, and how the hopper uses GitHub, with no extra setup.
