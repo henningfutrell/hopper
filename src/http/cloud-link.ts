@@ -4,17 +4,23 @@
 // or touches a job or a lane. Each is an event. This part makes no connection to hopper.io: a link stays `pending` until
 // it registers (issue #465, design.md "Registering at hopper.io") with a one-time registration code the admin minted, and
 // is `pending` again when hopper.io's account owner unregisters it there (design.md "Unregistering at hopper.io").
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+// The hopper.io link key (part 2, design.md "The hopper.io link key", docs/hopper-io-security.md R4): a link mints one
+// X25519 key, its private half a system secret of the instance's vault, its public half in the record; the admin rotates
+// it on request; an unlink drops it. Nothing uses it yet: the cloud link's agent (issue #464) will prove the install with it.
+import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
-import { normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome, type UnregistrationOutcome } from '../domain/cloud-link.ts';
+import { CLOUD_LINK_KEY, normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkKey, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome, type UnregistrationOutcome } from '../domain/cloud-link.ts';
+import type { SystemSecrets } from '../vault/system.ts';
 import { HttpError } from './errors.ts';
 
 export interface CloudLink {
   view(): CloudLinkView;
   /** Links this install to `account` (a valid name, normalised). Throws HttpError 409 while it is linked. */
   link(account: string, by: string): CloudLinkView;
-  /** Removes the link record and its registration code; not linked: nothing changes. */
+  /** Removes the link record, its registration code and its link key; not linked: nothing changes. */
   unlink(by: string): CloudLinkView;
+  /** A new hopper.io link key in place of the one before, at once. Throws HttpError 409 while not linked. */
+  rotateKey(by: string): CloudLinkView;
   /** A new registration code, in place of any before it; answered once, kept only hashed. Throws HttpError 409 while not linked. */
   mintRegistrationCode(by: string): RegistrationCodeMinted;
   /**
@@ -31,11 +37,30 @@ export interface CloudLink {
 
 const hash = (code: string): Buffer => createHash('sha256').update(code).digest();
 
+/**
+ * A new X25519 key: its private half as the secret keeps it, a JWK with `d` first, so the last 4 characters the vault
+ * keeps of a secret are none of it; and its public half, base64url.
+ */
+function newKey(): { secret: string; publicKey: string } {
+  const { privateKey } = generateKeyPairSync('x25519');
+  const { d, x } = privateKey.export({ format: 'jwk' }) as { d: string; x: string };
+  return { secret: JSON.stringify({ d, x, crv: 'X25519', kty: 'OKP' }), publicKey: x };
+}
+
 export function createCloudLink(o: {
   settings: Pick<InstanceSettingsRepository, 'instanceId' | 'getCloudLink' | 'setCloudLink' | 'removeCloudLink' | 'getCloudRegistrationCode' | 'setCloudRegistrationCode' | 'removeCloudRegistrationCode'>;
+  /** The instance's system secrets: the link key's private half. */
+  secrets: Pick<SystemSecrets, 'keep' | 'drop'>;
   events: Pick<InstanceEvents, 'append'>;
   now: () => Date;
 }): CloudLink {
+  /** Mints a link key and keeps its private half; throws HttpError 503 when no system secret can be kept (no master key). */
+  const mintKey = (by: string, rotated: boolean): CloudLinkKey => {
+    const key = newKey();
+    const kept = o.secrets.keep(CLOUD_LINK_KEY, key.secret, by, { rotated });
+    if (!kept.ok) throw new HttpError(kept.code === 'unavailable' ? 503 : 409, `the hopper.io link key cannot be kept: ${kept.error}`);
+    return { secret: CLOUD_LINK_KEY, publicKey: key.publicKey, createdAt: o.now().toISOString() };
+  };
   /** The open code, or undefined; an expired one is removed. */
   const openCode = () => {
     const code = o.settings.getCloudRegistrationCode();
@@ -50,7 +75,8 @@ export function createCloudLink(o: {
     view,
     link(account, by) {
       if (o.settings.getCloudLink()) throw new HttpError(409, 'this install is linked already: unlink it first');
-      const link = { installId: o.settings.instanceId(), account: normalCloudAccount(account), state: 'pending' as const, linkedAt: o.now().toISOString(), by };
+      const linkKey = mintKey(by, false);
+      const link = { installId: o.settings.instanceId(), account: normalCloudAccount(account), state: 'pending' as const, linkedAt: o.now().toISOString(), by, linkKey };
       o.settings.setCloudLink(link);
       o.events.append({ type: 'cloud_link.linked', data: { installId: link.installId, account: link.account, by } });
       return view();
@@ -60,8 +86,15 @@ export function createCloudLink(o: {
       o.settings.removeCloudRegistrationCode();
       if (link) {
         o.settings.removeCloudLink();
+        o.secrets.drop(CLOUD_LINK_KEY, by);
         o.events.append({ type: 'cloud_link.unlinked', data: { installId: link.installId, account: link.account, by } });
       }
+      return view();
+    },
+    rotateKey(by) {
+      const link = o.settings.getCloudLink();
+      if (!link) throw new HttpError(409, 'this install is not linked: link it first');
+      o.settings.setCloudLink({ ...link, linkKey: mintKey(by, true) });
       return view();
     },
     mintRegistrationCode(by) {
@@ -89,7 +122,7 @@ export function createCloudLink(o: {
       if (!link) return 'not-linked';
       if (normalCloudAccount(account) !== link.account) return 'other-account';
       if (link.state !== 'registered') return 'not-registered';
-      o.settings.setCloudLink({ installId: link.installId, account: link.account, state: 'pending', linkedAt: link.linkedAt, by: link.by });
+      o.settings.setCloudLink({ installId: link.installId, account: link.account, state: 'pending', linkedAt: link.linkedAt, by: link.by, ...(link.linkKey ? { linkKey: link.linkKey } : {}) });
       o.events.append({ type: 'cloud_link.unregistered', data: { installId: link.installId, account: link.account } });
       return 'unregistered';
     },
