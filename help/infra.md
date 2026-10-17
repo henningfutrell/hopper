@@ -41,4 +41,15 @@ An out-of-band change is a change to infrastructure that did not come through Ia
 
 The hopper only tracks these changes. It reverts nothing.
 
-The same reads and acts are in the API, under the Infra tag: `GET /api/infra-plans`, `GET /api/out-of-band`, `POST /ui/api/infra-plans` and `POST /ui/api/out-of-band`.
+## Topology
+
+The topology is a map of the services in your AWS accounts and Kubernetes clusters, and of what is linked to what: a cluster in its VPC, a service behind its load balancer, a workload and the IAM role it assumes, an app and the database or queue it uses, a role that another account may assume.
+
+- A read-only check reads one AWS account in one region, or one Kubernetes cluster, and reports what it found with an API token to `POST /ui/api/topology/report`. Give its grant the scope `topology:report`.
+- Filter the map by account, cluster, region or kind. Click a node to see its details, its neighbours, and the out-of-band changes that name it.
+- Each source says when it was read. When a check cannot read a source, the map keeps what it found the last time, and the source says why it is stale.
+- A faint node is one that only a link names, for example an IAM role in an account that no check read.
+
+The hopper never writes to a cloud or a cluster here.
+
+The same reads and acts are in the API, under the Infra tag: `GET /api/infra-plans`, `GET /api/out-of-band`, `GET /api/topology`, `POST /ui/api/infra-plans`, `POST /ui/api/out-of-band` and `POST /ui/api/topology/report`.
