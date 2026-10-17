@@ -58,7 +58,13 @@ describe('a container target on the sandbox module', () => {
 
   it('an issue routed to the box runs its body in a one-shot box with no network; the job finishes with the output, and the box is burned', async () => {
     const runtime = createFakeContainerRuntime();
-    runtime.runScript = async (spec) => ({ exit: 0, output: `ran ${spec.env.HOPPER_STEP_COMMAND?.trim()} for ${spec.env.HOPPER_JOB_ID}\r\n` });
+    // The box's command waits until the job's pull request merged: a run that ends first fails the job as not complete.
+    let merged!: () => void;
+    const prMerged = new Promise<void>((resolve) => { merged = resolve; });
+    runtime.runScript = async (spec) => {
+      await prMerged;
+      return { exit: 0, output: `ran ${spec.env.HOPPER_STEP_COMMAND?.trim()} for ${spec.env.HOPPER_JOB_ID}\r\n` };
+    };
     const { a, gh } = await boot(runtime);
     const issue = gh.createIssue({ repo: REPO, title: 'Where am I', body: 'Run:\n\n```sh\nhostname\n```\n', labels: ['hopper', 'on-box'] });
     await a.sync();
@@ -66,6 +72,7 @@ describe('a container target on the sandbox module', () => {
     expect(job.spec).toMatchObject({ executor: 'command', machineId: 'box' });
     // The job's pull request merges while it runs: only a job that shipped is finished (issue #171).
     gh.closeByPullRequest(REPO, issue.number, { createdAt: job.createdAt, mergedAt: new Date().toISOString() });
+    merged();
     const done = await a.waitForStatus(job.id, 'finished');
     expect(done.result).toEqual({ machine: 'box', exitCode: 0, stdout: `ran hostname for ${job.id}\n`, stderr: '' });
     const [spec] = [...runtime.ran.values()];
