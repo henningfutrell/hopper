@@ -3,7 +3,7 @@
 // Nothing holds it for good (issue #927): checks that stay pending hold it only for a time after the last push; a pull
 // request not seen yet, or whose checks the hopper cannot read, holds nothing.
 import { describe, expect, it } from 'vitest';
-import { PENDING_HOLD_MS, queueHeads } from '../../src/domain/tending-queue.ts';
+import { PENDING_HOLD_MS, queueHeads, repoOf } from '../../src/domain/tending-queue.ts';
 import type { Job, PullRequestSeen, Tended } from '../../src/domain/types.ts';
 import { jobForIssue, REPO } from '../sources/fixtures/github-support.ts';
 
@@ -93,5 +93,15 @@ describe('a merged pull request holds nothing (issues #1162, #1210)', () => {
       const other = jobForIssue(1, { id: 'job-0', status: 'finished', sourceState: { source: { follow, pullRequest: PR } } });
       expect(heads(tend('running', {}, [other]), false)).toEqual([]);
     }
+  });
+});
+
+describe('a job\'s pull request in another repository (issue #1778)', () => {
+  it('holds that repository\'s queue, not its issue\'s', () => {
+    const other = 'https://github.com/owner/infra/pull/7';
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: other, seen } } });
+    expect(repoOf(job)).toBe('owner/infra');
+    expect(queueHeads('owner/infra', [job], () => undefined, (repo) => repo === 'owner/infra', NOW, () => true)).toEqual([{ pullRequest: other, why: 'merging' }]);
+    expect(queueHeads(REPO.toLowerCase(), [job], () => undefined, () => true, NOW, () => true)).toEqual([]);
   });
 });

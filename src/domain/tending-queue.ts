@@ -18,7 +18,7 @@
 // A tend job on its own command holds nothing (issue #1210): a job that waits on its own background command works on nothing
 // meanwhile, as a job that waits on a person. One that ran a `sleep` loop to read another pull request held four pull requests
 // for the whole hour of `MAX_HELD_MS`. Once its wait ends and it pushes, it is a head again.
-import { following, tendOf, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
+import { following, jobPullRequestRepo, tendOf, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 import type { ChangeKind } from './change-kinds.ts';
 import { ownWaitOf } from './own-command.ts';
@@ -67,8 +67,8 @@ const WAITS_ON_PERSON: readonly string[] = ['waiting_answer', 'parked', 'operato
 /** A followed pull request's ends (issue #1162): one seen so holds nothing. */
 const FOLLOW_ENDS: readonly string[] = ['merged', 'closed', 'abandoned'];
 
-/** A job's repository, lowercased: the queue's key. */
-export const repoOf = (job: Job): string | undefined => job.source?.repo?.toLowerCase();
+/** The repository of a job's pull request (issue #1778: it may be another than its issue's), lowercased: the queue's key. */
+export const repoOf = (job: Job): string | undefined => jobPullRequestRepo(job)?.toLowerCase();
 
 /**
  * The tend job at work on a pull request: one a tend handed the pull request to (`tended`), not ended and not waiting on a
@@ -99,7 +99,7 @@ function soonMerged(s: PullRequestSeen, now: number): boolean {
  */
 function merging(job: Job, merges: (repo: string, kind?: ChangeKind) => boolean, now: number): string | undefined {
   const f = followedOf(job);
-  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!, f.seen?.change?.kind)) return undefined;
+  if (!following(job) || !f.pullRequest || !merges(jobPullRequestRepo(job)!, f.seen?.change?.kind)) return undefined;
   return f.seen && soonMerged(f.seen, now) ? f.pullRequest : undefined;
 }
 

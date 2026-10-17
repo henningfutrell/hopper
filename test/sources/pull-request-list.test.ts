@@ -249,3 +249,14 @@ describe('a direct job\'s pull request (issue #1068)', () => {
     expect(pullRequestList([job], () => job, { on: true, repos: {} }, [REPO], NOW, () => undefined).repos[0]!.pullRequests).toEqual([]);
   });
 });
+
+describe('a job\'s pull request in another repository (issue #1778)', () => {
+  it('its card is in that repository, with that repository\'s yolo mode', () => {
+    const other = 'https://github.com/owner/infra/pull/7';
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: other, seen: seen({ conflicting: true, base: 'master' }) } } });
+    const v = pullRequestList([job], () => job, { on: false, repos: { 'owner/infra': true } }, [REPO], NOW, () => undefined);
+    expect(v.repos.find((g) => g.repo === REPO)!.pullRequests).toEqual([]);
+    const card = v.repos.find((g) => g.repo === 'owner/infra')!.pullRequests[0]!;
+    expect(card).toMatchObject({ repo: 'owner/infra', issue: { number: 1 }, pullRequest: { number: 7, url: other }, yolo: true, base: 'master', waits: 'conflicts' });
+  });
+});

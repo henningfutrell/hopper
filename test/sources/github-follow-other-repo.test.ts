@@ -10,7 +10,7 @@ const LONG_AGO = '2026-10-02T09:50:00.000Z';
 function ended(pr: { conflicting?: boolean; base?: string }, yolo: (repo: string) => boolean = () => false) {
   const s = setup({}, { yoloMode: yolo });
   s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
-  const opened = s.gh.openUnlinkedPullRequest(INFRA, { createdAt: LONG_AGO, body: `Closes ${REPO}#1`, ...pr });
+  const opened = s.gh.openUnlinkedPullRequest(INFRA, { createdAt: LONG_AGO, headRef: 'issue-1-change', body: `Closes ${REPO}#1`, ...pr });
   const job = jobForIssue(1, { status: 'finished', createdAt: '2026-10-02T09:00:00.000Z', sourceState: { source: { pullRequest: opened.url, follow: 'open' } } });
   return { ...s, pr: opened, job, number: Number(opened.url.slice(opened.url.lastIndexOf('/') + 1)) };
 }

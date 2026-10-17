@@ -44,7 +44,7 @@
 // the issue is closed as above, once, and who merged it is recorded. Seen open, or ended, the marker goes.
 
 import {
-  classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, rechecksMerge, readyToMerge, ruleKey,
+  classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, pullRequestRepo, rechecksMerge, readyToMerge, ruleKey,
   type ActingPerson, type ChangeClass, type ChangeKind, type ChangeRule, type EndedPullRequest, type FollowAt, type FollowUp, type Job, type MergeMarker, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
 } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
@@ -150,7 +150,7 @@ async function namedStateOf(api: GitHubApi, repo: string, number: number, s: Fol
   const mention = (await api.referencingPullRequests(repo, number)).find((pr) => pr.url === s.pullRequest);
   if (mention) return s.part && !isPartOf(mention, repo, number) ? undefined : { state: mention.state, url: mention.url };
   // Not a mention (issue #637: a pull request named for the issue only on its branch): asked by its number.
-  return { state: (await api.pullRequest(repo, numberOf(s.pullRequest)))?.state ?? 'closed', url: s.pullRequest };
+  return { state: (await api.pullRequest(pullRequestRepo(s.pullRequest, repo), numberOf(s.pullRequest)))?.state ?? 'closed', url: s.pullRequest };
 }
 
 /**
@@ -190,7 +190,7 @@ async function classified(ctx: FollowContext, repo: string, pr: OpenPullRequest,
  */
 /** Say `body` on pull request `url` (issue #1143): only what the hopper did with it; a refusal loses only the comment. */
 async function note(api: GitHubApi, repo: string, url: string, body: string): Promise<void> {
-  await api.postComment(repo, numberOf(url), body).catch(() => undefined);
+  await api.postComment(pullRequestRepo(url, repo), numberOf(url), body).catch(() => undefined);
 }
 
 /** `JobSource.tendStarted` over `api` (issue #1143): the tend note on the job's own pull request. */
@@ -214,7 +214,8 @@ async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequ
 /** `mark`, when given, keeps the merge marker with the head it merges, before the merge call (issue #1588). */
 export async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct, mark?: (head: string | undefined) => void):
   Promise<{ ended: 'merged' | 'closed'; superseded?: string; seen?: PullRequestSeen } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
-  const repo = job.source!.repo!;
+  // Its own repository's (issue #1778): read, merged and moved there, under that repository's yolo mode and rules.
+  const repo = pullRequestRepo(url, job.source!.repo!);
   if (act === 'close') {
     await ctx.api.closeWithoutMerge(repo, numberOf(url));
     return { ended: 'closed' };
@@ -333,7 +334,7 @@ export async function endedPullRequests(api: GitHubApi, pulls: { repo: string; n
 
 /** Close pull request `url` without a merge, as nothing is left to land (issue #1143), and say why on it. */
 async function closeSuperseded(api: GitHubApi, repo: string, url: string, why: string): Promise<{ ended: 'closed'; superseded: string }> {
-  await api.closeWithoutMerge(repo, numberOf(url));
+  await api.closeWithoutMerge(pullRequestRepo(url, repo), numberOf(url));
   await note(api, repo, url, supersededNote(why));
   return { ended: 'closed', superseded: why };
 }
@@ -424,7 +425,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       byHopper = !act;
       mergedHere = w.ended === 'merged';
       superseded = w.superseded;
-    } else if (now.state === 'merged' && await mergedByMarker(ctx.api, repo, now.url, marker)) {
+    } else if (now.state === 'merged' && await mergedByMarker(ctx.api, pullRequestRepo(now.url, repo), now.url, marker)) {
       // The hopper's merge call went through, and a stop came before its record (issue #1588).
       byHopper = marker!.byHopper === true;
       mergedHere = true;
