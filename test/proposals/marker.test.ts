@@ -75,3 +75,35 @@ describe('the parts of a proposal', () => {
     expect(proposalSections('TL;DR: x\nNote: keep it\nProblem: y').sections).toEqual({ tldr: 'x\nNote: keep it', problem: 'y' });
   });
 });
+
+// Issue #850: a proposal with a Markdown rule or table, which Claude Code draws with ─, still ends on its marker.
+describe('a proposal with rules and tables', () => {
+  const RULED = [
+    '● ## TL;DR',
+    '  Paint the shed.',
+    '  ────────────────────────────',
+    '  ## Path 1: Brush',
+    '  ┌──────┬────────┐',
+    '  │ Path │ Effort │',
+    '  ├──────┼────────┤',
+    '  │ 1    │ low    │',
+    '  └──────┴────────┘',
+    '  ──────────────────',
+    '  Recommended: 1',
+    '  HOPPER_PROPOSAL',
+  ];
+
+  it('a pane turn whose proposal holds a rule and a table is a proposal, its text whole', () => {
+    const turn = readTurn(screen(ECHO, RULED, END), FOOTER_ANCHOR);
+    expect(turn.lastMarker).toBe('proposal');
+    expect(turn.assistantText).toContain('Paint the shed.');
+    expect(turn.assistantText).toContain('Recommended: 1');
+  });
+
+  it('a dialog under a turn with a rule still ends the turn at its top', () => {
+    const dialog = ['──────────────', ' Bash command', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', ' HOPPER_DONE'];
+    const turn = readTurn(screen(ECHO, ['● Before.', '  ──────────', '  After.'], dialog), FOOTER_ANCHOR);
+    expect(turn.lastMarker).toBe(null);
+    expect(turn.lastLine).toBe('After.');
+  });
+});

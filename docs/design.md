@@ -807,7 +807,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   machine's default shell, and has no option to pick one per tab (herdr 0.8.2); on Windows that is
   PowerShell, which refuses `&&` (5.1) and has no `printf`, so the scratch marker never showed and
   every job there waited 60000 ms. The executor reads the pane after each wait, and when it shows a
-  PowerShell or cmd prompt (`windowsShellOf`, `screen.ts`) fails the job at once: `the shell of pane
+  PowerShell or cmd prompt (`windowsShellOf`, `windows-shell.ts`) fails the job at once: `the shell of pane
   <pane> on <machine> is PowerShell, and the hopper needs a POSIX shell …`, the pane closed. The
   hopper does not translate its commands per shell: the fix is on the machine, a POSIX shell as herdr's
   default for the hopper's session (README "A Windows computer").
@@ -1041,7 +1041,7 @@ and `agent read --source recent-unwrapped --lines 200`.
 watch the same turn) where
 `anchor` is the last line of what was sent as Claude echoes it — the footer's last line
 (`If the job cannot be done, …`) on the first turn, the answer's last line on a resume.
-Only output lines **after the last occurrence of the anchor** count. **Every** outcome
+Only output lines **after the last occurrence of the anchor** count, up to the rule above the input box (`transcriptEnd`, `screen.ts`; with no input box, the last rule, a dialog's top): a `─` rule in the agent's own words, a Markdown rule or table, is part of the turn, so a marker after it still counts (issue #850: a proposal with a rule ended on `HOPPER_PROPOSAL` and was taken as a status note). **Every** outcome
 below except `blocked`, agent gone and timeout requires status `idle`/`done` **and**
 `state_change_seq` greater than at send — or, **stalled** (issue #278), Claude waiting (`idle`, `done`
 or `blocked`) with `state_change_seq` unmoved since the send for `idleNudgeMs`: herdr never said the

@@ -17,7 +17,7 @@ import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
 import { enterRuntime, enterSandbox } from './start-isolation.ts';
 import { RESTORE_MARK, restoreOutcome } from '../../client/checkpoint.ts';
-import { windowsShellOf } from './screen.ts';
+import { windowsShellOf } from './windows-shell.ts';
 import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
