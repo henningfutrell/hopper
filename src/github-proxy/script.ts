@@ -69,8 +69,10 @@ hopper), the same as its Pull requests list, and reads GitHub only for a pull re
 then answers that read again for a minute (from: cache). To wait on checks, run pr wait, once: do not ask again and
 again. On a pull request the hopper follows, it returns when the hopper sees the checks end (or the pull request merged
 or closed), with its status (exit 0); --timeout is the most it waits (an hour unless said; exit 4 when it ends first).
-On one the hopper does not follow, it answers at once as pr status, wait none (exit 3): ask pr status again later, once
-a minute at most. A job that ends its turn with HOPPER_WAITING while a pr wait is open is woken with the answer.
+On one the hopper does not follow (a pull request in another repository, for example), it answers at once as pr status:
+its checks ended, wait settled (exit 0); else wait none (exit 3) and waitOn: end your turn with HOPPER_WAITING and the
+line on: pr OWNER/NAME#N checks, and the hopper wakes you when they end. Never poll pr status for it in a loop.
+A job that ends its turn with HOPPER_WAITING while a pr wait is open is woken with the answer.
 To wait on its merge conflicts (a tend job of the hopper rebases it, or another merge makes conflicts), run pr wait
 --for mergeable, once: it returns when the hopper sees its mergeable other than it was, or it merged or closed. The same
 read asked again and again is a poll: the answer says so (poll). Never wait on the hopper in a loop with sleep.

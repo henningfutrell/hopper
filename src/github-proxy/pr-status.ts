@@ -77,3 +77,18 @@ export function prWaitOver(s: PullRequestStatus, over: PrWaitOver): boolean {
 /** Whether `url` is pull request `number` of `repo`, whatever the web origin and the case. */
 export const isPullRequest = (url: string, repo: string, number: number): boolean =>
   url.toLowerCase().endsWith(`/${repo.toLowerCase()}/pull/${number}`);
+
+/**
+ * How `pr wait` answers on a pull request the hopper does not follow (issue #1731): no event of the hopper's tells it when the
+ * checks end, so it opens no watch. Checks that ended: `settled`. Else `none`, with the `on:` line of a job's own wait on its
+ * checks: the wait check reads that pull request on GitHub, in any repository (design.md "Wait checks").
+ */
+export function unfollowedWait(repo: string, number: number, read: Record<string, unknown>, over: PrWaitOver['for']): { wait: 'settled' | 'none'; waitOn?: string; note?: string } {
+  if (over !== 'checks') return { wait: 'none' };
+  if (read.state !== undefined && read.checks !== undefined && (read.state !== 'open' || read.checks !== 'pending')) return { wait: 'settled' };
+  const waitOn = `pr ${repo}#${number} checks`;
+  return {
+    wait: 'none', waitOn,
+    note: `The hopper does not follow this pull request, so pr wait cannot wait on it. To wait until its checks end, end your turn with HOPPER_WAITING and the line on: ${waitOn}. The hopper then reads the pull request and wakes you when its checks end.`,
+  };
+}

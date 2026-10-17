@@ -21828,8 +21828,12 @@ answer, the same `github_proxy.done` event, which records `wait`:
   the open one answers) — emits `github.pr_waiting`, and answers 202 with `wait: open`, `waitId`, `until` and
   `waitSeconds`. `--timeout` is the watch's seconds (an hour unless said, at most a day);
 - it knows the pull request and its checks ended, or it is merged or closed: 200 now, `wait: settled`;
-- it does not know it: answered as `pr status` (the cache, else GitHub), `wait: none` — nothing would tell the hopper when
-  the checks end, so the job asks `pr status` again later, at most once a minute. `hopper-gh` exits 3.
+- it does not know it (a pull request in another repository, for example): answered as `pr status` (the cache, else
+  GitHub). Its checks ended, or it is merged or closed: `wait: settled`. Else `wait: none` — nothing would tell the hopper
+  when the checks end — with `waitOn`, the `on:` line `pr OWNER/NAME#N checks`, and a `note` that says to end the turn
+  with HOPPER_WAITING and that line: the wait check reads the pull request on GitHub in any repository ("Wait checks",
+  `pr_checks_ended`) and wakes the job when its checks end (issue #1731; `unfollowedWait`, `pr-status.ts`). `hopper-gh`
+  exits 3. Only for `--for checks`: `--for mergeable` answers `wait: none` alone.
 
 **Pushed, not polled.** The watch is answered again from the user's records — never GitHub, never on a timer — when an
 event says what the hopper saw of a pull request changed (`job.pull_request_seen`: following it saw its wait change, as
