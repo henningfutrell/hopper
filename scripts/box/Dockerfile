@@ -1,4 +1,5 @@
-# A sandbox box (design.md "Joining a machine", issue #308): a machine with one agent CLI in it that joins
+# A sandbox box (design.md "Joining a machine", issue #308): a machine with one agent CLI in it — claude, codex,
+# cursor, omp or opencode (build argument AGENT, issue #865; src/sandbox/box-image.ts BOX_AGENTS) — that joins
 # a hopper with the line Add machine shows and dials in — no sshd, no published port, nothing of the
 # computer it runs on. Published as ghcr.io/henningfutrell/hopper:box-<agent> by .github/workflows/image.yml;
 # built from the repo root (it carries the hopper client, src/client):
@@ -17,11 +18,16 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && groupmod -n agent node && usermod -l agent -d /home/agent -m -s /bin/bash node
 
-# The agent CLI, outside the home: the home volume never hides it. One per box; claude is the one an
-# executor drives on a client target today (herdr-claude).
+# The agent CLI, outside the home: the home volume never hides it. One per box; its executor drives it on a client
+# target (herdr-claude, or the print-mode executors: design.md "Print-mode agent executors").
 RUN set -eu; case "$AGENT" in \
     claude) npm install -g --no-audit --no-fund @anthropic-ai/claude-code ;; \
-    *) echo "AGENT must be claude, not '$AGENT'" >&2; exit 1 ;; \
+    codex) npm install -g --no-audit --no-fund @openai/codex ;; \
+    opencode) npm install -g --no-audit --no-fund opencode-ai ;; \
+    omp) npm install -g --no-audit --no-fund bun && BUN_INSTALL=/usr/local bun install -g @oh-my-pi/pi-coding-agent ;; \
+    cursor) HOME=/opt/cursor sh -c 'curl -fsS https://cursor.com/install | bash' \
+      && chmod -R a+rX /opt/cursor && ln -s "$(readlink -f /opt/cursor/.local/bin/cursor-agent)" /usr/local/bin/cursor-agent ;; \
+    *) echo "AGENT must be claude, codex, cursor, omp or opencode, not '$AGENT'" >&2; exit 1 ;; \
   esac; npm cache clean --force >/dev/null 2>&1 || true
 
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the box's jobs run in its session.
@@ -32,7 +38,8 @@ COPY src/client/ /usr/local/lib/hopper-client/
 COPY scripts/box/entrypoint.sh /usr/local/bin/hopper-box
 
 # A job's Claude Code starts without its first-run screens: onboarding, and the prompt that confirms
-# --dangerously-skip-permissions (herdr-claude's default args). Seeds the home volume on its first start.
+# --dangerously-skip-permissions (herdr-claude's default args). Seeds the home volume on its first start. Harmless
+# in a box of another agent.
 RUN chmod 755 /usr/local/bin/hopper-box \
  && install -d -o agent -g agent /home/agent/.claude \
  && printf '{"hasCompletedOnboarding":true}\n' > /home/agent/.claude.json \

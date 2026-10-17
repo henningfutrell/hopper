@@ -1,7 +1,7 @@
 // The plugin definition every print-mode agent executor shares (design.md "Print-mode agent executors"):
 // cursor-agent, codex, opencode and omp differ only in their CLI, its default arguments and what they say
-// about it. Each is opt-in, not in the built-in instances: the plugins config names it to use it, and an
-// agent box switches on the one it runs (scripts/agent-boxes.sh). The agent signs in on each machine it
+// about it. Each is opt-in, not in the built-in instances: the plugins config names it to use it, on any
+// machine, a box of its agent's image among them (issue #865). The agent signs in on each machine it
 // runs on: the hopper holds no credential of theirs.
 import { join } from 'node:path';
 import { createPrintAgentExecutor, type PrintAgent } from '../../executors/index.ts';

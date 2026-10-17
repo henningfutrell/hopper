@@ -253,7 +253,8 @@ lanes:
   # Kubernetes, or `hopper pool-key`). The pods join as the machines of the person it was issued to. Empty: the chart
   # makes <release>-lane-pool, a key only this release's own hopper reads. Needed with hopper.enabled=false.
   existingSecret: ""
-  # The agent CLI in the box image (ghcr.io/…:box-<agent>, of the hopper's update channel).
+  # The agent CLI in the box image (ghcr.io/…:box-<agent>, of the hopper's update channel): claude, codex, cursor, omp
+  # or opencode (issue #865).
   agent: claude
   # Another box image tag; empty: box-<agent> for latest and stable, box-<agent>-<channel> for the other channels.
   imageTag: ""

@@ -1,0 +1,1 @@
+- The sandbox playground can start a box of any agent: Claude Code, Codex, Cursor's agent, oh-my-pi or opencode. Each agent now has a published box image.

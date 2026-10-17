@@ -86,7 +86,7 @@ usage:
                                                      chart release outside this hopper (Add machine's Pod / Kubernetes);
                                                      --revoke: no pod joins with it any more. No restart either way
   hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
-                                                     authorized_keys takes (scripts/agent-boxes.sh asks it)
+                                                     authorized_keys takes (a script that adds a machine asks it)
   hopper ledger rebuild                              the work-item ledger replayed from every event and the issue graph,
                                                      in place of the rows there are; prints how many items it holds
 ${LOCAL_ACCOUNT_USAGE}

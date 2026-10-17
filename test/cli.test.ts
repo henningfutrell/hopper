@@ -154,7 +154,7 @@ describe('no bootstrap login (issue #238)', () => {
   });
 });
 
-// Issue #307: a script that lets the hopper into a machine (scripts/agent-boxes.sh) asks the hopper for
+// Issue #307: a script that lets the hopper into a machine asks the hopper for
 // its key's public half, where the hopper runs, instead of a person copying it out of the Add form.
 describe('hopper ssh-key', () => {
   it('prints the public half of the user\'s ssh key, never the private one', async () => {

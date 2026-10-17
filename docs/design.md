@@ -95,8 +95,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**), its side of the cloud link's registration messages (`link.ts`, transport-free: a registration kept on the instance's `registered`, a tombstone answered `unregister` at the hello), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
-| `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
-| `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
+| `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI of `BOX_AGENTS`, issue #865; herdr; the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
@@ -4225,119 +4224,21 @@ hopper supports both. A container is never taken to be the only shape a job has.
 **Not built here.** This section records the direction and what it binds; no daemon change. Each row above
 lands with its own issue, test first.
 
-## Agent boxes (issue #295, 2026-10-06; no catches since issue #307)
+## Agent boxes (issue #295, 2026-10-06; removed by issue #865, 2026-10-17)
 
-Owner request (#295): for testing, containers that run codex, cursor, omp, opencode and the like, all
-attached — the hopper attached to every one of them, and the owner able to open a terminal in each.
-Owner, on the first container deploy (#307): "No catches. All boxes must interop seamlessly and easily":
-every box attaches to the hopper in its container and runs jobs, with no step by hand, and stays so across
-re-runs and rebuilds.
+An **agent box** was a test container on this machine's docker with one agent CLI in it (claude, codex, cursor, omp,
+opencode), an ssh target with its own herdr session, made and attached by `scripts/agent-boxes.sh`. It was the only way
+to get a codex, cursor, omp or opencode box. Issue #865 made the hopper's own parts carry every harness instead:
 
-An **agent box** is a container on this machine's docker with one agent CLI in it — `claude`, `codex`,
-`cursor` (`cursor-agent`), `omp`, `opencode` — that is an ordinary **ssh target**: it runs sshd and its
-own herdr session `hopper`, so the hopper attaches it like any machine over ssh (not as a container
-target, which runs no agent and no herdr), and it runs the jobs of its agent's executor. The boxes are a
-script and an image; they reach the hopper through the plugins config.
+- **Client targets run every executor** (part A): a computer that joined with its line runs the print-mode executors
+  through `POST /turn` ("Client targets", "Print-mode agent executors").
+- **A published box image per harness** (part B): `scripts/box/Dockerfile` installs the agent its build argument
+  `AGENT` names, one of `BOX_AGENTS` (`src/sandbox/box-image.ts`: claude, codex, cursor, omp, opencode), and the image
+  workflow publishes `box-<agent>` of each. The sandbox playground offers each one, and the lane pods run the agent
+  `lanes.agent` names. `test/scripts/box-image.test.ts` checks the Dockerfile and the workflow against `BOX_AGENTS`.
 
-`bash scripts/agent-boxes.sh [--sign-in] [--remove] [--check] [agent...]` (no agent: all five). One command, safe to
-run again: each run puts every box back as it should be. Per box `hopper-box-<agent>`
-(`HOPPER_BOX_PREFIX` changes the prefix):
-
-- **The hopper is found, not described.** In order: a hopper installed on this host when its database is
-  named (`HOPPER_DATABASE_URL` or `HOPPER_DATABASE_URL_FILE`, and its install, `HOPPER_APP_DIR`); else the
-  running container of the compose service `hopper` (`compose.yaml`; `HOPPER_CONTAINER` names another,
-  `HOPPER_CONTAINER=` none); else none, and the boxes are made alone. For the container the script uses
-  `docker exec <hopper> hopper …`: the operator CLI where the hopper runs, with the database it already
-  holds — no database reachable from the host, no host install, no ssh config. `HOPPER_USER` names the
-  hopper's user when it has several.
-- **Image** `hopper-box-<agent>` from `scripts/agent-box/Dockerfile` (`node:24-bookworm-slim`, build argument
-  `AGENT`): the agent CLI outside the home (npm, bun for omp, Cursor's installer for cursor), GitHub's CLI
-  `gh` with git asking it for github.com credentials (so a job's `GH_TOKEN` clones and pushes) and a box
-  identity for commits (`hopper agent box`), and this machine's herdr binary (`HOPPER_BOX_HERDR`, else
-  `command -v herdr`) at `/usr/local/bin/herdr`. The login user `agent` has no password and is not
-  locked; sshd takes keys only, `agent` only, no root.
-- **Container**: `--restart unless-stopped`; with a hopper in a container, on **the hopper's network**
-  (its compose network, `hopper_default`), where the hopper reaches it by name, `agent@hopper-box-<agent>`,
-  port 22; sshd also published on `127.0.0.1` at a **fixed port** (`HOPPER_BOX_PORT_BASE`, default 2220,
-  + 1 claude, + 2 codex, + 3 cursor, + 4 omp, + 5 opencode), so its Host and known_hosts line hold across
-  restarts (#319's finding: an ephemeral port moved at each start). The home is the volume
-  `hopper-box-<agent>-home` — the agent's sign-in lives there and outlives the box. Its main process is the
-  herdr session. A box whose image changed, or not published at its port, is started again; one that left
-  the hopper's network is joined to it again; a running one is kept.
-- **Who gets in**: written into the box through docker — the hopper's key with `restrict`, as
-  `scripts/attach-machine.sh` installs it. The key is the hopper's own, asked of it (`hopper ssh-key`,
-  "Operator CLI"); with no hopper found, its file (`HOPPER_SSH_KEY_FILE`, made when missing) or its public
-  line (`HOPPER_SSH_PUBLIC_KEY`, as the Add form shows it). The user's own public keys (`~/.ssh/id_*.pub`)
-  unrestricted, for a terminal there (`ssh -t hopper-box-<agent>`, `herdr --remote hopper-box-<agent>
-  --session hopper`).
-- **ssh, for the person**: a `Host hopper-box-<agent>` (HostName `127.0.0.1`, its Port, User `agent`) in
-  `~/.ssh/hopper-box.config`, rewritten from the running boxes on every run and Included first in
-  `~/.ssh/config`; the box's host key in `~/.ssh/known_hosts` for `[127.0.0.1]:<port>`, read from the box
-  itself through docker — the source, never a connection ("Target authentication"). A hopper installed on
-  this host reaches the box through that Host; a hopper in a container never reads it.
-- **Checked**: its herdr session answering `running` — over ssh as the hopper would reach it when the
-  hopper's key file is here, else in the box through docker; and, for a hopper in a container, the box's
-  port 22 reached from the hopper's container by the box's name.
-- **Attached** on every run when a hopper is found: each box an `ssh` machine instance named after it
-  (`ssh`: `agent@<box>` for a hopper in a container, the Host for one on this host; `herdr: true`,
-  its `hostKey`; herdr is on the box's PATH, issue #311) through the operator CLI (`hopper config get|set
-  plugins`, against its version; the daemon's 5 s watch follows it, no restart), filtered by
-  `scripts/agent-boxes.ts`. A box runs **its agent's executor** — claude `herdr-claude`, cursor
-  `cursor-agent`, codex `codex`, opencode `opencode`, omp `omp` ("Print-mode agent executors") — the
-  config's instance of that plugin, switched on (an instance named after the plugin) when there is none.
-  Attached again, a box keeps its lanes, executors and label and takes its new connection; one left with
-  no executors takes its agent's again. A machine of another plugin under a box's name is refused.
-- **Sign-in**: the summary says which agents are signed in. `--sign-in` runs, at this terminal, each
-  unsigned agent's own sign-in in its box — `claude auth login`, `codex login --device-auth`,
-  `cursor-agent login`, `omp login` (a link or device code, opened on any device) — kept in the box's home,
-  so a rebuilt box stays signed in. opencode needs none: it runs its own free models unsigned. The
-  hopper holds none of these credentials.
-- **`--remove`**: the containers, their Hosts and known_hosts lines, and (with a hopper found) their
-  machines. The home volumes stay.
-- **`--check`** (issue #305): the proof that the hopper in its compose container and every box interoperate,
-  changing nothing. In the hopper's container, ssh connects as the hopper does (`sshArgv`): its own key and
-  the host key it pins for `agent@<box>`, both in its work dir; the box's herdr session `hopper` must answer
-  `status: running` and its agent CLI (`cursor-agent` for cursor) its version. One line per box, exit 1 when
-  any fails. It needs the compose container: a host install is checked by its Machines view.
-
-**Why no sign-in is copied from this computer.** A CLI's sign-in is an OAuth refresh token; a copy
-refreshed in a box can invalidate the original (Claude Code's own issue tracker reports a copied
-credentials file failing instead of refreshing), and this machine's codex sign-in may route through a
-local proxy a box cannot reach. Each box signs in once, in its own home, through the CLI's own flow.
-
-**What runs there.** Each box its agent's executor; the job's GitHub credential (`GH_TOKEN`, issue #214)
-reaches the agent's process, and gh hands it to git. A job's work tree is a path of the box: the jobs
-directory `~/hopper-jobs` there by default. An executor instance whose `cwd` names a directory of
-another machine (herdr-claude's, set for this computer) sends a job there that does not run; per-machine
-work trees are #324's.
-
-A `compose down` that removes the hopper's network takes the boxes off it: run the script again. A hopper
-in a container on another computer is not served: the boxes are on this machine's docker.
-
-**Residual risk.** The boxes reach the network (the agents need their APIs) and run whatever a job or
-the owner tells their agent; they are not the container target's locked-down sandbox. sshd is published
-on loopback only; on the hopper's network any container of it reaches the box's sshd, which takes keys
-only. The hopper's key is restricted there; the owner's keys are not. codex runs with its own sandbox
-off (`--dangerously-bypass-approvals-and-sandbox`): the box is the sandbox.
-
-**Verification.** `test/scripts/agent-boxes-compose.test.ts`: against a stand-in docker that answers as a
-compose deploy, a new box made on the hopper's network at its fixed port, a running one joined to it and a
-moved one started again at its port, the box attached as `agent@<box>` running its executor through the CLI
-in the hopper's container, the hopper's key asked of it, no hopper: the boxes alone; `--check` passing and
-failing. `test/scripts/agent-boxes.test.ts`: the plugins-config filter (each agent's executor, switched on
-when missing, kept when set); opt-in (`HOPPER_TEST_AGENT_BOX=1`: it builds an image with an agent CLI from
-npm) a real codex box on the real docker, reached over real ssh with the hopper's key alone (no pty), its
-herdr session running, attached to a test database through the operator CLI with its executor, kept on a
-second run, then removed.
-
-**Seen run (2026-10-07, this machine's compose hopper).** `bash scripts/agent-boxes.sh`, no flag and no key:
-all five boxes rebuilt and made again on the hopper's network, attached, and online in the hopper's
-Machines with their executors (`herdr-claude`, `codex`, `cursor-agent`, `omp`, `opencode`); `--check` ok for
-each. A turn of each print-mode executor, run in the hopper's container over its own connection: opencode
-(no sign-in) finished with its marker and wrote its file in `~/hopper-jobs`; codex, cursor and omp, not
-signed in, failed at once with their CLI's own reason. A box made again gets a new host key (sshd's keys
-live in the container, not the home): the same run pins it, and the hopper reaches the box again once the
-plugins config is applied.
+Then `scripts/agent-boxes.sh`, `scripts/agent-boxes.ts`, `scripts/agent-box/` and their tests went. Owner decision
+(#865): the hopper supports any harness and any model set, so no harness lost its path when they went.
 
 ## Print-mode agent executors (issue #307, 2026-10-07)
 
@@ -4398,8 +4299,7 @@ Plugins `codex`, `opencode`, `omp`, `claude` (`src/plugins/executor/<id>/`, each
 `PATH`), `args`, `cwd` (the jobs directory) and `sshBin`, every one command-bearing. Default `args` run the
 agent's tools without asking: codex `--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`
 (its sandbox would refuse the network a push needs; the machine is the sandbox), opencode `--auto`, omp
-`--auto-approve`, claude `--dangerously-skip-permissions`. Opt-in, as `cursor-agent`: switched on in Plugins, or by `scripts/agent-boxes.sh` for the
-box that runs it. Detection is `which` only and always `available`. Each agent signs in on the machine it
+`--auto-approve`, claude `--dangerously-skip-permissions`. Opt-in, as `cursor-agent`: switched on in Plugins. Detection is `which` only and always `available`. Each agent signs in on the machine it
 runs on; the hopper holds no credential of theirs. opencode runs its own free models with no sign-in.
 
 **Verification:** `test/adapters/print-agent-executors.test.ts` (each CLI a stand-in printing the real
@@ -4407,94 +4307,12 @@ CLI's events and reading its stdin to the end as the real ones do: done, questio
 status notes, the CLI's error, cancel, refusals),
 `test/adapters/cursor-executor.test.ts`, `test/plugins/executor-plugins.test.ts`.
 
-## Pickups on agent boxes (issue #319, 2026-10-06 — a spike)
+## Pickups on agent boxes (issue #319, 2026-10-06 — a spike; removed by issue #865)
 
-Owner request: the agent boxes, against a test repo, fulfil a manual, interactive pickup session, and
-report the pickup and how it stands, so the flow is seen end to end. Related: #318 (the claim of
-operator-led work and its timeline designation), #316 (containers primary, plus work by hand in an IDE).
-
-**The problem.** A job the hopper runs in herdr reports itself: herdr answers pane status, and the
-executor turns it into `job.started`, `job.progressed`, a question, an outcome. Work a person (or an IDE
-agent) does at a box by hand has no executor: nothing tells the hopper it was picked up, whether it is
-moving, or that it stopped. GitHub sees only the end — the closing pull request.
-
-**The protocol: the box keeps a pickup record, the hopper reads it.** The hopper pulls (repo law): a box
-sends nothing and no route accepts a report. The box writes; the hopper reads over the ssh connection it
-already holds to the box, as it reads herdr.
-
-- **Pickup record** — one JSON file per issue in the box's pickup dir (`HOPPER_PICKUP_DIR`, else
-  `~/.hopper/pickups/`, in the box's home volume, so it outlives the box), named
-  `<owner>_<repo>_<number>.json`, written whole (temp file, then rename), so a read never sees half of
-  one. Version 1:
-
-  ```json
-  { "v": 1, "issue": "https://github.com/<owner>/<repo>/issues/<n>", "mode": "operator-led",
-    "state": "working", "pickedUpAt": "ISO", "updatedAt": "ISO",
-    "workTree": "/home/agent/<repo>", "branch": "…", "pullRequest": "…",
-    "history": [ { "seq": 1, "state": "picked-up", "at": "ISO", "note": "…" }, … ] }
-  ```
-
-- **States.** `picked-up` (the pickup), then any of `working`, `waiting` (on an answer), `blocked`,
-  `pull-request` (names its pull request), and the two that end it: `finished` (the operator says the work
-  is done) and `released` (handed back, not done). A status with nothing picked up, or after the pickup
-  ended, is refused; an ended pickup is picked up again as a new pickup of the same record, its history
-  going on. **`history`** keeps every state change with a `seq` that only grows (the last 50 kept): the
-  reader polls, and a change between two reads is still seen, in order, once.
-- **Heartbeat.** `updatedAt` is the box's last word — a change or a `beat`. A pickup not ended and not
-  heard from past the stale time (the reader's `--stale`, 120 s by default) is **stale**: shown once, and
-  once more when it is heard from again. An ended pickup is never stale.
-- **The box's CLI**: `hopper-pickup pickup <issue url> [--work-tree] [--branch] [--note]`, `hopper-pickup
-  status <issue url> <state> [--pull-request] [--branch] [--note]`, `hopper-pickup beat <issue url>`,
-  `hopper-pickup list` (each record as one JSON line — what the hopper reads). In the box image
-  (`/usr/local/bin/hopper-pickup` runs `scripts/agent-box/pickup.ts` with the box's node). The file is the
-  protocol, not the CLI: an IDE extension, an agent's hook or a shell alias that writes the same record is a
-  conforming writer.
-- **The reader**, `node scripts/box-pickups.ts [--watch <s>] [--stale <s>] [box...]` (no box: the running
-  `hopper-box-*`): `ssh <box> hopper-pickup list` per box, then one timeline line per change since its last
-  read — `picked up (operator-led)`, each state with its note, `pull request <url>`, `stale`, `heard from
-  again`, and a box `unreadable` (once) and `readable again`. It runs on this machine with the Hosts of
-  `~/.ssh/hopper-box.config`; the hopper's key reaches the command too (`restrict` forbids a pty and
-  forwarding, not a command).
-
-**Seen end to end (2026-10-06).** The five boxes running, `hopper-pickup` put in each as the image puts it,
-the test repo cloned into the claude and cursor boxes from a bundle (the boxes hold no GitHub
-credential), the reader watching every 3 s with a 20 s stale time. On the claude box a pickup of one test
-issue, a commit on a branch, `working`, `pull-request`, `finished`; on the cursor box a pickup of another,
-`waiting`, `working`, `blocked`, silence until `stale`, a `beat` (`heard from again`), `released`, and a
-status after that refused (`ended (released): pick it up again`, exit 1); the omp box stopped (`unreadable:
-… Connection refused`). Every line came out once, in order, a burst of three changes between two reads
-included.
-
-**Found:** a box started again gets a new sshd port (published as `127.0.0.1::22`, any free port), so its
-Host in `~/.ssh/hopper-box.config` and its known_hosts line are stale until `scripts/agent-boxes.sh` runs
-again — the box stays unreadable, here as for the hopper. The same family as #306/#307 (boxes that do not
-interop without a catch); the fix belongs there: a fixed port per box, or the Host rewritten at start.
-
-**What the daemon would do with it (not built; for #318).** The concept the spike settles, for the work
-that makes it a part of the hopper:
-
-1. **Read in the machine source.** The `ssh` machine source already probes each machine every 30 s; the
-   probe reads `hopper-pickup list` beside `herdr status server` (a box with no `hopper-pickup` has no
-   pickups, not an error). A machine snapshot gains its pickups. No new route, no push.
-2. **A pickup is a claim of operator-led work.** A pickup of an issue the GitHub source would take makes
-   (or takes over, when it is waiting) that job as **operator-led** on that machine: the issue labelled
-   `hopper:claimed` as for any claim, the job on the machine's timeline with no lane and no executor,
-   so the decider never runs it a second time. The claim mode, its event and its timeline designation are
-   #318's, now built ("Operator-led work" below): status `operator_led`, event `job.claimed_by_operator`;
-   the pickup reader calls that claim.
-3. **States are events.** Each new history entry becomes an event on the job (a state, its note, its
-   time from the box); `stale` is the hopper's own reading, an event too, never a state the box writes;
-   `waiting` could raise a question for the owner the way a pane's question does.
-4. **Done stays the closing pull request** (#316's recommendation, "Done is a pull request"). `finished` is
-   the operator's word, as `HOPPER_DONE` is an agent's: the job is finished only when the source says the
-   work reached its completion, else it fails as any job does. `released` cancels the job and takes the
-   claim off, so the issue is the queue's again.
-5. **Trust.** A box writes what it likes into its own records; the hopper reads them only from a machine it
-   attached, with its pinned host key, and acts only on issues its sources already allow. A record names an
-   issue; it never names a command.
-
-**Not built, on purpose.** No daemon change, no event, no migration: the spike's job was the protocol and
-seeing it run. The reader is a script, as the boxes are.
+A spike: a person, or an IDE agent, at an agent box kept a **pickup record** per issue in the box's home, and a
+script read the records over ssh. It never reached the daemon. It went with the agent boxes (issue #865):
+`scripts/agent-box/pickup.ts`, `scripts/box-pickups.ts` and their test are gone. Operator-led work is #318's
+("Operator-led work"); `git log` keeps the protocol.
 
 ## Work by hand in an IDE: how it checks in (issue #317, 2026-10-06 — research)
 
@@ -4627,7 +4445,7 @@ the person should not set a path; use `PATH`, just call the tool.
 - **Adding a machine** checks, over the same connection, that `command -v herdr` answers with that PATH
   (else 409, "herdr not found: not on its PATH, not in ~/.local/bin"), and stores nothing of where.
   `scripts/attach-machine.sh` checks the same way and prints no `herdrBin`; `scripts/agent-boxes.ts`
-  writes none (herdr is `/usr/local/bin/herdr` in a box, on its PATH).
+  wrote none (herdr is `/usr/local/bin/herdr` in a box, on its PATH; the script went with issue #865).
 - **Persisted state**: tenant migration 12 (`src/store/migration-herdr-by-name.ts`) drops `herdrBin`
   from every stored `ssh` machine; every other option stays.
 - **Not changed**: a client target's `HOPPER_CLIENT_HERDR_BIN` (written by `scripts/attach-client.sh`,
@@ -5193,7 +5011,8 @@ deleted the home volume.
 
 - **One module, `src/sandbox/`.** Everything that creates, inspects, stops or removes a box the hopper starts goes
   through it: `POST /ui/api/machines/sandbox` and the reconcile loop. `scripts/agent-boxes.sh`, `container-target.sh`
-  and `docker-proxy.sh` are deprecated (a header says so); a follow-up deletes them once nothing uses them.
+  and `docker-proxy.sh` are deprecated (a header says so); a follow-up deletes them once nothing uses them (issue
+  #865: `agent-boxes.sh` went in its part B, once every harness had a box image).
 - **One runtime interface**, `ContainerRuntime` (`src/domain/sandboxes.ts`): `problem`, `pull` (answers the image's
   user), `createVolume` (answers whether it made one), `removeVolume`, `create` (answers the id), `start`, `inspect`,
   `stop`, `remove` (its volumes stay), `list` by label. Adapters: **Podman** (primary; libpod `/v5.0.0`) and **Docker**
@@ -8515,7 +8334,7 @@ about the daemon's surface; the CLI is beside it, like editing a file was.
   takes it or refuses, because the daemon keeps a runtime per user and the command removes one.
 - Since issue #307: `ssh-key [--user <id>]` — the public half of the user's ssh key (issue #293), the line a
   machine's `authorized_keys` takes; never the private half. None yet (the daemon mints it at its start):
-  refused, saying so. `scripts/agent-boxes.sh` asks it where the hopper runs.
+  refused, saying so. A script that adds a machine asks it where the hopper runs.
 - `help` (also `--help`, `-h`): every command, exit 0 (`password-hash` went with issue #200). No command or an unknown
   one prints the same text on stderr, exit 2.
 

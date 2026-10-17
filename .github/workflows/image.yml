@@ -57,7 +57,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # The sandbox boxes Add machine's line runs (issue #308, scripts/box/Dockerfile): tags of the same public
+  # The sandbox boxes Add machine's line runs (issue #308, scripts/box/Dockerfile), one per harness (issue #865,
+  # src/sandbox/box-image.ts BOX_AGENTS): tags of the same public
   # package, `box-<agent>` following stable, `box-<agent>-<branch>` following each channel's branch and
   # `box-<agent>-sha-<commit>` pinning one build, so a box pulls with no sign-in as the hopper's image does.
   box:
@@ -65,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        agent: [claude]
+        agent: [claude, codex, cursor, omp, opencode]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -106,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        agent: [claude]
+        agent: [claude, codex, cursor, omp, opencode]
         variant: [tools, tools-read-only]
     steps:
       - uses: actions/checkout@v4
