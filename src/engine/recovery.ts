@@ -1,11 +1,13 @@
 // Restart recovery (design.md "Recovery at startup"). A running job of a non-idempotent executor
-// whose external work is still alive is reattached on its lane; one whose work is gone fails and
+// whose external work is still alive is reattached on its lane; one whose work is gone resumes its agent
+// session in its kept work tree on its machine (issue #1569, lost-move.ts), or, with none to resume, fails and
 // is cleaned up, never re-run; one whose machine does not answer yet stays running on its lane
 // while the runner asks again, up to the reconnect grace (issue #368). Claimed jobs (nothing ran) and idempotent jobs return to the queue
 // (a pending answer is kept). waiting_answer jobs follow their question. Every other lane closes.
 import type { Job, Question } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
+import { recordLostMove } from './lost-move.ts';
 import { openItemOf } from './reviews.ts';
 
 export interface Recovered {
@@ -66,7 +68,10 @@ export async function recover(c: EngineContext): Promise<Recovered> {
     for (const job of store.jobs.list({ status: ['claimed', 'running'] })) {
       if (reattached.has(job.id)) continue;
       // A claimed job's executor never started (claim → running happens before it runs): requeue.
-      if (job.status === 'running' && c.executors.get(job.spec.executor)?.idempotent === false) fail(job, 'interrupted by daemon restart');
+      if (job.status === 'running' && c.executors.get(job.spec.executor)?.idempotent === false) {
+        // Its machine answered and its work is gone (issue #1569): it resumes its agent session there, when it has one.
+        if (!recordLostMove(c, job, job.laneId, 'gone', 'its pane was gone after a daemon restart')) fail(job, 'interrupted by daemon restart');
+      }
       else requeue(job, job.status, 'daemon restart');
     }
     for (const job of store.jobs.list({ status: ['waiting_answer'] })) {

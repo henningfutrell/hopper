@@ -118,6 +118,23 @@ describe('sagas', () => {
     expect(store.sagas.open()).toEqual([]);
   });
 
+  it('begin drives the saga only after its caller\'s synchronous work: a step reads what the caller did right after begin', async () => {
+    const url = temp.url(), clock = fixedClock();
+    const store = openInstanceStore({ url, clock });
+    opened.push(store);
+    let moved = false;
+    const seen: boolean[] = [];
+    const c = createSagaCoordinator({
+      repo: store.sagas, owner: 'host-a', clock, idGen: () => `saga-${++ids}`, logger: quiet, leaseMs: LEASE_MS, renewMs: 1e9,
+      definitions: [{ kind: 'move', steps: [{ name: 'end left', async do() { seen.push(moved); } }] }],
+    });
+    coordinators.push(c);
+    const s = c.begin('move', 'job-1', {});
+    moved = true;
+    await c.drive(s.id);
+    expect(seen).toEqual([true]);
+  });
+
   for (const [i, step] of STEPS.entries()) {
     for (const after of [false, true]) {
       it(`a hopper stopped ${after ? 'after the effect of' : 'before'} step "${step}": another host goes on from there, no effect twice`, async () => {

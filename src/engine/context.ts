@@ -4,6 +4,7 @@ import type {
 import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFirst, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 import type { Checkpoints } from './checkpoints.ts';
+import type { JobMoveData } from './lost-move.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -79,11 +80,17 @@ export interface EngineOptions {
   machineLanes?: (machineId: string, lanes: number) => Promise<void>;
   /** Decider calls through Jev first (issue #550): a machine's lanes and a waiting job's machine (issue #688). Absent: Jev is never asked. */
   jevFirst?: JevFirst;
+  /**
+   * Begins the `job-move` saga of a job that moves off its lost machine (issue #1569, lost-move.ts), one per `key`. Absent: a
+   * job whose machine stays away fails, as nothing would end the agent it left there.
+   */
+  jobMoves?: { begin(key: string, data: JobMoveData): void };
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'jobMoves'>> {
   fakeUsage?: SettableUsageSource;
+  jobMoves?: EngineOptions['jobMoves'];
   /** Ask for a Decision; coalesces with one already running. */
   trigger(reason: string): void;
   /** True once stop() began: nothing may write to the store after this. */

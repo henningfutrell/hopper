@@ -15,7 +15,7 @@ import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './
 import { ownCommandProbes, paneLostProbe, paneSessionOn, readPaneAnswer, terminalProbes } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
-import { paneEnds } from './pane-ends.ts';
+import { paneEnds } from './pane-ends.ts'; import { paneLeft } from './pane-left.ts';
 import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
 import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
 
@@ -295,7 +295,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     ctx.workTree(r.p.cwd);
     const unsent = saved?.turn?.unsent ? saved.turn.text : undefined;
     const text = withNotes(ctx, unsent ? `${answer}\n\n${unsent}` : answer);
-    return startAndSend(ctx, r.p, { resume: r.session, restore: r.restore, said: r.said }, () => [text, lastLineOf(text)]);
+    // Back on a machine it left (issue #1569): what of it still runs there stops first.
+    return startAndSend(ctx, r.p, { first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), resume: r.session, restore: r.restore, said: r.said }, () => [text, lastLineOf(text)]);
   }
 
   return {
@@ -390,6 +391,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const open = state ? await exitAndClose(heldOf(state, job.id), 'none') : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
     },
+
+    // The pane a job left on a machine it moved off (issue #1569).
+    ...paneLeft(herdrOn, exitAndClose),
 
     // Read on the job's machine through its own connection, never the pane (issue #921): its worktree and agent session.
     checkpoint: (job) => checkpointOn(job, herdrOn),
