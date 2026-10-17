@@ -3,7 +3,7 @@
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
 itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its cloud link key (issue #467 part 2), its registration code (issue #465 part 2), its
 unregistration (issue #465 part 3), the messages about them (issue #465 part 4) and the state snapshot the dashboard shows
-(issue #466 parts 1 and 2) are built, and at hopper.io its GitHub sign-in and account deletion (issue #463 parts 2 and 3, `cloud/`)
+(issue #466 parts 1 and 2) are built, and at hopper.io its GitHub sign-in, account deletion, records, registrations and their tombstones (issue #463 parts 2 to 5, `cloud/`)
 ("What is built" below).
 This document states the threats and the rules that every hopper.io change must obey. The open owner
 decisions of #469 (scope, what the link carries, transport, sign-in on instances, sharing, who operates hopper.io) do
@@ -252,15 +252,20 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   - T4, R5: **account deletion** (issue #463 part 3) needs a fresh GitHub sign-in as the same account, not only a
     hopper.io session, so a stolen session cannot delete the account. It deletes the account and all its sessions in
     one statement, and then the person's grant of the hosted app at GitHub. It keeps nothing of the account: no
-    tombstone, no login, no id.
+    login, no id. Its registrations go with it; a **registration tombstone** of each keeps the instance id and
+    the time only, for 90 days, so the instance learns it at its next hello (part 5, below).
   - R6, at hopper.io: a **hopper.io record** of each sign-in, sign-out and deletion confirmed as another GitHub
     account (issue #463 part 4), which the account owner reads at `GET /` and `GET /api/account/records`, and only
     their own (R3). A record is its kind and its time: no address, no browser, no other person (R5).
   - R5: records are kept 90 days and then deleted; a deleted account takes them with it. The **privacy note**
     (`cloud/privacy.ts`, `GET /privacy`) lists each column of hopper.io's store, why and for how long;
     `test/cloud/privacy.test.ts` fails when a column has no line in it.
-  - Not yet: the tombstones of an account's registrations, and the R6 records of registration, the cloud link and
-    remote actions at hopper.io (with hopper.io's side of #465 and #464).
+  - R3: a **hopper.io registration** (issue #463 part 5, `cloud/link.ts`) is kept only for the account whose owner
+    entered the code, and only when the instance answered `registered`; R7: that answer is checked against a closed
+    schema and a cap of 1024 bytes, as the instance checks hopper.io's messages. R1: the tombstone's answer is
+    `unregister`, a message the instance already takes, which changes its registration only.
+  - Not yet: the R6 records of registration, the cloud link and remote actions at hopper.io (with #465 and #464),
+    and the connection that carries the registration messages and the hello (#464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
   everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound
   actions, and its transport (one WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is

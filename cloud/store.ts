@@ -3,7 +3,10 @@
 // renamed), with the login and the avatar URL for display; a **hopper.io session**, only its token's hash; and a
 // sign-in under way, only its state's hash and its PKCE verifier, for ten minutes, and the account it is to delete when
 // it confirms a deletion; a **hopper.io record** of each act on the account, its kind and time only, for RECORD_MS
-// (docs/hopper-io-security.md R6, R5). No GitHub token is kept. A deleted account takes its sessions and records with it.
+// (docs/hopper-io-security.md R6, R5); a **registration** of each instance the account registered, its instance id only;
+// and a **registration tombstone** per registration a deletion removed, the instance id and the time only, for
+// TOMBSTONE_MS, so the instance learns it at its next hello (cloud/link.ts). No GitHub token is kept. A deleted account
+// takes its sessions, records and registrations with it.
 // What each column holds, why and for how long is the privacy note (cloud/privacy.ts), column for column.
 // Schema changes are migrations, appended to MIGRATIONS: the accounts are the users' saved data.
 import { createHash } from 'node:crypto';
@@ -17,6 +20,8 @@ export const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 export const SIGN_IN_MS = 10 * 60 * 1000;
 /** How long a hopper.io record is kept; then it is deleted. */
 export const RECORD_MS = 90 * 24 * 60 * 60 * 1000;
+/** How long a registration tombstone is kept; then the instance gets no answer, as one hopper.io never knew. */
+export const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000;
 
 /** What a hopper.io record says was done on the account. */
 export type RecordKind = 'signed_in' | 'signed_out' | 'deletion_refused';
@@ -38,6 +43,12 @@ const MIGRATIONS: string[] = [
      id bigserial PRIMARY KEY, account_id bigint NOT NULL REFERENCES account (github_user_id) ON DELETE CASCADE,
      kind text NOT NULL CHECK (kind IN ('signed_in', 'signed_out', 'deletion_refused')), at timestamptz NOT NULL);
    CREATE INDEX record_account ON record (account_id, at);`,
+  // Registrations (issue #465) and the tombstones an account deletion leaves (decision 5): no account in a tombstone.
+  `CREATE TABLE registration (
+     account_id bigint NOT NULL REFERENCES account (github_user_id) ON DELETE CASCADE,
+     install_id text NOT NULL CHECK (install_id ~ '^[0-9a-f]{16}$'), created_at timestamptz NOT NULL, PRIMARY KEY (account_id, install_id));
+   CREATE INDEX registration_install ON registration (install_id);
+   CREATE TABLE registration_tombstone (install_id text PRIMARY KEY, removed_at timestamptz NOT NULL);`,
 ];
 
 export const hashOf = (token: string): string => createHash('sha256').update(token).digest('hex');
@@ -61,8 +72,13 @@ export interface CloudStore {
   startSignIn(state: string, verifier: string, deletes?: string): Promise<void>;
   /** A sign-in started within SIGN_IN_MS, taken once. */
   takeSignIn(state: string, now: Date): Promise<SignInUnderWay | undefined>;
-  /** The account, its sessions, its records and its deletion sign-ins under way, in one statement. */
-  deleteAccount(githubUserId: string): Promise<void>;
+  /** Keeps the instance as a registration of the account, once, and drops a tombstone of the instance. */
+  register(githubUserId: string, installId: string, now: Date): Promise<void>;
+  /** Whether the instance is a registration of any account, a tombstone younger than TOMBSTONE_MS, or neither. */
+  registrationOf(installId: string, now: Date): Promise<'registered' | 'removed' | 'unknown'>;
+  /** The account, its sessions, its records, its registrations and its deletion sign-ins under way, in one statement,
+   * which leaves a tombstone for each registration; and every tombstone older than TOMBSTONE_MS goes. */
+  deleteAccount(githubUserId: string, now: Date): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -123,8 +139,24 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
       const row = r.rows[0];
       return row ? { verifier: String(row.verifier), ...(row.deletes ? { deletes: String(row.deletes) } : {}) } : undefined;
     },
-    async deleteAccount(githubUserId) {
-      await q('WITH s AS (DELETE FROM sign_in WHERE deletes = $1) DELETE FROM account WHERE github_user_id = $1', [githubUserId]);
+    async register(githubUserId, installId, now) {
+      await q(`WITH t AS (DELETE FROM registration_tombstone WHERE install_id = $2)
+               INSERT INTO registration (account_id, install_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [githubUserId, installId, now]);
+    },
+    async registrationOf(installId, now) {
+      const r = await q(`SELECT EXISTS (SELECT 1 FROM registration WHERE install_id = $1) AS registered,
+                                EXISTS (SELECT 1 FROM registration_tombstone WHERE install_id = $1 AND removed_at > $2) AS removed`,
+      [installId, new Date(now.getTime() - TOMBSTONE_MS)]);
+      return r.rows[0].registered ? 'registered' : r.rows[0].removed ? 'removed' : 'unknown';
+    },
+    async deleteAccount(githubUserId, now) {
+      await q('DELETE FROM registration_tombstone WHERE removed_at <= $1', [new Date(now.getTime() - TOMBSTONE_MS)]);
+      await q(`WITH s AS (DELETE FROM sign_in WHERE deletes = $1),
+               t AS (INSERT INTO registration_tombstone (install_id, removed_at)
+                     SELECT install_id, $2 FROM registration WHERE account_id = $1
+                     ON CONFLICT (install_id) DO UPDATE SET removed_at = EXCLUDED.removed_at)
+               DELETE FROM account WHERE github_user_id = $1`, [githubUserId, now]);
     },
     close: () => pool.end(),
   };

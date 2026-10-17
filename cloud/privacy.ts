@@ -8,6 +8,8 @@ const ACCOUNT = 'Until you delete your hopper.io account.';
 const SESSION = 'Until you sign out, or for 7 days.';
 const SIGN_IN = 'Until you come back from GitHub, or for 10 minutes.';
 const RECORD = 'For 90 days, or until you delete your hopper.io account.';
+const REGISTRATION = 'Until you delete your hopper.io account.';
+const TOMBSTONE = 'For 90 days after the deletion of the account.';
 const MIGRATION = 'As long as hopper.io runs. It is about hopper.io, not about you.';
 
 export const PRIVACY_NOTE: PrivacyField[] = [
@@ -28,6 +30,11 @@ export const PRIVACY_NOTE: PrivacyField[] = [
   { table: 'record', column: 'account_id', what: 'The account the record is about.', why: 'To show you only your own records.', kept: RECORD },
   { table: 'record', column: 'kind', what: 'What was done: a sign-in, a sign-out, or a deletion confirmed as another GitHub account.', why: 'So you can see what was done on your account.', kept: RECORD },
   { table: 'record', column: 'at', what: 'When it was done.', why: 'So you can see when it was done.', kept: RECORD },
+  { table: 'registration', column: 'account_id', what: 'The account that registered a hopper instance.', why: 'To show you only your own instances.', kept: REGISTRATION },
+  { table: 'registration', column: 'install_id', what: 'The id of a hopper instance you registered: random, made by the instance. It names no person and no machine.', why: 'To know the instance again when it registers or connects.', kept: REGISTRATION },
+  { table: 'registration', column: 'created_at', what: 'When you registered the instance.', why: 'To show when the instance was registered.', kept: REGISTRATION },
+  { table: 'registration_tombstone', column: 'install_id', what: 'The id of an instance of a deleted account. Nothing of the account.', why: 'hopper.io cannot reach an instance, so it tells the instance at its next connection that its registration is gone.', kept: TOMBSTONE },
+  { table: 'registration_tombstone', column: 'removed_at', what: 'When the account was deleted.', why: 'To delete the tombstone after 90 days.', kept: TOMBSTONE },
   { table: 'cloud_migration', column: 'version', what: 'Which changes to its tables hopper.io made.', why: 'To make each change once.', kept: MIGRATION },
   { table: 'cloud_migration', column: 'applied_at', what: 'When hopper.io made each change.', why: 'To find faults.', kept: MIGRATION },
 ];

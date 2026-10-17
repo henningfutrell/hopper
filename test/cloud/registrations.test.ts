@@ -22,8 +22,8 @@ afterEach(stopAll);
 
 const ADA = '1001';
 const GRACE = '1002';
-const INSTANCE = '7f0c2a4e-1d1b-4c55-9a8e-3e2b9f6a0c11';
-const OTHER = '0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6b';
+const INSTANCE = '7f0c2a4e1d1b4c55';
+const OTHER = '0b9e8d7c6a5f4e3d';
 const t0 = new Date('2026-10-17T12:00:00Z');
 const later = (ms: number) => new Date(t0.getTime() + ms);
 /** The rows of one table, by its place in rows(): 4 registration, 5 registration_tombstone. */
@@ -72,7 +72,7 @@ describe("hopper.io's registrations", () => {
 
     expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(3000) })).toBe(JSON.stringify({ type: 'unregister', account: 'ada' }));
     expect(await link.hello({ installId: OTHER, account: 'grace', now: later(3000) })).toBeUndefined();
-    expect(await link.hello({ installId: '11111111-2222-4333-8444-555555555555', account: 'ada', now: later(3000) })).toBeUndefined();
+    expect(await link.hello({ installId: '1111222233334444', account: 'ada', now: later(3000) })).toBeUndefined();
     expect((await table(s, 4)).map((r) => r.install_id)).toEqual([OTHER]);
     const tombstones = await table(s, 5);
     expect(tombstones).toHaveLength(1);
