@@ -10,11 +10,12 @@ import { gitBackend } from './fake-git.ts';
 export interface FakeGitLabUser { id: number; username: string; email: string; emails?: { email: string; confirmed?: boolean }[]; projects: string[]; mayReadEmails?: boolean }
 /**
  * `labelledBy`, `assignedBy`: who added the label `hopper` and who assigned it (default: its author); `editedBy`: who edited
- * its description since. A username's id is its token's user's, else `ids`, else 900.
+ * its description since; `highBy`: who added `hopper:high` (default: its author), when it has it. A username's id is its
+ * token's user's, else `ids`, else 900.
  */
 export interface FakeGitLabIssue {
   project: string; iid: number; title: string; description?: string; author: string; assignees?: string[]; labels: string[]; state?: 'opened' | 'closed';
-  labelledBy?: string; assignedBy?: string; editedBy?: string[];
+  labelledBy?: string; assignedBy?: string; editedBy?: string[]; highBy?: string;
 }
 
 /**
@@ -122,7 +123,8 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
       const issue = user.projects.includes(project) ? fake.issues.find((i) => i.project === project && i.iid === iid) : undefined;
       if (!issue) return send(res, 404, { message: '404 Not found' });
       if (of[3] === '/resource_label_events') {
-        return paged(res, url, issue.labels.includes('hopper') ? [{ id: 1, action: 'add', label: { name: 'hopper' }, user: person(issue.labelledBy ?? issue.author) }] : []);
+        const high = issue.labels.includes('hopper:high') ? [{ id: 2, action: 'add', label: { name: 'hopper:high' }, user: person(issue.highBy ?? issue.author) }] : [];
+        return paged(res, url, [...(issue.labels.includes('hopper') ? [{ id: 1, action: 'add', label: { name: 'hopper' }, user: person(issue.labelledBy ?? issue.author) }] : []), ...high]);
       }
       if (of[3] === '/notes') {
         const assigned = (issue.assignees ?? []).length ? [{ id: 1, system: true, body: `assigned to ${(issue.assignees ?? []).map((a) => `@${a}`).join(' and ')}`, author: person(issue.assignedBy ?? issue.author) }] : [];

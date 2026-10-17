@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
+import type { Clock, EventFollower, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { EVENT_EXAMPLES } from '../events/examples.ts';
 import { heldWhy, type Outbound, type OutboundRequest } from '../outbound/index.ts';
@@ -35,7 +35,9 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
   const sweepMs = o.sweepMs ?? 500;
   const listeners = new Set<(d: WebhookDelivery) => void>();
   const inFlight = new Map<string, Promise<void>>();
-  let unsubscribe: (() => void) | undefined;
+  let follower: EventFollower | undefined;
+  /** True while the follower hands the events committed since its cursor: one may have its delivery already. */
+  let catchingUp = false;
   let timer: NodeJS.Timeout | undefined;
   let running = false;
 
@@ -56,15 +58,20 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
   const request = (sub: WebhookSubscription, event: Pick<DomainEvent, 'id' | 'type' | 'jobId'>): OutboundRequest =>
     ({ sender: 'webhook', name: sub.name, url: sub.url, kind: event.type, key: `${sub.id}:${event.id}`, ...(event.jobId ? { jobId: event.jobId } : {}) });
 
+  /** The event's deliveries, kept with the cursor in one transaction (issue #1572): made once, or again at the next start. */
   function enqueue(event: DomainEvent): void {
-    for (const sub of store.webhooks.list()) {
-      if (!matches(sub, event)) continue;
-      const asked = o.outbound.ask(request(sub, event));
-      if (asked === 'duplicate') continue;
-      const d = store.webhooks.createDelivery(sub.id, event);
-      if (asked === 'circuit-open') update(d.id, { status: 'failed', lastError: heldWhy(asked), nextAttemptAt: undefined });
-      else for (const l of [...listeners]) l(d);
-    }
+    store.tx(() => {
+      for (const sub of store.webhooks.list()) {
+        if (!matches(sub, event)) continue;
+        if (catchingUp && store.webhooks.hasDelivery(sub.id, event.seq)) continue;
+        const asked = o.outbound.ask(request(sub, event));
+        if (asked === 'duplicate') continue;
+        const d = store.webhooks.createDelivery(sub.id, event);
+        if (asked === 'circuit-open') update(d.id, { status: 'failed', lastError: heldWhy(asked), nextAttemptAt: undefined });
+        else for (const l of [...listeners]) l(d);
+      }
+      follower?.save(event.seq);
+    });
     // Listeners must not re-enter synchronously (ports.ts): defer the sweep.
     setImmediate(sweep);
   }
@@ -147,15 +154,17 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     start() {
       if (running) return;
       running = true;
-      unsubscribe = store.events.subscribe(enqueue);
+      catchingUp = true;
+      try { follower = store.eventCursors.follow('webhooks', enqueue); } finally { catchingUp = false; }
+      follower.save();
       timer = setInterval(sweep, sweepMs);
       timer.unref();
       sweep();
     },
     async stop() {
       running = false;
-      unsubscribe?.();
-      unsubscribe = undefined;
+      follower?.stop();
+      follower = undefined;
       if (timer) clearInterval(timer);
       timer = undefined;
       await Promise.all(inFlight.values());

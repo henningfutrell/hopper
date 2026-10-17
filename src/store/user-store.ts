@@ -11,6 +11,7 @@ import { createDecisionRepository } from './decisions.ts';
 import { createConfigRecords } from './config.ts';
 import { createConnectedAccountRepository } from './connected-accounts.ts';
 import { createEventLog } from './events.ts';
+import { createEventCursorRepository } from './event-cursors.ts';
 import { createJobRepository } from './jobs.ts';
 import { createJobStreamRepository } from './job-stream.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -45,6 +46,7 @@ import { createMachineHistoryRepository } from './machine-history.ts';
 import { createVaultRepository } from './vault.ts';
 import { createWebhookRepository } from './webhooks.ts';
 import { createCredentialAcceptanceRepository } from './machine-credentials.ts';
+import { createWaitCheckLeases } from './wait-check-leases.ts';
 
 /** The database URL with `?schema=<schema>`: the user schema, created when absent. */
 export function schemaUrl(url: string, schema: string): string {
@@ -80,6 +82,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     lanes: createLaneRepository(ctx),
     decisions: createDecisionRepository(ctx),
     events,
+    eventCursors: createEventCursorRepository(ctx, events),
     webhooks: createWebhookRepository(ctx),
     vault: createVaultRepository(ctx),
     jobStream,
@@ -118,6 +121,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     machineHistory: createMachineHistoryRepository(ctx),
     config: createConfigRecords(ctx, USER_CONFIG),
     credentialAcceptances: createCredentialAcceptanceRepository(ctx),
+    waitCheckLeases: createWaitCheckLeases(ctx),
     tx: ctx.tx,
     close: () => db.close(),
   };

@@ -1,0 +1,1 @@
+- A GitLab request that you wrote, or that you labelled hopper:high, now runs without your approval, as it does on GitHub.

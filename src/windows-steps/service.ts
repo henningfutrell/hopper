@@ -1,197 +1,282 @@
 // One user's Windows sandbox steps (issue #731, design.md "Windows sandbox steps"). A running job's step is checked against
-// the user's Windows hosts; run on its host one at a time, stopped at its timeout or when the job goes, recorded on the
-// job's timeline, and its result kept for the job to fetch — an hour, then swept. A step's vault secrets (each one its
-// host gives, and the vault gives after the job's grant) go to the step only, and are masked in the log the job reads.
-// The Windows host is a port (`WindowsStepHost`): ssh in production, a double in tests. A box step is a need step
-// (src/sandbox/need-steps.ts, issue #1349).
+// the user's Windows hosts, kept in the database from the job's ask to an hour after its result (issue #1611, the
+// `windows_steps` table), and run by its `windows-step` saga (step-saga.ts) on whichever host holds the saga: so a
+// stop of the hopper drops no step and loses no result. One step runs on a host at a time: a step takes its host
+// lease in the database before it starts there, and lets it go only once the host's scratch directory is swept. A step
+// that took its host on a hopper that stopped is never run a second time: it ends saying so, as it may have had its
+// effect, and its host's scratch is swept. Recorded on the job's timeline (`step.started`, `step.finished`,
+// `step.refused`). A step's vault secrets (each one its host gives, and the vault gives after the job's grant) are read
+// when it runs, go to the step only, are never kept, and are masked in the log the job reads. The Windows host is a port
+// (`WindowsStepHost`): ssh in production, a double in tests. A box step is a need step (src/sandbox/need-steps.ts).
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { WindowsStepHost } from '../domain/ports.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
-import { stepRequestOf, type StepRequest, type StepResult, type WindowsHost } from '../domain/windows-steps.ts';
+import { STEP_OUTPUTS_MAX_BYTES, stepRequestOf, type StepResult, type WindowsHost, type WindowsStep, type WindowsStepRepository } from '../domain/windows-steps.ts';
 
 /** How long a step's result and outputs are kept for the job to fetch. */
 export const STEP_KEEP_MS = 60 * 60 * 1000;
 /** The most of a step's command an event keeps. */
 const COMMAND_IN_EVENT = 300;
+/** How often a step that waits for its host asks for its host lease again, and a running step looks whether its job is at work. */
+const HOLD_POLL_MS = 1_000, AT_WORK_MS = 5_000;
+const ID = /^[a-f0-9-]{36}$/;
+
+/** The problem of a step that took its host on a hopper that stopped: it is not run again (issue #1611). */
+export const STEP_INTERRUPTED = 'the hopper stopped while the step ran, and it is not run again: it may have had its effect. Look at what it changed on the host before you run it again';
 
 export interface WindowsStepsOptions {
+  userId: string;
   /** The user's Windows hosts now: a change applies to the next step. */
   hosts(): WindowsHost[];
   host: WindowsStepHost;
-  /** Where each step's own directory goes on this machine: the hopper's work dir (scratch). */
+  /** The Windows steps, in the database. */
+  steps: WindowsStepRepository;
+  /** The `windows-step` saga of a step (step-saga.ts): begun once per step, its id answered; and its abort. Absent: no step runs. */
+  sagas?: { begin(step: string): string; abort(saga: string, reason: string): boolean };
+  /** Whether the job is at work: a step of a job that stopped is stopped too. */
+  atWork(jobId: string): boolean;
+  /** Where each running step's own directory goes on this machine: the hopper's work dir (scratch). */
   dir: string;
   record(event: NewEvent): void;
   log(line: string): void;
   /** A vault secret's value for `job`'s step on `host` (the vault's grant and checks), or why not. Absent: no step gets one. */
   secret?(ask: { name: string; job: string; host: string }): Promise<{ value: string } | { refused: string }>;
   newId?: () => string;
+  now?: () => Date;
   keepMs?: number;
 }
 
 /** A step's fields as the job sent them. */
 export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }
 
-/** A step checked and given its own directory: the route puts the inputs in `inputsFile`, then runs it. */
-export interface StepStart {
-  id: string;
-  request: StepRequest;
-  inputsFile: string;
-  /** Run it: `log` gets its output as it comes; `signal` aborts (the job's request gone). */
-  run(o: { inputsBytes: number; log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
-  /** The inputs were refused (too large, cut off): the directory goes. */
-  drop(reason: string): void;
-}
+/** What the job sent with its ask: its key for the ask, and the inputs (a tar; empty: none). */
+export interface StepAsk { key: string; inputs: Buffer }
+
+/** Where a step of a job stands: it runs (or waits for its host), or it ended with its result and its outputs. */
+export type StepState = { running: true } | { result: StepResult; outputs?: Buffer };
 
 export interface WindowsSteps {
   hosts(): WindowsHost[];
-  /** Check `fields` for `job`, and get its secrets: a step to run, or a no with its HTTP status. A no is a `step.refused` event. */
-  start(job: Job, fields: StepFields): Promise<StepStart | { status: number; no: string }>;
-  /** A step's result, with its outputs tar when it has one; undefined: no step of this job's by that id, or swept. */
-  result(job: Job, id: string): { result: StepResult; outputs?: string } | undefined;
+  /**
+   * Check `fields` for `job`, keep the step and begin its saga: the step's id, or a no with its HTTP status. A no is a
+   * `step.refused` event. The same key again answers the same step.
+   */
+  start(job: Job, fields: StepFields, ask: StepAsk): { id: string } | { status: number; no: string };
+  /** The saga's `run` step: takes the host lease, reads the secrets, runs the step and keeps its result. Once per step, on any host. */
+  run(step: string, signal: AbortSignal): Promise<void>;
+  /** The saga's `sweep` step: the host's scratch directory removed, then its host lease released. Rejects when the host could not be reached. */
+  sweepHost(step: string): Promise<void>;
+  /** The compensation: the host swept as far as it can be and let go, and a step not ended ends cancelled. */
+  cancel(step: string, reason: string): Promise<void>;
+  /** A step of the job's; undefined: no step of this job's by that id, or swept. */
+  state(job: Job, id: string): StepState | undefined;
+  /** The step's log from character `from`, where the next read starts, and whether the step ended (then the log is whole). */
+  log(job: Job, id: string, from: number): { text: string; next: number; ended: boolean } | undefined;
+  /** The job stops its step: its saga is aborted. Undefined: no step of this job's by that id. */
+  stop(job: Job, id: string): boolean | undefined;
   /** Remove results older than the keep. */
   sweep(): void;
 }
 
-const ID = /^[a-f0-9-]{36}$/;
-
-/** Where a step runs: its queue's key, what its events name, and the run there. */
-interface Place {
-  key: string;
-  at: { host: string };
-  run(step: { id: string; command: string; dir: string; inputs: boolean; outputs: string[] }, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
+/** The Windows steps in the database and their sagas, as the composition root gives them to each user's runtime. */
+export interface WindowsStepLedger {
+  steps: WindowsStepRepository;
+  sagas: { begin(step: string, userId: string): string; abort(saga: string, reason: string): boolean };
 }
+
+/** The Windows steps of a hopper that keeps none (a runtime made with no ledger): no step is ever kept. */
+export const NO_WINDOWS_STEPS: WindowsStepRepository = {
+  add: (step) => step, get: () => undefined, sagaIs: () => {}, inputs: () => undefined, appendLog: () => {},
+  log: (_id, from) => ({ text: '', next: from }), end: () => false, outputs: () => undefined, leaseHost: () => false, releaseHost: () => {}, sweep: () => {},
+};
 
 export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
   const newId = o.newId ?? (() => randomUUID());
+  const now = o.now ?? (() => new Date());
   const keepMs = o.keepMs ?? STEP_KEEP_MS;
-  /** The tail of each host's queue: a step starts when the one before it on that host has ended. */
-  const queues = new Map<string, Promise<unknown>>();
-  const results = new Map<string, { jobId: string; result: StepResult; at: number }>();
   const dirOf = (id: string) => join(o.dir, id);
+  const hostOf = (name: string): WindowsHost | undefined => o.hosts().find((h) => h.name === name);
 
-  const refuse = (job: Job, status: number, no: string, at?: Place['at']) => {
-    o.record({ type: 'step.refused', jobId: job.id, data: { reason: no, ...at } });
+  const refuse = (job: Pick<Job, 'id'>, status: number, no: string, host?: string) => {
+    o.record({ type: 'step.refused', jobId: job.id, data: { reason: no, ...(host !== undefined ? { host } : {}) } });
     return { status, no };
+  };
+  /** Ends the step with `result`, once: the end kept is the one recorded. */
+  const finish = (s: WindowsStep, result: StepResult, seconds: number, outputs?: Buffer): void => {
+    if (!o.steps.end(s.id, result, now().toISOString(), outputs)) return;
+    o.record({ type: 'step.finished', jobId: s.jobId, data: {
+      step: s.id, host: s.host, exit: result.exit, seconds,
+      ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}), ...(result.problem ? { problem: result.problem } : {}),
+    } });
+  };
+  const ofJob = (job: Job, id: string): WindowsStep | undefined => {
+    if (!ID.test(id)) return undefined;
+    const s = o.steps.get(id);
+    return s && s.jobId === job.id && s.userId === o.userId ? s : undefined;
+  };
+  /** Why the host does not give each secret the step asks for, or undefined. */
+  const notGiven = (host: WindowsHost, secrets: readonly string[]): string | undefined => {
+    const gives = host.secrets ?? [];
+    const outside = secrets.find((n) => !gives.includes(n));
+    return outside === undefined ? undefined
+      : `${host.name} does not give ${outside} to its steps: ${gives.length ? `it gives ${gives.join(', ')}` : 'it gives none'}. A person adds a secret to the host in Settings → Windows hosts.`;
   };
 
   const sweep = () => {
-    const now = Date.now();
-    for (const [id, r] of results) if (now - r.at > keepMs) { results.delete(id); rmSync(dirOf(id), { recursive: true, force: true }); }
-    // A directory no result names (a hopper restarted mid-step) goes once it is old.
+    const at = now().getTime();
+    o.steps.sweep(new Date(at - keepMs).toISOString());
+    // A step's directory that a stopped hopper left.
     let names: string[];
     try { names = readdirSync(o.dir); } catch { return; }
     for (const name of names) {
-      if (results.has(name)) continue;
-      try { if (now - statSync(dirOf(name)).mtimeMs > keepMs) rmSync(dirOf(name), { recursive: true, force: true }); } catch { /* gone */ }
+      try { if (at - statSync(dirOf(name)).mtimeMs > keepMs) rmSync(dirOf(name), { recursive: true, force: true }); } catch { /* gone */ }
     }
   };
 
-  /** Where the step runs: a Windows host; else the no. */
-  const placeOf = async (job: Job, request: StepRequest, secrets: Record<string, string>): Promise<Place | { status: number; no: string }> => {
-    const host = o.hosts().find((h) => h.name === request.host);
-    if (!host) {
-      const names = o.hosts().map((h) => h.name);
-      return refuse(job, 404, `the hopper has no Windows host ${request.host}. ${names.length ? `It has: ${names.join(', ')}.` : 'It has none: a person adds one in Settings → Windows hosts.'}`, { host: request.host! });
+  /** Runs the step on its host, which it has the lease on: its log kept as it comes, its result and outputs kept at its end. */
+  const runHeld = async (s: WindowsStep, host: WindowsHost, secrets: Record<string, string>, signal: AbortSignal): Promise<void> => {
+    const dir = dirOf(s.id);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const inputs = s.inputsBytes > 0 ? o.steps.inputs(s.id) : undefined;
+    if (inputs) writeFileSync(join(dir, 'inputs.tar'), inputs, { mode: 0o600 });
+    const masked = maskSecrets(Object.values(secrets), (chunk) => { o.steps.appendLog(s.id, chunk); });
+    // The step stops at its timeout, when its saga is aborted or its hopper stops, or when its job is no longer at work.
+    const stop = new AbortController();
+    let why: string | undefined;
+    const timer = setTimeout(() => { why = `timed out after ${s.timeoutSeconds} s`; stop.abort(); }, s.timeoutSeconds * 1000);
+    const watch = setInterval(() => { if (!o.atWork(s.jobId)) { why = `cancelled: job ${s.jobId} is not at work`; stop.abort(); } }, AT_WORK_MS);
+    watch.unref();
+    const onAbort = () => stop.abort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    const started = now().getTime();
+    o.record({ type: 'step.started', jobId: s.jobId, data: {
+      step: s.id, host: s.host, command: s.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: s.timeoutSeconds,
+      inputsBytes: s.inputsBytes, outputs: s.outputs, ...(s.secrets.length ? { secrets: s.secrets } : {}),
+    } });
+    let result: StepResult, outputs: Buffer | undefined;
+    try {
+      result = await o.host.run(host, { id: s.id, command: s.command, dir, inputs: inputs !== undefined, outputs: s.outputs, ...(s.secrets.length ? { secrets } : {}) }, { log: masked.write, signal: stop.signal });
+      if (result.outputsBytes !== undefined) {
+        if (result.outputsBytes > STEP_OUTPUTS_MAX_BYTES) result = { exit: result.exit, problem: `the outputs hold more than ${STEP_OUTPUTS_MAX_BYTES / (1024 * 1024)} MiB` };
+        else outputs = readFileSync(join(dir, 'outputs.tar'));
+      }
+    } catch (e) {
+      o.log(`hopper: step ${s.id} on ${s.host}: ${(e as Error).message}`);
+      result = { exit: 255, problem: (e as Error).message };
+    } finally {
+      clearTimeout(timer);
+      clearInterval(watch);
+      signal.removeEventListener('abort', onAbort);
+      masked.end();
+      for (const k of Object.keys(secrets)) delete secrets[k];
+      rmSync(dir, { recursive: true, force: true });
     }
-    const gives = host.secrets ?? [];
-    const outside = request.secrets.find((n) => !gives.includes(n));
-    if (outside !== undefined) {
-      return refuse(job, 403, `${host.name} does not give ${outside} to its steps: ${gives.length ? `it gives ${gives.join(', ')}` : 'it gives none'}. A person adds a secret to the host in Settings → Windows hosts.`, { host: host.name });
-    }
-    // Read now, before the inputs come: a no costs the job no upload. Held in memory for this step only.
-    for (const name of request.secrets) {
-      const r = o.secret ? await o.secret({ name, job: job.id, host: host.name }) : { refused: 'the hopper gives no vault secret to a step here' };
-      if ('refused' in r) return refuse(job, 403, `${name}: ${r.refused}`, { host: host.name });
-      secrets[name] = r.value;
-    }
-    return { key: host.name, at: { host: host.name }, run: (step, io) => o.host.run(host, { ...step, ...(request.secrets.length ? { secrets } : {}) }, io) };
+    // Its saga aborted, or its hopper stopping, keeps none: the compensation ends it, or the next try says it was cut short.
+    if (signal.aborted) return;
+    if (why) result = { ...result, problem: why };
+    finish(s, result, Math.round((now().getTime() - started) / 1000), outputs);
   };
 
   return {
     hosts: () => o.hosts(),
     sweep,
 
-    async start(job, fields) {
+    start(job, fields, ask) {
       sweep();
       const request = stepRequestOf(fields);
-      if ('problem' in request) return refuse(job, 400, request.problem, fields.host ? { host: fields.host } : undefined);
-      const secrets: Record<string, string> = {};
-      const place = await placeOf(job, request, secrets);
-      if (!('key' in place)) return place;
-      const where = place.at.host;
-      const id = newId();
-      const dir = dirOf(id);
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      return {
-        id, request, inputsFile: join(dir, 'inputs.tar'),
-        drop(reason) {
-          rmSync(dir, { recursive: true, force: true });
-          refuse(job, 400, reason, place.at);
-        },
-        async run({ inputsBytes, log: toJob, signal }) {
-          const masked = maskSecrets(Object.values(secrets), toJob);
-          const log = masked.write;
-          const before = queues.get(place.key);
-          const stop = new AbortController();
-          const onGone = () => stop.abort();
-          signal.addEventListener('abort', onGone, { once: true });
-          let timedOut = false;
-          const mine = (async () => {
-            if (before) {
-              log(`hopper-step: waiting for ${where}: another step runs there\n`);
-              await before.catch(() => undefined);
-            }
-            if (stop.signal.aborted) return { exit: 255, problem: 'stopped before it started' } satisfies StepResult;
-            const started = Date.now();
-            o.record({ type: 'step.started', jobId: job.id, data: {
-              step: id, ...place.at, command: request.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: request.timeoutSeconds,
-              inputsBytes, outputs: request.outputs, ...(request.secrets.length ? { secrets: request.secrets } : {}),
-            } });
-            const timer = setTimeout(() => { timedOut = true; stop.abort(); }, request.timeoutSeconds * 1000);
-            let result: StepResult;
-            try {
-              result = await place.run({ id, command: request.command, dir, inputs: inputsBytes > 0, outputs: request.outputs }, { log, signal: stop.signal });
-            } finally {
-              clearTimeout(timer);
-              masked.end();
-            }
-            if (timedOut) result = { ...result, problem: `timed out after ${request.timeoutSeconds} s` };
-            else if (signal.aborted) result = { ...result, problem: 'the job stopped waiting for it' };
-            o.record({ type: 'step.finished', jobId: job.id, data: {
-              step: id, ...place.at, exit: result.exit, seconds: Math.round((Date.now() - started) / 1000),
-              ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}), ...(result.problem ? { problem: result.problem } : {}),
-            } });
-            return result;
-          })();
-          queues.set(place.key, mine);
-          try {
-            const result = await mine;
-            results.set(id, { jobId: job.id, result, at: Date.now() });
-            // The inputs and the step's script are not kept: only what the job may still fetch.
-            for (const f of ['inputs.tar', 'step.ps1', 'step.tar']) rmSync(join(dir, f), { force: true });
-            return result;
-          } catch (e) {
-            o.log(`hopper: step ${id} on ${where}: ${(e as Error).message}`);
-            const result = { exit: 255, problem: (e as Error).message };
-            results.set(id, { jobId: job.id, result, at: Date.now() });
-            return result;
-          } finally {
-            signal.removeEventListener('abort', onGone);
-            if (queues.get(place.key) === mine) queues.delete(place.key);
-            for (const k of Object.keys(secrets)) delete secrets[k];
-          }
-        },
-      };
+      if ('problem' in request) return refuse(job, 400, request.problem, fields.host);
+      const host = hostOf(request.host);
+      if (!host) {
+        const names = o.hosts().map((h) => h.name);
+        return refuse(job, 404, `the hopper has no Windows host ${request.host}. ${names.length ? `It has: ${names.join(', ')}.` : 'It has none: a person adds one in Settings → Windows hosts.'}`, request.host);
+      }
+      const outside = notGiven(host, request.secrets);
+      if (outside) return refuse(job, 403, outside, host.name);
+      if (!o.sagas) return refuse(job, 503, 'this hopper runs no Windows step: it keeps no saga', host.name);
+      const step = o.steps.add({
+        id: newId(), userId: o.userId, jobId: job.id, key: ask.key, host: host.name, command: request.command,
+        timeoutSeconds: request.timeoutSeconds, outputs: request.outputs, secrets: request.secrets, inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
+      }, ask.inputs);
+      // Begun at each ask, once per step: an ask whose begin a stop cut short begins it when it is sent again.
+      const saga = o.sagas.begin(step.id);
+      if (step.saga !== saga) o.steps.sagaIs(step.id, saga);
+      return { id: step.id };
     },
 
-    result(job, id) {
-      if (!ID.test(id)) return undefined;
-      const r = results.get(id);
-      if (!r || r.jobId !== job.id) return undefined;
-      const outputs = join(dirOf(id), 'outputs.tar');
-      return { result: r.result, ...(r.result.outputsBytes !== undefined ? { outputs } : {}) };
+    async run(stepId, signal) {
+      const s = o.steps.get(stepId);
+      // Swept, or ended: nothing is left to do.
+      if (!s || s.result) return;
+      // It took its host on a hopper that stopped: never a second time. The saga's sweep step sweeps the host.
+      if (s.leasedAt !== undefined) { finish(s, { exit: 125, problem: STEP_INTERRUPTED }, 0); return; }
+      let told = false;
+      for (;;) {
+        signal.throwIfAborted();
+        const host = hostOf(s.host);
+        if (!host) { finish(s, { exit: 125, problem: `the hopper has no Windows host ${s.host} any more` }, 0); return; }
+        if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return; }
+        if (o.steps.leaseHost(s.id, now().toISOString())) break;
+        if (!told) { o.steps.appendLog(s.id, `hopper-step: waiting for ${s.host}: another step runs there\n`); told = true; }
+        await sleep(HOLD_POLL_MS, undefined, { signal });
+      }
+      const host = hostOf(s.host);
+      const outside = host ? notGiven(host, s.secrets) : `the hopper has no Windows host ${s.host} any more`;
+      const refused = (no: string) => { refuse({ id: s.jobId }, 403, no, s.host); finish(s, { exit: 125, problem: no }, 0); };
+      if (!host || outside) { refused(outside!); return; }
+      // Read now, for this try only: no secret is kept in the database or between tries.
+      const secrets: Record<string, string> = {};
+      for (const name of s.secrets) {
+        const r = o.secret ? await o.secret({ name, job: s.jobId, host: s.host }) : { refused: 'the hopper gives no vault secret to a step here' };
+        if ('refused' in r) { refused(`${name}: ${r.refused}`); return; }
+        secrets[name] = r.value;
+      }
+      await runHeld(s, host, secrets, signal);
+    },
+
+    async sweepHost(stepId) {
+      const s = o.steps.get(stepId);
+      if (!s?.hostLeased) return;
+      const host = hostOf(s.host);
+      // A host a person removed meanwhile keeps its scratch: the hopper reaches it no more. The next step's prepare empties it.
+      if (host) await o.host.sweep(host);
+      o.steps.releaseHost(s.id);
+    },
+
+    async cancel(stepId, reason) {
+      const s = o.steps.get(stepId);
+      if (!s) return;
+      if (s.hostLeased) {
+        const host = hostOf(s.host);
+        // Best effort: the host is let go however the sweep goes, so a host that is away keeps no other step waiting.
+        if (host) await o.host.sweep(host).catch((e: unknown) => o.log(`hopper: the scratch of step ${s.id} on ${s.host} was not swept: ${(e as Error).message}`));
+        o.steps.releaseHost(s.id);
+      }
+      finish(s, { exit: 125, problem: `cancelled: ${reason}` }, 0);
+    },
+
+    state(job, id) {
+      const s = ofJob(job, id);
+      if (!s) return undefined;
+      if (!s.result) return { running: true };
+      const outputs = s.result.outputsBytes !== undefined ? o.steps.outputs(id) : undefined;
+      return { result: s.result, ...(outputs ? { outputs } : {}) };
+    },
+
+    log(job, id, from) {
+      const s = ofJob(job, id);
+      if (!s) return undefined;
+      // Whether it ended is read first: a log read after its end is the whole of it.
+      const ended = s.result !== undefined;
+      return { ...o.steps.log(id, from), ended };
+    },
+
+    stop(job, id) {
+      const s = ofJob(job, id);
+      if (!s) return undefined;
+      return s.saga !== undefined && !s.result ? o.sagas?.abort(s.saga, `job ${job.id} stopped the step`) ?? false : false;
     },
   };
 }

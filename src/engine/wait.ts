@@ -25,16 +25,17 @@ export function waitEndedNote(wait: Pick<JobWait, 'for'> | undefined, note?: str
 
 /**
  * In the tx: a person, or the hopper, ends the job's wait. It is queued again with the note pending, pinned to its machine (a pending
- * answer pins it, as for an answered question), and its claim types the note into its pane. `job.wait_ended`.
+ * answer pins it, as for an answered question), and its claim types the note into its pane. `job.wait_ended`; `check`: the key of
+ * the wait check's condition that ended it (issue #1694).
  */
-export function recordEndWait(c: EngineContext, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string): Job {
+export function recordEndWait(c: Pick<EngineContext, 'store'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, check?: string): Job {
   const { store } = c;
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'waiting_on') throw new EngineError('conflict', `job ${id} is ${job.status}: only a job on its own wait can have its wait ended`);
   const pendingAnswer = told ? told(job.wait) : waitEndedNote(job.wait, note, by);
   const next = store.jobs.update(id, { status: 'queued', pendingAnswer, wait: undefined, holdReason: undefined, waitReason: undefined });
-  store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}) } });
+  store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}), ...(check ? { check } : {}) } });
   return next;
 }
 

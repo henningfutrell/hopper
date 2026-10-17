@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "string",
+          "enum": [
+            "close",
+            "open"
+          ]
+        },
+        "reopened": {
+          "type": "string",
+          "enum": [
+            "close",
+            "open"
+          ]
+        }
+      },
+      "required": [
+        "request",
+        "reopened"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "string",
+          "enum": [
+            "close",
+            "open"
+          ]
+        },
+        "reopened": {
+          "type": "string",
+          "enum": [
+            "close",
+            "open"
+          ]
+        }
+      },
+      "required": [
+        "request",
+        "reopened"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

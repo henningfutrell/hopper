@@ -31,18 +31,22 @@ function stepDir(inputs: boolean): string {
   return d;
 }
 
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'win-step-')); process.env.FAKE_WIN_DIR = dir; delete process.env.FAKE_WIN_EXIT; delete process.env.FAKE_WIN_HANG; delete process.env.FAKE_WIN_CUT; });
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'win-step-')); process.env.FAKE_WIN_DIR = dir; delete process.env.FAKE_WIN_EXIT; delete process.env.FAKE_WIN_HANG; delete process.env.FAKE_WIN_CUT; delete process.env.FAKE_WIN_SWEEP_EXIT; });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.env.FAKE_WIN_DIR; });
 
 describe('the Windows step host over ssh', () => {
-  it('prepares, copies the inputs and the step, runs it streaming its output, brings the outputs back, then cleans up', async () => {
+  it('prepares, copies the inputs and the step, runs it streaming its output, brings the outputs back; the sweep cleans up', async () => {
     const d = stepDir(true);
     process.env.FAKE_WIN_EXIT = '3';
     const log: string[] = [];
-    const r = await host().run(HOST, { id: 's1', command: 'msbuild App.sln', dir: d, inputs: true, outputs: ['bin\\Release'] }, { log: (c) => log.push(c), signal: new AbortController().signal });
+    const h = host();
+    const r = await h.run(HOST, { id: 's1', command: 'msbuild App.sln', dir: d, inputs: true, outputs: ['bin\\Release'] }, { log: (c) => log.push(c), signal: new AbortController().signal });
     expect(r).toEqual({ exit: 3, outputsBytes: 'the outputs tar'.length });
     expect(log.join('')).toContain('building App.sln\n');
     expect(log.join('')).toContain('warning CS0168\n');
+    // The run leaves the scratch directory: the sweep, a call of its own, removes it (issue #1611).
+    expect(calls().map((x) => x.tool)).toEqual(['ssh', 'scp', 'ssh', 'scp']);
+    await h.sweep(HOST);
     const c = calls();
     expect(c.map((x) => x.tool)).toEqual(['ssh', 'scp', 'ssh', 'scp', 'ssh']);
     // Every call: the hardened options, the host's own pin, the hopper's key, nothing forwarded.
@@ -96,14 +100,16 @@ describe('the Windows step host over ssh', () => {
     expect(r).toEqual({ exit: 0, problem: 'the outputs came back cut short: 5 of 15 bytes' });
   });
 
-  it('stops the step when it is aborted, and still cleans up', async () => {
+  it('stops the step when it is aborted; the sweep still cleans up', async () => {
     const d = stepDir(false);
     process.env.FAKE_WIN_HANG = '1';
     const stop = new AbortController();
     const log: string[] = [];
-    const running = host().run(HOST, { id: 's3', command: 'sleep', dir: d, inputs: false, outputs: [] }, { log: (c) => { log.push(c); stop.abort(); }, signal: stop.signal });
+    const h = host();
+    const running = h.run(HOST, { id: 's3', command: 'sleep', dir: d, inputs: false, outputs: [] }, { log: (c) => { log.push(c); stop.abort(); }, signal: stop.signal });
     const r = await running;
     expect(r.problem).toBe('stopped before it ended');
+    await h.sweep(HOST);
     expect(calls().map((x) => x.tool).at(-1)).toBe('ssh');
     expect(scripts().at(-1)).toContain('Remove-Item');
   });
@@ -114,5 +120,10 @@ describe('the Windows step host over ssh', () => {
     expect(r.exit).toBe(255);
     expect(r.problem).toContain('bad ssh target');
     expect(existsSync(join(dir, 'calls.jsonl'))).toBe(false);
+  });
+
+  it('a sweep that fails rejects, so the step\'s saga tries again (issue #1611)', async () => {
+    process.env.FAKE_WIN_SWEEP_EXIT = '1';
+    await expect(host().sweep(HOST)).rejects.toThrow(/the scratch directory on build-host could not be removed/);
   });
 });

@@ -2,8 +2,9 @@
 // it as it reaches an ssh target ("Target authentication"): its own key, public-key authentication only, the pinned
 // host key only — here one known_hosts file per Windows host, written before each step —, nothing forwarded. Four
 // calls per step: prepare the scratch directory, copy the inputs and the step's script, run it (its output streamed;
-// its vault secrets, when it has any, on that call's stdin only), bring the outputs back; then the scratch directory is
-// removed.
+// its vault secrets, when it has any, on that call's stdin only), bring the outputs back. The sweep, a call of its own,
+// removes the scratch directory after: the step's saga sweeps after each step, and after a step a stopped hopper left
+// (issue #1611).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,6 +25,8 @@ export interface SshStepHostOptions {
 
 /** How long the calls around the step may take: the copy of large inputs included. */
 const SIDE_CALL_MS = 10 * 60 * 1000;
+/** How long the sweep of a host's scratch directory may take. */
+const SWEEP_MS = 60_000;
 
 interface Ran { code: number; stderr: string; aborted: boolean }
 
@@ -102,10 +105,13 @@ export function createSshStepHost(o: SshStepHostOptions): WindowsStepHost {
         return result;
       } catch (e) {
         return { exit: SSH_FAILED, problem: (e as Error).message };
-      } finally {
-        // The scratch directory goes even when the step was stopped: a call of its own, with its own short deadline.
-        try { await remote(cleanupScript(host.workDir), { signal: new AbortController().signal, timeoutMs: 60_000 }); } catch { /* the next step's prepare removes it */ }
       }
+    },
+
+    async sweep(host) {
+      const t = transport(host);
+      const r = await run(ssh, sshArgv(t, encodedCommand(cleanupScript(host.workDir))), { signal: new AbortController().signal, timeoutMs: SWEEP_MS });
+      if (r.code !== 0) throw new Error(`the scratch directory on ${host.name} could not be removed: ${r.aborted ? 'timed out' : r.stderr || `exit ${r.code}`}`);
     },
   };
 }

@@ -202,6 +202,10 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
       const s = current();
       return s?.endedWatched ? s.endedWatched(refs) : Promise.reject(new SourceError(why(), false));
     },
+    waitedChecks(repo, number) {
+      const s = current();
+      return s?.waitedChecks ? s.waitedChecks(repo, number) : Promise.reject(new SourceError(why(), false));
+    },
     censusPullRequests(facts) {
       const s = current();
       return s?.censusPullRequests ? s.censusPullRequests(facts) : Promise.reject(new SourceError(why(), false));

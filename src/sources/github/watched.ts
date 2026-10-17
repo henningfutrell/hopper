@@ -2,6 +2,7 @@
 // number is a pull request or an issue: the pull request read first, then the issue. A run is read through Actions. One
 // GitHub does not know — no such repository, item or run (issue #1691) — is `not_found`: it never ends, so the job is told.
 // One whose read throws otherwise is logged and left out: asked again at the next sync.
+import type { WaitedChecks } from '../../domain/wait-checks.ts';
 import { NOT_FOUND, type WatchedEnd, type WatchedRef } from '../../domain/watched-items.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
 
@@ -40,4 +41,12 @@ export async function endedWatched(api: Pick<GitHubApi, 'pullRequest' | 'getIssu
     }
   }
   return ended;
+}
+
+/** A pull request a wait on its checks names (issue #1694): its state, its checks and its last push; `not_found` when the number names none. */
+export async function waitedChecks(api: Pick<GitHubApi, 'pullRequest'>, repo: string, number: number): Promise<WaitedChecks> {
+  const url = `https://github.com/${repo}/pull/${number}`;
+  const pr = await api.pullRequest(repo, number).catch((e: unknown) => { if (notFound(e)) return undefined; throw e; });
+  if (!pr) return { url, state: 'not_found' };
+  return { url: pr.url, state: pr.state, ...(pr.checks ? { checks: pr.checks } : {}), ...(pr.headCommittedAt ? { headCommittedAt: pr.headCommittedAt } : {}) };
 }

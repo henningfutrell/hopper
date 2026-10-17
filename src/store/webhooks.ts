@@ -79,6 +79,8 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
       saveDelivery(d, true);
       return d;
     },
+    hasDelivery: (subscriptionId, eventSeq) =>
+      c.db.get("SELECT 1 AS x FROM deliveries WHERE subscription_id = ? AND (body::jsonb->>'eventSeq')::bigint = ? LIMIT 1", subscriptionId, eventSeq) !== undefined,
     updateDelivery(id, patch) {
       const cur = getDelivery(id);
       if (!cur) throw new Error(`delivery not found: ${id}`);

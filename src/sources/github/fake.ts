@@ -187,6 +187,10 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       enter('closeAsCompleted', [repo, n]);
       const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: stamp(), stateReason: 'completed' }); touch(i);
     },
+    async closeAsNotPlanned(repo, n) {
+      enter('closeAsNotPlanned', [repo, n]);
+      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: stamp(), stateReason: 'not_planned' }); touch(i);
+    },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);

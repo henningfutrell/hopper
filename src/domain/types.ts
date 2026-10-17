@@ -47,11 +47,12 @@ export const JOBS_DIR = '~/hopper-jobs';
  * review); `until`, how it will know it happened (a check it runs in the background, an event), as it wrote it.
  * `ownCommand` (issue #1037): `until` names the job's own background command, so it waits on nothing outside the job and
  * shows as running. Then, while its pane shows no background work: `goneSince`, when that was first seen; `nudgedAt`, when
- * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge. `on` (issue #1245): what it
- * waits on, typed; every wait since has one, and one without is a legacy wait, stuck work. `polledAt` (issue #1210): when the
- * hopper first saw its own command poll hopper state; `on` then says what it polls.
+ * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge (a wait from before issue
+ * #1694: its wait check ends it now). `on` (issue #1245): what it waits on, typed; every wait since has one, and one without is
+ * a legacy wait, stuck work. `polledAt` (issue #1210): when the hopper first saw its own command poll hopper state; `on` then
+ * says what it polls. `check` (issue #1694): what the hopper tests of the wait and when, kept with it (wait-checks.ts).
  */
-export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -520,10 +521,10 @@ export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettin
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
 export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts';
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
-export * from './check-logs.ts';
+export * from './check-logs.ts'; export type { WaitCheck, WaitCondition } from './wait-checks.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 

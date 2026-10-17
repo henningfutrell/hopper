@@ -8,7 +8,8 @@ import type { PullRequestAct } from './pull-requests.ts';
 
 /**
  * One change on one issue. `read_comments` is Approve's read of the assignee's comments, kept in the approved snapshot.
- * `comment` posts one comment: a hand-off's resolution (issue #551). `pull_request` is a person's Merge now or Close PR on
+ * `comment` posts one comment: a hand-off's resolution (issue #551), a Decline's note (issue #1710). `close_not_planned`
+ * closes the issue as not planned: a person's Decline with the choice Close (issue #1710). `pull_request` is a person's Merge now or Close PR on
  * job `jobId`'s open pull request (issue #677, part 3): the source follows it with the act, and records it by `acting`.
  * `give_back` is a person's act that gives ended job `jobId`'s item back: Run again or Rework (part 4), the new job told
  * Rework's `notes`; or Failures' Retry, a hand-off's Continue or I fixed it, Push it or Tend again (part 5), run by its own
@@ -21,6 +22,7 @@ export type OutboxChange =
   | { op: 'add_assignees'; assignees: string[] }
   | { op: 'read_comments' }
   | { op: 'comment'; body: string }
+  | { op: 'close_not_planned' }
   | { op: 'pull_request'; act: PullRequestAct; jobId: string; acting: ActingPerson }
   | { op: 'give_back'; act: OutboxGiveBack; jobId: string; acting?: ActingPerson; notes?: string; target?: string; input?: GiveBackInput; at?: string };
 
@@ -118,9 +120,9 @@ export interface OutboxPlan {
 
 /**
  * The rows due for one issue, coalesced: an add and a remove of the same label cancel out; the labels left go in one
- * add call and one remove call; the assignees in one call; Approve's comment reads in one; the same comment once; a job's
- * same Merge now, Close PR or give-back once. The newest row of a label says what it ends as. Removes go first,
- * then adds, assignments, the read, the comments and the job's acts.
+ * add call and one remove call; the assignees in one call; Approve's comment reads in one; the same comment once; the
+ * close once; a job's same Merge now, Close PR or give-back once. The newest row of a label says what it ends as. Removes
+ * go first, then adds, assignments, the read, the comments, the close and the job's acts.
  */
 export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
   const byIssue = new Map<string, OutboxRow[]>();
@@ -131,6 +133,7 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     const labels = new Map<string, { op: 'add' | 'remove'; row: number }[]>();
     const assignees = new Map<string, number[]>();
     const reads: number[] = [];
+    const closes: number[] = [];
     const comments = new Map<string, number[]>();
     const acts = new Map<string, { change: OutboxChange; rows: number[] }>();
     const cancelled: number[] = [];
@@ -138,6 +141,7 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
       const c = r.change;
       if (c.op === 'add_assignees') for (const a of c.assignees) assignees.set(a, [...(assignees.get(a) ?? []), r.id]);
       else if (c.op === 'read_comments') reads.push(r.id);
+      else if (c.op === 'close_not_planned') closes.push(r.id);
       else if (c.op === 'comment') comments.set(c.body, [...(comments.get(c.body) ?? []), r.id]);
       else if (c.op === 'pull_request' || c.op === 'give_back') { const k = `${c.jobId}\n${c.act}`; acts.set(k, { change: acts.get(k)?.change ?? c, rows: [...(acts.get(k)?.rows ?? []), r.id] }); }
       else {
@@ -160,6 +164,7 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     if (assignees.size) calls.push({ change: { op: 'add_assignees', assignees: [...assignees.keys()] }, rows: [...new Set([...assignees.values()].flat())] });
     if (reads.length) calls.push({ change: { op: 'read_comments' }, rows: reads });
     for (const [body, ids] of comments) calls.push({ change: { op: 'comment', body }, rows: ids });
+    if (closes.length) calls.push({ change: { op: 'close_not_planned' }, rows: closes });
     calls.push(...acts.values());
     // A row whose every label cancelled sends nothing; one with a label left is sent with that call.
     const inCalls = new Set(calls.flatMap((c) => c.rows));

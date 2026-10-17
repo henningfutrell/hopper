@@ -42,7 +42,7 @@ function afterWrite(name: string, args: unknown[]): ((i: ListedItem) => ListedIt
   if (name === 'addLabels') return (i) => ({ ...i, labels: [...i.labels, ...names.filter((l) => !i.labels.includes(l))] });
   if (name === 'removeLabels') return (i) => ({ ...i, labels: i.labels.filter((l) => !names.includes(l)) });
   if (name === 'addAssignees') return (i) => ({ ...i, assignees: [...i.assignees, ...names.filter((l) => !i.assignees.includes(l))] });
-  if (name === 'closeAsCompleted') return () => undefined;
+  if (name === 'closeAsCompleted' || name === 'closeAsNotPlanned') return () => undefined;
   return undefined;
 }
 

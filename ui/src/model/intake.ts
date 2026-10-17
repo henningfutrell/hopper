@@ -4,7 +4,26 @@
 // passed intake (issue #1035): their state is job progress, on Jobs, and Intake only counts them. A request a person
 // declined (issue #1035) waits for nobody: Intake counts it apart.
 import type { IntakeOutcome, NotTakenGroup } from '../../../src/domain/intake.ts';
-import type { JobStatus, SourceStatus } from './wire';
+import type { DeclineChoice, IntakeDeclineDefaults, JobStatus, SourceStatus } from './wire';
+
+/** The decline choices (issue #1710), in the order the confirm step lists them. */
+export const DECLINE_CHOICES: readonly DeclineChoice[] = ['close', 'open'];
+/** The daemon's default when no admin set one: Leave it open for a request card, Close the issue for a reopened card. */
+export const DEFAULT_DECLINE: IntakeDeclineDefaults = { request: 'open', reopened: 'close' };
+/** Each choice as the confirm step names it. */
+export const DECLINE_LABEL: Record<DeclineChoice, string> = { close: 'Close the issue', open: 'Leave it open' };
+/** What each choice does on GitHub, said before the click. */
+export const DECLINE_EFFECT: Record<DeclineChoice, string> = {
+  close: 'The hopper closes the issue as not planned, removes its hopper labels and posts a short comment that says so.',
+  open: 'The issue stays open. The hopper removes the hopper label, so no hopper queues it, and posts a short comment that says so.',
+};
+/** What a decline did, on its row once the card is gone. */
+export const DECLINED_ROW: Record<DeclineChoice, string> = { close: 'declined: issue closed on GitHub', open: 'declined: issue left open without the hopper label' };
+/** What a decline did, on the card after it. */
+export const DECLINED_DONE: Record<DeclineChoice, string> = {
+  close: 'Declined: no job. The hopper closes the issue as not planned and comments on it. Add the hopper label again to queue it',
+  open: 'Declined: no job. The issue stays open without the hopper label, with a comment. Add the hopper label again to queue it',
+};
 
 export type IntakeGroupKind = NotTakenGroup | 'taken';
 

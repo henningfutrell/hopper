@@ -19,8 +19,9 @@ import { LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PR_CLO
 import { CHECKS_LINE, untrustedBlock } from '../sources/github/context.ts';
 import type { GitLabAccount } from './account.ts';
 import { GitLabNotFound, type GitLabApi } from './api.ts';
-import { gitlabActs, untrustedActs } from './origin.ts';
-import { gitlabIntakeAct, gitlabVerdict, projectOfKey, takenOn, type GitLabVerdict } from './intake.ts';
+import { gitlabActs, labelledBy, untrustedActs } from './origin.ts';
+import { gitlabAutoApproval, gitlabIntakeAct, gitlabVerdict, projectOfKey, takenOn, type GitLabVerdict } from './intake.ts';
+import { autoApprovedReason, LABEL_HIGH } from '../domain/intake-auto-approve.ts';
 import { openRequests, requestOutcome, withdrawRequests } from '../sources/github/origin.ts';
 import { checkJobs, notComplete } from './completion.ts';
 import { endLabels, followMergeRequest, readyMergeRequest } from './follow.ts';
@@ -143,9 +144,19 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   async function originOf(i: GitLabIssue, account: string): Promise<GitLabVerdict> {
     const [events, notes] = await o.account.act((a) => Promise.all([a.labelEvents(i.project, i.iid), a.systemNotes(i.project, i.iid)]));
     const acts = gitlabActs(i, events, notes, label, account);
-    const trusted = await o.account.trusted(acts.flatMap((a) => (a.userId === undefined ? [] : [a.userId])));
-    return gitlabVerdict(i, acts, untrustedActs(acts, trusted), trusted, trust);
+    const high = i.labels.includes(LABEL_HIGH) ? labelledBy(events, LABEL_HIGH) : undefined;
+    const trusted = await o.account.trusted([...acts, ...(high ? [high] : [])].flatMap((a) => (a.userId === undefined ? [] : [a.userId])));
+    return gitlabVerdict(i, acts, untrustedActs(acts, trusted), trusted, trust, high);
   }
+
+  /** A card a rule approves (issue #1642, as GitHub's, issue #1268): recorded as the hopper's approval; the next sync takes it. */
+  const autoApproved = (i: GitLabIssue, v: Extract<GitLabVerdict, { request: unknown }>): Pick<IntakeOutcome, 'reason' | 'group'> | undefined => {
+    const guarded = trust.declined(i.url, v.request.hash) || trust.takenIn?.(i.url) === true;
+    const found = trust.autoApprove ? gitlabAutoApproval(v, guarded, trust.autoApproval?.()) : undefined;
+    if (!found) return undefined;
+    trust.autoApprove!(o.name, i.url, { title: v.request.title, body: v.request.body, comments: [] }, v.request, found);
+    return { reason: autoApprovedReason(found), group: 'other' };
+  };
 
   return {
     name: o.name,
@@ -178,7 +189,11 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
               listed.push({ ...base, reason: `its origin cannot be read: ${(err as Error).message}`, group: 'other' });
               continue;
             }
-            if ('request' in v) { requests.set(i.url, v.request); listed.push(requestOutcome(base, v.request, trust)); continue; }
+            if ('request' in v) {
+              const auto = autoApproved(i, v);
+              if (auto) listed.push({ ...base, ...auto }); else { requests.set(i.url, v.request); listed.push(requestOutcome(base, v.request, trust)); }
+              continue;
+            }
             branch ??= { name: await o.account.act((a) => a.defaultBranch(project)) };
             items.push({ ...toItem(i, s.baseUrl, branch.name, s.account), origin: v.origin });
             listed.push(base);
