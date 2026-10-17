@@ -3,10 +3,11 @@
 // body. A caller's `traceparent` is its parent, so a machine's call joins the trace that asked for it. The span is the
 // active context from the hook on, so the handler's own spans, GitHub calls and log lines are its children. The latency
 // histogram is the semantic conventions' `http.server.request.duration`, by method, route and status: a UI action's
-// latency is its route's.
+// latency is its route's, and the telemetry summary keeps it (`summary.ts`).
 import { context, propagation, SpanKind, SpanStatusCode, trace, type Context, type Span } from '@opentelemetry/api';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { instrument, tracer } from './instruments.ts';
+import { telemetrySummary } from './summary.ts';
 
 const duration = instrument((m) => m.createHistogram('http.server.request.duration', { unit: 's', description: 'How long the hopper took to answer a request.' }));
 
@@ -28,7 +29,9 @@ export function instrumentHttp(app: FastifyInstance): void {
     o.span.setAttributes(attributes);
     if (status === undefined || status >= 500) o.span.setStatus({ code: SpanStatusCode.ERROR });
     o.span.end();
-    duration().record((performance.now() - o.from) / 1000, attributes);
+    const seconds = (performance.now() - o.from) / 1000;
+    duration().record(seconds, attributes);
+    telemetrySummary.action(req.method, route, seconds);
   };
 
   app.addHook('onRequest', (req, _reply, done) => {

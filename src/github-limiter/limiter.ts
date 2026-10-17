@@ -12,7 +12,7 @@
 // Each call GitHub charged — not a 304 — counts for the last hour under its kind (issue #985), a GraphQL call with the
 // points it spent: the drop in its bucket's calls left since the last answer of the same window.
 // Each call is a client span and is counted by route, status and cache use, and each bucket's calls left is a gauge
-// (issue #1486, design.md "Telemetry"): the route's template, never its URL or credential.
+// (issue #1486, design.md "Telemetry"): the route's template, never its URL or credential. The telemetry summary keeps them too.
 import { createHash } from 'node:crypto';
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { setTimeout as sleepMs } from 'node:timers/promises';
@@ -22,6 +22,7 @@ import {
   type GitHubCallKind, type RateBucket, type RateLimiterSettings, type RateLimiterView,
 } from '../domain/github-rate-limit.ts';
 import { instrument, tracer } from '../telemetry/instruments.ts';
+import { telemetrySummary } from '../telemetry/summary.ts';
 import { githubTraffic, type GitHubTraffic } from './traffic.ts';
 
 type Request = typeof octokitRequest;
@@ -189,7 +190,9 @@ export function createGitHubLimiter(o: {
     const measured = (status: number | undefined, cache: 'hit' | 'miss' | 'none'): void => {
       const attributes = { 'http.request.method': parsed.method, 'http.route': route, ...(status !== undefined ? { 'http.response.status_code': status } : {}), 'hopper.github.cache': cache };
       githubCalls().add(1, attributes);
-      githubDuration().record((performance.now() - from) / 1000, attributes);
+      const seconds = (performance.now() - from) / 1000;
+      githubDuration().record(seconds, attributes);
+      telemetrySummary.githubCall(parsed.method, route, status, cache, seconds);
       span.setAttributes({ ...(status !== undefined ? { 'http.response.status_code': status } : {}), 'hopper.github.cache': cache });
       if (status === undefined || status >= 400) span.setStatus({ code: SpanStatusCode.ERROR });
     };
