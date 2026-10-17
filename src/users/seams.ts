@@ -1,6 +1,6 @@
 // The doubles a user's runtime takes at its ports.ts seams (issue #158), for integration tests. Production passes none.
 import type { IssueDrafter } from '../issue-drafts/index.ts';
-import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource, WindowsStepHost } from '../domain/ports.ts';
+import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource, TopologyReader, WindowsStepHost } from '../domain/ports.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
 import { kubernetesPlugin } from '../plugins/executor/kubernetes/index.ts';
@@ -59,6 +59,8 @@ export interface UserSeams {
   windowsStepHost?: WindowsStepHost;
   /** The `claude` the hopper's Claude sign-in for pods runs `setup-token` with (issue #1287; default `claude` on PATH), and variables it gets besides its own. */
   setupToken?: { file: string; env?: Record<string, string> };
+  /** Replaces what topology discovery reads AWS and Kubernetes with (issue #1781 part 3; default the AWS SDK and the Kubernetes API). */
+  topologyReader?: TopologyReader;
 }
 
 /**

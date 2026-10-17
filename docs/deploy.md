@@ -1147,6 +1147,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   3. In Settings → Vault, set a secret with *Mints for* `aws-account/<id>` and the access key as its value, as above.
   4. Check it: `hopper vault mint-test aws-role/<id>/hopper-read`.
 
+  The hopper's topology discovery (issue #1781, docs/design.md "The infrastructure topology") reads each account set up so
+  every 6 hours, as `hopper-read`, with list and describe calls only: EKS, EC2 VPCs, load balancers, RDS, SQS and IAM roles.
+  `ViewOnlyAccess` is enough for it. The clusters EKS lists there are read as `hopper-read` too (cluster discovery).
+
   Every read session the hopper mints carries two session policies: `ReadOnlyAccess`, and an inline policy that denies
   every `Create`, `Delete`, `Put`, `Update` and `Modify` action, IAM's other writes, and `sts:AssumeRole` on any role
   but `hopper-read` (docs/design.md "A read-only infra box"). So a read session cannot write, even when the role can. A

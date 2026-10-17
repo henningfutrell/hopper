@@ -1,0 +1,1 @@
+- The map of your AWS accounts and Kubernetes clusters on Infra now fills itself: the hopper reads each account and cluster your vault can reach every 6 hours, with read-only access. Click Discover now to read it at once.

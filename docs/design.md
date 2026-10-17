@@ -80,7 +80,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts` | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -26410,7 +26410,7 @@ hopper, by its URL, with a key from `hopper pool-key`, and checks the machine on
 credential and no hopper restart. **Not done in CI:** a compose hopper with a cluster, and a job on the pod: no runner has
 both, and a job needs a job source. `docs/deploy.md` "Lane pods of another release" has the manual check.
 
-## The infrastructure topology (issue #1781, parts 1 and 2, 2026-10-17)
+## The infrastructure topology (issue #1781, parts 1 to 3, 2026-10-17)
 
 Goal: show **which services exist** across the user's AWS accounts and Kubernetes clusters, and **what is linked to
 what**, as one graph. A list of accounts or credentials is not enough. Read-only: nothing here writes to a cloud or a
@@ -26462,14 +26462,65 @@ cluster.
   most 10: plans, approvals, applies, drift and out-of-band writes, not only the out-of-band changes. In the browser, from
   what the page reads already: no new route, nothing kept.
 
-**Not built yet** (left for the next parts of issue #1781):
-- Discovery inside the hopper with the read-only roles the vault mints, kept as a saga ("Sagas: work that survives a
-  stop"), on a schedule and on demand; it feeds the same report (`afterReport`) with the same mappers. It reads each AWS
-  account with the minting credential of that account (issue #1761) and the clusters cluster discovery finds (issue #1766).
+- **Topology discovery inside the hopper** (part 3, `src/infra-plans/topology-discovery.ts`, pure half
+  `src/domain/topology-discovery.ts`). The hopper reads a user's topology itself, with the read credentials its vault mints:
+  - **What it reads** (`discoveryTargets`): each account an `aws-account` minting credential mints for, and each cluster a
+    `cluster` minting credential mints for. A namespace's minting credential reads no whole cluster, so none is read for it.
+  - **An account.** The vault mints a read session of the account's read role `hopper-read` (`aws-role/<account>/hopper-read`,
+    the role cluster discovery signs in as) from the account's one minting credential (issue #1761), as for a mint test: the
+    read profile, the read session policies, 900 s, the session named `hopper-topology-discovery` (`awsSessionName`). The
+    reader (`TopologyReader`, a port; `src/infra-plans/topology-reader.ts` over the AWS SDK) asks, in the credential's region,
+    EKS `ListClusters` and `DescribeCluster`, EC2 `DescribeVpcs`, ELBv2 `DescribeLoadBalancers`, RDS `DescribeDBInstances`, SQS
+    `ListQueues` and IAM `ListRoles`, page by page, at most 20000 each: read calls only. A credential that names an STS
+    `Endpoint` (an AWS other than AWS's) is read at that endpoint for every service. A list the session may not read is left
+    out; an account none of whose lists answer is reported failed, with the first error.
+  - **A cluster** (`clustersToRead`): each cluster EKS listed, by its ARN, then each cluster of its own minting credential no
+    account listed, by its name; a cluster a cluster override names for EKS (`eksName`, in its `account` when it names one) by
+    the override's name. The vault mints a read token for `cluster/<name>` — its own minting credential, else found in the AWS
+    accounts as `hopper-read`, the override applied (cluster discovery, issue #1766) — and the reader lists namespaces, deployments,
+    services, ingresses and service accounts in every namespace (`@kubernetes/client-node`, 500 a page). A plain `http:` API
+    server is taken (the client's `skipTLSVerify`, with no TLS to skip); an `https:` one's certificate is always checked.
+  - **Reported as a check reports** (`report`, reporter `topology discovery`, `infra.topology_reported`), through the same
+    mappers. A source that cannot be read is reported failed, so it keeps its last good snapshot and says why: the rest of the
+    graph is read. An account the vault mints nothing for marks each of its kept sources failed (`accountUnread`); one never
+    read has no source to mark, and its refusal is in its `vault.discovery_minted` event. A source past a report's limits is
+    reported failed, saying so, never refused whole.
+  - **Each mint** is `vault.discovery_minted` (`asset`, `credential`, `expiresAt`, or `reason`), on no job's timeline, never a
+    key or a token. The minting credential never leaves the vault (`mintForDiscovery`, `src/vault/discovery-mint.ts`; in the
+    vault's own container too, over its `mint` op); the hopper holds the minted session and token only while it reads.
+  - **The saga** `topology-discovery` ("Sagas: work that survives a stop"): two steps, `aws` (the accounts; its output, the
+    clusters to read) and `kubernetes` (the clusters). A stop between them goes on from `kubernetes`, on any hopper; a step
+    done again reports again, which replaces the snapshot. Nothing to compensate: it writes nothing outside the hopper.
+  - **On a schedule** (`createTopologyDiscoveries`, started with the sagas): every 30 minutes the hopper begins, for each user
+    whose vault mints for an account or a cluster, the run of the 6-hour slot it is in (key `<user>/scheduled/<slot>`): one
+    run per user and slot, whichever hopper of the instance begins it first.
+  - **On demand**: **Discover now** on the Topology panel, `POST /ui/api/topology/discover` (operator, body `{}`; scope
+    `topology:discover`), begins a run of its own (`<user>/asked/<id>`) and drives it to its end, then answers `state` and
+    the graph. A stop meanwhile leaves the rest to the saga.
+
+**Not built yet** (left for the next part of issue #1781):
 - A ready-made topology collector script, as `scripts/out-of-band-collector.ts` is for signals.
+- An account in more than its minting credential's one region: each credential reads its `Region` only.
+
+**Decisions** (part 3):
+- **Access is not asked for a discovery mint**, as for a mint test: no job and no template take part. What bounds it is the
+  read profile — the read role `hopper-read`, the read session policies that deny every write, a cluster's read token — and
+  the minting credential a person set. The schedule is the issue's ask; a person turns it off by clearing *Mints for*.
+- **The hopper reads, not a box.** The reads are list and describe calls with a 15-minute session; a sandbox per run would
+  add a container to start and tear down for no gain in reach. The `TopologyReader` port keeps them in one module.
+- **The AWS SDK's clients**, one package per service (EC2, ELBv2, RDS, SQS, IAM beside EKS and STS), not the CLI: the
+  hopper's image carries no AWS CLI, and the SDK's shapes are the CLI's JSON, which the mappers already read.
+- **Each ask its own run.** Discover now begins a new saga each time; the button waits for its answer, so a person does not
+  ask twice by mistake.
 
 Tests: `test/domain/topology.test.ts` (the mappers, the join across AWS and Kubernetes, IRSA and trust across accounts,
-a failed source keeps its snapshot, refusals), `test/integration/topology.test.ts` (the real daemon and database: an API
+a failed source keeps its snapshot, refusals), `test/integration/topology-discovery.test.ts` (part 3: the real daemon, database,
+coordinator and minters, STS and the Kubernetes API on loopback, the reader at its seam: Discover now reads an account and
+its cluster into one graph with the minted read session and token, each mint recorded with no key; an account the vault mints
+nothing for and a cluster out of reach lose nothing of the rest), `test/domain/topology-discovery.test.ts` (the targets, the
+clusters to read, the schedule: one run per user and slot), `test/infra-plans/topology-reader.test.ts` (each AWS list page by
+page, read calls only; the Kubernetes lists page by page with the token, on loopback; a source none of whose lists answer),
+`test/ui/topology-discover.test.ts` (Discover now), `test/integration/topology.test.ts` (the real daemon and database: an API
 token reports a test account and a test cluster, the graph holds both and the links between them, a cluster out of reach
 keeps its snapshot, the event, the scope and the refusals), `test/ui/topology.test.ts` (filters, neighbours, the nodes each
 entry touched and the entries of a node, source words, the layout), `test/ui/infra-plans.test.ts` (each entry's subject),

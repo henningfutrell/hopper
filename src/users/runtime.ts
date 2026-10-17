@@ -18,7 +18,7 @@ import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts'; import { userCommandBoxes } from './command-boxes.ts';
+import { createTopologyDiscovery, type DiscoverAnswer, type TopologyDiscovery } from '../infra-plans/topology-discovery.ts'; import { createTopologyReader } from '../infra-plans/topology-reader.ts'; import { readClusters } from '../vault/clusters.ts'; import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts'; import { userCommandBoxes } from './command-boxes.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -126,7 +126,8 @@ export interface UserRuntimeOptions {
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
   /** Begins a `job-move` saga for this user's job that moves off its lost machine (issue #1569). Absent: such a job fails. */
   /** This user's `job-run` sagas (issue #1662): a claim's run is one, driven on any hopper. Absent: each run is driven where it was claimed. */
-  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; jobRuns?: { begin(userId: string, key: string, data: JobRunData): boolean; open(userId: string, jobIds: readonly string[]): Set<string> }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
+  /** A person's topology discovery run (issue #1781 part 3): the saga begun and driven. */
+  discoverTopology?: () => Promise<DiscoverAnswer | undefined>; jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; jobRuns?: { begin(userId: string, key: string, data: JobRunData): boolean; open(userId: string, jobIds: readonly string[]): Set<string> }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -176,7 +177,7 @@ export interface UserRuntime {
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
-  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests; needSteps: NeedSteps; // a job's need steps (issue #1007)
+  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests; needSteps: NeedSteps; topologyDiscovery: UserTopologyDiscovery; // a job's need steps (issue #1007); topology discovery (issue #1781 part 3)
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -184,7 +185,8 @@ export interface UserRuntime {
 }
 
 // The direct source (issue #901) pulls nothing, its jobs come through the route: a sync only retries a report that failed.
-const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000, AT_WORK: readonly string[] = ['running', 'waiting_answer', 'waiting_on']; // AT_WORK: a job whose need steps run (issue #1568)
+/** One user's topology discovery (issue #1781 part 3): its steps, and a run a person asks for. */
+export type UserTopologyDiscovery = TopologyDiscovery & { discover(): Promise<DiscoverAnswer | undefined> }; const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000, AT_WORK: readonly string[] = ['running', 'waiting_answer', 'waiting_on']; // AT_WORK: a job whose need steps run (issue #1568)
 /** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the decision goes on as before. */
 const JEV_TIMEOUT_MS = 30_000;
 
@@ -412,7 +414,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault, topologyDiscovery: { ...createTopologyDiscovery({ store, topology: proxy.githubProxy.topology, reader: seams.topologyReader ?? createTopologyReader(), secrets: () => vault.view().secrets, mint: (asset) => vault.mintForDiscovery(asset), overrides: () => readClusters(store.config) }), discover: () => o.discoverTopology?.() ?? Promise.resolve(undefined) }, // issues #558, #585, #586; topology discovery (issue #1781 part 3)
     machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
       tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined), leave: machineLeave({ userId: user.id, links: o.links, targets: () => host.targets(), jobsOn: (name) => jobsOnMachine(name), config: store.config, edit: (e) => host.edit(e) }) }, // issue #1284
     async start() {
