@@ -22,6 +22,7 @@ import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
 import { phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
 import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
+import { liveReader, type LivePoint } from '../telemetry/live.ts';
 
 export { BOX_IMAGE } from './box-image.ts';
 export { BOX_LABEL, USER_LABEL } from './owned.ts';
@@ -161,6 +162,12 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   // The need boxes running now (issue #1007): a sweep burns the hopper's other need boxes, left by a step whose remove
   // failed or by a hopper that stopped mid-step (issue #1349), and notes each burn in the ledger.
   const stepping = new Set<string>();
+  /** Where each need box of `stepping` runs, for the sandboxes that run now (issue #1486): `local` or `machine`. */
+  const steppingAt = new Map<string, 'local' | 'machine'>();
+  const needBoxesNow = (): LivePoint[] => (['local', 'machine'] as const).map((place) => ({
+    value: [...steppingAt.values()].filter((p) => p === place).length, attributes: { 'hopper.sandbox.kind': 'need', 'hopper.sandbox.place': place, 'hopper.sandbox.state': 'running' },
+  }));
+  let dropReader: (() => void) | undefined;
   /** Removes the need box and its home volume; whether neither is there after. */
   const burn = async (runtime: ContainerRuntime, box: { id: string; name: string }): Promise<boolean> => {
     await runtime.stop(box.id).catch(() => undefined);
@@ -259,7 +266,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       if (!at) return { exit: 125, problem: `${noRuntime}; and no machine of the user's with a container runtime is dialled in` };
       const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
       o.runs.start(ledger);
-      stepping.add(box.name);
+      stepping.add(box.name); steppingAt.set(box.name, at.machine === LOCAL ? 'local' : 'machine');
       let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
       try {
         // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts.
@@ -277,7 +284,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       } finally {
         o.runs.end(ledger.id, { at: o.clock.now().toISOString(), exit: r.exit, outcome: outcomeOf(r), ...(r.problem ? { problem: r.problem } : {}) });
         await burnAfter(at.runtime, ledger);
-        stepping.delete(box.name);
+        stepping.delete(box.name); steppingAt.delete(box.name);
       }
     },
 
@@ -285,6 +292,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     check,
     start() {
       if (timer) return;
+      dropReader = liveReader('hopper.sandboxes', needBoxesNow);
       endInterrupted();
       void burnPass();
       void check();
@@ -294,6 +302,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     async stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
+      dropReader?.(); dropReader = undefined;
       await Promise.allSettled([running, checking]);
     },
   };

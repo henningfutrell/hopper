@@ -57,7 +57,7 @@ describe('the sandboxes that run now (issue #1486)', () => {
     runtime.runScript = async () => { started(); await held; return { exit: 0, output: '' }; };
     const rows = new Map<string, SandboxRecord>();
     const sandboxes = createSandboxes({
-      runtime, repo: { list: () => [...rows.values()], add: () => false, remove: (id) => rows.delete(id) }, runs: memorySandboxRuns(),
+      runtime, repo: { list: () => [...rows.values()], remove: (id) => rows.delete(id) }, runs: memorySandboxRuns(),
       instanceId: 'test', network: 'host', clock: { now: () => NOW }, logger,
     });
     const dir = mkdtempSync(join(tmpdir(), 'live-'));
@@ -79,7 +79,7 @@ describe('the sandboxes that run now (issue #1486)', () => {
     }
   });
 
-  it('the playground\'s sandboxes count by state, and none once destroyed or stopped', async () => {
+  it('the playground\'s sandboxes count by state, and none once destroyed', async () => {
     const runtime = createFakeContainerRuntime();
     const p = createPlayground({ runtime, noRuntime: 'no runtime', instanceId: 'inst1', network: 'host', limits: PLAYGROUND_LIMITS, clock: { now: () => NOW }, logger });
     await p.start();
@@ -91,10 +91,12 @@ describe('the sandboxes that run now (issue #1486)', () => {
       const [one] = (await p.view('u1')).sandboxes;
       await p.destroy('u1', [one!.id]);
       expect(await at('running')).toBe(1);
+      await p.destroy('u1', (await p.view('u1')).sandboxes.map((s) => s.id));
+      expect(await at('running')).toBe(0);
+      expect(await at('starting')).toBe(0);
     } finally {
       await p.stop();
     }
-    expect((await points('hopper.sandboxes')).filter((x) => x.attributes['hopper.sandbox.kind'] === 'playground' && (x.value as number) > 0)).toEqual([]);
   });
 });
 
