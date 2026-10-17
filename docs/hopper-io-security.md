@@ -229,7 +229,9 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   - R5: only the kind of each executor goes out, from a closed list of the built-in executor plugins, else `other`. Never
     an executor's name from the plugins config, which can hold a host name, and never a third-party plugin's id.
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
-  everything at hopper.io wait for the issues in the table below.
+  everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound
+  actions, and its transport (one WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is
+  `docs/design.md` "Cloud link" (issue #464), a design, not built.
 
 ## What each child issue must show
 
