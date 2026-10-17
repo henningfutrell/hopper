@@ -300,6 +300,8 @@ describe('assess: the same failure as its run before', () => {
     expect(a).toMatchObject({ decision: 'person', auto: true, repeated: true });
     expect(a.retryInMs).toBeUndefined();
     expect(a.reasons.join(' ')).toMatch(/the same failure as the run before it/);
+    // The retry it would have had is not on it: nothing runs it again.
+    expect(a.reasons.join(' ')).not.toMatch(/transient: retry/);
     expect(a.summary).toMatch(/^Stopped: the same failure twice in a row\./);
   });
 

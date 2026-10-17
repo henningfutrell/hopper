@@ -164,7 +164,10 @@ describe('the same failure twice in a row', () => {
     const assessed = await waitFor(async () => (await a.job(again.body.id)).assessment, { what: 'the second failure assessed' });
     expect(assessed).toMatchObject({ decision: 'person' });
     expect(assessed.reasons.join(' ')).toMatch(/the same failure as the run before it/);
-    expect(a.user().store.failures.forJob(again.body.id)).toMatchObject({ pending: undefined, outcome: 'surfaced' });
+    const record = a.user().store.failures.forJob(again.body.id);
+    expect(record).toMatchObject({ outcome: 'surfaced' });
+    expect(record!.pending).toBeUndefined();
+    expect(record!.reasons.join(' ')).not.toMatch(/transient: retry/);
     expect(a.user().store.handoffs.list({ status: 'open', limit: 100 }).map((h) => h.jobId)).toEqual([again.body.id]);
   });
 });
