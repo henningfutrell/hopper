@@ -84,10 +84,12 @@ describe('herdr-claude executor: resume', () => {
     expect(s.clock.elapsed() - before).toBeLessThan(40000);
   });
 
-  it('fails with pane lost when the agent is gone', async () => {
+  // With a session recorded, a lost pane resumes in a new one (issue #1508, executor-herdr-lost.test.ts).
+  it('fails with pane lost when the agent is gone and no agent session is recorded', async () => {
     const { herdr, executor, job } = await onQuestion([ASK]);
     herdr.killAgent('jh-abcdef12');
-    expect(await executor.resume!(contextFor(job).ctx, 'French.')).toEqual({ kind: 'failed', error: 'pane lost' });
+    const { agentSession: _none, ...state } = job.executorState as Record<string, unknown>;
+    expect(await executor.resume!(contextFor({ ...job, executorState: state }).ctx, 'French.')).toEqual({ kind: 'failed', error: 'pane lost' });
   });
 
   it('fails with pane lost when the job carries no executor state', async () => {

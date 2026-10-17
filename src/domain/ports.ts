@@ -7,8 +7,7 @@ import type {
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
-import type { UserStore } from './store.ts';
-import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
+import type { UserStore } from './store.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
@@ -173,6 +172,8 @@ export interface Executor extends ExecutorTerminal {
    * shows none, or its pane or agent is gone; null when that cannot be told now. Must not throw. Absent → never asked.
    */
   ownCommandRuns?(job: Job): Promise<boolean | null>;
+  /** A job on its own wait (issue #1508): true when its pane is gone, so what ran in it stopped; null when that cannot be told now. Must not throw. */
+  paneLost?(job: Job): Promise<boolean | null>;
   /** Type `text` into a waiting job's pane (issue #1037), as a message to its agent; the job stays as it is. False: not delivered. Must not throw. */
   nudgeInPane?(job: Job, text: string): Promise<boolean>;
   /**

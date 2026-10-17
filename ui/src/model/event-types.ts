@@ -17,7 +17,7 @@ const ALL: Record<EventType, true> = {
   'job.dismissed': true,
   'job.unassigned': true, 'job.reassigned': true,
   'job.work_kept': true, 'job.work_removed': true, 'job.work_discard_failed': true, 'job.give_back_failed': true, 'job.pull_request_act_failed': true, 'job.containers_removed': true, 'job.cleanup_deferred': true, 'job.cleaned_up': true,
-  'job.parked': true, 'job.unparked': true, 'job.continued': true, 'job.waiting': true, 'job.wait_ended': true, 'job.own_command_nudged': true, 'job.own_command_stuck': true, 'job.wait_polled': true, 'job.waited_pull_request_ended': true, 'job.checkpointed': true, 'job.note_added': true, 'job.note_delivered': true, 'job.note_carried': true, 'terminal.opened': true, 'terminal.typed': true,
+  'job.parked': true, 'job.unparked': true, 'job.continued': true, 'job.waiting': true, 'job.wait_ended': true, 'job.own_command_nudged': true, 'job.own_command_stuck': true, 'job.wait_polled': true, 'job.waited_pull_request_ended': true, 'job.waited_items_ended': true, 'job.checkpointed': true, 'job.note_added': true, 'job.note_delivered': true, 'job.note_carried': true, 'terminal.opened': true, 'terminal.typed': true,
   'source.stalled': true, 'connected_account.expired': true, 'connected_account.renewed': true, 'connected_account.renewal_failed': true, 'ui_session.ended': true,
   'source.claim_released': true, 'source.intake_migrated': true, 'source.issues_assigned': true,
   'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true, 'auth.reopened': true, 'auth.dismissed': true,

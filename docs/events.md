@@ -1154,6 +1154,29 @@ Version 1 (`docs/schemas/job.waited_pull_request_ended.v1.json`). A pull request
 }
 ```
 
+## `job.waited_items_ended`
+
+Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, or the run's conclusion).
+
+| field | type | required |
+|---|---|---|
+| `items` | object[] | yes |
+
+```json
+{
+  "items": [
+    {
+      "url": "https://github.com/octo/identity/issues/199",
+      "state": "closed"
+    },
+    {
+      "url": "https://github.com/octo/platform/actions/runs/37998997248",
+      "state": "failure"
+    }
+  ]
+}
+```
+
 ## `job.checkpointed`
 
 Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at work, or of one just parked, or for a fresh read of its transcript (issue #1169), was taken and kept (issue #921): its agent session and its work not pushed, read on `machineId`, scrubbed of secrets. `bytes`: its size compressed. `session`: whether it holds the agent session (without it, the job cannot resume elsewhere). `commits`: the commits not pushed then. Only the latest checkpoint of a job is kept.

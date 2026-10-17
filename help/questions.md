@@ -13,7 +13,7 @@ A job asks a question in one of these ways:
 
 While a job waits on a question, its status is `waiting_answer`. It holds no lane. Its pane and its agent session stay open.
 
-A job that only waits for something outside (a review, a release) does not ask a question. It ends with `HOPPER_WAITING` and shows as on its own wait.
+A job that only waits for something outside (a review, a release) does not ask a question. It ends with `HOPPER_WAITING` and shows as on its own wait. When the wait names issues or pull requests (`owner/name#12`, `name#12`, `issue 12`) or a workflow run (`<repo> run 123456`, or its link), the hopper reads them at each sync. When all of them are closed, merged or finished, the hopper ends the wait. When the job's pane is lost (a restart) and only a background command in that pane could end the wait, the hopper ends the wait too, and the job goes on in a new pane.
 
 ### The escalation ladder
 

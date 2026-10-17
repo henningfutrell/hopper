@@ -2,9 +2,11 @@
 // tell whether to act, and the hopper can wake the job when it comes. The job names it on an `on:` line after
 // HOPPER_WAITING; with none, it is read from its `for:` and `until:`, and what reads as nothing else is an outside event.
 // A job never enters `waiting_on` without one (`waitEntryProblem`, checked where a job is written). The event that settles
-// it wakes the job (`settledBy`, `waitsFor`; engine/wait.ts). Pure.
+// it wakes the job (`settledBy`, `waitsFor`; engine/wait.ts). The items an item or outside wait names are watched too
+// (issue #1508, watched-items.ts). Pure.
 import { namesOwnCommand } from './own-command.ts';
 import type { Job } from './types.ts';
+import { endedNote } from './watched-items.ts';
 import type { WorkItem } from './work-items.ts';
 
 /** What about a pull request a job waits on. */
@@ -102,7 +104,9 @@ export type Settled = { note: string } & (
   | { kind: 'pull_request' | 'item'; repo: string; number: number }
   | { kind: 'job'; jobId: string }
   | { kind: 'question'; questionId: string }
-  | { kind: 'grant'; jobId: string });
+  | { kind: 'grant'; jobId: string }
+  // Issue #1508: everything the job's wait names ended (watched-items.ts).
+  | { kind: 'watched'; jobId: string });
 
 const AT = /github\.com\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/;
 const JOB_ENDS: Record<string, string> = { 'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'was cancelled' };
@@ -131,6 +135,10 @@ export function settledBy(e: { type: string; jobId?: string; data?: unknown }): 
       const item = at(str('key'));
       return item && { kind: 'item', ...item, note: `${str('key')} was closed` };
     }
+    case 'job.waited_items_ended': {
+      const items = Array.isArray(d.items) ? (d.items as { url: string; state: string }[]) : [];
+      return e.jobId ? { kind: 'watched', jobId: e.jobId, note: endedNote(items) } : undefined;
+    }
     case 'vault.granted': case 'vault.grant_denied':
       return e.jobId ? { kind: 'grant', jobId: e.jobId, note: `a vault grant was ${e.type === 'vault.granted' ? 'given' : 'denied'}` } : undefined;
   }
@@ -143,6 +151,7 @@ export function settledBy(e: { type: string; jobId?: string; data?: unknown }): 
 /** True when `job` is on its own wait on what `s` settled. A pull request or an item with no repository named is in the job's own. */
 export function waitsFor(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, s: Settled): boolean {
   const on = job.wait?.on;
+  if (job.status === 'waiting_on' && s.kind === 'watched') return job.id === s.jobId;
   if (job.status !== 'waiting_on' || !on || on.kind !== s.kind) return false;
   switch (on.kind) {
     case 'pull_request': case 'item': return 'number' in s && on.number === s.number && (on.repo ?? job.source?.repo) === s.repo;

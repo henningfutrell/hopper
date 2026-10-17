@@ -22,7 +22,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.unparked': { to: 'queued', elsewhere: true },
   'job.checkpointed': { machineId: 'laptop', bytes: 48213, session: true, commits: 2 },
   'job.continued': { handoffId: 'h1' },
-  'job.waiting': { for: 'write access to the repository', until: 'a background poll of the push', on: { kind: 'outside', what: 'write access to the repository' } }, 'job.own_command_nudged': { delivered: true }, 'job.own_command_stuck': {}, 'job.wait_polled': { on: { kind: 'pull_request', repo: 'octo/tools', number: 8, about: 'merge' } }, 'job.waited_pull_request_ended': { pullRequest: 'https://github.com/octo/tools/pull/8', state: 'closed' },
+  'job.waiting': { for: 'write access to the repository', until: 'a background poll of the push', on: { kind: 'outside', what: 'write access to the repository' } }, 'job.own_command_nudged': { delivered: true }, 'job.own_command_stuck': {}, 'job.wait_polled': { on: { kind: 'pull_request', repo: 'octo/tools', number: 8, about: 'merge' } }, 'job.waited_pull_request_ended': { pullRequest: 'https://github.com/octo/tools/pull/8', state: 'closed' }, 'job.waited_items_ended': { items: [{ url: 'https://github.com/octo/identity/issues/199', state: 'closed' }, { url: 'https://github.com/octo/platform/actions/runs/37998997248', state: 'failure' }] },
   'job.wait_ended': { by: 'person', note: 'Write access is granted.' },
   'job.note_added': { noteId: 'note-1', text: 'The instance is up on port 8443.', person: 'ada', via: 'ui' },
   'job.note_delivered': { noteIds: ['note-1'], delivery: 'turn' },

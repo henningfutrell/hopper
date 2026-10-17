@@ -79,6 +79,7 @@
         "job.own_command_stuck",
         "job.wait_polled",
         "job.waited_pull_request_ended",
+        "job.waited_items_ended",
         "job.checkpointed",
         "job.note_added",
         "job.note_delivered",

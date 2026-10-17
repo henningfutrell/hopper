@@ -39,7 +39,7 @@ import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
 import { createThreadAsks } from './thread-asks.ts';
-import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts';
+import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts'; import { watchedEnds } from './watched-ends.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
 import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts';
@@ -275,6 +275,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
       // Issue #1433: a pull request a job waits on that no follow records the end of; read at every sync, not only a round's.
       await waitedEnds(slot.source, jobsOf(slot));
+      // Issue #1508: the other items a job's wait names — issues, pull requests, workflow runs —, ended or not.
+      await watchedItemEnds(slot.source, jobsOf(slot));
     };
     try {
       await (slot.source.pass ? slot.source.pass(pass, paused) : pass()); // its line says why it takes nothing new (issue #1351)
@@ -345,7 +347,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob, kept: (s) => { const slot = slots.get(s.name); if (slot && running) outbox.soon(slot); } });
   const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
-  const waitedEnds = waitedPullRequestEnds(store);
+  const waitedEnds = waitedPullRequestEnds(store), watchedItemEnds = watchedEnds(store);
   const afterDone = createAfterDone({
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
