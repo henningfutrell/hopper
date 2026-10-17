@@ -307,11 +307,11 @@ export function renameBoot(o: {
   const jobs = withAdminStore(url, (store) => {
     const held = paneJobs(store.jobs.list({ status: [...PANE_JOB_STATUSES] }));
     if (held.length > 0) {
-      const pendingFile = join(env.HOPPER_WORK_DIR ?? '', 'update', 'pending.json');
+      const recordFile = join(env.HOPPER_WORK_DIR ?? '', 'update', 'pending.json');
       let to: unknown;
-      try { to = (JSON.parse(readFileSync(pendingFile, 'utf8')) as { to?: unknown }).to; } catch { /* no pending update */ }
+      try { to = (JSON.parse(readFileSync(recordFile, 'utf8')) as { to?: unknown }).to; } catch { /* no apply record */ }
       store.events.append({ type: 'update.failed', data: { ...(typeof to === 'string' ? { to } : {}), error: waitsFor(held) } });
-      rmSync(pendingFile, { force: true });
+      rmSync(recordFile, { force: true });
     }
     return held;
   });
