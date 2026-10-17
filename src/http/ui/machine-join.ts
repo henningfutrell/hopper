@@ -10,7 +10,8 @@ import { mintJoinCode } from '../../machines/join-code.ts';
 import { issueLanePoolKey } from '../../machines/lane-pool.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
-import { userIdOf, type TenantParts } from '../tenants.ts';
+import { roleAllows } from '../../domain/types.ts';
+import { signedInOf, userIdOf, type TenantParts } from '../tenants.ts';
 import { joinTemplate } from './vault.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
@@ -38,9 +39,11 @@ export function registerMachineJoinRoutes(app: FastifyInstance, o: {
     return mintJoinCode(o.instance, o.clock, id, template === undefined ? {} : { template });
   });
 
-  app.get('/api/machines/pool-key', o.admin, async (req) => {
-    const id = userIdOf(req);
-    if (id === undefined) throw new HttpError(401, 'sign in to see your lane pool key');
+  // A read, so not behind the mutation guard (it asks an Origin and JSON): the session's user's own key, an admin's.
+  app.get('/api/machines/pool-key', async (req) => {
+    const id = userIdOf(req), s = signedInOf(req);
+    if (id === undefined || s === undefined) throw new HttpError(401, 'sign in to see your lane pool key');
+    if (!roleAllows(s.role, 'admin')) throw new HttpError(403, `role ${s.role} may not see the lane pool key; it needs admin`);
     const issuedAt = o.instance.lanePoolKeys.issuedAt(id);
     return issuedAt === undefined ? {} : { issuedAt };
   });
