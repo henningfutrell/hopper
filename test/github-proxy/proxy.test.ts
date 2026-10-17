@@ -133,8 +133,12 @@ describe('issue lineage: an issue a job files is a child of the job\'s issue (is
       '\n\n---\nFollow-up of octo/tools#7.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true })).toBe(
       '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.');
-    // A routed child keeps the mark that a job filed it: it is never of a trusted origin, so a person approves it.
-    expect(FILED_BY_JOB.test(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true }))).toBe(true);
+    // Every child keeps the mark that a job filed it, its lineage line before it (issue #1510): it is never of a trusted
+    // origin, so a person approves a routed child.
+    for (const parent of [undefined, { repo: 'octo/tools', number: 7, required: false }, { repo: 'octo/tools', number: 7, required: true }]) {
+      expect(FILED_BY_JOB.test(`The text.${filedNote('job-1', 'r1', parent)}`)).toBe(true);
+    }
+    expect(FILED_BY_JOB.test('The text.\n\n---\nA line.\nAnother line.\nFiled through hopper for job `j`')).toBe(false);
     expect(filedNote('job-1', 'r1')).toBe('\n\n---\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
   });
 });
