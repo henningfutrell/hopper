@@ -289,14 +289,17 @@ function hopperPod(context: string): string {
  * A runner-only release (issue #1454): the lane pods alone, in a namespace of their own, join the hopper by its URL with
  * a lane pool key it issued (`hopper pool-key`), and the hopper does not start again. The machine shows online and ready
  * (no infra credentials on it), and no pod of the release mounts a host path or holds a credential in the jobs'
- * container. A hopper image older than `hopper pool-key` (the dev channel before this change ships) gives the key its
- * own release made instead, and the check says so.
+ * container. A hopper image older than `hopper pool-key` (the dev channel before this change ships) lets no pod join
+ * with its install's key (it gives such pods to a user `admin` a fresh hopper does not have): then the check takes
+ * that key, does not wait for the join, and checks that the join step runs and tries again without a crash, and the
+ * pods' spec. It says so.
  */
 function runnerOnly(context: string, tag: string | undefined): string | null {
   const podBefore = hopperPod(context);
   let key = inPod(context, '', 'hopper', 'pool-key').stdout.trim();
-  if (!/^[0-9a-f]{64}$/.test(key)) {
-    console.log('this hopper image issues no lane pool key yet (hopper pool-key): the runner uses the key of the hopper\'s own release');
+  const issued = /^[0-9a-f]{64}$/.test(key);
+  if (!issued) {
+    console.log('this hopper image issues no lane pool key yet (hopper pool-key): the runner uses the key of the hopper\'s own release, and the check does not wait for the join');
     const b64 = sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'get', 'secret', 'hopper-lane-pool', '-o', 'jsonpath={.data.key}'], true).stdout.trim();
     key = Buffer.from(b64, 'base64').toString('utf8');
     if (!/^[0-9a-f]{64}$/.test(key)) return 'no lane pool key: neither hopper pool-key nor the Secret hopper-lane-pool gave one';
@@ -308,20 +311,11 @@ function runnerOnly(context: string, tag: string | undefined): string | null {
   const secret = spawnSync('kubectl', ['--context', context, '--namespace', RUNNER_NAMESPACE, 'create', '-f', '-'],
     { input: manifest, encoding: 'utf8', stdio: ['pipe', 'inherit', 'inherit'] });
   if (secret.status !== 0) return 'kubectl could not make the Secret runner-pool-key';
-  const install = sh('helm', ['install', 'runner', CHART, '--kube-context', context, '--namespace', RUNNER_NAMESPACE, '--wait', '--timeout', '15m',
+  const install = sh('helm', ['install', 'runner', CHART, '--kube-context', context, '--namespace', RUNNER_NAMESPACE, ...(issued ? ['--wait', '--timeout', '15m'] : []),
     ...[...(tag ? [`image.tag=${tag}`] : []), 'hopper.enabled=false', 'lanes.replicas=1', `lanes.hopperUrl=${HOPPER_URL}`, 'lanes.existingSecret=runner-pool-key'].flatMap((v) => ['--set', v])]);
   if (install.status !== 0) return 'helm install of the runner-only release did not succeed';
-
-  let seen: { id: string; online: boolean; infraCredentials?: string[] } | undefined;
-  for (let i = 0; i < 60; i++) {
-    const r = inPod(context, adminPassword, 'node', '-e', READ_MACHINES);
-    try { seen = (JSON.parse(r.stdout) as { id: string; online: boolean; infraCredentials?: string[] }[]).find((m) => m.id === RUNNER_POD); } catch { seen = undefined; }
-    if (seen?.online && Array.isArray(seen.infraCredentials)) break;
-    spawnSync('sleep', ['5']);
-  }
-  if (!seen?.online) return `the runner's lane pod ${RUNNER_POD} is not online on the hopper: ${JSON.stringify(seen ?? 'not there')}`;
-  if (!Array.isArray(seen.infraCredentials)) return `the hopper did not read the infra credentials of ${RUNNER_POD}: it cannot say it is ready`;
-  if (seen.infraCredentials.length > 0) return `${RUNNER_POD} is not ready: it holds the infra credentials ${seen.infraCredentials.join(', ')}`;
+  const ready = issued ? joined(context) : joinRuns(context);
+  if (ready) return ready;
 
   const pods = (listPods(context) ?? []).filter((p) => p.metadata.namespace === RUNNER_NAMESPACE);
   if (pods.length === 0) return `no pod in ${RUNNER_NAMESPACE}`;
@@ -333,7 +327,48 @@ function runnerOnly(context: string, tag: string | undefined): string | null {
   if (runtime) return runtime;
   const podAfter = hopperPod(context);
   if (podAfter !== podBefore) return `the hopper started again while the runner joined: ${podBefore} became ${podAfter}`;
-  console.log(`runner-only release: ${RUNNER_POD} joined the hopper at ${HOPPER_URL}, online and ready, no host path, no credential, no hopper restart`);
+  console.log(issued
+    ? `runner-only release: ${RUNNER_POD} joined the hopper at ${HOPPER_URL}, online and ready, no host path, no credential, no hopper restart`
+    : `runner-only release: ${RUNNER_POD} tries to join the hopper at ${HOPPER_URL} with no crash, no host path, no credential, no hopper restart`);
+  return null;
+}
+
+/** The runner's lane pod shows online and ready on the hopper: no infra credentials on it. */
+function joined(context: string): string | null {
+  let seen: { id: string; online: boolean; infraCredentials?: string[] } | undefined;
+  for (let i = 0; i < 60; i++) {
+    const r = inPod(context, adminPassword, 'node', '-e', READ_MACHINES);
+    try { seen = (JSON.parse(r.stdout) as { id: string; online: boolean; infraCredentials?: string[] }[]).find((m) => m.id === RUNNER_POD); } catch { seen = undefined; }
+    if (seen?.online && Array.isArray(seen.infraCredentials)) break;
+    spawnSync('sleep', ['5']);
+  }
+  if (!seen?.online) return `the runner's lane pod ${RUNNER_POD} is not online on the hopper: ${JSON.stringify(seen ?? 'not there')}`;
+  if (!Array.isArray(seen.infraCredentials)) return `the hopper did not read the infra credentials of ${RUNNER_POD}: it cannot say it is ready`;
+  if (seen.infraCredentials.length > 0) return `${RUNNER_POD} is not ready: it holds the infra credentials ${seen.infraCredentials.join(', ')}`;
+  return null;
+}
+
+/**
+ * The runner's join step runs and tries the join again, with no crash: its home copied into the volume, the join refused
+ * for now. Its last lines are printed: they say why the hopper does not let it in.
+ */
+function joinRuns(context: string): string | null {
+  const kubectl = (...args: string[]): { status: number | null; stdout: string } => sh('kubectl', ['--context', context, '--namespace', RUNNER_NAMESPACE, ...args], true);
+  if (kubectl('wait', '--for=create', `pod/${RUNNER_POD}`, '--timeout=180s').status !== 0) return `no lane pod ${RUNNER_POD} in ${RUNNER_NAMESPACE}`;
+  const state = (): { restarts: number; running: boolean } => {
+    const out = kubectl('get', 'pod', RUNNER_POD, '-o', 'jsonpath={.status.initContainerStatuses[0].restartCount} {.status.initContainerStatuses[0].state.running.startedAt}').stdout.trim().split(' ');
+    return { restarts: Number(out[0] || 0), running: Boolean(out[1]) };
+  };
+  let s = state();
+  // The box image is large: its pull takes minutes.
+  for (let i = 0; i < 180 && !s.running && s.restarts === 0; i++) { spawnSync('sleep', ['5']); s = state(); }
+  // Long enough for a join step that fails at once to stop and be started again.
+  spawnSync('sleep', ['60']);
+  s = state();
+  const log = kubectl('logs', RUNNER_POD, '-c', 'join', '--tail', '3').stdout.trim();
+  if (log) console.log(`the join step of ${RUNNER_POD} says:\n${log}`);
+  if (s.restarts > 0) return `the join step of ${RUNNER_POD} stopped and was started again ${s.restarts} times: it must try the join again, not stop`;
+  if (!s.running) return `the join step of ${RUNNER_POD} does not run`;
   return null;
 }
 
