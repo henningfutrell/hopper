@@ -39,9 +39,10 @@ describe('herdr-claude executor: nudges', () => {
   });
 
   it('nudges in a row after idleNudgeMs, then 1, 5, 15 and 30 minutes, then no more: the job shows as waiting until it times out', async () => {
+    // Every fake-clock poll is real work: two hours (the nudges take 51 minutes) keep the run short on a loaded runner.
     const s = setup({ turns: [NOTE, NOTE, NOTE, NOTE, NOTE, NOTE, NOTE] }, { idleNudgeMs: 20000 });
     const times = sendTimes(s);
-    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', timeoutMs: 4 * HOUR }));
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', timeoutMs: 2 * HOUR }));
     expect(await s.executor.run(ctx)).toMatchObject({ kind: 'failed', error: 'timed out' });
     expect(s.herdr.prompts.slice(1).map((p) => p.text)).toEqual(Array(5).fill(STATUS_NOTE_NUDGE));
     const gaps = times.slice(1).map((t, i) => t - times[i]!);
@@ -50,7 +51,7 @@ describe('herdr-claude executor: nudges', () => {
       expect(gaps[i]).toBeLessThan(gap + 10000);
     });
     expect(progress.map((p) => p.message)).toContain('waiting: 6 status notes in a row without a marker; no more nudges until claude works again');
-  });
+  }, 60000);
 
   it('a job that works again by itself after the nudges stopped starts a new row of nudges', async () => {
     const s = setup({ turns: [NOTE, NOTE, NOTE, NOTE, NOTE, NOTE, NOTE, DONE] }, { idleNudgeMs: 20000 });
