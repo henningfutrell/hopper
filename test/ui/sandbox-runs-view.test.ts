@@ -236,6 +236,17 @@ describe('Settings → Vault: the auto-approve policy (issue #1001)', () => {
   });
 });
 
+describe('Settings → Vault: the standing read grant (issue #1472)', () => {
+  it('shows it off by default; the switch posts itself', async () => {
+    const daemon = await boot('#settings/vault', approvals);
+    const sw = approvals()!.querySelector<HTMLButtonElement>('[aria-label="Standing read grant"]')!;
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    await act(async () => { sw.click(); });
+    await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-approvals')).toBeDefined());
+    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-approvals')!.body).toEqual({ standingReadGrant: true });
+  });
+});
+
 describe('cards that say what the sandbox is for (issue #1001)', () => {
   it('a template card shows why, the job with its link, the plan, each asset in plain words and a readable name first', async () => {
     await boot('#access-requests', () => document.querySelector(`[data-template-approval="${HIGH.name}"]`));

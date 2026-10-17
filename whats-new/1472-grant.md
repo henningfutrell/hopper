@@ -1,0 +1,1 @@
+- An admin can turn on a standing read grant: jobs that only read what the read policy allows get their read access with no click from a person.

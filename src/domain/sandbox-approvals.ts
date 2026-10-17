@@ -24,6 +24,11 @@ export interface SandboxApprovals {
    * 0: until an admin forgets it. Absent: the default, a week.
    */
   rememberWritesHours?: number;
+  /**
+   * The standing read grant (issue #1472, design.md "Vault grants"): on, a job on a box of a template whose needs the read
+   * policy holds entirely as reads gets the vault grant with no person (`by` STANDING_READ_GRANTER). Absent: off.
+   */
+  standingReadGrant?: boolean;
 }
 
 /** The auto-approve policy in force. */
@@ -64,15 +69,17 @@ export const sandboxYolo = (a: SandboxApprovals): boolean => a.skipTemplateAppro
 /**
  * The toggles after an edit: `yolo` sets both, then each toggle named sets itself. Absent fields keep what was there.
  */
-export function editedApprovals(was: SandboxApprovals, e: { yolo?: boolean; skipTemplateApproval?: boolean; skipSandboxApproval?: boolean; autoApprove?: Partial<AutoApprove>; rememberWritesHours?: number }): SandboxApprovals {
+export function editedApprovals(was: SandboxApprovals, e: { yolo?: boolean; skipTemplateApproval?: boolean; skipSandboxApproval?: boolean; autoApprove?: Partial<AutoApprove>; rememberWritesHours?: number; standingReadGrant?: boolean }): SandboxApprovals {
   const base = e.yolo === undefined ? was : { skipTemplateApproval: e.yolo, skipSandboxApproval: e.yolo };
   const auto = e.autoApprove ? { autoApprove: { ...autoApproveOf(was), ...e.autoApprove } } : was.autoApprove ? { autoApprove: { ...was.autoApprove } } : {};
   const hours = e.rememberWritesHours ?? was.rememberWritesHours;
+  const standing = e.standingReadGrant ?? was.standingReadGrant;
   return {
     skipTemplateApproval: e.skipTemplateApproval ?? base.skipTemplateApproval,
     skipSandboxApproval: e.skipSandboxApproval ?? base.skipSandboxApproval,
     ...auto,
     ...(hours !== undefined ? { rememberWritesHours: hours } : {}),
+    ...(standing !== undefined ? { standingReadGrant: standing } : {}),
   };
 }
 

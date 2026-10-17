@@ -49,3 +49,16 @@ describe('remembered write approvals in the settings (issue #1001)', () => {
     expect(s.getRememberedWrites()).toEqual([w]);
   });
 });
+
+describe('the standing read grant in the settings (issue #1472)', () => {
+  it('a value saved before it reads as off; an edit sets it, yolo leaves it, and an edit that names it not keeps it', () => {
+    const { s } = settings('{"skipTemplateApproval":true,"skipSandboxApproval":true}');
+    expect(s.getSandboxApprovals()!.standingReadGrant).toBeUndefined();
+    const on = editedApprovals(s.getSandboxApprovals()!, { standingReadGrant: true });
+    s.setSandboxApprovals(on);
+    expect(s.getSandboxApprovals()!.standingReadGrant).toBe(true);
+    expect(editedApprovals(on, { yolo: false }).standingReadGrant).toBe(true);
+    expect(editedApprovals(on, { standingReadGrant: false }).standingReadGrant).toBe(false);
+    expect(editedApprovals(NO_SKIPS, { yolo: true }).standingReadGrant).toBeUndefined();
+  });
+});

@@ -4,6 +4,8 @@
 // Retry keep it; the box's template still bounds what a granted job gets.
 import { authorizesVault, DIRECT_SOURCE, directKey, type DirectJob } from './direct-jobs.ts';
 import { OPERATOR_CLI_NAME, type ActionVia } from './failures.ts';
+import type { OperationProfile } from './access.ts';
+import { inReadPolicy, type ReadPolicy } from './read-policy.ts';
 import { TERMINAL_STATUSES, type Job, type JobStatus } from './types.ts';
 
 /** A person's grant of the vault to a job's item: the item's key, the job it was granted on, who and when. */
@@ -18,6 +20,18 @@ export interface VaultGrantAsk { job: string; key: string; machine?: string; tem
 
 /** What a grant is kept for: the job's item (its source key); a job of no source, the job itself. */
 export const grantKeyOf = (job: Pick<Job, 'id' | 'source'>): string => job.source?.key ?? job.id;
+
+/** Who grants a job the vault with no person when the user's standing read grant is on (issue #1472). */
+export const STANDING_READ_GRANTER = 'standing read grant';
+
+/**
+ * Whether the standing read grant covers a template (issue #1472): it has needs, every one a read the read policy holds,
+ * and no vault secret. A write, sync or apply, a read outside the policy, or a secret: a person's grant, as before.
+ */
+export function readsOnlyInPolicy(t: { secrets: readonly string[]; profiles?: readonly OperationProfile[] | undefined }, policy: ReadPolicy | undefined): boolean {
+  const needs = t.profiles ?? [];
+  return t.secrets.length === 0 && needs.length > 0 && needs.every((p) => p.operation === 'read' && inReadPolicy(policy, p.asset));
+}
 
 /** Why a job with no grant gets nothing: what the job is told, and what `vault.refused` records. */
 export const noGrant = (job: string): string => `job ${job.slice(0, 8)} has no vault grant: a person grants it the vault on Access requests, then ask again`;
