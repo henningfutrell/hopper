@@ -16763,7 +16763,35 @@ Nothing is written to GitHub: no label, no comment, no close; an issue a person 
 (issue #387). At each sync a request whose hash a person declined (`IntakeTrust.declined`) is the outcome
 `a request you declined: …`, group `declined`, with no action: no job, and not waiting in Intake, which counts it in one
 line. An edit to its title or body makes a new hash, so it is a request card again. A declined text cannot be approved
-later; the request's author edits it, or a trusted actor files the work again.
+later; the request's author edits it, or a trusted actor files the work again. (Issue #1710 changed this for GitHub
+cards: see "Decline" below. A GitLab card, and a decline recorded before issue #1710, still work this way.)
+
+#### Decline (issue #1710, 2026-10-17)
+
+The decline above left the issue open with its labels, its assignee and no comment: from GitHub it looked queued, and
+nothing ran. It was also kept only in this hopper's events, so another hopper on the repository, or one rebuilt, offered
+the card again. Now the person picks what happens to the issue, the page says it before the click, and GitHub keeps the
+record.
+
+- **The choice.** `{ kind: 'decline', keys: [key], hash, choice }`, `choice` `close` or `open`
+  (`src/domain/intake-decline.ts`). `close`: the hopper takes off the source's label, the priority labels and `hopper:done`
+  the last listing showed, and closes the issue as not planned. `open`: the hopper takes off the source's label only; the
+  issue stays open. Either way it posts one comment (`declineNote`): what the hopper did, and how to queue it again. The
+  comment names no person and never quotes the issue. A reopened card's comment says it was declined after a reopen.
+- **The default.** Settings → Intake, Decline (`GET /api/intake-decline`, `POST /ui/api/intake-decline`, admin,
+  `intake.decline_changed`): the choice the confirm step offers first, for a request card (`open` by default) and for a
+  reopened card (`close` by default). A decline with no `choice` takes it.
+- **The outbox.** The writes are rows in the GitHub outbox (act `decline`, tagged with the hash), kept in the transaction of
+  `source.request_declined` (now with `choice`): remove the labels, the comment, and, for `close`, the new change
+  `close_not_planned` (`GitHubApi.closeAsNotPlanned`), sent last. Each is safe to send again: a label already gone is no
+  error, the comment carries its hidden key (issue #1590), and a closed issue stays closed. `source.request_decline_written`
+  is recorded once GitHub took the last row. A failed row shows on the item with Retry, as every outbox row.
+- **The record.** `IntakeTrust.declined` holds a decline with a choice only until its written event: until then the item is
+  in group `declined` with no action. After it, the issue has no source label, so no listing of any hopper has it. It comes
+  back only when a person adds the label again (and reopens it, when it was closed); an edit to its title or body does
+  nothing. Its card is then judged as any new card.
+- **Neutral text.** This is one of the exceptions of the rule "GitHub text is neutral" (`AGENTS.md`): the person's own act,
+  a fixed comment.
 
 **Reopened (issue #1126, 2026-10-14).** An issue whose job was done keeps `hopper:done`, so when a person reopened it —
 the merged pull request did not fix it all — intake said `done, but the issue is still open` and offered nothing: no job
@@ -16778,8 +16806,9 @@ approval of the same text (`requestOpenedSince`: since the last `source.request_
 Approve is the card's Approve, checked the same way; it also takes `hopper:done` off the issue (a label, the hopper's own
 write) before it records the text. The next sync — at once, as for every Approve — lists the issue with no end label, judges
 its origin as any issue's (a trusted origin, or the text just approved), and makes a new job of the item, which runs again
-from its ended job (`rerunOf`). Decline makes no job and writes nothing; the item is `done` again (a dropped item whose pull
-request merged is done). An issue with `hopper:done` and no job here, another hopper's, stays `done, but the issue is still
+from its ended job (`rerunOf`). Decline makes no job; the item is `done` again (a dropped item whose pull
+request merged is done). By default it closes the issue as not planned and takes off `hopper:done` (issue #1710,
+"Decline" above). An issue with `hopper:done` and no job here, another hopper's, stays `done, but the issue is still
 open`.
 
 No GitHub delivery is needed: the source lists every open labelled issue of its job repositories at each intake sync

@@ -32,8 +32,8 @@ export const PROMOTED_CLOSED = 'done: promoted to the tested branch with its bat
 export const PROMOTED_OPEN = 'done: promoted to the tested branch with its batch; closing the issue failed, asked again at the next sync';
 /** Why a card is a request when Access cannot be asked: no auto-approval holds then (issue #1268). */
 export const UNCHECKED = 'trusted actors cannot be checked';
-/** A request card a person declined (issue #1035). */
-export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
+/** A request card a person declined (issue #1035), while GitHub takes the decline's writes (issue #1710). */
+export const DECLINED_REASON = 'a request you declined';
 
 export type Act = Omit<OriginActor, 'trusted'>;
 
@@ -96,11 +96,17 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
 }
 
 /** An outcome with its request, if it has one: a request card, or a text a person declined (issue #1035), which waits for
- *  nobody and is offered nothing until an edit makes it a new request. */
+ *  nobody and is offered nothing; once GitHub took the decline (issue #1710) no listing has it until a person labels it again. */
 export function requestOutcome(x: IntakeOutcome, r: IntakeRequest | undefined, trust: Pick<IntakeTrust, 'declined'>): IntakeOutcome {
   if (!r) return x;
   if (trust.declined(x.key, r.hash)) return { ...x, reason: DECLINED_REASON, group: 'declined' };
   return { ...x, reason: r.reopened ? REOPENED_REASON : REQUEST_REASON, action: 'approve', group: 'request', request: r };
+}
+
+/** An item whose decline's GitHub writes are not sent (issue #1710): declined, whatever the sync made of it, and offered nothing. */
+export function declinedOutcome(x: IntakeOutcome): IntakeOutcome {
+  const { action: _action, request: _request, jobId: _jobId, jobStatus: _jobStatus, ...rest } = x;
+  return { ...rest, reason: DECLINED_REASON, group: 'declined' };
 }
 
 /**

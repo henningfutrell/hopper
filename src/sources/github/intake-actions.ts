@@ -1,14 +1,16 @@
 // The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve and Decline
 // (issue #1035) on a request card — on a reopened card (issue #1126) Approve also takes `hopper:done` off —, and Take off the backburner — each only on an item the source's last discover offered
-// it for. Decline writes nothing to GitHub. Take into Intake (issue #1176): only on an issue an untracked pull request the
+// it for. Decline (issue #1710) closes the issue as not planned or leaves it open, as the person picked, each without the
+// source's label, and comments what it did (`declineWrites`). Take into Intake (issue #1176): only on an issue an untracked pull request the
 // last census listed closes, and that is no work item. Each GitHub write is a row in the GitHub outbox (`outbox.ts`,
 // issue #1238), sent after the answer, and its event is recorded once GitHub took it. Apart from source.ts for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import type { GitHubOutbox } from './outbox.ts';
-import type { OutboxChange, OutboxEvent } from '../../domain/github-outbox.ts';
-import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
+import type { OutboxChange, OutboxEvent, OutboxInput } from '../../domain/github-outbox.ts';
+import { DEFAULT_INTAKE_DECLINE, declineChoiceFor, declineNote, type DeclineChoice } from '../../domain/intake-decline.ts';
+import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was shown: read it again';
@@ -21,7 +23,7 @@ export const NOT_OFFERED_TAKE_IN = 'not offered: no untracked pull request close
 /** Approve resolved again (issue #1316, approvals.ts `resolve`): why not. */
 export const NOT_SHOWN = 'not offered: the source does not list it as a request now';
 export const HAS_JOB = 'already taken: it has a job here';
-export const DECLINED = 'declined before: an edit to its title or body shows it again';
+export const DECLINED = 'declined: a person declined this text';
 const NO_ACCOUNT = 'no GitHub account connected';
 const NOTHING_FAILED = 'no GitHub write of this item failed';
 
@@ -40,10 +42,12 @@ export interface IntakeActionContext {
    * names. `approved` or `done`, else why not. Absent: not resolved again.
    */
   resolve?(key: string, a: IntakeAction): Promise<string>;
-  /** Keeps a person's decline of a request card (issue #1035); the text a person approved (issue #1045). */
-  trust: Pick<IntakeTrust, 'decline' | 'approvedText'>;
-  /** The source's label: what Take into Intake gives an issue. */
+  /** Keeps a person's decline of a request card (issue #1035) and its default choice (issue #1710); the text a person approved (issue #1045). */
+  trust: Pick<IntakeTrust, 'decline' | 'approvedText' | 'declineDefaults'>;
+  /** The source's label: what Take into Intake gives an issue, and what a decline takes off. */
   label: string;
+  /** The source's priority labels: what a decline that closes the issue takes off too (issue #1710). */
+  priorityLabels: readonly string[];
   /** The issues the last census offers to Intake, each with the untracked pull request that closes it (issue #1176). */
   takeIn: Map<string, UntrackedPullRequest>;
   /** The GitHub writes after the answer (issues #1194, #1238). */
@@ -68,6 +72,23 @@ function takeIn(c: IntakeActionContext, keys: string[]): IntakeActionResult {
     done.push(key);
   }
   return { done, failed };
+}
+
+/**
+ * A decline's GitHub writes (issue #1710): the source's label off — with the priority labels and `hopper:done` the last
+ * listing showed when it closes —, one comment, and the close as not planned. `source.request_decline_written` is recorded
+ * once GitHub took the last of them.
+ */
+function declineWrites(c: IntakeActionContext, key: string, request: IntakeRequest, choice: DeclineChoice): Pick<OutboxInput, 'change' | 'event'>[] {
+  const listed = c.listedLabels.get(key) ?? [];
+  const labels = choice === 'close' ? [...new Set([c.label, ...listed.filter((l) => l === LABEL_DONE || c.priorityLabels.includes(l))])] : [c.label];
+  const written: OutboxEvent = { type: 'source.request_decline_written', data: { source: c.source, key, hash: request.hash, choice } };
+  const note: OutboxChange = { op: 'comment', body: declineNote(choice, request.reopened !== undefined, c.label) };
+  return [
+    { change: { op: 'remove_labels', labels } },
+    choice === 'close' ? { change: note } : { change: note, event: written },
+    ...(choice === 'close' ? [{ change: { op: 'close_not_planned' } as OutboxChange, event: written }] : []),
+  ];
 }
 
 /** Decline is offered where Approve is: on a request card. */
@@ -139,9 +160,11 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
           if (r !== undefined) { failed[key] = r === NOT_SHOWN ? TEXT_CHANGED_SINCE_SHOWN : r; continue; }
         }
       } else if (a.kind === 'decline') {
-        // Only the text the person read, as the last sync showed it. Nothing on GitHub.
-        if (!x.request || x.request.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
-        c.trust.decline(c.source, key, x.request, a.acting);
+        // Only the text the person read, as the last sync showed it. Its GitHub writes are rows, kept with the decline.
+        const r = x.request;
+        if (!r || r.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
+        const choice = a.choice ?? declineChoiceFor(c.trust.declineDefaults?.() ?? DEFAULT_INTAKE_DECLINE, r.reopened !== undefined);
+        c.outbox.queue('decline', key, x.repo, declineWrites(c, key, r, choice), { tag: r.hash, local: () => c.trust.decline(c.source, key, r, a.acting, choice) });
       } else if (!c.outbox.sent(a.kind, key)) {
         const write = gitHubWrite(c, a.kind, key);
         if (typeof write === 'string') { failed[key] = write; continue; }

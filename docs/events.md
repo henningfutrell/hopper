@@ -1173,7 +1173,7 @@ Version 1 (`docs/schemas/job.waited_pull_request_ended.v1.json`). A pull request
 
 ## `job.waited_items_ended`
 
-Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, or the run's conclusion).
+Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. Also at once when one of them does not exist (issue #1691): then `items` holds only those, `state` `not_found`, so the job rewrites its wait. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, the run's conclusion, or `not_found`).
 
 | field | type | required |
 |---|---|---|
@@ -1609,6 +1609,30 @@ Version 1 (`docs/schemas/intake.auto_approval_changed.v1.json`). An admin change
 }
 ```
 
+## `intake.decline_changed`
+
+Version 1 (`docs/schemas/intake.decline_changed.v1.json`). An admin changed the choice Decline offers first in Settings → Intake (issue #1710): `request` for a request card, `reopened` for a reopened card, each `close` or `open`. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "request": "open",
+    "reopened": "close"
+  },
+  "to": {
+    "request": "close",
+    "reopened": "close"
+  },
+  "by": "octocat"
+}
+```
+
 ## `job.origin_judged`
 
 Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origins were judged (issue #652, the backfill: tenant migration 39) got its item's origin: its issue is of a trusted origin (`trusted`), or a person approved its request card (`approved`). Its hold for its origin ends. Until then the job does not start.
@@ -1687,7 +1711,7 @@ Version 1 (`docs/schemas/source.issue_taken_in.v1.json`). A person took an issue
 
 ## `source.request_declined`
 
-Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a request card (issue #1035): an issue not of a trusted origin, whose title and body hash as `hash`. It makes no job and leaves the request cards waiting in Intake; an edit to its title or body makes it a request card again. Nothing is written to GitHub. `person` and `via`: who declined it. Never the text.
+Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a request card (issue #1035): an issue not of a trusted origin, whose title and body hash as `hash`. It makes no job and leaves the request cards waiting in Intake. `choice` (issue #1710): `close`, the hopper closes the issue as not planned and takes off the source's label, its priority labels and `hopper:done`; `open`, the issue stays open and loses the source's label. Either way one comment on the issue says what the hopper did; these writes are rows in the GitHub outbox, and `source.request_decline_written` follows once GitHub took them. Then the issue comes back only when a person adds the label again. With no `choice` (before issue #1710, or a GitLab card), nothing is written, and an edit to its title or body makes it a request card again. `person` and `via`: who declined it. Never the text.
 
 | field | type | required |
 |---|---|---|
@@ -1697,6 +1721,7 @@ Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a 
 | `author` | string | yes |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
+| `choice` | `close` \| `open` | no |
 
 ```json
 {
@@ -1705,7 +1730,28 @@ Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a 
   "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "author": "stranger",
   "person": "octocat",
-  "via": "ui"
+  "via": "ui",
+  "choice": "open"
+}
+```
+
+## `source.request_decline_written`
+
+Version 1 (`docs/schemas/source.request_decline_written.v1.json`). GitHub took the writes of a person's decline (issue #1710): the labels came off, the comment was posted and, for `choice` `close`, the issue was closed as not planned. From now on the issue's labels and state are the record of the decline, the same on every hopper.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `choice` | `close` \| `open` | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "choice": "open"
 }
 ```
 

@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { GhLink } from '@/components/job';
 import { RequestCard } from '@/components/request-card';
 import type { IntakeActionKind, IntakeOutcome } from '../../../src/domain/intake.ts';
-import { INTAKE_GROUP_LABEL, intakeGroups, intakeRef, jobEnded, repoOf } from '@/model/intake';
+import { DECLINED_ROW, INTAKE_GROUP_LABEL, intakeGroups, intakeRef, jobEnded, repoOf } from '@/model/intake';
 import type { IntakeGroupKind } from '@/model/intake';
 import { ago } from '@/model/format';
 import { useNow } from '@/hooks/use-now';
@@ -97,6 +97,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
   const backburner = x.group === 'backburner';
   const ref = intakeRef(x);
   const { row, state } = useFocusOnApproved(x.key);
+  const declinedAs = useApprovals((s) => { const a = s[x.key]; return a?.state === 'declined' ? a.choice : undefined; });
   const asked = x.action !== 'approve'; // the sync took the approved or declined issue: its request card is gone, the decision shows here
   return (
     <li ref={row} tabIndex={state === 'approved' || state === 'declined' ? -1 : undefined} data-intake-item={x.key} data-backburner={backburner || undefined}
@@ -110,7 +111,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       {asked && state === 'approved' && <span data-approved className="text-ok">approved ·</span>}
       {asked && state === 'approved' && x.reason !== undefined && <span data-approved-waits className="text-muted-foreground">no job yet ·</span>}
       {asked && state === 'declining' && <span data-declining className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />declining ·</span>}
-      {asked && state === 'declined' && <span data-declined className="text-muted-foreground">declined ·</span>}
+      {asked && state === 'declined' && <span data-declined className="text-muted-foreground">{DECLINED_ROW[declinedAs ?? 'open']} ·</span>}
       <WriteBehindLine running={running} retry={retry} failed={failed} />
       {x.reason === undefined ? <Taken x={x} /> : <Reason x={x} />}
       {offers('assign') && (

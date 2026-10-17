@@ -11,6 +11,7 @@ import type { ItemText } from './item-snapshots.ts';
 import type { AccessAnswer } from './access.ts';
 import type { ActorRef, IntakeRequest, ItemHistory } from './intake-origin.ts';
 import type { AutoApproval, IntakeAutoApproval } from './intake-auto-approve.ts';
+import type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
 import type { TaggedRecord } from './tagged.ts';
@@ -66,7 +67,8 @@ export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
  * `assign`: assign the item to the user's connected account. `release`: release a claim no job here holds. `approve`:
  * approve a request card's text (issue #652), the one key named, only while its text hashes as `hash`. `unbackburner`:
  * take the item off the backburner (issue #798): remove its `hopper:backburner` label. `decline` (issue #1035): decline a
- * request card's text, offered with `approve`, the one key named, only while its text hashes as `hash`; nothing on GitHub.
+ * request card's text, offered with `approve`, the one key named, only while its text hashes as `hash`; its `choice`
+ * (issue #1710) closes the issue or leaves it open, each without the source's label, and a comment says so.
  * `dismiss` (issue #1141): take **tagged items** the last sync listed off Tagged, for the reasons they have now; nothing on
  * GitHub. `take_in` (issue #1176, Take into Intake): give an issue no work item, that an untracked pull request the last
  * census listed closes, the source's label and assign it to the user's connected account, so the next sync lists it in
@@ -81,6 +83,8 @@ export interface IntakeAction {
   hash?: string;
   /** `approve`, `decline`: the person who did it, as the event names them. */
   acting?: ActingPerson;
+  /** `decline` (issue #1710): close the issue or leave it open; absent: the user's default for the card. */
+  choice?: DeclineChoice;
 }
 
 export interface IntakeActionResult {
@@ -110,7 +114,7 @@ export interface OutsideRepo {
 
 /** The events intake records (issue #440); `work_item.issue_closed`: the close of a promoted item's issue (issue #1232). */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
-  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn' | 'source.review_requested'
+  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_decline_written' | 'source.request_withdrawn' | 'source.review_requested'
   | 'source.issue_taken_in' | 'work_item.issue_closed';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
@@ -200,10 +204,16 @@ export interface IntakeTrust {
    * when its snapshot is no longer the approved one.
    */
   approvedComments(key: string, comments: ItemText['comments']): void;
-  /** Whether a person declined the item's request card with this text's hash (issue #1035). */
+  /**
+   * Whether a person declined the item's request card with this text's hash (issue #1035): until GitHub took the decline's
+   * writes (issue #1710), then GitHub's labels and state are the record. A decline with no choice (before issue #1710, or
+   * on GitLab) holds until an edit.
+   */
   declined(key: string, hash: string): boolean;
-  /** Record a person's decline of a source's request card (issue #1035): `source.request_declined`, with its hash. */
-  decline(source: string, key: string, request: IntakeRequest, acting: ActingPerson | undefined): void;
+  /** Record a person's decline of a source's request card (issue #1035): `source.request_declined`, with its hash and `choice` (issue #1710). */
+  decline(source: string, key: string, request: IntakeRequest, acting: ActingPerson | undefined, choice?: DeclineChoice): void;
+  /** The user's decline defaults (issue #1710); absent: `DEFAULT_INTAKE_DECLINE`. */
+  declineDefaults?(): IntakeDeclineDefaults;
   /** Whether this hopper assigned the item to the user (Sources, Assign to me): that assignment is the user's own act. */
   assignedHere(key: string): boolean;
   /** Whether the item's job waits for its origin (`Job.originPending`, the backfill): its issue is judged though it has a job. */
