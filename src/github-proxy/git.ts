@@ -74,15 +74,18 @@ export function checkPush(commands: readonly RefUpdate[], at: { defaultBranch?: 
  * ssh and scp-like — is rewritten to `<hopperUrl>/job/git/`, and git's credential ask there is answered from the job's
  * token file (`HOPPER_TOKEN_FILE`), read when git asks: the token is never in a variable. Any other credential helper is
  * cleared for that URL first. `gitlab` (issue #1448 part 3, a GitLab job's): its GitLab's https URL is rewritten to
- * `<hopperUrl>/<gitlab.path>` the same way.
+ * `<hopperUrl>/<gitlab.path>` the same way. `traceparent` (issue #1486 part 6): the job's trace parent, sent as the
+ * `traceparent` header to those hopper routes only, so the hopper's span for a fetch or a push is a child of the job's
+ * run span; only a value of lowercase hex and dashes, as a W3C trace parent is, so it cannot add a header.
  */
-export function jobGitConfig(hopperUrl: string, webUrl: string, gitlab?: { url: string; path: string }): Record<string, string> {
+export function jobGitConfig(hopperUrl: string, webUrl: string, gitlab?: { url: string; path: string }, traceparent?: string): Record<string, string> {
   const hopper = hopperUrl.replace(/\/+$/, '');
   const to = `${hopper}${GIT_PATH}`;
   const web = new URL(webUrl);
   const from = [`${web.origin}/`, `git@${web.hostname}:`, `ssh://git@${web.hostname}/`];
   const helper = '!f() { test "$1" = get || exit 0; echo username=hopper-job; printf \'password=%s\\n\' "$(cat "$HOPPER_TOKEN_FILE")"; }; f';
-  const via = (url: string): [string, string][] => [[`credential.${url}.helper`, ''], [`credential.${url}.helper`, helper]];
+  const trace = traceparent && /^[0-9a-f-]+$/.test(traceparent) ? `traceparent: ${traceparent}` : undefined;
+  const via = (url: string): [string, string][] => [[`credential.${url}.helper`, ''], [`credential.${url}.helper`, helper], ...(trace ? [[`http.${url}.extraHeader`, trace] as [string, string]] : [])];
   const toGitLab = gitlab ? `${hopper}${gitlab.path}` : undefined;
   const entries: [string, string][] = [
     ...from.map((f): [string, string] => [`url.${to}.insteadOf`, f]),

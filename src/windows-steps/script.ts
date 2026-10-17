@@ -4,6 +4,7 @@
 // burned after it (issue #1349), with credentials minted for it; and (issue #1007) one step by its needs. Kept
 // in the job's credentials dir beside its proxy token, `hopper-gh` and `hopper-skill`, run as `sh "$HOPPER_STEP"`: POSIX
 // sh, curl, tar and od, nothing else. Its full help is the `windows-step` and `box-step` skills' text.
+import { TRACE_HEADER_SH } from '../github-proxy/retry-after.ts';
 
 export const STEP_SCRIPT_VARIABLE = 'HOPPER_STEP';
 
@@ -171,7 +172,9 @@ export const STEP_SCRIPT = `#!/bin/sh
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
 usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] | box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
-token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
+${TRACE_HEADER_SH}
+# The job's token, and its trace parent (issue #1486 part 6): the hopper's span for each request is a child of the job's run span.
+token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
 # A response header's value, from a header dump.

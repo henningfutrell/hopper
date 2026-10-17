@@ -5,6 +5,7 @@
 // SQL is written with `?` placeholders, numbered ($1, $2, …) before it is sent.
 import { createSyncFn } from 'synckit';
 import { instrument } from '../telemetry/instruments.ts';
+import { liveReader } from '../telemetry/live.ts';
 import { slowStoreCalls, statementOf } from './slow-calls.ts';
 
 /** Each store call's time, by its statement's verb and table (issue #1486, design.md "Telemetry"): never its SQL or values. */
@@ -51,6 +52,9 @@ interface WorkerCall {
 
 /** One worker per process (synckit's), one connection per Db in it. */
 let worker: WorkerCall | undefined;
+/** The Dbs open now: the store's connections (issue #1486, design.md "Telemetry: what runs now"). */
+let open = 0;
+liveReader('hopper.db.connections', () => [{ value: open, attributes: {} }]);
 
 /** `timeoutMs`: how long a statement may run (default STATEMENT_TIMEOUT_MS, at most it). */
 export function openDb(url: string, o: { timeoutMs?: number } = {}): Db {
@@ -67,11 +71,16 @@ export function openDb(url: string, o: { timeoutMs?: number } = {}): Db {
     }
   };
   const query = (sql: string, params: Param[]) => timed(sql, () => call('query', handle, numberPlaceholders(sql), params));
+  open++;
+  let closed = false;
   return {
     exec: (sql) => { timed(sql, () => call('exec', handle, sql, [])); },
     run: (sql, ...p) => ({ changes: query(sql, p).changes }),
     get: (sql, ...p) => query(sql, p).rows[0],
     all: (sql, ...p) => query(sql, p).rows,
-    close: () => { call('close', handle, '', []); },
+    close: () => {
+      if (!closed) { closed = true; open--; }
+      call('close', handle, '', []);
+    },
   };
 }

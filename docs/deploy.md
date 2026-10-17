@@ -1291,6 +1291,10 @@ Each sync of a job source, and each batch of GitHub changes the outbox sends, is
 and a link to the request that asked for them. The metrics are `hopper_source_sync_duration_seconds` by source and
 outcome, `hopper_outbox_batch_size`, `hopper_outbox_calls_total` by result, and `hopper_outbox_rows_coalesced_total`.
 
+Two gauges show what runs now (docs/design.md "Telemetry: what runs now"): `hopper_sandboxes`, the sandboxes that run at
+the same time, by kind (`need`, `playground`), place (`local`, `machine`) and state, and `hopper_db_connections`, the
+store's open connections.
+
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 
 ```sh
@@ -1309,7 +1313,8 @@ reaches its OTLP port. Open Grafana with `kubectl port-forward svc/hopper-teleme
 
 While telemetry is on, a job runs with `TRACEPARENT`: its run span (docs/design.md "Telemetry: a job's trace on its
 machine"). A tool in the job that reads it, and is set to export, puts its spans in the job's trace. The job's requests
-to the hopper through `hopper-gh`, `hopper-skill`, `hopper-login` and `hopper-artifact` are spans of that trace too. The
+to the hopper through `hopper-gh`, `hopper-skill`, `hopper-login`, `hopper-artifact` and `hopper-step`, and its git fetches
+and pushes through the hopper, are spans of that trace too. The
 job is given no `OTEL_*` variable: to export from inside a job, give the variables to its machine yourself.
 
 ## Optional services
