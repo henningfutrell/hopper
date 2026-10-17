@@ -176,6 +176,8 @@
         "remote_access.changed",
         "allowed_hosts.changed",
         "source_email_match.changed",
+        "cloud_link.linked",
+        "cloud_link.unlinked",
         "question.thread_held",
         "question.thread_approved",
         "question.thread_posted",

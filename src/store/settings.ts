@@ -8,7 +8,7 @@ import type { InfraPlanSettings } from '../domain/infra-plans.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
-import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { preemptionSettings } from './preemption-settings.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { preemptionSettings } from './preemption-settings.ts'; import { cloudLinkSettings } from './cloud-link-settings.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -22,7 +22,7 @@ function keyValues(c: StoreContext) {
     },
     write: (key: string, value: string): void => {
       c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, value);
-    },
+    }, remove: (key: string): void => { c.db.run('DELETE FROM settings WHERE key = ?', key); },
   };
 }
 
@@ -260,11 +260,11 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
 /** The update settings that are on or off, and their keys: auto-update, and taking stable releases early (issue #1073 part 5). */
 const UPDATE_SWITCHES = [['autoUpdate', 'autoUpdate'], ['updateCanary', 'canary']] as const;
 
-/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445) and the store installs. */
+/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445), the store installs and the cloud link (issue #467). */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
-  const { read, write } = keyValues(c);
+  const { read, write, remove } = keyValues(c);
   return {
-    getUpdateSettings() {
+    ...cloudLinkSettings(read, write, remove), getUpdateSettings() {
       const out: Partial<UpdateSettings> = {};
       const channel = read('updateChannel');
       if (channel && (UPDATE_CHANNELS as readonly string[]).includes(channel)) out.channel = channel as UpdateChannel;

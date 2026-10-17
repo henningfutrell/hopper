@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "installId": {
+      "type": "string"
+    },
+    "account": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "installId",
+    "account",
+    "by"
+  ],
+  "additionalProperties": false
+}
