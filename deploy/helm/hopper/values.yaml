@@ -175,6 +175,26 @@ solr:
   storageClass: ""
   resources: {}
 
+# Telemetry (docs/deploy.md "Telemetry", issue #1486): OpenTelemetry traces, metrics and logs. Off unless `env` names an
+# OTLP endpoint or an exporter, or the viewer is on.
+telemetry:
+  # The hopper's OTEL_* variables, as in compose.yaml: OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL,
+  # OTEL_TRACES_SAMPLER and the others the OpenTelemetry SDK reads. Each is passed as it is. A header with a credential
+  # (OTEL_EXPORTER_OTLP_HEADERS) is better kept in a Secret: name it in `envFromSecret`.
+  env: {}
+  # A Secret whose keys are OTEL_* variables, read as the hopper's environment. Empty: none. A variable `env` names, or
+  # the viewer's endpoint, wins over the same one in the Secret.
+  envFromSecret: ""
+  # A viewer in the release: Grafana's all-in-one OpenTelemetry image (a collector, Tempo, Prometheus, Loki, Grafana).
+  # On, the hopper exports to it unless `env` names another OTLP endpoint. Only the hopper reaches its OTLP port; see it
+  # with `kubectl port-forward svc/hopper-telemetry 3000`, then http://127.0.0.1:3000.
+  viewer:
+    enabled: false
+    image: docker.io/grafana/otel-lgtm:0.37.0
+    size: 5Gi
+    storageClass: ""
+    resources: {}
+
 # Sandbox boxes as pods (docs/deploy.md "Sandbox boxes on Kubernetes"): the hopper starts them in the release's
 # namespace through the Kubernetes API, with its service account and the Role the chart makes for it there. No
 # container socket. Each box is held by the NetworkPolicy the hopper applies: it reaches DNS, the hopper's pod and

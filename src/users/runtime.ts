@@ -54,7 +54,7 @@ import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
-import { machineLanesEditor } from './machine-lanes.ts'; import { traceJobs } from '../telemetry/jobs.ts';
+import { machineLanesEditor } from './machine-lanes.ts'; import { traceJobs } from '../telemetry/jobs.ts'; import { recordOutcomes } from '../telemetry/outcomes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
 import { planNotice } from '../domain/infra-watchers.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
@@ -391,7 +391,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   // Each job one trace (issue #1486, design.md "Telemetry"): built from its events; a no-op while telemetry is off.
-  const stopFailureLog = logFailures(store), stopJobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
+  const stopFailureLog = logFailures(store), stopJobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) });
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => uiUrl(`question-${id}`), loginsUrl: () => uiUrl('logins'), infraUrl: () => uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(linkBase(), id), deliveries: store.notifierDeliveries, ...(o.reach ? { reach: o.reach } : {}) });
@@ -432,7 +432,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
         await dispatcher.stop(); await host.stopNotifiers(); outbound.stop();
-        stopFailureLog(); stopJobTraces();
+        stopFailureLog(); stopJobTraces(); stopOutcomes();
         host.stop(); stopBackendReads();
         store.close();
       })();
