@@ -10083,7 +10083,9 @@ holds the database's credentials, the daemon's own trust, so acting from it wide
 
 - **Commands** (`src/cli-operator.ts`): `hopper job accept|reject|rerun <id>` (`reject --reason <text>`),
   `hopper job show <id>` and `hopper queue list` (issue #874: reads, a viewer's; a held job with its `holdReason`, a job
-  waiting for a lane with its `waitReason`), `hopper queue order <id>...`, `hopper queue gate <auto-accept|review> [--per-hour <n>|none]` (without
+  waiting for a lane with its `waitReason`; issue #1780: a job on its **own wait** with what it waits on, `waitsOn` and
+  `waitsFor`, `queue list` after the jobs that wait to run; `job show` by a job's id or its **short id**, a start of
+  the id more than one job has refused with 409), `hopper queue order <id>...`, `hopper queue gate <auto-accept|review> [--per-hour <n>|none]` (without
   `--per-hour` the throttle stays), `hopper question list [--reason <reason>]` (issue #679: the open questions, each with why it came to a person), `hopper question answer <id> <text>`, `hopper question close|dismiss <id>`.
   `--user <id>` as on `config` (default the one user). Each prints the daemon's answer as JSON.
 - **Through the daemon, never around it.** Each command is the UI's own route on the running daemon, so its

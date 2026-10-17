@@ -68,7 +68,8 @@ function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId
   const checkLine = w.check ? maskGitHubTokens(w.check) : undefined;
   c.store.jobs.update(job.id, {
     status: 'waiting_on', wait: { ...masked, since: at, ...(checkLine ? { checkLine } : {}) }, laneId: undefined, pendingAnswer: undefined,
-    resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,
+    // No question (issue #1780): one it asked before is answered or ended, so it keeps no questionId.
+    resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId, questionId: undefined,
   });
   c.store.events.append({ type: 'job.waiting', jobId: job.id, laneId, data: masked });
   // What it waits on happened already (issue #1356): no event comes for it now, so the hopper ends the wait at once.
