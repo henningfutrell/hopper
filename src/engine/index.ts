@@ -32,6 +32,7 @@ import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
 import { createMissedWakes, wakeOn } from './wait.ts';
+import { createWaitChecks } from './wait-checks.ts';
 export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
@@ -162,6 +163,8 @@ export function createEngine(o: EngineOptions): Engine {
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
   // Issue #1571: a wake a stop lost, at start, and on each tick.
   const missedWakes = createMissedWakes(c);
+  // Issue #1694: each job's own wait gets its wait check, tested on each tick when due.
+  const waitChecks = createWaitChecks(c);
   const wakeMissed = (): void => {
     try {
       if (store.tx(() => missedWakes.run()).length > 0) c.trigger('job.wait_ended');
@@ -248,6 +251,7 @@ export function createEngine(o: EngineOptions): Engine {
         leases.tick();
         classifier.sweep();
         void paneAnswers.sweep();
+        void waitChecks.run();
         cleanups.retry();
         o.logins.sweep();
         o.questions.sweep();

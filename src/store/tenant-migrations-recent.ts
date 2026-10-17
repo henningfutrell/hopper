@@ -25,6 +25,7 @@ import { noTemplateTimeLimit } from './migration-template-limits.ts';
 import { NOTIFIER_DELIVERY_TABLE } from './notifier-deliveries.ts';
 import { JOB_LEASE_TABLE } from './job-leases.ts';
 import { EVENT_CURSOR_TABLE } from './event-cursors.ts';
+import { WAIT_CHECK_LEASE_TABLE } from './wait-check-leases.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -111,4 +112,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 75: Event cursors (issue #1572): the last event each consumer of the event log handled. A table only: the build before
   // runs on it, and a later start of this build catches up from each cursor.
   EVENT_CURSOR_TABLE,
+  // 76: The wait checks' leases (issue #1694): which hopper tests a job's wait check, until when. A table only: the build
+  // before runs on it, and ignores the wait check kept in a job's wait.
+  WAIT_CHECK_LEASE_TABLE,
 ];

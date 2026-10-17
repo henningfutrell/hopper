@@ -106,6 +106,17 @@ describe('a job on its own wait', () => {
     expect(buttonIn(row()!, 'End the wait')).toBeUndefined();
   });
 
+  it('shows its wait check: what the hopper checks, the last result, and overdue past its deadline (issue #1694)', async () => {
+    const check = { condition: { kind: 'items_ended', refs: [{ kind: 'issue', repo: 'octo/tools', number: 9 }] }, nextCheckAt: T, everyMs: 120000, attempts: 2, deadline: T, checkedAt: T, result: 'not ended yet: octo/tools#9' };
+    await boot('admin', '#dashboard', [{ ...waitingJob, wait: { ...waitingJob.wait, check } }, { ...ownCommandJob, wait: { ...ownCommandJob.wait, check: { ...check, condition: { kind: 'command_exited' }, overdueAt: T } } }]);
+    const line = row()!.querySelector('[data-slot="wait-check"]')!.textContent!;
+    expect(line).toContain('the hopper checks whether octo/tools#9 ended');
+    expect(line).toContain('last check: not ended yet: octo/tools#9');
+    const own = document.querySelector('[data-job-group="waitingOn"][data-job-id="w2"] [data-slot="wait-check"]')!.textContent!;
+    expect(own).toContain('the hopper checks whether its own command ended');
+    expect(own).toContain('overdue');
+  });
+
   it('a wait on its own command shows as running, with its runtime, not as waiting on the outside world (issue #1037)', async () => {
     await boot('admin', '#dashboard', [ownCommandJob, { ...ownCommandJob, id: 'w3', wait: { ...ownCommandJob.wait, stuckAt: T } }]);
     const own = document.querySelector('[data-job-group="waitingOn"][data-job-id="w2"]')!;

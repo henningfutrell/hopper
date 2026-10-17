@@ -510,7 +510,7 @@ export interface UserStore {
   logins: LoginRepository; lastAccounts: import('./logins.ts').LastAccountRepository; // the last accounts (issue #1269)
   failures: FailureRepository;
   problems: ProblemRepository;
-  handoffs: HandoffRepository;
+  handoffs: HandoffRepository; waitCheckLeases: import('./wait-checks.ts').WaitCheckLeases; // the wait checks' leases (issue #1694)
   itemSnapshots: ItemSnapshotRepository;
   vaultGrants: VaultGrantRepository;
   bugReports: BugReportRepository;

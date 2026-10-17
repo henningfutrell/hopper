@@ -81,6 +81,7 @@
         "job.wait_polled",
         "job.waited_pull_request_ended",
         "job.waited_items_ended",
+        "job.wait_overdue",
         "job.checkpointed",
         "job.note_added",
         "job.note_delivered",
