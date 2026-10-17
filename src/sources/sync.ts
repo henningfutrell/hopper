@@ -32,7 +32,7 @@ import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from 
 import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
-import { REMOVED, detailOf, dropRetries, followSources, joined, keepNotRerun, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { REMOVED, detailOf, dropRetries, followSources, joined, keepNotRerun, newSlot, notAssignedTold, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
 import { needsWork, pauseTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
@@ -294,7 +294,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
+    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length); notAssignedTold(slot, paused);
     afterSync(slot, { changed: all || st.state !== 'ok' || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
