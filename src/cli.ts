@@ -214,7 +214,7 @@ function transfer(instance: InstanceStore, args: string[], io: CliIo): void {
   if (!fromId || !toId || extra.length > 0) throw new CliError('usage: hopper user transfer <from> <to>');
   for (const id of [fromId, toId]) userOf(instance, id);
   if (fromId === toId) throw new CliError('a transfer needs two different users');
-  if (!instance.holdDaemonLock()) throw new CliError('a running daemon has this database; stop it first (systemctl --user stop hopper), then start it again after');
+  if (!instance.holdSoleLock()) throw new CliError('a running daemon has this database; stop it first (systemctl --user stop hopper), then start it again after');
   let kept: User;
   try {
     kept = instance.users.transfer(fromId, toId);

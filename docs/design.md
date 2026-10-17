@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
@@ -25563,7 +25563,7 @@ key refused), `test/client/keyed-creates.test.ts` (a box create and a tab create
 failed create runs again), `test/vault/mint-bindings.test.ts` (a stop while the minter makes the Secret: the next start's
 reconcile pass deletes that one Secret, once).
 
-## Several hoppers on one database (issue #1662 parts 1 and 2, 2026-10-17)
+## Several hoppers on one database (issue #1662 parts 1 to 3, 2026-10-17)
 
 The problem: a running job was held only by the memory of the hopper that drove it. A second hopper on the same database
 saw the job `running` with nobody driving it after the first stopped, and at its own start it requeued or failed the first
@@ -25614,20 +25614,38 @@ cancelled in the store at once, as before.
 - **Decision: taken at the tick, not pushed.** The hopper has no channel to another hopper but the database. A tick is a
   few seconds at most; a job's executor ends its run in the same way as for a local request.
 
+**Each engine pass on one hopper** (issue #1662 part 3, `src/engine/pass-leases.ts`). Issue #1627 put the machine sweep, the
+question timers, the failure sweep, the TL;DR sweep and the artifacts' sweep under sweep leases. The other passes the engine
+runs over every job or machine of the user, on its tick or a timer, still ran on each hopper: two hoppers parked one job
+twice, read each waiting job's pane twice, took its checkpoint twice, moved a signed-out job twice and did a stopped
+hopper's owed cleanups twice. Each such pass now runs only on the holder of its own sweep lease (`PASS_LEASES`; the table in
+"Sweep leases: one host per sweep" lists them): auto-park, the signed-out move, the checkpoint pass, the read of waiting
+jobs' panes, the classifier's sweep, discovery, the missed wakes, and the owed cleanups (`Cleanups.resume`) at the start
+and when a hopper takes that lease from another.
+- **Left on each hopper, by decision:** the Decision (the claim lock makes it safe); the relayed acts and the takeover (the
+  job lease); a job's own work — its run, its cleanup and the retry of a cleanup it deferred, its park's and its missed
+  heartbeat's checkpoint, its classification when it is queued here (the event feed is in memory); the wait checks (a lease
+  per check, issue #1694); the placement picks (each hopper's Decision reads its own, kept in memory: a pick asked on both
+  costs a second ask, never a second claim); the sign-in sweep (each sign-in is its host's, issue #1627).
+
+**The daemon lock is shared** (`holdDaemonLock`, issue #1662 part 3). Each daemon holds it shared, so a second daemon on the
+same database starts with no warning. An operator command that needs the database alone (`hopper user transfer`, issue
+#212) takes it exclusive (`holdSoleLock`), and refuses while any daemon runs.
+
 **Not built yet (left on issue #1662):**
 - **The job run as a saga kind `job-run`** (claim, credentials, pane, run, checkpoint, end, keyed by the job and its
   attempt, the executor's session state in its data). The runner and the executors must change first: one executor call
   places the credentials, opens the pane and runs.
 - **Audit gap 17 (issue #1627)**: done, "Sweep leases: one host per sweep" below.
-- **The daemon lock** (`holdDaemonLock`) still warns at a second daemon's start; it stops being a single-writer rule once the
-  parts above are done.
 
 **Verification:** `test/integration/two-hoppers.test.ts` (two daemons on one database: the second leaves the first's running
 job and its lane alone, takes it over once the first stops and reattaches its live pane, the task sent once; two hoppers
 deciding at once claim each of four jobs once), `test/store/job-leases.test.ts` (a lease held until it ends, a crashed
 hopper's lease taken after its time, a lost lease seen at the renewal, a claim's take, a release). Part 2: a cancel and a park
 on the other hopper reach the run of the hopper that drives the job (two-hoppers); an act relayed once, to the live holder
-only, to the hopper that takes over a crashed one's job, and dropped at a claim (job-leases).
+only, to the hopper that takes over a crashed one's job, and dropped at a claim (job-leases). Part 3: a waiting job's pane is
+read by one hopper at a time, and by the other once the first stops (two-hoppers); two daemons both hold the daemon lock, and
+`hopper user transfer` refuses until both stopped (`test/cli.test.ts`).
 
 ## The cleanup record (issue #1570, follow-up of #1524, 2026-10-17)
 
@@ -25879,6 +25897,14 @@ The leases, each one per user (`<user id>/<name>`):
 | `failures` | the failure assessor's sweep | assesses the backlog and catches the hand-offs up, as at a start |
 | `tldr` | the TL;DR sweep | — |
 | `artifacts` | the retention sweep | — |
+| `cleanups` | the cleanups a record says are owed (issue #1662) | does every one owed, as at a start |
+| `auto-park` | auto-park (issue #1662) | — |
+| `signed-out-move` | the signed-out move (issue #1662) | — |
+| `checkpoints` | the checkpoint pass (issue #1662) | — |
+| `pane-answers` | the read of each waiting job's pane (issue #1662) | — |
+| `classifier` | the classifier's sweep (issue #1662) | — |
+| `discovery` | each machine's discovery (issue #1662) | — |
+| `missed-wakes` | the wakes a stop lost (issue #1662) | — |
 
 A question with no timers and no fork is one the host before armed: the new holder arms it with its times kept. One whose
 fork ended without a decision waits on a person again, as before (issue #570).

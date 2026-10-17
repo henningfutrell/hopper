@@ -300,20 +300,10 @@ describe('hopper user transfer (issue #212)', () => {
     expect((await cli(url, ['users'])).out.split('\n').filter(Boolean)).toHaveLength(2);
   });
 
-  it('refuses while a daemon has the database: stop it first', async () => {
-    const url = await adminAndBea();
-    const daemon = instanceOf(url);
-    expect(daemon.holdDaemonLock()).toBe(true);
-    expect(await cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
-    daemon.close();
-    expect((await cli(url, ['user', 'transfer', 'admin', 'bea'])).code).toBe(0);
-  });
-
-  it('two daemons on one database both hold the daemon lock (issue #1662); the transfer waits until both stopped', async () => {
+  it('refuses while a daemon has the database, of the two daemons one database holds (issue #1662): stop them first', async () => {
     const url = await adminAndBea();
     const first = instanceOf(url), second = instanceOf(url);
-    expect(first.holdDaemonLock()).toBe(true);
-    expect(second.holdDaemonLock()).toBe(true);
+    expect([first.holdDaemonLock(), second.holdDaemonLock()]).toEqual([true, true]);
     first.close();
     expect(await cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
     second.close();
