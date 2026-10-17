@@ -50,8 +50,13 @@ const reap = (s: Seat): ReturnType<typeof readReap> & { said: string } => {
  * runtime (issue #1120) runs podman there, and podman leaves its pause process: on a real machine it is the user's own.
  */
 function leave(s: Seat): void {
-  spawnSync('sh', ['-c', 'l=$(grep -lzxF "XDG_RUNTIME_DIR=$1" /proc/[0-9]*/environ 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/environ$|\\1|p"); [ -z "$l" ] || kill -KILL $l', 'leave', s.host]);
+  stopFrom(s.host);
   rmSync(s.root, { recursive: true, force: true });
+}
+
+/** Stops what runs with `dir` as its runtime dir. */
+function stopFrom(dir: string): void {
+  spawnSync('sh', ['-c', 'l=$(grep -lzxF "XDG_RUNTIME_DIR=$1" /proc/[0-9]*/environ 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/environ$|\\1|p"); [ -z "$l" ] || kill -KILL $l', 'leave', dir]);
 }
 
 /** Whether a real podman works here in a job's runtime: set one up, ask it, reap it. */
@@ -105,5 +110,23 @@ describe.skipIf(!WORKS)('a job\'s runtime leaves nothing, on real Podman (issue 
     const after = inJobShell(s, 'podman volume ls -q && podman network ls --format "{{.Name}}" && podman ps -aq && podman images -q');
     expect(after.status).toBe(0);
     expect(after.stdout.trim().split('\n').filter(Boolean)).toEqual(['podman']);
+  });
+
+  // Issue #1452: a reboot clears the user's runtime dir, and the job's runtime dir with it. Its storage holds files of the
+  // job's user namespace, which a plain remove cannot remove: the sweep reaped the job each pass and said it was removed.
+  it('the reap removes the job\'s storage and scratch dir when its runtime dir is gone', () => {
+    expect(setUp(s)).toBe('own');
+    const storage = join(s.scratch, 'containers', 'storage');
+    const made = inJobShell(s, `podman unshare sh -c 'mkdir -p "$0/marker" && touch "$0/marker/f" && chown -R 1:1 "$0/marker" && chmod 700 "$0/marker"' ${JSON.stringify(storage)}`);
+    expect(made.status, made.stderr).toBe(0);
+    const runtime = join(s.host, `hopper-runtime-${JOB}`);
+    stopFrom(runtime);
+    rmSync(runtime, { recursive: true, force: true });
+    expect(existsSync(join(s.host, `hopper-runtime-${JOB}`))).toBe(false);
+
+    const said = reap(s);
+    expect(said.left, said.said).toBeUndefined();
+    expect(existsSync(s.scratch)).toBe(false);
+    expect(existsSync(join(s.host, `hopper-runtime-${JOB}`))).toBe(false);
   });
 });
