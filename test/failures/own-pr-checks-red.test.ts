@@ -78,7 +78,10 @@ describe('its Continue, step by step', () => {
     const h = harness({ checks: () => state });
     expect(await h.steps.step(record)).toEqual({ kind: 'wait', ms: CHECKS_WAIT_MS, note: 'its failed checks run again: test (node 24)' });
     expect(h.reran).toEqual([['test (node 24)']]);
-    expect(h.events.map((e) => [e.type, e.data])).toEqual([['job.checks_rerun', { recordId: 'f1', pullRequest: PR, head: 'abc1234', checks: ['test (node 24)'] }]]);
+    expect(h.events.map((e) => [e.type, e.data])).toEqual([
+      ['job.checks_rerun', { recordId: 'f1', pullRequest: PR, head: 'abc1234', checks: ['test (node 24)'] }],
+      ['job.checks_rerun_asked', { recordId: 'f1', pullRequest: PR, head: 'abc1234', checks: ['test (node 24)'] }],
+    ]);
     state = { ...state, checks: 'pending', failed: [] };
     expect(await h.steps.step(record)).toMatchObject({ kind: 'wait', note: `the checks of ${PR} are running` });
     state = { ...state, checks: 'failing', failed };
@@ -94,6 +97,20 @@ describe('its Continue, step by step', () => {
     expect(brief).toContain('took 210.6 ms');
     expect(brief).toContain('The hopper ran the failed checks again once, and they failed again.');
     expect(brief).not.toContain('git commit --allow-empty');
+  });
+
+  it('the run again is recorded before it is asked: a stop while it is asked makes no second one (issue #1607)', async () => {
+    const state: OwnPullRequestChecks = { pullRequest: PR, headOid: 'abc1234', checks: 'failing', failed };
+    let asked = 0;
+    const h = harness({ checks: () => state, rerun: async () => { asked += 1; throw new Error('the hopper stopped'); } });
+    await expect(h.steps.step(record)).rejects.toThrow('the hopper stopped');
+    expect(h.events.map((e) => e.type)).toEqual(['job.checks_rerun_asked']);
+    const step = await h.steps.step(record);
+    expect(asked).toBe(1);
+    expect(step.kind).toBe('go');
+    if (step.kind === 'go') await step.go();
+    // Not known to have run again: the job may run them again itself.
+    expect(h.continued[0]!.brief).toContain('git commit --allow-empty');
   });
 
   it('a new head commit with red checks gets its own run again', async () => {
