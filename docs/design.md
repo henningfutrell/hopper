@@ -23894,7 +23894,10 @@ restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links
 link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
 UI: Settings → hopper.io.
 
-**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
+**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. An install that never links
+connects to nothing outside its machine but its database: `test/integration/cloud-link.test.ts` watches every socket
+and fetch the daemon opens (`Socket.prototype.connect`, which every TCP and TLS connection in the process passes) while it
+starts, signs in and runs a job, and fails on any other host; the link agent must keep it so. The connection — an outbound
 link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
 hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
 keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
