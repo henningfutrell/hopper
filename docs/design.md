@@ -22213,6 +22213,12 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began,
   `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
   only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
+- **An item that does not exist** (issue #1691). A wait named `gss#330`, a repository that does not exist, and was read
+  again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
+  run does not exist (404, 410, GraphQL's "Could not resolve to …") is permanent, not a failed read: the item is
+  `not_found`. A job one of whose items is `not_found` is woken at once, whatever its other items, with
+  `job.waited_items_ended { items }` of those items only; its note says each was not found, so the job rewrites its wait. A
+  refusal (403) or a rate limit is still a failed read.
 - **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
   memory, the items each job was last woken for. After a restart such a job is woken once more.
 - **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
@@ -22232,7 +22238,8 @@ their own pane waited for ever once a host restart killed the pane, and one fail
 - **Persisted state.** No schema change: the watch is read from each wait's text, so waits recorded before this build are
   watched too.
 - **Verification.** `test/domain/watched-items.test.ts` (what a wait watches, the wake, a wait its pane carries),
-  `test/integration/watched-items.test.ts` (an issue closed before the wait, two issues, a workflow run; no second wake),
+  `test/integration/watched-items.test.ts` (an issue closed before the wait, two issues, a workflow run, an item that does
+  not exist; no second wake),
   `test/integration/job-wait.test.ts` (a lost pane wakes a wait on its own command and on a poll, and the job resumes in a
   new pane), `test/herdr/executor-herdr-lost.test.ts` (the resume and the probe).
 
