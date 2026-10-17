@@ -30,18 +30,28 @@ export interface JobFilter {
 }
 
 export interface JobRepository {
-  create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
-  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined;
+  /**
+   * A new queued job. With the stamp key (`useStampKey`), it is stamped by the rules (issue #655); `parent`: a job made it,
+   * and it gets at most its parent's verified level, never `owner`, or no stamp when its parent's does not verify.
+   */
+  create(spec: JobSpec, priority: number, source?: JobSourceRef, parent?: Job): Job;
+  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined; list(filter?: JobFilter): Job[];
   /**
    * Many jobs in one read (issue #1411), so a pass over many jobs reads none one by one: `getMany` the jobs of `ids` that
    * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`.
    */
   getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>;
-  list(filter?: JobFilter): Job[];
   /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
-  update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
-  /** Replace the spec of a job that has not started (issue #375). Bumps updatedAt. */
+  update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt' | 'stamp'>>): Job;
+  /** Replace the spec of a job that has not started (issue #375); stamped again at its verified level or lower (issue #655). Bumps updatedAt. */
   respecify(id: JobId, spec: JobSpec): Job;
+  /**
+   * Trust stamps (issue #655). `useStampKey`: the user's stamp key, given once at the start: from then each job made is
+   * stamped; it stamps, by the rules, each job that has not ended and has no stamp (the backfill), and answers their ids.
+   * `stampHold`: why the job's stamp holds it; undefined: it may start, or the store has no stamp key. `restamp`: the job
+   * stamped again by the rules, for an origin judged after it was made (issue #652, the backfill).
+   */
+  useStampKey(key: Buffer): string[]; stampHold(job: Job): string | undefined; restamp(id: JobId): Job;
 }
 
 export interface LaneRepository {
