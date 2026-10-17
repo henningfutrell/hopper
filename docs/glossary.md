@@ -884,7 +884,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Telemetry** | What the hopper exports through OpenTelemetry (issue #1486, design.md "Telemetry"): traces, metrics and log records, to the exporters the launch's `OTEL_*` variables name. Off unless they name one. Never carries a secret, a prompt, an item's text or event data. | observability, monitoring, tracing (each a part of it) |
 | **Telemetry summary** | The most useful numbers of the **telemetry**, kept in the hopper's own process since it started, telemetry on or off (issue #1486, design.md "Telemetry summary", `GET /api/telemetry`): the slowest actions, each kind of **job span**'s duration, and the GitHub calls by route. Names only, never a URL, an id or a value. The Resources page shows it as the Telemetry panel. | dashboard metrics, stats |
 | **Job trace** | A job's one trace (issue #1486): a root span `hopper.job` from the first event seen to the job's end, and its **job spans**. | job timeline (the UI's event list) |
-| **Job span** | A child span of a **job trace** for one part of the job's life, by kind: `queue`, `run`, `question`, `wait`, `park`, `pull_request` (issue #1486). Timed by the job's events. | stage (a *stage* is where a question is), phase (`job.phase_changed`) |
+| **Job span** | A child span of a **job trace** for one part of the job's life, by kind: `queue`, `run`, `question`, `wait`, `park`, `sandbox` (one per sandbox request), `pull_request` (issue #1486). Timed by the job's events. | stage (a *stage* is where a question is), phase (`job.phase_changed`) |
 
 ## Events
 
