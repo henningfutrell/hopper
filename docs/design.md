@@ -2440,6 +2440,12 @@ the list, and nothing tended them). Two ways it fell out, each closed:
   #N") and closes or ships part of another issue (`worksOnAnotherIssue`) is that issue's work: it never makes this issue
   done, the report never follows it, and the hopper's merge of it never closes this issue. Before, such a mention counted
   as done, its merge closed the issue as completed, and the issue's own open part was left.
+- *A promotion was taken for it* (issue #876). A pull request from a **release branch** (`fromReleaseBranch`: its head
+  is one of `RELEASE_BRANCHES`, `src/domain/landing-batches.ts`) is no issue's work, whatever its body says: a promotion
+  of `dev` into `beta` lists in its body the issues it carries. It never makes an issue done, is never a part, is never
+  followed for it, and the hopper's merge of it never closes it. A job branch never is a release branch: no job pushes
+  to one. Before, a job on an issue that a promotion mentioned ended done with no pull request of its own, and in yolo
+  mode the promotion's merge closed the issue.
 
 **The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
 waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are

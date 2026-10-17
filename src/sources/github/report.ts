@@ -112,7 +112,7 @@ async function readyPullRequest(api: GitHubApi, repo: string, number: number): P
   const closing = ready(await api.openClosingPullRequests(repo, number));
   if (closing) return closing;
   const mentions = (await api.referencingPullRequests(repo, number))
-    .filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr.body, repo, number));
+    .filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number));
   const parts = new Set(mentions.filter((pr) => isPartOf(pr, repo, number)).map((pr) => pr.url));
   return ready(mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url)))
     ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url)));
