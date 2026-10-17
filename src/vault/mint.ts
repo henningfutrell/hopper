@@ -14,6 +14,7 @@ import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintDiscovered, mintEks } from './eks.ts';
 import { mintSourceFor, type ClusterDiscovery, type MintSource } from '../domain/cluster-discovery.ts';
+import { readClusters } from './clusters.ts';
 import { mintPrincipal } from '../domain/out-of-band.ts';
 import type { UnbindFrom } from './bindings.ts';
 import { appliesRefusal } from '../domain/infra-plans.ts';
@@ -40,7 +41,7 @@ export interface MintedFrom {
 }
 
 export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'config'>;
   /** The vault's user: Access names a job by its user and id. */
   userId: string;
   access?: VaultAccess;
@@ -117,7 +118,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (planNo) return refuse(planNo, decision);
     const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
-    const source = mintSourceFor(vault.list(), target, profile.operation);
+    const source = mintSourceFor(vault.list(), target, profile.operation, readClusters(o.store.config));
     if (typeof source === 'string') return refuse(source, decision);
     const made = await from(fromOf(source), target, job.id);
     if ('refused' in made) return refuse(made.refused, decision);
