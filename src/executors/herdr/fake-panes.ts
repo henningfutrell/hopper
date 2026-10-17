@@ -11,6 +11,8 @@ export interface Pane {
   title?: string;
   lines: string[];
   closed: boolean;
+  /** Its terminal: a new one each time herdr restores the pane after a server restart (issue #1465). */
+  terminal: string;
   agent?: string;
   status: AgentStatus;
   seq: number;
@@ -40,7 +42,7 @@ export interface Pane {
 
 /** A pane at its shell: `lines` on screen; `title`, as a person's own terminal sets it. */
 export const newPane = (id: string, tabId: string, lines: string[], title?: string): Pane =>
-  ({ id, tabId, ...(title ? { title } : {}), lines: [...lines], closed: false, status: 'unknown', seq: 0, mode: 'none', step: 0, ctrlC: 0, sawDown: false });
+  ({ id, tabId, ...(title ? { title } : {}), lines: [...lines], closed: false, terminal: `term_${id}_0`, status: 'unknown', seq: 0, mode: 'none', step: 0, ctrlC: 0, sawDown: false });
 
 /** The panes not closed, as herdr lists them: an agent's as `claude`, with its state. */
 export const listedPanes = (panes: Iterable<Pane>): HerdrPane[] => [...panes].filter((p) => !p.closed).map((p) => ({
