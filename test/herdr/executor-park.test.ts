@@ -91,6 +91,19 @@ describe('herdr-claude executor: park and resume (issue #501)', () => {
     expect(sent).toContain('HOPPER_DONE');
   });
 
+  it('Push it of a job with no pane state (issue #1472): a fresh session in the job worktree its kept work names, its task, then the brief', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD] }, { jobWorktrees: true });
+    const job = jobWith({ prompt: 'Paint the shed' }, { status: 'claimed', agentSession: 'old-session', continued: { at: '2026-10-08T00:00:00Z', keptWork: true } });
+    const again = contextFor(job);
+    again.ctx.keptTree = { cwd: CWD, jobWorktree: JOB_TREE };
+    expect(await executor.resume!(again.ctx, 'BRIEF: push the kept work.')).toMatchObject({ kind: 'finished' });
+    expect(herdr.agentStarts[0]!.args).not.toContain('--resume');
+    expect(again.workTrees[0]).toBe(JOB_TREE);
+    expect(again.saved.at(-1)).toMatchObject({ cwd: CWD, jobWorktree: JOB_TREE });
+    const sent = herdr.prompts.at(-1)!.text;
+    expect(sent.indexOf('Paint the shed')).toBeLessThan(sent.indexOf('BRIEF:'));
+  });
+
   it('a parked job with no pane state fails its resume: its work tree is not known', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     const job = jobWith({ prompt: 'go' }, { status: 'claimed', parked: PARKED });

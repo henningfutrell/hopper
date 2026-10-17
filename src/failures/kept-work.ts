@@ -5,7 +5,8 @@
 // Continue of its own (`job.continued` with `keptWork`). Discard is the engine's (`Engine.discardWork`): it reaches
 // the job's machine. Push it by itself (issue #1472 part 2): a finished job's kept work is pushed so with no person, once,
 // while the failures setting `auto.push` is on (`autoPush`, run by the failure sweep). A job whose agent session was not
-// recorded, or a print-mode agent's, goes on so too, in a fresh session in its kept work tree (`reopens`).
+// recorded, or a print-mode agent's, goes on so too, in a fresh session in its kept work tree (`reopens`); so does one
+// with no pane state, in the job worktree its kept work names (`keptTreeOf`).
 import type { RerunResult, UserStore } from '../domain/ports.ts';
 import { keptWorkShown } from '../domain/work-items.ts';
 import { keptAgainOf, keptWorkOf, KEPT_AGAIN_EVENTS, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type Discarding, type HandoffView, type Job, type KeptWork, type KeptWorkView } from '../domain/types.ts';
