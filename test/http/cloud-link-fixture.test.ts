@@ -1,7 +1,8 @@
 // The cloud link (issue #467, design.md "The cloud link"): linking an install to hopper.io moves no data. On a fixture
 // database with two users and their work, a link writes only its own record in the instance's settings, and an unlink
 // removes it: every other row of every table, the instance's and each user's, is as it was.
-//   Scenario: link then unlink a fixture database; every table but the link record is unchanged
+//   Scenario: link, mint a registration code (issue #465), then unlink a fixture database; every table but the link
+//     record and the code is unchanged
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InstanceStore } from '../../src/domain/store.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
@@ -20,6 +21,7 @@ function fixture(url: string): InstanceStore {
   closers.push(() => instance.close());
   instance.settings.setAllowedHosts(['hopper.example.net']);
   instance.settings.setUpdateSettings({ channel: 'beta', autoUpdate: true });
+  instance.settings.instanceId(); // a running daemon has made its instance id at its start (issue #603)
   instance.users.add('octo');
   for (const user of instance.users.list()) {
     const store = instance.userStore(user);
@@ -54,17 +56,18 @@ describe('the cloud link on a fixture database', () => {
     const before = snapshot(raw, schema);
     expect(Object.keys(before).filter((t) => t.includes('_u_')).length).toBeGreaterThan(1);
     const linked = link.link('octo-cat', 'admin');
-    expect(linked.link).toMatchObject({ account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T08:00:00.000Z', by: 'admin' });
+    expect(linked.link).toMatchObject({ installId: instance.settings.instanceId(), account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T08:00:00.000Z', by: 'admin' });
+    link.mintRegistrationCode('admin');
 
     const during = snapshot(raw, schema);
     const settings = `${schema}.settings`;
     expect({ ...during, [settings]: undefined }).toEqual({ ...before, [settings]: undefined });
     const added = during[settings]!.filter((r) => !before[settings]!.includes(r));
-    expect(added.map((r) => (JSON.parse(r) as { key: string }).key)).toEqual(['cloudLink']);
+    expect(added.map((r) => (JSON.parse(r) as { key: string }).key)).toEqual(['cloudLink', 'cloudRegistrationCode']);
     expect(before[settings]!.every((r) => during[settings]!.includes(r))).toBe(true);
 
     expect(link.unlink('admin')).toEqual({ link: null });
     expect(snapshot(raw, schema)).toEqual(before);
-    expect(events.map((e) => e.type)).toEqual(['cloud_link.linked', 'cloud_link.unlinked']);
+    expect(events.map((e) => e.type)).toEqual(['cloud_link.linked', 'cloud_link.registration_code_minted', 'cloud_link.unlinked']);
   });
 });

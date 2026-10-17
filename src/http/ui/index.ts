@@ -13,6 +13,7 @@ import { registerLocalAccountRoutes } from './local-accounts.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
 import { ACCESS_UNAVAILABLE, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { registerConnectedAccountsRoutes } from './connected-accounts.ts';
+import { registerGitLabAccountRoutes } from './gitlab-account.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -41,7 +42,7 @@ import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
 
 /** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436); remote access (issue #880). */
-export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess' | 'githubDeliveries' | 'hostLink' | 'wsl' | 'allowedHosts' | 'sourceEmailMatch' | 'cloudLink'> {
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess' | 'githubDeliveries' | 'hostLink' | 'wsl' | 'allowedHosts' | 'sourceEmailMatch' | 'cloudLink' | 'displayName'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
@@ -350,10 +351,12 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => personOf(signedInOf(req)!) });
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => personOf(signedInOf(req)!) });
 
   // design.md "Connected accounts": the user's own accounts, their session's user alone (issues #214, #1380, #1448).
   registerConnectedAccountsRoutes(app, { admin, tenant: o.tenant, email: (req) => sessionOf(req)?.identity.email });
+  // design.md "A GitLab source": the user's GitLab account, read and changed (issue #1448 part 2).
+  registerGitLabAccountRoutes(app, { admin, tenant: o.tenant, email: (req) => sessionOf(req)?.identity.email });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links
   // share one code: it works once, and expires like any other. `keep` (issue #95): the code the

@@ -1,0 +1,1 @@
+- An admin can now get a one-time registration code in Settings under hopper.io, to register this hopper at hopper.io. A hopper linked again keeps the same id there.

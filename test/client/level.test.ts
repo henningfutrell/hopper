@@ -3,7 +3,7 @@
 // signed like every call on its link. The client builds the argv itself, locked down as on any machine (no
 // tools, no MCP, no settings, no session); the prompt comes on stdin; a fresh private dir, removed after with
 // the project dir claude keeps for it; killed at its timeout. The client is real; claude is the fake.
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -57,6 +57,20 @@ describe('a level\'s run on a client target (issue #482)', () => {
     expect(Date.now() - started).toBeLessThan(5000);
     expect(r).toMatchObject({ code: 124, stderr: 'claude timed out after 500 ms' });
     expect(existsSync(rec().cwd)).toBe(false);
+  });
+
+  it('a run dir that cannot be removed fails the run with its path, never silently (issue #472)', async () => {
+    process.env.FAKE_CLAUDE_LITTER = 'stuck';
+    const r = await clientLevel(client!.transport(TOKEN), CALL, 15000);
+    const { cwd } = rec();
+    try {
+      expect(existsSync(cwd)).toBe(true);
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toContain(`the run left files on the machine: ${cwd}`);
+    } finally {
+      chmodSync(join(cwd, 'stuck'), 0o700);
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('refuses a call the hopper did not sign: claude never runs', async () => {

@@ -4,7 +4,8 @@
 // the sign-in itself and its job repositories, never from whether a source status exists: signed in with no repositories,
 // it asks to choose them; signed in with an expired token, to sign in again; signed in while the source cannot run, why.
 // A further GitHub account (issue #1448) has a source of its own, which names its account (`detail.accountKey`): shown in
-// that account's panel, never as a card. Pure; the view renders it.
+// that account's panel, never as a card. The GitLab account's source (issue #1448 part 2) is shown in the GitLab panel. Pure;
+// the view renders it.
 import type { ConnectedAccountStatus, SourceStatus } from './wire.ts';
 
 export interface SourcesView {
@@ -17,12 +18,15 @@ export interface SourcesView {
   /** The other connected-account sources (issue #1264): each a card of its own, marked as the duplicate it is. */
   github: SourceStatus[];
   summary: string;
+  /** The GitLab account's source (issue #1448 part 2), shown in the GitLab panel. */
+  gitlab?: SourceStatus;
   others: SourceStatus[];
   /** The sources that take the same work as an earlier one (issue #1264), each to remove. */
   duplicates: SourceStatus[];
 }
 
 const ACCOUNT = 'github-account';
+const GITLAB = 'gitlab-account';
 
 const isConnected = (s: SourceStatus | undefined) => s !== undefined && typeof s.detail.paused !== 'string' && s.state !== 'disabled' && s.state !== 'error';
 
@@ -68,11 +72,12 @@ export function sourcesView(sources: SourceStatus[], signIn?: ConnectedAccountSt
   // A second connected-account source (issue #1264) is a card of its own, marked as the duplicate it is.
   const account = firsts.find((s) => !s.duplicateOf) ?? firsts[0];
   const connected = isConnected(account);
+  const gitlab = sources.find((s) => s.kind === GITLAB);
   const further = Object.fromEntries(sources.flatMap((s) => { const k = accountKeyOf(s); return s.kind === ACCOUNT && k !== undefined ? [[k, s]] : []; }));
   return {
-    ...(account ? { account } : {}), further, connected, summary: summary(account, connected, signIn),
+    ...(account ? { account } : {}), ...(gitlab ? { gitlab } : {}), further, connected, summary: summary(account, connected, signIn),
     github: firsts.filter((s) => s !== account),
-    others: sources.filter((s) => s.kind !== ACCOUNT),
+    others: sources.filter((s) => s.kind !== ACCOUNT && s !== gitlab),
     duplicates: sources.filter((s) => s.duplicateOf !== undefined),
   };
 }

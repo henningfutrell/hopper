@@ -1,7 +1,9 @@
 // A file-issue run (issue #472, design.md "Run skills") against a fake `claude`: the skill goes on stdin, nothing is
 // written for it, and the run leaves nothing on the machine — on success, on an error and on a login that expired —,
-// with the user's own config dirs unchanged. The draft comes back checked against the constraints, with the skill id.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// with the user's own config dirs unchanged; on a timeout and a cancel too, the run stopped on the machine. A run dir
+// that cannot be removed fails the run, with its path. The draft comes back checked against the constraints, with the
+// skill id.
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -9,6 +11,7 @@ import { ON_MACHINE, type ClaudePrintOptions } from '../../src/plugins/claude-pr
 import { draftIssue } from '../../src/run-skills/draft.ts';
 import { loadRunSkill } from '../../src/run-skills/index.ts';
 import type { LoginReport, RunLogins } from '../../src/domain/types.ts';
+import { gone } from '../support/sweep.ts';
 
 const BIN = join(import.meta.dirname, '..', 'plugins', 'fake-claude.mjs');
 const KEYS = ['FAKE_CLAUDE_OUT', 'FAKE_CLAUDE_MODE', 'FAKE_CLAUDE_STRUCTURED', 'FAKE_CLAUDE_LITTER', 'CLAUDE_CONFIG_DIR'];
@@ -33,7 +36,20 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const rec = () => JSON.parse(readFileSync(join(dir, 'rec.json'), 'utf8')) as { argv: string[]; stdin: string; cwd: string };
+const rec = () => JSON.parse(readFileSync(join(dir, 'rec.json'), 'utf8')) as { argv: string[]; stdin: string; cwd: string; pid: number };
+/** Until fake claude has read its prompt and littered. */
+async function started(): Promise<void> {
+  for (let i = 0; i < 200 && !existsSync(join(dir, 'rec.json')); i++) await new Promise((r) => setTimeout(r, 25));
+}
+function expectNothingLeft(before: string[]): void {
+  const { cwd } = rec();
+  expect(cwd).not.toBe(dir);
+  expect(existsSync(cwd)).toBe(false);
+  expect(existsSync(join(config, 'projects')) ? readdirSync(join(config, 'projects')) : []).toEqual([]);
+  expect(readdirSync(config).filter((n) => n !== 'projects').sort()).toEqual(before);
+  expect(readdirSync(join(config, 'skills'))).toEqual([]);
+  expect(readFileSync(join(config, 'settings.json'), 'utf8')).toBe('{"mine":true}');
+}
 const signal = () => new AbortController().signal;
 /** As on an attached machine: claude through ON_MACHINE, in a fresh private dir, here. */
 const onMachine: ClaudePrintOptions['wrap'] = (argv) => ['sh', ['-c', ON_MACHINE, 'sh', ...argv]];
@@ -95,13 +111,48 @@ describe('draftIssue', () => {
       process.env.FAKE_CLAUDE_LITTER = '1';
       const before = readdirSync(config).sort();
       await draftIssue(run({ wrap: onMachine }), input, signal());
+      expectNothingLeft(before);
+    });
+  }
+
+  it('on a timeout, stops claude on the machine and leaves no file of the run there', async () => {
+    process.env.FAKE_CLAUDE_MODE = 'hang';
+    process.env.FAKE_CLAUDE_LITTER = '1';
+    const before = readdirSync(config).sort();
+    const r = await draftIssue(run({ wrap: onMachine, timeoutMs: 1500 }), input, signal());
+    expect(r).toEqual({ error: 'timeout after 1500ms' });
+    // Killed, it can stay a zombie a moment, until its new parent reaps it.
+    await expect.poll(() => gone(rec().pid), { timeout: 2000 }).toBe(true);
+    expectNothingLeft(before);
+  });
+
+  it('on a cancel, stops claude on the machine and leaves no file of the run there', async () => {
+    process.env.FAKE_CLAUDE_MODE = 'hang';
+    process.env.FAKE_CLAUDE_LITTER = '1';
+    const before = readdirSync(config).sort();
+    const ac = new AbortController();
+    const running = draftIssue(run({ wrap: onMachine }), input, ac.signal);
+    await started();
+    ac.abort();
+    expect(await running).toEqual({ error: 'aborted' });
+    // Killed, it can stay a zombie a moment, until its new parent reaps it.
+    await expect.poll(() => gone(rec().pid), { timeout: 2000 }).toBe(true);
+    expectNothingLeft(before);
+  });
+
+  for (const [what, mode] of [['an answer', undefined], ['a timeout', 'hang']] as const) {
+    it(`after ${what}, a run dir that cannot be removed fails the run with its path, never silently`, async () => {
+      if (mode) process.env.FAKE_CLAUDE_MODE = mode;
+      process.env.FAKE_CLAUDE_LITTER = 'stuck';
+      const r = await draftIssue(run({ wrap: onMachine, timeoutMs: 1500 }), input, signal());
       const { cwd } = rec();
-      expect(cwd).not.toBe(dir);
-      expect(existsSync(cwd)).toBe(false);
-      expect(existsSync(join(config, 'projects')) ? readdirSync(join(config, 'projects')) : []).toEqual([]);
-      expect(readdirSync(config).filter((n) => n !== 'projects').sort()).toEqual(before);
-      expect(readdirSync(join(config, 'skills'))).toEqual([]);
-      expect(readFileSync(join(config, 'settings.json'), 'utf8')).toBe('{"mine":true}');
+      try {
+        expect(existsSync(cwd)).toBe(true);
+        expect(r).toEqual({ error: expect.stringContaining(`the run left files on the machine: ${cwd}`) });
+      } finally {
+        chmodSync(join(cwd, 'stuck'), 0o700);
+        rmSync(cwd, { recursive: true, force: true });
+      }
     });
   }
 });

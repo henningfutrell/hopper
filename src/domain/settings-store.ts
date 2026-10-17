@@ -6,12 +6,13 @@ import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeAutoApproval } from './intake-auto-approve.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
+import type { GitLabAccountRecord } from './gitlab-account.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MachineDrains } from './machines.ts';
-import type { CloudLinkSettings } from './cloud-link.ts';
+import type { CloudLinkSettings, CloudRegistrationCode } from './cloud-link.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
@@ -32,6 +33,9 @@ export interface UserSettingsRepository {
   /** The repositories a connected account's jobs may use (issue #321), by the account's key (issue #1448); empty: none chosen. */
   getJobRepositories(key: ConnectedAccountKey): string[];
   setJobRepositories(key: ConnectedAccountKey, repositories: readonly string[]): void;
+  /** The user's GitLab account (issue #1448 part 2), never its token; absent: none attached. */
+  getGitLabAccount(): GitLabAccountRecord | undefined;
+  setGitLabAccount(account: GitLabAccountRecord | null): void;
   /** The usage graph's range and step the user chose (issue #385); absent: never chosen. */
   getUsageGraphView(): UsageGraphView | undefined;
   setUsageGraphView(view: UsageGraphView): void;
@@ -204,6 +208,13 @@ export interface InstanceSettingsRepository {
   setCloudLink(link: CloudLinkSettings): void;
   /** Deletes the link record, and nothing else. */
   removeCloudLink(): void;
+  /** The open registration code of the cloud link (issue #465), hashed; undefined: none. */
+  getCloudRegistrationCode(): CloudRegistrationCode | undefined;
+  setCloudRegistrationCode(code: CloudRegistrationCode): void;
+  removeCloudRegistrationCode(): void;
+  /** The instance's display name (issue #465): what the hopper's admin calls this hopper; empty: never set, or cleared. */
+  getDisplayName(): string;
+  setDisplayName(name: string): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */
