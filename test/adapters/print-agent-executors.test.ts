@@ -202,14 +202,14 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     }
   });
 
-  it('reaches this machine and ssh targets for the sweep, never a container or a client target (issue #410)', () => {
+  it('reaches this machine, ssh targets and client targets (issue #865) for the sweep, never a container (issue #410)', () => {
     expect(ex.machineShell!(HERE)).toBeDefined();
     expect(ex.machineShell!({ ...HERE, ssh: 'box' })).toBeDefined();
     expect(ex.machineShell!({ ...HERE, docker: 'c' })).toBeUndefined();
-    expect(ex.machineShell!({ ...HERE, client: {} })).toBeUndefined();
+    expect(ex.machineShell!({ ...HERE, client: {} })).toBeDefined();
   });
 
-  it('refuses a container target and a client target, and is not idempotent', async () => {
+  it('refuses a container target, and is not idempotent', async () => {
     expect(await ex.run({ ...ctxFor({ prompt: 'p' }).ctx, machine: { ...HERE, id: 'box', docker: 'c' } })).toEqual({ kind: 'failed', error: `${agent} does not run on container target box: it has no agent` });
     expect(ex.idempotent).toBe(false);
   });

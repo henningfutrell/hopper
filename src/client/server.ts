@@ -24,6 +24,8 @@
 // code a person pasted and answers how it ended, `cancel` stops it; the argv is built here, the request names only the account.
 // `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs an escalation level's claude in print
 // mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
+// `POST /turn {script, timeoutMs}` runs a print-mode agent's turn the hopper built (issue #865, turn.ts), its job's runtime and
+// sandbox in it; `{code, stdout, stderr, timedOut?}`; the hopper closing the call stops it.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s. A dial refused as
 // stale waited behind a stall of the hopper's event loop (issue #1154): it is dialled again at the first backoff, signed
@@ -51,6 +53,7 @@ import { checkRelease, installRelease, readRelease } from './release.ts';
 import { createResourceMeter, diskOfHome } from './resources.ts';
 import { infraCredentialsAt } from './infra-credentials.ts';
 import type { WindowsLink } from './windows-link.ts';
+import { runTurn, turnOf } from './turn.ts';
 import { workTreeCall } from './work-tree.ts';
 import { createKeyOf, createOnce, type Creates } from './once.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
@@ -143,7 +146,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in', '/leftovers', '/leftover-remove']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in', '/leftovers', '/leftover-remove', '/turn']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -187,6 +190,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   if (path === '/sign-in') { const r = await signIn(body); return answer(r.status, r.payload); }
+  if (path === '/turn') return turn(stream, body, answer);
   // A create is keyed by the name it makes (issue #1628, once.ts): sent again, it is answered as the first.
   const key = createKeyOf(path, body);
   if (path === '/runtime') {
@@ -228,6 +232,16 @@ async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | 
   answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 
+/** A print-mode agent's turn (issue #865, turn.ts): stopped when the hopper closes the call or the link ends. */
+async function turn(stream: ServerHttp2Stream, body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
+  const call = turnOf(parsed);
+  if (typeof call === 'string') return answer(400, { error: call });
+  const closed = new AbortController();
+  stream.once('close', () => closed.abort());
+  answer(200, await runTurn(call.script, call.timeoutMs, closed.signal));
+}
 
 /** After the load's answer leaves this end, how long the link stays up for it to reach the hopper before the restart. */
 const RESTART_GRACE_MS = 1000;

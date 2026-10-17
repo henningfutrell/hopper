@@ -27,6 +27,8 @@ export function printAgentPlugin(p: { id: PrintAgent; describe: string; bin: str
     create: (ctx, o) => createPrintAgentExecutor({
       agent: p.id, name: ctx.instanceName, bin: o.bin, args: o.args, sshBin: o.sshBin, sshControlDir: join(ctx.dataDir, 'ssh'),
       sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }), userEnv: ctx.userEnv,
+      // A client target's link (issue #865), looked up at each call.
+      client: (machine) => ctx.client(machine),
     }),
   };
 }
