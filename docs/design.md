@@ -1846,6 +1846,15 @@ For what the automatic path has not reached yet, **Dismiss many** (`POST /ui/api
 `{ jobIds }` dismisses each as one Dismiss does and answers each refusal with why, or `{ superseded: true }` runs
 the automatic pass now; the CLI's `hopper job dismiss <id>...` and `hopper job dismiss --superseded` (`src/cli-operator-dismiss.ts`).
 
+**A failure ends when its item's work ends** (issue #1461). An operator cleared failures by hand for hours: items whose
+work had landed, or whose pull request was closed, kept a hand-off open, because an item a person holds is `needs_you`
+and a merge or a close only marked its pull request. Now the item waits on no failure also when its pull request merged
+as the whole item (`mergedWhole`: not a part, not a culprit reverted from the landing branch) or closed without a merge
+(`itemEnded`, `src/failures/stale.ts`). The automatic pass also runs at each `job.pull_request_merged`,
+`job.pull_request_closed`, `job.pull_request_abandoned` and `landing_batch.promoted`: the hand-off closes
+(`item_closed`), its record settles, and the job is dismissed `by: "item_closed"`. The ledger then has the item `done`
+(merged) or `dropped` (closed). The sidebar's counts are issue #1457's.
+
 **Run again offered only where it is taken** (issues #362, #354). The UI never offers an action the
 daemon refuses: the Ended panel's Run again (`canRerun`) needs a failed or finished job, the newest of its
 item, its end reported. A closed issue no longer blocks it (Run again reopens it), so the per-sync
@@ -11504,6 +11513,15 @@ Two cases come before the rules and act on nothing (issue #517):
   recommendation (`auto: false`, `Retry recommended`, `Redirect recommended: <cause>`), and it waits on a person:
   its work may be stale, and a failure that old neither retries by itself nor opens or joins a problem that would
   hold other jobs.
+
+**The same failure twice in a row** (issue #1461). The record of its item's run before it — the same job's, when it
+was continued, else that of the job it ran again (`rerunOf`), by whatever ran it again — has the same signature
+(`repeatedOf`, `chain.ts`). A run again did not help, so the item stops: `person`, `repeated`, and no Jev pick (issue #550) runs it
+again. One the rules would run again gets the summary "Stopped: the same failure twice in a row"; one they give to a
+person already keeps its summary, with the repeat in its reasons. It is raised once, as one
+hand-off (`retry_limit` for a `transient` class, else `person`). Not a daemon restart, a timeout (its liveness
+decides) or a `shared` cause (its problem holds the job): they say nothing of the item's work. It comes after the rules,
+the two cases above, and a hopper bug the job reported (issue #1147).
 
 **hopper's own client errors** match known causes: `client <machine> is not dialled in` is `machine offline` (a
 problem, redirected or held, resolved by its online check); `no answer: its link closed` and `no answer within <n>
