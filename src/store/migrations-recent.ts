@@ -9,6 +9,7 @@ import { remoteAccessProvider } from './migration-remote-access.ts';
 import { SANDBOX_RUN_TABLE } from './sandbox-runs.ts';
 import { cloudLinkInstanceId } from './migration-cloud-link-id.ts';
 import { SAGA_TABLE } from './sagas.ts';
+import { NEED_STEP_TABLE } from './need-steps.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -47,4 +48,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 46: the sagas (issue #1524): one row per saga, its steps and data as JSON, its lease and abort as columns. A table
   // only: the build before never reads it, and leaves a saga to a hopper that knows its kind.
   SAGA_TABLE,
+  // 47: the need steps (issue #1568): one row per need step or box step, its ask, inputs, log, result and outputs. A
+  // table only: the build before never reads it, and keeps its steps in memory as before.
+  NEED_STEP_TABLE,
 ];

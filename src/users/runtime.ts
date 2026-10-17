@@ -19,7 +19,7 @@ import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } 
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, type NeedSteps } from '../sandbox/need-steps.ts';
+import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -183,7 +183,7 @@ export interface UserRuntime {
 }
 
 // The direct source (issue #901) pulls nothing, its jobs come through the route: a sync only retries a report that failed.
-const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000;
+const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000, AT_WORK: readonly string[] = ['running', 'waiting_answer', 'waiting_on']; // AT_WORK: a job whose need steps run (issue #1568)
 /** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the decision goes on as before. */
 const JEV_TIMEOUT_MS = 30_000;
 
@@ -398,7 +398,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Steps: Windows (issue #731, over ssh), box steps (issue #1004, in a job's own box), need steps (issue #1007, one-shot need boxes).
-  const mintReconcile = reconcilePass(() => vault.reconcileMints(), logger), sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) }); const needStepRun = o.sandboxes?.needStep, needSteps = createNeedSteps({ templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), release: (box) => vault.releaseMints(box), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), ...(needStepRun ? { run: (box, io, run) => needStepRun(user.id, box, io, run) } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349)
+  const mintReconcile = reconcilePass(() => vault.reconcileMints(), logger), sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) }); const launcher = o.sandboxes, needSteps = createNeedSteps({ userId: user.id, templates: () => vault.view().templates, mint: (ask) => vault.mintForNeedStep(ask), release: (box) => vault.releaseMints(box), planFile: (id) => proxy.githubProxy.infraPlans.file(id), dir: join(dataDir, 'need-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), now: () => clock.now(), steps: launcher?.steps ?? NO_NEED_STEPS, ran: (step) => launcher?.ran(step) ?? false, atWork: (jobId) => AT_WORK.includes(store.jobs.get(jobId)?.status ?? 'done'), ...(launcher ? { run: (box, io, run) => launcher.needStep(user.id, box, io, run), sagas: { begin: (step) => launcher.sagas.begin(step, user.id), abort: (saga, reason) => launcher.sagas.abort(saga, reason) } } : {}) }); // a box step is a need step in a sandbox of its own (issue #1349)
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {

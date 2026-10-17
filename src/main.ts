@@ -38,7 +38,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
-import { createSagas } from './sagas/index.ts';
+import { createSagas } from './sagas/index.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
 
@@ -213,7 +213,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Search (issue #945): one Solr core for the hopper, each user's documents apart by the instance id and the user id.
   // One outbound guard for the process (issue #1014): every user's sends to one destination share its limits. The shared
   // secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
-  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run) }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below
+  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run), steps: instance.needSteps, ran: (step) => instance.sandboxRuns.get(step) !== undefined, sagas: { begin: (step, userId) => sagas.begin(NEED_STEP_SAGA, step, { step }, { userId }).id, abort: (saga, reason) => sagas.abort(saga, reason) } }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below; each kept in the database and run by its saga (issue #1568)
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
@@ -293,7 +293,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     clients: sandboxClientsOf(runtimes),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
-  const sagas = createSagas({ repo: instance.sagas, instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
+  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps })], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
   const playground = createPlayground({ runtime: sandboxRuntime, noRuntime: inPod ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME, instanceId: instance.settings.instanceId(), network: hopperNetwork(config), limits: config.playground, clock, logger }); // the sandbox playground (issue #1410): many sandboxes at once, on the same runtime, none a machine
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
