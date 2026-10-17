@@ -1,0 +1,1 @@
+- When the link to a computer starts to fail, the hopper saves the work of its jobs at once, so a job that moves to another computer loses less work.

@@ -1369,7 +1369,9 @@ so a running job's pane and Claude outlive a restart.
 job. The herdr client of a machine with a link says whether that link is down (`HerdrClient.linkDown`, true while the
 client is not dialled in). Both ends of a link send an HTTP/2 PING on it every 5 s (`src/client/keepalive.ts`); a
 PING not answered within 10 s drops the link on that end, so a dead or half-open link (no FIN) is found within seconds,
-not at a call's timeout: the hopper then sees the link down, and the client dials in again. The monitor ends its watch at the first herdr error with the link down, as `failed` marked
+not at a call's timeout: the hopper then sees the link down, and the client dials in again. A PING still not answered
+when the next is due (5 s on) is a **missed heartbeat** (issue #1569): the hopper's end tells the herdr client's
+listeners (`HerdrClient.onLinkLate`), and the job's checkpoint is taken while the link may still carry it. The monitor ends its watch at the first herdr error with the link down, as `failed` marked
 `linkLost`; with the link up, errors count toward the three in a row that fail the job, as before. The runner does not
 record that outcome: it sets `linkLost { machine, since, failsAt }` on the job, records `job.link_lost` with the same
 data, and asks `canReattach` every second as above. Alive → `job.reattached { reason: "link restored" }`, `linkLost`
@@ -18684,7 +18686,8 @@ runs, and a parked job with such a copy can resume on any machine.
   herdr-claude, for a job with an agent session and a job worktree of its own — is checkpointed every ten minutes
   (`CHECKPOINT_EVERY_MS`, a pass each minute, one at a time; a machine that cannot be reached is asked again at the next
   interval, not each pass), and once more when it is parked, after `Executor.park` ended its agent, so the session is
-  whole (`releaseParked`). No setting: the interval is fixed.
+  whole (`releaseParked`). One more at a **missed heartbeat** of its machine (issue #1569, "The lost-machine move"), at
+  most once a minute. No setting: the interval is fixed.
 - **Read on the machine, never through the pane.** `MachineShell.checkpoint(jobId, worktree, session)` runs the fixed
   script of `src/client/checkpoint.ts` through the machine's own connection: this machine, ssh, or a client target's
   `POST /checkpoint` (a client older than it answers 404: no checkpoint, as for a missing `/reach`). The worktree must be
@@ -24743,8 +24746,32 @@ stream — with 401, before the `end-left` step ends it. A stream it holds open 
 - **The job's whole run is not a saga yet.** Its steps (claim, credentials, pane, run, checkpoint, end) stay in the runner;
   the issue's tests — a job stopped mid-run on one machine resumes on another, with no task sent twice — pass with the move.
 
-**Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers; a checkpoint at the first
-missed heartbeat and at link loss (the machine cannot be read once its link is down).
+**A checkpoint at the first missed heartbeat** (issue #1569). An `away` move resumes from the job's last checkpoint, and a
+pass takes one only every ten minutes: the work after it was lost. Once the link is down the machine cannot be read, so
+the hopper takes one at the first sign, before the drop. A **missed heartbeat** is either of:
+- a poll of the job's watch (`watchTurn`, `src/executors/herdr/monitor.ts`) that fails while the link is up — an ssh
+  target that did not answer, a herdr error, a slow machine;
+- a PING of a client target's link not answered when the next one is due (`keepAlive`'s `late`, `src/client/keepalive.ts`),
+  5 s before the PING timeout drops the link. `src/executors/client.ts` tells the listeners of that machine
+  (`onClientLinkLate`), and the watch of each job on it listens while it runs (`HerdrClient.onLinkLate`).
+
+The watch tells the engine (`ExecutionContext.missedHeartbeat`), and the engine takes the checkpoint at once
+(`Checkpoints.soon`, `src/engine/checkpoints.ts`), as the pass does: through the machine's own connection, scrubbed,
+`job.checkpointed`. It does not wait for it, and the watch goes on. At most one each `CHECKPOINT_SOON_GAP_MS` (a minute)
+after the last checkpoint taken or tried, and none while one is taken: a flaky link is not read over and over. A link
+that is half-open fails the read at the drop, and the checkpoint before it stays the one kept. A poll that fails with the
+link down already takes none.
+
+Decisions:
+- **The PING before the drop, not the drop.** At the drop the link is gone and the read cannot reach the machine. A late
+  PING is the last moment the link may still carry it: a slow link answers it, a dead one does not, and nothing is lost.
+- **A minute between two, the same as a fresh transcript read.** A machine that misses heartbeats again and again is read
+  once a minute, not at each poll.
+- **No new event and no field.** The checkpoint is `job.checkpointed`, as any other. Why it was taken is said in the log
+  only when it fails.
+
+**Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers: the daemon is one writer
+for its database (the daemon lock), so a second hopper on the same database is not supported yet.
 
 **Residual risk, stated.** Between the lost machine's last answer and the move (the grace, 30 s by default), the agent there
 may still ask the hopper, with the token of the job's run then: its asks are the job's, as before the machine was lost. Its
@@ -24758,7 +24785,9 @@ another started, which ends it; a job with no checkpoint fails as before), `test
 `test/integration/herdr-reattach.test.ts` (`gone`: it resumes its session on its machine; with no session it fails as
 before), `test/decider/left-machine.test.ts` (not placed back on the machine it left until the mark is lifted); the agent
 left is refused on the GitHub proxy and the job stream once the job moved, and the resumed run is answered
-(`test/integration/lost-machine-move.test.ts`), and the token after a move (`test/github-proxy/proxy.test.ts`).
+(`test/integration/lost-machine-move.test.ts`), and the token after a move (`test/github-proxy/proxy.test.ts`); a checkpoint at a missed heartbeat — a failed poll, a late PING, at most once a minute, none with the link down
+(`test/integration/checkpoint.test.ts`), the late PING said once before the drop (`test/client/keepalive.test.ts`), and
+over a real client link to the herdr client's listeners (`test/adapters/client-link-ping.test.ts`).
 
 ## The pane key (issue #1524 part 4, issue #1569, 2026-10-17)
 

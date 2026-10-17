@@ -2,7 +2,8 @@
 // CHECKPOINT_EVERY_MS its executor reads its agent session and its work not pushed on its machine, through the machine's
 // own connection; the hopper scrubs both of secrets and keeps the latest, so the job can resume on another machine when
 // its own is lost. One more is taken when a job is parked, once its agent has ended. A checkpoint of a job that ended
-// goes after CHECKPOINT_KEEP_MS. The scrub runs in a worker thread (checkpoint-scrub.ts, issue #1154), off the event loop.
+// goes after CHECKPOINT_KEEP_MS. One more at a missed heartbeat of its machine (issue #1569, `soon`): before its link
+// drops, while the machine may still answer, so a move elsewhere loses less than ten minutes of work. The scrub runs in a worker thread (checkpoint-scrub.ts, issue #1154), off the event loop.
 import type { JobCheckpoint } from '../domain/checkpoints.ts';
 import { CHECKPOINT_COMMITS } from '../domain/checkpoints.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
@@ -15,6 +16,8 @@ export const CHECKPOINT_EVERY_MS = 10 * 60000;
 export const CHECKPOINT_CHECK_MS = 60000;
 /** How long a checkpoint is kept after its job ended. */
 export const CHECKPOINT_KEEP_MS = 7 * 24 * 3600000;
+/** The least time between two checkpoints taken at missed heartbeats: a flaky link is not read over and over. */
+export const CHECKPOINT_SOON_GAP_MS = 60000;
 /** A job at work: its agent and work tree are live on its machine. */
 const AT_WORK: readonly Job['status'][] = ['running', 'waiting_answer', 'waiting_on'];
 
@@ -23,6 +26,11 @@ export interface Checkpoints {
   run(): Promise<void>;
   /** Take the job's checkpoint now: the one taken, or why none was. Never throws. */
   take(jobId: string): Promise<JobCheckpoint | string>;
+  /**
+   * A missed heartbeat of the job's machine (issue #1569): take its checkpoint now, unless one is being taken or was tried
+   * less than CHECKPOINT_SOON_GAP_MS ago. Does not wait for it; never throws.
+   */
+  soon(jobId: string): void;
 }
 
 const machineOf = (c: Pick<EngineContext, 'store'>, job: Job): string =>
@@ -72,6 +80,15 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
 
   return {
     take,
+    soon(jobId) {
+      const job = store.jobs.get(jobId);
+      if (!job || !AT_WORK.includes(job.status) || inFlight.has(jobId) || c.stopping()) return;
+      const last = Math.max(job.checkpoint ? Date.parse(job.checkpoint.at) : 0, tried.get(jobId) ?? 0);
+      if (c.clock.now().getTime() - last < CHECKPOINT_SOON_GAP_MS) return;
+      void take(jobId).then((said) => {
+        if (typeof said === 'string' && !c.stopping()) console.warn(`hopper: no checkpoint of job ${jobId} at a missed heartbeat: ${said}`);
+      });
+    },
     async run() {
       const now = c.clock.now().getTime();
       for (const job of store.jobs.list({ status: [...AT_WORK] })) {
