@@ -178,6 +178,10 @@ function WaitBadge({ job }: { job: Job }) {
   if (own === 'stuck') {
     return <span data-slot="own-wait"><StatusBadge status="failed" label="stuck: its own command is gone" title="Its background command is gone and it did not go on, not even after a nudge. End the wait, or cancel it." /></span>;
   }
+  // Its agent session ended while it waited (issue #1779): nothing in its pane can go on.
+  if (job.wait?.strandedAt) {
+    return <span data-slot="own-wait"><StatusBadge status="failed" label="stranded: its agent session ended" title="Its agent session ended while it waited, so its pane shows only a shell. It still goes on when what it waits on happens. End the wait to resume its session in a new pane now, or cancel it." /></span>;
+  }
   return <StatusBadge status="waiting_on" label="waiting" title="Waiting on something it named: no question, its lane is free, its pane stays on its machine. It goes on by itself when it happens, or when you end the wait." />;
 }
 

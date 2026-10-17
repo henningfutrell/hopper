@@ -73,11 +73,15 @@ describe('a stranded wait (issue #1779)', () => {
     expect(herdr.prompts[1]!.text).toContain('Your agent session ended while you waited');
   });
 
-  it('the operator CLI lists it as stuck work and wakes it with end-wait', async () => {
+  it('the operator CLI lists it as stuck work, shows it in queue list and job show, and wakes it with end-wait', async () => {
     const { a, job } = await strandedJob();
     const stuck = await hopper(a, ['failure', 'stuck']);
     expect(stuck.code).toBe(0);
     expect((JSON.parse(stuck.out) as StuckCause[]).find((c) => c.cause === 'stranded')!.ids).toEqual([job.id]);
+
+    const queue = await hopper(a, ['queue', 'list']);
+    expect((JSON.parse(queue.out) as { id: string; strandedSince?: string }[]).find((j) => j.id === job.id)!.strandedSince).toBe(job.wait!.strandedAt);
+    expect(JSON.parse((await hopper(a, ['job', 'show', job.id])).out)).toMatchObject({ strandedSince: job.wait!.strandedAt });
 
     const ended = await hopper(a, ['job', 'end-wait', job.id]);
     expect(ended.code).toBe(0);

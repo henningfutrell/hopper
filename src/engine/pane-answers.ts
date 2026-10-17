@@ -15,6 +15,8 @@
 // event the hopper watches nothing of) whose pane is lost — its machine or herdr restarted — is woken by the hopper, told so
 // (`job.wait_ended { by: hopper }`): its resume opens a new pane. Asked on every tick, so after a start and a seat's restart too.
 // Then the runner reattaches it: the executor watches the new turn until the next outcome.
+// Any other wait whose pane is lost (issue #1779: its agent session ended, its pane a bare shell) is marked stranded
+// (`strandedAt`), never ended: what it waits on, or a person (stuck work, `stranded`), wakes it, and its resume opens a new pane.
 // The job already runs physically, so it never waits for a lane: with none idle it opens one
 // more, marked past the cap (`pastCap`), over the lane cap until it ends: the decider drains that lane first (issue #1181).
 import type { PaneAnswer } from '../domain/ports.ts';
@@ -123,10 +125,19 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
     });
   }
 
-  /** A wait its lost pane carried (issue #1508): the hopper ends it. True when it did. */
+  /**
+   * A wait its lost pane carried (issue #1508): the hopper ends it. True when it did. Any other wait whose pane is lost is
+   * marked stranded (issue #1779), and unmarked when its agent is seen again: what it waits on still wakes it.
+   */
   async function wakeLost(job: Job): Promise<boolean> {
-    const lost = c.executors.get(job.spec.executor)?.paneLost;
-    if (!lost || !paneCarriesWait(job) || (await lost(job).catch(() => null)) !== true || c.stopping()) return false;
+    const probe = c.executors.get(job.spec.executor)?.paneLost;
+    const lost = probe ? await probe(job).catch(() => null) : null;
+    if (lost === null || c.stopping()) return false;
+    if (!paneCarriesWait(job)) {
+      if (lost !== Boolean(job.wait?.strandedAt)) store.tx(() => patchWait(job, { strandedAt: lost ? nowIso(c) : undefined }));
+      return false;
+    }
+    if (!lost) return false;
     const ended = store.tx(() => {
       const now = store.jobs.get(job.id);
       if (now?.status !== 'waiting_on' || now.wait?.since !== job.wait?.since) return false;
