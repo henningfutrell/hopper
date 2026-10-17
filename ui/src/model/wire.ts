@@ -29,7 +29,9 @@ import type {
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval,
   BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
+import type { GitLabAccountStatus } from '../../../src/domain/gitlab-account.ts';
 
+export type { GitLabAccountStatus };
 export type {
   AttachedMachine, PlaygroundLimits, PlaygroundSandbox, PlaygroundView, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   WindowsHost, WindowsHostsView,

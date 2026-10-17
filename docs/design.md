@@ -60,6 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 part 2, "A GitLab source"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal (`account.ts`), and the `gitlab-account` job source over it (`source.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -23818,7 +23819,8 @@ The header's **GitHub: reconnect needed** shows for any account that ended, the 
 - **The same GitHub login twice is refused.** A second key for the same account adds nothing but a second token to keep.
 
 **Left for later parts of issue #1448:** sources from other forges (GitLab first: OAuth or a personal access token, kept in
-the user's vault, with repositories picked per source, and Intake, jobs and git through it); and the user's own GitHub acts
+the user's vault, with repositories picked per source, and Intake, jobs and git through it; part 2, "A GitLab source", attaches
+it with a token and lists its issues in Intake); and the user's own GitHub acts
 that name no job repository still go through the first account: Report a bug, the trusted actor picker, Promote to GitHub,
 the GitHub watches, the component watchers, the work-item ledger's fallback read, repository checks (`no checks`) and landing
 batches, which list and act on the first account's job repositories only.
@@ -24040,3 +24042,62 @@ as their dialects call them: the machine's other users can see it in its process
 run dir removed after, the draft checked; over ssh; the model and effort flags; an answer that is no draft, not signed in,
 not installed, an offline, unknown or container machine, a timeout and a cancel; a client target's claude through its
 client and another CLI refused there; a user added later with their own claude config dir, refused another CLI here.
+
+## A GitLab source (issue #1448, part 2, 2026-10-17)
+
+Part 2 of issue #1448: sources from other forges, GitLab first. A user attaches a **GitLab account** with a personal access
+token, picks its projects, and Intake lists their issues. Jobs do not act through GitLab yet: that is the next part.
+
+**The account** (`src/gitlab/account.ts`). One per user, at https://gitlab.com or at a GitLab of the user's own (its URL:
+https, or http only on a loopback host; no user, query or fragment). `POST /ui/api/gitlab-account` (admin of the user):
+
+- `connect` `{ token, baseUrl? }`: GitLab must take the token (`GET /api/v4/user`); the **source email match** applies as for a
+  GitHub token, over the account's confirmed emails (its primary email and the confirmed ones of `GET /api/v4/user/emails`);
+  a token that may not read them is refused while the match is on, as GitHub's is. The token is kept as the system secret
+  `gitlab-account.access-token` in the user's vault, sealed under the master key; without the key nothing is kept. The record
+  (the user setting `gitlabAccount`: the URL, the username and id, when, the email it was connected for, the picked projects,
+  and the projects the token reaches as last read) never holds it. A refusal answers `failed` with why and keeps nothing; an
+  account there was stays as it was. A new token of the same account (the same URL and user id) keeps its picked projects.
+- `choose` `{ projects }`: the picked projects, the whole list. `refresh`: read again the projects the token reaches (its
+  memberships, `GET /api/v4/projects?membership=true`). `disconnect`: forget the record and the token; nothing is deleted at
+  GitLab. With no account, `choose` and `refresh` answer 404.
+- `GET /api/gitlab-account` answers its status: connected, expired, unreadable, or not connected (with why the last connect
+  failed). Never the token.
+
+**A source expiring marks only the source** (issue #1380). GitLab answering 401 to the token ends the account: the record
+keeps `ended`, its status reads `expired`, its source pauses, and a new token connects it again. The GitHub accounts go on.
+
+**The source** (`src/gitlab/source.ts`, the `gitlab-account` plugin). The hopper adds an instance of it while a GitLab account
+is attached, unless the plugins config has one (`gitlabAccountSources`, `src/users/further-sources.ts`), as it adds a further
+GitHub account's: attaching or removing the account reloads the plugins. Each sync reads the open issues labelled `hopper`
+(the option `label`) of each picked project, paged, and lists each in `detail.intake`: assigned to the account, not taken with
+why (`jobs do not act through GitLab yet`, group `other`); else `not assigned to your GitLab account` (group `not-assigned`).
+`discover` answers no item, so no job is made, and nothing is written to GitLab: no label, no comment. A project GitLab does not
+answer is named in `detail.repoErrors`; none answering is the source's error. Paused while no account is attached, none is
+picked, or its token ended. Its key is the issue's URL (`…/-/issues/<iid>`).
+
+**The UI** (`ui/src/views/gitlab-account.tsx`). Sources → **GitLab**, below GitHub: the URL and the token to connect; connected,
+who and where, the projects the token reaches to pick, Refresh projects, the source's sync, and **Remove this account**;
+expired, **reconnect needed** and a field for a new token. Its words say that jobs do not act through GitLab yet.
+
+**Decisions:**
+- **A personal access token only, in this part.** OAuth needs an application registered at each GitLab, with its secret kept by
+  the hopper; a token needs neither, and names its account without doubt. OAuth stays for a later part.
+- **Not a connected account.** The connected-accounts service is GitHub's: the hopper's app, its device and web flows, renewal,
+  installations. A GitLab token has none of these, so the GitLab account is a small service of its own over the same vault and
+  the same email match, not a provider of that service.
+- **Plain fetch, no GitLab client library.** Four GET calls with a header and a page number; a client library would add a
+  dependency larger than the code it replaces.
+- **List, do not take.** A job from GitLab needs git and the API through the hopper for GitLab, which do not exist yet. Taking
+  the issue would make a job that cannot push. So Intake lists the issue and says why it is not taken, and the next part takes it.
+- **One GitLab account per user, in this part.** The second criterion asks for one; a second one is a later need.
+
+**Left for later parts of issue #1448:** jobs through GitLab — the issue taken as a job, its claim and end labels, its git and its
+API through the hopper with the account's token (the acting identity per job, named on the job page), and its merge request
+followed; OAuth for GitLab; more than one GitLab account.
+
+**Verification:** `test/gitlab/account.test.ts` (connect, the sealed token, refusals keep nothing, the URL rule, the source email
+match, picked projects, the end marks only the account, removal), `test/gitlab/source.test.ts` (Intake lists the labelled open
+issues of the picked projects, paged; a project not answered; paused; the token refused), `test/users/further-sources.test.ts`,
+`test/integration/gitlab-source.test.ts` (the daemon with a fake GitLab: connect, pick, Intake lists; 404; the token never
+answered; removal removes the source), `test/ui/gitlab-view.test.ts` and `test/ui/sources.test.ts`.

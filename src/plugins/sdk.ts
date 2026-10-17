@@ -16,6 +16,7 @@ import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
 import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
+import type { GitLabAccount } from '../gitlab/account.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
@@ -190,6 +191,8 @@ export interface JobSourceContext {
   rejections(keys: string[]): Map<string, Rejection>;
   /** The user's connected GitHub account (issue #214): who it is, and a token for a call. */
   connectedAccounts: ConnectedAccountTokens;
+  /** The user's GitLab account (issue #1448 part 2): its status and the issues of its picked projects. Absent: none here. */
+  gitlabAccount?: GitLabAccount;
   /** For the source of this instance name: claim holders, the intake migration and intake events (issue #440); undefined: none kept. */
   intake(sourceName: string): IntakeContext | undefined;
   /** The user's trusted actors and approved requests (issue #652): what an item's origin is judged by. */

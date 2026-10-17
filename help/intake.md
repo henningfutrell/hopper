@@ -103,6 +103,12 @@ Approve works only when the text has not changed since the hopper showed it to y
 
 If the issue changes after you approved it, but before its job is made, the card shows again. It shows the approved text and the change line by line, with **Approve the new text**.
 
+### Issues on GitLab
+
+Connect a GitLab account in Sources → GitLab with a personal access token, and pick its projects. Intake then lists the open
+issues labelled `hopper` in those projects. Jobs do not act through GitLab yet: each GitLab issue shows why it is not taken,
+and the hopper writes nothing to GitLab.
+
 ### Issues not assigned to you
 
 An issue with the label but not assigned to you shows in Intake with `not assigned to you`.

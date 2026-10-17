@@ -13,6 +13,7 @@ import { registerLocalAccountRoutes } from './local-accounts.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
 import { ACCESS_UNAVAILABLE, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { registerConnectedAccountsRoutes } from './connected-accounts.ts';
+import { registerGitLabAccountRoutes } from './gitlab-account.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -354,6 +355,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // design.md "Connected accounts": the user's own accounts, their session's user alone (issues #214, #1380, #1448).
   registerConnectedAccountsRoutes(app, { admin, tenant: o.tenant, email: (req) => sessionOf(req)?.identity.email });
+  // design.md "A GitLab source": the user's GitLab account, read and changed (issue #1448 part 2).
+  registerGitLabAccountRoutes(app, { admin, tenant: o.tenant, email: (req) => sessionOf(req)?.identity.email });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links
   // share one code: it works once, and expires like any other. `keep` (issue #95): the code the
