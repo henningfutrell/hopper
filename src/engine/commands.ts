@@ -86,8 +86,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     cancel(id, reason, note) {
       const job = existing(c, id);
       if (job.status === 'claimed' || job.status === 'running') {
-        // The runner ends it `cancelled` once the executor has stopped.
-        if (runner.cancel(id, reason, note)) return job;
+        // The runner ends it `cancelled` once the executor has stopped: this hopper's, or the one that drives it (issue #1662).
+        if (runner.cancel(id, reason, note) || c.leases.relay(id, { kind: 'cancel', reason, ...(note ? { note } : {}) })) return job;
       }
       // A waiting_answer or parked job's question is cancelled in the same tx; a job on a question or about to
       // resume holds a pane, and a parked job its work tree, released after the commit by the normal reap.
@@ -149,7 +149,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       const refused = parkRefusal(c, job);
       if (refused) throw new EngineError('conflict', refused);
       if (job.status === 'running') {
-        if (runner.park(id)) return job;
+        if (runner.park(id) || c.leases.relay(id, { kind: 'park' })) return job;
         throw new EngineError('conflict', `job ${id} is not running here yet: try again`);
       }
       const parked = store.tx(() => {
