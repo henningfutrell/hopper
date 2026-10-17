@@ -49,7 +49,7 @@ export async function signIn(s: Set) {
 export const account = (s: Set, session: string | undefined) =>
   s.server.inject({ method: 'GET', url: '/api/account', ...(session ? { headers: { cookie: `${SESSION_COOKIE}=${session}` } } : {}) });
 
-/** Every row of the store's tables, as JSON: [account, session, sign_in]. */
+/** Every row of the store's tables, as JSON: [account, session, sign_in, record]. */
 export async function rows(databaseUrl: string): Promise<string> {
   const u = new URL(databaseUrl);
   const schema = u.searchParams.get('schema')!;
@@ -58,7 +58,7 @@ export async function rows(databaseUrl: string): Promise<string> {
   await c.connect();
   try {
     const out: unknown[] = [];
-    for (const t of ['account', 'session', 'sign_in']) out.push((await c.query(`SELECT row_to_json(x) AS r FROM "${schema}".${t} x`)).rows);
+    for (const t of ['account', 'session', 'sign_in', 'record']) out.push((await c.query(`SELECT row_to_json(x) AS r FROM "${schema}".${t} x`)).rows);
     return JSON.stringify(out);
   } finally { await c.end(); }
 }
