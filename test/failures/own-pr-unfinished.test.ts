@@ -2,10 +2,10 @@
 // the hopper's to finish. The cause wins over Not complete; the assessor sends it back while under the retry limit, never
 // grouped; its Continue tells the job the step its source names now.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FAILURE_SETTINGS, type FailureRecord, type Job, type UnfinishedPullRequest } from '../../src/domain/types.ts';
+import { DEFAULT_FAILURE_SETTINGS, type FailureRecord, type Job, type UnfinishedPullRequest, type WorkPullRequest } from '../../src/domain/types.ts';
 import type { RerunResult } from '../../src/domain/ports.ts';
 import { assess, type AssessInput } from '../../src/failures/assess.ts';
-import { matchCause, OWN_PR_UNFINISHED } from '../../src/failures/causes.ts';
+import { matchCause, OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED, ownPullRequestCause } from '../../src/failures/causes.ts';
 import { signatureOf } from '../../src/failures/signature.ts';
 import { createUnfinished } from '../../src/failures/unfinished.ts';
 
@@ -97,5 +97,31 @@ describe('its Continue', () => {
     const h = harness(async () => { throw new Error('GitHub is down'); });
     expect(await h.u.continueOf(record)).toMatchObject({ ok: false, reason: 'source' });
     expect(h.continued).toEqual([]);
+  });
+});
+
+// Issue #1522: the work state decides, not the failure text alone, so a wording drift cannot open Needs a person.
+describe('the cause the job\'s work shows', () => {
+  const pr = (over: Partial<WorkPullRequest> = {}): WorkPullRequest =>
+    ({ url: PR, number: 1260, by: 'opened', state: 'open', draft: false, conflicting: false, ...over });
+  const work = (...pullRequests: WorkPullRequest[]) => ({ item: 'open' as const, pullRequests });
+
+  it('its own or updated open pull request with merge conflicts, or a draft: Own PR unfinished', () => {
+    expect(ownPullRequestCause(work(pr({ conflicting: true })))).toBe(OWN_PR_UNFINISHED);
+    expect(ownPullRequestCause(work(pr({ by: 'updated', conflicting: true })))).toBe(OWN_PR_UNFINISHED);
+    expect(ownPullRequestCause(work(pr({ draft: true })))).toBe(OWN_PR_UNFINISHED);
+  });
+
+  it('its own open pull request, ready but for its red checks: Own PR checks red', () => {
+    expect(ownPullRequestCause(work(pr({ checks: 'failing' })))).toBe(OWN_PR_CHECKS_RED);
+    expect(ownPullRequestCause(work(pr({ checks: 'failing' }), pr({ url: `${PR}1`, number: 12601, conflicting: true })))).toBe(OWN_PR_UNFINISHED);
+  });
+
+  it('none: no pull request, only closed ones, a ready one, or the item not open', () => {
+    expect(ownPullRequestCause(work())).toBeUndefined();
+    expect(ownPullRequestCause(work(pr({ state: 'closed', conflicting: true })))).toBeUndefined();
+    expect(ownPullRequestCause(work(pr({ checks: 'pending' })))).toBeUndefined();
+    expect(ownPullRequestCause({ item: 'closed', pullRequests: [pr({ conflicting: true })] })).toBeUndefined();
+    expect(ownPullRequestCause(work(pr({ conflicting: true }), pr({ url: `${PR}1`, number: 12601, state: 'merged' })))).toBeUndefined();
   });
 });

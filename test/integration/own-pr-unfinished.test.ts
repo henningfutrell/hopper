@@ -88,4 +88,57 @@ describe('own PR unfinished (issue #1265)', () => {
     expect(await assessed(app, job.id)).toEqual([expect.objectContaining({ causeId: 'own-pr-unfinished', decision: 'continue', auto: false })]);
     expect(await app.events('types=job.continued&limit=1000')).toEqual([]);
   });
+
+  // Issue #1522: the miss's text is the generic Not complete form — the pull request the job updated is one its issue names,
+  // which neither closes nor references the issue — but its work shows the pull request with merge conflicts.
+  describe('the failure text in the generic Not complete form, its work showing the conflicts (issue #1522)', () => {
+    async function namedPullRequest(gh: FakeGitHub, app: TestApp, fix: (url: string, issue: number) => void) {
+      const other = gh.createIssue({ repo: REPO, body: 'Other work.' });
+      const pr = gh.openReferencingPullRequest(REPO, other.number, { createdAt: '2026-10-01T09:00:00.000Z', crossReferenced: false, headRef: 'other-work' });
+      const issue = gh.createIssue({ repo: REPO, body: `${body({ op: 'echo' })}\nIts work is on ${pr.url}.`, labels: ['hopper'] });
+      let first: string | undefined;
+      app.scripted.ships((j) => {
+        first ??= j.id;
+        if (j.id === first && j.continued === undefined) gh.pushToPullRequest(pr.url, new Date().toISOString(), { conflicting: true });
+        else fix(pr.url, issue.number);
+      });
+      await app.sync();
+      const [job] = await jobsFor(app, issue.url);
+      return { issue, job: job!, url: pr.url };
+    }
+
+    it('no hand-off: Own PR unfinished, the job goes on, and finishes once it is fixed', async () => {
+      const gh = createFakeGitHub();
+      const app = await boot(gh);
+      const { issue, job } = await namedPullRequest(gh, app, (pr, n) => {
+        gh.pushToPullRequest(pr, new Date().toISOString());
+        gh.closeIssue(REPO, n, 'someone', { at: new Date().toISOString() });
+      });
+      const failed = await app.waitForStatus(job.id, 'failed');
+      expect(failed.error).toMatch(/^not complete: /);
+      expect(failed.error).not.toMatch(/merge conflicts with its base/);
+      await waitFor(async () => (await jobsFor(app, issue.url)).find((j) => j.status === 'finished'), { what: 'the job finished', timeoutMs: 30_000 });
+      expect(await assessed(app, job.id)).toEqual([expect.objectContaining({ causeId: 'own-pr-unfinished', decision: 'continue', auto: true })]);
+      expect((await app.events('types=job.continued&limit=1000')).length + (await app.events('types=job.rerun&limit=1000')).length).toBe(1);
+      expect(await app.events('types=handoff.opened&limit=1000')).toEqual([]);
+    });
+
+    it('still conflicting after the retries: a person', async () => {
+      const gh = createFakeGitHub();
+      const app = await boot(gh, { maxAttempts: 1 });
+      await namedPullRequest(gh, app, (pr) => gh.pushToPullRequest(pr, new Date().toISOString(), { conflicting: true }));
+      const handoff = await waitFor(async () => (await failuresOf(app)).handoffs[0], { what: 'a hand-off', timeoutMs: 30_000 });
+      expect(handoff.reasons.join(' ')).toMatch(/retry limit reached: sent back 1 time to finish its pull request/);
+      expect((await app.events('types=job.continued&limit=1000')).length + (await app.events('types=job.rerun&limit=1000')).length).toBe(1);
+    });
+
+    it('automatic Continue off: a person, as before', async () => {
+      const gh = createFakeGitHub();
+      const app = await boot(gh, { auto: { retry: true, hold: true, redirect: true, continue: false } });
+      const { job } = await namedPullRequest(gh, app, () => {});
+      const handoff = await waitFor(async () => (await failuresOf(app)).handoffs[0], { what: 'a hand-off', timeoutMs: 30_000 });
+      expect(handoff.jobId).toBe(job.id);
+      expect(await app.events('types=job.continued&limit=1000')).toEqual([]);
+    });
+  });
 });
