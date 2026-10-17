@@ -1,5 +1,5 @@
-// The hopper.io state snapshot (issue #466 part 1, design.md "The hopper.io state snapshot"): what an install may send
-// on its hopper.io link for the dashboard, and how it is made from the install's own state. The allow-list of
+// The hopper.io state snapshot (issue #466 part 1, design.md "The hopper.io state snapshot"): what an instance may send
+// on its cloud link for the dashboard, and how it is made from the instance's own state. The allow-list of
 // docs/hopper-io-security.md R5 is this schema: counts, closed enums and an opaque machine key, never free text. Pure:
 // `sentAt` and the machine key are passed in. Nothing here sends anything.
 import { z } from 'zod';
@@ -23,7 +23,7 @@ const count = z.number().int().min(0);
 export const HOPPER_IO_STATE_SCHEMA = strict({
   schema: z.literal(1),
   sentAt: z.iso.datetime(),
-  install: strict({ version: z.string().regex(/^(?:[0-9a-f]{4,8}|unknown)$/), channel: z.enum(UPDATE_CHANNELS) }),
+  instance: strict({ version: z.string().regex(/^(?:[0-9a-f]{4,8}|unknown)$/), channel: z.enum(UPDATE_CHANNELS) }),
   queue: strict({ waiting: count, running: count, locked: count, gate: z.enum(QUEUE_GATE_MODES) }),
   attention: strict({ questionsAwaitingOwner: count, jobsLocked: count, machinesOffline: count }),
   machines: z.array(strict({
@@ -39,9 +39,9 @@ export type HopperIoState = z.infer<typeof HOPPER_IO_STATE_SCHEMA>;
 export type HopperIoMachine = HopperIoState['machines'][number];
 
 /**
- * What the snapshot is made from: the install's machines and lanes (GET /api/machines), its queue (GET /api/queue), its
+ * What the snapshot is made from: the instance's machines and lanes (GET /api/machines), its queue (GET /api/queue), its
  * open questions and parked jobs (GET /api/questions), its installed version and channel (GET /api/update).
- * `machineKey`: an opaque, stable key for a machine id, never the id itself (the hopper.io link derives it, issue #464).
+ * `machineKey`: an opaque, stable key for a machine id, never the id itself (the cloud link derives it, issue #464).
  */
 export interface HopperIoStateInputs {
   sentAt: string;
@@ -87,7 +87,7 @@ export function projectHopperIoState(i: HopperIoStateInputs): HopperIoState {
   return {
     schema: 1,
     sentAt: i.sentAt,
-    install: { version: i.installed ? i.installed.commit.slice(0, 8) : 'unknown', channel: i.channel },
+    instance: { version: i.installed ? i.installed.commit.slice(0, 8) : 'unknown', channel: i.channel },
     queue: { waiting: i.queue.waiting.length, running: i.queue.running.length, locked: i.queue.locked.length, gate: i.queue.gate.mode },
     attention: {
       questionsAwaitingOwner: i.questions.filter((q) => q.status === 'open' && q.tier === 'human' && !parkedOn.has(`${q.jobId} ${q.id}`)).length,
