@@ -16,6 +16,7 @@ import { agentSignIn, placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 import { elsewhereBrief, freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
+import { requeuePreempted } from './preemption.ts';
 import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
 import { nudgeCheck } from './nudge-check.ts';
@@ -181,7 +182,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const machine = await machineOf(claim.laneId);
     const reattach = launch !== 'run';
     const started = reattach ? job : store.tx(() => {
-      const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c) });
+      // A preempted job runs again (issue #1525): its mark goes, and its minimum run time counts from now.
+      const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c), preempted: undefined });
       store.events.append({ type: 'job.started', jobId: job.id, laneId: claim.laneId, data: { attempts: j.attempts } });
       return j;
     });
@@ -258,6 +260,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         progress.flush();
         const parked = store.tx(() => recordPark(c, store.jobs.get(job.id) ?? started, 'running', claim.laneId));
         await releaseParked(c, parked);
+        // Preempted (issue #1525): queued again at once, to resume where it stopped.
+        if (parked.preempted) requeuePreempted(c, job.id);
         return;
       }
       if (entry.cancelReason !== undefined) break;

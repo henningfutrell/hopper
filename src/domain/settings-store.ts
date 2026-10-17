@@ -13,7 +13,7 @@ import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MachineDrains } from './machines.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, AutoParkSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
 } from './types.ts';
 
@@ -105,6 +105,9 @@ export interface UserSettingsRepository {
   /** Auto-park (issue #650): how long a question waits on a person before its job parks by itself; absent: never set. */
   getAutoPark(): AutoParkSettings | undefined;
   setAutoPark(settings: AutoParkSettings): void;
+  /** Preemption (issue #1525): whether a higher-priority job takes a running job's lane, and its minimum run time; absent: never set (on, 10 min). */
+  getPreemption(): PreemptionSettings | undefined;
+  setPreemption(settings: PreemptionSettings): void;
   /** Asking on the issue thread (issue #435): the policy for own and other repositories; absent: never set. */
   getThreadAsk(): ThreadAskSettings | undefined;
   setThreadAsk(settings: ThreadAskSettings): void;

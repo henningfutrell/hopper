@@ -2,7 +2,7 @@
 import { decide } from '../decider/index.ts';
 import { retiredPins } from '../decider/retired.ts';
 import { signedOutOf } from '../decider/signed-out.ts';
-import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, LaneId, MachineSnapshot } from '../domain/types.ts';
+import { preemptionInput, type CleanupDue, type Decision, type DecisionInputs, type ExpectedCost, type Job, type JobId, type Lane, type LaneId, type MachineSnapshot } from '../domain/types.ts';
 import { credentialHeldIds } from '../domain/machine-credentials.ts';
 import { nowIso, policyOf, priorityTagOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
@@ -10,6 +10,7 @@ import type { BlastRadius } from './blast-radius.ts';
 import type { PlacementPicks } from './lane-calls.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
+import { preemptionSettings } from './preemption.ts';
 import { queueOrder } from './queue-order.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
@@ -30,6 +31,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const placementPicks = picks.input(waiting);
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
+    const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
     return {
       at: nowIso(c),
       trigger,
@@ -49,6 +51,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(signedOut.length ? { signedOut } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
+      ...(preemption ? { preemption } : {}),
       policy: policyOf(c),
     };
   } };
@@ -68,14 +71,17 @@ function expectedOf(waiting: readonly Job[], expected: ExpectedCostOf): Record<s
 
 /** A Decision that changes nothing is not recorded (design.md "The decider"). */
 export function isNoOp(d: Decision): boolean {
-  if (d.start.length > 0) return false;
+  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0) return false;
   if (d.lanes.some((p) => p.open > 0 || p.close.length > 0 || p.drain.length > 0)) return false;
   const byId = new Map(d.inputs.waiting.map((j) => [j.id, j]));
   return d.hold.every((h) => byId.get(h.jobId)?.holdReason === h.reason)
     && d.wait.every((w) => { const j = byId.get(w.jobId); return j?.status === 'queued' && j.waitReason === w.reason; });
 }
 
-function apply(c: EngineContext, d: Decision): Claim[] {
+/** What one Decision asks of the runner: the claims to start, and the running jobs to park for preemption (issue #1525). */
+export interface Applied { claims: Claim[]; preempts: JobId[] }
+
+function apply(c: EngineContext, d: Decision): Applied {
   const { store } = c;
   store.decisions.save(d);
   store.events.append({
@@ -120,7 +126,19 @@ function apply(c: EngineContext, d: Decision): Claim[] {
     if (!job || (job.status === 'queued' && job.waitReason === w.reason)) continue;
     store.jobs.update(w.jobId, { status: 'queued', holdReason: undefined, waitReason: w.reason });
   }
-  return claims;
+  // Preemption (issue #1525): the job is marked here, and parked by the runner after the commit; it is queued again once parked.
+  const preempts: JobId[] = [];
+  for (const p of d.preempt ?? []) {
+    const job = store.jobs.get(p.jobId);
+    if (job?.status !== 'running' || job.laneId !== p.laneId) continue;
+    store.jobs.update(p.jobId, { preempted: { at: d.at, by: p.by, byPriority: p.byPriority, priority: p.priority, machineId: p.machineId } });
+    store.events.append({
+      type: 'job.preempted', jobId: p.jobId, laneId: p.laneId, machineId: p.machineId, decisionId: d.id,
+      data: { by: p.by, byPriority: p.byPriority, priority: p.priority, reason: p.reason },
+    });
+    preempts.push(p.jobId);
+  }
+  return { claims, preempts };
 }
 
 /**
@@ -161,14 +179,15 @@ function failRetiredPins(c: EngineContext, machines: readonly MachineSnapshot[])
   });
 }
 
-/** Returns the claims whose executors the caller must start, outside the transaction. */
-export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<Claim[]> {
+/** Returns the claims whose executors the caller must start, and the jobs it must park for preemption, outside the transaction. */
+export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<Applied> {
+  const none: Applied = { claims: [], preempts: [] };
   const { machines, inputs } = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks);
-  if (c.stopping()) return [];
+  if (c.stopping()) return none;
   freeStrandedLanes(c);
   failRetiredPins(c, machines);
   autoAccept(c);
   const decision = decide(inputs(), decisionId);
-  if (isNoOp(decision)) return [];
+  if (isNoOp(decision)) return none;
   return c.store.tx(() => apply(c, decision));
 }
