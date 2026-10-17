@@ -3,7 +3,7 @@
 // waits for, and its explainer: the summary in plain words, the risk callouts, the blast radius and the checks — and
 // whether this person may approve it: by its risk (part 3), an operator a low-risk plan in uat only, an admin any other,
 // nobody a plan that failed a check. One line per apply, and the applies and drift timeline: plans, approvals, applies and
-// out-of-band changes, newest first. The environment watchers (part 4) as a person types them: one environment a line.
+// out-of-band changes, newest first, each with what it touched (issue #1781: the topology links it to its nodes). The environment watchers (part 4) as a person types them: one environment a line.
 import type { InfraWatchers, OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
 import { changeHeadline } from './out-of-band.ts';
 
@@ -58,7 +58,10 @@ export const askedLine = (a: NonNullable<PlanView['asked']>): string =>
 export const applyLine = (a: PlanApply): string =>
   `${a.operation} on ${a.asset.kind} ${a.asset.name} by job ${a.job.slice(0, 8)}, valid until ${a.expiresAt}${a.renewal ? ' (renewed)' : ''}`;
 
-export interface TimelineEntry { at: string; kind: 'plan' | 'approved' | 'apply' | 'drift' | 'out-of-band' | 'marked'; words: string }
+/** What an entry touched (issue #1781): a plan's or an apply's asset, or an out-of-band change's target. */
+export type TimelineSubject = { asset: PlanApply['asset'] } | { target: string };
+
+export interface TimelineEntry { at: string; kind: 'plan' | 'approved' | 'apply' | 'drift' | 'out-of-band' | 'marked'; words: string; subject?: TimelineSubject }
 
 const DRIFT: readonly OutOfBandView['source'][] = ['gitops', 'terraform-plan'];
 
@@ -67,13 +70,13 @@ export function infraTimeline(plans: PlanView[], applies: PlanApply[], changes: 
   const short = (id: string): string => id.slice(0, 8);
   const entries: TimelineEntry[] = [
     ...plans.flatMap((p): TimelineEntry[] => [
-      { at: p.createdAt, kind: 'plan', words: `Plan ${short(p.id)} recorded: ${planHeadline(p)}` },
-      ...(p.approval ? [{ at: p.approval.at, kind: 'approved' as const, words: `Plan ${short(p.id)} approved by ${p.approval.by}` }] : []),
+      { at: p.createdAt, kind: 'plan', words: `Plan ${short(p.id)} recorded: ${planHeadline(p)}`, subject: { asset: p.asset } },
+      ...(p.approval ? [{ at: p.approval.at, kind: 'approved' as const, words: `Plan ${short(p.id)} approved by ${p.approval.by}`, subject: { asset: p.asset } }] : []),
     ]),
-    ...applies.map((a): TimelineEntry => ({ at: a.at, kind: 'apply', words: `Applied plan ${short(a.plan)}: ${applyLine(a)}` })),
+    ...applies.map((a): TimelineEntry => ({ at: a.at, kind: 'apply', words: `Applied plan ${short(a.plan)}: ${applyLine(a)}`, subject: { asset: a.asset } })),
     ...changes.flatMap((c): TimelineEntry[] => [
-      { at: c.at, kind: DRIFT.includes(c.source) ? 'drift' : 'out-of-band', words: changeHeadline(c) },
-      ...(c.marked ? [{ at: c.marked.at, kind: 'marked' as const, words: `Change ${short(c.id)}: ${c.marked.mark} by ${c.marked.by}${c.marked.reason ? `: ${c.marked.reason}` : ''}` }] : []),
+      { at: c.at, kind: DRIFT.includes(c.source) ? 'drift' : 'out-of-band', words: changeHeadline(c), subject: { target: c.target } },
+      ...(c.marked ? [{ at: c.marked.at, kind: 'marked' as const, words: `Change ${short(c.id)}: ${c.marked.mark} by ${c.marked.by}${c.marked.reason ? `: ${c.marked.reason}` : ''}`, subject: { target: c.target } }] : []),
     ]),
   ];
   return entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
