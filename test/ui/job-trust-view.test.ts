@@ -7,6 +7,7 @@
 //   Scenario: an operator lifts a quarantine
 //   Scenario: a viewer reads the level and gets no button; an ended job offers none
 //   Scenario: a job Jev's trust check lowered says why; an operator approves its trust, after a confirm (part 4)
+//   Scenario: a job a person's deny lowered says why, and offers Approve trust (part 5)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,12 +26,17 @@ const lowered = {
   stamp: { ...stamp('untrusted'), reasons: ['origin:approved', 'jev:touches_ci'], by: 'jev', check: { pick: 'lower:untrusted:touches_ci', confidence: 0.9, applied: true } },
 } as unknown as Job;
 
+const denied = {
+  ...lowered, id: 'd1',
+  stamp: { ...stamp('screened'), reasons: ['origin:approved', 'jev:unclear', 'deny:sandbox'], by: 'person' },
+} as unknown as Job;
+
 let calls: { method: string; path: string; body?: unknown }[] = [];
 
 function fakeDaemon(role: 'operator' | 'viewer') {
   const routes: Record<string, () => unknown> = {
     '/api/health': () => ({ ok: true, version: '0', router: 'pass-through', fallback: false, executors: ['herdr-claude'], uptimeS: 1 }),
-    '/api/queue': () => ({ waiting: [lowered], running: [running, quarantined], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
+    '/api/queue': () => ({ waiting: [lowered, denied], running: [running, quarantined], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
     '/api/machines': () => ({ machines: [] }), '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
@@ -123,6 +129,13 @@ describe('trust on the job view (issue #655)', () => {
     expect(calls.some((c) => c.method === 'POST' && c.path.startsWith('/ui/api/jobs/'))).toBe(false);
     await act(async () => { [...d.querySelectorAll('button')].find((b) => b.textContent === 'Approve trust')!.click(); });
     await vi.waitFor(() => expect(calls.filter((c) => c.method === 'POST' && c.path.startsWith('/ui/api/jobs/'))).toEqual([{ method: 'POST', path: '/ui/api/jobs/l1/approve-trust', body: {} }]));
+  });
+
+  it('a job a person\'s deny lowered says why, the last reason first, and offers Approve trust', async () => {
+    await boot('d1');
+    expect(trust().dataset.level).toBe('screened');
+    expect(document.querySelector('[data-slot="job-trust-check"]')?.textContent).toBe('A person declined its sandbox request');
+    expect(button(/Approve trust/)).toBeDefined();
   });
 
   it('a job no check lowered offers no Approve trust', async () => {

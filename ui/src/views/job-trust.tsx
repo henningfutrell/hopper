@@ -1,7 +1,7 @@
 // A job's trust on its job view (issue #655): its trust level from its signed stamp, and for an operator, Quarantine — the
 // job is held, and its proxy token opens no door of the hopper (POST /ui/api/jobs/:id/quarantine) — or Lift quarantine,
 // which gives back the level it had (POST /ui/api/jobs/:id/unquarantine). A job Jev's trust check lowered says why, with
-// Approve trust (POST /ui/api/jobs/:id/approve-trust, part 4).
+// Approve trust (POST /ui/api/jobs/:id/approve-trust, part 4); so does a job a person's deny lowered (part 5).
 import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { Confirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,7 @@ export function JobTrust({ job }: { job: Job }) {
       {checked && <span data-slot="job-trust-check" className="min-w-0 break-words text-warn">{checked}</span>}
       {operate && trustApprovalOffered(job) && (
         <Confirm title="Approve this job's trust?" action="Approve trust" onConfirm={() => act(`${at}/approve-trust`, {}, 'Trust approved')}
-          description="The job gets the trust level approved, and it may start. Read its text first: Jev's trust check found a reason to hold it.">
+          description="The job gets the trust level approved, and it may start. Read its text first: it was held for the reason shown.">
           <Button size="xs" variant="outline"><ShieldCheck />Approve trust</Button>
         </Confirm>
       )}

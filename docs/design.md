@@ -16940,7 +16940,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 4, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 5, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17079,11 +17079,37 @@ asked; a job the rules hold already is not asked either: Jev can only lower.
 Persisted state: `check` is one more field in the stamp. The build before verifies such a stamp (its MAC covers every
 field but `mac`), and does not read `check`; a job it made has none, and a build with this part asks for it.
 
+**A person's deny at gate 2** (part 5, `deniedStamp`, `recordDeny` in `src/engine/quarantine.ts`). The issue: "deny by Jev
+or a person: the job stamp drops one level, and a second deny in the job sets it to `quarantined`". A person's deny is a
+**declined sandbox request** (`POST /ui/api/sandbox-requests`, `decline`; a delegate approver's too, issue #1138), the
+one request a job makes that a person answers no to now. After the decline, in its own transaction:
+
+- the job's stamp is signed one level lower, `by: person`, with the reason id `deny:sandbox`
+  (`job.trust_lowered { from, to, reason, by: person, person, via }`);
+- the **second** deny in the job — two `deny:sandbox` on its stamp —, or a deny of a job at `untrusted`, signs it
+  `quarantined`, its level then kept as `was` (`job.quarantined { was, reason: deny:sandbox, person, via }`): it is held,
+  and its proxy token opens no door of the hopper, as for a person's quarantine (part 2);
+- nothing changes for a job that ended, is quarantined already, or whose stamp does not verify: the decline itself
+  stands, and the job is told no as before.
+
+A running job lowered below the dispatch minimum keeps running and keeps its doors (part 2): the level holds only a start.
+A job held before it starts (issue #1471, "Sandboxes before the start") and lowered below its brake waits again; below
+`approved` it says why (`trust stamp screened is below approved (a person declined its sandbox request): held — a person
+approves its trust on the job, or cancels it`) and **Approve trust** takes it (`trustApprovable`, as for a check). The job
+view shows `A person declined its sandbox request` beside the level. The denies stay on the stamp: a lift of the
+quarantine and a person's approval keep them, so the next deny quarantines the job again. A new spec (`respecify`) keeps
+its reasons too. Jev's trust check is not asked for a job a person stamped, a deny's included.
+
+What is not a deny: an approval; a decline of a request that no longer waits (409, nothing changes); a person's decline
+of a **credential request** (the dynamic vault, issue #583), which often says only that no such credential exists, and
+which answers every job that waited on it at once. No migration: `deny:sandbox` is one more reason id, which the build
+before verifies (its MAC covers the reasons) and reads as any other.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
 `intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy, Jev's `sandbox-request`, its brake, lowering trust on a deny,
-quarantine by two denies, stopping a quarantined job's sandboxes), the restamp on an edit seen at a sync, and the Intake
-and API views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+rest of gate 2 at the skill broker (the request's policy, Jev's `sandbox-request` and its denies, its brake, stopping a
+quarantined job's sandboxes and revoking its vault grant), the restamp on an edit seen at a sync, and the Intake and API
+views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

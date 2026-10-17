@@ -29,7 +29,21 @@
     },
     "by": {
       "type": "string",
-      "const": "jev"
+      "enum": [
+        "jev",
+        "person"
+      ]
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
     }
   },
   "required": [
