@@ -302,7 +302,7 @@ describe('a job\'s containers and volumes (issue #1120)', () => {
     const r = rig({ found: { ...none, containers: ['done', 'run'] }, containers: ['done'] });
     await r.sweep.run(true);
     expect(r.reaps).toEqual([{ jobId: 'done' }]);
-    expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'] } }]);
+    expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'], details: [{ id: 'c-done', name: 'db', image: 'postgres:16' }] } }]);
     expect(r.logs).toContainEqual(expect.stringContaining('removed 1 container and 1 volume of job done on m'));
   });
 
@@ -317,6 +317,6 @@ describe('a job\'s containers and volumes (issue #1120)', () => {
     r.events[0]!.data = { paths: ['/w/.worktrees/@scratch/old/repo'] };
     await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
     await r.sweep.removals();
-    expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'] } }]);
+    expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'], details: [{ id: 'c-old', name: 'db', image: 'postgres:16' }] } }]);
   });
 });

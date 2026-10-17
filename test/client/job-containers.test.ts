@@ -17,9 +17,11 @@ const FAKE_RUNTIME = `#!/bin/sh
 echo "$*" >> "$FAKE/calls"
 list() { f=$1; l=$2; case $l in label=${JOB_LABEL}) cut -d " " -f 1 "$FAKE/$f";; label=${JOB_LABEL}=*) awk -v j="\${l#label=${JOB_LABEL}=}" '$2 == j { print $1 }' "$FAKE/$f";; esac; }
 label() { f=$1; shift; for i in "$@"; do awk -v i="$i" '$1 == i { print $2 }' "$FAKE/$f"; done; }
+# What the reap asks of a container for the parts list (issue #975): docker's own answer, its name after a slash.
+details() { case $1 in c0ffee01) echo '/db-1 docker.io/library/postgres:16 "2026-10-01T00:05:00.123456789Z" "2026-10-01T00:20:00Z"';; c0ffee02) echo '/cache-1 redis:7 "2026-10-01T00:06:00Z" "0001-01-01T00:00:00Z"';; esac; }
 case "$1 $2" in
   "ps -aq") list containers "$4";;
-  "inspect --format") shift 3; label containers "$@";;
+  "inspect --format") case $3 in *Config.Image*) shift 3; for i in "$@"; do details "$i"; done;; *) shift 3; label containers "$@";; esac;;
   "rm -f") shift 3; for i in "$@"; do grep -v "^$i " "$FAKE/containers" > "$FAKE/c.next"; mv "$FAKE/c.next" "$FAKE/containers"; done;;
   "volume ls") list volumes "$5";;
   "volume inspect") shift 4; label volumes "$@";;
@@ -50,10 +52,17 @@ const lines = (f: string): string[] => readFileSync(join(fake, f), 'utf8').split
 describe('the reap removes a job\'s containers and volumes (issue #1120)', () => {
   it('removes each container and volume labelled with the job, a container with its anonymous volumes; never another job\'s', () => {
     const said = readReap(run(reapArgv(JOB)));
-    expect(said?.removed).toEqual({ containers: ['c0ffee01', 'c0ffee02'], volumes: ['vol-db'] });
+    expect(said?.removed).toMatchObject({ containers: ['c0ffee01', 'c0ffee02'], volumes: ['vol-db'] });
     expect(lines('containers')).toEqual([`beef0001 ${OTHER}`]);
     expect(lines('volumes')).toEqual([`vol-other ${OTHER}`]);
     expect(lines('calls')).toContain('rm -f -v c0ffee01');
+  });
+
+  it('says each container\'s name, image, and when it started and stopped (issue #975); one still running has no stop', () => {
+    expect(readReap(run(reapArgv(JOB)))?.removed?.details).toEqual([
+      { id: 'c0ffee01', name: 'db-1', image: 'docker.io/library/postgres:16', startedAt: '2026-10-01T00:05:00.123Z', stoppedAt: '2026-10-01T00:20:00.000Z' },
+      { id: 'c0ffee02', name: 'cache-1', image: 'redis:7', startedAt: '2026-10-01T00:06:00.000Z' },
+    ]);
   });
 
   it('a timed-out job\'s reap (keep) removes none: it may go on there', () => {

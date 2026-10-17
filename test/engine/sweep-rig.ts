@@ -29,8 +29,8 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       // `reapGate`: the reap ends once it settles (a slow machine, issue #1194); `reapFails`: it cannot reach the machine.
       await o.reapGate;
       if (o.reapFails) throw new Error(o.reapFails);
-      // `containers`: the jobs whose reap removed a container and a volume (issue #1120).
-      const removed = o.containers?.includes(jobId) ? { removed: { containers: [`c-${jobId}`], volumes: [`v-${jobId}`] } } : {};
+      // `containers`: the jobs whose reap removed a container and a volume (issue #1120), the container's details said (issue #975).
+      const removed = o.containers?.includes(jobId) ? { removed: { containers: [`c-${jobId}`], volumes: [`v-${jobId}`], details: [{ id: `c-${jobId}`, name: 'db', image: 'postgres:16' }] } } : {};
       const kept = scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [];
       // `lefts`: the jobs whose scratch dir the reap could not remove (issue #1452).
       const left = scratch && kept.length === 0 && o.lefts?.includes(jobId) ? { left: [scratch] } : {};
