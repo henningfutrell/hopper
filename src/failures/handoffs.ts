@@ -21,6 +21,7 @@ import {
 } from '../domain/types.ts';
 import type { DismissedBy } from '../domain/locked.ts';
 import { ENDS_STALE } from './stale.ts';
+import { live, LIVE_AGAIN_NOTE } from './continued.ts';
 import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
@@ -65,7 +66,7 @@ export interface Handoffs {
   supersede(): void;
   /**
    * The open hand-offs nothing waits on any more (issue #529), closed: a newer job of its item (`superseded`), its
-   * job finished (`finished`) or gone (`job_gone`). A store from the build before included.
+   * job finished (`finished`), gone (`job_gone`) or live again (`resumed`, issue #1777). A store from the build before included.
    */
   settle(): void;
   /**
@@ -109,6 +110,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       return;
     }
     const job = store.jobs.get(jobId);
+    if (live(job)) return; // A live job waits on nobody (issue #1777): a Continue or a resume took it first.
     const error = record?.evidence.error ?? job?.error ?? 'failed without a reason';
     const h = store.handoffs.create({
       jobId, status: 'open', reason, openedAt: nowIso(), error,
@@ -149,14 +151,21 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
     return h?.status === 'open' ? h : undefined;
   };
 
-  /** A new job of the item: the hand-off of the job it runs again closes. */
+  /** A new job of the item: the hand-off of the job it runs again closes. The same job queued again: its own, `resumed`. */
   function onQueued(jobId: string): void {
     store.tx(() => {
       const prev = store.jobs.get(jobId)?.rerunOf;
       const h = prev ? openOf(prev) : undefined;
       if (h && !resolving.has(h.id)) close(h, 'run_again', jobId);
     });
+    onLiveAgain(jobId);
   }
+
+  /** Its job live again (issue #1777: Continue, Push it, a resume) — not by this hand-off's own Continue: it closes, `resumed`. */
+  const onLiveAgain = (jobId: string): void => store.tx(() => {
+    const h = openOf(jobId);
+    if (h && !resolving.has(h.id) && live(store.jobs.get(jobId))) { close(h, 'resumed'); settleRecord(h, 'retried', LIVE_AGAIN_NOTE, jobId); }
+  });
 
   /** The record a person's resolution settles: run again (`retried`), or resolved without (`resolved`). */
   function settleByPerson(h: Handoff, outcome: 'retried' | 'resolved', note: string, nextJobId?: string): void {
@@ -285,10 +294,11 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
         if (!staleOf(store, h, read)) continue;
         store.tx(() => {
           const cur = store.handoffs.get(h.id);
-          const stale = cur?.status === 'open' ? staleOf(store, cur) : undefined;
-          if (!cur || !stale) return;
+          const stale = cur?.status === 'open' && !resolving.has(cur.id) ? staleOf(store, cur) : undefined;
+          if (!cur || !stale) return; // Not one a person is resolving now: its Continue makes its job live before it closes it.
           close(cur, stale.end, stale.nextJobId);
           if (stale.end === 'superseded') settleRecord(cur, 'superseded', 'a newer job of its item exists', stale.nextJobId);
+          if (stale.end === 'resumed') settleRecord(cur, 'retried', LIVE_AGAIN_NOTE, cur.jobId);
         });
       }
     },
@@ -321,7 +331,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       const id = e.jobId;
       if (id) {
         const later = (fn: (jobId: string) => void) => setImmediate(() => { if (o.live()) fn(id); });
-        if (e.type === 'job.queued') later(onQueued);
+        if (e.type === 'job.queued') later(onQueued); else if (e.type === 'job.continued') later(onLiveAgain);
         // Only a person's dismissal is forgotten unless a hand-off keeps it: one by itself waits on nobody (issue #1123).
         else if (e.type === 'job.dismissed' && e.data.by === 'user') later(onDismissed);
         else if (e.type === 'job.finished') later(onFinished);

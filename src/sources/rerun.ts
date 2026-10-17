@@ -15,6 +15,7 @@ import { SourceError, type JobSource, type RerunBy, type RerunResult, type Sourc
 import type { OutboxActs } from '../domain/github-outbox.ts';
 import type { AfterAnswerAct, GiveBackAct, GiveBackAnswer, GiveBackCheck, GiveBackInput, GiveBackRun } from '../domain/give-back.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
+import { liveWhy } from '../failures/continued.ts';
 import { withAct } from './after-answer-timings.ts';
 import { sourceRef, withEdits } from './item-text.ts';
 import { following, PUSHABLE_ENDS, TERMINAL_STATUSES, tendRetryAt, type ActingPerson, type Allowed, type ContinuedBy, type Job, type JobStatus, type Tended } from '../domain/types.ts';
@@ -80,8 +81,10 @@ export function createRerun(c: RerunContext) {
   /**
    * Whether the job's source takes its item back now: it runs, it can run an item again, and the job's end is reported to
    * it. A source that adopts the job (issue #1352) needs no report: the job's own source is gone and is told nothing more.
+   * A live job (issue #1777: Continue or a resume took it back to the queue) has no end to report: it is said so, not soon.
    */
   function takesBackOf(job: Job, source: JobSource | undefined): Allowed {
+    if (!TERMINAL_STATUSES.includes(job.status)) return { ok: false, why: liveWhy(job.status) };
     if (!source) return { ok: false, why: 'its source is not running, and no running source takes its repository: turn one on in Sources' };
     if (!source.rerun) return { ok: false, why: `its source ${source.name} cannot run an item again` };
     if (source.name === job.source?.source && !c.flagsOf(job).finalReported) return { ok: false, why: 'its end is not reported to its source yet', soon: true };

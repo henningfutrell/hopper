@@ -2123,12 +2123,12 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 
 ## `handoff.closed`
 
-Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone). A person's resolution names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source), `job_gone` (its job is gone) or `resumed` (its job is live again — a Continue, Push it or a resume took it back to the queue —, issue #1777). A person's resolution names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | yes |
-| `end` | `run_again` \| `continued` \| `done_by_hand` \| `wont_do` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` | yes |
+| `end` | `run_again` \| `continued` \| `done_by_hand` \| `wont_do` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` \| `resumed` | yes |
 | `nextJobId` | string | no |
 | `resolution` | `continue` \| `fixed` \| `done_by_hand` \| `wont_do` | no |
 | `person` | string | no |
