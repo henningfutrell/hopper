@@ -4,7 +4,7 @@
 // request a person must answer first is waited on with --wait: the hopper pushes the answer on the job stream (issue
 // #613), and the script reads it there, reconnecting with Last-Event-ID when the stream drops, until its deadline.
 
-import { HCURL_SH } from '../github-proxy/retry-after.ts';
+import { HCURL_SH, TRACE_HEADER_SH } from '../github-proxy/retry-after.ts';
 import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 
 export const SKILL_SCRIPT_VARIABLE = 'HOPPER_SKILL';
@@ -36,7 +36,8 @@ export const SKILL_SCRIPT = `#!/bin/sh
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
 usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
-token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
+${TRACE_HEADER_SH}
+token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
 ${STREAM_WAIT_SH}
 wait=; opt=; pos=0

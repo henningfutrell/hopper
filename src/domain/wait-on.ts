@@ -130,7 +130,7 @@ export type Settled = { note: string } & (
 
 const AT = /github\.com\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/;
 const JOB_ENDS: Record<string, string> = { 'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'was cancelled' };
-const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answered', 'question.closed': 'was closed', 'question.dismissed': 'was dismissed', 'question.expired': 'expired' };
+const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answered', 'question.closed': 'was closed', 'question.dismissed': 'was dismissed', 'question.expired': 'expired', 'question.cancelled': 'was cancelled' };
 
 /** Every event type `settledBy` reads (issue #1571: the hopper reads them again for a wake a stop lost). */
 export const SETTLING_EVENT_TYPES: readonly EventType[] = [

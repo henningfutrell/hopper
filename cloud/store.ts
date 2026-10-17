@@ -2,7 +2,9 @@
 // needs: a **hopper.io account** per GitHub account, keyed by GitHub's numeric user id (never the login, which can be
 // renamed), with the login and the avatar URL for display; a **hopper.io session**, only its token's hash; and a
 // sign-in under way, only its state's hash and its PKCE verifier, for ten minutes, and the account it is to delete when
-// it confirms a deletion. No GitHub token is kept. A deleted account takes its sessions with it.
+// it confirms a deletion; a **hopper.io record** of each act on the account, its kind and time only, for RECORD_MS
+// (docs/hopper-io-security.md R6, R5). No GitHub token is kept. A deleted account takes its sessions and records with it.
+// What each column holds, why and for how long is the privacy note (cloud/privacy.ts), column for column.
 // Schema changes are migrations, appended to MIGRATIONS: the accounts are the users' saved data.
 import { createHash } from 'node:crypto';
 import pg from 'pg';
@@ -13,6 +15,12 @@ export interface CloudAccount { githubUserId: string; login: string; avatarUrl?:
 export const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 /** How long a sign-in may stay at GitHub before its state is no longer taken. */
 export const SIGN_IN_MS = 10 * 60 * 1000;
+/** How long a hopper.io record is kept; then it is deleted. */
+export const RECORD_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** What a hopper.io record says was done on the account. */
+export type RecordKind = 'signed_in' | 'signed_out' | 'deletion_refused';
+export interface CloudRecord { kind: RecordKind; at: Date }
 
 const MIGRATIONS: string[] = [
   `CREATE TABLE account (
@@ -25,6 +33,11 @@ const MIGRATIONS: string[] = [
    CREATE TABLE sign_in (state_hash text PRIMARY KEY, verifier text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());`,
   // A sign-in that confirms an account deletion names the account (decision 5).
   'ALTER TABLE sign_in ADD COLUMN deletes bigint',
+  // hopper.io records (R6): kind and time only, no address or browser (R5).
+  `CREATE TABLE record (
+     id bigserial PRIMARY KEY, account_id bigint NOT NULL REFERENCES account (github_user_id) ON DELETE CASCADE,
+     kind text NOT NULL CHECK (kind IN ('signed_in', 'signed_out', 'deletion_refused')), at timestamptz NOT NULL);
+   CREATE INDEX record_account ON record (account_id, at);`,
 ];
 
 export const hashOf = (token: string): string => createHash('sha256').update(token).digest('hex');
@@ -38,12 +51,17 @@ export interface CloudStore {
   openSession(token: string, githubUserId: string, now: Date): Promise<void>;
   /** The account of a session that has not ended. */
   sessionAccount(token: string, now: Date): Promise<CloudAccount | undefined>;
-  endSession(token: string): Promise<void>;
+  /** The account of the session it ended, if one was open. */
+  endSession(token: string): Promise<string | undefined>;
+  /** Keeps a hopper.io record on the account, and deletes every record older than RECORD_MS. */
+  record(githubUserId: string, kind: RecordKind, now: Date): Promise<void>;
+  /** The account's records, newest first, at most 100. */
+  records(githubUserId: string, now: Date): Promise<CloudRecord[]>;
   /** `deletes`: the account this sign-in confirms the deletion of. */
   startSignIn(state: string, verifier: string, deletes?: string): Promise<void>;
   /** A sign-in started within SIGN_IN_MS, taken once. */
   takeSignIn(state: string, now: Date): Promise<SignInUnderWay | undefined>;
-  /** The account, its sessions and its deletion sign-ins under way, in one statement. */
+  /** The account, its sessions, its records and its deletion sign-ins under way, in one statement. */
   deleteAccount(githubUserId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -84,7 +102,17 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
       return r.rows[0] ? accountOf(r.rows[0]) : undefined;
     },
     async endSession(token) {
-      await q('DELETE FROM session WHERE token_hash = $1', [hashOf(token)]);
+      const r = await q('DELETE FROM session WHERE token_hash = $1 RETURNING account_id', [hashOf(token)]);
+      return r.rows[0] ? String(r.rows[0].account_id) : undefined;
+    },
+    async record(githubUserId, kind, now) {
+      await q('DELETE FROM record WHERE at <= $1', [new Date(now.getTime() - RECORD_MS)]);
+      await q('INSERT INTO record (account_id, kind, at) VALUES ($1, $2, $3)', [githubUserId, kind, now]);
+    },
+    async records(githubUserId, now) {
+      const r = await q('SELECT kind, at FROM record WHERE account_id = $1 AND at > $2 ORDER BY at DESC, id DESC LIMIT 100',
+        [githubUserId, new Date(now.getTime() - RECORD_MS)]);
+      return r.rows.map((x) => ({ kind: x.kind as RecordKind, at: new Date(x.at as string) }));
     },
     async startSignIn(state, verifier, deletes) {
       await q('INSERT INTO sign_in (state_hash, verifier, deletes) VALUES ($1, $2, $3)', [hashOf(state), verifier, deletes ?? null]);

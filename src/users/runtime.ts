@@ -360,11 +360,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // A job whose last push the shrink guard refused (issue #1096) does not end done: tending failed, whatever its source says.
     verdict: (job) => guardedVerdict(store.events.recent(200, ['github_proxy.refused', 'github_proxy.done'], job.id), job, () => judge(sourceOf(job), job)),
     // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
-    overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [], waitReads: { endedWatched: async (job, refs) => sourceOf(job)?.endedWatched?.(refs), pullRequestChecks: async (job, repo, n) => sourceOf(job)?.waitedChecks?.(repo, n) }, // a wait check's reads (issue #1694)
+    overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [], waitReads: { endedWatched: async (job, refs) => sourceOf(job)?.endedWatched?.(refs), pullRequestChecks: async (job, repo, n) => sourceOf(job)?.waitedChecks?.(repo, n), pullRequestReviews: async (job, repo, n) => sourceOf(job)?.waitedReviews?.(repo, n) }, // a wait check's reads (issue #1694)
     // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL, and
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
-    jobProxy: proxy.jobProxy, agentSignIn: (job, machine) => lanePodSignIn(machine.id, job.id), boxRadius: (machine) => vault.boxRadius(machine),
+    // A job's processes join its trace (issue #1486): its run span's context, from the job traces below (made before the engine starts).
+    jobProxy: proxy.jobProxy, agentSignIn: (job, machine) => lanePodSignIn(machine.id, job.id), boxRadius: (machine) => vault.boxRadius(machine), traceContext: (jobId) => jobTraces.traceContext(jobId),
     // Read at each Decision; reached only after `failures` (and `sandboxRequests`) exists. An applied lane recommendation edits the machine (issue #688).
     // The sandboxes a waiting job's prompt names are asked for before it starts, and hold it until approved and ready (issue #1471).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins), sandboxesHeld: (waiting) => sandboxesHeld(sandboxRequests, () => vault.view().templates, waiting),
@@ -391,7 +392,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   // Each job one trace (issue #1486, design.md "Telemetry"): built from its events; a no-op while telemetry is off.
-  const stopFailureLog = logFailures(store), stopJobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) });
+  const stopFailureLog = logFailures(store), jobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) });
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => uiUrl(`question-${id}`), loginsUrl: () => uiUrl('logins'), infraUrl: () => uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(linkBase(), id), deliveries: store.notifierDeliveries, ...(o.reach ? { reach: o.reach } : {}) });
@@ -432,7 +433,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
         await dispatcher.stop(); await host.stopNotifiers(); outbound.stop();
-        stopFailureLog(); stopJobTraces(); stopOutcomes();
+        stopFailureLog(); jobTraces.stop(); stopOutcomes();
         host.stop(); stopBackendReads();
         store.close();
       })();

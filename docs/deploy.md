@@ -1298,6 +1298,11 @@ helm upgrade hopper deploy/helm/hopper --reuse-values --set telemetry.envFromSec
 `--set telemetry.viewer.enabled=true` adds the same viewer in the release; the hopper then exports to it. Only the hopper
 reaches its OTLP port. Open Grafana with `kubectl port-forward svc/hopper-telemetry 3000`, then http://127.0.0.1:3000.
 
+While telemetry is on, a job runs with `TRACEPARENT`: its run span (docs/design.md "Telemetry: a job's trace on its
+machine"). A tool in the job that reads it, and is set to export, puts its spans in the job's trace. The job's requests
+to the hopper through `hopper-gh`, `hopper-skill`, `hopper-login` and `hopper-artifact` are spans of that trace too. The
+job is given no `OTEL_*` variable: to export from inside a job, give the variables to its machine yourself.
+
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.

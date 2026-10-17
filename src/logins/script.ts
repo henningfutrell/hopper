@@ -2,7 +2,7 @@
 // knows whether a login worked: it says so, and the hopper ends the login, or opens it again, with no person. Kept in
 // the job's credentials dir beside its proxy token and `hopper-gh` (issue #563), run as `sh "$HOPPER_LOGIN"`: POSIX sh
 // and curl, nothing else.
-import { HCURL_SH } from '../github-proxy/retry-after.ts';
+import { HCURL_SH, TRACE_HEADER_SH } from '../github-proxy/retry-after.ts';
 
 export const LOGIN_SCRIPT_VARIABLE = 'HOPPER_LOGIN';
 
@@ -22,7 +22,8 @@ export const LOGIN_SCRIPT = `#!/bin/sh
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
 usage() { echo 'usage: sh "$HOPPER_LOGIN" completed|failed [TOOL] [--reason TEXT]' >&2; exit 2; }
-token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
+${TRACE_HEADER_SH}
+token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
 case \${1:-} in completed|failed) ;; *) usage ;; esac
 outcome=$1; shift

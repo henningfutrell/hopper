@@ -96,7 +96,7 @@ describe('a job is one trace (issue #1486)', () => {
   it('has a root span and a child span for each job span, each parented on the root, with the job\'s attributes', async () => {
     const b = bus();
     let current = job();
-    const stop = traceJobs({ subscribe: b.subscribe, job: () => current });
+    const { stop } = traceJobs({ subscribe: b.subscribe, job: () => current });
     b.emit('job.queued');
     current = job({ status: 'claimed', laneId: 'desk/lane-1' });
     b.emit('job.claimed', { laneId: 'desk/lane-1' });
@@ -147,7 +147,7 @@ describe('a job is one trace (issue #1486)', () => {
   it('a job that fails with no pull request ends its trace at once, its open job span with it', () => {
     const b = bus();
     let current = job();
-    const stop = traceJobs({ subscribe: b.subscribe, job: () => current });
+    const { stop } = traceJobs({ subscribe: b.subscribe, job: () => current });
     b.emit('job.started');
     current = job({ status: 'failed' });
     b.emit('job.failed', {}, { error: 'SECRET-ERROR' });
@@ -159,7 +159,7 @@ describe('a job is one trace (issue #1486)', () => {
 
   it('keeps at most `max` jobs open: the oldest is ended, marked evicted', () => {
     const b = bus();
-    const stop = traceJobs({ subscribe: b.subscribe, job: (id) => job({ id }), max: 2 });
+    const { stop } = traceJobs({ subscribe: b.subscribe, job: (id) => job({ id }), max: 2 });
     for (const id of ['a', 'b', 'c']) b.emit('job.queued', { jobId: id });
     stop();
     const evicted = byName('hopper.job').filter((s) => s.attributes['hopper.trace.evicted'] === true);

@@ -4,7 +4,7 @@
 // `artifacts` skill's text: a job reads it only when it loads the skill. Agent-native: `--json` answers JSON, and the
 // exit code says what happened.
 
-import { HCURL_SH } from '../github-proxy/retry-after.ts';
+import { HCURL_SH, TRACE_HEADER_SH } from '../github-proxy/retry-after.ts';
 import { ARTIFACT_LIB_PATH, ARTIFACT_LIBS } from './libs.ts';
 
 export const ARTIFACT_SCRIPT_VARIABLE = 'HOPPER_ARTIFACT';
@@ -107,7 +107,8 @@ export const ARTIFACT_SCRIPT = `#!/bin/sh
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
 usage() { echo 'usage: sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--to ID [--note TEXT] | --new] | list [--all] [--markdown] | get ID [--out FILE] | revisions ID | restore ID N | share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID  [--json]' >&2; exit 2; }
-token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; [ -z "$json" ] || printf 'accept: application/json\\n'; }
+${TRACE_HEADER_SH}
+token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; [ -z "$json" ] || printf 'accept: application/json\\n'; trace_header; }
 ${HCURL_SH}
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }

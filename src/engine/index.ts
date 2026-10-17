@@ -134,7 +134,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: drainedMachines(o.machines, { store }), configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), traceContext: o.traceContext ?? (() => ({})), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
     jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
@@ -145,9 +145,16 @@ export function createEngine(o: EngineOptions): Engine {
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
-  const leases = createLeaseKeeper(c, runner, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanups);
+  // A person's act another hopper relayed (issue #1662): a cancel as that hopper's would be; a park parks the run here, and
+  // a preempted job not run here loses its mark.
+  const leases = createLeaseKeeper(c, runner, cleanup, (jobId, act) => {
+    if (act.kind === 'cancel') { commands.cancel(jobId, act.reason, act.note); return; }
+    if (runner.park(jobId)) return;
+    console.warn(`hopper: job ${jobId}: another hopper relayed its park, but it does not run here`);
+    preemptRunning(c, runner, jobId, false);
+  });
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
   const checkpoints = createCheckpoints(c);

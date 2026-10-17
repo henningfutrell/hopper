@@ -163,6 +163,8 @@ export interface FakeHerdrClient extends HerdrClient {
   /** Each restore command typed into a pane (issue #921). */
   readonly restores: string[];
   addTurns(...turns: FakeTurn[]): void;
+  /** The turns not played yet are these from now on. */
+  setTurns(...turns: FakeTurn[]): void;
   /** Claude is signed in on the machine from now on (`notSignedIn`). */
   signIn(): void;
   /** The next N prompts never reach Claude, as `dropsPrompts`. */

@@ -4,7 +4,8 @@
 // (engine/wait-checks.ts) takes each check due under a lease, tests its condition, and ends the wait when it is met; else it
 // tries again later, the time between doubling. Past its deadline the wait is overdue once, and a person is told. Part 2:
 // the job names its next check-in, or a time to wake it at, on a `check:` line after HOPPER_WAITING (`checkAskOf`), and a
-// wait on a pull request's checks is tested on its checks (`checksOutcome`). Pure.
+// wait on a pull request's checks is tested on its checks (`checksOutcome`). Part 3: a wait on a pull request's review is
+// tested on its reviews (`reviewOutcome`). Pure.
 import type { ChecksState } from './pull-requests.ts';
 import type { Job, JobWait } from './types.ts';
 import { waitOnLabel } from './wait-on.ts';
@@ -19,6 +20,8 @@ export type WaitCondition =
   // Part 2: the checks of a pull request ended (passed or failed), or it ended; the time a job named passed.
   | { kind: 'pr_checks_ended'; repo: string; number: number }
   | { kind: 'time_passed'; at: string }
+  // Part 3: a pull request got a review after the wait began, or it ended.
+  | { kind: 'pr_review_ended'; repo: string; number: number }
   | { kind: 'none' };
 
 /** A job's wait check: its condition, its next check, the time between checks, its deadline, and what the last check found. */
@@ -100,7 +103,9 @@ function baseCondition(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): Wai
   if (on?.kind === 'pull_request') {
     const repo = on.repo ?? job.source?.repo;
     if (!repo) return { kind: 'none' };
-    return on.about === 'checks' ? { kind: 'pr_checks_ended', repo, number: on.number } : { kind: 'items_ended', refs: [{ kind: 'issue', repo, number: on.number }] };
+    if (on.about === 'checks') return { kind: 'pr_checks_ended', repo, number: on.number };
+    if (on.about === 'review') return { kind: 'pr_review_ended', repo, number: on.number };
+    return { kind: 'items_ended', refs: [{ kind: 'issue', repo, number: on.number }] };
   }
   const refs = watchedOf(job);
   return refs.length > 0 ? { kind: 'items_ended', refs } : { kind: 'none' };
@@ -112,7 +117,8 @@ export function conditionKey(c: WaitCondition): string {
     case 'items_ended': return `items_ended:${c.refs.map(watchKey).sort().join(' ')}`;
     case 'job_ended': return `job_ended:${c.jobId}`;
     case 'question_settled': return `question_settled:${c.questionId}`;
-    case 'pr_checks_ended': return `pr_checks_ended:${c.repo.toLowerCase()}#${c.number}`;
+    case 'pr_checks_ended':
+    case 'pr_review_ended': return `${c.kind}:${c.repo.toLowerCase()}#${c.number}`;
     case 'time_passed': return `time_passed:${c.at}`;
     default: return c.kind;
   }
@@ -185,6 +191,29 @@ export function checksOutcome(pr: WaitedChecks, nowMs: number): CheckOutcome {
   }
   const pushed = pr.headCommittedAt ? Date.parse(pr.headCommittedAt) : NaN;
   return !Number.isNaN(pushed) && nowMs - pushed < NO_CHECKS_MS ? { met: false, result: `no checks of ${pr.url} started yet` } : { met: true, note: `${pr.url} has no checks` };
+}
+
+/** A review of a pull request, as the job's source reads it (part 3): `approved`, `changes_requested`, `commented`, `dismissed`. */
+export interface WaitedReview { state: string; submittedAt?: string }
+
+/** A pull request a wait on its review names (part 3); `reviews` absent: the source cannot read them. */
+export interface WaitedReviews { url: string; state: 'open' | 'closed' | 'merged' | 'not_found'; reviews?: WaitedReview[] }
+
+const REVIEW_SAYS: Record<string, string> = { approved: 'was approved', changes_requested: 'got a review that asks for changes', commented: 'got a review with comments', dismissed: 'had a review dismissed' };
+
+/**
+ * A wait on a pull request's review: met when a review came after the wait began (the newest one says what), or when it ended.
+ * A review from before the wait is the one the job already read, so it does not count: else a job that pushed a fix and waits
+ * for a new review is woken at once, again and again.
+ */
+export function reviewOutcome(pr: WaitedReviews, sinceMs: number): CheckOutcome {
+  if (pr.state === 'not_found') return { met: true, note: `${pr.url} is no pull request. Name the right one if you still wait on it` };
+  if (pr.state !== 'open') return { met: true, note: `${pr.url} was ${pr.state}` };
+  if (!pr.reviews) return { met: false, result: `the hopper cannot read the reviews of ${pr.url}` };
+  const after = pr.reviews.filter((r) => r.submittedAt !== undefined && Date.parse(r.submittedAt) >= sinceMs);
+  const newest = after.sort((x, y) => Date.parse(x.submittedAt!) - Date.parse(y.submittedAt!)).at(-1);
+  if (!newest) return { met: false, result: `no review of ${pr.url} since the wait began` };
+  return { met: true, note: `${pr.url} ${REVIEW_SAYS[newest.state] ?? `got a review (${newest.state})`}` };
 }
 
 /** What the executor said of the pane: its background work runs, and its pane is lost; null when it cannot tell. */
