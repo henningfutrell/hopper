@@ -44,7 +44,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   and pushes on GitHub with the job's own user's connection — a push only to a branch of the job's own repository or of another of its user's job repositories (issue #1275), or, with
   the user's **Contribution** on (issue #429, `docs/design.md` "The contribution flow"), of the user's fork of it, never its
   default or a release branch, and never a push that brings in its base branch (its pull request's, else the landing branch) and empties or shrinks a file the branch's own change
-  did not (the shrink guard, issue #1096, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. **A job holds no
+  did not, or empties a file it only shrank (the shrink guard, issues #1096, #1218; the hopper's own base merge is judged so too, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. **A job holds no
   GitHub token** (issue #652): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
   sealed to that request; it records only the delivery or refusal. **The vault gives only to a job a person granted it**
