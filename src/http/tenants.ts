@@ -10,6 +10,7 @@
 // GitHub account it is. A token given and refused is refused, on loopback too. A sign-in's token reads only;
 // what it may do beyond is exchange itself for an API token (issue #718, src/http/api-tokens.ts). An API token is a
 // session (src/http/ui/sessions.ts) and reads as its user, once Access allows its read (`api_token#can_view`).
+import type { DiscoverAnswer } from '../infra-plans/topology-discovery.ts';
 import type { GitLabAccount } from '../gitlab/account.ts';
 import type { Outbound } from '../outbound/index.ts';
 import type { DirectJobs } from '../direct-jobs/index.ts';
@@ -52,6 +53,8 @@ import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 /** One user's parts, as the HTTP edge reads and changes them. */
 export interface TenantParts {
   store: UserStore;
+  /** Topology discovery (issue #1781 part 3): a run a person asks for. */
+  topologyDiscovery: { discover(): Promise<DiscoverAnswer | undefined> };
   engine: Engine;
   questions: QuestionService;
   /** Each review section's review: proposals (issue #537), research (issue #543). */

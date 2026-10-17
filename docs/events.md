@@ -4394,6 +4394,28 @@ Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting 
 }
 ```
 
+## `vault.discovery_minted`
+
+Version 1 (`docs/schemas/vault.discovery_minted.v1.json`). Topology discovery (issue #1781 part 3, design.md "The infrastructure topology") asked the vault for a read credential: a read session of an account's read role (`aws-role/<account>/hopper-read`), or a read token for a `cluster`. `credential`: the minting credential it came from (for a cluster found in the AWS accounts, the AWS one); `expiresAt` when it was minted; `reason` when nothing was minted. Never a key or a token. On no job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `asset` | object | yes |
+| `credential` | string | no |
+| `expiresAt` | string | no |
+| `reason` | string | no |
+
+```json
+{
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/hopper-read"
+  },
+  "credential": "AWS_LAB",
+  "expiresAt": "2026-10-17T12:15:00.000Z"
+}
+```
+
 ## `vault.check_minted`
 
 Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Settings → Access). The check runs no job; `check` is its check box. `bound` (issue #1371): the Secret a Kubernetes token is bound to, deleted when the check box ends (`vault.unbound`). Never the credential.
@@ -6459,7 +6481,7 @@ Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the en
 
 ## `infra.topology_reported`
 
-Version 1 (`docs/schemas/infra.topology_reported.v1.json`). A read-only check reported topology sources (issue #1781, design.md "The infrastructure topology"): for each source (`key`: `aws/<account>/<region>` or `kubernetes/<cluster>`), `ok` and the `nodes` and `links` it found, or the `error` that kept it from being read; a failed source keeps its last good snapshot. `reporter`: the API token's label, else who signed in. Never a node. On no job's timeline.
+Version 1 (`docs/schemas/infra.topology_reported.v1.json`). A read-only check, or the hopper's own topology discovery (part 3), reported topology sources (issue #1781, design.md "The infrastructure topology"): for each source (`key`: `aws/<account>/<region>` or `kubernetes/<cluster>`), `ok` and the `nodes` and `links` it found, or the `error` that kept it from being read; a failed source keeps its last good snapshot. `reporter`: the API token's label, else who signed in, or `topology discovery`. Never a node. On no job's timeline.
 
 | field | type | required |
 |---|---|---|

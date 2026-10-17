@@ -3,7 +3,7 @@
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { SystemSecretName, VaultView } from '../domain/vault.ts';
 import type { MintAsk } from './mint.ts';
-import type { MintTestAnswer } from './mint-test.ts';
+import type { MintTestAnswer } from './mint-test.ts'; import type { DiscoveryMintAnswer } from './discovery-mint.ts'; import type { Asset } from '../domain/access.ts';
 import type { CheckMintAnswer, CheckMintAsk } from './checks.ts';
 import type { NeedMintAnswer, NeedMintAsk } from './need-mint.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
@@ -29,6 +29,8 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   mint(ask: MintAsk, machineKey: string): Promise<{ value: string } | { refused: string }>;
   /** A person's mint test (issue #781): an AWS read session minted where the minting credential is, and who STS says it is. */
   testMint(asset: string, by: string): Promise<MintTestAnswer>;
+  /** Topology discovery's read credential (issue #1781 part 3), minted where the minting credential is. */
+  mintForDiscovery(asset: Asset): Promise<DiscoveryMintAnswer>;
   /** A read-only check box's credential for one read need (issue #797), after Access, minted where the minting credential is. */
   mintForCheck(ask: CheckMintAsk): Promise<CheckMintAnswer>;
   /** A need step's credential for one need (issue #1007), after Access and the apply gate, minted where the minting credential is. */
@@ -74,7 +76,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   deliver: (ask, key) => v.deliver(ask, key),
   forStep: (ask) => v.forStep(ask),
   mint: (ask, key) => v.mint(ask, key),
-  testMint: (asset, by) => v.testMint(asset, by),
+  testMint: (asset, by) => v.testMint(asset, by), mintForDiscovery: (asset) => v.mintForDiscovery(asset),
   mintForCheck: (ask) => v.mintForCheck(ask),
   mintForNeedStep: (ask) => v.mintForNeedStep(ask),
   releaseMints: (box) => v.releaseMints(box), reconcileMints: () => v.reconcileMints(),

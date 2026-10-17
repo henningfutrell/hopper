@@ -18,7 +18,7 @@ import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../do
 import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, unbindHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
 import { mintBindings, type MintReleases } from './bindings.ts';
-import { createMintTest, type MintTestAnswer } from './mint-test.ts';
+import { createMintTest, type MintTestAnswer } from './mint-test.ts'; import { createDiscoveryMinting, type DiscoveryMintAnswer } from './discovery-mint.ts';
 import { systemReadRefusal } from './system-read.ts';
 import { stepDelivery, type StepDelivery } from './step-delivery.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
@@ -82,8 +82,11 @@ export interface VaultService extends TemplateChecks, AgentCredentials, StepDeli
   mint(ask: MintAsk, machineKey: string, from?: MintFrom): Promise<{ value: string } | { refused: string }>;
   /** Mints from the minting credential `name` for `target`, here: its value opened or read in its backend, then STS or the Kubernetes API. */
   mintFrom: MintFrom;
-  /** A person's mint test (issue #781): an AWS read session for `asset` (`aws-role/<account>/<role>`), and who STS says it is. */
-  testMint(asset: string, by: string, from?: MintFrom): Promise<MintTestAnswer>;
+  /**
+   * A person's mint test (issue #781): an AWS read session for `asset` (`aws-role/<account>/<role>`), and who STS says it is.
+   * Topology discovery's read credential (issue #1781 part 3): an account's `hopper-read` session or a cluster's read token.
+   */
+  testMint(asset: string, by: string, from?: MintFrom): Promise<MintTestAnswer>; mintForDiscovery(asset: Asset, from?: MintFrom): Promise<DiscoveryMintAnswer>;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
@@ -184,7 +187,7 @@ export function createVaultService(o: {
     ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}),
   });
 
-  const testMint = createMintTest({ store: o.store });
+  const testMint = createMintTest({ store: o.store }), discoveryMint = createDiscoveryMinting(o.store);
 
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
     const m = clientOf(o.targets, (x) => x.name === machine);
@@ -377,7 +380,7 @@ export function createVaultService(o: {
     },
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
-    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom), unbindFrom, releaseMints: (box, from) => bindings.release(box, from), reconcileMints: (from) => bindings.reconcile(from),
+    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom), mintForDiscovery: (asset, from) => discoveryMint(asset, from ?? mintFrom), unbindFrom, releaseMints: (box, from) => bindings.release(box, from), reconcileMints: (from) => bindings.reconcile(from),
     ...templateChecks(o.store, { access: o.access, mintFrom, bindings }), ...needMinting(o.store, { access: o.access, mintFrom, bindings, ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
