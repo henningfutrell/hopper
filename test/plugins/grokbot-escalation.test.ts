@@ -32,9 +32,9 @@ const event = (type: DomainEvent['type'], data: Record<string, unknown>): Domain
 
 const question = { id: 'q1', jobId: 'j1', text: 'Is this risky?', createdAt: '2026-10-08T16:40:00.000Z', detectedBy: 'protocol', tier: 'human' } as unknown as Question;
 
-function notifier(url: string) {
+function notifier(url: string, sent?: Set<string>) {
   const listeners: ((e: DomainEvent) => void)[] = [];
-  const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date('2026-10-08T16:48:00.000Z') }, baseMs: 10 });
+  const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date('2026-10-08T16:48:00.000Z') }, baseMs: 10, ...(sent ? { sent } : {}) });
   n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: (id) => (id === question.id ? question : undefined), waitingOnHuman: () => [], answerUrl: () => 'http://127.0.0.1/q' });
   return { n, send: (e: DomainEvent) => { for (const l of listeners) l(e); } };
 }
@@ -42,6 +42,18 @@ function notifier(url: string) {
 const settle = () => new Promise((r) => setTimeout(r, 100));
 
 describe('Grok Bot routine: question.escalated_to_human only (issue #481)', () => {
+  it('lets a question go once it ends: the set of sent questions does not grow (issue #1402)', async () => {
+    const r = await receiver();
+    const sent = new Set<string>();
+    const { n, send } = notifier(r.url, sent);
+    send(event('question.escalated_to_human', { questionId: 'q1', reason: 'asked', text: 'Is this risky?', jobId: 'j1', answerUrl: 'http://127.0.0.1/q', notifyCount: 1 }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    expect([...sent]).toEqual(['q1']);
+    send(event('question.answered', { questionId: 'q1', by: 'human', answer: 'no' }));
+    await n.stop();
+    expect(sent.size).toBe(0);
+  });
+
   it('posts once when the question reaches the human stage; level hops and re-notifications post nothing', async () => {
     const r = await receiver();
     const { n, send } = notifier(r.url);
