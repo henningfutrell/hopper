@@ -25,11 +25,11 @@ describe('the vault forgets ended jobs (issue #1402)', () => {
     };
     const vault = withVaultGrants({ view: () => ({ templates: [] }) } as unknown as Vault, { store: store as never, clock, targets: () => [], holds: () => true, denied });
     await vault.forStep({ job: 'j1', name: 's', host: 'win' } as never);
-    expect(vault.denyGrant('j1', 'person')).toEqual({ ok: true });
+    expect(vault.denyGrant!('j1', 'person')).toEqual({ ok: true });
     expect([...denied]).toEqual(['j1']);
     jobs.set('j1', { ...jobs.get('j1')!, status: 'finished' } as Job);
     await vault.forStep({ job: 'j2', name: 's', host: 'win' } as never);
-    expect(vault.denyGrant('j2', 'person')).toEqual({ ok: true });
+    expect(vault.denyGrant!('j2', 'person')).toEqual({ ok: true });
     expect([...denied]).toEqual(['j2']);
   });
 
