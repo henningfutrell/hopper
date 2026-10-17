@@ -1,0 +1,1 @@
+- Operators who send telemetry now also see failures, retries, escalations, hand-offs, sandbox start times and landing batch results, and can turn telemetry and its viewer on in the Helm chart.

@@ -260,8 +260,8 @@ All five are accepted as recommended (2026-10-17).
 
 ## What is built
 
-Part 2 of #463 (part 1 was this document): the hopper.io account and GitHub sign-in at hopper.io, in
-`cloud/` (decision 2).
+Parts 2 and 3 of #463 (part 1 was this document): the hopper.io account, GitHub sign-in at hopper.io and
+account deletion, in `cloud/` (decision 2).
 
 - `cloud/store.ts`: the `account` table, keyed by GitHub's numeric user id (`github_user_id`), with `login`
   and `avatar_url` for display, `created_at` and `seen_at`. Each sign-in updates the login and the avatar,
@@ -276,9 +276,22 @@ Part 2 of #463 (part 1 was this document): the hopper.io account and GitHub sign
   `GET /api/account` answers the signed-in account, else 401. `GET /` is a minimal page.
 - Sign-ins are limited per address (`SIGN_IN_LIMIT`, 30 a minute, `@fastify/rate-limit`;
   `docs/hopper-io-security.md` R7).
+- **Account deletion** (part 3, decision 5). `POST /account/delete` (only with hopper.io's own Origin,
+  signed in) sends the browser to GitHub again. The sign-in under way names the account it is to delete
+  (`sign_in.deletes`). Back at the callback, the GitHub account must be the same one. Then, in one
+  statement, the account, all its sessions and its deletion sign-ins go. After that, hopper.io deletes the
+  person's grant of the hosted app at GitHub (`DELETE /applications/{client_id}/grant`, `grantDeletion` in
+  `src/connected-accounts/revocation.ts`), with the token of that sign-in. GitHub needs a token for this,
+  and hopper.io keeps none, so the fresh sign-in gives it. It also proves that the person holds the GitHub
+  account now, not only a hopper.io session (`docs/hopper-io-security.md` T4). Another GitHub account at
+  GitHub, or a denial, deletes nothing. When GitHub refuses the grant deletion, the account is still gone,
+  and the page links to GitHub's *Authorized GitHub Apps*, so the person can remove the app there.
+  Tombstones for the installs come with hopper.io's side of the registrations: today hopper.io keeps no
+  registration, so there is nothing to tell an install.
 - Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
   instance realm changes (decision 4).
-- Tests: `test/cloud/sign-in.test.ts` (real Postgres, real server, a fake GitHub) and
+- Tests: `test/cloud/sign-in.test.ts` and `test/cloud/delete-account.test.ts` (real Postgres, real
+  server, a fake GitHub, `test/cloud/harness.ts`) and
   `test/cloud/config.test.ts` (the config, and the `cloud/` seam both ways).
 
 ## Run it
@@ -303,6 +316,6 @@ No deploy is part of this: where hopper.io runs is decision 7 of #469.
 ## After the decisions
 
 The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io
-(built, part 2), the install registrations (with the multiple-installs issue), account deletion and tombstones, then
+(built, part 2), account deletion (built, part 3), the install registrations (with the multiple-installs issue) and their tombstones, then
 the install side of the heartbeat. Each part adds its glossary entries and its row in
 `docs/design.md` "Directories and what each must not know" in the same change.

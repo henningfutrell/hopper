@@ -1,0 +1,74 @@
+{{- if .Values.telemetry.viewer.enabled -}}
+{{- /*
+A telemetry viewer (issue #1486, docs/deploy.md "Telemetry"): Grafana's all-in-one OpenTelemetry image, as compose.yaml's
+`telemetry` profile. Its OTLP port takes the hopper's traces, metrics and logs; Grafana is reached by port-forward only.
+*/ -}}
+{{- $name := printf "%s-telemetry" (include "hopper.fullname" .) -}}
+{{- $sel := dict "ctx" . "component" "telemetry" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  selector:
+    {{- include "hopper.selector" $sel | nindent 4 }}
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+    - name: grafana
+      port: 3000
+      targetPort: grafana
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hopper.labels" $sel | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hopper.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hopper.labels" $sel | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # No <SERVICE>_PORT=tcp://… variables: for the Service `hopper` they would be HOPPER_* variables.
+      enableServiceLinks: false
+      containers:
+        - name: telemetry
+          image: {{ .Values.telemetry.viewer.image }}
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+            - name: grafana
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: grafana
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          {{- include "hopper.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.telemetry.viewer.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "hopper.storageClass" .Values.telemetry.viewer.storageClass | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.telemetry.viewer.size }}
+{{- end }}

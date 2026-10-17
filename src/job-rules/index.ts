@@ -59,6 +59,13 @@ export const OUT_OF_REACH_LINE = 'When an answer says "the hopper is out of reac
 /** The protocol line on skills (issue #582; artifacts, issue #624): the catalog first, a skill loaded only when needed, a no taken as it is. */
 export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential (a read-only link to a cluster or an AWS account, a token for another service, and the like), or a place to show a person a visual you made (a diagram or a chart: the artifacts skill), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question. When the hopper says no, it says why: find another way.';
 
+/**
+ * The protocol line on infrastructure tools (issue #1502): run only in a job's sandbox, never on the machine. Run there,
+ * they write credentials and caches into the job user's home (terraform's `~/.terraform.d`), and the credential check
+ * then holds the machine (issue #1467).
+ */
+export const INFRA_TOOLS_LINE = '[hopper infra tools] Run infrastructure tools (terraform, aws, kubectl, helm, and the like) only in a sandbox the hopper starts for the job: ask for one with sh "$HOPPER_SKILL". Never run them on this machine itself: they write credentials and caches into its home, and a machine whose home holds credentials takes no new job. With no sandbox, read and edit infrastructure code only.';
+
 /** The protocol line on a job's own wait (issue #483); a wait on its own command says so in `until:` (issue #1037). */
 export const WAIT_LINE = 'When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, one line: on: <what you wait on>, one of: pr <number> merge, pr <number> checks, pr <number> review, job <id>, issue <number>, question <id>, sandbox approval, template approval, vault grant, own command, outside: not managed: <what>, outside: gated: <what>, outside: <what>, and, if you can, one line: until: <how you will know it happened>. You can add one line to say when the hopper checks: check: in <time> (when it checks next, for example in 20m), or check: after <time> or check: at <ISO time> (it wakes you then, if nothing else did before). The hopper wakes you when a pull request you wait on is merged or closed. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends. A poll is never a command of your own: never write own command for it. Never wait in a loop for the hopper to tend, rebase or merge a pull request: it does that by itself, so go on with your work or end the job.';
 
@@ -96,6 +103,8 @@ export const PROTOCOL_LINES: readonly string[] = [
   OUT_OF_REACH_LINE,
   // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
   SKILL_LINE,
+  // Infrastructure tools (issue #1502): only in the job's sandbox, never on the machine.
+  INFRA_TOOLS_LINE,
   // A login (issue #476); its outcome, said by the job that asked for it (issue #1110, `hopper-login`).
   AUTH_PENDING_LINE,
   // A job's task count (issue #794): its progress, x/y, as each task completes; never a clock.
