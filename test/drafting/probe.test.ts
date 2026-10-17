@@ -85,7 +85,7 @@ describe('probeOn: a provider signed in lists its models', () => {
   it('over ssh: the probe runs there, through the machine\'s connection', async () => {
     expect(await probe('codex', 'desk')).toMatchObject({ usable: true, models: [{ value: 'gpt-x' }, { value: 'gpt-y' }] });
     const ssh = readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] });
-    expect(ssh.map((s) => s.argv.at(-1))).toEqual([expect.stringContaining('login status'), expect.stringContaining('debug models')]);
+    expect(ssh.map((s) => s.argv.at(-1))).toEqual([expect.stringMatching(/'login' 'status'$/), expect.stringMatching(/'debug' 'models'$/)]);
   });
 });
 
