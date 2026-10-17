@@ -75,7 +75,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
-| `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
+| `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
@@ -4973,7 +4973,7 @@ full help is the `windows-step` skill's text, so the catalog grows by one line a
 | call | what happens |
 |------|--------------|
 | `sh "$HOPPER_STEP" hosts` | `GET /job/step`: the user's hosts, `name  workDir  label` per line |
-| `sh "$HOPPER_STEP" run HOST (--command TEXT \| --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout S] [--into DIR]` | `POST /job/step?host=&command=&timeout=&output=…&secret=…` with the inputs as a tar body (`application/x-tar`, streamed to a file, at most 1 GiB); 200 streams the step's output as it comes, the step's id in `x-hopper-step`. Then `GET /job/step/:id`: the outputs tar, `x-hopper-step-exit`, and `x-hopper-step-problem` when the hopper could not run it, stopped it or could not bring the outputs back |
+| `sh "$HOPPER_STEP" run HOST (--command TEXT \| --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout S] [--into DIR]` | `POST /job/step?host=&key=&command=&timeout=&output=…&secret=…` with the inputs as a tar body (`application/x-tar`, at most 32 MiB); 202 at once, the step's id in `x-hopper-step` (issue #1611; the same `key` again is the same step). Then `GET /job/step/:id/log?from=N` until `x-hopper-step-state` says `ended`, and `GET /job/step/:id`: the outputs tar, `x-hopper-step-exit`, and `x-hopper-step-problem` when the hopper could not run it, stopped it or could not bring the outputs back. A signal to `hopper-step` sends `DELETE /job/step/:id`, which stops the step |
 
 The script exits with the step's own exit code, or `125` with the reason on stderr when the hopper did not run the
 step, stopped it, or could not bring it all back. `--command` travels in the URL, so it is at most 4 KiB; `--script FILE`
@@ -4997,13 +4997,14 @@ before each step. Every remote command is `powershell -NoProfile -NonInteractive
 4. scp: `outputs.tar` back, when the step asked for outputs. A copy of another size than the one the host said is no
    outputs: the step's problem says `the outputs came back cut short: <got> of <packed> bytes`. `GET /job/step/:id`
    sends the archive with its `content-length`, so the job's copy that ends short fails in curl, not in `tar -xf`.
-5. ssh: the scratch directory is removed, whatever came before. The inputs stay in the working directory: that is
-   where the build runs.
+5. ssh, a call of its own (`WindowsStepHost.sweep`, issue #1611): the scratch directory is removed, whatever came
+   before. The step's saga makes it after each step, and after a step a stopped hopper left. The inputs stay in the
+   working directory: that is where the build runs.
 
 **The service** (`src/windows-steps/service.ts`): one step at a time per host — a step waits while another runs there,
-and its log says so; its timeout (default 30 minutes, at most 4 hours) and the job's request ending both stop it (the
-ssh process is killed; the next step's prepare clears what is left); its result and outputs are kept an hour for the job
-to fetch, then swept. On the job's timeline: `step.started` (host, command up to 300 characters, timeout, inputs size,
+and its log says so; its timeout (default 30 minutes, at most 4 hours), the job's `DELETE`, and its job no longer at work
+each stop it (the ssh process is killed; the sweep clears what is left); its result and outputs are kept an hour for the
+job to fetch, then swept. How each step is kept and run, across a stop, is "Windows steps kept as sagas" below. On the job's timeline: `step.started` (host, command up to 300 characters, timeout, inputs size,
 outputs), `step.finished` (exit, seconds, outputs size, problem) and `step.refused` (reason). Never the step's output.
 
 **Credentials and GitHub.** A step gets no GitHub token: GitHub stays on the Linux machine, through the hopper (issues
@@ -5021,8 +5022,9 @@ three gates, in order:
    the job at work, a secret it holds, not a minting credential, opened or read in its backend. `vault.step_delivered`
    (name, host, job, backend), never the value; the secret's `lastUsed` names the host.
 
-The secrets are read when the step is asked, before its inputs are taken, and held in the hopper's memory for that step
-only. On the host they go over the run call's stdin, one line each, `NAME=<base64 of UTF-8>`
+The host's list (gate 1) is checked when the step is asked, before its inputs are kept; the vault (gates 2 and 3) is
+asked when the step runs, on the host that runs it (issue #1611), and its no ends the step with exit 125 and the reason as
+its problem. The values are held in that hopper's memory for that try only, never in the database. On the host they go over the run call's stdin, one line each, `NAME=<base64 of UTF-8>`
 (`secretsInput`, `src/windows-steps/powershell.ts`); the run script reads stdin to its end, sets each as an environment
 variable of its own process, and runs the step's PowerShell, which inherits them. Never an argument, never a file, never
 in the step's script; the host's scratch directory holds none. The log the job reads has each value replaced by `***`
@@ -5066,12 +5068,47 @@ never falls back to a Linux machine.
 Tests: `test/decider/windows.test.ts`, `test/plugins/machine-targets.test.ts`, `test/plugins/host-sources.test.ts`,
 `test/adapters/ssh-machine.test.ts`, `test/sources/github-context.test.ts`.
 
-**Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (the response carries it); more than
-one step at a time on one host; a host reached through a jump host.
+**Windows steps kept as sagas** (issue #1611, 2026-10-17). A step lived in its job's request and in one hopper's memory:
+the queue of each host, the results (an hour), and the step's directory under the hopper's data directory. A stop dropped
+the queued steps, lost the results the job had not read, let a second step start on the host, and left the host's
+scratch directory, which nothing swept. Requirement: a stop of the hopper loses no step and no result, never runs a step
+twice, never lets two steps run on one host, and leaves no scratch on the host. Built as the need steps were ("Need steps
+kept as sagas"):
+
+- **Kept.** Each step is a row of the instance's `windows_steps` table (instance migration 49,
+  `src/store/windows-steps.ts`): its ask, its inputs (at most 32 MiB; were 1 GiB), its log (4 MiB, then cut, and it says
+  so), its result and its outputs (at most 32 MiB; more is the step's problem). One step per job and `key`: an ask sent
+  again after a broken connection is the same step. The row is swept an hour after the step ended, once its host is let go.
+- **Run by a saga.** The ask begins a `windows-step` saga (`src/windows-steps/step-saga.ts`) and answers 202. Its steps:
+  `run` takes the host lease, reads the step's vault secrets, runs the step and keeps its result; `sweep` removes the
+  host's scratch directory (`WindowsStepHost.sweep`) and releases the host lease. A sweep the host does not answer is
+  tried again, as any saga step is, and the host lease stays meanwhile. The compensation of each (an abort: the job's `DELETE`)
+  sweeps the host as far as it can, lets the host go whatever the sweep did (the next step's prepare empties the scratch
+  directory too), and ends a step not ended as cancelled.
+- **The host lease** is the per-host lease, in the database: the columns `leased_at` and `lease_host`, and a unique index
+  on `(user_id, lease_host)`, so one step of a user has a host at a time, across hoppers. A step takes it only while no
+  other step has a lease on that host; a step that waits asks again each second, and its saga's lease keeps the saga
+  meanwhile. The host lease lasts as long as the saga that took it: a hopper that stops renews no saga lease, so the next start, or another host,
+  claims the saga, which ends the step and sweeps the host.
+- **Never twice.** A step whose `leased_at` is set may have run on the host. The `run` step of a saga that a stop cut short
+  finds it so, and ends the step with exit 125 and `STEP_INTERRUPTED` (it may have had its effect: look before you run it
+  again), not run again; the `sweep` step then sweeps the host. A step that only waited for its host runs after the stop.
+- **The job reads it**, from any host, after a restart too: `hopper-step` asks with its key, reads the log until it ends
+  (a hopper away for a restart is read again for up to 300 s), then the result and the outputs, as for a need step.
+
+Decisions: the vault is asked when the step runs, not when it is asked, so no secret is kept in the database; a secret
+refused then is the step's problem, not the ask's answer. The inputs and outputs are capped at 32 MiB, as they are kept in
+the database: a larger build sends a script that fetches its sources, or brings back less.
+Tests: `test/windows-steps/step-saga.test.ts` (the real database and coordinator, a double at the host: a step run once and
+read from another host; a hopper stopped mid-step — the next start ends it once, with why, sweeps the host and runs the
+step that waited; one step at a time across two hoppers; a sweep the host does not answer keeps the host lease; the job's stop).
+
+**Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (its log is read
+from `/job/step/:id/log`); more than one step at a time on one host; a host reached through a jump host.
 
 Tests: `test/windows-steps/domain.test.ts` (a host's and a step's checks), `test/windows-steps/powershell.test.ts` (the
 scripts and their encoding; the secrets read from stdin), `test/windows-steps/ssh-host.test.ts` (fake ssh and scp record each
-call: the hardening, the host's own pin, the order, the copies, a stop, the cleanup; a secret on the run call's stdin only),
+call: the hardening, the host's own pin, the order, the copies, a stop, the sweep; a secret on the run call's stdin only),
 `test/integration/windows-steps.test.ts` (the real daemon and `hopper-step`, a double at the `WindowsStepHost` seam: hosts, a
 run with its log, exit code and outputs, a script, the noes, a timeout, the edit; a secret refused with no grant and a grant
 ask opened, refused outside the host's list, given after the grant and masked in the log),
@@ -25034,7 +25071,8 @@ closes):
 
 **The kinds.** The composition root gives the coordinator its kinds (`createSagas`, `definitions`): each module that moves its
 work onto a saga defines its own kind. The first is the sandbox module's `need-step` ("Need steps kept as sagas"
-below, part 2).
+below, part 2); the Windows steps' `windows-step` is another ("Windows sandbox steps", "Windows steps kept as sagas",
+issue #1611).
 
 **What is not done yet** (part 1 ships the saga, its store and its coordinator). The sandbox work — create the sandbox, mint and grant its credentials, set up the worktree, run the executor, push, open the
 pull request, tear down, revoke — moves onto a saga kind in a later part, with the executor's session state (#1465) in its

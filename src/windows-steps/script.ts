@@ -13,7 +13,7 @@ export const STEP_PATH = '/job/step';
 /** The file under the job's credentials dir. */
 export const STEP_SCRIPT_FILE = 'hopper/step';
 
-/** The response headers: the step's id on the run, its exit code and the hopper's problem on the result; a need or box step's log read's next start and state (issue #1568). */
+/** The response headers: the step's id on the ask, its exit code and the hopper's problem on the result; a log read's next start and state (issues #1568, #1611). */
 export const STEP_HEADER = { id: 'x-hopper-step', exit: 'x-hopper-step-exit', problem: 'x-hopper-step-problem', logNext: 'x-hopper-step-log-next', state: 'x-hopper-step-state' } as const;
 
 /** The exit code the script ends with when the hopper did not run the step, or could not bring it all back. */
@@ -30,6 +30,8 @@ export const STEP_HELP = `windows-step: run one step on a Windows host, from thi
 No agent, client or work tree runs on Windows. When the work needs Windows (a .NET Framework build, a Windows app's
 tests, a packing step), the hopper runs that one step on a Windows host a person set up, over ssh, in PowerShell, in
 that host's working directory. The step's output streams back here as it runs; then its exit code and its outputs.
+The hopper keeps each step until it ends: a broken connection does not stop it, and a hopper that stops never runs it
+twice (the step then ends with exit ${STEP_NOT_RUN} and says so). Stop hopper-step (a signal) and the step stops.
 
   sh "$HOPPER_STEP" hosts                     the Windows hosts: name, working directory, label, the secrets it gives
   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]...
@@ -49,8 +51,8 @@ Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stop
 (the reason is on stderr); 2: a bad call.
 
 One step runs on a host at a time: a step waits while another runs there, and says so. The host keeps no scratch:
-the hopper removes what it copied there for the step when the step ends. Inputs overwrite files of the same name in
-the working directory, and stay there. A step is on this job's timeline: its host, command, exit code and time.
+the hopper removes what it copied there for the step when the step ends, also after a hopper that stopped. Inputs
+overwrite files of the same name in the working directory, and stay there. Inputs and outputs: at most 32 MiB each. A step is on this job's timeline: its host, command, exit code and time.
 The step gets no GitHub token and no credential but the vault secrets it asks for with --secret. GitHub stays here:
 fetch, push and open pull requests from this machine. Do not print a secret, or write it into an output: the hopper
 masks only the log.
@@ -98,7 +100,7 @@ set up as for a need step: one AWS role is the AWS CLI's default; each AWS role 
 Example: check who the sandbox is on AWS, and bring back a plan.
   sh "$HOPPER_STEP" box asked-0a1b2c3d4e5f --input infra --command 'cd infra && terraform plan -no-color > plan.txt' --output infra/plan.txt`;
 
-/** How often a need or box step's ask is sent before hopper-step gives up: the same key each time (issue #1568). */
+/** How often a step's ask is sent before hopper-step gives up: the same key each time (issues #1568, #1611). */
 export const STEP_ASK_TRIES = 5;
 /** How many log reads in a row may fail, one a second, before hopper-step gives up: a hopper restart fits in it. */
 export const STEP_LOG_MISSES = 300;
@@ -248,46 +250,37 @@ if [ -s "$tmp/inputs" ] || [ -n "$script" ]; then
 else
   : > "$tmp/in.tar"
 fi
-if [ "$at" = host ]; then
-  # The step's output streams to stdout as it comes; its id is in the response's header.
-  token | curl -sS -N -H @- -H 'expect:' -H 'content-type: application/x-tar' --data-binary @"$tmp/in.tar" -D "$tmp/head" \\
-    "$HOPPER_URL${STEP_PATH}?$at=$(enc "$place")&command=$(enc "$command")$q" || { echo 'hopper-step: the hopper could not be reached, or the connection broke' >&2; exit ${STEP_NOT_RUN}; }
-  status=$(awk '/^HTTP\\// { s = $2 } END { print s }' "$tmp/head")
-  [ "$status" = 200 ] || exit ${STEP_NOT_RUN}
-  id=$(header ${STEP_HEADER.id} "$tmp/head")
-else
-  # A need or box step is kept by the hopper and runs there by itself (issue #1568): asked with a key of this ask's own,
-  # so an ask sent again after a broken connection is the same step, never a second one. Then its log is read until it
-  # ends, and the outputs after.
-  key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')
-  tries=0
-  until code=$(token | curl -sS -H @- -H 'expect:' -H 'content-type: application/x-tar' --data-binary @"$tmp/in.tar" -D "$tmp/head" -o "$tmp/asked" -w '%{http_code}' \\
-    "$HOPPER_URL${STEP_PATH}?$at=$(enc "$place")&key=$key&command=$(enc "$command")$q"); do
-    tries=$((tries + 1))
-    [ "$tries" -lt ${STEP_ASK_TRIES} ] || { echo 'hopper-step: the hopper could not be reached' >&2; exit ${STEP_NOT_RUN}; }
-    sleep 2
-  done
-  [ "$code" = 202 ] || { cat "$tmp/asked"; exit ${STEP_NOT_RUN}; }
-  id=$(header ${STEP_HEADER.id} "$tmp/head")
-  # Stopped here, the step is stopped there.
-  trap 'token | curl -sS -H @- -X DELETE -o /dev/null "$HOPPER_URL${STEP_PATH}/$id" 2>/dev/null; exit 130' INT TERM HUP
-  from=0; misses=0
-  while :; do
-    if code=$(token | curl -sS -H @- -D "$tmp/loghead" -o "$tmp/log" -w '%{http_code}' "$HOPPER_URL${STEP_PATH}/$id/log?from=$from" 2>/dev/null); then
-      misses=0
-      [ "$code" = 200 ] || { cat "$tmp/log" >&2; exit ${STEP_NOT_RUN}; }
-      cat "$tmp/log"
-      from=$(header ${STEP_HEADER.logNext} "$tmp/loghead")
-      [ "$(header ${STEP_HEADER.state} "$tmp/loghead")" = ended ] && break
-    else
-      # The hopper away a while (a restart): the step goes on there, and is read again when it is back.
-      misses=$((misses + 1))
-      [ "$misses" -lt ${STEP_LOG_MISSES} ] || { echo "hopper-step: the hopper could not be reached for ${STEP_LOG_MISSES} s; step $id may still run there" >&2; exit ${STEP_NOT_RUN}; }
-    fi
-    sleep 1
-  done
-  trap - INT TERM HUP
-fi
+# Each step is kept by the hopper and runs there by itself (issues #1568, #1611): asked with a key of this ask's own,
+# so an ask sent again after a broken connection is the same step, never a second one. Then its log is read until it
+# ends, and the outputs after.
+key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')
+tries=0
+until code=$(token | curl -sS -H @- -H 'expect:' -H 'content-type: application/x-tar' --data-binary @"$tmp/in.tar" -D "$tmp/head" -o "$tmp/asked" -w '%{http_code}' \\
+  "$HOPPER_URL${STEP_PATH}?$at=$(enc "$place")&key=$key&command=$(enc "$command")$q"); do
+  tries=$((tries + 1))
+  [ "$tries" -lt ${STEP_ASK_TRIES} ] || { echo 'hopper-step: the hopper could not be reached' >&2; exit ${STEP_NOT_RUN}; }
+  sleep 2
+done
+[ "$code" = 202 ] || { cat "$tmp/asked"; exit ${STEP_NOT_RUN}; }
+id=$(header ${STEP_HEADER.id} "$tmp/head")
+# Stopped here, the step is stopped there.
+trap 'token | curl -sS -H @- -X DELETE -o /dev/null "$HOPPER_URL${STEP_PATH}/$id" 2>/dev/null; exit 130' INT TERM HUP
+from=0; misses=0
+while :; do
+  if code=$(token | curl -sS -H @- -D "$tmp/loghead" -o "$tmp/log" -w '%{http_code}' "$HOPPER_URL${STEP_PATH}/$id/log?from=$from" 2>/dev/null); then
+    misses=0
+    [ "$code" = 200 ] || { cat "$tmp/log" >&2; exit ${STEP_NOT_RUN}; }
+    cat "$tmp/log"
+    from=$(header ${STEP_HEADER.logNext} "$tmp/loghead")
+    [ "$(header ${STEP_HEADER.state} "$tmp/loghead")" = ended ] && break
+  else
+    # The hopper away a while (a restart): the step goes on there, and is read again when it is back.
+    misses=$((misses + 1))
+    [ "$misses" -lt ${STEP_LOG_MISSES} ] || { echo "hopper-step: the hopper could not be reached for ${STEP_LOG_MISSES} s; step $id may still run there" >&2; exit ${STEP_NOT_RUN}; }
+  fi
+  sleep 1
+done
+trap - INT TERM HUP
 code=$(token | curl -sS -H @- -D "$tmp/head2" -o "$tmp/out.tar" -w '%{http_code}' "$HOPPER_URL${STEP_PATH}/$id") || { echo 'hopper-step: the hopper could not be reached, or the outputs did not arrive whole' >&2; exit ${STEP_NOT_RUN}; }
 [ "$code" = 200 ] || { cat "$tmp/out.tar" >&2; exit ${STEP_NOT_RUN}; }
 exit_code=$(header ${STEP_HEADER.exit} "$tmp/head2")
