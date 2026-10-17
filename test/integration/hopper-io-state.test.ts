@@ -2,8 +2,9 @@
 // hopper.io state snapshot from its live state, every user's machines, lanes, queue and questions in one, and shows it to
 // its admin in Settings → hopper.io before anything is sent. GET /api/cloud-link/state reads only. Real daemon over the
 // fake herdr, as auto-park.test.ts.
-//   Scenario: the admin reads the snapshot: the counts of the live queue and questions, each user's machine under its
-//     own key; no machine id, host name, user, job or question text in it; the schema takes it
+//   Scenario: the admin reads the snapshot: the counts of the live queue and questions of every user, each user's machine
+//     under its own key; no machine id, host name, user, job or question text in it; the schema takes it
+//   Scenario: one queue gate for the instance: `review` while any user reviews new jobs
 //   Scenario: only the admin reads it (403 for another user), and the read records nothing
 import { hostname } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -35,26 +36,38 @@ describe('what hopper.io would get', () => {
   it('the admin reads the snapshot of the live state: counts and each user\'s machine under its own key, nothing else', async () => {
     const a = await boot();
     const token = await a.login();
-    const job = await a.pull({}, { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} });
+    const job = await a.pull({}, { executor: 'herdr-claude', prompt: 'Paint the shed' });
     await a.waitForQuestion(job.id, (q) => q.tier === 'human');
     const other = await a.addUser('octo2');
     await a.addThisMachine(other.id);
+    const sleeping = await a.pull({ op: 'sleep', ms: 30_000 }, undefined, other.id);
+    await a.waitForStatusOf(sleeping.id, 'running', other.id);
 
     const r = await a.api<HopperIoState>('GET', '/api/cloud-link/state', undefined, { 'x-hopper-session': token });
     expect(r.status).toBe(200);
     expect(HOPPER_IO_STATE_SCHEMA.parse(r.body)).toEqual(r.body);
     expect(r.body).toMatchObject({
       schema: 1,
-      queue: { waiting: 0, running: 1, locked: 0, gate: 'auto-accept' },
+      queue: { waiting: 0, running: 1, locked: 0, gate: 'auto-accept' }, // the asking job waits on its answer, in no list counted
       attention: { questionsAwaitingOwner: 1, jobsLocked: 0, machinesOffline: 0 },
     });
     expect(r.body.machines).toEqual([
-      expect.objectContaining({ key: 'machine-1', lanes: 1, lanesInUse: 1 }),
-      expect.objectContaining({ key: 'machine-2', lanesInUse: 0 }),
+      { key: 'machine-1', online: true, lanesInUse: 0, lanes: 1, takesJobs: true },
+      expect.objectContaining({ key: 'machine-2', online: true, lanesInUse: 1 }),
     ]);
 
     const text = JSON.stringify(r.body);
-    for (const never of ['local', hostname(), 'octo2', other.id, job.id, QUESTION, 'Paint the shed', '/tmp']) expect(text).not.toContain(never);
+    for (const never of ['local', hostname(), 'octo2', other.id, job.id, sleeping.id, QUESTION, 'Paint the shed', '/tmp']) expect(text).not.toContain(never);
+  });
+
+  it('one queue gate for the instance: review while any user reviews new jobs', async () => {
+    const a = await boot();
+    const token = await a.login();
+    const other = await a.addUser('octo2');
+    const gate = async () => (await a.api<HopperIoState>('GET', '/api/cloud-link/state', undefined, { 'x-hopper-session': token })).body.queue.gate;
+    expect(await gate()).toBe('auto-accept');
+    a.user(other.id).engine.setQueueGate({ mode: 'review', autoAcceptPerHour: null });
+    expect(await gate()).toBe('review');
   });
 
   it('only the admin reads it, and the read records nothing', async () => {

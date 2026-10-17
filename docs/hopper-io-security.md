@@ -1,8 +1,8 @@
 # hopper.io — threat model, account isolation and privacy
 
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
-itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its registration code (issue #465 part 2) and its
-unregistration (issue #465 part 3) are built
+itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its registration code (issue #465 part 2), its
+unregistration (issue #465 part 3) and the state snapshot the dashboard shows (issue #466 parts 1 and 2) are built
 ("What is built" below).
 This document states the threats and the rules that every hopper.io change must obey. The open owner
 decisions of #469 (scope, what the link carries, transport, sign-in on instances, sharing, who operates hopper.io) do
@@ -210,6 +210,13 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     the cloud link stays on or off as the instance's admin set it; nothing else on the instance changes.
   - R3: only a removal for the linked hopper.io account counts; one for another account changes nothing.
   - R6, on the instance side: `cloud_link.unregistered`.
+- **The hopper.io state snapshot and what hopper.io would get** (issue #466 parts 1 and 2, `docs/design.md` "The
+  hopper.io state snapshot"). It obeys:
+  - R5: the schema `HOPPER_IO_STATE_SCHEMA` (`src/domain/hopper-io-state.ts`) is the allow-list: counts, closed states and
+    an opaque machine key, never free text. The instance makes it from its live state and checks it against the schema.
+  - R5: the instance admin reads it in Settings → hopper.io (`GET /api/cloud-link/state`) before anything is sent: the
+    data boundary a person can read on their own instance.
+  - R1, R8: making it and reading it sends nothing and changes nothing.
 - Nothing else. The connection (and so who calls the registration), the cloud link key, the allow-list and everything at
   hopper.io wait for the issues in the table below.
 
