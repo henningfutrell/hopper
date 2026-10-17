@@ -38,19 +38,24 @@
 // from the hopper's mirror, only for the files whose content can change the kind. The kind's merge gate says whether the
 // hopper merges it once ready: with no person (docs, low-risk), only with yolo mode on, or never (a person merges). The
 // same files under the same rule and head are not read again; a batch answer under another rule reads it again.
+// The merge marker (issue #1588): before its merge call — yolo mode or Merge now — the hopper keeps in the job's source
+// state the pull request, the head it merges and who merges it (`merging`). A stop after the call and before the record
+// leaves the pull request merged on GitHub: read merged with the marker on it at that head, it is the hopper's merge, so
+// the issue is closed as above, once, and who merged it is recorded. Seen open, or ended, the marker goes.
 
 import {
   classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, rechecksMerge, readyToMerge, ruleKey,
-  type ChangeClass, type ChangeKind, type ChangeRule, type EndedPullRequest, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
+  type ActingPerson, type ChangeClass, type ChangeKind, type ChangeRule, type EndedPullRequest, type FollowAt, type FollowUp, type Job, type MergeMarker, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
 } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
-import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
+import { isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
+import { closeAfterMerge, closedByMerge, mergedByMarker } from './own-merge.ts';
 import { relabel, type ReportContext } from './report.ts';
 
 interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
@@ -206,7 +211,8 @@ async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequ
   return stacked ? undefined : to;
 }
 
-export async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
+/** `mark`, when given, keeps the merge marker with the head it merges, before the merge call (issue #1588). */
+export async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct, mark?: (head: string | undefined) => void):
   Promise<{ ended: 'merged' | 'closed'; superseded?: string; seen?: PullRequestSeen } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
   const repo = job.source!.repo!;
   if (act === 'close') {
@@ -214,6 +220,7 @@ export async function waiting(ctx: FollowContext, job: Job, url: string, before:
     return { ended: 'closed' };
   }
   if (act === 'merge') {
+    if (mark) mark((await ctx.api.pullRequest(repo, numberOf(url)))?.headOid);
     await ctx.api.merge(repo, numberOf(url));
     return { ended: 'merged' };
   }
@@ -238,7 +245,7 @@ export async function waiting(ctx: FollowContext, job: Job, url: string, before:
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
   if (pr.state !== 'open' || !merges(ctx, repo, change?.kind) || !readyToMerge(seen, now)) return { seen };
   try {
-    const heldBehind = await mergeGateOf(ctx.api).merge(repo, pr.base, url, () => ctx.api.merge(repo, numberOf(url)));
+    const heldBehind = await mergeGateOf(ctx.api).merge(repo, pr.base, url, () => { mark?.(pr.headOid); return ctx.api.merge(repo, numberOf(url)); });
     if (heldBehind) return { seen: { ...seen, mergeHeldBehind: heldBehind } };
     return { ended: 'merged', seen };
   } catch (err) {
@@ -343,34 +350,6 @@ async function supersededBy(api: GitHubApi, repo: string, number: number, issue:
 }
 
 /**
- * Whether the merge of pull request `url` closed the issue (issue #721): the issue is closed as completed, or the pull
- * request's body closes it with a closing keyword and is no part.
- */
-async function closedByMerge(api: GitHubApi, repo: string, number: number, url: string): Promise<boolean> {
-  if (isClosedAsCompleted(await api.getIssue(repo, number), await api.closingPullRequest(repo, number))) return true;
-  const pr = (await api.referencingPullRequests(repo, number)).find((p) => p.url === url);
-  return pr !== undefined && !isPartOf(pr, repo, number) && closesByKeyword(pr.body, repo, number);
-}
-
-/** What the hopper says on the issue it closes after its own merge (issue #677): neutral, the pull request's link only. */
-export const closedAfterMergeComment = (url: string): string =>
-  `Closed after the merge of ${url}. The pull request had no closing keyword for this issue.`;
-
-/**
- * After the hopper's own merge of pull request `url` that did not close the issue (issue #677): a part ("Part of #N") stays
- * a part, and so does another issue's work that only mentions this one (issue #786); else the hopper closes the issue as
- * completed and comments with its link. Whether it closed the issue.
- */
-async function closeAfterMerge(api: GitHubApi, repo: string, number: number, url: string): Promise<boolean> {
-  const pr = (await api.referencingPullRequests(repo, number)).find((p) => p.url === url);
-  if (pr && (isPartOf(pr, repo, number) || worksOnAnotherIssue(pr, repo, number))) return false;
-  // Closed first: a sync after a failed comment finds it closed as completed, the item done.
-  await api.closeAsCompleted(repo, number);
-  await api.postComment(repo, number, closedAfterMergeComment(url));
-  return true;
-}
-
-/**
  * A merge recorded as the whole item before issue #721, checked once: closed by it, it is marked checked; else it was a
  * part — `hopper:done` comes off, so the issue is offered again and its next part runs.
  */
@@ -390,9 +369,14 @@ async function abandon(ctx: FollowContext, repo: string, issue: GitHubIssue, s: 
   return { outcome: 'abandoned', pullRequest, part: s.part === true, state: { ...s, ...(pullRequest ? { pullRequest } : {}), follow: 'abandoned' } };
 }
 
-/** Followed after its end; with `act`, a person's Merge now or Close PR on its open pull request (issue #677). */
-export async function followPullRequest(ctx: FollowContext, job: Job, act?: PullRequestAct): Promise<FollowUp | undefined> {
-  let s = (job.sourceState?.source ?? {}) as Followed & Record<string, unknown>;
+/**
+ * Followed after its end; with `act`, a person's Merge now or Close PR on its open pull request (issue #677). With `at`, the
+ * merge marker is kept before the hopper's merge call (issue #1588).
+ */
+export async function followPullRequest(ctx: FollowContext, job: Job, act?: PullRequestAct, at?: FollowAt): Promise<FollowUp | undefined> {
+  // The marker an earlier follow kept (issue #1588); no state this follow keeps carries it on.
+  const { merging: marker, ...kept } = (job.sourceState?.source ?? {}) as Followed & Record<string, unknown> & { merging?: MergeMarker };
+  let s: Followed & Record<string, unknown> = kept;
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
   try {
@@ -416,6 +400,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     const part = s.part === true;
     let byHopper = false;
     let mergedHere = false;
+    let acting: ActingPerson | undefined;
     let superseded: string | undefined;
     // Done by another pull request (issue #1143): nothing is left to land, and the item is done. A part too (issue #1433):
     // its issue closed as completed, every part of it is done.
@@ -424,7 +409,11 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       superseded = (await closeSuperseded(ctx.api, repo, now.url, doneElsewhere)).superseded;
       now = { state: 'closed', url: now.url };
     } else if (now.state === 'open') {
-      const w = await waiting(ctx, job, now.url, s.seen, act);
+      const url = now.url;
+      const mark = at && ((head: string | undefined) => at.keep({
+        ...s, merging: { pullRequest: url, ...(head ? { head } : {}), ...(!act ? { byHopper: true } : {}), ...(at.acting ? { acting: at.acting } : {}) } satisfies MergeMarker,
+      }));
+      const w = await waiting(ctx, job, now.url, s.seen, act, mark);
       if (!('ended' in w)) {
         if (JSON.stringify(w.seen) === JSON.stringify(s.seen) && !w.retargeted) return undefined;
         return { outcome: 'open', pullRequest: now.url, part, state: { ...s, seen: w.seen }, ...(w.retargeted ? { retargeted: w.retargeted } : {}) };
@@ -435,6 +424,11 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       byHopper = !act;
       mergedHere = w.ended === 'merged';
       superseded = w.superseded;
+    } else if (now.state === 'merged' && await mergedByMarker(ctx.api, repo, now.url, marker)) {
+      // The hopper's merge call went through, and a stop came before its record (issue #1588).
+      byHopper = marker!.byHopper === true;
+      mergedHere = true;
+      acting = marker!.acting;
     }
     // A merge that did not close the issue is a part (issue #721), whatever the report took it for — unless the hopper
     // merged it and it ships no part: then the hopper closes the issue (issue #677).
@@ -449,7 +443,10 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     const carried = (issue ?? await ctx.api.getIssue(repo, number)).labels;
     await relabel(ctx, repo, number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED], ...(add ? { add: [add] } : {}), carried });
     const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}), ...(parts ? { parts } : {}) };
-    return { outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper && !superseded ? { byHopper } : {}), ...(superseded ? { superseded } : {}), state: after };
+    return {
+      outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper && !superseded ? { byHopper } : {}), ...(acting ? { acting } : {}),
+      ...(superseded ? { superseded } : {}), state: after,
+    };
   } catch (err) {
     if (err instanceof SourceError) throw err;
     // A person's act is answered GitHub's refusal as it is (issue #677); a sync asks again later.

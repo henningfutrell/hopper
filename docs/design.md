@@ -15938,7 +15938,7 @@ the Pull requests list and post the same route; `--repo <owner/repo>` picks one 
 Tests: `test/integration/pull-requests.test.ts` (Merge now with yolo off and checks pending; a refused merge; Close PR;
 the CLI), `test/ui/pull-requests-view.test.ts` (the buttons, the confirmation, none for a viewer).
 
-**Closing finishes the loop** (the third part of issue #677, `src/sources/github/follow.ts` `closeAfterMerge`). A merge
+**Closing finishes the loop** (the third part of issue #677, `src/sources/github/own-merge.ts` `closeAfterMerge`). A merge
 by the hopper — yolo mode, or a person's Merge now — of a pull request that did not close its issue (no closing keyword:
 one that only mentions the issue, or one named for it only on its branch) left the issue open, and issue #721 took that
 merge for a part, so the issue was offered again. Now, when the hopper made the merge and the pull request is no part
@@ -15949,6 +15949,21 @@ closed before the comment, so a sync after a failed comment finds it closed as c
 merged by the hopper stays a part: the issue stays open and its next part runs. A merge a person made on GitHub stays as
 issue #721 has it: the hopper did not merge it, so it does not close the issue. This is the seventh exception to "GitHub
 text is neutral" in `AGENTS.md`: the user's setting (yolo mode) or act (Merge now) merged it.
+
+**The merge marker** (issue #1588). "The hopper made the merge" was known only in the follow that made the merge call. A
+stop after the call and before the record (or a lost answer, then the Merge now row sent again) left the pull request
+merged on GitHub and read as a person's merge: no close, the merge taken for a part, the issue offered again, and
+`byHopper` and who pressed Merge now lost. Now, just before the merge call, the follow keeps a **merge marker** in the
+job's source state (`merging`: the pull request, its head commit, `byHopper` or the acting person), through
+`FollowAt.keep` (`JobSource.follow`'s third argument; the sync loop and the Merge now row pass it). A later follow that
+reads the pull request merged, with the marker on it and the same head (or a head not known), takes it as the hopper's
+merge: the issue is closed with its one comment as above, and `job.pull_request_merged` says `byHopper` or the person.
+Another head is a person's merge on GitHub after the hopper's call was refused. The marker goes with the next state the
+follow keeps. A Merge now row sent again after a sync recorded the merge is answered done. Not for a direct job's pull
+request (`direct-follow.ts`): it has no issue to close.
+
+Tests: `test/integration/merge-marker.test.ts` (yolo mode and Merge now, the merge's answer lost and the daemon stopped:
+after the start the issue is closed once, with one comment, and who merged it is recorded).
 
 Tests: `test/sources/github-follow.test.ts` (yolo merges a pull request that only mentions the issue: closed with one
 comment; Merge now on one named only on its branch; a closing pull request gets no extra close or comment; a part stays
