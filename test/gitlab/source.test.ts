@@ -8,7 +8,7 @@
 //   Scenario: an issue another person wrote, labelled, assigned or edited is not of a trusted origin, with who did what
 //   Scenario: an issue assigned to another person is not assigned to you; one with an end label or on the backburner is not taken
 //   Scenario: with no Access, nobody is a trusted actor, so no issue is taken
-//   Scenario: a report writes the hopper's labels: claimed, then the end label; a missing issue is a permanent error
+//   Scenario: a report writes the hopper's labels: claimed, then hopper:pr-ready or the end label; a missing issue is a permanent error
 //   Scenario: a project GitLab does not answer is named; the others are still listed; none answering is the source's error
 //   Scenario: paused with no account, and with no project picked
 //   Scenario: GitLab refusing the token ends only the account: the source stops reading, pauses, and lists nothing
@@ -138,8 +138,9 @@ describe('the GitLab source', () => {
     expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:claimed']);
     await s.source.report({ kind: 'claimed', job: jobOf('ada/tools', 1) }); // again: nothing more
     expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:claimed']);
-    expect(await s.source.report({ kind: 'finished', job: jobOf('ada/tools', 1) })).toEqual({ reported: 'finished' });
-    expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:done']);
+    // Open, its merge request not found yet: it waits for review, and the follow looks for it (follow.test.ts).
+    expect(await s.source.report({ kind: 'finished', job: jobOf('ada/tools', 1) })).toEqual({ reported: 'finished', follow: 'open' });
+    expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:pr-ready']);
     await s.source.report({ kind: 'failed', job: jobOf('acme/platform/api', 9) });
     expect(s.gitlab.issues.find((i) => i.iid === 9)!.labels).toEqual(['hopper', 'hopper:failed']);
     expect(s.gitlab.requests.filter((r) => r.method === 'PUT').at(-1)).toMatchObject({ path: '/api/v4/projects/acme%2Fplatform%2Fapi/issues/9', body: { add_labels: 'hopper:failed', remove_labels: 'hopper:claimed' } });
