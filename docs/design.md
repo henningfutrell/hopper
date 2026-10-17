@@ -75,7 +75,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
-| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run through the locked-down `claude` print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its answer checked in the form asked for and against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), and the machines it can run on (`providers.ts`, pure); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -95,6 +96,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
+| `scripts/cloud-acceptance.ts` | the cloud acceptance run (issue #866, `docs/cloud-acceptance.md`): drives a tester's hopper through its operator CLI — mint tests, a template in plain words, its read-only check — and writes a masked report; `collect` sums the reports up | everything in `src/` but `src/sandbox/probes.ts` (the probes' ids, tools and titles), `src/secrets/mask.ts` and types of `src/domain/`; it never runs in the daemon |
 | `scripts/kind-check.ts` | the kind check (issue #1281, docs/deploy.md "Check the chart on kind"): `kind`, `helm` and `kubectl` bring up a fresh kind cluster with the Helm chart, ask the hopper's health in its pod, and look in every pod for a Podman or Docker socket or runtime; run by `.github/workflows/kind.yml` | everything in `src/`; it never runs in the daemon |
 | `scripts/hopper-cluster.sh` | a compose install moved onto Kubernetes (issue #1373, "Moving a compose install onto a cluster", `docs/kubernetes.md`): `bootstrap` (k3s rootless, beside Podman), `migrate` (the database and the master key into the chart's release, the cutover) and `rollback`; in every image, `hopper cluster script`. `scripts/kind-migrate-check.ts` checks it end to end on kind | everything in `src/`; it never runs in the daemon |
 | `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, and its lane pods (issue #1284, "Lane pods"), the same images as `compose.yaml`; an external Postgres and the tunnel services, whose scripts in `files/` are compose's own, unchanged, and OpenFGA's migration as a Job named by its spec (issue #1282, tested by `test/scripts/helm-chart-parts.test.ts`); tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
@@ -7607,14 +7609,17 @@ secrets sat in a file on the host, beside the stack they open. The update script
 ## hopper.io: threat model, account isolation and privacy (issue #468, 2026-10-17 — a design, not built)
 
 Child of the cloud-hosting tracking issue #469. Written before any hopper.io code: `docs/hopper-io-security.md`. It
-names the assets and the trust boundaries, five threats (hopper.io compromised, a stolen **hopper.io link key**, a
-malicious install, a **hopper.io account** taken over, one account reading another's data), and eight rules every
+names the assets and the trust boundaries, five threats (hopper.io compromised, a stolen **cloud link key**, a
+malicious instance, a **hopper.io account** taken over, one account reading another's data), and eight rules every
 hopper.io change cites: R1 hopper.io runs nothing on an instance; R2 a remote action only by the admin's opt-in per
 instance, under the instance's roles, as one `POST /ui/api/*`, recorded; R3 every record and query scoped to one
-account, with tests; R4 no credential on the **hopper.io link**, a per-instance key that either side rotates or revokes;
+account, with tests; R4 no credential on the **cloud link**, a per-instance key that either side rotates or revokes;
 R5 only what the dashboard shows, a retention period, erase on delete, a privacy note; R6 link events on both sides;
 R7 rate and size caps; R8 self-hosting with no link stays complete. The open owner decisions of #469 change none of
-them; the document says where one widens a threat.
+them; the document says where one widens a threat. **They are repo law** (`AGENTS.md` "hopper.io runs nothing
+on an instance"): a hopper.io change cites the rules it touches, and one that cannot obey a rule changes the document
+first, with the owner's decision. The cloud link's record (issue #467 part 1, "The cloud link" below) is R8's switch, and
+the document's "What is built" says how it obeys R1, R4, R5 and R6.
 
 ## Self-update (issue #44, 2026-10-04)
 
@@ -10781,6 +10786,46 @@ and `docker-runtime.test.ts` (the one-shot create body, `wait`, `logs` with and 
 `HOPPER_TEST_PODMAN_SOCKET` is set): a check box of the box image with `kubectl` added ran its probes as `agent` and was
 removed with its volume; with a token minted for a cluster no server answers at, the hopper's own cluster probes were
 all `error`, kubectl asked the server its kubeconfig names, and the check failed.
+
+## The cloud acceptance run (issue #866, 2026-10-17)
+
+The sandbox module (issues #708 to #864) was shown against doubles for the cloud side; no run used real cloud tools.
+Owner's decision on issue #866: no outside credentials are used, and nothing goes into the hopper's vault from the
+maintainers. Make the real-cloud acceptance easy for outside testers to run in their own environment with their own
+credentials: a runbook, one command, results in a form they report back, and a way to collect them.
+
+- **The runbook.** `docs/cloud-acceptance.md`: what the run proves, what a tester needs (a hopper with sandbox boxes, a
+  minting credential for an AWS account and a cluster), the command, the client-machine variant, how to read and file
+  the report, and how maintainers collect the reports.
+- **The command.** `node scripts/cloud-acceptance.ts run --aws-role <account>/<role> --cluster <name> [--namespace
+  <cluster>/<ns>] [--terraform-workspace <name>] [--hopper "<cli>"]`. It adds no path into the hopper: each step is an
+  operator CLI command, so the vault's checks, the approval gate and the read-only check apply as for a person. The steps:
+  `hopper vault` (the hopper answers, and a minting credential mints for each asset); `hopper vault mint-test` for the
+  role and the cluster; `hopper template request --needs` with the needs in plain words ("Needs in words"), reads only;
+  the template approved, by the read policy or by a person while the command waits; then its read-only check, which is
+  dropped first when one ended before the run, so the report is of this run. The check is the box run with real tools:
+  one read per tool and the write probes ("The read-only check"), beside the hopper, or on a client machine when the
+  hopper has no runtime ("The read-only check on a client target").
+- **The report.** `report.json` and `report.md`: each step `passed`, `failed` or `skipped` with a short output, and each
+  tool (`aws`, `kubectl`, `helm`, `terraform`) `passed` (its read worked and each write was refused), `failed` or `skipped`
+  (no probe of it ran, with what to name to cover it). Masked before it is written: the tester's account id, role,
+  cluster, namespace and workspace become `<account>`, `<role>`, `<cluster>`, `<namespace>`, `<workspace>`; any other
+  12-digit number, email address, key, token, IP address, private host name and the host name are masked too
+  (`src/secrets/mask.ts`). `report.md` ends with the report as a `json hopper-cloud-acceptance` block.
+- **Collecting.** A tester files `report.md` with the issue form `.github/ISSUE_TEMPLATE/cloud-acceptance.yml` (label
+  `cloud-acceptance`). `node scripts/cloud-acceptance.ts collect <file>...` reads the reports from `report.json` files and
+  from `gh issue list --label cloud-acceptance --json number,url,body` output, and prints a sum per tool and one row per
+  report; it names each issue with no report. It reaches no network itself.
+
+**Not built.** The secret scope of a launch (a box gets only the secrets its launch named) and a launch of a box for a
+job are not in the command: the CLI launches no box, and the integration tests already prove both against the real
+daemon (`test/integration/job-sandboxes.test.ts`, `test/integration/template-request-api.test.ts`). No run of the command
+against a real cloud is recorded here: that is the testers' reports.
+
+Tests: `test/scripts/cloud-acceptance.test.ts` (the hopper CLI as a double: a passing run with each tool's reads and
+writes; the plain-words needs; a template waiting for a person; a check that ended before the run, run again; a write
+that went through fails the run and names the tool; a hopper out of reach; a tool no asset covers; the masking;
+`collect` over report files and an issue list; the command's files and exit codes).
 
 ## Probe marks (issue #916, 2026-10-12)
 
@@ -23849,8 +23894,98 @@ restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links
 link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
 UI: Settings → hopper.io.
 
-**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
+**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. An install that never links
+connects to nothing outside its machine but its database: `test/integration/cloud-link.test.ts` watches every socket
+and fetch the daemon's main thread opens (`Socket.prototype.connect`, which every TCP and TLS connection in the thread
+passes) while it starts, signs in and runs a job, and fails on any host but loopback; the database's worker thread is not
+watched. The link agent must run in the main thread and keep it so. The connection — an outbound
 link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
 hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
 keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
 Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+
+## Drafting on the user's AI CLI (issue #474, 2026-10-17)
+
+**The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
+for. The File an issue flow (issue #471) lets the user pick the AI CLI they signed in to, and the machine it is signed
+in on. The hopper holds no model key for it.
+
+**The change.**
+- A **draft provider** is one of `claude`, `codex`, `cursor-agent`, `opencode`, `omp` (`src/drafting/providers.ts`). Each
+  draft is one turn, locked down for its CLI:
+  - `claude`: the client's `levelArgv` — `--no-session-persistence`, `--setting-sources ''`, `--strict-mcp-config`,
+    `--tools ''`, the answer bound to the JSON Schema, the prompt on stdin.
+  - `codex exec --json --ephemeral --ignore-user-config --ignore-rules --skip-git-repo-check --sandbox read-only`, the
+    prompt on stdin (`-`).
+  - `cursor-agent -p --mode ask --sandbox enabled --trust`: ask mode is read-only.
+  - `opencode run --format json --pure`, with `OPENCODE_PERMISSION={"*":"deny"}`, no project config and no Claude Code
+    prompt or skills, set by `env` in the argv so it holds over ssh too.
+  - `omp -p --no-tools --no-session --no-skills --no-rules --no-extensions --no-lsp`.
+  The argv and the reading of the print-mode CLIs are the print-mode executors' dialects (`print-agents.ts`): a dialect's
+  `said` reads the answer without a session, which a draft keeps none of; `read`, a job's, still needs one. A CLI with
+  no `--json-schema` is told to answer one JSON object; the hopper takes it as it is, from a Markdown fence, or between
+  its first `{` and last `}`. `draftIssueWith` (`src/run-skills/draft.ts`) checks every provider's answer in the same
+  form (`ISSUE_DRAFT`), then against the draft constraints.
+- **The machine** is the user's pick (`src/drafting/run.ts` `draftOn`), never a default. Refused before anything runs,
+  each in plain words: not configured, offline, a container target (`docker exec` passes no stdin), a client target for
+  a provider other than claude, and this machine for a user added later with a provider other than claude.
+- **Client targets** (issue #470 D3): claude runs through the client's signed `POST /level` (issue #482), which builds
+  the same argv. No new client call: `/level` runs claude only, and the other CLIs are refused there.
+- **Identity.** The CLI finds its own login on its machine; the hopper never reads or copies it. This machine runs a
+  user added later with their CLI config dirs (`userCliEnv`): only claude has one, so another CLI here would run on the
+  daemon's account, and is refused. An ssh target runs its CLI with that machine's environment.
+- **Failures in plain words.** Exit 127 or `<bin>: not found`: not installed. A CLI's sign-in text (not logged in,
+  authentication required, unauthorized, invalid or no API key, 401): not signed in, with the provider's sign-in
+  command. An answer that is no draft: refused. A timeout or a cancel stops the run and says which. A device code the
+  run prints goes to the logins (issue #476) and is hidden in the error.
+
+**Not done here.** The UI's machine and provider picker (issue #471) and a probe that says, before a run, whether the
+CLI is installed and signed in there; model lists for the CLIs other than claude (claude's is `claudeModels`); session
+records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); the run dir
+on the machine when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft
+counts toward usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
+as their dialects call them: the machine's other users can see it in its process list while the turn runs.
+
+**Verification:** `test/drafting/run.test.ts`, against fake CLIs: each provider locked down, the prompt delivered, the
+run dir removed after, the draft checked; over ssh; the model and effort flags; an answer that is no draft, not signed in,
+not installed, an offline, unknown or container machine, a timeout and a cancel; a client target's claude through its
+client and another CLI refused there; a user added later with their own claude config dir, refused another CLI here.
+
+## The instance's display name (issue #465, part 1, 2026-10-17)
+
+Issue #465 asks that one hopper.io account register many hoppers and see the machines of each. Each hopper keeps its own
+data. The issue says "install"; this repository's word is **instance** (glossary): "install" is the directory the daemon
+runs from. Its first need is a stable id that the instance makes once and keeps in its database, and a display name that
+its owner can change. The id is there already: `instanceId()` (issue #603, `src/store/settings.ts`), made at its first ask,
+kept in the instance's settings, and the label of the sandbox boxes the hopper launches. A restart, a new container or an
+update on the same database keeps it. This part adds the display name and shows both.
+
+**The setting** (`src/http/display-name.ts`, `src/http/ui/display-name.ts`): the instance's settings key `displayName`
+(never set: empty). `GET /api/display-name` (an instance read) answers `{ instanceId, displayName }`; `POST
+/ui/api/display-name` `{ displayName }` (the instance admin) sets it: one line, trimmed, 80 characters at most, empty clears
+it. Each change is `display_name.changed` (`from`, `to`, `by`). UI: Settings → Version → This hopper, shown to the instance
+admin only.
+
+**Decisions:**
+- **The display name is the instance's, not a user's.** The issue's terms put users inside an install; the instance admin
+  owns its settings. Whether each user links their own part to their own account is an open question of the issue.
+- **No new id.** The id of issue #603 is already made once and kept, which is what the issue asks. A second id would be
+  two names for one thing.
+- **No migration.** `displayName` is a new key of the instance's key-value settings; the build before never reads it.
+
+**Left for later parts of issue #465:** these need the hopper.io service, which is not in this repository, and the issue's
+open questions decided (who registers a multi-user instance, sharing with more than one account, a cap on instances).
+They follow the security rules of `docs/hopper-io-security.md` (issue #468) and the decisions of issue #469.
+- Registering from the instance: the admin starts it in Settings, the account owner approves it at hopper.io with a
+  short-lived, single-use code; nothing registered without approval on both sides.
+- Re-registering reuses the instance id and replaces the old registration. The cloud link (issue #467, "The cloud
+  link") makes a new `installId` at each link; the registration part makes it the instance id.
+- The link reports the instance's machines (name, online state, lanes, executors offered); machines are still added and
+  removed only on the instance.
+- Unregistering from either side: hopper.io revokes the link, or the instance unlinks and hopper.io removes it; neither
+  deletes anything on the instance.
+- The link state and last-seen time the account shows.
+
+**Verification:** `test/integration/display-name.test.ts`: a fresh hopper shows a 16-hex instance id and no name; the admin
+sets, changes and clears the name; the name and the id are kept across a restart; each change is one event; a body that is
+not one line of 80 characters at most is 400.
