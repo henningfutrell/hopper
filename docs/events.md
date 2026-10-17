@@ -992,16 +992,31 @@ Version 1 (`docs/schemas/job.cleanup_deferred.v1.json`). The job ended, but its 
 
 ## `job.cleaned_up`
 
-Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. Recorded only for a deferred cleanup.
+Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. `dueAt` (issue #1570): a stop of the hopper came between the job's end and its cleanup, which the next start did from its record; `dueAt` is when the record was written, at the job's end. Recorded only for a deferred cleanup, or one done after a stop.
 
 | field | type | required |
 |---|---|---|
-| `deferredAt` | string | yes |
+| `deferredAt` | string | no |
+| `dueAt` | string | no |
 | `by` | `user` | no |
 
 ```json
 {
   "deferredAt": "2026-10-07T21:31:00.000Z"
+}
+```
+
+## `job.pod_removed`
+
+Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at startup and then every 10 minutes, deleted the job's pod and removed its machine: the job ended, no cleanup was still owed, and its pod was still there with this hopper's instance label (a delete that failed, or a hopper older than the cleanup record). `executor` is the executor that started it.
+
+| field | type | required |
+|---|---|---|
+| `executor` | string | yes |
+
+```json
+{
+  "executor": "kubernetes"
 }
 ```
 

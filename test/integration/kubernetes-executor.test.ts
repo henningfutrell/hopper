@@ -7,6 +7,7 @@
 //   Scenario: a queued job produces a pod, runs there, finishes, and the pod is removed after
 //   Scenario: cancelling a running job deletes its pod
 //   Scenario: a pod that never joins fails its job, and is deleted
+//   Scenario: a pod still there after its job ended is deleted by the sweep at the next start (issue #1570)
 //
 // Feature: the agent's sign-in survives new pods (issue #1287)
 //   Scenario: after one sign-in kept in the vault, each new job pod runs Claude signed in
@@ -87,9 +88,9 @@ function cluster(o: { joins?: boolean } = {}): FakeKubernetes {
   return k8s;
 }
 
-/** `container`: the vault in a container of its own (issue #586). */
-async function boot(k8s: FakeKubernetes, herdr: FakeHerdrClient, startTimeoutSec = 60, o: { container?: boolean } = {}) {
-  const db = tempDbPath();
+/** `container`: the vault in a container of its own (issue #586). `dbPath`: the database of an earlier boot (a restart). */
+async function boot(k8s: FakeKubernetes, herdr: FakeHerdrClient, startTimeoutSec = 60, o: { container?: boolean; dbPath?: string } = {}) {
+  const db = o.dbPath ? { dbPath: o.dbPath, cleanup: () => {} } : tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
@@ -105,7 +106,7 @@ async function boot(k8s: FakeKubernetes, herdr: FakeHerdrClient, startTimeoutSec
     seams: { herdr, kubernetes: () => k8s, levels: [] },
   });
   (k8s as FakeKubernetes & { url: { now: string } }).url.now = t.url;
-  return { a: t, token: await t.login() };
+  return { a: t, token: await t.login(), dbPath: db.dbPath };
 }
 
 const item = { executor: 'kubernetes', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
@@ -127,6 +128,25 @@ describe('a pod per job on the kubernetes executor', () => {
     expect(JSON.stringify(k8s.created[0])).not.toMatch(/containerPort|sshd/);
     await waitFor(() => k8s.removed.includes(pod), { what: 'its pod deleted' });
     await waitFor(async () => !(await machineIds(a)).includes(pod), { what: 'its machine removed' });
+  });
+
+  it('a pod still there after its job ended is deleted by the sweep at the next start, with its machine', { timeout: 60_000 }, async () => {
+    const k8s = cluster();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE] });
+    const { a, dbPath } = await boot(k8s, herdr);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'finished', 30_000);
+    const pod = `hopper-job-${job.id}`;
+    await waitFor(async () => k8s.removed.includes(pod) && (await a.job(job.id)).cleanupDue === undefined, { what: 'its cleanup done' });
+    await a.stop();
+    t = undefined;
+    // Left there all the same: a delete the API answered but did not do, or a hopper older than the cleanup record.
+    k8s.pods.set(pod, { phase: 'Succeeded' });
+    const { a: b } = await boot(k8s, herdr, 60, { dbPath });
+    const swept = await waitFor(async () => (await b.events('types=job.pod_removed')).find((e) => e.jobId === job.id), { what: 'the pod swept' });
+    expect(swept.data).toEqual({ executor: 'kubernetes' });
+    expect(k8s.pods.has(pod)).toBe(false);
+    expect(k8s.removed.filter((n) => n === pod)).toHaveLength(2);
   });
 
   it('cancelling a running job deletes its pod', { timeout: 60_000 }, async () => {

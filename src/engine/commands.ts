@@ -6,7 +6,7 @@ import type { DismissedBy } from '../domain/locked.ts';
 import type { ActingPerson, Job, JobNote, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import type { Cleanups } from './cleanup.ts';
+import { cleanupDue, type Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
 import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
@@ -93,7 +93,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       // resume holds a pane, and a parked job its work tree, released after the commit by the normal reap.
       const next = store.tx(() => {
         if ((job.status === 'waiting_answer' || job.status === 'parked') && job.questionId) c.questions.cancel(job.questionId);
-        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
+        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined, ...cleanupDue(c) });
         store.events.append({ type: 'job.cancelled', jobId: id, data: { reason, ...(note ? { note } : {}) } });
         return cancelled;
       });
@@ -106,7 +106,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       const next = store.tx(() => {
         const job = existing(c, id);
         if (job.status !== 'waiting_on') throw new EngineError('conflict', `job ${id} is ${job.status}: only a job on its own wait ends finished when its item closes`);
-        const finished = store.jobs.update(id, { status: 'finished', finishedAt: nowIso(c), result, wait: undefined, pendingAnswer: undefined });
+        const finished = store.jobs.update(id, { status: 'finished', finishedAt: nowIso(c), result, wait: undefined, pendingAnswer: undefined, ...cleanupDue(c) });
         store.events.append({ type: 'job.finished', jobId: id, data: { result } });
         return finished;
       });
