@@ -18236,6 +18236,53 @@ image puts the wrapper first on PATH; a read-only image and one with no terrafor
 (the read check), `test/integration/infra-plans.test.ts` (the real daemon: a plan naming a read the job was not minted is
 a 400, and kept once the job was minted it).
 
+## Infra plans: Argo CD syncs through the plan gate (issue #959, 2026-10-17)
+
+Follow-up of issue #870. Before this, the apply gate held a terraform or helm apply, but an Argo CD auto-sync did not ask
+the hopper: it applied what git said, and showed only as drift on Infra. The vault minted nothing for an `argocd-app`.
+
+The issue gave two paths. **Taken: turn off auto-sync for a gated app, and sync it with a plan-bound `sync`
+credential.** The other path — keep auto-sync and gate the merge to the branch Argo CD watches — needs the hopper to
+write a status or a rule to GitHub ("GitHub text is neutral": the hopper writes only labels), and a merge on GitHub by a
+person would still skip it.
+
+- **A gated app** is an Argo CD Application with no automated sync (`spec.syncPolicy.automated` absent), labelled
+  `io.hopper.plan-gate=true` (`ARGO_PLAN_GATE_LABEL`), whose sync only the service account `hopper-sync` in the
+  namespace `argocd` may start (`docs/deploy.md` "Argo CD syncs through the plan gate"). The hopper changes no cluster:
+  the operator sets this up.
+- **A sync is minted only through the apply gate** (`mintTarget`, `src/domain/minting.ts`). `$HOPPER_SECRET kube sync
+  argocd-app/<cluster>/<app> --plan <id>` mints a token of `hopper-sync` in `argocd` (`ARGOCD_NAMESPACE`) of that
+  cluster, from the cluster's minting credential, after Access and the gate, as any other change: the plan is kept, of
+  that app, not stale, not failed, approved, and made at the commit its branch is at now. Any other ask mints nothing and
+  the cluster is not asked. `vault.minted` names the plan and the principal
+  `system:serviceaccount:argocd:hopper-sync`, so the sync is an apply on Infra and a plan-bound write for the out-of-band
+  rule.
+- **An `argocd-app` takes sync only**, and names its cluster (`<cluster>/<app>`); `read`, `write` and `apply` are refused:
+  read or change what it deploys through its cluster or namespace. Reads of an Argo CD app stay as they were (no read
+  token for checks or need steps).
+- **A plan for an `argocd-app` is a `gitops` plan** (`planInputProblem`): the `argocd app diff` its sync applies. A
+  terraform or helm plan of one is a 400.
+- **A gated app that syncs by itself is drift.** The collector's `--argo` (`argoSignals`, `src/domain/out-of-band-collect.ts`)
+  reports each Application with the label and an automated sync policy: `what` `AutoSyncOnGatedApp`, key
+  `argocd:<namespace>/<name>:auto-sync`. It is kept, sent to the notifiers and shown on Infra like any out-of-band change.
+
+**Why a credential, not a sync by the hopper.** The vault is already the boundary for every change ("Infra plans: no apply
+without a plan"); a sync is one more operation behind it, with no new route and no Argo CD credential in the hopper.
+
+**Residual risk, stated.** As for any plan-bound credential, the `hopper-sync` token can, for its 10 minutes, sync what
+its Role allows, at any revision: the gate binds the credential to the plan, not the sync to the plan's commit. A Role
+limited to the gated app (`resourceNames`) keeps it to that app. A person or tool that Argo CD's own RBAC lets sync, or
+someone who turns automated sync on again, skips the hopper: the collector reports the second as drift, and the first as
+an out-of-band write when the Kubernetes audit log names a principal that is no controller identity. A sync from Argo CD's
+UI or CLI writes as `argocd-server`: keep it out of the controller identities, so it is reported.
+
+Tests: `test/domain/infra-plans.test.ts` (the sync target, sync only, the cluster named, a gitops plan, the gate with no
+plan and with another app's plan), `test/domain/out-of-band-collect.test.ts` (a gated app with automated sync reported, a
+gated one without and an ungated one not), `test/integration/infra-plans-argocd.test.ts` (the real daemon, a joined box, the
+Kubernetes API and GitHub faked: a sync with no plan, an unapproved plan, another app's plan and a moved head mints
+nothing and the cluster is not asked — the negative test of the issue's "Done when"; a terraform plan of the app is a
+400; a current approved GitOps plan mints a `hopper-sync` token in `argocd`, the audit naming the plan).
+
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
 The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in
