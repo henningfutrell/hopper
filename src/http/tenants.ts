@@ -32,7 +32,8 @@ import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, requestSession } from './host-guard.ts';
 import { apiTokenIn } from './ui/guard.ts';
-import { accessIdOf, grantActionRefusal, grantScopeRefusal } from './ui/api-tokens.ts';
+import { accessIdOf, grantActionRefusal, grantScopeRefusal, senderRefusal } from './ui/api-tokens.ts';
+import type { DpopProofs } from './ui/dpop.ts';
 import type { ApiGrants } from './ui/api-grants.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
@@ -155,7 +156,7 @@ export function createApiDoor(o: { tenants: Tenants; signIn: Pick<SignIn, 'check
   };
 }
 
-export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan;
+export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; proofs: DpopProofs; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan;
   /** The field of a POST route's body that names its action (issue #909), by the route as registered; undefined: none. */
   actionField: (route: string) => string | undefined;
 }): void {
@@ -165,6 +166,14 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
   app.addHook('onRequest', async (req, reply) => {
     const session = requestSession(req, o.sessions);
     if (session) {
+      // A bound grant's API token (issue #892, "Sender binding"): on every request, a DPoP proof of its grant's key.
+      if (session.kind === 'api') {
+        const unproved = await senderRefusal(o.grants, o.proofs, session, req);
+        if (unproved !== undefined) {
+          console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${unproved}`);
+          return reply.code(401).header('www-authenticate', 'DPoP error="invalid_dpop_proof"').send({ error: `the API token is refused: ${unproved}` });
+        }
+      }
       // An API token's read: its grant's scopes (issue #881), then Access decide it (a mutation's is decided by its guard).
       if (session.kind === 'api' && req.method === 'GET' && req.url.startsWith('/api/')) {
         const outOfScope = grantScopeRefusal(o.grants, session, req.method, req.routeOptions.url);

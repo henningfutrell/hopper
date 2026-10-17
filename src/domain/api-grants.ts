@@ -7,10 +7,11 @@ import type { Identity, UiRole } from './types.ts';
  * A stored grant (issue #881): never a token. `identity`: the minter's, which a sign-in change reconciles as it does a
  * session's. `endsAt` absent: no fixed end. `lastUsedAt`: its last refresh (its mint, before one); `lastUsedFrom`: who
  * sent it, as the sign-in limit counts callers. `delegate`: a delegate approver's (issue #1138), with its approver policy.
+ * `jkt`: a bound grant's (issue #892, "Sender binding"): the thumbprint of the key every refresh and API token use proves.
  */
 export interface ApiGrantRow {
   id: string; userId: string; identity: Identity; label: string; holder?: string; role: UiRole; scopes: string[]; box?: true;
-  createdAt: string; endsAt?: string; tokenMinutes?: number; lastUsedAt: string; lastUsedFrom?: string; delegate?: DelegatePolicy;
+  createdAt: string; endsAt?: string; tokenMinutes?: number; lastUsedAt: string; lastUsedFrom?: string; delegate?: DelegatePolicy; jkt?: string;
 }
 
 /** A refresh token as stored: its hash, its grant, and when it was rotated (absent: it is the grant's current one). */

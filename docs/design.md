@@ -13689,10 +13689,11 @@ its scopes and its minter's live rights, until the grant ends, it is revoked, or
 (then the grant ends). The agent keeps it in its own secret store and must replace it at each refresh. Reuse detection
 needs the legitimate holder to refresh after a thief: a thief who refreshes first and keeps refreshing holds the grant
 until the holder's next refresh ends it. The scope names a route's area and act, not an object: `questions:answer` answers
-any question of the user. Sender binding (DPoP, RFC 9449) and per-grant repository or source limits are not built.
+any question of the user. A grant bound to its agent's key ("Sender binding" below) closes the theft of a token alone.
+Per-grant repository or source limits are not built.
 
-**Not built** (follow-ups, issue #892): sender binding (DPoP); per-grant repository or source restrictions. A grant minted
-by device approval is built: "Grants by device approval" below.
+**Not built** (follow-up, issue #892): per-grant repository or source restrictions. A grant minted by device approval and
+sender binding are built: "Grants by device approval" and "Sender binding" below.
 
 Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
 ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
@@ -13704,8 +13705,8 @@ in scope and out, the retry, the events; no box flag; revoke and revoke all; the
 ### Grants by device approval (issue #892, 2026-10-16)
 
 The first part of issue #892, a follow-up of #881: an agent gets a grant with no token pasted into it. On the model of the
-OAuth 2.0 device authorization grant (RFC 8628). Sender binding and per-grant repository or source limits are the issue's
-other parts, not built here.
+OAuth 2.0 device authorization grant (RFC 8628). Sender binding is the second part ("Sender binding" below); per-grant
+repository or source limits are not built.
 
 - **The ask.** `POST /ui/auth/device-grant`, with no credential: the grant the agent wants, in a mint's fields (`label`,
   `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`, `deny`). It answers a **device code** (`hopper_dc_` and
@@ -13743,6 +13744,55 @@ holds the device code when the request is approved takes the grant; it is shown 
 Tests: `test/http/device-grants.test.ts` (the codes, waiting, approve once, deny, the end, the cap),
 `test/integration/device-grants.test.ts` (the flow over HTTP and its refresh; deny; the mint's checks at the approval;
 no approval by an API token; the CLI), `test/http/tunnel.test.ts`, `test/ui/api-tokens.test.ts`.
+
+### Sender binding (issue #892, part 2, 2026-10-17)
+
+The second part of issue #892: a stolen refresh token, API token or device code alone is not enough. A grant may be
+**bound** to a key its agent holds, on the model of DPoP (RFC 9449): then each request that uses the grant carries a
+**DPoP proof**, a short JWT the agent signs with that key for that one request, in the `DPoP` header. The hopper keeps
+only the key's JWK SHA-256 thumbprint (RFC 7638, `jkt`) in the grant's body; the private key never leaves the agent.
+
+- **Binding.** A grant is bound at its birth or at its first refresh with a proof; once bound it stays bound.
+  - A device grant request with a proof on the ask (`POST /ui/auth/device-grant`) binds its grant to the proof's key.
+    The person sees "bound to the asking agent's key" before they approve. The poll then needs a proof of that key: a
+    device code alone, or with another key's proof, takes nothing (401) and the request stands.
+  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt`): the thumbprint the agent shows. A
+    `jkt` on an ask with a proof must be the proof's (400).
+  - An unbound grant's refresh with a proof binds it to the proof's key. The refresh token a person copied to the agent
+    is then worth nothing to anyone without the key, from the agent's first refresh on.
+- **A refresh** of a bound grant needs a proof of its key (`htm` `POST`, `htu` the refresh URL), else 401 with
+  `WWW-Authenticate: DPoP error="invalid_dpop_proof"`. This is checked before reuse detection: a spent refresh token sent
+  without the key does not end the grant, so a thief cannot end it either. The answer has `tokenType: 'DPoP'`.
+- **Each use of a bound grant's API token**, read or mutation, is `Authorization: DPoP <token>` (a `Bearer` one is
+  refused, RFC 9449 §7.1) with a proof of the grant's key whose `ath` is the token's SHA-256. Checked in the tenancy hook
+  (`src/http/tenants.ts`), before the scopes and Access; the grant's API tokens made before its binding need the proof too.
+- **The proof** (`src/http/ui/dpop.ts`). jose checks the signature with the key in the proof's own header
+  (`EmbeddedJWK`: a public key only), `typ` `dpop+jwt`, and an asymmetric algorithm (`DPOP.algorithms`: ES256, ES384,
+  EdDSA, Ed25519, RS256, PS256; never `none` or HMAC). The hopper checks the rest of RFC 9449 §4.3: `htm` is the method;
+  `htu` names this request's Host and path (a query does not count; `http` or `https`, since behind a proxy or the tunnel
+  the hopper sees `http`); `iat` is at most `DPOP.maxAgeS` (60) seconds off the hopper's clock; `jti` was not seen with
+  that key while a proof with it is fresh (kept in memory, `DPOP.jtiMost` (10 000) at once; beyond, 401 until one is
+  forgotten); `ath` for an API token. A proof that fails is refused even on a route or grant that needs none: it is no
+  proof of the request.
+- **Not built: the server nonce** (`DPoP-Nonce`, RFC 9449 §8). The 60-second `iat` window and the `jti` cache stand for
+  it; a nonce would add a round trip to each refresh and a state the agent must keep.
+- **Why jose and not a library of its own.** No maintained Node library checks a DPoP proof as a resource server; jose
+  (already the hopper's, by the same author as openid-client) does the JWS part, and the claim checks are a few lines.
+- **Migration.** None: `jkt` is a field of the grant's JSON body (`api_grants.body`). The build before reads it as no field:
+  there a bound grant's tokens work as bearer tokens again, until the grant ends.
+- **Events.** None new: the mint and the refresh are `api_grant.minted` and `api_grant.refreshed`, as before. A refused
+  proof is a log line.
+
+**Residual risk, stated.** Binding is optional: an agent that sends no proof keeps a bearer grant, as before. A refresh
+token taken before the agent's first refresh can be bound to the thief's key instead; the agent's next refresh then fails,
+and the person revokes the grant. To close that gap, bind at the birth (a device grant request with a proof, or `jkt` at
+the mint). The key is the agent's to keep safe: whoever holds the key and a token acts as the grant. The `jti` cache is
+in memory: a proof seen before a restart can be sent again after it, within its 60 seconds, to the same URL.
+
+Tests: `test/http/dpop.test.ts` (the proof: the key, htm, htu, iat, jti, ath, no proof, a private key, `none`, HMAC, two
+headers, the cap), `test/integration/sender-binding.test.ts` (a device grant bound by its ask's proof; a mint with
+`jkt`; binding at the first refresh; an unbound grant as before; a mutation; the CLI), `test/http/device-grants.test.ts`,
+`test/ui/api-tokens.test.ts`.
 
 ### The scope registry and presets (issue #909, 2026-10-12)
 

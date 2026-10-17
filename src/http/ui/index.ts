@@ -47,7 +47,7 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
   sessions: UiSessions;
   /** Grants (issue #881), and every scope a route needs. */
-  grants: import('./api-grants.ts').ApiGrants; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
+  grants: import('./api-grants.ts').ApiGrants; proofs: import('./dpop.ts').DpopProofs; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
   signIn: SignIn;
   /** Settings → Sign-in: the sign-in config's realms (issue #185), and the local accounts (issue #1380). */
   realms: RealmsAdmin; localAccounts: import('../local-accounts.ts').LocalAccountsAdmin; passkeys: import('../../auth/passkeys.ts').Passkeys;
@@ -319,7 +319,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => personOf(signedInOf(req)!) });
   registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
-  registerApiTokenRoutes(app, { allow, instance, sessions, grants: o.grants, registry: o.scopeRegistry, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller, clock: o.clock });
+  registerApiTokenRoutes(app, { allow, instance, sessions, grants: o.grants, proofs: o.proofs, registry: o.scopeRegistry, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller, clock: o.clock });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
