@@ -74,6 +74,8 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   installationsDown?: boolean;
   /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
   issuesRefused?: number;
+  /** GitHub: a new issue or comment is made, then the answer is lost: the caller reads this status (issue #1591: a stop or a timeout after GitHub made it). */
+  answerLost?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
   /** The credentials revoke requests named (issue #514), in order. */
@@ -301,7 +303,11 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
-        return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };
+        // `state=all`, `creator` and no `labels` too (issue #1591: a post key looked for); `since` is not read.
+        const state = r.query.state ?? 'open';
+        const labels = r.query.labels === undefined ? [] : r.query.labels.split(',');
+        return { status: 200, body: issues.filter((i) => i.repo === repo && (state === 'all' || (i.state ?? 'open') === state) && labels.every((l) => i.labels.includes(l))
+          && (r.query.labels !== undefined || r.query.creator !== undefined) && (r.query.creator === undefined || i.author === r.query.creator)).map(restIssue) };
       }
       // Filing an issue and opening a pull request (the GitHub proxy, issue #563): GitHub numbers both in one sequence per repository.
       const nextNumber = () => Math.max(0, ...issues.filter((i) => i.repo === repo).map((i) => i.number), ...pulls.filter((p) => p.repo === repo).map((p) => p.number)) + 1;
@@ -313,6 +319,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           labels: (r.body.labels as string[] | undefined) ?? [], assignees: (r.body.assignees as string[] | undefined) ?? [],
         };
         issues.push(issue);
+        if (forge?.answerLost) return { status: forge.answerLost, body: { message: 'Bad Gateway' } };
         return { status: 201, body: restIssue(issue) };
       }
       if (r.method === 'POST' && rest === 'pulls') {
@@ -345,6 +352,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         const id = ++n;
         const comment = { id, body: r.body.body, user: { login }, created_at: '2026-10-09T00:00:00Z', html_url: `${base}/${repo}/issues/${issue.number}#issuecomment-${id}` };
         (issue.comments ??= []).push(comment);
+        if (forge?.answerLost) return { status: forge.answerLost, body: { message: 'Bad Gateway' } };
         return { status: 201, body: comment };
       }
       if (r.method === 'POST' && im[2] === 'labels') {
