@@ -12279,6 +12279,10 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   are sent in one batch: half a second after an intake action (`OUTBOX_BATCH_MS`), so the clicks of a burst go together,
   and every 5 s (`OUTBOX_EVERY_MS`) from the start on, so a restart sends what a stopped hopper left — a row it left
   `sending` is `pending` again; labels and assignees are idempotent, so a second send of the same change does no harm.
+  A comment is not (issue #1590): its first line is a hidden key (`<!-- job-hopper v1 kind=outbox id=… -->`, a hash of
+  its first row's source, id and time), and its send lists the issue's comments first: one that carries the key is the
+  post a stop left unrecorded, and the row is `sent` with no second comment. The key is in the form the context filter
+  and the thread's reply check already take as the hopper's own.
   One batch runs at a time per source; one call that does not end holds the source's next batch, never a sync. Every call
   goes through the source's GitHub API, so the shared rate limiter applies.
 - **Coalescing** (`coalesce`, pure). The rows due for one issue become the fewest calls: an add and a remove of the same
