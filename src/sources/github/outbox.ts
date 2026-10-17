@@ -1,6 +1,6 @@
 // The GitHub outbox of one source (issue #1238, design.md "GitHub outbox"): the GitHub changes a person's intake action
 // asks for — Approve's comment read and `hopper:done`, Assign to me's assignment, Release claim's and Take off the
-// backburner's labels, Take into Intake's label and assignment — kept as rows in the user's store, in the transaction of
+// backburner's labels, Take into Intake's label and assignment, Decline's labels, note and close (issue #1710) — kept as rows in the user's store, in the transaction of
 // the action's own local change, and sent after the answer by `flush`: the rows due, coalesced per issue
 // (`coalesce`, src/domain/github-outbox.ts), one call per change left. A row's event is recorded once GitHub took it. A
 // failed call waits its backoff and is tried again; a permanent refusal, or the last attempt, leaves it `failed` until the
@@ -222,6 +222,8 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       const error = mine.find((r) => r.lastError !== undefined)?.lastError;
       return { state: 'pending', ...(error !== undefined ? { error } : {}) };
     },
+    /** An item with a decline's rows not sent (issue #1710), failed ones too: declined, whatever the sync made of it. */
+    declining: (key: string): boolean => openOf(key).some((r) => r.act === 'decline'),
     /** An item with rows not sent: a discover does not take it until they are. */
     held: (key: string): boolean => openOf(key).some((r) => r.state !== 'failed'),
     /** At a discover's start: its round. Never waits for the outbox. */
@@ -263,7 +265,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
  * sync loop's: without it, it waits.
  */
 export function outboxSend(
-  api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment' | 'listComments'>,
+  api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment' | 'listComments' | 'closeAsNotPlanned'>,
   readComments: (repo: string, key: string) => Promise<void>,
   ensureLabels: (repo: string, labels: readonly string[]) => Promise<void> = async () => {},
   acts?: OutboxActs,
@@ -273,6 +275,7 @@ export function outboxSend(
     if (change.op === 'add_labels') { await ensureLabels(repo, change.labels); await api.addLabels(repo, n, change.labels); }
     else if (change.op === 'remove_labels') await api.removeLabels(repo, n, change.labels);
     else if (change.op === 'add_assignees') await api.addAssignees(repo, n, change.assignees);
+    else if (change.op === 'close_not_planned') await api.closeAsNotPlanned(repo, n);
     else if (change.op === 'comment') {
       if (once && (await api.listComments(repo, n)).some((c) => c.body.trimStart().startsWith(once))) return;
       await api.postComment(repo, n, once ? `${once}\n${change.body}` : change.body);

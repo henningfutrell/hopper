@@ -10,6 +10,7 @@ import { SANDBOX_RUN_TABLE } from './sandbox-runs.ts';
 import { cloudLinkInstanceId } from './migration-cloud-link-id.ts';
 import { SAGA_TABLE } from './sagas.ts';
 import { NEED_STEP_TABLE } from './need-steps.ts';
+import { WINDOWS_STEP_TABLE } from './windows-steps.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -55,4 +56,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // expires, so that machine's join sent again is answered as the first. A table only: the build before never reads it,
   // and takes no spent code again.
   'CREATE TABLE IF NOT EXISTS join_codes_spent (code_hash TEXT PRIMARY KEY, machine_key TEXT NOT NULL, expires_at TEXT NOT NULL, user_id TEXT NOT NULL, template TEXT, pod TEXT);',
+  // 49: the Windows steps (issue #1611): one row per Windows sandbox step, its ask, inputs, log, result, outputs and the
+  // hold of its host. A table only: the build before never reads it, and keeps its steps in memory as before.
+  WINDOWS_STEP_TABLE,
 ];

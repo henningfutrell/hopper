@@ -3,7 +3,7 @@
 // request cards waiting for approval first (Approve), then not assigned to you (Assign to me, and Assign all), on the
 // backburner (Take off the backburner), and the other reasons. An issue that passed intake — taken, partly done, its pull
 // request waits for review — is job progress, on Jobs (issue #1035): Intake lists none of them, and counts them in one line
-// that links to Jobs. A request declined here (issue #1035) is no row either: one line counts them. With nothing waiting, a source says so. The nav badge counts the request cards. An issue approved here stays in its place until the view closes (issue #811).
+// that links to Jobs. A request declined here (issue #1035) is no row either: one line counts those whose GitHub writes wait (issue #1710). With nothing waiting, a source says so. The nav badge counts the request cards. An issue approved here stays in its place until the view closes (issue #811).
 // Always rendered: with no source that lists issues, it says what will show here. Sources keeps each source's sync and
 // links here; who is a trusted actor is configuration, on Settings → Intake. A source that lists fewer issues than it should
 // says why (issue #1125): paused (and still shown), its last sync failed, or a job repository GitHub did not answer for. The
@@ -57,7 +57,7 @@ function SourceIntake({ s }: { s: SourceStatus }) {
         <div className="flex flex-wrap items-center gap-2">
           <span data-intake-summary className="text-muted-foreground">{items.length === 0 ? 'Nothing waiting for intake' : `${items.length} waiting for intake`}</span>
           {progress > 0 && <a data-intake-in-progress href="#jobs" className="underline">{progress} in progress on Jobs</a>}
-          {declinedCount > 0 && <span data-intake-declined className="text-muted-foreground" title="An edit to a declined issue's title or body shows it here again">{declinedCount} {declinedCount === 1 ? 'request' : 'requests'} declined</span>}
+          {declinedCount > 0 && <span data-intake-declined className="text-muted-foreground" title="The hopper writes each decline to GitHub: the issue loses the hopper label and gets a comment">{declinedCount} {declinedCount === 1 ? 'request' : 'requests'} declined, written to GitHub soon</span>}
           {canOperate && assignable.length > 1 && (
             <Button size="xs" variant="outline" title="Assigns every labelled issue not assigned to you to your GitHub account"
               onClick={() => void actFor(`/ui/api/sources/${encodeURIComponent(s.name)}/intake`, { kind: 'assign', keys: assignable }, 'Assigned to you', intakeRefusal(assignable))}>

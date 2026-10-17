@@ -48,7 +48,8 @@ describe('a job that waits on what it named', () => {
     const a = await start(herdr);
     const job = await waiting(a, herdr);
     const on = { kind: 'outside', what: 'write access to the repository' };
-    expect(job.wait).toEqual({ for: 'write access to the repository', until: 'a background poll of the push', on, since: expect.any(String) });
+    expect(job.wait).toMatchObject({ for: 'write access to the repository', until: 'a background poll of the push', on, since: expect.any(String) });
+    expect(Object.keys(job.wait!).filter((k) => k !== 'check').sort()).toEqual(['for', 'on', 'since', 'until']);
     expect(job.laneId).toBeUndefined();
     expect(job.questionId).toBeUndefined();
     expect(job.resumeOn).toBe('local');
@@ -239,6 +240,21 @@ describe('a job that waits on its own background command (issue #1037)', () => {
     expect(events.find((e) => e.type === 'job.own_command_nudged')!.data).toEqual({ delivered: true });
     expect(events.find((e) => e.type === 'job.reattached')!.data).toEqual({ reason: 'the wait ended in the pane' });
     expect(done.wait).toBeUndefined();
+  });
+
+  it('a wait flagged stuck before (issue #1694): its wait check ends it once the command is gone, and the job goes on, told why', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 3, wakes: false }), DONE] });
+    const a = await start(herdr, GRACE);
+    const job = await waiting(a, herdr);
+    const { check: _check, ...wait } = (await a.job(job.id)).wait!;
+    a.user().store.jobs.update(job.id, { wait: { ...wait, nudgedAt: wait.since, stuckAt: wait.since } });
+
+    const done = await a.waitForStatus(job.id, 'finished', 8000);
+
+    expect(done.wait).toBeUndefined();
+    const events = await ofJob(a, job.id);
+    expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: 'its command is gone, and you did not go on', check: 'command_exited' });
+    expect(herdr.prompts[1]!.text).toContain('The hopper ended your wait on your own command');
   });
 
   it('its pane lost (issue #1508): the hopper ends the wait, and the job resumes its session in a new pane, told why', async () => {

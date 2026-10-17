@@ -28,7 +28,7 @@ async function boot(gh: FakeGitHub): Promise<TestApp> {
   return a;
 }
 
-const WRITES = new Set(['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'toDraft']);
+const WRITES = new Set(['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'closeAsNotPlanned', 'postComment', 'merge', 'closeWithoutMerge', 'toDraft']);
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (app: TestApp, url: string): Promise<Job> =>
   (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url)!;

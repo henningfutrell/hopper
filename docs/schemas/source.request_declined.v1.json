@@ -25,6 +25,13 @@
         "cli",
         "api"
       ]
+    },
+    "choice": {
+      "type": "string",
+      "enum": [
+        "close",
+        "open"
+      ]
     }
   },
   "required": [

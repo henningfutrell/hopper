@@ -3,7 +3,7 @@
 // A fake ssh and scp for the Windows step host's tests (issue #731): it records each call in $FAKE_WIN_DIR/calls.jsonl,
 // answers `ssh -G`, keeps the "host's" files under $FAKE_WIN_DIR/host/<drive>/<path>, and "runs" a step script: it
 // prints a log line on stdout and one on stderr, writes outputs.tar when the script packs outputs, and exits with
-// $FAKE_WIN_EXIT. With $FAKE_WIN_CUT set, scp brings back only that many bytes of a file. A step script that reads secrets has its stdin kept in $FAKE_WIN_DIR/stdin.txt. With $FAKE_WIN_HANG set, a step never ends on its own.
+// $FAKE_WIN_EXIT. With $FAKE_WIN_CUT set, scp brings back only that many bytes of a file. A step script that reads secrets has its stdin kept in $FAKE_WIN_DIR/stdin.txt. With $FAKE_WIN_HANG set, a step never ends on its own. With $FAKE_WIN_SWEEP_EXIT set, the sweep exits with it.
 import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
@@ -48,3 +48,4 @@ if (script.includes('-File')) {
   if (process.env.FAKE_WIN_HANG) setInterval(() => undefined, 1000);
   else process.exit(Number(process.env.FAKE_WIN_EXIT ?? 0));
 }
+if (!script.includes('New-Item') && script.includes('Remove-Item')) process.exit(Number(process.env.FAKE_WIN_SWEEP_EXIT ?? 0));
