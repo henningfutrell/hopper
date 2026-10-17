@@ -2,7 +2,7 @@
 // its number: its state, its checks and its last push; a number that names no pull request is `not_found`.
 import { describe, expect, it } from 'vitest';
 import { GitHubApiError, type NumberedPullRequest } from '../../src/sources/github/api.ts';
-import { waitedChecks } from '../../src/sources/github/watched.ts';
+import { waitedChecks, waitedReviews } from '../../src/sources/github/watched.ts';
 
 const PR: NumberedPullRequest = { url: 'https://github.com/octo/tools/pull/8', createdAt: '2026-10-17T09:00:00Z', isDraft: false, conflicting: false, state: 'open', checks: 'pending', headCommittedAt: '2026-10-17T09:30:00Z' };
 
@@ -16,5 +16,18 @@ describe('a pull request\'s checks, as the GitHub source reads them (waitedCheck
     expect(await waitedChecks({ pullRequest: async () => undefined }, 'octo/tools', 8)).toEqual({ url: 'https://github.com/octo/tools/pull/8', state: 'not_found' });
     expect(await waitedChecks({ pullRequest: async () => { throw new GitHubApiError('Not Found', true, 404); } }, 'octo/tools', 8)).toMatchObject({ state: 'not_found' });
     await expect(waitedChecks({ pullRequest: async () => { throw new GitHubApiError('rate limited', false, 429); } }, 'octo/tools', 8)).rejects.toThrow('rate limited');
+  });
+});
+
+describe('a pull request\'s reviews, as the GitHub source reads them (waitedReviews, part 3)', () => {
+  const reviews = [{ state: 'approved', submittedAt: '2026-10-17T10:05:00Z' }];
+  it('its state and its reviews', async () => {
+    expect(await waitedReviews({ pullRequest: async () => PR, pullRequestReviews: async () => reviews }, 'octo/tools', 8)).toEqual({ url: PR.url, state: 'open', reviews });
+  });
+
+  it('a number that is no pull request: not_found; GitHub with no reviews read: none read', async () => {
+    expect(await waitedReviews({ pullRequest: async () => undefined, pullRequestReviews: async () => reviews }, 'octo/tools', 8)).toEqual({ url: 'https://github.com/octo/tools/pull/8', state: 'not_found' });
+    expect(await waitedReviews({ pullRequest: async () => PR }, 'octo/tools', 8)).toEqual({ url: PR.url, state: 'open' });
+    await expect(waitedReviews({ pullRequest: async () => PR, pullRequestReviews: async () => { throw new GitHubApiError('rate limited', false, 429); } }, 'octo/tools', 8)).rejects.toThrow('rate limited');
   });
 });

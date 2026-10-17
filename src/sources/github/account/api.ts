@@ -94,6 +94,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; installUrl?: string 
     headChecks: (repo, ref) => call(`checks of ${repo}@${ref}`, (t) => headChecks(req, t, repo, ref)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, (t) => rest.jobLog(req, t, repo, jobId)),
     workflowRun: (repo, runId) => call(`Actions run ${runId} of ${repo}`, (t) => rest.workflowRun(req, t, repo, runId)),
+    pullRequestReviews: (repo, number) => call(`reviews of ${repo}#${number}`, (t) => rest.pullRequestReviews(req, t, repo, number)),
     rerunJob: (repo, jobId) => call(`rerun of Actions job ${jobId} of ${repo}`, (t) => rest.rerunJob(req, t, repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (t) => ({ url: `${webOriginOf(o.apiUrl)}/${repo}.git`, token: t })),
   };
