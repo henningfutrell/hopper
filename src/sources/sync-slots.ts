@@ -24,6 +24,8 @@ export interface Slot {
   notRerun: NotRerun[];
   /** Keys already logged as not run again, so each is logged once. */
   loggedNotRerun: Set<string>;
+  /** Keys already logged as not assigned to the user (issue #1614), so each is logged once. */
+  loggedNotAssigned: Set<string>;
   /** Since when the source has been in error (this run of failures), and whether source.stalled was recorded for it. */
   failing?: { since: string; stalled: boolean };
   /** Removed from the plugins config (issue #356): pulls nothing, goes once its jobs ended and are reported. */
@@ -65,6 +67,24 @@ export function keepNotRerun(slot: Slot, notRerun: NotRerun[]): void {
   slot.notRerun = notRerun;
 }
 
+/**
+ * Say once in the log each labelled issue the source does not take because it is not assigned to the user (issue #1614):
+ * nothing on the issue says so. One taken or gone is forgotten, so it is said again when it comes back. A paused source,
+ * or one that lists no intake: nothing changes.
+ */
+export function notAssignedTold(slot: Slot, paused: string | undefined): void {
+  const intake = paused === undefined ? slot.source.intake?.() : undefined;
+  if (!intake) return;
+  const now = intake.filter((x) => x.group === 'not-assigned');
+  const still = new Set(now.map((x) => x.key));
+  for (const key of slot.loggedNotAssigned) if (!still.has(key)) slot.loggedNotAssigned.delete(key);
+  for (const x of now) {
+    if (slot.loggedNotAssigned.has(x.key)) continue;
+    slot.loggedNotAssigned.add(x.key);
+    console.warn(`hopper: source ${slot.source.name} does not take ${x.key}: ${x.reason}. No job starts until it is assigned (Intake: Assign to me)`);
+  }
+}
+
 /** A job gone, or ended with nothing left to report, retries nothing (issue #1402). */
 export function dropRetries(slot: Slot, reports: (jobId: string) => boolean): void {
   for (const id of slot.retrying.keys()) if (!reports(id)) slot.retrying.delete(id);
@@ -72,7 +92,7 @@ export function dropRetries(slot: Slot, reports: (jobId: string) => boolean): vo
 
 export function newSlot(source: JobSource): Slot {
   return {
-    source, chain: Promise.resolve(), retrying: new Map(), notRerun: [], loggedNotRerun: new Set(),
+    source, chain: Promise.resolve(), retrying: new Map(), notRerun: [], loggedNotRerun: new Set(), loggedNotAssigned: new Set(),
     status: { name: source.name, kind: source.kind, state: 'starting', itemsSeen: 0, jobsCreated: 0, activeJobs: 0, detail: source.describe() },
   };
 }

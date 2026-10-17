@@ -32,6 +32,8 @@ export interface EngineOptions {
   tickMs: number;
   /** How often the engine looks for a machine whose sweep is due (issue #410). Default a minute. */
   sweepCheckMs?: number;
+  /** The sweep's lease (issue #1627): on two hosts on one database, only its holder sweeps the machines. Absent: this host alone. */
+  sweepLease?: import('../domain/leases.ts').SweepLease;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
   /** Each review section's review (issues #537, #543). Their onDecided/onRevise must call the engine's; swept on each tick. */
@@ -94,7 +96,7 @@ export interface EngineOptions {
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'jobMoves' | 'jobLeaseMs' | 'waitReads'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'sweepLease' | 'jobMoves' | 'jobLeaseMs' | 'waitReads'>> {
   fakeUsage?: SettableUsageSource;
   jobMoves?: EngineOptions['jobMoves']; waitReads?: WaitReads;
   /** Ask for a Decision; coalesces with one already running. */

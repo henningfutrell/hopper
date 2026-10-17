@@ -6297,6 +6297,22 @@ Version 1 (`docs/schemas/infra.settings_changed.v1.json`). An admin turned auto-
 }
 ```
 
+## `infra.applies_changed`
+
+Version 1 (`docs/schemas/infra.applies_changed.v1.json`). The hopper's admin turned infra applies on or off (issue #1722): off, the vault mints only read credentials, and no need or box step that applies runs; an infrastructure change goes through CI. `on`, the new setting; `by`, who. It applies to the next mint and the next step. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `on` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "on": false,
+  "by": "admin"
+}
+```
+
 ## `infra.watchers_changed`
 
 Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the environment watchers (issue #870 part 4): who is told of each plan, approval and apply, by the environments the plan names (`prod`, `uat`, `staging`, `dev`, `qa`), and of every plan (`*`). Names as the notifier's receiver knows them. `from` and `to` are the whole lists; `by`, who.
@@ -6560,6 +6576,40 @@ Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows s
 }
 ```
 
+## `landing_batch.due`
+
+Version 1 (`docs/schemas/landing_batch.due.v1.json`). A batch run of a repository's landing branch is due (issue #1589): recorded before the hopper makes its `branch` at the `tip` and opens its pull request into the `tested` branch, with the text it carries (`merges`, the issues it `closes`) and `why`. A pass that stops before `landing_batch.started` starts the same batch run, and takes the pull request it finds on that branch in place of a second one.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `landing` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `branch` | string | yes |
+| `merges` | integer[] | yes |
+| `closes` | string[] | yes |
+| `why` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "landing": "main",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "branch": "hopper-batch/0123456789ab",
+  "merges": [
+    1088,
+    1090,
+    1093
+  ],
+  "closes": [
+    "#1087"
+  ],
+  "why": "3 merges since the last batch run"
+}
+```
+
 ## `landing_batch.started`
 
 Version 1 (`docs/schemas/landing_batch.started.v1.json`). The hopper started a batch run of a repository's landing branch (issue #1073, design.md "Landing batches"): `branch` made at the landing branch's `tip`, and a pull request of it (`pullRequest`, `url`) into the `tested` branch, so the full test suite runs on it. `merges`: the pull requests the batch carries, from their merge commits. `why`: the trigger (N merges, the timer, or no batch run before).
@@ -6620,7 +6670,7 @@ Version 1 (`docs/schemas/landing_batch.promoted.v1.json`). A batch run passed ev
 
 ## `landing_batch.failed`
 
-Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
+Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). `conflicts` true: merge conflicts with the tested branch, and a back-merge is due. Recorded before the hopper closes the pull request (issue #1589): a pass closes it while it stays open. The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
 
 | field | type | required |
 |---|---|---|
@@ -6632,6 +6682,7 @@ Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pas
 | `reason` | string | yes |
 | `checks` | string[] | yes |
 | `checkRuns` | object[] | no |
+| `conflicts` | boolean | no |
 
 ```json
 {

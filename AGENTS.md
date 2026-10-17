@@ -229,8 +229,13 @@ hopper's note naming the job and the request by id only, and gets no label or as
   names them with closing keywords, issue #1175); a red batch's culprit is reverted from `main`, and the rest of the batch moves on;
   `beta` and `canary` move only by `scripts/promote.sh`, one step at a time; `stable` moves to the canary's candidate
   when its canary window passes with no bug report that names it (the batch runner, part 5), or by `scripts/promote.sh stable`.
-- **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
-  by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+- **The UI is the daemon's one built part; `cloud/` is the second part, and not the daemon's.** `ui/` → `npm run build:ui`
+  → `ui/dist` (gitignored), served by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+  `cloud/` is **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), its own service with its own database, run by Node
+  as the daemon is (`npm run cloud`): the daemon never serves it, its image does not carry it, and nothing in `src/` imports
+  it. It imports of `src/` only the GitHub sign-in it shares with an instance (`src/connected-accounts/hopper-app.ts`,
+  `web-flow.ts`, `identity.ts`) and `src/secrets/runtime.ts`; `test/cloud/config.test.ts` checks both ways. It signs in
+  through a GitHub App of its own, never the shipped one, and keeps no GitHub token.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,
   never served by the daemon; it takes its look from `ui/src/index.css` and nothing of `src/`.
 - **What's new.** A change people who use the hopper would notice adds one line in a new file

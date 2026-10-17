@@ -13,7 +13,7 @@ import { filedBy, reportLine, stateLabel, type BugReportView } from '@/model/bug
 import { useHopper } from '@/store';
 import { useCanOperate } from '@/store/selectors';
 
-const STATE_VARIANT: Record<BugReportView['state'], 'default' | 'secondary' | 'outline'> = { waiting: 'outline', open: 'default', closed: 'secondary' };
+const STATE_VARIANT: Record<BugReportView['state'], 'default' | 'secondary' | 'outline'> = { sending: 'outline', waiting: 'outline', open: 'default', closed: 'secondary' };
 
 function Row({ r }: { r: BugReportView }) {
   const by = filedBy(r);

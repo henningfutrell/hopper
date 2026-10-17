@@ -4,7 +4,10 @@
 // the hopper's own repository with the person's own GitHub connection (`bug_report.filed`, `bug_report.failed`).
 // `fileForJob` is a running job's report, by the same path: its text masked whole, the job's context added, marked as
 // the job's. With no GitHub connection, or GitHub out of reach or refusing access, the report is kept (`bug_report.kept`)
-// and sent later (`later.ts`); every report filed or kept is a row, for Your reports. Never a token in an event.
+// and sent later (`later.ts`); every report filed or kept is a row, for Your reports. The row is kept `sending` before
+// GitHub is asked, its id the post key in the text (issue #1591): GitHub may make the report and its answer be lost, and
+// the send later looks for the key first, so a report is never filed twice. Never a token in an event.
+import type { BugReport } from '../domain/bug-reports.ts';
 import type { BugReportRepository } from '../domain/ports.ts';
 import type { InstallInfo, Job, NewEvent } from '../domain/types.ts';
 import { maskReportText, REPORT_LABEL, REPORT_REPO, reportBody, reportContext, reportTitle, searchTerms, SIGNATURE_LINE, similarityOf, type ReportSystem } from './context.ts';
@@ -111,40 +114,43 @@ export function createBugReports(o: BugReportsOptions): BugReports {
     const failure = job ? o.failureOf(job.id) : undefined;
     return reportContext({ install: o.install(), system: o.system(), ...(job ? { job } : {}), ...(failure ? { failureId: failure.id, signature: failure.signature } : {}) });
   };
-  /** Kept to send later: the row, `bug_report.kept`, and the answer that says so. */
-  function keep(d: BugReportDraft, at: Record<string, unknown>, body: string, problem: string): BugReportAnswer {
-    const r = o.reports.add({
-      createdAt: o.now(), by: String(at.by), ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
-      title: reportTitle(d.title), state: 'waiting', kind: d.commentOn !== undefined ? 'comment' : 'issue',
-      ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, problem, tries: 1, checkedAt: o.now(),
-    });
-    o.record({ type: 'bug_report.kept', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, id: r.id, problem } });
-    return { kind: 'kept', id: r.id, problem };
+  /** The report's row, in `state`, with the body to send. */
+  const row = (d: BugReportDraft, by: string, body: string, state: 'sending' | 'waiting', problem?: string): BugReport => o.reports.add({
+    createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
+    title: reportTitle(d.title), state, kind: d.commentOn !== undefined ? 'comment' : 'issue',
+    ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, ...(problem !== undefined ? { problem } : {}), tries: 1, checkedAt: o.now(),
+  });
+  /** Kept to send later: `bug_report.kept`, and the answer that says so. */
+  function kept(d: BugReportDraft, at: Record<string, unknown>, id: string, problem: string): BugReportAnswer {
+    o.record({ type: 'bug_report.kept', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, id, problem } });
+    return { kind: 'kept', id, problem };
   }
   async function file(d: BugReportDraft, by: string): Promise<BugReportAnswer> {
     if (d.jobId !== undefined) jobOf(d.jobId);
     const at = { repo: REPORT_REPO, ...(d.jobId ? { jobId: d.jobId } : {}), by, ...(d.fromJob ? { fromJob: true } : {}) };
     const body = reportBody({ happened: d.happened, expected: d.expected, context: d.context, ...(d.fromJob && d.jobId ? { fromJob: d.jobId } : {}) });
     const github = o.github();
-    if ('problem' in github) return keep(d, at, body, github.problem);
+    if ('problem' in github) return kept(d, at, row(d, by, body, 'waiting', github.problem).id, github.problem);
     if (d.commentOn === undefined && !d.force) {
       // The signature only while the context sent still names it: what the person removed is not searched for either.
       const signature = d.jobId === undefined ? undefined : o.failureOf(d.jobId)?.signature;
       const found = await similar(github, d.title, signature && d.context.includes(`${SIGNATURE_LINE}${signature}`) ? signature : undefined);
       if (found.length > 0) return { kind: 'similar', similar: found };
     }
-    const kind = d.commentOn !== undefined ? 'comment' : 'issue';
+    const sending = row(d, by, body, 'sending');
+    const kind = sending.kind;
     try {
-      const done = await sendReport(github, { kind, title: reportTitle(d.title), body, ...(d.commentOn !== undefined ? { number: d.commentOn } : {}) });
-      o.reports.add({
-        createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
-        title: reportTitle(d.title), state: 'open', kind, number: done.number, url: done.url, tries: 1, checkedAt: o.now(),
-      });
+      const done = await sendReport(github, { key: sending.id, kind, title: sending.title, body, ...(d.commentOn !== undefined ? { number: d.commentOn } : {}) });
+      o.reports.update(sending.id, { state: 'open', number: done.number, url: done.url, body: undefined });
       o.record({ type: 'bug_report.filed', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, kind, number: done.number, url: done.url } });
       return { kind: kind === 'comment' ? 'commented' : 'filed', ...done };
     } catch (e) {
       const error = (e as Error).message;
-      if (sendLater(e)) return keep(d, at, body, error);
+      if (sendLater(e)) {
+        o.reports.update(sending.id, { state: 'waiting', problem: error });
+        return kept(d, at, sending.id, error);
+      }
+      o.reports.remove(sending.id);
       o.record({ type: 'bug_report.failed', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, error } });
       throw new BugReportRefused(502, error);
     }

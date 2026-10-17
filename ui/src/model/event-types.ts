@@ -42,7 +42,7 @@ const ALL: Record<EventType, true> = {
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.pull_request_abandoned': true, 'job.finish_briefed': true, 'job.checks_rerun': true, 'job.checks_rerun_asked': true, 'job.pull_request_tended': true, 'job.pull_request_base_merged': true, 'job.pull_request_retargeted': true, 'job.pull_request_followed': true, 'job.pull_request_seen': true, 'work_item.issue_closed': true, 'work_item.issue_reopened': true, 'job.pull_request_classified': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
   'step.started': true, 'step.finished': true, 'step.refused': true, 'vault.step_delivered': true, 'vault.step_refused': true,
-  'landing_batch.started': true, 'landing_batch.promoted': true, 'landing_batch.failed': true, 'landing_batch.retargeted': true, 'landing_batches.changed': true,
+  'landing_batch.due': true, 'landing_batch.started': true, 'landing_batch.promoted': true, 'landing_batch.failed': true, 'landing_batch.retargeted': true, 'landing_batches.changed': true,
   'landing_batch.bisect_started': true, 'landing_batch.bisect_run': true, 'landing_batch.bisect_tested': true, 'landing_batch.culprit': true, 'landing_batch.revert_opened': true, 'landing_batch.reverted': true, 'landing_batch.revert_failed': true, 'landing_batch.fix_filed': true, 'landing_batch.pending': true,
   'landing_batch.back_merge_opened': true, 'landing_batch.back_merged': true, 'landing_batch.back_merge_failed': true, 'landing_batch.back_merge_issue_filed': true,
   'landing_batch.canary_started': true, 'landing_batch.canary_held': true, 'landing_batch.canary_issue_filed': true, 'landing_batch.canary_promoted': true, 'landing_batch.stuck': true, 'landing_batch.restarted': true,
@@ -54,7 +54,7 @@ const ALL: Record<EventType, true> = {
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'job.sub_issue_linked': true, 'contribution.changed': true, 'shrink_guard.changed': true, 'credential_check.changed': true,
   'pointed_job.created': true, 'pointed_job.status_changed': true, 'github_watch.changed': true, 'github_watch.settings_changed': true, 'drift.found': true, 'drift.cleared': true, 'drift.issue_filed': true, 'drift.issue_updated': true, 'component_watchers.settings_changed': true, 'direct_job.submitted': true, 'direct_job.promoted': true, 'direct_job.promotion_revoked': true, 'issue_draft.drafted': true, 'issue_draft.filed': true,
-  'infra.plan_recorded': true, 'infra.plan_approved': true, 'infra.out_of_band_recorded': true, 'infra.out_of_band_marked': true, 'infra.controllers_changed': true, 'infra.settings_changed': true, 'infra.watchers_changed': true,
+  'infra.plan_recorded': true, 'infra.plan_approved': true, 'infra.out_of_band_recorded': true, 'infra.out_of_band_marked': true, 'infra.controllers_changed': true, 'infra.settings_changed': true, 'infra.applies_changed': true, 'infra.watchers_changed': true,
   'approval.confirmation_asked': true,
   'api_grant.minted': true, 'api_grant.refreshed': true, 'api_grant.reuse_detected': true, 'api_grant.revoked': true, 'api_tokens.settings_changed': true,
 };

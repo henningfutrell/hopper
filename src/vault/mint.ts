@@ -15,6 +15,7 @@ import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintEks } from './eks.ts';
 import { mintPrincipal } from '../domain/out-of-band.ts';
 import type { UnbindFrom } from './bindings.ts';
+import { appliesRefusal } from '../domain/infra-plans.ts';
 
 /** `plan` (issue #870): the plan an operation that changes infrastructure applies. */
 export interface MintAsk { mint: MintKind; operation: string; asset: string; plan?: string; token: string }
@@ -42,6 +43,8 @@ export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   clock: Clock;
   /** The apply gate (issue #870): absent, no credential that changes infrastructure is minted. */
   plans?: { gate(profile: OperationProfile, planId: string | undefined): Promise<string | undefined> };
+  /** Whether infra applies are on (issue #1722, the instance's setting, read at each ask); off, only a read is minted. Absent: on. */
+  applies?: () => boolean;
   /** What was minted, by job: each job's mint keys. Default: a map of its own. */
   minted?: Map<string, Set<string>>;
 }
@@ -92,6 +95,8 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (problem) return refuse(problem);
     const target = mintTarget(ask.mint, profile);
     if (typeof target === 'string') return refuse(target);
+    const off = appliesRefusal(profile, o.applies?.() ?? true);
+    if (off) return refuse(off);
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
 
     // Access takes the template from who the job is now (issue #581): the box it runs on, joined as its template.

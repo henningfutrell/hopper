@@ -59,7 +59,7 @@ import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
 import type { AllowedHosts } from './allowed-hosts.ts';
-import type { SourceEmailMatch } from './source-email-match.ts';
+import type { SourceEmailMatch } from './source-email-match.ts'; import type { InfraApplies } from './infra-applies.ts';
 import type { CloudLink } from './cloud-link.ts';
 import type { DisplayName } from './display-name.ts';
 import type { CallerOf } from './ui/sign-in.ts';
@@ -86,14 +86,14 @@ import { componentWatcherReadRoutes } from './ui/component-watchers.ts';
 import { landingBatchReadRoutes } from './ui/landing-batches.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
-import { instrumentHttp } from '../telemetry/http.ts';
+import { instrumentHttp } from '../telemetry/http.ts'; import { telemetrySummary } from '../telemetry/summary.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
 export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveries.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
-export { createSourceEmailMatch } from './source-email-match.ts';
+export { createSourceEmailMatch } from './source-email-match.ts'; export { createInfraApplies } from './infra-applies.ts';
 export { createCloudLink } from './cloud-link.ts';
 export { createDisplayName } from './display-name.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
@@ -133,7 +133,7 @@ export interface ServerOptions {
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
   /** The source email match (issue #1380): GET /api/source-email-match, POST /ui/api/source-email-match. */
-  sourceEmailMatch: SourceEmailMatch;
+  sourceEmailMatch: SourceEmailMatch; infraApplies: InfraApplies; // and infra applies (issue #1722): GET /api/infra-applies, POST /ui/api/infra-applies
   /** The cloud link (issue #467): GET /api/cloud-link, POST /ui/api/cloud-link and /ui/api/cloud-link/unlink. */
   cloudLink: CloudLink;
   /** The instance's display name and instance id (issue #465): GET /api/display-name, POST /ui/api/display-name. */
@@ -245,7 +245,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
-  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock, process: loop.reading });
+  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock, process: loop.reading, telemetry: telemetrySummary.read });
   componentWatcherReadRoutes(app, { ...tenant, instanceAdmin }); // Component watchers (issue #1077): the stack's only for the instance admin
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
@@ -286,7 +286,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, proofs, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, infraApplies: o.infraApplies, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

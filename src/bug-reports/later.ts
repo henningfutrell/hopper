@@ -1,8 +1,10 @@
 // Report a bug's reports after filing (issue #694, design.md "Report a bug"): a report kept while GitHub could not take
 // it is sent later, and Your reports reads each filed report's state on GitHub. One pass at start and every
-// `REPORT_SEND_MS`; Refresh in Your reports runs one now.
+// `REPORT_SEND_MS`; Refresh in Your reports runs one now. A kept report is looked for by its post key before it is sent
+// (issue #1591): GitHub may have made it while its answer was lost. A report a stop left `sending` waits again at start.
 import type { BugReport } from '../domain/bug-reports.ts';
 import type { BugReportRepository } from '../domain/ports.ts';
+import { postKeySince, withPostKey } from '../domain/post-key.ts';
 import type { NewEvent } from '../domain/types.ts';
 import { REPORT_LABEL, REPORT_REPO } from './context.ts';
 import type { ReportGitHub } from './github.ts';
@@ -10,10 +12,14 @@ import type { ReportGitHub } from './github.ts';
 /** How often a user's kept reports are sent and their reports' states read: 10 minutes. */
 export const REPORT_SEND_MS = 10 * 60_000;
 
-/** One report on GitHub: a new issue, or a comment on the open report `number`. */
-export const sendReport = (github: ReportGitHub, r: { kind: 'issue' | 'comment'; title: string; body: string; number?: number }): Promise<{ number: number; url: string }> => (r.kind === 'comment'
-  ? github.comment(REPORT_REPO, r.number!, `**${r.title}**\n\n${r.body}`)
-  : github.create(REPORT_REPO, { title: r.title, body: r.body, labels: [REPORT_LABEL] }));
+/** One report on GitHub: a new issue, or a comment on the open report `number`; its text ends with its post key `key`. */
+export const sendReport = (github: ReportGitHub, r: { key: string; kind: 'issue' | 'comment'; title: string; body: string; number?: number }): Promise<{ number: number; url: string }> => (r.kind === 'comment'
+  ? github.comment(REPORT_REPO, r.number!, withPostKey(`**${r.title}**\n\n${r.body}`, r.key))
+  : github.create(REPORT_REPO, { title: r.title, body: withPostKey(r.body, r.key), labels: [REPORT_LABEL] }));
+
+/** A kept report as GitHub has it, found by its post key: GitHub made it, and the answer was lost (issue #1591). */
+export const findReport = (github: ReportGitHub, r: BugReport): Promise<{ number: number; url: string } | undefined> =>
+  github.find(REPORT_REPO, r.id, r.kind === 'comment' ? { kind: 'comment', number: r.number! } : { kind: 'issue' }, postKeySince(r.createdAt));
 
 export interface ReportSender {
   /** Send the kept reports, then read the state of the filed ones; the reports after, newest first. */
@@ -36,7 +42,8 @@ export function createReportSender(o: {
     const tried = { tries: r.tries + 1, checkedAt: o.now() };
     if ('problem' in github) { o.reports.update(r.id, { ...tried, problem: github.problem }); return; }
     try {
-      const done = await sendReport(github, { kind: r.kind, title: r.title, body: r.body ?? '', ...(r.number !== undefined ? { number: r.number } : {}) });
+      const done = await findReport(github, r)
+        ?? await sendReport(github, { key: r.id, kind: r.kind, title: r.title, body: r.body ?? '', ...(r.number !== undefined ? { number: r.number } : {}) });
       o.reports.update(r.id, { ...tried, state: 'open', number: done.number, url: done.url, body: undefined, problem: undefined });
       o.record({
         type: 'bug_report.filed', ...(r.jobId ? { jobId: r.jobId } : {}),
@@ -71,6 +78,8 @@ export function createReportSender(o: {
   return {
     refresh,
     start() {
+      // A report a stop left on its way waits again: the pass looks for its post key before it sends it.
+      for (const r of o.reports.inState('sending')) o.reports.update(r.id, { state: 'waiting', problem: 'the hopper stopped while it sent this report' });
       const run = () => { refresh().catch((e: unknown) => { o.log(`hopper: Report a bug: the send pass failed: ${(e as Error).message}`); }); };
       run();
       timer ??= setInterval(run, o.everyMs ?? REPORT_SEND_MS);

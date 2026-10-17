@@ -1,7 +1,9 @@
 // Promote to GitHub's calls (issue #946), with the promoting person's own GitHub connection, never a job's: a repository's
 // visibility, the issue a comment goes on, a new issue, an issue edited, its labels added, a comment and a comment
-// edited; part 2: the promotion's own branch made from the default branch, and a file put on it (the contents API). The
+// edited; part 2: the promotion's own branch made from the default branch, and a file put on it (the contents API); the
+// look-up for a promotion's post key (issue #1591). The
 // same `@octokit/request` binding and token renewal as Report a bug (src/bug-reports/github.ts).
+import { hasPostKey } from '../domain/post-key.ts';
 import type { RepoVisibility } from '../domain/promotions.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts';
@@ -19,6 +21,11 @@ export interface PromotionGitHub {
   addLabels(repo: string, number: number, labels: string[]): Promise<void>;
   comment(repo: string, number: number, body: string): Promise<{ id: number; url: string }>;
   editComment(repo: string, id: number, body: string): Promise<{ id: number; url: string }>;
+  /**
+   * The issue `creator` made, or the comment on issue `number`, whose text carries the post key `key`, made or changed
+   * since `since` (issue #1591); undefined: none.
+   */
+  find(repo: string, key: string, where: { kind: 'issue'; creator: string } | { kind: 'comment'; number: number }, since: string): Promise<{ number: number; url: string; commentId?: number } | undefined>;
 }
 
 /** GitHub's refusal or failure, with its status when it gave one. */
@@ -85,5 +92,16 @@ export function createPromotionGitHub(o: { apiUrl: string } & TokenSource): Prom
       const d = (await req('PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', { ...splitRepo(repo), comment_id: id, body, headers: headers(token) })).data as { id: number; html_url: string };
       return { id: d.id, url: d.html_url };
     }, failed(`the edit of a comment on ${repo}`)),
+    find: (repo, key, where, since) => withToken(async (token) => {
+      const at = { ...splitRepo(repo), since, per_page: 100, headers: headers(token) };
+      if (where.kind === 'comment') {
+        const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: where.number })).data as { id: number; body?: string | null; html_url: string }[];
+        const c = d.find((x) => hasPostKey(x.body, key));
+        return c ? { number: where.number, url: c.html_url, commentId: c.id } : undefined;
+      }
+      const d = (await req('GET /repos/{owner}/{repo}/issues', { ...at, creator: where.creator, state: 'all' })).data as { number: number; body?: string | null; html_url: string; pull_request?: unknown }[];
+      const i = d.find((x) => x.pull_request === undefined && hasPostKey(x.body, key));
+      return i ? { number: i.number, url: i.html_url } : undefined;
+    }, failed(`the post key on ${repo}`)),
   };
 }

@@ -4,12 +4,14 @@
 // after the job ended: its job span is a child of the ended root, in the same trace, for as long as the hopper remembers
 // the job (the last `max` ended). Every other event of the job is an
 // event on the root span, or on its question's span. The attributes are ids and numbers only, picked by name: no event
-// data, job text, prompt or error goes out. A job span's duration and a job's end are metrics too.
+// data, job text, prompt or error goes out. A job span's duration and a job's end are metrics too; the telemetry
+// summary keeps each job span's duration, telemetry on or off (`summary.ts`).
 //
 // The spans live in memory: a restart ends no trace and starts a new one at the next event of a job still open.
 import { context, trace, type Attributes, type Span } from '@opentelemetry/api';
 import type { DomainEvent, EventType, Job } from '../domain/types.ts';
 import { instrument, tracer } from './instruments.ts';
+import { telemetrySummary } from './summary.ts';
 
 export type JobSpan = 'queue' | 'run' | 'question' | 'wait' | 'park' | 'pull_request';
 
@@ -87,7 +89,9 @@ export function traceJobs(o: TraceJobsOptions): () => void {
     open.spans.delete(key);
     s.span.setAttribute('hopper.job.span.ended_by', by);
     s.span.end(at);
-    spanDuration().record(Math.max(0, at - s.from) / 1000, { 'hopper.job.span': s.kind });
+    const ms = Math.max(0, at - s.from);
+    spanDuration().record(ms / 1000, { 'hopper.job.span': s.kind });
+    telemetrySummary.jobSpan(s.kind, ms);
   };
 
   /** Ends the root; the job is remembered a while, for the spans that come after its end. */

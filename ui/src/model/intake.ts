@@ -104,6 +104,13 @@ export const issueNumber = (key: string): number | undefined => { const m = /\/i
 export const requestsWaiting = (sources: readonly SourceStatus[]): number =>
   sources.reduce((n, s) => n + (intakeGroups(intakeOf(s)).find((g) => g.kind === 'request')?.count ?? 0), 0);
 
+/**
+ * The labelled issues not assigned to the user across the sources (issue #1614): no job starts on one until a person
+ * assigns it, and nothing on the issue says so. With the request cards, the Intake badge and Needs you's Intake row.
+ */
+export const notAssignedWaiting = (sources: readonly SourceStatus[]): number =>
+  sources.reduce((n, s) => n + intakeOf(s).filter((x) => groupOf(x) === 'not-assigned').length, 0);
+
 const ENDED: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 /** A taken item's job has ended since the sync that took it: the next sync says what became of the issue. */
 export const jobEnded = (status: JobStatus | undefined): boolean => status !== undefined && ENDED.includes(status);

@@ -15,7 +15,7 @@ import { answerHold, correctAutoAnswer, riskCall } from './auto-answer.ts';
 import { escalationOf, type Climb, type ToHuman } from './escalation.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { answerFixed, FIXED } from './fixed-answers.ts';
-import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
+import { forkRuns, forksOf, openOnEndedJobs, unarmed } from './stale.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts';
 import { callLevel } from './level-call.ts';
 import { resumeAt, startCall } from './calls.ts';
 import { levelRequest } from './request.ts';
@@ -53,6 +53,11 @@ export interface QuestionServiceOptions {
    * phase-shift settings allow the level — the mode it made — else undefined, and the suggestion is the person's to take.
    */
   onShift?: (q: Question, suggest: { to: ReviewKind; note?: string }, by: string) => ShiftMode | undefined;
+  /**
+   * The question timers' lease (issue #1627): on two hosts on one database, only its holder arms the human stage's
+   * timers and runs the recovery and the sweep; a host that takes it from another arms every open question again. Absent: this host alone.
+   */
+  lease?: SweepLease;
 }
 
 export const HUMAN = 'human';
@@ -69,6 +74,9 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   const { store, clock } = o;
   const inflight = new Map<string, AbortController>();
   const timers = new Map<string, Timers>();
+  // Whether this host held the lease at its last ask: only then does it arm timers.
+  const lease = o.lease ?? soleLease(); let holding = o.lease === undefined;
+  const hold = (): { held: boolean; taken: boolean } => { const h = lease.hold(); holding = h.held; if (!h.held) for (const id of [...timers.keys()]) clearTimers(id); return h; };
   const running = new Set<Promise<void>>();
   let stopped = false;
   const iso = () => clock.now().toISOString();
@@ -124,6 +132,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
    */
   function armHuman(id: string) {
     clearTimers(id);
+    if (!holding) return;
     const q = store.questions.get(id);
     if (!q || q.status !== 'open' || q.tier !== HUMAN || !q.expiresAt || store.jobs.get(q.jobId)?.status === 'parked' || forkRuns(store, q)) return;
     const now = clock.now().getTime();
@@ -380,9 +389,13 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
     // A question at the human stage left with no timers — its fork ended without a decision (issue #570) — waits on a person
     // again, its timeout from now, as when the fork's item is rejected.
-    sweep() { for (const q of openOnEndedJobs(store)) this.cancel(q.id); for (const q of unarmed(store, timers, HUMAN)) this.unparked(q.id); },
+    // A question with no timers and no fork was armed on the host that held the lease before (issue #1627): armed again, its times kept.
+    sweep() {
+      const h = hold(); if (!h.held) return; if (h.taken) this.recover(); for (const q of openOnEndedJobs(store)) this.cancel(q.id);
+      for (const q of unarmed(store, timers, HUMAN)) if (forksOf(store, q).length) this.unparked(q.id); else armHuman(q.id); },
 
     recover() {
+      if (!hold().held) return;
       // What a restart, or the build before, left open with nothing waiting on it (issue #529): cancelled, not asked again.
       for (const q of openOnEndedJobs(store)) this.cancel(q.id);
       for (const q of store.questions.list({ status: ['open'] })) {
@@ -394,8 +407,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     },
 
     async stop() {
-      stopped = true;
-      for (const id of [...inflight.keys()]) abortStage(id, 'shutdown');
+      stopped = true; for (const id of [...inflight.keys()]) abortStage(id, 'shutdown');
       for (const id of [...timers.keys()]) clearTimers(id);
       await Promise.all([...running]);
     },

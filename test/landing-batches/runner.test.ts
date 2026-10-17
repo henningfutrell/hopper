@@ -7,7 +7,7 @@
 //   Scenario: nothing new: no branch, no pull request, no event
 //   Scenario: a green batch run is merged into the tested branch at its tip, and its branch removed
 //   Scenario: a merge that waits for its batch run is recorded pending once
-//   Scenario: a red batch run is closed and recorded failed; failing checks start a bisect; with none, the same tip does not run again
+//   Scenario: a red batch run is recorded failed, then closed; failing checks start a bisect; with none, the same tip does not run again
 //   Scenario: a job's open pull request on the tested branch moves to the landing branch, and says so on it; another's does not
 //   Scenario: the hopper's own batch pull request stays on the tested branch, even when its text closes a job's issue (issue #1311)
 //   Scenario: a pull request GitHub refuses to move is skipped, logged once; the others move and the batch run goes on (issue #1311)
@@ -82,7 +82,7 @@ function fake(w: World): LandingBatchGitHub {
     mergeInto: async () => ({ kind: 'nothing' }),
     openPullRequests: async (_repo, base) => {
       if (w.listFails) throw new Error(w.listFails);
-      return [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url, head: p.head }));
+      return [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url, head: p.head, title: '' }));
     },
     retarget: async (_repo, n, base) => {
       w.calls.push(`retarget #${n} ${base}`);
@@ -93,7 +93,7 @@ function fake(w: World): LandingBatchGitHub {
     pullRequestOf: async () => undefined,
     revert: async () => { throw new Error('no revert here'); },
     checkLog: async () => '',
-    fileIssue: async () => { throw new Error('no issue here'); },
+    fileIssue: async () => { throw new Error('no issue here'); }, findIssue: async () => undefined,
     bugReports: async () => [],
     fastForward: async () => { throw new Error('no canary here'); },
   };
@@ -122,8 +122,9 @@ describe('the batch runner (issue #1073)', () => {
     const { r, events } = runner(w);
     await r.pass();
     expect(w.calls).toEqual(['compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started']);
-    expect(events[0]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: TIP, branch: 'hopper-batch/abcdef012345', pullRequest: 100, merges: [12, 14] });
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started']);
+    expect(events[0]!.data).toEqual({ repo: REPO, landing: 'main', tested: 'dev', tip: TIP, branch: 'hopper-batch/abcdef012345', merges: [12, 14], closes: [], why: 'no batch run before' });
+    expect(events[1]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: TIP, branch: 'hopper-batch/abcdef012345', pullRequest: 100, merges: [12, 14] });
     expect(r.view().repos[0]).toMatchObject({ repo: REPO, state: { running: { pullRequest: 100 } } });
   });
 
@@ -146,8 +147,7 @@ describe('the batch runner (issue #1073)', () => {
   });
 
   it('nothing new: no branch, no pull request, no event', async () => {
-    const w = world();
-    w.aheadBy = 0;
+    const w = { ...world(), aheadBy: 0 };
     const { r, events } = runner(w);
     await r.pass();
     expect(w.calls).toEqual(['compare dev...main']);
@@ -161,12 +161,12 @@ describe('the batch runner (issue #1073)', () => {
     await r.pass();
     w.checks = [{ name: 'test', status: 'in_progress' }];
     await r.pass();
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     w.checks = [{ name: 'test', status: 'completed', conclusion: 'success' }];
     await r.pass();
     expect(w.calls.slice(-2)).toEqual([`merge #100 ${TIP}`, 'delete hopper-batch/abcdef012345']);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted']);
-    expect(events[1]!.data).toMatchObject({ repo: REPO, tested: 'dev', tip: TIP, pullRequest: 100, merge: 'merge-sha' });
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.promoted']);
+    expect(events[2]!.data).toMatchObject({ repo: REPO, tested: 'dev', tip: TIP, pullRequest: 100, merge: 'merge-sha' });
   });
 
   it('a merge that waits for its batch run is recorded pending once, for the work-item ledger (part 3)', async () => {
@@ -180,20 +180,20 @@ describe('the batch runner (issue #1073)', () => {
     Object.assign(w, { tip: tip2, aheadBy: 1, messages: ['Merge pull request #16 from owner/issue-3-c'] });
     await r.pass();
     await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted', 'landing_batch.pending']);
-    expect(events[2]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: tip2, merges: [16] });
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.promoted', 'landing_batch.pending']);
+    expect(events[3]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: tip2, merges: [16] });
     expect(r.view().repos[0]!.state.pending).toEqual({ tip: tip2, merges: [16] });
   });
 
-  it('red: closes the batch run, records it failed, and bisects within the batch (red.test.ts)', async () => {
+  it('red: records the batch run failed and its bisect, then closes it (red.test.ts)', async () => {
     const w = world();
     const { r, events } = runner(w);
     await r.pass();
     w.checks = [{ name: 'test', status: 'completed', conclusion: 'failure' }];
     await r.pass();
-    expect(w.calls.slice(-3)).toEqual(['close #100', 'delete hopper-batch/abcdef012345', 'compare dev...abcdef0123456789abcdef0123456789abcdef01']);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.bisect_started']);
-    expect(events[1]!.data).toMatchObject({ tip: TIP, reason: 'checks failed: test', checks: ['test'] });
+    expect(w.calls.slice(-3)).toEqual(['compare dev...abcdef0123456789abcdef0123456789abcdef01', 'close #100', 'delete hopper-batch/abcdef012345']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.bisect_started']);
+    expect(events[2]!.data).toMatchObject({ tip: TIP, reason: 'checks failed: test', checks: ['test'] });
   });
 
   it('red with merge conflicts: closed and recorded failed; the same tip does not run again', async () => {
@@ -203,11 +203,11 @@ describe('the batch runner (issue #1073)', () => {
     w.pulls.get(100)!.mergeable = false;
     await r.pass();
     // Nothing of dev to merge into the landing branch (part 4): the back-merge fails, and no issue is filed.
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed']);
     await r.pass();
     await r.pass();
     // Its pull requests wait for the next batch run again: recorded once (part 3).
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed', 'landing_batch.pending']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed', 'landing_batch.pending']);
     expect(r.view().repos[0]!.why).toBe(`the landing branch tip ${TIP.slice(0, 12)} was tested already`);
   });
 
@@ -254,7 +254,7 @@ describe('the batch runner (issue #1073)', () => {
     expect(w.pulls.get(6)!.base).toBe('dev');
     expect(w.pulls.get(7)!.base).toBe('main');
     expect(w.pulls.get(100)!.merged).toBe(true);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.retargeted', 'landing_batch.promoted']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.retargeted', 'landing_batch.promoted']);
     expect(w.calls.filter((c) => c.startsWith('comment'))).toEqual([`comment #7 ${retargetNote('dev', 'main')}`]);
     // Refused again on the next pass: not logged again.
     await r.pass();
@@ -267,7 +267,7 @@ describe('the batch runner (issue #1073)', () => {
     const { r, events } = runner(w, { settings: { repos: { [REPO]: { tested: 'dev', landing: 'trunk', everyMerges: 2, everyMinutes: 60 } } } });
     await r.pass();
     expect(w.calls).toEqual(['compare dev...trunk', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
-    expect(events[0]!.data).toMatchObject({ landing: 'trunk', tested: 'dev', tip: TIP });
+    expect(events[1]!.data).toMatchObject({ landing: 'trunk', tested: 'dev', tip: TIP });
   });
 
   it('runs nothing while the landing branch is the tested branch, and says why', async () => {
@@ -290,7 +290,7 @@ describe('the batch runner (issue #1073)', () => {
     w.refuseRetarget = 'all';
     await r.pass();
     expect(w.pulls.get(100)!.merged).toBe(true);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.promoted']);
   });
 
   it('merges a green batch run when the list of pull requests to move fails, and says the problem (issue #1333)', async () => {
@@ -302,7 +302,7 @@ describe('the batch runner (issue #1073)', () => {
     w.listFails = 'GitHub answered 502';
     await r.pass();
     expect(w.pulls.get(100)!.merged).toBe(true);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.promoted']);
     expect(r.view().repos[0]!.problem).toBe('the move of job pull requests to main: GitHub answered 502');
     expect(log.filter((l) => l.includes('502'))).toHaveLength(1);
   });
@@ -334,9 +334,9 @@ describe('the batch runner (issue #1073)', () => {
     w.calls.length = 0;
     await r.restart(REPO, 'admin').done;
     expect(w.calls).toEqual(['close #100', 'delete hopper-batch/abcdef012345', 'compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.restarted', 'landing_batch.started']);
-    expect(events[1]!.data).toEqual({ repo: REPO, tip: TIP, by: 'admin', closed: [100] });
-    expect(events[2]!.data).toMatchObject({ tip: TIP, pullRequest: 101, why: 'a person restarted the landing batch' });
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.restarted', 'landing_batch.due', 'landing_batch.started']);
+    expect(events[2]!.data).toEqual({ repo: REPO, tip: TIP, by: 'admin', closed: [100] });
+    expect(events[4]!.data).toMatchObject({ tip: TIP, pullRequest: 101, why: 'a person restarted the landing batch' });
   });
 
   it('restarts the batch when GitHub refuses the close: logged, and the removed branch ends it (issue #1333)', async () => {
@@ -347,7 +347,7 @@ describe('the batch runner (issue #1073)', () => {
     w.closeFails = 'GitHub answered 422';
     await r.restart(REPO, 'admin').done;
     expect(log).toEqual(['hopper: landing batches: #100 of owner/app not closed: GitHub answered 422']);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.restarted', 'landing_batch.started']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.restarted', 'landing_batch.due', 'landing_batch.started']);
   });
 
   it('refuses to restart a repository with no landing batches', async () => {

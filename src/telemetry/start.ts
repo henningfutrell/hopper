@@ -5,10 +5,12 @@ import type { Writable } from 'node:stream';
 import { bridgeLogStream } from './logs.ts';
 import { observeProcess } from './process.ts';
 import { bridgesToItself, startTelemetry, type Telemetry } from './sdk.ts';
+import { telemetrySummary } from './summary.ts';
 
 export function startProcessTelemetry(o: { env: Record<string, string | undefined>; version: string; stdout: Writable; stderr: Writable }): Telemetry {
   const telemetry = startTelemetry({ env: o.env, version: o.version });
   if (!telemetry.enabled) return telemetry;
+  telemetrySummary.exporting(true);
   // Logs exported to the console would come back as lines, and be exported again.
   if (!bridgesToItself(o.env)) { bridgeLogStream(o.stdout, 'info'); bridgeLogStream(o.stderr, 'warn'); }
   const stopProcess = observeProcess();

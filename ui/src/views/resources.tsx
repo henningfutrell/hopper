@@ -2,10 +2,12 @@
 // boxes — beside the hopper and on each client target — uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
 // Postgres and OpenFGA do. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
 // that cannot be read says why. Below, the stack's resources over time, from GET /api/resources/history: the shares the
-// stack recorder keeps each minute. The machines' own resources over time are on Usage and Machines (issue #560).
+// stack recorder keeps each minute. The machines' own resources over time are on Usage and Machines (issue #560). Last,
+// the telemetry summary (issue #1486): the slowest actions, the job spans and the GitHub calls.
 import { AlertTriangle, Boxes, Container, Database, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
+import { TelemetrySummary } from '@/components/telemetry-summary';
 import { UsageGraphCard } from '@/components/usage-graph-card';
 import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
@@ -108,9 +110,12 @@ export function Resources() {
   if (state.kind === 'loading') return <div className="max-w-4xl"><Empty>Reading the stack…</Empty></div>;
   if (state.kind === 'error') {
     return (
-      <div data-slot="resources-error" className="flex max-w-4xl flex-wrap items-center gap-2 rounded-md border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
-        <AlertTriangle className="size-4" /><span className="break-words">The stack resources cannot be read: {state.message}</span>
-        <Button size="sm" variant="outline" className="ml-auto" onClick={reload}><RefreshCw />Try again</Button>
+      <div className="max-w-4xl space-y-3">
+        <div data-slot="resources-error" className="flex flex-wrap items-center gap-2 rounded-md border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
+          <AlertTriangle className="size-4" /><span className="break-words">The stack resources cannot be read: {state.message}</span>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={reload}><RefreshCw />Try again</Button>
+        </div>
+        <TelemetrySummary everyMs={READ_EVERY_MS} />
       </div>
     );
   }
@@ -151,6 +156,7 @@ export function Resources() {
       <UsageGraphCard<StackHistory> path="/api/resources/history" linesOf={linesOfStack} title="Stack resources over time" what="stack history"
         recordedBy={null} empty={NO_SAMPLES} />
       <p className="text-xs text-muted-foreground">Each line is a share: a container&apos;s CPU of its CPU limit, else of the cores it sees; its memory of its limit, else of the computer&apos;s; Postgres&apos;s connections of the most it allows; OpenFGA&apos;s failed checks of its checks since the minute before. Sandbox boxes&apos; lines are hidden until you show them.</p>
+      <TelemetrySummary everyMs={READ_EVERY_MS} />
     </div>
   );
 }
