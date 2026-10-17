@@ -27,7 +27,7 @@ async function cli(url: string | undefined, argv: string[], o: { stdin?: string 
   return { code, out: out.join(''), err: err.join('') };
 }
 
-function recordIn(url: string, name: 'plugins' | 'rules' | 'job-rules'): unknown {
+function recordIn(url: string, name: 'plugins' | 'rules' | 'job-rules' | 'repo-job-rules'): unknown {
   const s = openAdminStore(url);
   try { return s.config.read(name); } finally { s.close(); }
 }
@@ -82,6 +82,15 @@ describe('hopper config', () => {
     expect(await cli(url, ['config', 'set', 'job-rules', '--if-version', version], { stdin: json({ rules: [] }) }))
       .toMatchObject({ code: 2, err: expect.stringMatching(/job-rules refused, nothing written: the job rules are a text/) });
     expect(recordIn(url, 'job-rules')).toBe('Be brief.\n');
+  });
+
+  it('repo-job-rules is a record: a map of repository to text; anything else is refused (issue #1472)', async () => {
+    const url = db();
+    expect((await cli(url, ['config', 'set', 'repo-job-rules', '--if-version', 'missing'], { stdin: json({ 'acme/*': 'Be brief.' }) })).code).toBe(0);
+    const version = (await cli(url, ['config', 'version', 'repo-job-rules'])).out.trim();
+    expect(await cli(url, ['config', 'set', 'repo-job-rules', '--if-version', version], { stdin: json({ acme: 'x' }) }))
+      .toMatchObject({ code: 2, err: expect.stringMatching(/repo-job-rules refused, nothing written: acme is no repository/) });
+    expect(recordIn(url, 'repo-job-rules')).toEqual({ 'acme/*': 'Be brief.' });
   });
 
   it('get plugins prints the plugins config as JSON', async () => {
