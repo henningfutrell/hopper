@@ -4,7 +4,7 @@
 // set up as at the start, resuming the same session, and tells the job why.
 import { describe, expect, it } from 'vitest';
 import type { PaneState } from '../../src/executors/herdr/start.ts';
-import { RESTORED_NOTE } from '../../src/executors/herdr/screen.ts';
+import { RESTORED_NOTE } from '../../src/executors/herdr/restored.ts';
 import { contextFor, jobWith, setup, until } from './support.ts';
 
 const ASK = { output: ['● Which colour?', '  HOPPER_QUESTION'] };

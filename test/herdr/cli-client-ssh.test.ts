@@ -98,7 +98,7 @@ describe('herdr CLI client over ssh', () => {
   });
 
   it('remote herdr results and errors come back as they do locally', async () => {
-    expect(await remote().getAgent('jh-a')).toEqual({ status: 'idle', stateChangeSeq: 4, paneId: 'w7:p5' });
+    expect(await remote().getAgent('jh-a')).toEqual({ status: 'idle', stateChangeSeq: 4, paneId: 'w7:p5', terminalId: 'term_a1' });
     expect(await remote().getAgent('jh-gone')).toBeNull();
     await expect(remote().run(['usage'])).rejects.toMatchObject({ code: 'usage' });
   });
