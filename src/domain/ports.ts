@@ -13,8 +13,7 @@ import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
 export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
-export { authorizationServerRefusal, isRefusal } from './access.ts';
-export type { CredentialMinter } from './minting.ts';
+export { authorizationServerRefusal, isRefusal } from './access.ts'; export type { CredentialMinter } from './minting.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 
@@ -70,6 +69,11 @@ export interface ExecutionContext {
    * can read text: as it starts, at a turn boundary, with an answer it types in. Absent → none.
    */
   notes?: { waiting(): boolean; take(how: NoteDelivery): string | undefined };
+  /**
+   * A missed heartbeat of the job's machine (issue #1569): a watch of its work that failed while the link is up, or a PING
+   * of its link not answered in time. The engine takes the job's checkpoint at once, at most once a minute. Absent → none.
+   */
+  missedHeartbeat?(): void;
 }
 
 /**
@@ -258,8 +262,11 @@ export interface NotifierEvents {
   tldr?(q: Question): string | undefined;
   /** Where the hopper is reached from outside now (issues #795, #880): the remote access URL while its tunnel is up. Absent or undefined: not reached. */
   reach?(): string | undefined;
-  /** A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan. */
-  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined;
+  /**
+   * A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan.
+   * `deliveries`: the user's notifier deliveries (issue #1587), where a notifier keeps each notification until it is delivered. Absent: kept in memory.
+   */
+  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined; deliveries?: import('./notifier-deliveries.ts').NotifierDeliveryRepository;
 }
 
 /**

@@ -16,7 +16,7 @@ export const NO_KEY_PROBLEM = 'the master key is missing: the hopper is limited 
 
 let n = 0;
 /** `key`: the master key (default TEST_KEY); null: none, the hopper limited. */
-export function systemOf(s: Pick<UserStore, 'vault' | 'events' | 'tx'>, key: string | null = TEST_KEY, previous: string[] = []): SystemSecrets {
+export function systemOf(s: Parameters<typeof createSystemSecrets>[0]['store'], key: string | null = TEST_KEY, previous: string[] = []): SystemSecrets {
   return createSystemSecrets({
     store: s, keys: key ? { sealer: createSealer(key, previous) } : { problem: NO_KEY_PROBLEM }, userId: 'admin',
     clock: { now: () => new Date() }, idGen: () => `system-${process.pid}-${++n}-${Math.random().toString(36).slice(2)}`, logger: { warn: () => {} },

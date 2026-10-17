@@ -36,13 +36,13 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key (`lane-pool.ts`, issue #1284), `combineMachineSources` | engine, http, store, plugins |
@@ -1369,7 +1369,9 @@ so a running job's pane and Claude outlive a restart.
 job. The herdr client of a machine with a link says whether that link is down (`HerdrClient.linkDown`, true while the
 client is not dialled in). Both ends of a link send an HTTP/2 PING on it every 5 s (`src/client/keepalive.ts`); a
 PING not answered within 10 s drops the link on that end, so a dead or half-open link (no FIN) is found within seconds,
-not at a call's timeout: the hopper then sees the link down, and the client dials in again. The monitor ends its watch at the first herdr error with the link down, as `failed` marked
+not at a call's timeout: the hopper then sees the link down, and the client dials in again. A PING still not answered
+when the next is due (5 s on) is a **missed heartbeat** (issue #1569): the hopper's end tells the herdr client's
+listeners (`HerdrClient.onLinkLate`), and the job's checkpoint is taken while the link may still carry it. The monitor ends its watch at the first herdr error with the link down, as `failed` marked
 `linkLost`; with the link up, errors count toward the three in a row that fail the job, as before. The runner does not
 record that outcome: it sets `linkLost { machine, since, failsAt }` on the job, records `job.link_lost` with the same
 data, and asks `canReattach` every second as above. Alive → `job.reattached { reason: "link restored" }`, `linkLost`
@@ -2975,8 +2977,9 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
 The built-in notifier plugin `grokbot-routine` (`src/plugins/notifier/grokbot-routine/`, since
 phase 5 slice 5) POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) when a
 question reaches the owner (questions never go onto the issue), when intake stops (issue #358), when a job ends, and to
-say where the hopper is reached (issue #795). Not a **Webhook subscription**: no store row, no schema change, no domain
-event; in-memory only.
+say where the hopper is reached (issue #795). Not a **Webhook subscription**: no domain event. Each notification about an
+event is a **notifier delivery** (issue #1587), a row in the user's store; the offers of open questions, `hopper.reachable`
+and the test event are sent at once, in memory only.
 
 - Events: `question.escalated_to_human` (issue #481: once per question that reaches the human; never a level
   hop or a re-notification, so never `question.escalated`, which other consumers keep); `source.stalled`
@@ -3035,10 +3038,18 @@ event; in-memory only.
   HTTP status. A notifier offers its actions in GET /api/plugins (`actions`); a custom notifier offers
   one by having the optional `test` or `sendOpen` member (`Notifier`, ports.ts).
 - Delivery: 10 s timeout; 3 attempts, backoff `base * 2^(n-1)` (base 1000 ms), retried only on
-  network error, 429, 5xx; other non-2xx is final. Each post passes the routine's outbound guard ("Outbound sends", issue #1014): a
+  network error, 429, 5xx; other non-2xx is final. Issue #1587: each notification about an event is a **notifier delivery**
+  (`notifier_deliveries`, tenant migration 73, `src/store/notifier-deliveries.ts`; the type and the port
+  `src/domain/notifier-deliveries.ts`, given as `NotifierEvents.deliveries`, else kept in memory): its notifier, its key
+  (`<event type>:<event id>`, a question's escalation `question:<question id>`, one row per key and notifier), the event,
+  `pending`/`retrying`/`delivered`/`failed`, the attempts, the last status and error, and the next try. The payload is made
+  from the event at each attempt. A stop aborts the posts in flight and clears the retries: what is not delivered stays
+  due, and the next start sends it (a crash too). Each post carries the key in `x-hopper-delivery`, so a receiver dedupes a
+  post sent again after a stop. A delivery with no token stays due and is logged `rate-limited`; the 5 s check sends
+  what is due. Rows delivered or failed are kept 14 days. Each post passes the routine's outbound guard ("Outbound sends", issue #1014): a
   duplicate of its event, an open circuit or no token is not sent, and each attempt is in the send log. Success logs kind, jobId, status; final
   failure logs an error. The key is never logged. Work runs deferred, off the event listener;
-  `stop()` unsubscribes and awaits in-flight posts.
+  `stop()` unsubscribes, aborts the posts in flight and awaits them.
 - `createGrokBotNotifier({ name, routine, logger, clock, baseMs?, timeoutMs?, watchMs? })` → `Notifier`;
   the job, the question and the open questions come from the `NotifierEvents` feed.
   `AppSeams.grokbot` (`baseMs`, `watchMs`) lets tests shorten the backoff and the check.
@@ -18684,7 +18695,8 @@ runs, and a parked job with such a copy can resume on any machine.
   herdr-claude, for a job with an agent session and a job worktree of its own — is checkpointed every ten minutes
   (`CHECKPOINT_EVERY_MS`, a pass each minute, one at a time; a machine that cannot be reached is asked again at the next
   interval, not each pass), and once more when it is parked, after `Executor.park` ended its agent, so the session is
-  whole (`releaseParked`). No setting: the interval is fixed.
+  whole (`releaseParked`). One more at a **missed heartbeat** of its machine (issue #1569, "The lost-machine move"), at
+  most once a minute. No setting: the interval is fixed.
 - **Read on the machine, never through the pane.** `MachineShell.checkpoint(jobId, worktree, session)` runs the fixed
   script of `src/client/checkpoint.ts` through the machine's own connection: this machine, ssh, or a client target's
   `POST /checkpoint` (a client older than it answers 404: no checkpoint, as for a missing `/reach`). The worktree must be
@@ -23934,9 +23946,50 @@ UI: Settings → hopper.io.
 
 **No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
 link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
-hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
-keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
+hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its key is
+a secret the hopper owns, so it is a system secret ("The vault's system scope"), named by the link record: built in part 2
+("The cloud link key").
 Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+
+## The cloud link key (issue #467, part 2, 2026-10-17)
+
+Issue #467 asks that a link write the link keys with the link record, and nothing else. Part 1 wrote no key: it said the
+key's format depends on hopper.io's protocol. `docs/hopper-io-security.md` R4 fixes the format already: one X25519 key per
+instance, minted on the instance, kept as a system secret of the instance's vault, only its public half at hopper.io, and
+rotated or revoked from either side. So this part mints it. The transport (issue #469 decision 4) and the agent that uses
+the key (issue #464) are not decided or built here.
+
+**The key** (`src/http/cloud-link.ts`, `src/domain/cloud-link.ts`): a link mints one X25519 key (Node's crypto). Its private
+half is the system secret `cloud-link.key` (`CLOUD_LINK_KEY`) in the instance's vault, kept through `SystemSecrets.keep`
+and sealed under the master key; its value is the key as a JWK with `d` first, so the last 4 characters the vault keeps of
+each secret are none of the private half. The link record names it: `linkKey: { secret, publicKey, createdAt }`, with
+`publicKey` the 32-byte public half as base64url. `GET /api/cloud-link` shows `linkKey`; no route answers the private half.
+With no master key, a link is 503 and writes nothing: none is kept in clear.
+
+**Rotate and unlink.** `POST /ui/api/cloud-link/rotate-key` `{}` (the instance admin; no box action) mints a new key in place
+of the one before, at once, and puts its public half in the record; 409 while not linked. An unlink drops the secret with
+the record. Each is a vault event with no value: `vault.secret_set` (with `rotated` for a rotation), `vault.secret_removed`.
+Neither restarts the daemon or touches a job or a lane. An unregistration at hopper.io keeps the key. UI: Settings →
+hopper.io shows the public half and Rotate key; Settings → Vault lists the private half as the whole hopper's.
+
+**Decisions:**
+- **The key comes now, before the agent.** Part 1 chose "no link keys until the agent". The threat model fixes the key's
+  format, so it does not wait on the protocol. A link writes the record, the code and this one vault row; the fixture test
+  (`test/http/cloud-link-fixture.test.ts`) allows those and no other change.
+- **A rotation replaces the key at once.** R4 revokes the old key after the new one connects; there is no connection yet,
+  so nothing can connect with the old one. The agent (issue #464) adds the overlap when it connects.
+- **No migration.** A link from part 1 has no `linkKey`: the field is optional, the build before reads the record as it
+  did, and Rotate key mints one.
+- **No new event type.** The vault's own events record the mint, the rotation and the drop (R6).
+
+**Left (issue #467, waiting on issue #464):** the outbound link agent and hopper.io's confirmation from `pending`; the test
+that an install that never links makes no connection, with the agent; the test that a link during a running job does not
+end it, with the agent running.
+
+**Verification:** `test/http/cloud-link-key.test.ts` (the real instance store): a link mints an X25519 key, the record holds
+its public half, the secret its private half; a rotation replaces it, not linked is 409; an unlink drops it; no master key,
+a link writes nothing; an unregistration keeps it; a part-1 record has none until a rotation. `test/integration/cloud-link.test.ts`:
+a rotation during a running job ends no job; 409, 400 and 403.
 
 ## The instance's display name (issue #465, part 1, 2026-10-17)
 
@@ -24135,6 +24188,94 @@ config, from the link (issue #464); an unknown name is `other` too.
 **Verification:** `test/domain/hopper-io-state.test.ts`: a machine's executors named after a host, a custom name and a
 third-party plugin go out only as their kinds (`claude`, `codex`, `herdr-claude`, `other`); none of the names is in the
 snapshot; the schema refuses an executor outside the list and version 1; 50 machines with two executors each fit in 8 KiB.
+
+## Cloud link (issue #464, 2026-10-17 — a design, not built)
+
+**The problem.** Issue #464: a self-hosted instance links to hopper.io by dialing out. No port opens on the instance's
+host, and it needs no reverse proxy, DNS name or public URL. Today the instance reaches outside its host only through
+`HOPPER_PUBLIC_URL` or the LAN names, behind the Host guard (`src/http/reach.ts`). The cloud link's record, its
+registration, its two messages and the state snapshot are built ("The cloud link", "Registering at hopper.io",
+"Unregistering at hopper.io", "The cloud link's messages", "The hopper.io state snapshot"). The connection is not. This
+section fixes its data boundary, its stance on inbound actions and its transport. No code follows until a hopper.io
+server exists, with its key. The rules are `docs/hopper-io-security.md` (R1–R8); this section cites them and does not
+restate them.
+
+**What may leave the instance.** Only these messages, each a closed schema checked before it is sent (R5, R7):
+
+| Message | Content | Where its schema is |
+|---------|---------|---------------------|
+| the hello | the instance id (`installId`), the link's account, the proof of the cloud link key (below) | #464's install side |
+| the state snapshot | `HOPPER_IO_STATE_SCHEMA`: version and channel, queue and attention counts, per machine an opaque key, online state, lanes and executor kinds | `src/domain/hopper-io-state.ts` |
+| a heartbeat | `sentAt` only | #464's install side |
+| `registration`, `unregistration` | the outcome of `register` or `unregister`, a closed word | `src/http/cloud-link-messages.ts` |
+| `refused` | the reason, a closed word, never the message refused | `src/http/cloud-link-messages.ts` |
+| `unlinked` | the instance id and the account, before an unlink closes the connection | `src/http/cloud-link-messages.ts` |
+
+The issue proposed the instance's name and each machine's name too. They stay out: a name is free text and often a host
+name (R5, "The hopper.io state snapshot"); the owner names the instance and its machines at hopper.io. Last-seen time
+and link state are hopper.io's, from the connection itself, not a field.
+
+**What never leaves the instance.** No field of any message can hold:
+
+- a secret: the database URL, the master key, a GitHub or GitLab token or refresh token, a sealed or vault secret, a
+  webhook secret, a client token, a machine link key, a proxy token, an API token, a session, or the private half of the
+  cloud link key (R4);
+- job content: issue text, prompts, pane output and recent output, diffs, logs, artifacts;
+- question and answer text;
+- repository contents, local paths, host names, IP addresses, and people's names.
+
+The instance scans each outgoing message for secrets, and drops one that holds a secret, as an event (R4). A change to
+this boundary changes the schema, bumps its version, and changes the tables here and in "The hopper.io state snapshot",
+in the same change, as a reviewed change.
+
+**No inbound actions.** The link carries state out. hopper.io starts, cancels, answers and changes nothing on the
+instance, and installs no plugin (R1). The only messages the instance takes are `register` and `unregister`, which change
+the registration only ("The cloud link's messages"); anything else is refused and recorded. The link carries no UI and no
+HTTP request into the instance: the instance serves nothing on it. A remote action (R2), or the UI through the link
+(#469 decision 3b), is a later change that edits `docs/hopper-io-security.md` first, with the owner's decision.
+
+**Transport: one WebSocket over TLS, opened by the instance.**
+
+- The instance opens `wss://` to hopper.io on port 443, while the link record exists (R8), and only then. A container
+  instance needs no change: it is an outbound HTTPS connection, through NAT and a proxy that allows HTTPS.
+- It reconnects with backoff and jitter (1 second, doubling, at most 5 minutes). A connection that hopper.io refuses as
+  revoked is not tried again until the admin links again.
+- Each WebSocket text frame is one JSON message from the tables above. The cap is per message, on both sides (R7): 1024
+  bytes in, as built; the snapshot's own cap out.
+- **The instance checks hopper.io:** TLS with the system's roots, and a pin of hopper.io's public key, shipped in the
+  instance's code. A connection whose key does not match is closed before the hello.
+- **hopper.io checks the instance:** the hello proves the cloud link key over a fresh challenge from hopper.io; hopper.io
+  keeps only the public half (R4). Either side revokes the key (R4); a revoked key connects no more.
+- Each connect, disconnect, refused connection, revoke and refused or dropped message is an event on the instance (R6),
+  added to `docs/events.md` with the code.
+
+**Decisions:**
+
+- **A WebSocket, not `hopper-client/1`.** A machine's link (`src/http/client-link.ts`) runs HTTP/2 calls from the hopper
+  down the socket: the server acts on the client. The cloud link must not have that shape, since R1 lets hopper.io act on
+  nothing. A WebSocket carries one closed message at a time, which fits the messages already built
+  (`receive(text)`), and passes through the HTTPS proxies a container sits behind.
+- **Not a third-party tunnel or overlay network.** A tunnel (as remote access's providers, "Remote access providers")
+  carries inbound requests to the instance, which is what R1 forbids here. An overlay network adds a service and a
+  credential the owner must run and rotate.
+- **Full snapshots, not deltas**, as "The hopper.io state snapshot" says: a lost message heals at the next one.
+- **The key pin ships in the code.** hopper.io's key is not set in Settings: a key a person can change is a key a
+  person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
+
+**Left for the install side** (an issue filed once the hopper.io server and its key exist):
+
+- the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
+  scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519
+  agrees keys and cannot sign. That issue picks an Ed25519 key that signs the challenge, or keeps X25519 in a handshake an
+  established library implements, and changes R4 and the glossary in the same change;
+- the agent: connect while the link record exists, close at an unlink after `unlinked`, reconnect, send the snapshot and
+  heartbeat at the rate "The hopper.io state snapshot" names, and hand incoming text to `receive`;
+- the outgoing secret scan, the events, and `machineKey` and `executorPlugin` for the snapshot;
+- the WebSocket client: an established one (Node's own, or `ws`), the one that takes the key pin;
+- Settings → hopper.io shows the connection's state.
+
+**Verification:** a docs change; no code. The install-side issue's tests must show R1, R4, R5, R6, R7 and R8
+(`docs/hopper-io-security.md` "What each child issue must show").
 
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
@@ -24743,8 +24884,32 @@ stream — with 401, before the `end-left` step ends it. A stream it holds open 
 - **The job's whole run is not a saga yet.** Its steps (claim, credentials, pane, run, checkpoint, end) stay in the runner;
   the issue's tests — a job stopped mid-run on one machine resumes on another, with no task sent twice — pass with the move.
 
-**Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers; a checkpoint at the first
-missed heartbeat and at link loss (the machine cannot be read once its link is down).
+**A checkpoint at the first missed heartbeat** (issue #1569). An `away` move resumes from the job's last checkpoint, and a
+pass takes one only every ten minutes: the work after it was lost. Once the link is down the machine cannot be read, so
+the hopper takes one at the first sign, before the drop. A **missed heartbeat** is either of:
+- a poll of the job's watch (`watchTurn`, `src/executors/herdr/monitor.ts`) that fails while the link is up — an ssh
+  target that did not answer, a herdr error, a slow machine;
+- a PING of a client target's link not answered when the next one is due (`keepAlive`'s `late`, `src/client/keepalive.ts`),
+  5 s before the PING timeout drops the link. `src/executors/client.ts` tells the listeners of that machine
+  (`onClientLinkLate`), and the watch of each job on it listens while it runs (`HerdrClient.onLinkLate`).
+
+The watch tells the engine (`ExecutionContext.missedHeartbeat`), and the engine takes the checkpoint at once
+(`Checkpoints.soon`, `src/engine/checkpoints.ts`), as the pass does: through the machine's own connection, scrubbed,
+`job.checkpointed`. It does not wait for it, and the watch goes on. At most one each `CHECKPOINT_SOON_GAP_MS` (a minute)
+after the last checkpoint taken or tried, and none while one is taken: a flaky link is not read over and over. A link
+that is half-open fails the read at the drop, and the checkpoint before it stays the one kept. A poll that fails with the
+link down already takes none.
+
+Decisions:
+- **The PING before the drop, not the drop.** At the drop the link is gone and the read cannot reach the machine. A late
+  PING is the last moment the link may still carry it: a slow link answers it, a dead one does not, and nothing is lost.
+- **A minute between two, the same as a fresh transcript read.** A machine that misses heartbeats again and again is read
+  once a minute, not at each poll.
+- **No new event and no field.** The checkpoint is `job.checkpointed`, as any other. Why it was taken is said in the log
+  only when it fails.
+
+**Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers: the daemon is one writer
+for its database (the daemon lock), so a second hopper on the same database is not supported yet.
 
 **Residual risk, stated.** Between the lost machine's last answer and the move (the grace, 30 s by default), the agent there
 may still ask the hopper, with the token of the job's run then: its asks are the job's, as before the machine was lost. Its
@@ -24758,7 +24923,9 @@ another started, which ends it; a job with no checkpoint fails as before), `test
 `test/integration/herdr-reattach.test.ts` (`gone`: it resumes its session on its machine; with no session it fails as
 before), `test/decider/left-machine.test.ts` (not placed back on the machine it left until the mark is lifted); the agent
 left is refused on the GitHub proxy and the job stream once the job moved, and the resumed run is answered
-(`test/integration/lost-machine-move.test.ts`), and the token after a move (`test/github-proxy/proxy.test.ts`).
+(`test/integration/lost-machine-move.test.ts`), and the token after a move (`test/github-proxy/proxy.test.ts`); a checkpoint at a missed heartbeat — a failed poll, a late PING, at most once a minute, none with the link down
+(`test/integration/checkpoint.test.ts`), the late PING said once before the drop (`test/client/keepalive.test.ts`), and
+over a real client link to the herdr client's listeners (`test/adapters/client-link-ping.test.ts`).
 
 ## The pane key (issue #1524 part 4, issue #1569, 2026-10-17)
 

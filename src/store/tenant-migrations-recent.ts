@@ -22,6 +22,7 @@ import { JOB_FILTER_COLUMNS } from './job-filter-columns.ts';
 import { accountSourceOnly } from './migration-account-source.ts';
 import { noSandboxMachines } from './migration-no-sandbox-machines.ts';
 import { noTemplateTimeLimit } from './migration-template-limits.ts';
+import { NOTIFIER_DELIVERY_TABLE } from './notifier-deliveries.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -99,4 +100,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // credentials takes jobs anyway. A row per machine, revoked when `revoked_at` is set. A table only: the build before
   // never reads it, and holds such machines.
   'CREATE TABLE IF NOT EXISTS machine_credential_acceptances (machine_key TEXT PRIMARY KEY, credentials TEXT NOT NULL, accepted_by TEXT NOT NULL, accepted_at TEXT NOT NULL, revoked_at TEXT)',
+  // 73: Notifier deliveries (issue #1587): one row per notification a notifier sends, until it is delivered or fails. A
+  // table only: the build before runs on it, and sends in memory, as before.
+  NOTIFIER_DELIVERY_TABLE,
 ];

@@ -15,6 +15,7 @@ import { CLOUD_MESSAGE_MAX_BYTES, createCloudLinkMessages, unlinkedMessage } fro
 import { createCloudLink, type CloudLink } from '../../src/http/cloud-link.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
+import { systemOf } from '../support/system-secrets.ts';
 import { fixedClock } from '../store/helpers.ts';
 
 const closers: (() => void)[] = [];
@@ -26,7 +27,7 @@ function setup(): { instance: InstanceStore; link: CloudLink; receive: (text: st
   closers.push(() => instance.close());
   const events: NewEvent[] = [];
   const append = (e: NewEvent) => { events.push(e); };
-  const link = createCloudLink({ settings: instance.settings, events: { append }, now: () => new Date('2026-10-17T08:00:00.000Z') });
+  const link = createCloudLink({ settings: instance.settings, secrets: systemOf({ vault: instance.vault, events: { append: (e) => e }, tx: instance.tx }), events: { append }, now: () => new Date('2026-10-17T08:00:00.000Z') });
   const messages = createCloudLinkMessages({ cloudLink: link, events: { append } });
   return { instance, link, receive: (text) => JSON.parse(messages.receive(text)), events };
 }

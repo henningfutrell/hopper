@@ -13,6 +13,7 @@ import { createCloudLink, type CloudLink } from '../../src/http/cloud-link.ts';
 import { openDb } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
+import { systemOf } from '../support/system-secrets.ts';
 import { fixedClock } from '../store/helpers.ts';
 
 const closers: (() => void)[] = [];
@@ -23,7 +24,7 @@ function setup(): { url: string; instance: InstanceStore; link: CloudLink; event
   const instance = openInstanceStore({ url, clock: fixedClock() });
   closers.push(() => instance.close());
   const events: NewEvent[] = [];
-  const link = createCloudLink({ settings: instance.settings, events: { append: (e) => { events.push(e); } }, now: () => new Date('2026-10-17T08:00:00.000Z') });
+  const link = createCloudLink({ settings: instance.settings, secrets: systemOf({ vault: instance.vault, events: { append: (e) => e }, tx: instance.tx }), events: { append: (e) => { events.push(e); } }, now: () => new Date('2026-10-17T08:00:00.000Z') });
   return { url, instance, link, events };
 }
 
@@ -40,7 +41,7 @@ describe('unregistering the instance at hopper.io', () => {
     registered(link);
 
     expect(link.unregister('Octo-Cat')).toBe('unregistered');
-    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T08:00:00.000Z', by: 'admin' } });
+    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T08:00:00.000Z', by: 'admin', linkKey: expect.objectContaining({ secret: 'cloud-link.key' }) } });
     expect(events.at(-1)).toEqual({ type: 'cloud_link.unregistered', data: { installId, account: 'octo-cat' } });
     expect(link.unregister('octo-cat')).toBe('not-registered');
 

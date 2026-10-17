@@ -221,6 +221,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
       workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
       agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
+      // A missed heartbeat of its machine (issue #1569): its checkpoint now, while the machine may still answer.
+      missedHeartbeat: () => c.checkpoints?.soon(job.id),
     });
     const masked = (outcome: ExecutionOutcome): ExecutionOutcome => {
       if (outcome.kind !== 'failed' || given.size === 0) return outcome;

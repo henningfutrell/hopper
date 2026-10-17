@@ -28,6 +28,7 @@ import { createPromotionRepository } from './promotions.ts';
 import { createGitHubListingRepository } from './github-listings.ts';
 import { createSourceCallLog } from './source-calls.ts';
 import { createGitHubOutboxRepository } from './github-outbox.ts';
+import { createNotifierDeliveryRepository } from './notifier-deliveries.ts';
 import { createCheckpointRepository } from './checkpoints.ts';
 import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
@@ -107,6 +108,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     appInstallations: createAppInstallationsReadRepository(ctx),
     checkpoints: createCheckpointRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
+    notifierDeliveries: createNotifierDeliveryRepository(ctx),
     searchPending: createSearchPendingRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
