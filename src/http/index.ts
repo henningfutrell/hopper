@@ -61,6 +61,7 @@ import { registerUiRoutes } from './ui/index.ts';
 import type { AllowedHosts } from './allowed-hosts.ts';
 import type { SourceEmailMatch } from './source-email-match.ts';
 import type { CloudLink } from './cloud-link.ts';
+import type { DisplayName } from './display-name.ts';
 import type { CallerOf } from './ui/sign-in.ts';
 import type { Sandboxes } from '../sandbox/service.ts'; import type { Playground } from '../sandbox/playground.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
@@ -93,6 +94,7 @@ export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveri
 export { createAllowedHosts } from './allowed-hosts.ts';
 export { createSourceEmailMatch } from './source-email-match.ts';
 export { createCloudLink } from './cloud-link.ts';
+export { createDisplayName } from './display-name.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';
 
@@ -133,6 +135,8 @@ export interface ServerOptions {
   sourceEmailMatch: SourceEmailMatch;
   /** The cloud link (issue #467): GET /api/cloud-link, POST /ui/api/cloud-link and /ui/api/cloud-link/unlink. */
   cloudLink: CloudLink;
+  /** The instance's display name and instance id (issue #465): GET /api/display-name, POST /ui/api/display-name. */
+  displayName: DisplayName;
   /** The hopper runs in WSL (issue #712): GET /api/host-link says so, for Settings' Windows hint. */
   wsl: boolean;
   /** The instance's events (every user's log): an event loop stall is raised there (issue #1154). Absent: only logged. */
@@ -280,7 +284,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, proofs, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

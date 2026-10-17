@@ -1,4 +1,4 @@
-// Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
+// Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165) with this hopper's display name (issue #465)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
 // risk rules), the decider (issue #550; named Decider in issue #661), auto-park (issue #650), preemption (issue #1525), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), landing batches (issue #1073), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
@@ -18,6 +18,7 @@ import { Preemption } from '@/views/preemption';
 import { GitHubRateLimiter } from '@/views/github-rate-limiter';
 import { GitHubDeliveries } from '@/views/github-deliveries';
 import { Contribution } from '@/views/contribution';
+import { DisplayName } from '@/views/display-name';
 import { ShrinkGuard } from '@/views/shrink-guard';
 import { GitHubWatches } from '@/views/github-watches';
 import { ComponentWatchers } from '@/views/component-watchers';
@@ -81,7 +82,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
 };
 
 function Version() {
-  return <section className="max-w-xl rounded-lg border p-4"><h2 className="mb-3 text-sm font-medium">Version and updates</h2><VersionDetails /></section>;
+  return <div className="space-y-3"><section className="max-w-xl rounded-lg border p-4"><h2 className="mb-3 text-sm font-medium">Version and updates</h2><VersionDetails /></section><DisplayName /></div>;
 }
 
 /** Old section names and the section each moved to, so an old link still opens it. */

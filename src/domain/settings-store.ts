@@ -204,6 +204,9 @@ export interface InstanceSettingsRepository {
   setCloudLink(link: CloudLinkSettings): void;
   /** Deletes the link record, and nothing else. */
   removeCloudLink(): void;
+  /** The instance's display name (issue #465): what the hopper's admin calls this hopper; empty: never set, or cleared. */
+  getDisplayName(): string;
+  setDisplayName(name: string): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */

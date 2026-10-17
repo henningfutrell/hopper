@@ -152,6 +152,7 @@ export const rateLimiterEvents = {
   'cloud_link.linked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
   'cloud_link.unlinked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
   'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
+  'display_name.changed': strict({ from: z.string(), to: z.string(), by: z.string() }),
 };
 
 // Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.
