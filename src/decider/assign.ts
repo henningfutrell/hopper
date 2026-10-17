@@ -298,7 +298,7 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
 }
 
 /** State with whether the credential check holds the machine (`credentialHolds`, issue #1467). */
-interface MachineStateWithCredentialHold extends MachineState {
+export interface MachineStateWithCredentialHold extends MachineState {
   credentialHeld: boolean;
 }
 
@@ -318,30 +318,8 @@ function holdFor(states: MachineStateWithCredentialHold[], ahead: Job[], job: Jo
   for (const s of states) s.slots.wanted = ahead.filter((h) => eligible(s, h) && roomFor(s, h.spec.executor) > 0).length;
 }
 
-const fitsLane = (s: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
+export const fitsLane = (s: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
 
-/**
- * Issue #1525: whether `job` fits on the machine once `lane`, busy with `holder`, is free. Read after step 7 on the
- * states it counted: the lane is taken out of every count, the fit judged, and the counts put back.
- */
-export function fitsWhenFreed(s: MachineState, job: Job, lane: Lane, holder: Job, pl?: PriorityLanesInput): boolean {
-  const c = s as MachineStateWithCredentialHold;
-  const e = c.executors.get(holder.spec.executor);
-  const unpinned = pinOf(holder) !== c.machine.id;
-  const at = e?.occupied.indexOf(lane.id) ?? -1;
-  const inUse = c.slots.inUse.delete(lane.id);
-  c.occupied -= 1;
-  if (unpinned) c.unpinned -= 1;
-  if (at >= 0) e!.occupied.splice(at, 1);
-  try {
-    return fitsLane(c, job, pl);
-  } finally {
-    c.occupied += 1;
-    if (unpinned) c.unpinned += 1;
-    if (at >= 0) e!.occupied.splice(at, 0, lane.id);
-    if (inUse) c.slots.inUse.add(lane.id);
-  }
-}
 
 /**
  * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible

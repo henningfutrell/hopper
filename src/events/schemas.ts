@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS } from '../domain/types.ts';
 import { DISMISSED_BY } from '../domain/locked.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
-import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { MACHINE_DRAIN_EVENT_SCHEMAS } from './machine-drain-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts';
+import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { MACHINE_DRAIN_EVENT_SCHEMAS } from './machine-drain-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts'; import { PREEMPTION_EVENT_SCHEMAS } from './preemption-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
@@ -110,7 +110,6 @@ const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean
 // `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
-const preemptionSettings = strict({ enabled: z.boolean(), minRunMinutes: z.number().min(0) });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
 export const EVENT_SCHEMAS = {
@@ -320,8 +319,6 @@ export const EVENT_SCHEMAS = {
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
   'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }),
-  'preemption.settings_changed': strict({ from: preemptionSettings, to: preemptionSettings, by: z.string() }),
-  'job.preempted': strict({ by: z.string(), byPriority: z.number(), priority: z.number(), reason: z.string() }),
   ...TLDR_EVENT_SCHEMAS,
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
@@ -383,7 +380,7 @@ export const EVENT_SCHEMAS = {
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
-  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...MACHINE_DRAIN_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, // the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
+  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...MACHINE_DRAIN_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, ...PREEMPTION_EVENT_SCHEMAS, // preemption (issue #1525: preemption-schemas.ts), the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   ...THREAD_ASK_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, // issues #997, #1128: notes to a job, the job's terminal

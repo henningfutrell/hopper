@@ -5,12 +5,35 @@
 // time since it started or resumed, one whose executor cannot park, one with no agent session to resume, one whose lane
 // drains, or one a preemption already in flight names. Pure: the clock is `at`.
 import { PREEMPT_IN_FLIGHT_MS, type Job, type Lane, type LaneId, type PreemptPlan, type PreemptionInput, type PriorityLanesInput, type WaitPlan } from '../domain/types.ts';
-import { fitsWhenFreed, type Candidate, type MachineState } from './assign.ts';
+import { fitsLane, pinOf, type Candidate, type MachineState, type MachineStateWithCredentialHold } from './assign.ts';
 
 const MINUTE_MS = 60_000;
 
 /** A preemption a Decision made whose park has not gone through yet: its job runs still, and is not taken again. */
 const inFlight = (j: Job, at: number): boolean => j.preempted !== undefined && at - new Date(j.preempted.at).getTime() < PREEMPT_IN_FLIGHT_MS;
+
+/**
+ * Issue #1525: whether `job` fits on the machine once `lane`, busy with `holder`, is free. Read after step 7 on the
+ * states it counted: the lane is taken out of every count, the fit judged, and the counts put back.
+ */
+function fitsWhenFreed(s: MachineState, job: Job, lane: Lane, holder: Job, pl?: PriorityLanesInput): boolean {
+  const c = s as MachineStateWithCredentialHold;
+  const e = c.executors.get(holder.spec.executor);
+  const unpinned = pinOf(holder) !== c.machine.id;
+  const at = e?.occupied.indexOf(lane.id) ?? -1;
+  const inUse = c.slots.inUse.delete(lane.id);
+  c.occupied -= 1;
+  if (unpinned) c.unpinned -= 1;
+  if (at >= 0) e!.occupied.splice(at, 1);
+  try {
+    return fitsLane(c, job, pl);
+  } finally {
+    c.occupied += 1;
+    if (unpinned) c.unpinned += 1;
+    if (at >= 0) e!.occupied.splice(at, 0, lane.id);
+    if (inUse) c.slots.inUse.add(lane.id);
+  }
+}
 
 export function preempt(
   ordered: readonly Candidate[], waits: readonly WaitPlan[], running: readonly Job[], lanes: readonly Lane[], states: MachineState[],

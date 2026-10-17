@@ -191,12 +191,8 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
-  continued?: { at: string } & ContinuedBy;
-  /**
-   * Set when a job of higher priority took its lane (issue #1525, design.md "Preemption"): which one, both priorities,
-   * where. Set when the Decision names it, kept while it is parked and queued again, cleared when it runs again.
-   */
-  preempted?: import('./preemption.ts').JobPreempted;
+  /** `preempted`: a job of higher priority took its lane (issue #1525, design.md "Preemption"), kept until it runs again. */
+  continued?: { at: string } & ContinuedBy; preempted?: import('./preemption.ts').JobPreempted;
   /**
    * Its latest checkpoint (issue #921): its agent session and its work not pushed, copied from its machine while it ran.
    * The patch and the session are in the store's checkpoints.
@@ -384,8 +380,7 @@ export interface DecisionInputs {
    * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none.
    */
   /** Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it. */
-  preemption?: import('./preemption.ts').PreemptionInput;
-  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[];
+  preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 
@@ -442,9 +437,8 @@ export interface Decision {
   /** Admitted jobs no lane is free for: they stay queued (issue #381). Decisions recorded before it lack it. */
   wait: WaitPlan[];
   /** Divergences: jobs where the advice differs from the native verdict. */
-  advice: Divergence[];
-  /** Running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. */
-  preempt?: import('./preemption.ts').PreemptPlan[];
+  /** `preempt`: running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. */
+  advice: Divergence[]; preempt?: import('./preemption.ts').PreemptPlan[];
   /** Plain-language reasons, in the order the decider reached them. */
   reasons: string[];
   inputs: DecisionInputs;
@@ -545,8 +539,7 @@ export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
 export * from './auto-answer.ts';
-export * from './auto-park.ts';
-export * from './preemption.ts';
+export * from './auto-park.ts'; export * from './preemption.ts';
 export * from './thread-ask.ts';
 export * from './access.ts';
 export * from './state-backend.ts';

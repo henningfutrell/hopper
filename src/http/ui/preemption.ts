@@ -7,6 +7,7 @@ import { MAX_PREEMPTION_MIN_RUN_MINUTES, type PreemptionSettings } from '../../d
 import { preemptionSettings } from '../../engine/preemption.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
+import type { Operation } from '../openapi-operation.ts';
 import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
@@ -16,6 +17,12 @@ export const preemptionBody = z.strictObject({
   enabled: z.boolean().optional(),
   minRunMinutes: z.number().min(0).max(MAX_PREEMPTION_MIN_RUN_MINUTES).optional(),
 }).refine((b) => b.enabled !== undefined || b.minRunMinutes !== undefined, { message: 'name enabled or minRunMinutes' });
+
+/** Its part of the API reference (openapi.ts). */
+export const PREEMPTION_OPERATIONS: Operation[] = [
+  { method: 'get', path: '/api/preemption', tag: 'Jobs', summary: 'Preemption', description: 'Issue #1525: whether a job of strictly higher priority that waits for a lane, with every lane it may use busy, takes the lane of a running job of lower priority (`enabled`, default on), and how many minutes a job runs from its start or resume before it may be preempted (`minRunMinutes`, default 10). The job preempted is parked, its work tree and agent session kept, and queued again at its own priority to resume where it stopped.', returns: '`PreemptionSettings`' },
+  { method: 'post', path: '/ui/api/preemption', tag: 'Jobs', summary: 'Change the preemption settings', description: 'Either part; one left out keeps its value (`preemption.settings_changed`). `minRunMinutes` from 0 to a day. Applies from the next Decision, without a restart.', role: 'admin', body: preemptionBody, returns: '`PreemptionSettings`', errors: [400] },
+];
 
 export const preemptionView = (t: Pick<TenantParts, 'store'>): PreemptionSettings => preemptionSettings(t.store);
 
