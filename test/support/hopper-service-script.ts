@@ -24,6 +24,13 @@ case "$*" in
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") [ -n "\${STUB_RUNNING:-}" ] && echo cid ;;
   "port cid") [ -n "\${STUB_PORT:-}" ] && echo "4790/tcp -> \${STUB_PORT}" ;;
   "volume exists hopper_postgres") [ -n "\${STUB_DATA:-}" ] || exit 1 ;;
+  "ps -aq --filter network=hopper_default --filter status=exited --filter status=stopped") [ -n "\${STUB_SEATS:-}" ] && printf 'seat1\\nmigrate\\nbox\\nseat2\\n' ;;
+  "inspect --format {{json .Config.Labels}} seat1") echo '{"purpose":"seat"}' ;;
+  "inspect --format {{json .Config.Labels}} seat2") echo '{"com.docker.compose.project":"seats"}' ;;
+  "inspect --format {{json .Config.Labels}} migrate") echo '{"com.docker.compose.project":"hopper","com.docker.compose.service":"openfga-migrate"}' ;;
+  "inspect --format {{json .Config.Labels}} box") echo '{"io.hopper.need":"instance"}' ;;
+  "inspect --format {{.Name}} "*) echo "fleet-\${4}" ;;
+  "start seat2") [ -z "\${STUB_SEAT2_FAILS:-}" ] || exit 125 ;;
 esac
 exit 0
 `;

@@ -11,7 +11,8 @@
 #   bash hopper-service.sh uninstall   stop the stack and remove the units (the data stays)
 #   bash hopper-service.sh start-with-key
 #                                      restart the service with the master key given at launch: HOPPER_MASTER_KEY, else
-#                                      asked on the terminal. No key needs to be sealed here
+#                                      one line on stdin when it is no terminal (a key piped in), else asked on the
+#                                      terminal. No key needs to be sealed here
 #
 # The install puts in master-key.sh from the image when none is here, and seals the key given to it as HOPPER_MASTER_KEY
 # (issue #1487): then a restart of this host brings the stack back with no person. With data and no key sealed, it says
@@ -32,6 +33,11 @@
 #                                mounted read-only into the hopper's container (and hopper-vault's), and named by
 #                                HOPPER_MASTER_KEY_FILE. No container's config holds the key, and after a restart of this
 #                                host the file is gone, so a `podman start` of an old container does not start.
+#                                After the stack is up, it starts each joined container that is stopped (issue #1497): a
+#                                container a person joined to the hopper's network (hopper_default), an ssh target's
+#                                machine for example, which stops with its host and which nothing else starts. A container
+#                                of the hopper's compose project, and a sandbox (a label io.hopper.*), is never one. One to
+#                                keep stopped: take it off the network (podman network disconnect hopper_default <name>).
 #                                Its stop takes the stack down and removes the file; the volumes and the data stay.
 #   hopper-compose-alert.service runs when the start fails (OnFailure=, issue #1487): it says what stopped the start in a
 #                                desktop notice (notify-send, when there is one) and gives it to hopper-alert.sh beside
@@ -56,6 +62,8 @@ PROJECT=hopper
 # The systemd credential the service reads the master key from, and the volume that holds the hopper's data.
 CREDENTIAL=hopper-master-key
 DATA_VOLUME=${PROJECT}_postgres
+# The hopper's network (compose.yaml): a joined container is a container on it that is not of the stack.
+NETWORK=hopper_default
 
 main() {
   local command="${1:-}"
@@ -320,6 +328,7 @@ start() {
 
 # The stack started. The key, given as HOPPER_MASTER_KEY, goes to compose as a file (issue #1487): written where only this
 # user opens it, in memory, and mounted read-only into the containers that read it. No container's config holds it.
+# Then the joined containers that are stopped (issue #1497): no joined container gets the key.
 up() {
   local dir; dir="$(key_dir)"
   [ -z "$dir" ] || rm -f "$dir/master-key"
@@ -333,14 +342,37 @@ up() {
     unset HOPPER_MASTER_KEY
   fi
   compose up -d </dev/null
+  start_joined
 }
 
-# The key a person gives: HOPPER_MASTER_KEY, else asked on the terminal (nothing is shown).
+# The joined containers that are stopped, started again (issue #1497): after a host restart nothing else starts them. A
+# container of the hopper's compose project, or a sandbox (a label io.hopper.*), is not one. One that does not start is
+# said, and the others still start.
+start_joined() {
+  local id labels name
+  for id in $(podman ps -aq --filter "network=$NETWORK" --filter status=exited --filter status=stopped </dev/null 2>/dev/null || true); do
+    labels="$(podman inspect --format '{{json .Config.Labels}}' "$id" </dev/null 2>/dev/null || true)"
+    [[ "$labels" == *'"com.docker.compose.project":"'"$PROJECT"'"'* || "$labels" == *'"io.podman.compose.project":"'"$PROJECT"'"'* ]] && continue
+    [[ "$labels" == *'"io.hopper.'* ]] && continue
+    name="$(podman inspect --format '{{.Name}}' "$id" </dev/null 2>/dev/null || printf '%s' "$id")"
+    if podman start "$id" </dev/null >/dev/null 2>&1; then
+      say "started the joined container $name: it is on the hopper's network ($NETWORK) and was stopped"
+    else
+      say "the joined container $name did not start: see podman start $name"
+    fi
+  done
+}
+
+# The key a person gives: HOPPER_MASTER_KEY, else one line on stdin when it is no terminal (issue #1497: a key piped
+# in), else asked on the terminal (nothing is shown).
 given_key() {
   local key="${HOPPER_MASTER_KEY:-}"
+  if [ -z "$key" ] && [ ! -t 0 ]; then
+    IFS= read -r -t "${HOPPER_KEY_STDIN_WAIT:-10}" key || true
+  fi
   if [ -z "$key" ]; then
     local tty="${HOPPER_KEY_TTY:-/dev/tty}"
-    { : <"$tty"; } 2>/dev/null || fail 'no master key: give it as HOPPER_MASTER_KEY, or run this in a terminal'
+    { : <"$tty"; } 2>/dev/null || fail 'no master key: give it as HOPPER_MASTER_KEY, pipe it in on stdin, or run this in a terminal'
     printf 'hopper-service: paste the master key from your password manager (nothing is shown): ' >&2
     IFS= read -rs key <"$tty" || true
     printf '\n' >&2

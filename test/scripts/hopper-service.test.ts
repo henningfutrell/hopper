@@ -183,6 +183,24 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(f.run(['start-with-key'], { HOPPER_KEY_TTY: join(f.dir, 'no-tty') }).err).toMatch(/no master key: give it as HOPPER_MASTER_KEY/);
   });
 
+  it('start-with-key reads a key piped in on stdin, and says so when the line is no key (issue #1497)', () => {
+    const f = folder();
+    expect(f.run(['install']).status).toBe(0);
+    const before = f.calls().length;
+    const piped = (input: string) => spawnSync('/bin/bash', ['hopper-service.sh', 'start-with-key'], {
+      cwd: f.dir, encoding: 'utf8', input,
+      env: { PATH: `${f.bin}:/usr/bin:/bin`, HOME: f.home, XDG_CONFIG_HOME: join(f.home, '.config'), USER: 'someone', STUB_LOG: join(f.dir, '.calls'), HOPPER_KEY_TTY: join(f.dir, 'no-tty') },
+    });
+    const r = piped(`${KEY}\n`);
+    expect(r.status, r.stderr).toBe(0);
+    expect(f.calls().slice(before)).toContain(`imported key=${KEY}`);
+    expect(r.stderr).not.toContain(KEY);
+    const bad = piped('nope\n');
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toMatch(/that is no master key/);
+    expect(piped('').stderr).toMatch(/pipe it in on stdin/);
+  });
+
   it('start with no key sealed here and no data yet starts the stack with no key, and stop takes it down', () => {
     const f = folder();
     expect(f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
@@ -192,6 +210,23 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
       'podman compose -p hopper up -d | key=',
       'podman compose -p hopper down | key=',
     ]);
+  });
+
+  it('start brings back each joined container that is stopped on the hopper\'s network, after the stack, without the key; never a stack container or a sandbox (issue #1497)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    writeFileSync(join(f.dir, 'hopper-master-key.enc'), 'sealed');
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', STUB_SEATS: '1', STUB_DATA: '1', STUB_SEAT2_FAILS: '1' });
+    expect(r.status, r.err).toBe(0);
+    const calls = f.calls();
+    const up = calls.indexOf(`podman compose -p hopper up -d | key= | file=${KEY} at /run/hopper-master-key`);
+    expect(up).toBeGreaterThan(-1);
+    const starts = calls.filter((c) => c.startsWith('podman start'));
+    expect(starts.map((c) => c.split(' | ')[0])).toEqual(['podman start seat1', 'podman start seat2']);
+    for (const c of starts) expect(c.split(' | ')[1]).toBe('key=');
+    expect(calls.indexOf(starts[0]!)).toBeGreaterThan(up);
+    expect(r.err).toMatch(/started the joined container fleet-seat1/);
+    expect(r.err).toMatch(/the joined container fleet-seat2 did not start/);
   });
 
   it('check restarts the service when the hopper container runs and its published port does not answer from this host', async () => {
