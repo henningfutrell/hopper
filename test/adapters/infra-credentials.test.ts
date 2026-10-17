@@ -38,8 +38,8 @@ describe('infra credential folders on machines (issue #1128)', () => {
   it('this machine: read from its home at every list; none is an empty list', async () => {
     const src = createLocalMachineSource({ maxLanes: 1, executors: () => [] });
     expect((await src.list())[0]!.infraCredentials).toEqual([]);
-    holds('.aws', '.terraform.d/credentials.tfrc.json');
-    expect((await src.list())[0]!.infraCredentials).toEqual(['.aws', '.terraform.d/credentials.tfrc.json']);
+    holds('.aws', '.terraform.d');
+    expect((await src.list())[0]!.infraCredentials).toEqual(['.aws', '.terraform.d']);
   });
 
   it('an attached machine carries what its last probe read; a probe that read none, or offline, drops it', async () => {
@@ -77,10 +77,10 @@ describe('infra credential folders on machines (issue #1128)', () => {
     process.env.FAKE_HERDR_RUNNING = '1';
     const token = mintToken();
     client = await startTestClient({ token: () => token, herdrBin: HERDR, session: 'hopper' });
-    holds('.terraform.d/credentials.tfrc.json', '.keycloak');
-    expect((await clientRunningRelease(client.transport(token), [])).infraCredentials).toEqual(['.keycloak', '.terraform.d/credentials.tfrc.json']);
+    holds('.terraform.d', '.keycloak');
+    expect((await clientRunningRelease(client.transport(token), [])).infraCredentials).toEqual(['.keycloak', '.terraform.d']);
     const keep = createClientReleaseKeeper({ release: readRelease(fileURLToPath(new URL('../../src/client', import.meta.url))), logger: { info: () => {}, warn: () => {} } });
-    expect(await keep(client.transport(token), () => [])).toMatchObject({ online: true, infraCredentials: ['.keycloak', '.terraform.d/credentials.tfrc.json'] });
+    expect(await keep(client.transport(token), () => [])).toMatchObject({ online: true, infraCredentials: ['.keycloak', '.terraform.d'] });
   });
 });
 

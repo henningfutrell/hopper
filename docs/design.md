@@ -20483,8 +20483,7 @@ below makes the credentials a warning by default, and a hold only in strict mode
 
 **Credentials hold the machine.** This reverses "Flag, never hold" above. The read is the same one, wider
 (`src/client/infra-credentials.ts`, **infra credentials**): folders and files under the home — cloud CLI config (`.aws`,
-`.azure`, `.config/gcloud`), `.kube`, `.keycloak`, terraform's `.terraform.d/credentials.tfrc.json` (issue #1466: only
-that file; any terraform run writes its version-check files `checkpoint_*` in `.terraform.d`, which hold none), the GitHub CLI's `.config/gh/hosts.yml`,
+`.azure`, `.config/gcloud`), `.kube`, `.keycloak`, `.terraform.d`, the GitHub CLI's `.config/gh/hosts.yml`,
 `.git-credentials`, `.config/git/credentials`, `.netrc`, ssh private keys (`.ssh/id_rsa`, `id_ecdsa`, `id_ecdsa_sk`,
 `id_ed25519`, `id_ed25519_sk`, `id_dsa`; public keys and `authorized_keys` are not credentials) —, a `git credential
 helper` in the global git config, and token variables by name (`$AWS_ACCESS_KEY_ID`, `$AWS_SECRET_ACCESS_KEY`,
