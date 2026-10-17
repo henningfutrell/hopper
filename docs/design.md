@@ -10459,10 +10459,14 @@ person or the CLI started the box (issue #769).
 - **Manual creation is no longer the main path.** Machines → Add machine → A sandbox box stays, for a test; its hint says
   that jobs start their own boxes.
 
-**Decided here, from issue #769's open questions.** What the job does with the box: the hopper starts it, and it joins
-as a machine of its template, as a box from Add machine does; the job learns its name. The rest of the job's work
-reaches the box as box steps (issue #1004, "Box steps"): the job stays where it runs. Who pays: the template's defaults, within its limits; a request names none. When it
-ends: at the template's time limit, never with the job; a request of a job no longer at work is forgotten.
+**Decided here, from issue #769's open questions** (as issue #1349 changed it, "Sandboxes are burned after each step").
+The owner's decision on issue #769: a sandbox is only for a short-lived, ephemeral action. A job never runs in a
+sandbox; it runs on a machine (a job box). What the job does with the sandbox: it runs each command that needs the
+template's assets as a box step (issue #1004, "Box steps"): the hopper makes a new sandbox of the template for that
+step, and burns it with its home when the step ends; the job stays where it runs. No sandbox joins as a machine, and a
+person moves no work. Who pays: the template's limits (`cpus`, `memoryMb`) for each step; a request names none. When it
+ends: with its step, never at a time limit (a template has none since issue #1349 part 4) and never with the job; the
+check pass's sweep burns a sandbox that no step holds. A request of a job no longer at work is forgotten.
 
 **Residual risk, stated.** With skip template approval on, any job at work may get a template with write, sync or apply
 on any asset it names, approved with no person; with skip sandbox approval on too, a box of it starts. Every such
