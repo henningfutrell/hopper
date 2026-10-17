@@ -5,8 +5,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
+import { LOST_NOTE } from '../../src/executors/herdr/restored.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -241,24 +241,35 @@ describe('a job that waits on its own background command (issue #1037)', () => {
     expect(done.wait).toBeUndefined();
   });
 
-  it('its pane gone: nudged once, then flagged stuck; a person can still end the wait', async () => {
+  it('its pane lost (issue #1508): the hopper ends the wait, and the job resumes its session in a new pane, told why', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 1_000_000 }), DONE] });
     const a = await start(herdr, GRACE);
-    const token = await a.login();
     const job = await waiting(a, herdr);
+    const first = job.executorState as { agentName: string; paneId: string };
+    herdr.killAgent(first.agentName);
+
+    const done = await a.waitForStatus(job.id, 'finished', 8000);
+
+    expect(done.wait).toBeUndefined();
+    const events = await ofJob(a, job.id);
+    expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: 'its pane was lost' });
+    expect(events.filter((e) => e.type === 'job.own_command_nudged' || e.type === 'job.own_command_stuck')).toEqual([]);
+    expect(herdr.agentStarts).toHaveLength(2);
+    expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--resume']));
+    expect(herdr.agentStarts[1]!.paneId).not.toBe(first.paneId);
+    expect(herdr.prompts[1]!.text).toContain(LOST_NOTE);
+    expect(herdr.prompts[1]!.text).toContain('your pane was lost');
+  });
+
+  it('a wait on a background poll for an outside event (issue #1508): its pane lost, it is woken the same way', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WAIT, DONE] });
+    const a = await start(herdr);
+    const job = await waiting(a, herdr);
+    expect(job.wait?.on).toEqual({ kind: 'outside', what: 'write access to the repository' });
     herdr.killAgent((job.executorState as { agentName: string }).agentName);
 
-    const stuck = await waitFor(async () => {
-      const j = await a.job(job.id);
-      return j.wait?.stuckAt ? j : undefined;
-    }, { timeoutMs: 8000, what: 'the job to be flagged stuck' });
-
-    expect(stuck.status).toBe('waiting_on');
-    expect(stuck.wait).toMatchObject({ ownCommand: true, goneSince: expect.any(String), nudgedAt: expect.any(String), stuckAt: expect.any(String) });
-    const events = await ofJob(a, job.id);
-    expect(events.find((e) => e.type === 'job.own_command_nudged')!.data).toEqual({ delivered: false });
-    expect(events.filter((e) => e.type === 'job.own_command_stuck')).toHaveLength(1);
-    expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
-    await a.waitForStatus(job.id, 'cancelled', 8000);
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: 'its pane was lost' });
+    expect(herdr.prompts[1]!.text).toContain('outside: write access to the repository');
   });
 });
