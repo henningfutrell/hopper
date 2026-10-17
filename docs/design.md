@@ -55,7 +55,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
-| `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
+| `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
@@ -12673,6 +12673,31 @@ job is told it whatever its job rules. It says:
 - **No question about the path itself**: only a real decision, as the decisions line says.
 
 **Verification.** `test/job-rules/delivery-path.test.ts`.
+
+## Repository job rules (issue #1472 part 4, 2026-10-16)
+
+Owner requirement: jobs do not know what done means for a repository (follow the change through its pipeline to its test
+environment; production stays with a person), which repositories and tools they may touch, or the standing context. The
+job rules are one text for every job of a user; what is true for one repository, or one owner's repositories, had no place.
+
+- **The record.** A user's config record `repo-job-rules` (`src/job-rules/repo-rules.ts`): a map from a repository
+  (`owner/name`), or an owner (`owner/*`, every repository of that owner), to a text of at most 16 KiB; at most 100 names.
+  Names are matched in any case; two names that differ only in case are refused. No migration: a missing record is none.
+- **What a job is told.** As each job starts, the engine adds to its job rules (`withRepoJobRules`): first its owner's
+  text, then its repository's, each after a line `[hopper repository rules] Rules set in the hopper for every job of
+  <name>:`. A job of no repository, or of one with no rules, is told nothing more. An empty text adds nothing. A running
+  job keeps what it started with; the next job gets an edit. The fixed lines (the work tree, the protocol, the delivery
+  line) still follow and are not edited.
+- **Editing.** Settings → Job rules → Per repository: one row per name, saved whole against its version
+  (`GET /api/repo-job-rules`, `POST /ui/api/repo-job-rules`, admin, `src/http/ui/repo-job-rules.ts`).
+  `hopper config set repo-job-rules` from the CLI.
+- **A job's own context** is its issue's text and the person's notes (issue #997): no record for it.
+- **Left of part 4.** A default read-only credential for every job (`cluster/uat-view`): AGENTS.md "The vault gives only to
+  a job a person granted it" does not allow it without a grant, so it waits for a person's decision. A repository's rules can
+  tell its jobs to ask for that read through the skills (`hopper-skill`).
+
+**Verification.** `test/job-rules/repo-job-rules.test.ts`, `test/integration/job-rules.test.ts` (a job of the repository
+gets them, a job of another does not), `test/cli.test.ts`, `test/ui/job-rules-panel.test.ts`.
 
 ## Decide and proceed (issue #1059, 2026-10-13)
 

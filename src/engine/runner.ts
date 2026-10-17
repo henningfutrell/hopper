@@ -8,6 +8,7 @@ import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/por
 import type { TaskCount } from '../domain/task-count.ts';
 import { finishBrief, MAX_FINISH_BRIEFS, type Job, type LaneId, type MachineSnapshot, type UnfinishedPullRequest } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
+import { repoJobRulesFor, withRepoJobRules } from '../job-rules/repo-rules.ts';
 import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -192,8 +193,9 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     /** The agent's sign-ins given to this run: never in its outcome, as a tool's error may repeat its variables. */
     const given = new Set<string>();
     const contextOf = (j: Job, m: MachineSnapshot): ExecutionContext => ({
-      // The job rules as they are at this start (issue #172): an edit reaches the next job.
-      job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), j.spec, j.forkOf, j.followOn),
+      // The job rules as they are at this start (issue #172): an edit reaches the next job. Then its repository's (issue #1472).
+      job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal,
+      jobRules: withAsks(withRepoJobRules(readJobRules(store.config), repoJobRulesFor(store.config, j.source?.repo)), j.spec, j.forkOf, j.followOn),
       // A login the job waits on (issue #476) goes to the logins, never into a question.
       logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: m.id, run: job.spec.executor }, () => !c.stopping()),
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).

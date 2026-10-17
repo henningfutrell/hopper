@@ -45,6 +45,7 @@ import type { User } from './domain/types.ts';
 import { signInConfigProblem } from './auth/config.ts';
 import { withHeldSecrets } from './auth/sealed-secrets.ts';
 import { jobRulesProblem } from './job-rules/index.ts';
+import { repoJobRulesProblem } from './job-rules/repo-rules.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -100,7 +101,7 @@ and events, as the UI does: --url names it (default HOPPER_URL, else http://127.
 No sign-in is needed: the CLI holds the database's credentials. Each prints the daemon's answer as JSON; the events
 say the operator CLI acted (via cli).
 
-records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules and windows-hosts are one user's; sign-in is shared. Every one is edited
+records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules, repo-job-rules and windows-hosts are one user's; sign-in is shared. Every one is edited
 in the UI too.
 --user <id> on config, ssh-key, ledger and the commands on the running daemon names the user (default: the one user, while there is one).
 
@@ -126,11 +127,12 @@ function recordName(raw: string | undefined): ConfigName {
 export function recordProblem(name: ConfigName, value: unknown, held: readonly string[] = []): string | undefined {
   if (name === 'rules') return rulesProblem(value);
   if (name === 'job-rules') return jobRulesProblem(value);
+  if (name === 'repo-job-rules') return repoJobRulesProblem(value);
   if (name === 'windows-hosts') return windowsHostsProblem(value);
   return name === 'sign-in' ? signInConfigProblem(withHeldSecrets(value, held)) : pluginsConfigProblem(value);
 }
 
-/** One config record wherever it lives: a user's (plugins, rules, job-rules, windows-hosts) or the instance's (sign-in). */
+/** One config record wherever it lives: a user's (plugins, rules, job-rules, repo-job-rules, windows-hosts) or the instance's (sign-in). */
 type Records = ConfigRecords<ConfigName>;
 
 function put(records: Records, name: ConfigName, json: string, version: string, held: readonly string[]): void {
