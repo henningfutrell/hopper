@@ -74,7 +74,7 @@ import {
   failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
-import { pullRequestWaitOf } from '../domain/work-items.ts';
+import { pullRequestWaitOf } from '../domain/work-items.ts'; import { followOutcome, traceJobStep } from '../telemetry/job-steps.ts';
 
 export interface AfterDoneContext {
   store: Pick<UserStore, 'jobs' | 'events' | 'handoffs' | 'workItems'>;
@@ -178,7 +178,8 @@ export function createAfterDone(c: AfterDoneContext) {
     if (all) await crossReference(source, job);
     job = store.jobs.get(jobId) ?? job;
     // The merge marker is kept before the hopper's merge call (issue #1588).
-    const r = await source.follow!(job, undefined, { keep: (state) => c.setSource(jobId, state) });
+    const followed = job;
+    const r = await traceJobStep(jobId, 'follow', () => source.follow!(followed, undefined, { keep: (state) => c.setSource(jobId, state) }), followOutcome, { 'hopper.pull_request.act': 'none' });
     if (r) return record(jobId, r);
     // Nothing changed: the ledger may not hold what it waits on yet (it was seen before the ledger read it).
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
@@ -240,7 +241,7 @@ export function createAfterDone(c: AfterDoneContext) {
     if (ended) return { ok: false, reason: 'conflict', message: `job ${jobId}'s pull request is not tended: it was ${ended} on GitHub` };
     const checks = due.step === 'fix_checks' && source.checkLogs && due.checks.failed?.length
       ? { ...due.checks, failed: await source.checkLogs(due.checks.failed) } : due.checks;
-    const r = await c.tend(jobId, tendBrief(due.url, due.step, checks));
+    const r = await traceJobStep(jobId, 'tend', () => c.tend(jobId, tendBrief(due.url, due.step, checks)), (t) => (t.ok ? 'started' : t.reason), { 'hopper.tend.step': due.step });
     if (!r.ok) {
       // Kept, so the card says why (issue #967): a refusal is never shown as a tend to come.
       keepHold(jobId, 'tendRefused', r.message);
@@ -287,7 +288,7 @@ export function createAfterDone(c: AfterDoneContext) {
     if (d.step !== 'rebase' || !source.baseMerge || !job) return false;
     let r: BaseMerge | undefined;
     try {
-      r = await source.baseMerge(job);
+      r = await traceJobStep(d.jobId, 'base_merge', () => source.baseMerge!(job), (b) => b?.outcome ?? 'none');
     } catch (e) {
       console.warn(`hopper: ${source.name}: the base merge of ${d.pullRequest} failed, a tend job rebases it: ${(e as Error).message}`);
       return false;

@@ -12,6 +12,10 @@
 // A job's trace context (part 4, design.md "Telemetry: a job's trace on its machine") is the variables its processes run
 // with — `TRACEPARENT`, `TRACESTATE`: OpenTelemetry's environment carrier — naming its open run span, else its root while
 // the job is open. So what the job does, and its requests to the hopper, join its trace. Telemetry off, it is empty.
+//
+// Part 7 (design.md "Telemetry: job steps"): a job's root links to the span active at its first event, what made it (a
+// request, a sync, the tend of another job's pull request); a tend ends the pull request span, as the job follows it no
+// more; and the steps the hopper does for a job (`job-steps.ts`) find their parent here (`jobStepParent`).
 import { context, propagation, ROOT_CONTEXT, trace, type Attributes, type Span } from '@opentelemetry/api';
 import type { DomainEvent, EventType, Job } from '../domain/types.ts';
 import { instrument, tracer } from './instruments.ts';
@@ -30,7 +34,8 @@ const JOB_SPANS: Record<JobSpan, { start: EventType[]; end: EventType[] }> = {
   wait: { start: ['job.waiting'], end: ['job.wait_ended', 'job.cancelled', 'job.failed', 'job.finished'] },
   park: { start: ['job.parked'], end: ['job.unparked', 'job.cancelled', 'job.requeued'] },
   sandbox: { start: ['vault.sandbox_requested'], end: ['vault.sandbox_started', 'vault.sandbox_failed', 'vault.sandbox_declined'] },
-  pull_request: { start: ['job.pull_request_followed'], end: ['job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned'] },
+  // A tend hands the pull request to a new job (part 7): this job follows it no more.
+  pull_request: { start: ['job.pull_request_followed'], end: ['job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_tended'] },
 };
 
 const ENDED: Partial<Record<EventType, string>> = {
@@ -89,6 +94,21 @@ export interface JobTraces {
   stop(): void;
 }
 
+/** Each user's job traces, for a job step's parent (`job-steps.ts`): the job's open span, if one of them holds it. */
+const stepParents = new Set<(jobId: string) => Span | undefined>();
+
+/**
+ * The span a step of the job is a child of: its run, else its pull request, else its root — ended too, while the hopper
+ * remembers the job, as its pull request span is (a pull request followed from the job's report has no span of its own).
+ */
+export function jobStepParent(jobId: string): Span | undefined {
+  for (const parent of stepParents) {
+    const span = parent(jobId);
+    if (span) return span;
+  }
+  return undefined;
+}
+
 /** A propagator's field as an environment variable: `traceparent` → `TRACEPARENT`. */
 const envName = (field: string): string => field.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
 
@@ -135,7 +155,10 @@ export function traceJobs(o: TraceJobsOptions): JobTraces {
       endJob(oldest, held, at, true);
     }
     const job = o.job(id);
-    const root = tracer().startSpan('hopper.job', { root: true, startTime: at, attributes: { 'hopper.job.id': id, ...jobAttributes(job) } }, context.active());
+    // What made the job (part 7): a request, a sync, a tend of another job's pull request. Linked, not a parent.
+    const cause = trace.getActiveSpan()?.spanContext();
+    const links = cause && trace.isSpanContextValid(cause) ? [{ context: cause }] : [];
+    const root = tracer().startSpan('hopper.job', { root: true, startTime: at, links, attributes: { 'hopper.job.id': id, ...jobAttributes(job) } }, context.active());
     const open: OpenJob = { root, spans: new Map(), ...(job ? { executor: job.spec.executor } : {}) };
     jobs.set(id, open);
     return open;
@@ -201,11 +224,18 @@ export function traceJobs(o: TraceJobsOptions): JobTraces {
     return carrier;
   };
 
+  const stepParent = (jobId: string): Span | undefined => {
+    const open = jobs.get(jobId) ?? ended.get(jobId);
+    return open?.spans.get('run')?.span ?? open?.spans.get('pull_request')?.span ?? open?.root;
+  };
+
   const unsubscribe = o.subscribe(onEvent);
+  stepParents.add(stepParent);
   return {
     traceContext,
     stop: () => {
       unsubscribe();
+      stepParents.delete(stepParent);
       const now = Date.now();
       for (const [id, open] of [...jobs]) endJob(id, open, now);
       for (const open of ended.values()) for (const key of [...open.spans.keys()]) endSpan(open, key, now, 'job.dismissed');
