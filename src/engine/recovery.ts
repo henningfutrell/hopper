@@ -9,12 +9,13 @@
 // taken over the same way (`takeOver`), from the next tick of any hopper on the database.
 import type { Job, Question } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { cleanupDue } from './cleanup.ts';
 import type { Claim } from './decision-step.ts';
 import { recordLostMove } from './lost-move.ts';
 import { openItemOf } from './reviews.ts';
 
 export interface Recovered {
-  /** Jobs whose external work the caller must clean up, after the commit. */
+  /** Jobs whose external work the caller must clean up, after the commit. Each holds its cleanup's record (issue #1570). */
   toClean: string[];
   /** Running jobs whose executors the caller must reattach, after the commit. */
   reattach: Claim[];
@@ -85,7 +86,7 @@ async function decide(c: EngineContext, taken: readonly string[], why: RecoveryR
 }
 
 function failJob(c: EngineContext, job: Job, error: string): void {
-  c.store.jobs.update(job.id, { status: 'failed', error, finishedAt: nowIso(c), laneId: undefined, pendingAnswer: undefined });
+  c.store.jobs.update(job.id, { status: 'failed', error, finishedAt: nowIso(c), laneId: undefined, pendingAnswer: undefined, ...cleanupDue(c) });
   c.store.events.append({ type: 'job.failed', jobId: job.id, data: { error, ...priorityTagOf(c, job.id) } });
 }
 

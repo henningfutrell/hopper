@@ -3,7 +3,7 @@
 // change together. Both are compare-and-set: they act only on a job still waiting on that
 // question, and are a logged no-op otherwise.
 import type { Job, Question } from '../domain/types.ts';
-import type { Cleanup } from './cleanup.ts';
+import { cleanupDue, type Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordUnpark } from './park.ts';
 import { forksOnAnswered } from './phase-shifts.ts';
@@ -53,7 +53,7 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
     onExpired(q) {
       if (!waitingOn(q)) return;
       const error = 'question unanswered';
-      store.jobs.update(q.jobId, { status: 'failed', error, finishedAt: nowIso(c) });
+      store.jobs.update(q.jobId, { status: 'failed', error, finishedAt: nowIso(c), ...cleanupDue(c) });
       store.events.append({ type: 'job.failed', jobId: q.jobId, questionId: q.id, data: { error, ...priorityTagOf(c, q.jobId) } });
       // After the surrounding tx commits.
       setImmediate(() => void cleanup(q.jobId));
@@ -67,7 +67,7 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
     onDismissed(q) {
       const job = store.jobs.get(q.jobId);
       if ((job?.status !== 'waiting_answer' && job?.status !== 'parked') || job.questionId !== q.id) return;
-      store.jobs.update(q.jobId, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
+      store.jobs.update(q.jobId, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined, ...cleanupDue(c) });
       store.events.append({ type: 'job.cancelled', jobId: q.jobId, questionId: q.id, data: { reason: 'question dismissed' } });
       setImmediate(() => void cleanup(q.jobId));
     },

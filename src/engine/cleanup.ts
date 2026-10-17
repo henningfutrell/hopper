@@ -1,8 +1,10 @@
 // Releasing what a job holds outside the process (its herdr pane) and reaping what it left (issue #401).
 // Called after the transaction that recorded a terminal outcome, and by restart recovery. Never throws.
+// That transaction writes the cleanup's record (`cleanupDue`, issue #1570): a hopper that stops before the cleanup went
+// through does it from the record at its next start (`resume`), and records `job.cleaned_up` with `dueAt`.
 // A cleanup that could not reach the job's machine is deferred (issue #371): recorded on the job, tried
 // again on every tick until it goes through, and meanwhile a waiting job of the same item is held.
-import { keptScratchOf, keptWorkOf, machineRanOn, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
+import { keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
@@ -10,6 +12,8 @@ export type Cleanup = (jobId: string) => Promise<void>;
 
 export interface Cleanups {
   run: Cleanup;
+  /** Every cleanup a record says is due or deferred (a stop before it went through), done now; ends when each ended. */
+  resume(): Promise<void>;
   /** Try every deferred cleanup again that is not running now. */
   retry(): void;
   /** The ended jobs whose cleanup is running or deferred: the decider holds a waiting job of the same item. */
@@ -19,21 +23,27 @@ export interface Cleanups {
 }
 
 /** Statuses a job can end in with its cleanup due. */
-const ENDED = ['finished', 'failed', 'cancelled'] as const;
+const ENDED = TERMINAL_STATUSES;
+
+/** The cleanup's record, for the patch of the transaction that records the job's end (issue #1570). */
+export const cleanupDue = (c: Pick<EngineContext, 'clock'>): Pick<Job, 'cleanupDue'> => ({ cleanupDue: { at: nowIso(c) } });
 
 export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'keepPanes' | 'clock' | 'trigger' | 'stopping'>): Cleanups {
   const running = new Set<string>();
-  /** Deferred cleanups by job id: the job's item key, and why. Seeded from the store, so a restart keeps them. */
+  /** The jobs whose cleanup `resume` found due from a stop: said so once it goes through. */
+  const resumed = new Set<string>();
+  /** Deferred cleanups by job id: the job's item key, and why. Seeded from the store by `resume`, so a restart keeps them. */
   const deferred = new Map<string, { sourceKey?: string; error: string }>();
-  for (const job of c.keepPanes ? [] : c.store.jobs.list({ status: [...ENDED] })) {
-    if (job.cleanupDeferred) deferred.set(job.id, { sourceKey: job.source?.key, error: job.cleanupDeferred.error });
-  }
 
   const run: Cleanup = async (jobId) => {
     if (c.keepPanes || running.has(jobId)) return;
     const job = c.store.jobs.get(jobId);
     const executor = job ? c.executors.get(job.spec.executor) : undefined;
-    if (!job || !executor?.cleanup) return;
+    if (!job || !ENDED.includes(job.status)) return;
+    if (!executor?.cleanup) {
+      if (job.cleanupDue) c.store.jobs.update(jobId, { cleanupDue: undefined });
+      return;
+    }
     running.add(jobId);
     try {
       const reaped = await executor.cleanup(job);
@@ -52,10 +62,11 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
         // Work an earlier end kept, pushed by the job that went on with it (issue #1010): no longer kept.
         const before = reaped && reaped.kept.length === 0 ? keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0] : undefined;
         if (before) c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [keptScratchOf(before, job) ?? before.paths[0]!] } });
-        if (was) {
-          c.store.jobs.update(jobId, { cleanupDeferred: undefined });
-          c.store.events.append({ type: 'job.cleaned_up', jobId, data: { deferredAt: was.at } });
-        }
+        const now = c.store.jobs.get(jobId);
+        if (now?.cleanupDeferred || now?.cleanupDue) c.store.jobs.update(jobId, { cleanupDeferred: undefined, cleanupDue: undefined });
+        // Done after a stop of the hopper (issue #1570), or after it was deferred: said so.
+        const due = resumed.has(jobId) ? job.cleanupDue?.at : undefined;
+        if (was || due) c.store.events.append({ type: 'job.cleaned_up', jobId, data: { ...(was ? { deferredAt: was.at } : {}), ...(due ? { dueAt: due } : {}) } });
       });
     } catch (e) {
       if (c.stopping()) return;
@@ -72,6 +83,7 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
       }
     } finally {
       running.delete(jobId);
+      resumed.delete(jobId);
     }
     // A waiting job of the same item may be admitted now, or held with the new reason.
     c.trigger('cleanup');
@@ -79,6 +91,15 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
 
   return {
     run,
+    async resume() {
+      if (c.keepPanes) return;
+      const owed = c.store.jobs.list({ status: [...ENDED] }).filter((j) => j.cleanupDue || j.cleanupDeferred);
+      for (const job of owed) {
+        if (job.cleanupDeferred) deferred.set(job.id, { sourceKey: job.source?.key, error: job.cleanupDeferred.error });
+        else resumed.add(job.id);
+      }
+      await Promise.all(owed.map((j) => run(j.id)));
+    },
     retry() {
       for (const jobId of deferred.keys()) if (!running.has(jobId)) void run(jobId);
     },
@@ -100,7 +121,7 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
       if (running.has(jobId)) throw new EngineError('conflict', `job ${jobId}'s cleanup is being tried now: try again`);
       deferred.delete(jobId);
       const next = c.store.tx(() => {
-        const marked = c.store.jobs.update(jobId, { cleanupDeferred: undefined });
+        const marked = c.store.jobs.update(jobId, { cleanupDeferred: undefined, cleanupDue: undefined });
         c.store.events.append({ type: 'job.cleaned_up', jobId, data: { deferredAt: was.at, by: 'user' } });
         return marked;
       });

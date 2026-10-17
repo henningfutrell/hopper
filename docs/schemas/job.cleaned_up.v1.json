@@ -5,6 +5,9 @@
     "deferredAt": {
       "type": "string"
     },
+    "dueAt": {
+      "type": "string"
+    },
     "by": {
       "type": "string",
       "enum": [
@@ -12,8 +15,5 @@
       ]
     }
   },
-  "required": [
-    "deferredAt"
-  ],
   "additionalProperties": false
 }

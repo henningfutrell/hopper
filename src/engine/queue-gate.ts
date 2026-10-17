@@ -6,6 +6,7 @@ import { effectivePriority } from '../decider/assign.ts';
 import { DEFAULT_QUEUE_GATE } from '../domain/types.ts';
 import type { GateActor, Job, PreSort, QueueGate } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
+import { cleanupDue } from './cleanup.ts';
 import { EngineError } from './errors.ts';
 
 const HOUR_MS = 3_600_000;
@@ -123,7 +124,10 @@ export function createQueueGateCommands(c: EngineContext, cleanup: (jobId: strin
       const job = store.jobs.get(id);
       if (!job) throw new EngineError('not_found', `job ${id} not found`);
       if (!isWaiting(job)) throw new EngineError('conflict', `job ${id} is ${job.status}: only a waiting job can be rejected`);
-      const next = store.tx(() => rejectJob(c, job, 'user', reason?.trim() || USER_REJECTED));
+      const next = store.tx(() => {
+        const rejected = rejectJob(c, job, 'user', reason?.trim() || USER_REJECTED);
+        return job.resumeOn !== undefined ? store.jobs.update(id, cleanupDue(c)) : rejected;
+      });
       // A waiting job resuming with an answer holds a pane.
       if (job.resumeOn !== undefined) cleanup(id);
       return next;

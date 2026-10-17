@@ -70,6 +70,7 @@
         "job.containers_removed",
         "job.cleanup_deferred",
         "job.cleaned_up",
+        "job.pod_removed",
         "job.parked",
         "job.unparked",
         "job.continued",
