@@ -1,6 +1,6 @@
 // The UI session's routes that are the hopper's admin's alone (issue #240), behind the `instance` guard: self-update
 // (issue #44), the master key (issue #659), the shared GitHub rate limiter's settings (issue #436, ./github-rate-limiter.ts)
-// remote access (issue #880, ./remote-access.ts), the GitHub webhook (issue #1079, ./github-deliveries.ts), the host link base (issue #712, ./host-link.ts), the allowed hosts (issue #1024, ./allowed-hosts.ts) the source email match (issue #1380, ./source-email-match.ts) and the cloud link (issue #467, ./cloud-link.ts).
+// remote access (issue #880, ./remote-access.ts), the GitHub webhook (issue #1079, ./github-deliveries.ts), the host link base (issue #712, ./host-link.ts), the allowed hosts (issue #1024, ./allowed-hosts.ts) the source email match (issue #1380, ./source-email-match.ts), the cloud link (issue #467, ./cloud-link.ts) and the instance's display name (issue #465, ./display-name.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Updater } from '../../domain/ports.ts';
@@ -18,6 +18,8 @@ import { registerSourceEmailMatchRoutes } from './source-email-match.ts';
 import type { SourceEmailMatch } from '../source-email-match.ts';
 import { registerCloudLinkRoutes } from './cloud-link.ts';
 import type { CloudLink } from '../cloud-link.ts';
+import { registerDisplayNameRoutes } from './display-name.ts';
+import type { DisplayName } from '../display-name.ts';
 import type { RateLimiterControl } from '../../github-limiter/settings.ts';
 import type { InstanceAdmin } from '../instance-admin.ts';
 import type { RemoteAccess } from '../remote-access.ts';
@@ -37,7 +39,7 @@ export const updateBody = z.discriminatedUnion('action', [
  */
 export const masterKeyBody = z.strictObject({ action: z.enum(['reveal', 'saved', 'rotate']), hostSeals: z.boolean().optional() });
 
-export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; githubDeliveries: GitHubDeliveries; allowedHosts: AllowedHosts; sourceEmailMatch: SourceEmailMatch; cloudLink: CloudLink; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; wsl: boolean; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
+export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; githubDeliveries: GitHubDeliveries; allowedHosts: AllowedHosts; sourceEmailMatch: SourceEmailMatch; cloudLink: CloudLink; displayName: DisplayName; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; wsl: boolean; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
   registerRateLimiterRoutes(app, o);
   registerHostLinkRoutes(app, o);
   registerRemoteAccessRoutes(app, o);
@@ -45,6 +47,7 @@ export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guar
   registerAllowedHostsRoutes(app, o);
   registerSourceEmailMatchRoutes(app, o);
   registerCloudLinkRoutes(app, o);
+  registerDisplayNameRoutes(app, o);
   // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
   // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.
   app.post('/ui/api/update', o.instance, async (req) => {

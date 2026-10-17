@@ -1,0 +1,49 @@
+# The report of a real-cloud acceptance run (issue #866, docs/cloud-acceptance.md). `node scripts/cloud-acceptance.ts
+# collect` reads the `json hopper-cloud-acceptance` block in the report.
+name: Cloud acceptance report
+description: The result of a cloud acceptance run (scripts/cloud-acceptance.ts) in your own environment.
+title: "Cloud acceptance report"
+labels: ["cloud-acceptance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The runbook is docs/cloud-acceptance.md. Read report.md before you paste it: it is masked, but remove anything else you do not want to share.
+  - type: input
+    id: version
+    attributes:
+      label: Hopper version
+      description: The version the hopper shows on its Dashboard.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install
+      options:
+        - compose
+        - host (systemd user services)
+        - Kubernetes (Helm chart)
+    validations:
+      required: true
+  - type: dropdown
+    id: place
+    attributes:
+      label: Where the check ran
+      options:
+        - beside the hopper
+        - on a client machine
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: report.md
+      description: All of report.md, with the json block at its end.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything else, for example a credential with more than read access, or a step you could not run.
