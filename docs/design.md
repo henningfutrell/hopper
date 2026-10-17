@@ -23937,9 +23937,50 @@ UI: Settings → hopper.io.
 
 **No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
 link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
-hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
-keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
+hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its key is
+a secret the hopper owns, so it is a system secret ("The vault's system scope"), named by the link record: built in part 2
+("The cloud link key").
 Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+
+## The cloud link key (issue #467, part 2, 2026-10-17)
+
+Issue #467 asks that a link write the link keys with the link record, and nothing else. Part 1 wrote no key: it said the
+key's format depends on hopper.io's protocol. `docs/hopper-io-security.md` R4 fixes the format already: one X25519 key per
+instance, minted on the instance, kept as a system secret of the instance's vault, only its public half at hopper.io, and
+rotated or revoked from either side. So this part mints it. The transport (issue #469 decision 4) and the agent that uses
+the key (issue #464) are not decided or built here.
+
+**The key** (`src/http/cloud-link.ts`, `src/domain/cloud-link.ts`): a link mints one X25519 key (Node's crypto). Its private
+half is the system secret `cloud-link.key` (`CLOUD_LINK_KEY`) in the instance's vault, kept through `SystemSecrets.keep`
+and sealed under the master key; its value is the key as a JWK with `d` first, so the last 4 characters the vault keeps of
+each secret are none of the private half. The link record names it: `linkKey: { secret, publicKey, createdAt }`, with
+`publicKey` the 32-byte public half as base64url. `GET /api/cloud-link` shows `linkKey`; no route answers the private half.
+With no master key, a link is 503 and writes nothing: none is kept in clear.
+
+**Rotate and unlink.** `POST /ui/api/cloud-link/rotate-key` `{}` (the instance admin; no box action) mints a new key in place
+of the one before, at once, and puts its public half in the record; 409 while not linked. An unlink drops the secret with
+the record. Each is a vault event with no value: `vault.secret_set` (with `rotated` for a rotation), `vault.secret_removed`.
+Neither restarts the daemon or touches a job or a lane. An unregistration at hopper.io keeps the key. UI: Settings →
+hopper.io shows the public half and Rotate key; Settings → Vault lists the private half as the whole hopper's.
+
+**Decisions:**
+- **The key comes now, before the agent.** Part 1 chose "no link keys until the agent". The threat model fixes the key's
+  format, so it does not wait on the protocol. A link writes the record, the code and this one vault row; the fixture test
+  (`test/http/cloud-link-fixture.test.ts`) allows those and no other change.
+- **A rotation replaces the key at once.** R4 revokes the old key after the new one connects; there is no connection yet,
+  so nothing can connect with the old one. The agent (issue #464) adds the overlap when it connects.
+- **No migration.** A link from part 1 has no `linkKey`: the field is optional, the build before reads the record as it
+  did, and Rotate key mints one.
+- **No new event type.** The vault's own events record the mint, the rotation and the drop (R6).
+
+**Left (issue #467, waiting on issue #464):** the outbound link agent and hopper.io's confirmation from `pending`; the test
+that an install that never links makes no connection, with the agent; the test that a link during a running job does not
+end it, with the agent running.
+
+**Verification:** `test/http/cloud-link-key.test.ts` (the real instance store): a link mints an X25519 key, the record holds
+its public half, the secret its private half; a rotation replaces it, not linked is 409; an unlink drops it; no master key,
+a link writes nothing; an unregistration keeps it; a part-1 record has none until a rotation. `test/integration/cloud-link.test.ts`:
+a rotation during a running job ends no job; 409, 400 and 403.
 
 ## The instance's display name (issue #465, part 1, 2026-10-17)
 
