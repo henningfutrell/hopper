@@ -4,7 +4,9 @@
 // parent's level, and never `owner`. A job starts only with a stamp that verifies, at the dispatch minimum or above.
 // A person can quarantine a job (part 2): its level is `quarantined` until a person lifts it, and its proxy token opens
 // no door meanwhile, as for a job whose stamp does not verify. Jev's trust check (part 4, ./trust-check.ts) can lower a
-// level the rules gave, never raise it; a person approves the trust of a job it lowered. Pure: the key is passed in.
+// level the rules gave, never raise it; a person approves the trust of a job it lowered. A person's deny at gate 2 (part
+// 5: a declined sandbox request) lowers the level one step, and the second deny in the job quarantines it. Pure: the key
+// is passed in.
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import type { Job } from './types.ts';
 import { brakeWhere, type Brake } from './intake-strictness.ts';
@@ -47,6 +49,11 @@ export const QUARANTINED_HOLD = 'quarantined by a person: held — a person lift
 export const CHECK_PENDING = 'Jev checks its trust: held — it starts when the check keeps its level; a person can cancel it';
 /** The reason id a quarantine adds to the stamp's reasons; its lift takes it away. */
 const QUARANTINED = 'quarantined';
+/** The reason id a person's deny at gate 2 adds to the stamp's reasons (part 5): a declined sandbox request. It stays. */
+export const DENY_REASON = 'deny:sandbox';
+/** The deny that quarantines a job: the second in the job. */
+const DENIES_TO_QUARANTINE = 2;
+const DENY_TEXT = 'a person declined its sandbox request';
 
 /** The user's stamp key: HKDF of the hopper's link key for that user (issue #308), as the job proxy token's (issue #563). */
 export const stampKeyOf = (linkPrivateKey: string, userId: string): Buffer =>
@@ -111,6 +118,9 @@ export function verifiedLevel(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp
   return want.length === got.length && timingSafeEqual(want, got) ? s.level : undefined;
 }
 
+/** The last reason id that lowered a level: a deny's or a check's; undefined: none. */
+const lastLowered = (reasons: readonly string[]): string | undefined => reasons.filter((r) => r === DENY_REASON || r.startsWith('jev:')).at(-1);
+
 /**
  * Why a job's stamp holds it: none, one that does not verify, or a level below the level `brake` needs (the dispatch
  * minimum with none); undefined: it may start. Below `approved` a person's approval is the way out; at `approved` or
@@ -124,7 +134,8 @@ export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, 
   const min = brake?.min ?? DISPATCH_MIN;
   if (atLeast(level, min)) return undefined;
   const checked = checkReasonOf(job.stamp.reasons);
-  if (checked && !atLeast(level, DISPATCH_MIN)) return `trust stamp ${level} is below ${min} (Jev's trust check: ${checkReasonText(checked)}): held — a person approves its trust on the job, or cancels it`;
+  const why = lastLowered(job.stamp.reasons) === DENY_REASON ? DENY_TEXT : checked ? `Jev's trust check: ${checkReasonText(checked)}` : undefined;
+  if (why && !atLeast(level, DISPATCH_MIN)) return `trust stamp ${level} is below ${min} (${why}): held — a person approves its trust on the job, or cancels it`;
   if (!atLeast(level, DISPATCH_MIN) || !brake) return `trust stamp ${level} is below ${min}: held — a person approves its item in Intake, or cancels it`;
   return `trust stamp ${level} is below ${min} (intake strictness ${brake.strictness} ${brakeWhere(brake)}): held — an admin changes the intake strictness in Settings → Intake, or a person cancels it`;
 }
@@ -173,10 +184,30 @@ export function checkedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'
   return signStamp(key, job, { level: c.level, reasons: [...job.stamp.reasons, ...(c.reason ? [c.reason] : [])], by: 'jev', at, check: c.check });
 }
 
-/** Whether a person may approve the job's trust: Jev's check lowered it below the dispatch minimum, and its stamp verifies. */
+/**
+ * Whether a person may approve the job's trust: Jev's check or a person's deny lowered it below the dispatch minimum, and
+ * its stamp verifies.
+ */
 export function trustApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
   const level = verifiedLevel(key, job);
-  return level !== undefined && level !== 'quarantined' && !atLeast(level, DISPATCH_MIN) && checkReasonOf(job.stamp?.reasons ?? []) !== undefined;
+  return level !== undefined && level !== 'quarantined' && !atLeast(level, DISPATCH_MIN) && lastLowered(job.stamp?.reasons ?? []) !== undefined;
+}
+
+/**
+ * The stamp after a person's deny at gate 2 (part 5), at `at`: one level lower, with the deny's reason; the second deny
+ * in the job, or a deny of a job at `untrusted`, quarantines it, its level before kept as `was`. Undefined: the job is
+ * quarantined already, or its stamp does not verify. Denies stay on the stamp: a lift or a person's approval keeps them.
+ */
+export function deniedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, at: string): TrustStamp | undefined {
+  const level = verifiedLevel(key, job);
+  if (level === undefined || level === 'quarantined' || !job.stamp) return undefined;
+  const reasons = [...job.stamp.reasons, DENY_REASON];
+  const check = job.stamp.check ? { check: job.stamp.check } : {};
+  const lower = TRUST_LEVELS[rank(level) - 1]!;
+  if (lower === 'quarantined' || reasons.filter((r) => r === DENY_REASON).length >= DENIES_TO_QUARANTINE) {
+    return signStamp(key, job, { level: 'quarantined', reasons: [...reasons, QUARANTINED], by: 'person', at, was: level, ...check });
+  }
+  return signStamp(key, job, { level: lower, reasons, by: 'person', at, ...check });
 }
 
 /** The job's trust approved by a person, at `at`: `approved`, never more; Jev's check stays on the stamp, so it is not asked again. */
