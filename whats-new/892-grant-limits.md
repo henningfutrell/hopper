@@ -1,0 +1,1 @@
+- You can now limit an agent's access to some repositories or job sources. Then it can change only the work of those, and the access list shows the limits.

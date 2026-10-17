@@ -1,5 +1,8 @@
 // Signing in (design.md "Sign-in: realms", issues #39, #53, #185): who a UI session belongs to,
 // and what its role lets it do. The same for every realm.
+import type { GrantLimits } from './grant-limits.ts';
+
+export type { GrantLimits };
 
 /** What a UI session may do. Each role includes the ones before it. */
 export type UiRole = 'viewer' | 'operator' | 'admin';
@@ -60,6 +63,8 @@ export interface ApiGrantView {
   delegate?: { deny: string[] };
   /** A bound grant's (issue #892, "Sender binding"): the thumbprint of the key its agent proves it holds at each use. */
   jkt?: string;
+  /** A limited grant's (issue #892, "Grant limits"): the repositories and job sources its tokens act on. Absent: no limits. */
+  limits?: GrantLimits;
 }
 /**
  * A new API token for a grant, and the grant's next refresh token: both answered once (issue #881). `tokenType` `DPoP`: the
@@ -80,6 +85,8 @@ export interface DeviceGrantAsk {
   label: string; holder?: string; role?: UiRole; scopes?: string[]; preset?: string; box?: boolean; days?: number | null; minutes?: number; deny?: string[];
   /** The key the grant is bound to (issue #892, "Sender binding"): the thumbprint of a DPoP proof's key. */
   jkt?: string;
+  /** What the grant's tokens may act on (issue #892, "Grant limits"). */
+  limits?: GrantLimits;
 }
 /** A device grant request just made (issue #892): the agent shows `userCode` and where to enter it, and polls with `deviceCode`. */
 export interface DeviceGrantStarted { deviceCode: string; userCode: string; verificationPath: string; verificationPathComplete: string; expiresAt: string; interval: number }

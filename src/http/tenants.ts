@@ -33,6 +33,7 @@ import { HttpError } from './errors.ts';
 import { atApiDoor, requestSession } from './host-guard.ts';
 import { apiTokenIn } from './ui/guard.ts';
 import { accessIdOf, grantActionRefusal, grantScopeRefusal, senderRefusal } from './ui/api-tokens.ts';
+import { grantLimitRefusal } from './ui/grant-limits.ts';
 import type { DpopProofs } from './ui/dpop.ts';
 import type { ApiGrants } from './ui/api-grants.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
@@ -210,19 +211,20 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
     const all = o.tenants.list();
     if (all.length === 1) users.set(req, all[0]!.id);
   });
-  // A grant's mutation that names one of its route's actions (issue #909): once the body is read, the grant's scopes
-  // must cover that action, or the whole route. The door let the grant through on a part of the route's actions.
+  // Once the body is read, a grant's mutation: one that names one of its route's actions (issue #909) needs the grant's
+  // scopes to cover that action, or the whole route (the door let the grant through on a part of the route's actions);
+  // a limited grant's (issue #892, "Grant limits") must act only on the repositories and job sources it names.
   app.addHook('preHandler', async (req, reply) => {
     if (req.method !== 'POST' || kinds.get(req) !== 'api') return;
-    const route = req.routeOptions.url;
-    const field = route === undefined ? undefined : o.actionField(route);
-    if (field === undefined) return;
     const session = requestSession(req, o.sessions);
     if (!session) return;
-    const outOfScope = grantActionRefusal(o.grants, session, req.method, route, (req.body as Record<string, unknown> | undefined)?.[field]);
-    if (outOfScope === undefined) return;
-    console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
-    return reply.code(403).send({ error: `the API token may not do this: ${outOfScope}` });
+    const route = req.routeOptions.url;
+    const field = route === undefined ? undefined : o.actionField(route);
+    const refusal = (field === undefined ? undefined : grantActionRefusal(o.grants, session, req.method, route, (req.body as Record<string, unknown> | undefined)?.[field]))
+      ?? grantLimitRefusal(o.grants, session, req, route, o.tenants.user(session.userId)?.store);
+    if (refusal === undefined) return;
+    console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${refusal}`);
+    return reply.code(403).send({ error: `the API token may not do this: ${refusal}` });
   });
 }
 

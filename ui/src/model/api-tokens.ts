@@ -2,7 +2,7 @@
 // person may mint one with, and the scopes a person ticks (issue #909): every scope of the registry is a box, a preset
 // ticks its boxes, and a wildcard a preset holds (`*:read`, `*`) stays one until a box it ticks is cleared. The tokens
 // themselves are shown once, right after the mint; the list never holds them.
-import type { ApiGrantView, ApiTokenView, DeviceGrantView, ScopePermission, ScopeRegistry, UiRole } from './wire.ts';
+import type { ApiGrantView, ApiTokenView, DeviceGrantView, GrantLimits, ScopePermission, ScopeRegistry, UiRole } from './wire.ts';
 
 const ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 
@@ -16,12 +16,25 @@ export const mintableRoles = (role: UiRole | undefined): UiRole[] => (role ? ROL
 export const apiTokenLine = (t: ApiTokenView): string =>
   `${t.role}${t.box ? ' · box token' : ''} · ends ${when(t.expiresAt)}${t.lastUsedAt === t.startedAt ? ' · not used yet' : ` · last used ${when(t.lastUsedAt)}`}`;
 
+/** What a grant's limits say (issue #892, "Grant limits"), as parts of a line: none when it has none. */
+export const limitsParts = (l: GrantLimits | undefined): string[] => [
+  ...(l?.repos?.length ? [`only ${l.repos.join(', ')}`] : []), ...(l?.sources?.length ? [`only the job sources ${l.sources.join(', ')}`] : []),
+];
+
+/** The limits a person typed (issue #892): repositories and job sources, each list by commas or spaces; none when both are empty. */
+export function typedLimits(repos: string, sources: string): GrantLimits | undefined {
+  const list = (s: string): string[] => s.split(/[\s,]+/).filter(Boolean);
+  const r = list(repos);
+  const src = list(sources);
+  return r.length || src.length ? { ...(r.length ? { repos: r } : {}), ...(src.length ? { sources: src } : {}) } : undefined;
+}
+
 /**
- * A grant's line (issue #881): its role, box flag, whether it is bound to its agent's key (issue #892), when it was made,
- * when it was last used and from where, and when it ends.
+ * A grant's line (issue #881): its role, box flag, whether it is bound to its agent's key (issue #892), its limits (issue
+ * #892), when it was made, when it was last used and from where, and when it ends.
  */
 export const grantLine = (g: ApiGrantView): string => [
-  g.role, ...(g.box ? ['box'] : []), ...(g.jkt ? ['bound to its agent\'s key'] : []), `made ${when(g.createdAt)}`,
+  g.role, ...(g.box ? ['box'] : []), ...(g.jkt ? ['bound to its agent\'s key'] : []), ...limitsParts(g.limits), `made ${when(g.createdAt)}`,
   g.lastUsedAt === undefined ? 'not used yet' : `last used ${when(g.lastUsedAt)}${g.lastUsedFrom ? ` from ${g.lastUsedFrom}` : ''}`,
   g.endsAt === null ? 'no fixed end' : `ends ${when(g.endsAt)}`,
 ].join(' · ');
@@ -72,13 +85,13 @@ export const deviceCodeOfHash = (hash: string): string => decodeURIComponent(has
 
 /**
  * What a device grant request asks for (issue #892), in one line: its role (`as`, the person's, when it names none), box,
- * preset, scopes, how long it lives, who asked and when the request ends. Box: named, or its preset's.
+ * preset, scopes, limits, how long it lives, who asked and when the request ends. Box: named, or its preset's.
  */
 export function deviceAskLine(v: DeviceGrantView, as: UiRole | undefined, registry?: ScopeRegistry): string {
   const box = v.ask.box ?? registry?.presets.find((p) => p.id === v.ask.preset)?.box ?? false;
   return [
     v.ask.role ?? `${as ?? 'your role'} (your role)`, ...(box ? ['box'] : []), ...(v.ask.jkt ? ['bound to the asking agent\'s key'] : []), ...(v.ask.preset ? [`preset ${v.ask.preset}`] : []),
-    ...(v.ask.scopes?.length ? [`scopes ${v.ask.scopes.join(' ')}`] : []),
+    ...(v.ask.scopes?.length ? [`scopes ${v.ask.scopes.join(' ')}`] : []), ...limitsParts(v.ask.limits),
     v.ask.days === null ? 'no fixed end' : `lives ${v.ask.days ?? 90} days at most`, `asked from ${v.from}`, `request ends ${when(v.expiresAt)}`,
   ].join(' · ');
 }
