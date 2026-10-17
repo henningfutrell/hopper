@@ -3,6 +3,7 @@
 // and open the pull request, once, with no person. The failures setting `auto.push` (default on) turns it off. Real
 // daemon, real database; the fake herdr and its machine at their seams.
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Executor } from '../../src/domain/ports.ts';
 import type { FailuresView, FailureSettings } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -22,10 +23,10 @@ const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { po
 const herdrItem = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 const KEPT = '/tmp/.worktrees/@scratch/kept/repo';
 
-async function boot(herdr: FakeHerdrClient): Promise<TestApp> {
+async function boot(herdr: FakeHerdrClient, executors: Executor[] = []): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const a = await startTestApp({ dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines: lanes(1) }, seams: { herdr, levels: [] } });
+  const a = await startTestApp({ dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines: lanes(1) }, seams: { herdr, levels: [], executors } });
   apps.push(a);
   return a;
 }
@@ -102,5 +103,39 @@ describe('Push it by itself (issue #1472)', () => {
     await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id), { what: 'its work kept' });
     await new Promise((r) => setTimeout(r, 500));
     expect((await continuedOf(a, job.id)).filter((e) => (e.data as { keptWork?: true }).keptWork)).toEqual([]);
+  });
+
+  // As a print-mode agent's (issue #1472 part 2): no pane to park, its work tree in its state; Push it starts a fresh turn there.
+  const printLike = (name: string, reopensKept: boolean) => {
+    const resumed: string[] = [];
+    let reaps = 0;
+    const executor: Executor = {
+      name, idempotent: false, validate: () => null, ...(reopensKept ? { reopensKept: true as const } : {}),
+      async run(ctx) { ctx.saveState({ cwd: '/tmp' }); return { kind: 'finished', result: {} }; },
+      async resume(_ctx, answer) { resumed.push(answer); return { kind: 'finished', result: {} }; },
+      async cleanup() { reaps += 1; return { kept: reaps === 1 ? [KEPT] : [] }; },
+    };
+    return { executor, resumed };
+  };
+
+  it('a finished job of an executor that cannot park, but reopens its kept work tree, goes on there in a fresh turn', { timeout: 30_000 }, async () => {
+    const p = printLike('print-like', true);
+    const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }), [p.executor]);
+    const job = await a.pull({}, { executor: 'print-like', prompt: 'Paint the shed' });
+    await waitFor(() => p.resumed.length === 1, { what: 'the push brief sent by itself' });
+    expect(p.resumed[0]).toContain('was not pushed');
+    expect(p.resumed[0]).toContain('fresh session');
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(await continuedOf(a, job.id)).toEqual([expect.objectContaining({ data: { keptWork: true, auto: true } })]);
+  });
+
+  it('an executor that neither parks nor reopens: Push it is refused, and says why', { timeout: 30_000 }, async () => {
+    const p = printLike('plain', false);
+    const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }), [p.executor]);
+    const job = await a.pull({}, { executor: 'plain', prompt: 'Paint the shed' });
+    await a.waitForStatus(job.id, 'finished', 8000);
+    const kept = await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id), { what: 'its work kept' });
+    expect(kept.actions.push).toEqual({ ok: false, why: expect.stringContaining('its work tree cannot reopen') });
+    expect(p.resumed).toEqual([]);
   });
 });
