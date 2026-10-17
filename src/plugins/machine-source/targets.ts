@@ -3,12 +3,12 @@
 import type { AttachedMachine, InstanceSpec } from '../../domain/types.ts';
 import { parseOptions } from '../options.ts';
 import client, { clientMachine, type ClientOptions } from './client/index.ts';
-import docker, { containerMachine, type DockerOptions } from './docker/index.ts';
+import container, { containerMachine, type ContainerOptions } from './container/index.ts';
 import ssh, { sshMachine, type SshOptions } from './ssh/index.ts';
 
 const MAKE = {
   ssh: { def: ssh, make: (name: string, o: Record<string, unknown>) => sshMachine(name, o as unknown as SshOptions) },
-  docker: { def: docker, make: (name: string, o: Record<string, unknown>) => containerMachine(name, o as unknown as DockerOptions) },
+  container: { def: container, make: (name: string, o: Record<string, unknown>) => containerMachine(name, o as unknown as ContainerOptions) },
   client: { def: client, make: (name: string, o: Record<string, unknown>) => clientMachine(name, o as unknown as ClientOptions) },
 } as const;
 

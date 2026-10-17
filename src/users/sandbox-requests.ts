@@ -19,6 +19,8 @@ import type { NeedStepRepository } from '../domain/need-steps.ts';
  */
 export interface SandboxLauncher {
   needStep: Sandboxes['needStep'];
+  /** Why no step can run for the user now; a container target is offline while it is so (issue #865). */
+  stepProblem: Sandboxes['stepProblem'];
   steps: NeedStepRepository;
   ran(step: string): boolean;
   sagas: { begin(step: string, userId: string): string; abort(saga: string, reason: string): boolean };

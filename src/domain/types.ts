@@ -321,8 +321,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
   executors: string[];
   /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
   ssh?: string;
-  /** A container target: the container its executors reach it in, through `docker exec`. */
-  docker?: string;
+  /** A container target (issue #865): the image each of its commands runs in, a one-shot sandbox box of its own. */
+  containerImage?: string;
   /** Its work tree (issues #324, #361): every job's there but one a routing rule pinned here with a path; `~` resolves on it. Absent: the jobs directory. */
   workTree?: string;
   /** A work tree per repository (issue #691), keyed `owner/name`, matched in any case: a job from one of them works there, not in `workTree`. */

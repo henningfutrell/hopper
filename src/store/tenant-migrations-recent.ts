@@ -28,6 +28,7 @@ import { EVENT_CURSOR_TABLE } from './event-cursors.ts';
 import { WAIT_CHECK_LEASE_TABLE } from './wait-check-leases.ts';
 import { PROMOTION_SEND_TABLE } from './promotions.ts';
 import { noQuestionOnOwnWait } from './migration-own-wait-question.ts';
+import { containerTargets } from './migration-container-target.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -126,4 +127,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 79: No question on a job's own wait (issue #1780): each job on its own wait loses the `questionId` of a question it asked
   // before. Rows only: the build before reads it only for a job waiting on its answer or parked.
   noQuestionOnOwnWait,
+  // 80: A container target on the sandbox module (issue #865 part C): each `docker` machine becomes a `container` machine of
+  // the same name, and `dockerBin` leaves the command executors and claude-plan sources. Config rows only: the build before
+  // lists no such machine, and its jobs wait.
+  (db) => { containerTargets(db); },
 ];

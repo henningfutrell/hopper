@@ -1,5 +1,5 @@
 // The Machines view's model (design.md "Machines from the UI", issues #18, #74): which machine is
-// this one (connection `local`) and which an attached one (connection `ssh`, `docker` or `client`), why an Add
+// this one (connection `local`) and which an attached one (connection `ssh`, `container` or `client`), why an Add
 // form may not be sent yet, the body POST /ui/api/machines takes, and the options edit an Edit form
 // sends to POST /ui/api/plugins — its name and every detail of how it is reached too (issue #205). An
 // Add body over ssh never carries session; its ssh target is a detected one or a typed plain
@@ -14,7 +14,7 @@ import type { ConfiguredMachine, MachineDefaultsEdit, MachineEdit, MachineSnapsh
 const DEFAULT_LANES = 4;
 
 /** The connections of an attached machine, and the executors each runs when the machine names none. */
-const ATTACHED: Record<string, string[]> = { ssh: ['herdr-claude'], docker: ['command'], client: ['herdr-claude'] };
+const ATTACHED: Record<string, string[]> = { ssh: ['herdr-claude'], container: ['command'], client: ['herdr-claude'] };
 
 export type MachineKind =
   | { kind: 'local'; machine: ConfiguredMachine; lanes: number }
@@ -54,7 +54,7 @@ export const DETAILS: Record<string, DetailField[]> = {
     { key: 'hostKey', label: 'host key', hint: '<type> <base64>, the only key accepted from it; empty: not connected. Another ssh target has its own', required: false },
     WORK_TREE,
   ],
-  docker: [{ key: 'docker', label: 'container', hint: 'its name or id; commands run in it through docker exec', required: true }],
+  container: [{ key: 'image', label: 'image', hint: 'each command runs in a new sandbox box of this image, with no network; empty: the hopper\'s box image', required: false }],
   // A client target dials in with its machine key (issue #308): nothing of how it is reached to type.
   client: [WORK_TREE],
 };
@@ -64,7 +64,7 @@ const pathLike = (s: string): boolean => s.startsWith('/') || s === '~' || s.sta
 
 /** The work tree the Machines view shows (issue #361): the machine's, else the jobs directory; null for a container target, which has none. */
 export function workTreeText(m: MachineSnapshot): string | null {
-  if (m.docker) return null;
+  if (m.containerImage) return null;
   return m.workTree ?? `${JOBS_DIR} (the jobs directory)`;
 }
 

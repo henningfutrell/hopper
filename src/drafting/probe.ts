@@ -76,7 +76,6 @@ export async function probeOn(host: DraftHost, choice: ProbeChoice, signal: Abor
     mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
     return commandOn(m!, argv, {
       ...(host.sshBin ? { sshBin: host.sshBin } : {}), sshControlDir, sshAuth: host.sshAuth ?? (() => hopperSshAuth({ env: host.env, dataDir: host.dataDir })),
-      dockerHost: () => { throw new Error('no docker'); },
     });
   };
   // A call stopped by its timeout or a cancel is reaped on the machine (issue #472), as a draft run is. The lines
