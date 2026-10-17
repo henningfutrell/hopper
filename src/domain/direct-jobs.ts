@@ -16,8 +16,10 @@ export const directKey = (id: string): string => `${DIRECT_SOURCE}:${id}`;
 /**
  * How the `direct` source follows a direct job's own pull request (issue #1068): with the GitHub connection of the user
  * whose direct job it is — the one its job opened the pull request with through the hopper. Absent: nothing is followed.
+ * The ends of the pull requests and items its jobs' waits name are read with it too (issue #1721): no other source lists a
+ * direct job, so the sync asks the direct source.
  */
-export type DirectPullRequests = Required<Pick<FollowsPullRequests, 'follow' | 'mergesOnReady' | 'tendStarted' | 'checkLogs'>>;
+export type DirectPullRequests = Required<Pick<FollowsPullRequests, 'follow' | 'mergesOnReady' | 'tendStarted' | 'checkLogs' | 'endedPullRequests' | 'endedWatched'>>;
 
 /**
  * The pull request a direct job opened on its repository `repo` through the hopper's GitHub proxy (issue #1068): the
