@@ -1,0 +1,188 @@
+// Issue #1694: the wait checks, against the real database. Each hopper here is a store of its own on the same user schema and
+// a sweeper of its own, with its own lease owner, as two hoppers (or a hopper after a restart) are.
+import { randomUUID } from 'node:crypto';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { ExecutorRegistry, UserStore } from '../../src/domain/ports.ts';
+import type { Job, JobWait } from '../../src/domain/types.ts';
+import type { WatchedEnd, WatchedRef } from '../../src/domain/watched-items.ts';
+import { DEADLINE_MS, FIRST_CHECK_MS } from '../../src/domain/wait-checks.ts';
+import { createWaitChecks, LEASE_MS, type WaitReads } from '../../src/engine/wait-checks.ts';
+import { openUserStore } from '../../src/store/user-store.ts';
+import { testDatabaseUrl } from '../support/database.ts';
+
+const T0 = Date.parse('2026-10-17T10:00:00.000Z');
+let now = T0;
+const clock = { now: () => new Date(now) };
+const opened: UserStore[] = [];
+const noExecutors = { get: () => undefined, names: () => [] } as unknown as ExecutorRegistry;
+
+afterEach(() => {
+  for (const s of opened.splice(0)) s.close();
+  now = T0;
+});
+
+function hopper(url: string, reads: WaitReads, owner = randomUUID()) {
+  const store = openUserStore({ url, clock, idGen: randomUUID });
+  opened.push(store);
+  const triggers: string[] = [];
+  const checks = createWaitChecks({ store, clock, executors: noExecutors, stopping: () => false, trigger: (r) => triggers.push(r), ownCommandGraceMs: 300_000, waitReads: reads }, { owner });
+  return { store, checks, triggers };
+}
+
+/** Reads that answer what `ended` holds now, counted; `gate`: each read waits for it first. */
+function reads(o: { ended?: WatchedEnd[]; gate?: Promise<void> } = {}) {
+  const asked: WatchedRef[][] = [];
+  const r = {
+    asked, ended: o.ended ?? [],
+    async endedWatched(_job: Job, refs: WatchedRef[]) { asked.push(refs); await o.gate; return r.ended; },
+  };
+  return r;
+}
+
+const ISSUE = { kind: 'issue' as const, repo: 'octo/tools', number: 9 };
+const CLOSED: WatchedEnd = { ref: ISSUE, url: 'https://github.com/octo/tools/issues/9', state: 'closed' };
+
+function waitingJob(store: UserStore, wait: Partial<JobWait> = {}): Job {
+  const job = store.jobs.create({ executor: 'x', payload: {} }, 50, { source: 's', kind: 'github', key: 'https://github.com/octo/tools/issues/7', repo: 'octo/tools', number: 7 });
+  return store.jobs.update(job.id, { status: 'waiting_on', wait: { for: 'issue 9 to close', since: new Date(now).toISOString(), on: { kind: 'item', number: 9 }, ...wait } });
+}
+
+const ended = (s: UserStore, id: string) => s.events.recent(50, ['job.wait_ended'], id);
+
+describe('a wait check (issue #1694)', () => {
+  it('is kept with the wait: its condition and next check; a restarted hopper goes on from it and ends the wait once met', async () => {
+    const url = testDatabaseUrl();
+    const r1 = reads();
+    const a = hopper(url, r1);
+    const job = waitingJob(a.store);
+
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({
+      condition: { kind: 'items_ended', refs: [ISSUE] }, attempts: 0, nextCheckAt: new Date(T0 + FIRST_CHECK_MS).toISOString(),
+    });
+    expect(r1.asked).toEqual([]);
+
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    const after = a.store.jobs.get(job.id)!;
+    expect(after.status).toBe('waiting_on');
+    expect(after.wait!.check).toMatchObject({ attempts: 1, result: 'not ended yet: octo/tools#9', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString() });
+
+    // The hopper stops; another starts on the same database.
+    const r2 = reads({ ended: [CLOSED] });
+    const b = hopper(url, r2);
+    now += FIRST_CHECK_MS;
+    await b.checks.run();
+
+    const woken = b.store.jobs.get(job.id)!;
+    expect(woken.status).toBe('queued');
+    expect(woken.wait).toBeUndefined();
+    expect(woken.pendingAnswer).toContain('https://github.com/octo/tools/issues/9 was closed');
+    expect(ended(b.store, job.id).map((e) => e.data)).toEqual([{ by: 'hopper', note: 'https://github.com/octo/tools/issues/9 was closed', check: 'items_ended:issue:octo/tools#9' }]);
+    expect(b.triggers).toContain('job.wait_ended');
+  });
+
+  it('two hoppers, and two passes at once: the wait is read and ended once', async () => {
+    const url = testDatabaseUrl();
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    const ra = reads({ ended: [CLOSED], gate }), rb = reads({ ended: [CLOSED], gate });
+    const a = hopper(url, ra), b = hopper(url, rb);
+    const job = waitingJob(a.store);
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+
+    const passes = [a.checks.run(), a.checks.run(), b.checks.run()];
+    await new Promise((r) => setTimeout(r, 50));
+    open();
+    await Promise.all(passes);
+
+    expect(ra.asked.length + rb.asked.length).toBe(1);
+    expect(ended(a.store, job.id)).toHaveLength(1);
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+  });
+
+  it('a hopper that stops mid-check: another takes the wait once its lease ends, and the first one\'s late answer changes nothing', async () => {
+    const url = testDatabaseUrl();
+    let late!: () => void;
+    const hung = reads({ ended: [CLOSED], gate: new Promise<void>((resolve) => { late = resolve; }) });
+    const a = hopper(url, hung);
+    const rb = reads({ ended: [CLOSED] });
+    const b = hopper(url, rb);
+    const job = waitingJob(a.store);
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+
+    const stuck = a.checks.run();
+    await new Promise((r) => setTimeout(r, 50));
+    await b.checks.run();
+    expect(rb.asked).toEqual([]);
+
+    now += LEASE_MS + 1;
+    await b.checks.run();
+    expect(rb.asked).toHaveLength(1);
+    expect(b.store.jobs.get(job.id)!.status).toBe('queued');
+
+    late();
+    await stuck;
+    expect(ended(b.store, job.id)).toHaveLength(1);
+  });
+
+  it('a wait on another job ends when that job ends, read from the store with no outside read', async () => {
+    const url = testDatabaseUrl();
+    const r = reads();
+    const a = hopper(url, r);
+    const other = a.store.jobs.create({ executor: 'x', payload: {} }, 50);
+    const job = waitingJob(a.store, { for: 'the other job', on: { kind: 'job', jobId: other.id } });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({ attempts: 1, result: `job ${other.id} is queued` });
+
+    a.store.jobs.update(other.id, { status: 'finished' });
+    now += 2 * FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ by: 'hopper', note: `job ${other.id} finished` });
+    expect(r.asked).toEqual([]);
+  });
+
+  it('a wait the hopper cannot test is overdue once past its deadline, and stays on its wait', async () => {
+    const url = testDatabaseUrl();
+    const a = hopper(url, reads());
+    const job = waitingJob(a.store, { for: 'a person to grant access', on: { kind: 'grant' } });
+    await a.checks.run();
+    now = T0 + DEADLINE_MS;
+    await a.checks.run();
+    now += 2 * 3600_000;
+    await a.checks.run();
+
+    const overdue = a.store.events.recent(50, ['job.wait_overdue'], job.id);
+    expect(overdue.map((e) => e.data)).toEqual([{ deadline: new Date(T0 + DEADLINE_MS).toISOString(), result: 'the hopper has no check for a vault grant' }]);
+    const still = a.store.jobs.get(job.id)!;
+    expect(still.status).toBe('waiting_on');
+    expect(still.wait!.check!.overdueAt).toBe(new Date(T0 + DEADLINE_MS).toISOString());
+  });
+
+  it('a job woken for items that ended, that waits on them again, is not woken for them again: its wait is overdue at once', async () => {
+    const url = testDatabaseUrl();
+    const r = reads({ ended: [CLOSED] });
+    const a = hopper(url, r);
+    const job = waitingJob(a.store);
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.status).toBe('queued');
+
+    a.store.jobs.update(job.id, { status: 'waiting_on', wait: { for: 'issue 9 to close', since: new Date(now).toISOString(), on: { kind: 'item', number: 9 } } });
+    await a.checks.run();
+    now += FIRST_CHECK_MS;
+    await a.checks.run();
+
+    const again = a.store.jobs.get(job.id)!;
+    expect(again.status).toBe('waiting_on');
+    expect(again.wait!.check).toMatchObject({ overdueAt: new Date(now).toISOString() });
+    expect(ended(a.store, job.id)).toHaveLength(1);
+    expect(a.store.events.recent(50, ['job.wait_overdue'], job.id)).toHaveLength(1);
+  });
+});
