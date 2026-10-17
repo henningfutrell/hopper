@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "recordId": {
+      "type": "string"
+    },
+    "pullRequest": {
+      "type": "string"
+    },
+    "head": {
+      "type": "string"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "recordId",
+    "pullRequest",
+    "head",
+    "checks"
+  ],
+  "additionalProperties": false
+}

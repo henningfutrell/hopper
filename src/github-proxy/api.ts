@@ -300,7 +300,7 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
 }
 
 /** GitHub's message for a failed call to `what`, as the job reads it. */
-function messageOf(err: unknown, what: string): string {
+export function messageOf(err: unknown, what: string): string {
   const e = err as { message?: unknown; response?: { data?: { message?: unknown; errors?: { message?: unknown }[] } } };
   const detail = e.response?.data?.errors?.map((x) => (typeof x.message === 'string' ? x.message : '')).filter(Boolean).join('; ');
   const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : typeof e.message === 'string' ? e.message : String(err);
