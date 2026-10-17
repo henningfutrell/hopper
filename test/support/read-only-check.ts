@@ -9,7 +9,7 @@ import { expect } from 'vitest';
 import { checkWait } from '../../src/domain/read-only-check.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
-import { ready } from '../../src/sandbox/need-steps.ts';
+import { templateReady as ready } from '../../src/domain/sandboxes-before-start.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from './fake-authorization-server.ts';
 import { createFakeCloudTools, type FakeCloudTools } from './fake-cloud-tools.ts';

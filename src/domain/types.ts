@@ -375,9 +375,10 @@ export interface DecisionInputs {
    * job may go. Absent on Decisions stored before them: none. `signedOut` (issue #1128 part 5): the machines whose agent tool
    * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none. `credentialHeld` (issue #1467):
    * the machines the credential check holds (an admin stopped them, or strict mode is on and no admin acknowledged them); a
-   * machine with infra credentials that is not named takes jobs. Absent: none.
+   * machine with infra credentials that is not named takes jobs. Absent: none. `sandboxesHeld` (issue #1471): the waiting jobs
+   * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none.
    */
-  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[];
+  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 
@@ -552,7 +553,7 @@ export type { QuestionGatesView, RiskRuleView, RulesView } from './question-gate
 
 // ---- Job rules (issue #172): src/domain/job-rules.ts (re-exported here) -------------------
 
-export type { JobRulesView } from './job-rules.ts';
+export type { JobRulesView, RepoJobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 

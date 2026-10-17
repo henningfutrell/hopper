@@ -140,6 +140,31 @@ describe('the sweep runner (issue #410)', () => {
   });
 });
 
+describe('a scratch dir the reap could not remove (issue #1452)', () => {
+  const found = { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 30 * HOUR }] };
+
+  it('is never said removed: it is told once while it stays', async () => {
+    const r = rig({ found, lefts: ['done'] });
+    for (let i = 0; i < 3; i++) { await r.sweep.run(true); r.advance(10 * 60_000); }
+    expect(r.reaps).toHaveLength(3);
+    expect(r.logs).toEqual([expect.stringContaining('could not remove job done\'s scratch dir on m: /w/.worktrees/@scratch/done is still there')]);
+    expect(r.logs.some((l) => /reaped job done/.test(l))).toBe(false);
+  });
+
+  it('kept work it could not remove records no job.work_removed', async () => {
+    const r = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.worktrees/@scratch/old', ageMs: HOUR }] }, kept: ['old'], lefts: ['old'] });
+    await r.sweep.run(true);
+    expect(r.events.map((e) => e.type)).toEqual(['job.work_kept']);
+  });
+
+  it('a discard it could not remove fails, and says what is still there', async () => {
+    const r = rig({ kept: ['old'], lefts: ['old'] });
+    await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
+    await r.sweep.removals();
+    expect(r.sweep.discarding('old')).toEqual({ state: 'failed', error: 'the machine m could not remove /w/.worktrees/@scratch/old' });
+  });
+});
+
 describe('kept work of a done item (issue #1105)', () => {
   const found = { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.worktrees/@scratch/old', ageMs: HOUR }] };
 

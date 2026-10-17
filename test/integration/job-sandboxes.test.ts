@@ -20,6 +20,15 @@
 //   Scenario: a delegate approver approves the sandbox run with `hopper sandbox approve` and its refresh token alone; one whose
 //     approver policy names the account is refused (issue #1138)
 //   Scenario: the toggles are the admin's, a box action: shown in the vault's view, an event; an API token with no box grant refused
+//
+// Feature: sandboxes before the start (issue #1471)
+//   Scenario: a job whose brief names a template is held before it starts until a person approves its sandbox runs
+//     Given the user has the approved template kube
+//     When a job whose brief says to work in a box of template `kube` is queued
+//     Then the hopper asks for its sandbox runs of kube, and holds the job "awaiting its sandboxes"; it does not start
+//     When a person approves the request on Access requests
+//     Then the job starts, its sandbox runs of kube approved already
+//   Scenario: a running job asks for the sandbox runs of a template by its name (`sandbox --template NAME`)
 import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,6 +36,7 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli } from '../../src/cli.ts';
+import { BEFORE_START_PURPOSE } from '../../src/users/sandbox-requests.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
@@ -281,5 +291,50 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect(minted.status).toBe(200);
     const r = await rawRequest(a.url, { method: 'POST', path: '/ui/api/sandbox-approvals', headers: { authorization: `Bearer ${minted.body.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ yolo: true }) });
     expect(r.status, r.text).toBe(403);
+  });
+});
+
+/** The user's approved template kube, of a vault secret only. */
+async function kube(a: TestApp, token: string): Promise<void> {
+  const edit = (body: Record<string, unknown>) => a.ui('/ui/api/vault', body, { token });
+  expect((await edit({ action: 'set', name: 'KUBE_TOKEN', scope: 'lab cluster', value: 'lab-token-0123456789abcdef' })).status).toBe(200);
+  expect((await edit({ action: 'save-template', name: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'] })).status).toBe(200);
+  expect((await edit({ action: 'approve-template', name: 'kube' })).status).toBe(200);
+}
+
+describe('sandboxes before the start (issue #1471)', () => {
+  it('a job whose brief names a template is held before it starts until a person approves its sandbox runs', async () => {
+    const { a, token } = await boot();
+    await kube(a, token);
+    const job = await a.pull({ op: 'sleep', ms: 60000, brief: 'Work in a box of template `kube`.' });
+    const held = await a.waitForStatus(job.id, 'held', 10000);
+    expect(held.holdReason).toBe('awaiting its sandboxes: the sandbox runs of template kube wait for a person on Access requests');
+    const [req] = (await view(a, token)).sandboxRequests!;
+    expect(req).toMatchObject({ jobId: job.id, template: 'kube', state: 'waiting', purpose: BEFORE_START_PURPOSE });
+    expect((await a.ui('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'running', 10000);
+    expect((await view(a, token)).sandboxRequests).toEqual([expect.objectContaining({ id: req!.id, jobId: job.id, state: 'approved' })]);
+  });
+
+  it('a running job asks for the sandbox runs of a template by its name', async () => {
+    const { a, token } = await boot();
+    await kube(a, token);
+    const creds = await runningJob(a);
+    const ask = ['sandbox', '--template', 'kube', '--why', 'The brief says to work in a box of kube'];
+    const first = await skill(a, creds, ask);
+    expect(first.code, first.stdout).toBe(3);
+    expect(first.stdout).toContain('waiting: the sandbox runs of template kube wait for a person to approve them on Access requests.');
+    const [req] = (await view(a, token)).sandboxRequests!;
+    expect((await a.ui('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(200);
+    const again = await skill(a, creds, ask);
+    expect(again.code, again.stdout).toBe(0);
+    expect(again.stdout).toContain('sh "$HOPPER_STEP" box kube --command');
+
+    const none = await skill(a, creds, ['sandbox', '--template', 'nope', '--why', 'x']);
+    expect(none.code).toBe(1);
+    expect(none.stdout).toContain('no: there is no template nope.');
+    const both = await skill(a, creds, ['sandbox', '--template', 'kube', '--needs', NEEDS, ...ASK]);
+    expect(both.code).toBe(1);
+    expect(both.stdout).toContain('no: give --template NAME or --needs, not both');
   });
 });

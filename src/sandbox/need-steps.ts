@@ -24,7 +24,7 @@ import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
 import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
-import { checkWait } from '../domain/read-only-check.ts';
+import { templateReady as ready } from '../domain/sandboxes-before-start.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { STEP_INPUTS_MAX_BYTES, stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
@@ -37,8 +37,6 @@ const ID = /^[a-f0-9-]{36}$/;
 
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
-/** Whether a step may run in a box of the template now: approved, its image approved, every profile approved, its check passed. */
-export const ready = (t: TemplateView): boolean => t.approval !== undefined && !t.pending.image && t.pending.profiles.length === 0 && checkWait(t) === undefined;
 
 /** The ready template that declares every need, the one with the fewest profiles first; undefined: none. */
 export function coveringTemplate(templates: readonly TemplateView[], needs: readonly OperationProfile[]): TemplateView | undefined {
@@ -194,8 +192,9 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     async box(job, fields) {
       const { box } = fields;
       if (!fields.approved.includes(box)) {
-        const named = fields.approved.length ? `Its approved sandboxes: ${fields.approved.join(', ')}.` : 'It has none: ask the hopper for one with sh "$HOPPER_SKILL" sandbox.';
-        return refuse(job, 404, `this job has no approved sandbox of template ${box}. ${named}`, box);
+        const named = fields.approved.length ? `Its approved sandboxes: ${fields.approved.join(', ')}.` : 'It has none.';
+        // Issue #1471: a job asks for the template it was told to use by its name.
+        return refuse(job, 404, `this job has no approved sandbox of template ${box}. ${named} Ask for it: sh "$HOPPER_SKILL" sandbox --template ${box} --why "<why the job needs it>"`, box);
       }
       if (fields.secrets.length > 0) return refuse(job, 400, 'a box step takes no --secret: its sandbox is minted what its template gives', box);
       const t = o.templates().find((x) => x.name === box);

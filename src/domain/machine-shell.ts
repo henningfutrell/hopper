@@ -6,9 +6,10 @@ import type { CheckpointCapture } from './checkpoints.ts';
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
  * (issue #630): those whose HEAD holds a remote branch the default branch does not; absent, none. `removed` (issue #1120):
- * the containers and volumes labelled with the job's id that it removed; absent, none.
+ * the containers and volumes labelled with the job's id that it removed; absent, none. `left` (issue #1452): the job's dirs
+ * it set out to remove and could not; absent, none (or a client older than this).
  */
-export interface Reaped { kept: string[]; pushed?: string[]; removed?: { containers: string[]; volumes: string[] } }
+export interface Reaped { kept: string[]; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[] } }
 
 /** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
 export interface Survey {

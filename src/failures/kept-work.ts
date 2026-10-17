@@ -6,7 +6,7 @@
 // the job's machine.
 import type { RerunResult, UserStore } from '../domain/ports.ts';
 import { keptWorkShown } from '../domain/work-items.ts';
-import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type Discarding, type HandoffView, type Job, type KeptWork, type KeptWorkView } from '../domain/types.ts';
+import { keptAgainOf, keptWorkOf, KEPT_AGAIN_EVENTS, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type Discarding, type HandoffView, type Job, type KeptWork, type KeptWorkView } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
 import { handoffView, newestOfItem, type TakesBack } from './view.ts';
 
@@ -21,6 +21,7 @@ export function pushBrief(note: string | undefined): string {
     'This job ended with work in its work tree that was not pushed. A person asks you to push it, in this same session and work tree.',
     'Look at what is there first (git status, git log, the branch on the remote). Commit what is not committed, and push the branch.',
     'Then open the pull request the task asks for. Open it as a draft when the work is not finished. Do not start over.',
+    'A push goes only to a branch of this job\'s own repository. Do not push a clone of another repository: the hopper refuses it. Say in your last message which work stays, and end: a person pushes it or discards it.',
     ...(note ? ['', 'The person\'s note:', note] : []),
   ].join('\n');
 }
@@ -29,6 +30,7 @@ export function pushBrief(note: string | undefined): string {
 function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs']['forJob']>, resumable: (job: Job) => boolean, takesBack: TakesBack): Allowed {
   if (!PUSHABLE_ENDS.includes(job.status)) return no(`it is ${job.status}: only a failed, finished or cancelled job goes on in its work tree`);
   if (!resumable(job)) return no('its agent session cannot resume: open its work tree on its machine, or discard it');
+  if (keptAgainOf(store.events.recent(20, [...KEPT_AGAIN_EVENTS], job.id))) return no('it went on and its reap kept the same work again: a push of it is refused or failed. Open its work tree on its machine and push it, or discard it');
   if (handoff?.status === 'open') return handoffView(store, handoff, resumable, takesBack).actions.continue;
   const newest = newestOfItem(store, job.id);
   return newest.ok ? takesBack(job.id) : newest;

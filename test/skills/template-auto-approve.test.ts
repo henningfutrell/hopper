@@ -44,7 +44,7 @@ const OFF = { skipTemplateApproval: false, skipSandboxApproval: false };
 describe('the auto-approve policy (issue #1001)', () => {
   it('by default approves a read-only template with no person, by the policy, outside the read policy too', async () => {
     const { u, calls } = user();
-    const r = await requestTemplate(u, 'read/aws-account/123456789012 read/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, 'read/aws-role/123456789012/ReadOnly read/cluster/lab', 'job j1', 'j1');
     expect(r.status).not.toBe(400);
     expect(calls).toEqual([expect.stringMatching(new RegExp(`^approve asked-\\w+ by ${AUTO_APPROVER}$`))]);
   });

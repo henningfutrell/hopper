@@ -1,5 +1,5 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject, run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
+// accept, reject, cancel (issue #1460), run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
@@ -45,6 +45,7 @@ export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handof
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
+  hopper job cancel <id> [--reason <text>]           any job that has not ended ends cancelled, the reason kept on it
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
@@ -121,13 +122,12 @@ function jobCall(args: string[]): Call {
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
-  const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
-  const notes = values.notes;
+  if (!id || extra.length > 0) throw usage('job accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
+  const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes;
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
   if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
-  if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
-  if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
+  if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
+  if (values.reason !== undefined) throw usage('job reject|cancel <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
   if (verb === 'rerun' || verb === 'keep-original' || verb === 'accept-new-text') return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
@@ -137,7 +137,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
+  throw usage('job accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
 }
 
 function perHour(raw: string): number | null {

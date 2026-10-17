@@ -55,7 +55,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
-| `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
+| `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
@@ -942,6 +942,10 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     (`job.containers_removed`).
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
+  A dir the reap could not remove (issue #1452) is never said removed. The reap makes a read-only dir in it (a Go
+  module cache) writable and removes it again, and resets the job's container storage in it through the job's runtime
+  dir, which it makes again when a reboot removed it. What is still there it names (`hopper-left <path>`): the sweep
+  logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
@@ -2486,6 +2490,8 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
   completed (`state_reason`) at or after the job's `createdAt` — a commit's `Closes #N`, or a close
   with no code — gives a job that has started (not `queued`/`held`) no signal: a job may end its
   issue itself. A waiting job is cancelled; a close as not planned, or before the job, cancels.
+- **And a job on its own wait** (`waiting_on`, issue #1460): it never runs on to its own end, so either close of its own work
+  above gives it `finish` (reason `issue closed as complete`): it ends finished. Any other close cancels it, as above.
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
@@ -10222,6 +10228,14 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   never approves a template again: one a person revoked waits for a person.
 - **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
   is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
+  Issue #1468: the 409 names the needs the template holds now (`--needs "<them>"`), so a job can ask for those, and
+  where a person changed it: through the operator CLI (`savedBy` is `operator CLI`) or in Settings → Vault.
+- **A read the check cannot mint for is refused at the ask** (issue #1468). A template of read needs only takes the
+  read-only check, and the vault mints the check's read credentials for an `aws-role`, a `cluster` or a `namespace` only
+  (a `terraform-workspace` takes the aws-role's). A read need on any other kind (`aws-account`, `argocd-app`) in such a
+  request failed the check at every run, after the template was saved and approved. Now the request (and its preview)
+  is a 400 that names the need to ask for in its place: `read/aws-role/<account>/<role>` for an `aws-account`. A request
+  with a write, sync or apply need takes no check, so its `aws-account` read is asked for as before.
 - **The answer.** 200 when the template is approved, its image the approved one, every profile approved in Access, and
   (a template of read needs only) its read-only check passed ("The read-only check"):
   its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
@@ -10593,7 +10607,10 @@ replaces them; test with doubles, and state the gap to a real environment.
   image, tool or profile is checked again.
 - **When it runs.** The check pass (`createCheckPass`, `src/sandbox/check.ts`) runs with the reconcile pass, every 10 s
   and at start, one check at a time. A template is due when it takes a check, its image (and tools) are approved, and its
-  version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself: a
+  version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself
+  (issue #1468: but one that failed only on a network error — each mint refusal, or the check box's start, said
+  `ECONNRESET`, `ETIMEDOUT`, a timeout and the like — is `transient`, says so, and runs again `CHECK_RETRY_MS`, 5 minutes,
+  after it ended, with no person): a
   person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
   check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
@@ -11898,6 +11915,12 @@ Now Failures lists it, and each has an action that moves it.
   the click on. Out of reach, or kept all the same — a client older than this ignores `discard` —, the removal fails:
   `job.work_discard_failed` with why and who, `discarding` `failed` with the error (the refusal says to update the
   client), and Discard is offered again. `discarding` is kept in memory: after a restart the work shows kept, as it is.
+- **Kept again** (issue #1470, `keptAgainOf`). A job pushes only to its own repository, so work in a clone of another
+  repository in its scratch dir is never pushed by the job: Push it went on, the push was refused, and the reap kept it
+  again, so Push it was offered again with the same brief, in a loop. Now, when the job went on in its kept work tree
+  (`job.continued`: Push it, a Continue) and its reap kept no path it did not keep before, Push it is refused with why
+  (Stuck lists it under `kept_work`); Discard stays. `pushBrief` also says a push goes only to the job's own repository,
+  so the job names the work that stays and ends, and does not try the push.
 - **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
 - **Discarded once done** (issue #1105). Kept work of a job whose work item is `done`, as the ledger has it, waits on
   nobody: the sweep reaps its scratch dir with `discard`, as Discard does, and records `job.work_removed` with
@@ -11919,11 +11942,11 @@ for a finished or cancelled job — its source takes the item back as for Run ag
 Continue only), and `SourceHost.continueJob` takes those ends only `by` `keptWork` (a hand-off's Continue stays a failed
 job's).
 
-**Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (the log once), `test/engine/sweep-discard.test.ts` (discard, its refusals, the removal after the answer and its failure),
+**Verification:** `test/domain/kept-work.test.ts` (`keptAgainOf`, issue #1470), `test/engine/sweep.test.ts` (the log once), `test/engine/sweep-discard.test.ts` (discard, its refusals, the removal after the answer and its failure),
 `test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,
 the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squash-merged, rebased and re-made commits
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
-the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused).
+the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused; issue #1470: the same work kept again, Push it refused).
 
 ### Actions answer at once (issue #1194, 2026-10-14)
 
@@ -12654,6 +12677,31 @@ job is told it whatever its job rules. It says:
 - **No question about the path itself**: only a real decision, as the decisions line says.
 
 **Verification.** `test/job-rules/delivery-path.test.ts`.
+
+## Repository job rules (issue #1472 part 4, 2026-10-16)
+
+Owner requirement: jobs do not know what done means for a repository (follow the change through its pipeline to its test
+environment; production stays with a person), which repositories and tools they may touch, or the standing context. The
+job rules are one text for every job of a user; what is true for one repository, or one owner's repositories, had no place.
+
+- **The record.** A user's config record `repo-job-rules` (`src/job-rules/repo-rules.ts`): a map from a repository
+  (`owner/name`), or an owner (`owner/*`, every repository of that owner), to a text of at most 16 KiB; at most 100 names.
+  Names are matched in any case; two names that differ only in case are refused. No migration: a missing record is none.
+- **What a job is told.** As each job starts, the engine adds to its job rules (`withRepoJobRules`): first its owner's
+  text, then its repository's, each after a line `[hopper repository rules] Rules set in the hopper for every job of
+  <name>:`. A job of no repository, or of one with no rules, is told nothing more. An empty text adds nothing. A running
+  job keeps what it started with; the next job gets an edit. The fixed lines (the work tree, the protocol, the delivery
+  line) still follow and are not edited.
+- **Editing.** Settings → Job rules → Per repository: one row per name, saved whole against its version
+  (`GET /api/repo-job-rules`, `POST /ui/api/repo-job-rules`, admin, `src/http/ui/repo-job-rules.ts`).
+  `hopper config set repo-job-rules` from the CLI.
+- **A job's own context** is its issue's text and the person's notes (issue #997): no record for it.
+- **Left of part 4.** A default read-only credential for every job (`cluster/uat-view`): AGENTS.md "The vault gives only to
+  a job a person granted it" does not allow it without a grant, so it waits for a person's decision. A repository's rules can
+  tell its jobs to ask for that read through the skills (`hopper-skill`).
+
+**Verification.** `test/job-rules/repo-job-rules.test.ts`, `test/integration/job-rules.test.ts` (a job of the repository
+gets them, a job of another does not), `test/cli.test.ts`, `test/ui/job-rules-panel.test.ts`.
 
 ## Decide and proceed (issue #1059, 2026-10-13)
 
@@ -15271,7 +15319,14 @@ person's question list as if it needed an answer), or ended failed though it was
   again with `waitEndedNote` pending, which pins it to `resumeOn` as an answer does; its claim types it into the pane (`[hopper] A
   person ended your wait: what you waited for (<for>) has happened. The person's note: <note> Check it, then go on with the
   job.`). `job.wait_ended { by: 'person', note? }`. A print-mode job resumes its session with it.
-- **Cancel** works as for any job: the pane closes through the normal reap.
+- **Cancel** works as for any job: the pane closes through the normal reap. A person gives a reason if they like (issue #1460):
+  `POST /ui/api/jobs/:id/cancel { reason? }` or `hopper job cancel <id> [--reason <text>]`, for any job that has not ended;
+  `job.cancelled { reason: 'cancelled in UI', note }` keeps it, and the source is told only the cancel (the claim labels go).
+- **Its item closes** (issue #1460). A job on its own wait never runs on to its own end, so the source's check ends it: its
+  issue closed by its own work — the merge of its own pull request, or closed as completed after it started, the done-check —
+  gives the `finish` signal, and it ends `finished` (`job.finished { result: 'issue closed as complete' }`, its wait dropped,
+  `hopper:done`); closed any other way cancels it (`issue closed`). Either way its claim labels come off, and its pane closes
+  through the normal reap. Before, both kinds of close gave it no signal, and it waited for ever.
 - **Live job.** A `waiting_on` job's processes still run on its machine (its background poll): it is in every "at work" list —
   credentials renewed, the GitHub proxy, skills, the vault, the job stream, artifacts, Access, the sweep and the rename guard
   keep it as live — and in `jobsOnMachine`.
@@ -22735,3 +22790,45 @@ hopper follows, on the repositories where a person turned it on.
 forced too", "refuses a push to another job repository its user cannot push to", a repository the hopper does not work
 on refused), `test/integration/github-proxy.test.ts` (a pull request on another job repository, marked ready; one
 elsewhere refused), `test/github-proxy/proxy.test.ts` (`checkRequest`), `test/integration/contribution.test.ts`.
+
+## Sandboxes before the start (issue #1471, 2026-10-16)
+
+A direct job's brief said to work in a box of template `cluster-role-builder`. The job's only approved sandbox was of a
+template its `--needs` made. It learned of the gap mid-run, when its box step was refused, and could not fix it: a
+sandbox ask took only `--needs`. Several rounds of questions followed. Now the hopper finds the templates a job will need
+before the job starts, and asks a person for them up front.
+
+- **Named templates** (`namedTemplates`, `src/domain/sandboxes-before-start.ts`, pure). A template of the user's is
+  named in a job's prompt when its whole name comes right after `template` or `box` (or `box of template`), quoted or
+  not: `box cluster-role-builder`, ``template `cluster-role-builder` ``. A name that is only a word of the text is not
+  named ("fix the web page" names no template `web`), and a name no template has is not named. Only the user's own
+  templates are matched, so the check never guesses at a template that does not exist.
+- **The ask** (`sandboxesHeld`, `src/users/sandbox-requests.ts`). At each Decision, the engine's gather step
+  (`src/engine/decision-step.ts`, engine option `sandboxesHeld`) gives the waiting jobs to it. For each job that is
+  accepted, of a judged origin and text, not resuming after a question, and with a prompt, it asks for the sandbox runs
+  of every template the prompt names, with the purpose `BEFORE_START_PURPOSE`. A request is the one the job has when
+  asked again: no second event, no second card. The approvals that skip a person — skip sandbox approval, the
+  auto-approve policy, remembered write approvals — apply as to any sandbox request. The vault's view is read only when
+  a waiting job may name a template.
+- **The hold** (`sandboxesHold`, pure; the decider, `src/decider/index.ts`). A job is held `awaiting its sandboxes: …`
+  while one of its requests waits for a person, or an approved one's template is not ready (`templateReady`: approved,
+  its image approved, every profile approved, its read-only check passed). A declined request holds nothing: a person
+  said no, and the job is told so when it asks. The hold comes after the queue gate and before every other judgement
+  of a job not resuming: a person's approval of a router hold does not pass it. The decider stays pure: the reasons
+  come in as the input `sandboxesHeld`.
+- **One approval for all of them.** Every request of a job is on Access requests, panel **Sandbox runs**, at once,
+  before the job starts: **Approve selected** (issue #1018) approves them in one action.
+- **Requests live until the job ends.** A sandbox request was forgotten when its job was not at work. It is now kept
+  while the job is queued, held, claimed or at work (`live`), so the approval given before the start is there when the
+  job's box step asks. Requests are still kept in memory: after a restart, the next Decision asks again for a job that
+  has not started.
+- **A job may name a template** (`sh "$HOPPER_SKILL" sandbox --template NAME --why …`, `src/skills/broker.ts`). In place
+  of `--needs`, not with it. The template stays as it is: the hopper makes and widens nothing. A template whose profiles
+  change an asset takes `--plan`, as a `--needs` ask that changes one does. Approved, but the template not ready: 202,
+  waiting. A template the user does not have: no. The refusal of a box step of a template the job has no approval of
+  says how to ask for it by name.
+
+**Tests.** `test/domain/sandboxes-before-start.test.ts` (named templates; the hold), `test/decider/sandboxes-before-start.test.ts`
+(the decider holds; the queue gate first; never a job resuming), `test/users/sandboxes-held.test.ts` (asked once, all at
+once; declined and skip sandbox approval do not hold; nothing asked for a job at the gate, not judged or resuming), and
+`test/integration/job-sandboxes.test.ts` (a held job starts once a person approves its request; `--template`).

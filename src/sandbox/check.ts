@@ -12,10 +12,12 @@
 // Issue #708: a check runs beside the hopper when it is given a runtime, else on a client target of the template's user,
 // dialled in with a runtime there (`CheckPassContext.place`). With neither, the template waits for its check.
 // Issue #715, part 4: each ended check's report is an artifact of the job that asked for the template (check-report.ts).
+// Issue #1468: a check that failed only on a network error (a mint's ECONNRESET, a timeout) is transient: it runs again
+// after `CHECK_RETRY_MS`, with no person. Any other failure still waits for one.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
-import { currentCheck, markRuns, workspaceRole } from '../domain/read-only-check.ts';
+import { currentCheck, markRuns, onlyNetworkErrors, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
@@ -30,6 +32,8 @@ export { CHECK_LABEL };
 export const CHECK_MS = 30 * 60_000;
 /** How often a passed check runs again (issue #715). */
 export const CHECK_EVERY_MS = 24 * 60 * 60_000;
+/** How soon a check that failed only on a network error runs again (issue #1468). */
+export const CHECK_RETRY_MS = 5 * 60_000;
 
 /** The templates the check pass reads, of every user, and where it keeps a check. */
 export interface CheckTemplates {
@@ -69,12 +73,14 @@ export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'networ
 /**
  * Whether the template gets a check now: it needs one, its image is approved, and its version has none — or one still
  * `running`, which a pass finds only when a hopper stopped mid-check: passes run one after the other —, or one that
- * passed `CHECK_EVERY_MS` ago or more (issue #715). A failed check waits for a person.
+ * passed `CHECK_EVERY_MS` ago or more (issue #715), or one that failed only on a network error `CHECK_RETRY_MS` ago or
+ * more (issue #1468). Any other failed check waits for a person.
  */
 export function dueForCheck(t: Template, now: Date): boolean {
   if (t.readOnly !== true || !imageApproved(t)) return false;
   const c = currentCheck(t);
   if (c?.state === 'passed') return now.getTime() - Date.parse(c.at) >= CHECK_EVERY_MS;
+  if (c?.state === 'failed' && c.transient) return now.getTime() - Date.parse(c.at) >= CHECK_RETRY_MS;
   return c?.state !== 'failed';
 }
 
@@ -106,22 +112,25 @@ export function checkCredentialOf(profile: OperationProfile, minted: Minted, rea
  * workspace is minted nothing of its own (issue #715): it takes the AWS read session of the template's one aws-role read
  * need (`workspaceRole`), which Access allowed and the deny policy keeps read-only, state backend included.
  */
-async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<{ credentials: CheckCredential[] } | { problem: string }> {
+async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<{ credentials: CheckCredential[] } | { problem: string; transient: boolean }> {
   const credentials: CheckCredential[] = [];
   const problems: string[] = [];
+  // Issue #1468: whether every refusal was a network error, so the check runs again with no person.
+  const refusals: string[] = [];
+  let other = false;
   const noCredential = (need: OperationProfile, why: string): void => { problems.push(`the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
   for (const need of needs.filter((n) => n.asset.kind !== 'terraform-workspace')) {
     const r = await c.credentials.credential(userId, t.name, name, need);
-    if ('refused' in r) noCredential(need, r.refused);
+    if ('refused' in r) { noCredential(need, r.refused); refusals.push(r.refused); }
     else credentials.push(checkCredentialOf(need, r.minted, r.reach));
   }
   for (const workspace of needs.filter((n) => n.asset.kind === 'terraform-workspace')) {
     const role = workspaceRole(needs);
-    if (typeof role === 'string') noCredential(workspace, role);
+    if (typeof role === 'string') { noCredential(workspace, role); other = true; }
     const session = typeof role === 'string' ? undefined : credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name);
     if (session) credentials.push({ ...session, asset: workspace.asset });
   }
-  return problems.length > 0 ? { problem: problems.join('; ') } : { credentials };
+  return problems.length > 0 ? { problem: problems.join('; '), transient: !other && onlyNetworkErrors(refusals) } : { credentials };
 }
 
 /**
@@ -132,11 +141,11 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   const needs = (t.profiles ?? []).filter((p) => p.operation === 'read');
   // A person's marks on its read probes (issue #916): an expected refusal, or a probe not run.
   const runs = markRuns(c.probes.runsFor(needs), t.probeMarks);
-  const ended = (state: 'passed' | 'failed', probes: ReadOnlyCheck['probes'], problem?: string): ReadOnlyCheck =>
-    ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}) });
+  const ended = (state: 'passed' | 'failed', probes: ReadOnlyCheck['probes'], problem?: string, transient?: boolean): ReadOnlyCheck =>
+    ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}), ...(transient ? { transient: true as const } : {}) });
   if (runs.length === 0) return ended('failed', [], 'no probe checks its needs: it cannot pass');
   const given = await credentialsFor(c, userId, t, name, needs);
-  if ('problem' in given) return ended('failed', [], given.problem);
+  if ('problem' in given) return ended('failed', [], given.problem, given.transient);
   const labels = { [CHECK_LABEL]: c.instanceId, [USER_LABEL]: userId };
   const volume = `${name}-home`;
   let id = '';
@@ -153,7 +162,8 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     const passed = exit === 0 && probes.every((p) => p.passed);
     return ended(passed ? 'passed' : 'failed', probes, exit !== 0 ? `the check box ended with ${exit}` : undefined);
   } catch (e) {
-    return ended('failed', [], `the check box did not run: ${e instanceof Error ? e.message : String(e)}`);
+    const why = e instanceof Error ? e.message : String(e);
+    return ended('failed', [], `the check box did not run: ${why}`, onlyNetworkErrors([why]));
   } finally {
     if (id) await c.runtime.remove(id).catch(() => {});
     if (madeHome) await c.runtime.removeVolume(volume).catch(() => {});

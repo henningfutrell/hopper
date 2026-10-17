@@ -29,6 +29,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const expectedCosts = expectedOf(waiting, expected);
     const placementPicks = picks.input(waiting);
     const credentialHeld = credentialHeldOf(c, machines);
+    const sandboxesHeld = c.sandboxesHeld(waiting);
     return {
       at: nowIso(c),
       trigger,
@@ -47,6 +48,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(placementPicks ? { placementPicks } : {}),
       ...(signedOut.length ? { signedOut } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
+      ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
       policy: policyOf(c),
     };
   } };

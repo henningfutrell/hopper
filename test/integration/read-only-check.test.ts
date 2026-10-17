@@ -231,16 +231,15 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
   });
   it('a need the vault cannot mint a credential for fails the check, saying why, and runs no check box', async () => {
-    const { a, token, runtime, kube } = await boot(['cluster/*', 'aws-account/*']);
+    const { a, token, runtime, kube } = await boot(['cluster/*']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/cluster/other read/aws-account/${ACCOUNT}`]);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/other']);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
     expect(t.check).toMatchObject({ state: 'failed', probes: [] });
-    expect(t.check!.problem).toBe([
-      'the check box gets no credential for read on cluster other: no minting credential mints for cluster other: a person adds one on Settings → Vault',
-      `the check box gets no credential for read on aws-account ${ACCOUNT}: the vault mints a credential for read on an aws-role, a cluster or a namespace only`,
-    ].join('; '));
+    // Issue #1468: a read the vault mints nothing for (an aws-account) is refused when it is asked for, so never reaches the check.
+    expect(t.check!.problem).toBe('the check box gets no credential for read on cluster other: no minting credential mints for cluster other: a person adds one on Settings → Vault');
+    expect(t.check!.transient).toBeUndefined();
     expect(runtime.ran.size).toBe(0);
     expect(kube.seen).toHaveLength(0);
     expect((await stepBox(a, token, t.name)).status).toBe(409);

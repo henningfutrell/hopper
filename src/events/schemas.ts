@@ -132,7 +132,7 @@ export const EVENT_SCHEMAS = {
   // `partlyDone` (issue #579, additive): the URL of the job's own pull request that ships part of its item.
   'job.finished': strict({ result: z.unknown(), partlyDone: z.string().optional() }),
   'job.failed': strict({ error: z.string(), ...priority }),
-  'job.cancelled': strict({ reason: z.string() }),
+  'job.cancelled': strict({ reason: z.string(), note: z.string().optional() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional() }),
   // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`

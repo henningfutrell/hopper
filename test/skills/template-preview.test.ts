@@ -16,12 +16,12 @@ const user = (o: { policy?: string[]; templates?: TemplateView[] } = {}) => ({
 
 describe('the template a request makes, shown before it is made (issue #708)', () => {
   it('shows the name, the image, the tools the needs use and no secret; read needs inside the policy are approved by it', () => {
-    const p = previewTemplate(user({ policy: ['cluster/lab', 'aws-account/*'] }), 'read/cluster/lab read/aws-account/123456789012');
+    const p = previewTemplate(user({ policy: ['cluster/lab', 'aws-role/*'] }), 'read/cluster/lab read/aws-role/123456789012/ReadOnly');
     expect(p).toEqual({
-      template: requestedName(needsOf('read/cluster/lab read/aws-account/123456789012') as never),
+      template: requestedName(needsOf('read/cluster/lab read/aws-role/123456789012/ReadOnly') as never),
       image: IMAGE,
       tools: ['aws', 'helm', 'kubectl'],
-      needs: ['read on cluster lab', 'read on aws-account 123456789012'],
+      needs: ['read on cluster lab', 'read on aws-role 123456789012/ReadOnly'],
       readOnly: true,
       approvedBy: 'the read policy',
       waits: [],

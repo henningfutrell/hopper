@@ -432,14 +432,13 @@ export interface QuestionService {
 
 /**
  * What a source observed about a job it owns. Questions are answered in the UI, never through a source.
- * `unassigned` (issue #387): a started job's item is no longer assigned to the account it was taken for —
- * the job is flagged, and the user decides whether to stop it; `reassigned`: a flagged job's item is
- * assigned to it again.
+ * `unassigned` (issue #387): a started job's item is no longer assigned to the account it was taken for — the job is flagged,
+ * and the user decides whether to stop it; `reassigned`: a flagged job's item is assigned to it again. `finish` (issue #1460):
+ * a job on its own wait whose item closed by its own work (the done-check passes) ends finished, `reason` its result.
  */
 export type SourceSignal =
-  | { kind: 'cancel'; jobId: JobId; reason: string }
-  | { kind: 'unassigned'; jobId: JobId }
-  | { kind: 'reassigned'; jobId: JobId };
+  | { kind: 'cancel' | 'finish'; jobId: JobId; reason: string }
+  | { kind: 'unassigned' | 'reassigned'; jobId: JobId };
 
 /**
  * What happened to a job, reported back to its source: the claim and the end. Progress and questions
@@ -606,6 +605,7 @@ export interface SourceHost extends AnswersFromThread {
    */
   changedSince(item: SourceItem, jobId?: JobId): string | undefined;
   cancel(jobId: JobId, reason: string): void;
+  finishWaiting(jobId: JobId, result: string): void; // the `finish` signal (issue #1460); late or ended: nothing
   /**
    * The item offered again for a job not ended (issue #375): its priority, from the item or a routing rule, as
    * now (job.reprioritized) — a started job's too, the live priority (issue #535); and, while it waits and has not

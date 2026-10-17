@@ -194,11 +194,12 @@ Version 1 (`docs/schemas/job.failed.v1.json`). A job ended with an error. `prior
 
 ## `job.cancelled`
 
-Version 1 (`docs/schemas/job.cancelled.v1.json`). A job was cancelled.
+Version 1 (`docs/schemas/job.cancelled.v1.json`). A job was cancelled. `reason`: why, as the hopper or its source names it (`cancelled in UI` for a person's cancel). `note` (issue #1460): the person's own words why, when they gave some; never told to the source.
 
 | field | type | required |
 |---|---|---|
 | `reason` | string | yes |
+| `note` | string | no |
 
 ```json
 {
@@ -4043,7 +4044,7 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 
 ## `vault.sandbox_requested`
 
-Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`, or `--template NAME`, issue #1471), or the hopper asked for one before the job started, as the job's prompt names the template (issue #1471): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
