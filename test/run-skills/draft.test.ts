@@ -11,6 +11,7 @@ import { ON_MACHINE, type ClaudePrintOptions } from '../../src/plugins/claude-pr
 import { draftIssue } from '../../src/run-skills/draft.ts';
 import { loadRunSkill } from '../../src/run-skills/index.ts';
 import type { LoginReport, RunLogins } from '../../src/domain/types.ts';
+import { gone } from '../support/sweep.ts';
 
 const BIN = join(import.meta.dirname, '..', 'plugins', 'fake-claude.mjs');
 const KEYS = ['FAKE_CLAUDE_OUT', 'FAKE_CLAUDE_MODE', 'FAKE_CLAUDE_STRUCTURED', 'FAKE_CLAUDE_LITTER', 'CLAUDE_CONFIG_DIR'];
@@ -36,7 +37,6 @@ afterEach(() => {
 });
 
 const rec = () => JSON.parse(readFileSync(join(dir, 'rec.json'), 'utf8')) as { argv: string[]; stdin: string; cwd: string; pid: number };
-const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
 /** Until fake claude has read its prompt and littered. */
 async function started(): Promise<void> {
   for (let i = 0; i < 200 && !existsSync(join(dir, 'rec.json')); i++) await new Promise((r) => setTimeout(r, 25));
@@ -121,7 +121,8 @@ describe('draftIssue', () => {
     const before = readdirSync(config).sort();
     const r = await draftIssue(run({ wrap: onMachine, timeoutMs: 1500 }), input, signal());
     expect(r).toEqual({ error: 'timeout after 1500ms' });
-    expect(alive(rec().pid)).toBe(false);
+    // Killed, it can stay a zombie a moment, until its new parent reaps it.
+    await expect.poll(() => gone(rec().pid), { timeout: 2000 }).toBe(true);
     expectNothingLeft(before);
   });
 
@@ -134,7 +135,8 @@ describe('draftIssue', () => {
     await started();
     ac.abort();
     expect(await running).toEqual({ error: 'aborted' });
-    expect(alive(rec().pid)).toBe(false);
+    // Killed, it can stay a zombie a moment, until its new parent reaps it.
+    await expect.poll(() => gone(rec().pid), { timeout: 2000 }).toBe(true);
     expectNothingLeft(before);
   });
 

@@ -15,6 +15,7 @@ import { draftOn, type DraftChoice, type DraftHost } from '../../src/drafting/ru
 import { NOT_A_DRAFT } from '../../src/run-skills/draft.ts';
 import { loadRunSkill } from '../../src/run-skills/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
+import { gone } from '../support/sweep.ts';
 import { testSshAuth } from '../support/ssh.ts';
 
 const FAKE_AGENT = join(import.meta.dirname, '..', 'adapters', 'fake-print-agent.mjs');
@@ -159,8 +160,8 @@ describe('draftOn: what goes wrong, in plain words', () => {
       process.env.FAKE_AGENT_MODE = 'hang';
       expect(await draftOn(host([m]), pick('codex', m.id, { timeoutMs: 1500 }), input, signal())).toEqual({ error: `codex on ${on}: timed out after 1500 ms` });
       const call = lastCall('codex') as Call & { sandbox: { pid: number } };
-      const alive = (() => { try { process.kill(call.sandbox.pid, 0); return true; } catch { return false; } })();
-      expect(alive).toBe(false);
+      // Killed, it can stay a zombie a moment, until its new parent reaps it.
+      await expect.poll(() => gone(call.sandbox.pid), { timeout: 2000 }).toBe(true);
       expect(existsSync(call.cwd)).toBe(false);
     });
   }
