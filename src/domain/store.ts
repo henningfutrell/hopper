@@ -513,7 +513,7 @@ export interface UserStore {
   /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing; the GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent; the repositories' checks as last read (issue #1250), with their answers' ETags. */
   githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; githubOutbox: import('./github-outbox.ts').GitHubOutboxRepository; repoChecks: import('./repo-checks.ts').RepoChecksReadRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
-  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
+  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; notifierDeliveries: import('./notifier-deliveries.ts').NotifierDeliveryRepository; // the send log (issue #1014); notifier deliveries (issue #1587)
   settings: UserSettingsRepository;
   /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
   connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;

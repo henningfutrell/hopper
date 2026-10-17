@@ -12,6 +12,7 @@ import { createCloudLink, type CloudLink } from '../../src/http/cloud-link.ts';
 import { HttpError } from '../../src/http/errors.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
+import { systemOf } from '../support/system-secrets.ts';
 import { fixedClock } from '../store/helpers.ts';
 
 const closers: (() => void)[] = [];
@@ -21,7 +22,7 @@ function setup(): { instance: InstanceStore; link: CloudLink; events: NewEvent[]
   const instance = openInstanceStore({ url: installFromBefore(testDatabaseUrl()), clock: fixedClock() });
   closers.push(() => instance.close());
   const events: NewEvent[] = [], clock = fixedClock('2026-10-17T08:00:00.000Z');
-  const link = createCloudLink({ settings: instance.settings, events: { append: (e) => { events.push(e); } }, now: () => clock.now() });
+  const link = createCloudLink({ settings: instance.settings, secrets: systemOf({ vault: instance.vault, events: { append: (e) => e }, tx: instance.tx }), events: { append: (e) => { events.push(e); } }, now: () => clock.now() });
   return { instance, link, events, clock };
 }
 
@@ -40,7 +41,7 @@ describe('registering the instance at hopper.io', () => {
 
     clock.set('2026-10-17T08:09:59.000Z');
     expect(link.register(minted.code, 'Octo-Cat')).toBe('registered');
-    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'registered', linkedAt: '2026-10-17T08:00:00.000Z', registeredAt: '2026-10-17T08:09:59.000Z', by: 'admin' } });
+    expect(link.view()).toEqual({ link: { installId, account: 'octo-cat', state: 'registered', linkedAt: '2026-10-17T08:00:00.000Z', registeredAt: '2026-10-17T08:09:59.000Z', by: 'admin', linkKey: expect.objectContaining({ secret: 'cloud-link.key' }) } });
     expect(link.register(minted.code, 'octo-cat')).toBe('no-code');
 
     expect(events.map((e) => [e.type, e.data])).toEqual([
