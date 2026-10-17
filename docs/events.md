@@ -1324,6 +1324,7 @@ Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the
 | field | type | required |
 |---|---|---|
 | `provider` | `github` | yes |
+| `key` | string | no |
 | `account` | string | yes |
 | `reason` | string | yes |
 
@@ -1342,6 +1343,7 @@ Version 1 (`docs/schemas/connected_account.renewed.v1.json`). The renewer kept a
 | field | type | required |
 |---|---|---|
 | `provider` | `github` | yes |
+| `key` | string | no |
 | `account` | string | yes |
 | `expiresAt` | string | no |
 
@@ -1360,6 +1362,7 @@ Version 1 (`docs/schemas/connected_account.renewal_failed.v1.json`). A renewal o
 | field | type | required |
 |---|---|---|
 | `provider` | `github` | yes |
+| `key` | string | no |
 | `account` | string | yes |
 | `code` | string | yes |
 

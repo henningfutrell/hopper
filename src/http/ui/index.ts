@@ -11,7 +11,8 @@ import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import { registerLocalAccountRoutes } from './local-accounts.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { ACCESS_UNAVAILABLE, CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { ACCESS_UNAVAILABLE, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { registerConnectedAccountsRoutes } from './connected-accounts.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -154,13 +155,6 @@ export { usageGraphViewBody };
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 // Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect; take or drop a
 // sign-in's held grant (issue #647).
-export const connectedAccountsBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect', 'take-held', 'drop-held']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
-  // Issue #321: the job repositories, the whole list.
-  z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
-  // Issue #1380: a personal access token, with no GitHub App; never logged, never answered.
-  z.strictObject({ action: z.literal('connect-token'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), token: z.string().trim().min(1).max(1024).regex(/^\S+$/, 'one token, no spaces') }),
-]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
@@ -358,18 +352,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
   registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => personOf(signedInOf(req)!) });
 
-  // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
-  // device code once the provider shows it. The user's own accounts: their session's user alone.
-  app.post('/ui/api/connected-accounts', admin, async (req) => {
-    const body = parseWith(connectedAccountsBody, req.body);
-    const { connectedAccounts } = o.tenant(req);
-    if (body.action === 'choose') return connectedAccounts.choose(body.provider, body.repositories);
-    // The source email match (issue #1380): the account must have the email the session's identity signed in with.
-    const email = sessionOf(req)?.identity.email, by = email ? { email } : {};
-    if (body.action === 'connect') return connectedAccounts.connect(body.provider, by); if (body.action === 'connect-token') return connectedAccounts.connectToken(body.provider, body.token, by); // a personal access token (issue #1380)
-    if (body.action === 'take-held') return connectedAccounts.takeHeld(body.provider).catch((e: Error) => { throw new HttpError(409, e.message); });
-    return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : body.action === 'drop-held' ? connectedAccounts.dropHeld(body.provider) : connectedAccounts.disconnect(body.provider);
-  });
+  // design.md "Connected accounts": the user's own accounts, their session's user alone (issues #214, #1380, #1448).
+  registerConnectedAccountsRoutes(app, { admin, tenant: o.tenant, email: (req) => sessionOf(req)?.identity.email });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links
   // share one code: it works once, and expires like any other. `keep` (issue #95): the code the

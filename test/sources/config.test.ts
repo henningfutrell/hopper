@@ -65,8 +65,8 @@ describe('the GitHub source\'s options', () => {
 
 describe('github-account options', () => {
   it('no options get the defaults: enabled; privateKeyEnv as stored before issue #1243 is dropped', () => {
-    expect(ok(parseOptions(githubAccount, AUTHORS))).toEqual({ enabled: true, ...SHARED_DEFAULTS });
-    expect(ok(parseOptions(githubAccount, { ...AUTHORS, privateKeyEnv: 'MY_KEY' }))).toEqual({ enabled: true, ...SHARED_DEFAULTS });
+    expect(ok(parseOptions(githubAccount, AUTHORS))).toEqual({ enabled: true, account: 'github', ...SHARED_DEFAULTS });
+    expect(ok(parseOptions(githubAccount, { ...AUTHORS, privateKeyEnv: 'MY_KEY' }))).toEqual({ enabled: true, account: 'github', ...SHARED_DEFAULTS });
   });
 
   it.each([

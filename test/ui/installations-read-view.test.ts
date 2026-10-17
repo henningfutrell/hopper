@@ -9,7 +9,7 @@ import { boot, source, unmount } from './sources-daemon.ts';
 afterEach(unmount);
 
 const SOURCES = { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] };
-const CONNECTED = { provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [] };
+const CONNECTED = { provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [] };
 const INSTALLED = [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'] }];
 const panel = () => document.querySelector('[data-connected-account="github"]');
 const refreshes = () => vi.mocked(fetch).mock.calls.filter(([url, init]) => String(url) === '/ui/api/connected-accounts/refresh' && init?.method === 'POST')

@@ -27,60 +27,71 @@
 // A personal access token (issue #1380): with no GitHub App, a person connects with a token of their own. The field takes it
 // once and is cleared; the token is never shown again. Its connection lists the repositories the token reaches, not where the
 // app is installed, and links to no app.
-import { Link2, LogOut, RefreshCw, Unlink } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+// A further GitHub account (issue #1448, `accountKey` `github-2`, …): added with a personal access token, it has a panel of
+// its own — its job repositories, its source's sync, its health — never a device code or a sign-in; Remove this account
+// forgets it, its token and its job repositories. A repository chosen for another account is refused, with which one.
+import { Link2, LogOut, Unlink } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { DeviceCode } from '@/components/device-code';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
-import { ago } from '@/model/format';
-import type { AppInstallation, ConnectedAccountStatus, SourceStatus } from '@/model/wire';
+import type { ConnectedAccountStatus, SourceStatus } from '@/model/wire';
 import { logout, useHopper } from '@/store';
-import { useCanAdmin, useServerNow, useSignedInWith } from '@/store/selectors';
+import { useCanAdmin, useSignedInWith } from '@/store/selectors';
+import { ConnectionHealth, LABEL, NAME, Repositories, TokenConnect, type AccountKey, type Provider } from './connected-account-parts';
+import { AddAccount, FurtherAccount } from './further-account';
 import { SourceSync } from './source-sync';
 
 const POLL_MS = 2000;
-type Provider = ConnectedAccountStatus['provider'];
-const NAME: Record<Provider, string> = { github: 'GitHub' };
-const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'reconnect needed', unreadable: 'cannot be read' };
+/** A further account's number (issue #1448): `github-2` → 2; undefined for the first. */
+const furtherNumber = (key: AccountKey): number | undefined => { const m = /-(\d+)$/.exec(key); return m ? Number(m[1]) : undefined; };
 
-export function ConnectedAccountPanel({ provider, source, onStatus }: { provider: Provider; source?: SourceStatus | undefined; onStatus?: (s: ConnectedAccountStatus) => void }) {
+export function ConnectedAccountPanel({ provider, accountKey = provider, source, onStatus, onRemoved, onAdded }: {
+  provider: Provider; accountKey?: AccountKey; source?: SourceStatus | undefined; onStatus?: (s: ConnectedAccountStatus) => void; onRemoved?: () => void;
+  /** Offers Add another account under the connected first account (issue #1448); called once one is added. */
+  onAdded?: () => void;
+}) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
   // The Sources summary reads the sign-in as the panel has it (issue #1377).
   useEffect(() => { if (s) onStatus?.(s); }, [s, onStatus]);
   const canAdmin = useCanAdmin();
-  const signedInWith = useSignedInWith(provider);
+  const further = furtherNumber(accountKey);
+  // A further account is never the sign-in (issue #1448).
+  const signedInWith = useSignedInWith(provider) && further === undefined;
   const waiting = s?.state === 'waiting' || (s?.state === 'connected' && s.installationsReading === true);
   useEffect(() => {
     let live = true;
     const read = () => get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts')
-      .then((v) => { const mine = v.accounts.find((a) => a.provider === provider); if (live && mine) setS(mine); }, () => {});
+      .then((v) => { const mine = v.accounts.find((a) => a.key === accountKey); if (live && mine) setS(mine); }, () => {});
     void read();
     const t = waiting ? setInterval(read, POLL_MS) : undefined;
     return () => { live = false; if (t) clearInterval(t); };
-  }, [waiting, provider]);
+  }, [waiting, accountKey]);
   if (!s) return null;
 
   const name = NAME[provider];
+  const keyOf = further === undefined ? {} : { key: accountKey };
   const send = async (body: Record<string, unknown>): Promise<boolean> => {
-    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts', { ...body, provider })); return true; } catch (e) {
+    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts', { ...body, provider, ...keyOf })); return true; } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });
       toast.error((e as Error).message);
       return false;
     }
   };
   const act = (action: 'connect' | 'cancel' | 'disconnect' | 'take-held' | 'drop-held') => send({ action });
+  const remove = () => void send({ action: 'disconnect' }).then((ok) => { if (ok) { toast.success(`${name} account removed`); onRemoved?.(); } });
   const refresh = async () => {
-    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts/refresh', { provider })); } catch (e) { toast.error((e as Error).message); }
+    try { setS(await post<ConnectedAccountStatus>('/ui/api/connected-accounts/refresh', { provider, ...keyOf })); } catch (e) { toast.error((e as Error).message); }
   };
   const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' || s.state === 'unreadable' ? 'bad' : 'warn';
   const adminOnly = canAdmin ? undefined : `An admin can connect ${name}: sign in as one`;
   const byToken = s.state === 'connected' && s.grantedBy === 'token';
   const where = byToken ? 'the token' : 'the app';
   const tokenConnect = <TokenConnect name={name} disabled={!canAdmin} title={adminOnly} connect={(token) => send({ action: 'connect-token', token })} />;
+  if (further !== undefined) return <FurtherAccount s={s} name={name} n={further} tone={tone} source={source} canAdmin={canAdmin} adminOnly={adminOnly} send={send} refresh={() => void refresh()} remove={remove} />;
   return (
     <Panel title={`${name} account`} icon={Link2} action={<StatusBadge status={s.state} label={LABEL[s.state]} tone={tone} />} bodyClassName="space-y-2 text-xs">
       <div data-connected-account={provider} className="space-y-2">
@@ -117,22 +128,7 @@ export function ConnectedAccountPanel({ provider, source, onStatus }: { provider
           {s.renewal && <div data-renewal className="break-words text-warn">
             Its token could not be renewed yet: {s.renewal}. The hopper tries again by itself; the connection goes on.
           </div>}
-          <InstallationsRead s={s} name={name} what={byToken ? 'Repositories the token reaches' : 'Where the app is installed'} refresh={() => void refresh()} />
-          {s.installations !== undefined && s.installationsError && <div data-installations-error className="text-warn break-words">{s.installationsError}. Shown: the read before it.</div>}
-          {s.installations === undefined
-            ? <div data-installations className="space-y-1">
-              {s.installationsError
-                ? <div data-installations-error className="text-warn break-words">{s.installationsError}</div>
-                : <div data-installations-unread className="text-muted-foreground">{byToken ? 'The repositories the token reaches are' : 'Where the app is installed is'} not read from {name} yet.</div>}
-              {s.configUrl && <div><a className="underline" href={s.configUrl} target="_blank" rel="noreferrer">See where the app is installed</a></div>}
-            </div>
-            : s.installations.length > 0
-              ? <JobRepositories key={s.jobRepositories.join('\n')} installations={s.installations} installUrl={s.installUrl} where={where} saved={s.jobRepositories} canAdmin={canAdmin}
-                save={(repositories) => send({ action: 'choose', repositories })} />
-              : <div data-installations className="space-y-1">
-                <div className="text-warn">{byToken ? 'The token reaches no repository.' : 'The app is not installed on any account you can see: it reaches no repository yet.'}</div>
-                {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
-              </div>}
+          <Repositories s={s} name={name} byToken={byToken} where={where} canAdmin={canAdmin} send={send} refresh={() => void refresh()} />
           {source && <SourceSync s={source} addRepository={(repo) => send({ action: 'choose', repositories: [...s.jobRepositories.filter((r) => r !== repo), repo] })} />}
           {signedInWith
             ? <>
@@ -140,6 +136,7 @@ export function ConnectedAccountPanel({ provider, source, onStatus }: { provider
               <Button size="xs" variant="outline" onClick={() => void logout()}><LogOut />Sign out</Button>
             </>
             : <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `Forgets the ${name} account and its token: its issues stop becoming jobs, and you stay signed in`} onClick={() => void act('disconnect')}><Unlink />Stop working through {name}</Button>}
+          {onAdded && <AddAccount provider={provider} onAdded={onAdded} />}
         </>}
         {s.state === 'waiting' && (
           <DeviceCode className="rounded-lg border bg-muted/30 px-4 py-5" provider={name} userCode={s.userCode} verificationUri={s.verificationUri} expiresAt={s.expiresAt}
@@ -172,163 +169,5 @@ export function ConnectedAccountPanel({ provider, source, onStatus }: { provider
         </>}
       </div>
     </Panel>
-  );
-}
-
-/** When where the app is installed was read from GitHub (issue #1250), and Refresh to read it again. */
-function InstallationsRead({ s, name, what, refresh }: { s: Extract<ConnectedAccountStatus, { state: 'connected' }>; name: string; what: string; refresh: () => void }) {
-  const now = useServerNow();
-  const cls = 'text-muted-foreground';
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className={cls}>{what}:</span>
-      {s.installationsReading
-        ? <span data-installations-read className={cls}>reading {name}…</span>
-        : s.installationsCheckedAt
-          ? <time data-installations-read dateTime={s.installationsCheckedAt} title={s.installationsCheckedAt} className={cls}>read {ago(s.installationsCheckedAt, now)}</time>
-          : <span data-installations-read className={cls}>not read yet</span>}
-      <Button data-installations-refresh size="xs" variant="ghost" disabled={s.installationsReading === true} title={`Reads from ${name} again: ${what.toLowerCase()}`} onClick={refresh}><RefreshCw />Refresh</Button>
-    </div>
-  );
-}
-
-const FLOW: Record<'device' | 'web' | 'token', string> = { device: 'a device code', web: 'the browser', token: 'a personal access token' };
-const when = (iso: string | undefined): string => (iso ? new Date(iso).toLocaleString() : 'not yet');
-
-/** When and how the connection was made, its last and next renewal, and its last error (issue #647). */
-function ConnectionHealth({ s, name }: { s: Extract<ConnectedAccountStatus, { state: 'connected' }>; name: string }) {
-  const by = s.connectedBy === 'sign-in' ? `by signing in with ${name}` : s.connectedBy === 'sources' ? 'from Sources' : undefined;
-  const flow = s.grantedBy ? FLOW[s.grantedBy] : undefined;
-  return (
-    <dl data-connection-health className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
-      <dt>Connected</dt><dd data-connected-at>{when(s.connectedAt)}{by ? `, ${by}` : ''}{flow ? `, through ${flow}` : ''}</dd>
-      {s.matchEmail && <><dt>Email</dt><dd data-match-email className="break-words">{s.matchEmail}, checked at each renewal</dd></>}
-      <dt>Last renewal</dt><dd data-renewed-at>{when(s.renewedAt)}</dd>
-      <dt>Next renewal</dt><dd data-next-renewal>{s.nextRenewalAt ? when(s.nextRenewalAt) : 'none: its token does not renew'}</dd>
-      <dt>Last error</dt><dd data-last-error className={s.lastError ? 'break-words text-warn' : undefined}>{s.lastError ? `${when(s.lastError.at)}: ${s.lastError.error}` : 'none'}</dd>
-    </dl>
-  );
-}
-
-/**
- * The job repositories (issue #321): every repository the app reaches, by installation, each ticked when
- * jobs may use it; a filter narrows what is shown, and Choose shown / Clear shown act on what is shown.
- * Save sends the whole list; a new saved list remounts it (its key).
- */
-function JobRepositories({ installations, installUrl, where, saved, canAdmin, save }: {
-  installations: AppInstallation[]; installUrl: string | undefined; where: string; saved: string[]; canAdmin: boolean; save: (repositories: string[]) => Promise<boolean>;
-}) {
-  const [chosen, setChosen] = useState(() => new Set(saved));
-  const [filter, setFilter] = useState('');
-  const [busy, setBusy] = useState(false);
-  const savedKey = saved.join('\n');
-  const reached = useMemo(() => [...new Set(installations.flatMap((i) => i.repositories))], [installations]);
-  const unreached = saved.filter((r) => !reached.includes(r));
-  const needle = filter.trim().toLowerCase();
-  const matches = (r: string) => needle === '' || r.toLowerCase().includes(needle);
-  const all = [...reached, ...unreached];
-  const list = all.filter((r) => chosen.has(r));
-  const dirty = list.join('\n') !== savedKey || list.length !== saved.length;
-  const toggle = (r: string, on: boolean) => setChosen((c) => { const n = new Set(c); if (on) n.add(r); else n.delete(r); return n; });
-  const shown = (on: boolean) => setChosen((c) => { const n = new Set(c); for (const r of all.filter(matches)) { if (on) n.add(r); else n.delete(r); } return n; });
-  const box = (r: string) => (
-    <label className="flex items-center gap-2">
-      <input type="checkbox" className="size-4" checked={chosen.has(r)} disabled={!canAdmin || busy} onChange={(e) => toggle(r, e.target.checked)} />{r}
-    </label>
-  );
-  const adminOnly = canAdmin ? undefined : 'An admin can choose the job repositories: sign in as one';
-  return (
-    <div data-job-repositories className="space-y-2">
-      <div className="font-medium">Repositories jobs may use</div>
-      <div data-job-repositories-summary>{list.length} of {reached.length} {reached.length === 1 ? 'repository' : 'repositories'} chosen for jobs</div>
-      {list.length === 0 && <div data-job-repositories-none className="text-warn">None chosen. No new jobs come in until you choose the repositories they may use.</div>}
-      <div className="flex flex-wrap items-center gap-2">
-        <Input data-repository-filter className="h-7 max-w-64 text-xs" placeholder="Filter repositories" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <Button size="xs" variant="outline" disabled={!canAdmin || busy} title={adminOnly} onClick={() => shown(true)}>Choose shown</Button>
-        <Button size="xs" variant="outline" disabled={!canAdmin || busy} title={adminOnly} onClick={() => shown(false)}>Clear shown</Button>
-      </div>
-      <div data-installations className="space-y-2">
-        {installations.map((i) => <Installation key={i.account} installation={i} matches={matches} box={box} />)}
-        {installUrl && <div><a className="underline" href={installUrl} target="_blank" rel="noreferrer">Add the app to another account or organization</a></div>}
-        {unreached.length > 0 && (
-          <ul className="rounded-md border bg-muted/30 px-2 py-1">
-            {unreached.map((r) => <li key={r} data-repository={r} hidden={!matches(r)} className="font-mono break-all">{box(r)}<span className="text-warn"> — {where} does not reach it</span></li>)}
-          </ul>
-        )}
-      </div>
-      <Button size="xs" disabled={!canAdmin || busy || !dirty} title={adminOnly}
-        onClick={() => { setBusy(true); void save(list).then((ok) => { setBusy(false); if (ok) toast.success('Job repositories saved'); }); }}>Save</Button>
-    </div>
-  );
-}
-
-/** One installation of the app: the account, the repositories it reaches there (each with its box), and where to choose them. */
-function Installation({ installation: i, matches, box }: { installation: AppInstallation; matches: (r: string) => boolean; box: (r: string) => React.ReactNode }) {
-  const n = i.repositories.length;
-  return (
-    <div data-installation={i.account} className="space-y-1">
-      <div>
-        On <span className="font-mono">{i.account}</span>: {i.repositorySelection === 'all' ? 'all repositories' : 'chosen repositories'}
-        {n === 0 ? <span className="text-warn"> — it reaches no repository there yet.</span> : <> — {n} {n === 1 ? 'repository' : 'repositories'}:</>}
-      </div>
-      {n > 0 && (
-        <ul className="max-h-48 overflow-y-auto rounded-md border bg-muted/30 px-2 py-1">
-          {i.repositories.map((r) => <li key={r} data-repository={r} hidden={!matches(r)} className="font-mono break-all">{box(r)}</li>)}
-        </ul>
-      )}
-      {i.permissions && <div data-installation-access className="text-muted-foreground">{access(i.permissions)}</div>}
-      {i.permissionRequest && <PermissionRequest installation={i} asked={i.permissionRequest} />}
-      {i.settingsUrl && <div><a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Choose its repositories</a></div>}
-    </div>
-  );
-}
-
-/**
- * An installation's permission request (issue #1378): accepted, or the new permissions the app asks for that wait for an
- * owner of the account, with the link where they review the request on GitHub.
- */
-function PermissionRequest({ installation: i, asked }: { installation: AppInstallation; asked: Record<string, string> }) {
-  if (Object.keys(asked).length === 0) return <div data-permission-request="accepted" className="text-muted-foreground">It has every permission the app asks for.</div>;
-  return (
-    <div data-permission-request="asked" className="text-warn">
-      Waiting for an owner of <span className="font-mono">{i.account}</span> to accept the new permissions the app asks for: {inWords(asked)}.
-      {i.settingsUrl && <> <a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Review the request</a></>}
-    </div>
-  );
-}
-
-/** What an installation grants, in words: `{ issues: 'write', metadata: 'read' }` → "It may: read and write issues; read metadata." */
-function access(permissions: Record<string, string>): string {
-  return `It may: ${inWords(permissions)}.`;
-}
-
-/** Permissions in words: `{ issues: 'write', metadata: 'read' }` → "read and write issues; read metadata". */
-function inWords(permissions: Record<string, string>): string {
-  const by = (level: string) => Object.entries(permissions).filter(([, l]) => l === level).map(([p]) => p.replaceAll('_', ' ')).sort();
-  const parts = [['read and write', by('write')], ['administer', by('admin')], ['read', by('read')]] as const;
-  return parts.filter(([, ps]) => ps.length > 0).map(([verb, ps]) => `${verb} ${ps.join(', ')}`).join('; ');
-}
-
-/**
- * Connect with a personal access token (issue #1380): no GitHub App. The token goes to the hopper once and the field is
- * cleared; a refusal says why in the panel.
- */
-function TokenConnect({ name, disabled, title, connect }: { name: string; disabled: boolean; title: string | undefined; connect: (token: string) => Promise<boolean> }) {
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
-  const value = token.trim();
-  return (
-    <div className="space-y-1 pt-1">
-      <div className="text-muted-foreground">
-        Or connect with a personal access token of your {name} account, with no app. It needs to read and write issues, pull
-        requests and code in the repositories your jobs use, and to read your email addresses.
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Input data-token-input type="password" autoComplete="off" className="h-7 max-w-64 text-xs" placeholder="Personal access token" value={token}
-          disabled={disabled || busy} onChange={(e) => setToken(e.target.value)} />
-        <Button data-token-connect size="xs" variant="outline" disabled={disabled || busy || value === ''} title={title ?? `Connects ${name} with this token; it is kept in your vault`}
-          onClick={() => { setBusy(true); void connect(value).then(() => { setToken(''); setBusy(false); }); }}><Link2 />Connect with a token</Button>
-      </div>
-    </div>
   );
 }

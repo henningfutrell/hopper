@@ -3,7 +3,9 @@
 // sync inside it: the one way the hopper reads and writes GitHub (issues #359, #1377). Its summary line reads the sign-in
 // the panel shows. Below it, each job repository's setup (issue #652).
 // A source that takes the same work as an earlier one (issue #1264) is named in a banner at the top, with one click to remove it.
-import { useState } from 'react';
+// More than one GitHub account (issue #1448): each further account has a panel of its own, with its source inside it, and Add
+// another GitHub account, in the first account's panel once it is connected, takes a personal access token of another account.
+import { useCallback, useEffect, useState } from 'react';
 import { CopyX, Inbox, Trash2 } from 'lucide-react';
 import { sendPluginsEdit } from '@/components/plugin-form';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,7 @@ import type { ConnectedAccountStatus, SourceStatus } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { AfterAnswer } from './after-answer';
 import { ConnectedAccountPanel } from './connected-account';
+import { get } from '@/lib/api';
 import { RepoSetupSection } from './repo-setup';
 import { SourceSync } from './source-sync';
 
@@ -51,9 +54,20 @@ function DuplicateBanner({ duplicates }: { duplicates: SourceStatus[] }) {
   );
 }
 
+/** The further GitHub accounts' keys (issue #1448), read again after one is added or removed. */
+function useFurtherKeys(): [ConnectedAccountStatus['key'][], () => void] {
+  const [keys, setKeys] = useState<ConnectedAccountStatus['key'][]>([]);
+  const read = useCallback(() => {
+    void get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((v) => setKeys(v.accounts.map((a) => a.key).filter((k) => k !== 'github')), () => {});
+  }, []);
+  useEffect(read, [read]);
+  return [keys, read];
+}
+
 export function Sources() {
   const sources = useHopper((s) => s.sources);
   const [signIn, setSignIn] = useState<ConnectedAccountStatus>();
+  const [further, readFurther] = useFurtherKeys();
   const v = sourcesView(sources, signIn);
   return (
     <div className="space-y-4">
@@ -64,7 +78,8 @@ export function Sources() {
           <p data-github-summary className="text-xs text-muted-foreground">{v.summary}</p>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
-          <ConnectedAccountPanel provider="github" source={v.account} onStatus={setSignIn} />
+          <ConnectedAccountPanel provider="github" source={v.account} onStatus={setSignIn} onAdded={readFurther} />
+          {further.map((k) => <ConnectedAccountPanel key={k} provider="github" accountKey={k} source={v.further[k]} onRemoved={readFurther} />)}
           {v.github.map((s) => <SourceCard key={s.name} s={s} />)}
         </div>
       </section>

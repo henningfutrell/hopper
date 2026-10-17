@@ -3,6 +3,7 @@
 // newest assessed failures still open (issues #529, #618) and those that ended in the last day, the profile — and, on
 // each problem, failure and hand-off (issue #551), whether the daemon takes each action now and why not. The routes
 // refuse with the same reasons, so the view offers only what is taken.
+import { everyJobRepository } from '../domain/job-repositories.ts';
 import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_YOLO_MODE, following, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { HANDOFF_WAIT, prOpenStuck } from '../domain/work-items.ts';
@@ -149,8 +150,8 @@ function problemView(store: Reads, p: Problem): ProblemView {
 }
 
 /** The Pull requests page's cards (issue #637), as it reads them: those the hopper gave up on are stuck work. */
-function pullRequestCards(store: Pick<UserStore, 'jobs' | 'settings'>, now: Date) {
-  const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, store.settings.getJobRepositories('github'), now.getTime(), (id) => store.jobs.get(id));
+function pullRequestCards(store: Pick<UserStore, 'jobs' | 'settings' | 'connectedAccounts'>, now: Date) {
+  const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, everyJobRepository(store), now.getTime(), (id) => store.jobs.get(id));
   return view.repos.flatMap((g) => g.pullRequests);
 }
 
@@ -160,7 +161,7 @@ function prOpenStale(store: Reads, now: Date): string[] {
   return store.workItems.list({ state: ['pr_open'] }).filter((i) => prOpenStuck(i, follows(i.jobId), now.getTime())).map((i) => i.jobId ?? i.key);
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);

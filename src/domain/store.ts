@@ -9,7 +9,7 @@ import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
-  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountKey, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
 
 // Report a bug (issue #694): its repository sits beside its record.
 export type { BugReportRepository } from './bug-reports.ts';
@@ -457,24 +457,27 @@ export interface ConnectedAccount {
 export type StoredAccount = Omit<ConnectedAccount, 'accessToken' | 'refreshToken'>;
 
 export interface ConnectedAccountRepository {
-  /** The account's row, without its tokens. */
-  get(provider: ConnectedAccountProvider): StoredAccount | undefined;
-  /** Insert or replace the provider's row; tokens given with it are not kept here. */
-  put(account: StoredAccount): void;
-  /** Inside a transaction: lock the provider's row until it ends (issue #441); false when there is none. */
-  lockRow(provider: ConnectedAccountProvider): boolean;
+  /** The account's row, without its tokens, by its key (issue #1448: the first account's is its provider). */
+  get(key: ConnectedAccountKey): StoredAccount | undefined;
+  /**
+   * Insert or replace the account's row, by `key` (absent: its provider, the first account); tokens given with it are not kept
+   * here. `keys`: the keys of the rows kept (issue #1448), in key order.
+   */
+  put(account: StoredAccount, key?: ConnectedAccountKey): void; keys(): ConnectedAccountKey[];
+  /** Inside a transaction: lock the account's row until it ends (issue #441); false when there is none. */
+  lockRow(key: ConnectedAccountKey): boolean;
   /** The tokens a row kept before issue #658 (sealed by the token box, or in clear), for the move into the vault; none: none left. */
-  legacyTokens(provider: ConnectedAccountProvider): { accessToken: string; refreshToken?: string } | undefined;
+  legacyTokens(key: ConnectedAccountKey): { accessToken: string; refreshToken?: string } | undefined;
   /** The row without the tokens it kept before issue #658: once they are in the vault. */
-  dropLegacyTokens(provider: ConnectedAccountProvider): void;
+  dropLegacyTokens(key: ConnectedAccountKey): void;
   /**
    * Take the account's renewal lock, held by this connection until `unlock` or until the connection
    * ends — a crashed process lets it go (issue #441). False when another connection holds it.
    */
-  lock(provider: ConnectedAccountProvider): boolean;
-  unlock(provider: ConnectedAccountProvider): void;
+  lock(key: ConnectedAccountKey): boolean;
+  unlock(key: ConnectedAccountKey): void;
   /** True when there was one. */
-  delete(provider: ConnectedAccountProvider): boolean;
+  delete(key: ConnectedAccountKey): boolean;
 }
 
 export interface UserStore {

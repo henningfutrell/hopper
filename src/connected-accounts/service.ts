@@ -38,7 +38,7 @@
 // its grant is held (a **held grant**, held.ts) until the person takes it or drops it. No job holds a token of it (issue
 // #652): a job's GitHub goes through the hopper, which asks for the token as it is at each call.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountKey, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { createAtRest, NO_KEY, PROVIDER_NAME, recordOf } from './at-rest.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
@@ -47,7 +47,7 @@ import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './ho
 import type { Renewal } from './renewal.ts';
 import { createHeldGrants } from './held.ts'; import { createEmailMatch } from './email-match.ts';
 import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
-import { createRenewer, type Live } from './renewer.ts'; import { createTokenConnect } from './token-connect.ts';
+import { createRenewer, type Live } from './renewer.ts'; import { createTokenConnect } from './token-connect.ts'; import type { ByProvider } from './keyed.ts';
 
 export { PROVIDER_NAME };
 export { RENEW_AHEAD_MS, RENEW_EVERY_MS, RETRY_MS } from './renewer.ts';
@@ -79,15 +79,15 @@ export interface ConnectedAccountsOptions {
   /** The device flows (tests may pass their own); default: deviceFlow(app). */
   flows?: Partial<Record<ConnectedAccountProvider, DeviceFlow>>;
   /** Called once an account is connected or disconnected: its job source syncs now rather than at its next poll. */
-  onChange?(provider: ConnectedAccountProvider): void;
+  onChange?(key: ConnectedAccountKey): void;
   /** Renews a token with its refresh token (renewal.ts), per provider. */
   refresh(provider: ConnectedAccountProvider, refreshToken: string, grantedBy: Grant['grantedBy']): Promise<Grant>;
   /** Called once when an account's sign-in ends (issue #358): the owner is told. */
-  onExpired?(provider: ConnectedAccountProvider, account: string, reason: string): void;
+  onExpired?(key: ConnectedAccountKey, account: string, reason: string): void;
   /** Called after this process renewed an account's token (issue #647): recorded, never with a token. */
-  onRenewed?(provider: ConnectedAccountProvider, renewed: { account: string; expiresAt?: string }): void;
+  onRenewed?(key: ConnectedAccountKey, renewed: { account: string; expiresAt?: string }): void;
   /** Called after a renewal failed (issue #647): its error code, never a token. */
-  onRenewalFailed?(provider: ConnectedAccountProvider, failed: { account: string; code: string }): void;
+  onRenewalFailed?(key: ConnectedAccountKey, failed: { account: string; code: string }): void;
   /** Deletes the old access token at GitHub (issue #597, issue #514): the one a new grant replaces. Absent: none is deleted. */
   deleteToken?(provider: ConnectedAccountProvider, accessToken: string): Promise<void>;
   /** Whether the runtime gives a client secret (issue #597): `incorrect_client_credentials` without one ends the connection. */
@@ -95,12 +95,14 @@ export interface ConnectedAccountsOptions {
   /** Where the tokens are kept (issue #658): system secrets in the user's vault, sealed under the master key; none is kept without it (issue #659). */
   secrets: SystemSecrets;
   /** How often the renewer looks, default RENEW_EVERY_MS; whether the source email match is on (issue #1380), the instance's setting read at each check, absent: on. */
-  renewEveryMs?: number; sourceEmailMatch?(): boolean;
+  /** `accountKey`: the account's key, said in its status (issue #1448): a further account's (account-set.ts); absent: its provider, the first account. */
+  renewEveryMs?: number; sourceEmailMatch?(): boolean; accountKey?: ConnectedAccountKey;
 }
 
 export type { Renewal };
 
-export type ConnectedAccountsService = ConnectedAccounts & ConnectedAccountTokens & {
+/** One account's service: the ports by provider, not by key (account-set.ts holds a user's every account, issue #1448). */
+export type ConnectedAccountsService = ByProvider<Omit<ConnectedAccounts, 'add' | 'keys'> & ConnectedAccountTokens> & {
   /** Starts the renewer (issue #441): it looks at once, then every `renewEveryMs`; and the installations' schedule (issue #1250). */
   start(): void;
   /** One look of the renewer; resolves once every renewal it started has settled. */
@@ -171,7 +173,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   });
 
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
-    const base = { provider, via: CONNECTED_VIA } as const;
+    const base = { provider, key: o.accountKey ?? provider, via: CONNECTED_VIA } as const;
     const w = waiting.get(provider);
     if (w) return { ...base, state: 'waiting', userCode: w.userCode, verificationUri: w.verificationUri, expiresAt: w.expiresAt };
     const c = current(provider);

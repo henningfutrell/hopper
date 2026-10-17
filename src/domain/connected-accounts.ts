@@ -5,6 +5,20 @@ import type { KeptAnswer } from './repo-checks.ts';
 export const CONNECTED_ACCOUNT_PROVIDERS = ['github'] as const;
 export type ConnectedAccountProvider = (typeof CONNECTED_ACCOUNT_PROVIDERS)[number];
 
+/**
+ * A connected account's key (issue #1448): a user may connect more than one account at a provider, each with its own job
+ * repositories. The first is keyed by its provider (`github`), so what was kept before stays as it was; each further one by
+ * its provider and a number from 2 (`github-2`, `github-3`, …).
+ */
+export type ConnectedAccountKey = ConnectedAccountProvider | `${ConnectedAccountProvider}-${number}`;
+const KEY = /^(github)(?:-([2-9]|[1-9]\d+))?$/;
+/** Whether `s` is a connected account key. */
+export const isConnectedAccountKey = (s: string): s is ConnectedAccountKey => KEY.test(s);
+/** The provider a key's account is at. */
+export const providerOfKey = (key: ConnectedAccountKey): ConnectedAccountProvider => KEY.exec(key)![1] as ConnectedAccountProvider;
+/** Whether the key names a further account, not the first. */
+export const furtherAccount = (key: ConnectedAccountKey): boolean => key !== providerOfKey(key);
+
 /** How every connected account reaches its provider: the app the hopper ships (its GitHub App; the client id is public). */
 export const CONNECTED_VIA = 'the hopper\'s app';
 
@@ -29,11 +43,11 @@ export interface AppInstallation {
 }
 
 /**
- * A user's connected account at one provider, as GET /api/connected-accounts reports it: connected
+ * A user's connected account at one provider, by its key (issue #1448), as GET /api/connected-accounts reports it: connected
  * (the account, when), not connected, expired, unreadable, waiting on the device code the user enters at
  * `verificationUri`, or failed. Facts only, never a token.
  */
-export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: typeof CONNECTED_VIA } & (
+export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; key: ConnectedAccountKey; via: typeof CONNECTED_VIA } & (
   | {
     state: 'connected'; account: string; connectedAt: string;
     /** The repositories this account's jobs may use, chosen in Sources (issue #321); empty: none, so no job. */
@@ -108,9 +122,10 @@ export interface AppInstallationsRead {
   etags: Record<string, KeptAnswer>;
 }
 
-/** The kept reads (tenant migration 66): one row per provider. */
+/** The kept reads (tenant migration 66): one row per connected account, by its key (issue #1448: the first's is its provider). */
 export interface AppInstallationsReadRepository {
-  get(provider: ConnectedAccountProvider): AppInstallationsRead | undefined;
-  put(read: AppInstallationsRead): void;
-  remove(provider: ConnectedAccountProvider): void;
+  get(key: ConnectedAccountKey): AppInstallationsRead | undefined;
+  /** `key`: the account's; absent: the read's provider, the first account's. */
+  put(read: AppInstallationsRead, key?: ConnectedAccountKey): void;
+  remove(key: ConnectedAccountKey): void;
 }
