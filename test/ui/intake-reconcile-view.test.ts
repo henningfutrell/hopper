@@ -34,7 +34,7 @@ describe('Intake takes a decision from the source\'s list (issue #1178)', () => 
     const card = row(view()!, url(9));
     expect(card.querySelector('[data-approved]')).toBeNull();
     expect(card.querySelector('[data-slot="request-approved"]')).toBeNull();
-    expect(button(card, 'Decline')!.disabled).toBe(false);
+    expect(button(card, 'Decline…')!.disabled).toBe(false);
   });
 
   it('an approved issue whose job is done leaves Needs approval', async () => {
