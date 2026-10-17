@@ -173,6 +173,9 @@ export function createGitHubLimiter(o: {
     const cached = isGet ? cache.get(cacheKey) : undefined;
     const send = cached ? { ...options, headers: { ...options.headers, 'if-none-match': cached.etag } } : options;
 
+    // A bucket past its reset and its hold says nothing any more: a renewed token's old one goes (issue #1402).
+    const t = now();
+    for (const [k, b] of buckets) if (b.resetAt <= t && (b.holdUntil ?? 0) <= t && b.pending === 0) buckets.delete(k);
     const counted = await admit(key, call);
     // Octokit's merged options keep the route's template (`/repos/{owner}/{repo}/issues`): one route, whatever the repository.
     const route = String(options.url ?? parsed.url);
