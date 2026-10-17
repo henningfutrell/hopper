@@ -162,8 +162,10 @@ describe('the cloud acceptance run (issue #866)', () => {
     expect(text).toContain('<cluster>');
   });
 
-  it('refuses a run that names no asset', async () => {
+  it('refuses a run that names no asset, or a workspace with no AWS role', async () => {
     await expect(runWith(hopper(), {})).rejects.toThrow(/--aws-role|--cluster/);
+    // terraform's probes run with the read session of the template's AWS role (design.md "The read-only check").
+    await expect(runWith(hopper(), { workspace: 'infra-ro' })).rejects.toThrow(/--terraform-workspace needs --aws-role/);
   });
 });
 

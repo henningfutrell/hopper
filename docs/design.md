@@ -94,6 +94,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
+| `scripts/cloud-acceptance.ts` | the cloud acceptance run (issue #866, `docs/cloud-acceptance.md`): drives a tester's hopper through its operator CLI — mint tests, a template in plain words, its read-only check — and writes a masked report; `collect` sums the reports up | everything in `src/` but `src/sandbox/probes.ts` (the probes' ids, tools and titles), `src/secrets/mask.ts` and types of `src/domain/`; it never runs in the daemon |
 | `scripts/kind-check.ts` | the kind check (issue #1281, docs/deploy.md "Check the chart on kind"): `kind`, `helm` and `kubectl` bring up a fresh kind cluster with the Helm chart, ask the hopper's health in its pod, and look in every pod for a Podman or Docker socket or runtime; run by `.github/workflows/kind.yml` | everything in `src/`; it never runs in the daemon |
 | `scripts/hopper-cluster.sh` | a compose install moved onto Kubernetes (issue #1373, "Moving a compose install onto a cluster", `docs/kubernetes.md`): `bootstrap` (k3s rootless, beside Podman), `migrate` (the database and the master key into the chart's release, the cutover) and `rollback`; in every image, `hopper cluster script`. `scripts/kind-migrate-check.ts` checks it end to end on kind | everything in `src/`; it never runs in the daemon |
 | `deploy/helm/hopper/` | the Helm chart (issue #1281, `docs/deploy.md` "On Kubernetes, with Helm"): the hopper, its Postgres, OpenFGA and Solr as Kubernetes objects, and its lane pods (issue #1284, "Lane pods"), the same images as `compose.yaml`; an external Postgres and the tunnel services, whose scripts in `files/` are compose's own, unchanged, and OpenFGA's migration as a Job named by its spec (issue #1282, tested by `test/scripts/helm-chart-parts.test.ts`); tested by `test/scripts/helm-chart.test.ts` on what `helm template` renders | everything in `src/`: it runs the published image and sets only the daemon's runtime variables |
@@ -10773,6 +10774,46 @@ and `docker-runtime.test.ts` (the one-shot create body, `wait`, `logs` with and 
 `HOPPER_TEST_PODMAN_SOCKET` is set): a check box of the box image with `kubectl` added ran its probes as `agent` and was
 removed with its volume; with a token minted for a cluster no server answers at, the hopper's own cluster probes were
 all `error`, kubectl asked the server its kubeconfig names, and the check failed.
+
+## The cloud acceptance run (issue #866, 2026-10-17)
+
+The sandbox module (issues #708 to #864) was shown against doubles for the cloud side; no run used real cloud tools.
+Owner's decision on issue #866: no outside credentials are used, and nothing goes into the hopper's vault from the
+maintainers. Make the real-cloud acceptance easy for outside testers to run in their own environment with their own
+credentials: a runbook, one command, results in a form they report back, and a way to collect them.
+
+- **The runbook.** `docs/cloud-acceptance.md`: what the run proves, what a tester needs (a hopper with sandbox boxes, a
+  minting credential for an AWS account and a cluster), the command, the client-machine variant, how to read and file
+  the report, and how maintainers collect the reports.
+- **The command.** `node scripts/cloud-acceptance.ts run --aws-role <account>/<role> --cluster <name> [--namespace
+  <cluster>/<ns>] [--terraform-workspace <name>] [--hopper "<cli>"]`. It adds no path into the hopper: each step is an
+  operator CLI command, so the vault's checks, the approval gate and the read-only check apply as for a person. The steps:
+  `hopper vault` (the hopper answers, and a minting credential mints for each asset); `hopper vault mint-test` for the
+  role and the cluster; `hopper template request --needs` with the needs in plain words ("Needs in words"), reads only;
+  the template approved, by the read policy or by a person while the command waits; then its read-only check, which is
+  dropped first when one ended before the run, so the report is of this run. The check is the box run with real tools:
+  one read per tool and the write probes ("The read-only check"), beside the hopper, or on a client machine when the
+  hopper has no runtime ("The read-only check on a client target").
+- **The report.** `report.json` and `report.md`: each step `passed`, `failed` or `skipped` with a short output, and each
+  tool (`aws`, `kubectl`, `helm`, `terraform`) `passed` (its read worked and each write was refused), `failed` or `skipped`
+  (no probe of it ran, with what to name to cover it). Masked before it is written: the tester's account id, role,
+  cluster, namespace and workspace become `<account>`, `<role>`, `<cluster>`, `<namespace>`, `<workspace>`; any other
+  12-digit number, email address, key, token, IP address, private host name and the host name are masked too
+  (`src/secrets/mask.ts`). `report.md` ends with the report as a `json hopper-cloud-acceptance` block.
+- **Collecting.** A tester files `report.md` with the issue form `.github/ISSUE_TEMPLATE/cloud-acceptance.yml` (label
+  `cloud-acceptance`). `node scripts/cloud-acceptance.ts collect <file>...` reads the reports from `report.json` files and
+  from `gh issue list --label cloud-acceptance --json number,url,body` output, and prints a sum per tool and one row per
+  report; it names each issue with no report. It reaches no network itself.
+
+**Not built.** The secret scope of a launch (a box gets only the secrets its launch named) and a launch of a box for a
+job are not in the command: the CLI launches no box, and the integration tests already prove both against the real
+daemon (`test/integration/job-sandboxes.test.ts`, `test/integration/template-request-api.test.ts`). No run of the command
+against a real cloud is recorded here: that is the testers' reports.
+
+Tests: `test/scripts/cloud-acceptance.test.ts` (the hopper CLI as a double: a passing run with each tool's reads and
+writes; the plain-words needs; a template waiting for a person; a check that ended before the run, run again; a write
+that went through fails the run and names the tool; a hopper out of reach; a tool no asset covers; the masking;
+`collect` over report files and an issue list; the command's files and exit codes).
 
 ## Probe marks (issue #916, 2026-10-12)
 

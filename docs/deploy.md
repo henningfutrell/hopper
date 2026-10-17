@@ -938,6 +938,11 @@ To reach it from other machines at this host's name or address, add them to `all
 The node port must be in the cluster's node port range (30000–32767 by default). A request through the mapping comes from
 the node's network, which the default `lanPeers` holds: the browser reads the API only with a UI session.
 
+### Check the sandboxes on a real cloud
+
+To prove the sandbox module with real `aws`, `kubectl`, `helm` and `terraform` against your own AWS account and
+cluster, follow `docs/cloud-acceptance.md`: one command runs the check and writes a report you can file.
+
 ### Check the chart on kind
 
 `scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
