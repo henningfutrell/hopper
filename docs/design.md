@@ -261,7 +261,8 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
   the decision path and never gates a start. A question frees its lane in the transaction that
   pauses the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
-  - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
+  - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option: a machine added or joined takes
+    the machine defaults' lanes; only this machine, `local`, falls back to 4), scaled down
     past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
@@ -4144,7 +4145,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 
 | Part | Stands | Carried by |
 |------|--------|------------|
-| Container sandbox for agent jobs | built as the **sandbox box**: a person runs the Add machine line, the box joins as a client target and an instance of a template, and its jobs get only what that template is approved for ("Joining a machine", "Templates"). Not built: the hopper does not start or stop a box itself ("Joining a machine", option B), and the box's egress is open | #308; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
+| Container sandbox for agent jobs | built: the hopper starts and stops each sandbox itself, through the sandbox module: a need box for each need step or box step, burned when the step ends, and a check box for the read-only check; each gets only what its template is approved for ("Sandboxes are burned after each step", "Templates"). The **sandbox box** an older build had join as a client target is gone (issue #1349). Not built: the box's egress is open | #308, #1349; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
@@ -10564,18 +10565,18 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   what its boxes run, so they are approved with its image (`approval.tools`, `imageApproved`): a change of tools waits for
   a person as a new image does, and `template.saved` and `vault.approved` carry `tools`. Templates are a JSON body: an old
   one has no `tools`, which is none. No migration.
-- **A launch's tools** (`params.tools`, `POST /ui/api/machines/sandbox`, `hopper sandbox launch --tool <name>`). A box of a
-  template gets all its tools, or the fewer the launch names; a tool it does not add is refused (400). A box of no template
-  may name any tool in the catalog: tools are software, not credentials. A launch with no tool runs the base image as
-  before. The sandbox record keeps the tools and the built image.
+- **A box's tools** (`boxImage`, `src/sandbox/box-image.ts`). A need box and a check box of a template run its image
+  with all the template's tools. Before issue #1349 a launch could name fewer (`params.tools`, the tool toggles on the
+  Add machine form, `hopper sandbox launch --tool <name>`), and the sandbox record kept the tools and the built image.
+  Since issue #1349 there is no launch: Add machine adds a computer only, and a template's tools are set on its form
+  (Settings → Vault) or with `hopper template save --tool <name>`.
 - **A template made on request** gets the tools its needs use (`toolsForNeeds`): `cluster` and `namespace` → `kubectl`,
   `helm`; `argocd-app` → `kubectl`; `aws-account` and `aws-role` → `aws`; `terraform-workspace` → `terraform`, `aws`. The
   read policy approves them with the template, as it approves the box image: they are the hopper's own pinned software.
   A template a job asked for before this has no tools, and a job does not add them (a job never widens a template).
 
 **Not built.** Removing old tools images: each new base or tool set leaves one in the runtime's storage, as pulled images
-do. A tool outside the four; a version per template. Tools on the Add machine form (the UI launch gets all the template's
-tools; the CLI and the API name fewer). A running box gets no new tools: launch another.
+do. A tool outside the four; a version per template. A step gets all its template's tools, never fewer.
 
 **Residual risk, stated.** The build fetches from the four release hosts and Debian's mirrors with the runtime's network.
 A compromised release host cannot change what is installed (the sums are pinned here), but it can make the build fail.
@@ -14347,9 +14348,10 @@ or written to its disk: the value is in memory, in the client and the helper, fo
 **On the box.** The hopper client (`src/client/vault.ts`) serves a Unix socket, `vault.sock` in its client dir (the
 dir 700, the socket 600), and writes the helper `hopper-secret` beside it at each start: a short sh script that runs
 the client's `secret.ts` with node, the socket named. The client's `/release` answer says the helper's path (`vault`);
-the hopper keeps it on the machine (`MachineSnapshot.client.vault`) and gives each job there `HOPPER_SECRET`, beside the
-GitHub proxy's `HOPPER_TOKEN_FILE` (`src/users/github-proxy.ts`, issue #563). A machine whose client says no helper (an
-ssh target, this machine, a client from before) gets none.
+the hopper keeps it on the machine (`MachineSnapshot.client.vault`). Since vault grants (issue #652), only a box of a
+template gets the helper: the hopper gives each job there `HOPPER_SECRET`, beside the GitHub proxy's
+`HOPPER_TOKEN_FILE` (`src/users/github-proxy.ts`, issue #563). Any other machine gets none: a machine of no template, a
+machine whose client says no helper (an ssh target, this machine, a client from before).
 
 | run | prints |
 |-----|--------|
@@ -14367,7 +14369,7 @@ dial-in), once, within 30 s. The hopper (`VaultService.deliver`) gives the value
 
 1. a client target holds the machine key, and the signature is its token's (else **401**);
 2. the proxy token is one this user's link key gives the job (issue #563): it dies with the job;
-3. the job is at work (`running`, `waiting_answer`): ended, failed or parked, nothing;
+3. the job is at work (`running`, `waiting_answer`, `waiting_on`; `AT_WORK`, `src/vault/box.ts`): ended, failed or parked, nothing;
 4. the job runs on that machine (its lane's, or where its pane waits);
 5. the machine is a box of a template, and the secret is in the template's approved scope now (`scopeOf`, slice 2);
 6. the vault holds the secret and the key provider opens it.

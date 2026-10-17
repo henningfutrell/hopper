@@ -1697,6 +1697,17 @@ Open the UI at `http://localhost:4790/` and sign in with GitHub: the first perso
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
 
+**Updates.** This install updates itself (`docs/design.md` "Self-update"). It checks its update channel every minute.
+When a newer version is there, the UI shows a notice with What's new and **Update now**; Settings → Version has the
+same button, the channel and the **Auto-update** switch. With Auto-update on, the hopper applies an update as soon as a
+check finds it. An update builds the next install in `~/.local/lib/hopper.next` while jobs keep running, and checks that
+it loads. Then it waits while there is a **restart blocker**: a running job that cannot reattach after a restart. The
+UI shows which jobs it waits for. Then it moves the old install to `~/.local/lib/hopper.prev` (the previous `.prev`
+goes), puts the new one in its place, and exits 75: systemd starts it again (`SuccessExitStatus=75`,
+`RestartForceExitStatus=75`). `hopper-herdr` does not restart, so herdr panes and their jobs stay. A build that fails
+leaves the install as it was. To go back by hand, stop the service, move `~/.local/lib/hopper.prev` back to
+`~/.local/lib/hopper`, and start it: the next start records the update as failed.
+
 ## Sign-in set up at launch
 
 Who may use the UI is set by sign-in: the realms (an auth gateway in front, OIDC or SAML single
