@@ -30,6 +30,8 @@
 //     Then the issue's text names octo/tools#7 as its parent, and the lineage is on the job's timeline (`job.child_issue_filed`)
 //     And with --required the hopper links it as a GitHub sub-issue of octo/tools#7: a required part of it
 //     And a link GitHub refuses leaves the issue filed: the job and the timeline say why
+//     And a required child is routed (issue #1510): labelled and assigned, so Intake lists it as a request card, and the
+//     job is answered the wait line that wakes it when the child closes
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
 //   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
@@ -366,6 +368,27 @@ describe('issue lineage through the hopper (issue #729)', () => {
     expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
       jobId: job.id, data: expect.objectContaining({ parent: { repo: 'octo/tools', number: 7 }, child: expect.objectContaining({ number: 8 }), required: true, subIssue: true }),
     })]);
+  });
+
+  it('a required child is routed (issue #1510): the hopper labels it and assigns it, so Intake lists it, and the job is told what to wait on', async () => {
+    const { t, job, env } = await parented();
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/site', '--title', 'Fix there', '--body', 'Needed.', '--required']);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, parent: 'octo/tools#7', required: true, routed: true, waitOn: `issue octo/site#${String(answer.number)}` });
+    const child = t.github.issues.find((i) => i.repo === 'octo/site' && i.number === answer.number)!;
+    expect(child).toMatchObject({ labels: ['hopper'], assignees: ['owner'] });
+    expect(child.body).toContain('Filed through hopper for job');
+    expect(child.body).toContain('Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.');
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      jobId: job.id, data: expect.objectContaining({ child: expect.objectContaining({ repo: 'octo/site', number: answer.number }), required: true, routed: true }),
+    })]);
+  });
+
+  it('a follow-up is not routed: no label and no assignee, a person triages it', async () => {
+    const { t, env } = await parented();
+    const answer = json(await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/site', '--title', 'Later', '--body', 'Some day.']));
+    expect(answer).not.toHaveProperty('routed');
+    expect(t.github.issues.find((i) => i.repo === 'octo/site' && i.number === answer.number)).toMatchObject({ labels: [], assignees: [] });
   });
 
   it('a sub-issue link GitHub refuses leaves the issue filed: the job and the timeline say why', async () => {

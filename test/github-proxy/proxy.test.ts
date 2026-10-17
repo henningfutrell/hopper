@@ -127,11 +127,11 @@ describe('issue lineage: an issue a job files is a child of the job\'s issue (is
       .toEqual({ ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' });
   });
 
-  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done', () => {
+  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done and is routed (issue #1510)', () => {
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: false })).toBe(
       '\n\n---\nFollow-up of octo/tools#7.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true })).toBe(
-      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.');
     expect(filedNote('job-1', 'r1')).toBe('\n\n---\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
   });
 });
