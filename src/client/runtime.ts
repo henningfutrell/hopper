@@ -13,6 +13,8 @@
 // sandbox box an older hopper launched (issue #1349: none joins as a machine now) is stopped and removed, never created. The volumes of a label are listed, so the hopper's sweep finds a home whose box is gone, and a volume is removed
 // only when it carries a sandbox label (issue #1371).
 // A box's one-shot stats (`stream=false`, nothing else) are read for the stack resources (issue #947); never a stream.
+// The images are listed, and the list answers only the hopper's box builds; one of them is removed by its id, never
+// forced (issue #1202): a tools image, or an untagged stage of its build, as src/sandbox/leftover-builds.ts knows them.
 // In a Kubernetes pod with no socket (issue #1289) the problem asks for no socket or systemd fix: a pod has neither.
 // A refused call answers 403 in the runtime's own shape, `{message}`. The checks restate src/sandbox/flags.ts's
 // builder on purpose: this end imports nothing of hopper, and it holds the line even if the hopper's end is wrong.
@@ -44,6 +46,14 @@ const NEED_LABEL = 'io.hopper.need';
 const HOME = '/home/agent';
 /** The tag of a tools image (src/sandbox/tools.ts `TOOLS_IMAGE`): the one image a build may make here. */
 const TOOLS_TAG = /^localhost\/hopper-box-tools:[0-9a-f]{16}$/;
+/** The label of a tools build's fetch stage (src/sandbox/tools.ts `TOOLS_STAGE_LABEL`): an untagged image with it is the hopper's. */
+const TOOLS_STAGE_LABEL = 'io.hopper.tools-stage';
+/** Docker names an untagged image `<none>:<none>`: that is no tag. */
+const NO_TAG = '<none>:<none>';
+/** An image is removed only by its full id, as the image list gives it. */
+const IMAGE_ID = /^(sha256:)?[0-9a-f]{64}$/;
+/** The one option of the image list each adapter sends (src/sandbox/images.ts): intermediate images too. */
+const LIST_ALL: Record<RuntimeKind, string> = { podman: 'true', docker: '1' };
 /** A build's options as each adapter sends them; any other (a host network, a volume, a remote context) is refused. */
 const BUILD_OPTIONS: Record<RuntimeKind, Record<string, string>> = { podman: { dockerfile: 'Containerfile', layers: 'true', rm: 'true' }, docker: { dockerfile: 'Containerfile', rm: '1' } };
 const MAX_CONTAINERFILE = 64 * 1024;
@@ -171,11 +181,24 @@ function buildProblem(kind: RuntimeKind, q: URLSearchParams, c: RuntimeCall): st
   return undefined;
 }
 
+interface ImageSeen { Id?: unknown; RepoTags?: unknown; Labels?: unknown; Config?: { Labels?: unknown } }
+/**
+ * Whether the image, as the image list or an inspect gives it, is a box build of the hopper's: each of its tags is a
+ * tools image's, or it has no tag and carries the fetch stage's label. Anyone else's image is never answered or removed.
+ */
+function boxBuild(i: ImageSeen): boolean {
+  const tags = Array.isArray(i.RepoTags) ? i.RepoTags.filter((t) => t !== NO_TAG) : [];
+  if (tags.length > 0) return tags.every((t) => typeof t === 'string' && TOOLS_TAG.test(t));
+  const labels = isObject(i.Labels) ? i.Labels : isObject(i.Config) && isObject(i.Config.Labels) ? i.Config.Labels : undefined;
+  return labels !== undefined && typeof labels[TOOLS_STAGE_LABEL] === 'string';
+}
+const bareId = (id: string): string => id.replace(/^sha256:/, '');
+
 /**
  * `container`, with `checkOnly`: a call only a check box or a need box takes — its end awaited, its output read; with `stats`: a box's
  * one-shot stats (issue #947).
  */
-type Check = { container: string; checkOnly?: true; stats?: true } | { volume: string } | { create: true } | { build: true } | 'open';
+type Check = { container: string; checkOnly?: true; stats?: true } | { volume: string } | { image: string } | { images: true } | { create: true } | { build: true } | 'open';
 
 /** What a call is, as the adapters make it: undefined, it is no call of theirs. */
 function routeOf(kind: RuntimeKind, method: string, route: string): Check | undefined {
@@ -189,6 +212,9 @@ function routeOf(kind: RuntimeKind, method: string, route: string): Check | unde
   if (method === 'POST' && route === '/build') return { build: true };
   if (a === 'images' && method === 'GET' && n >= 3 && (seg.at(-1) === 'json' || (kind === 'podman' && seg.at(-1) === 'exists'))) return 'open';
   if (method === 'POST' && route === (kind === 'podman' ? '/images/pull' : '/images/create')) return 'open';
+  // The hopper's box builds (issue #1202): listed, and one removed.
+  if (method === 'GET' && route === '/images/json') return { images: true };
+  if (a === 'images' && n === 2 && method === 'DELETE') return { image: b! };
   // The volumes of a label (issue #1371): Podman's list, and Docker's.
   if (method === 'GET' && route === (kind === 'podman' ? '/volumes/json' : '/volumes')) return 'open';
   if (a === 'volumes' && n === 2 && (method === 'DELETE' || (kind === 'docker' && method === 'GET'))) return { volume: b! };
@@ -235,6 +261,25 @@ export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { 
     const problem = !isObject(c.body) ? 'a create carries its body'
       : here.kind === 'podman' ? podmanCreateProblem(c.body) : dockerCreateProblem(c.body, query.get('name'));
     if (problem) return refused(problem);
+  }
+  if (check !== 'open' && 'images' in check) {
+    if (query.size !== 1 || query.get('all') !== LIST_ALL[here.kind]) return refused(`the images are listed with all=${LIST_ALL[here.kind]} and nothing else`);
+    const listed = await call(here.socket, c.method, c.path, undefined, timeout);
+    if (listed.status < 200 || listed.status >= 300) return listed;
+    let images: unknown;
+    try { images = JSON.parse(listed.text); } catch { return refused('the runtime\'s image list is not JSON'); }
+    if (!Array.isArray(images)) return refused('the runtime\'s image list is not a list');
+    return { status: listed.status, text: JSON.stringify(images.filter((i) => isObject(i) && boxBuild(i))) };
+  }
+  if (check !== 'open' && 'image' in check) {
+    if (query.size !== 0) return refused('an image is never forced: it is removed with no option');
+    if (!IMAGE_ID.test(check.image)) return refused('an image is removed by its id, as the image list gives it');
+    // A remove only of a box build of the hopper's: the id alone is no proof it is one.
+    const seen = await call(here.socket, 'GET', `${prefix}/images/${encodeURIComponent(check.image)}/json`, undefined, timeout);
+    if (seen.status < 200 || seen.status >= 300) return seen;
+    let image: ImageSeen = {};
+    try { image = JSON.parse(seen.text) as ImageSeen; } catch { /* nothing known of it */ }
+    if (typeof image.Id !== 'string' || bareId(image.Id) !== bareId(check.image) || !boxBuild(image)) return refused(`${check.image} is not a box build of the hopper's`);
   }
   if (check !== 'open' && 'volume' in check) {
     if (!NAME.test(check.volume)) return refused(`${check.volume} is not a sandbox box's home volume`);

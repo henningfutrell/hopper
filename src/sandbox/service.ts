@@ -125,10 +125,17 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
         down.set(g.key, reason);
       }
     }
-    if (o.runtime && now.getTime() - buildsAt >= LEFTOVER_PASS_MS) {
+    // The leftover box builds (issue #1120), beside the hopper and on each client target it reached now (issue #1202).
+    if (now.getTime() - buildsAt >= LEFTOVER_PASS_MS) {
       buildsAt = now.getTime();
-      await removeLeftoverBuilds({ runtime: o.runtime, now, inUse: o.repo.list().map((r) => r.image), logger: o.logger })
-        .catch((e: unknown) => o.logger.warn(`hopper: cannot remove the leftover box builds: ${e instanceof Error ? e.message : String(e)}`));
+      const inUse = o.repo.list().map((r) => r.image);
+      for (const g of groups) {
+        const runtime = places.runtimeOf(g.userId ?? '', g.machine);
+        if (!runtime || down.has(g.key)) continue;
+        const where = g.userId === undefined ? 'beside the hopper' : `on ${g.machine}`;
+        await removeLeftoverBuilds({ runtime, now, inUse, where, logger: o.logger })
+          .catch((e: unknown) => o.logger.warn(`hopper: cannot remove the leftover box builds ${where}: ${e instanceof Error ? e.message : String(e)}`));
+      }
     }
   };
   const burnPass = (): Promise<void> => (running ??= pass(o.clock.now()).finally(() => { running = undefined; }));

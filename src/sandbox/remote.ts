@@ -5,7 +5,8 @@
 // each call again before it runs it. A machine not dialled in, or with no runtime, is a problem, never a box started.
 // A build (a tools image, issue #716) carries its context, a tar, in base64; the box then runs the image built there.
 // A check box (the read-only check, issue #716) runs there too: its end is awaited, and its output comes back in base64,
-// as the bytes the runtime sent (libpod frames them).
+// as the bytes the runtime sent (libpod frames them). The hopper's leftover box builds there are listed and removed
+// (issue #1202), as beside the hopper.
 import type { BuildingRuntime, RuntimeRelay } from '../domain/sandboxes.ts';
 import { createDockerRuntime } from './docker.ts';
 import { createPodmanRuntime } from './podman.ts';
@@ -58,5 +59,8 @@ export function createRemoteRuntime(machine: string, relay: RuntimeRelay): Build
     stop: async (id) => (await known()).stop(id),
     remove: async (id) => (await known()).remove(id),
     list: async (labels) => (await known()).list(labels),
+    // The hopper's box builds on the machine (issue #1202): its client answers only those, and removes only those.
+    listImages: async () => (await known()).listImages!(),
+    removeImage: async (id) => (await known()).removeImage!(id),
   };
 }
