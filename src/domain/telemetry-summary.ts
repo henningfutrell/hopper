@@ -29,7 +29,7 @@ export interface TelemetrySummary {
   exporting: boolean;
   /** The slowest actions (requests that change something: not GET or HEAD), by p95, at most `TELEMETRY_SUMMARY_TOP`. */
   actions: TimingStat[];
-  /** Each kind of job span that ended, slowest p95 first. */
+  /** Each kind of job span that ended, and each job step (issue #1486 part 7), slowest p95 first. */
   jobSpans: TimingStat[];
   /** The most called GitHub routes, at most `TELEMETRY_SUMMARY_TOP`. */
   github: GitHubUseStat[];
