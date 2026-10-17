@@ -1,100 +1,56 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "anyOf": [
-    {
-      "type": "object",
-      "properties": {
-        "from": {
-          "type": "string",
-          "enum": [
-            "quarantined",
-            "untrusted",
-            "screened",
-            "approved",
-            "trusted",
-            "owner"
-          ]
-        },
-        "to": {
-          "type": "string",
-          "enum": [
-            "quarantined",
-            "untrusted",
-            "screened",
-            "approved",
-            "trusted",
-            "owner"
-          ]
-        },
-        "reason": {
-          "type": "string"
-        },
-        "by": {
-          "type": "string",
-          "const": "jev"
-        }
-      },
-      "required": [
-        "from",
-        "to",
-        "reason",
-        "by"
-      ],
-      "additionalProperties": false
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
     },
-    {
-      "type": "object",
-      "properties": {
-        "from": {
-          "type": "string",
-          "enum": [
-            "quarantined",
-            "untrusted",
-            "screened",
-            "approved",
-            "trusted",
-            "owner"
-          ]
-        },
-        "to": {
-          "type": "string",
-          "enum": [
-            "quarantined",
-            "untrusted",
-            "screened",
-            "approved",
-            "trusted",
-            "owner"
-          ]
-        },
-        "reason": {
-          "type": "string"
-        },
-        "by": {
-          "type": "string",
-          "const": "person"
-        },
-        "person": {
-          "type": "string"
-        },
-        "via": {
-          "type": "string",
-          "enum": [
-            "ui",
-            "cli",
-            "api"
-          ]
-        }
-      },
-      "required": [
-        "from",
-        "to",
-        "reason",
-        "by",
-        "person",
-        "via"
-      ],
-      "additionalProperties": false
+    "to": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "jev",
+        "person"
+      ]
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
     }
-  ]
+  },
+  "required": [
+    "from",
+    "to",
+    "reason",
+    "by"
+  ],
+  "additionalProperties": false
 }

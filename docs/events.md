@@ -1342,7 +1342,14 @@ Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with
 
 Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`).
 
-`data` is `{}`.
+| field | type | required |
+|---|---|---|
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `to` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `reason` | string | yes |
+| `by` | `jev` \| `person` | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
