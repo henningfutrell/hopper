@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, and a job whose lease ended taken over by any hopper on the database (`leases.ts`, issue #1662) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
-| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -24718,7 +24718,7 @@ id>`), the user's GitLab account told as the trusted actor at each check. So onl
 OpenFGA trusts nobody, as on GitHub. A model edited before this change lacks `intake#trusted_actor accepts gitlab_account`:
 its gap (`gitlabIntakeGaps`) is apart from GitHub's, so GitHub's intake still decides, and no GitLab issue is a job. An act
 GitLab does not say who did is no trusted act. Any other issue is listed with why: `not of a trusted origin: <who> <did
-what>, and is not a trusted actor`. There are no request cards from GitLab in this part.
+what>, and is not a trusted actor`. There are no request cards from GitLab in this part (issue #1642 part 3 adds them).
 
 **The item.** Its key and URL are the issue's URL; `repo` is the project path, `number` its `iid`, `origin: trusted`. The
 prompt is the issue's text in the untrusted block, then the hopper's context: the forge, the project and the issue, its
@@ -24867,12 +24867,56 @@ repositories only, so a GitLab project follows the switch for all job repositori
 **Left for later parts of issue #1642:** request cards for GitLab issues of another origin; a GitLab route for a job's API
 reads and writes; OAuth for GitLab; more than one GitLab account; the user's own GitHub acts that name no job repository; and,
 from this part, tending a GitLab merge request, a person's Merge now and Close PR on GitLab, and yolo mode per GitLab project.
+Part 3 below does the request cards.
 
 **Verification:** `test/gitlab/follow.test.ts` (the report's labels and follow; what is seen; the yolo merge at the head with
 the marker first; no merge for a draft, merge conflicts, a failed or running pipeline, or yolo mode off; the grace window; a
 refused merge kept and asked again; a person's merge and close; a merge after a stop; the check of an older merge; yolo mode
 asked by the project's URL; `hopper:pr-ready` and `hopper:pr-closed` keep an issue out; the Pull requests list's number),
 `test/gitlab/source.test.ts`, over the fake GitLab (its merge, which closes the issues the merge request closes).
+
+### Part 3: request cards from GitLab (2026-10-17)
+
+A GitLab issue assigned to the account that is not of a trusted origin is now a **request card**, as on GitHub ("Trusted origin
+and request cards"). Before, it was listed with why and never taken.
+
+**The card** (`src/gitlab/intake.ts`, `gitlabVerdict`). The origin is judged as before (`origin.ts`: who wrote it, added the
+label, assigned it to the account, and each edit of its title or description; Access decides each GitLab user). When one act is
+not trusted, the card holds the hash of its title and description (`requestHash`, as GitHub's title and body), its author, each
+act as an actor (`role` `author`, `labelled`, `assigned` or `edited`, the GitLab username as `login`, the user id as `id`,
+`trusted`), and why, one line per act. The outcome is GitHub's: `a request: approve it to take it`, group `request`, action
+`approve`; a declined text is in the group `declined`. A new card's text records `source.request_opened` once, and a card the
+sync no longer offers records `source.request_withdrawn` (only for a picked project the sync read: `projectOfKey`).
+
+**Approve and Decline** (`gitlabIntakeAct`, through `POST /ui/api/sources/gitlab-account/intake`, a person's act through the UI
+session). Only on the text the last sync showed (`hash`). Approve records the text as the item's snapshot (reason `approved`)
+and `source.request_approved`, through the user's intake trust, as on GitHub; Intake lists the card taken at once, and the next
+sync takes the issue as a job of origin `approved`, its prompt the text approved. Decline records `source.request_declined`.
+Nothing is written to GitLab for either. Any other action is refused: `not offered on GitLab`.
+
+**An edit after the approval** (an edit by anyone, or a text of another hash) makes it a card again, with the text approved
+before (`approved`): GitLab's text is compared with the approved snapshot at each sync.
+
+**Decisions:**
+- **The user's intake trust, as GitHub's.** Approvals, declines and the card events are the same records, so Intake, the
+  work-item ledger and the notifiers treat a GitLab card as a GitHub one. Only the origin's acts differ, so `OriginRole` gains
+  `edited` (the event schemas of `source.request_approved` and `source.request_auto_approved` with it: an addition, no stored
+  event changes).
+- **No GitLab outbox.** GitHub's Approve queues GitHub work (the assignee's comments read, `hopper:done` taken off a reopened
+  card). A GitLab card has neither: the job reads no comments from GitLab, and there are no reopened cards from GitLab yet. So
+  Approve writes nothing to GitLab and needs no outbox.
+- **Approve only on what the last sync showed.** GitHub's Approve reads the issue again when the sync has not listed it (no
+  sync since a restart); a GitLab Approve then says `not in this source's scope`, and the next sync shows the card.
+
+**Left for later parts of issue #1642:** auto-approval for GitLab cards; reopened cards from GitLab (an issue reopened after its
+job was done); a GitLab route for a job's API reads and writes; OAuth for GitLab; more than one GitLab account; the user's own
+GitHub acts that name no job repository; tending a GitLab merge request, a person's Merge now and Close PR on GitLab, and yolo
+mode per GitLab project.
+
+**Verification:** `test/gitlab/request-cards.test.ts` (a card with who did what, opened once; Approve of the text shown, taken
+at the next sync as approved, another hash refused; an edit makes a card again with the text approved before; Decline; other
+actions refused; a card withdrawn), `test/gitlab/source.test.ts`, `test/integration/gitlab-source.test.ts` (Approve through the
+UI route, and the job of origin `approved`).
 
 ## Sagas: work that survives a stop (issue #1524, part 1, 2026-10-17)
 

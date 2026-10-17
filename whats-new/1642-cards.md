@@ -1,0 +1,1 @@
+- A GitLab issue that someone else wrote, labelled or edited now shows in Intake as a request, and you can approve it to run it as a job or decline it.

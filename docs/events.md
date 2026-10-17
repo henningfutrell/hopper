@@ -225,7 +225,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane. `reason` `link restored` (issue #752): the machine's link is back after `job.link_lost` and the job's pane is alive; it goes on from its saved turn.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane. `reason` `link restored` (issue #752): the machine's link is back after `job.link_lost` and the job's pane is alive; it goes on from its saved turn. `reason` `its hopper stopped` (issue #1662): another hopper on the same database took over a running job whose lease ended.
 
 | field | type | required |
 |---|---|---|
@@ -1453,7 +1453,7 @@ Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned the
 
 ## `source.request_approved`
 
-Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a request card (issue #652): an issue not of a trusted origin — `actors` says who wrote, labelled and assigned it, and whether each is a trusted actor —, whose title and body hash as `hash`. Its text is the item's snapshot (`approved`): the next sync takes it, and its job runs that text. `person` and `via`: who approved it. Never the text.
+Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a request card (issue #652): an issue not of a trusted origin — `actors` says who wrote, labelled and assigned it (on GitLab also who edited its title or description, `edited`, issue #1642), and whether each is a trusted actor —, whose title and body hash as `hash`. Its text is the item's snapshot (`approved`): the next sync takes it, and its job runs that text. `person` and `via`: who approved it. Never the text.
 
 | field | type | required |
 |---|---|---|

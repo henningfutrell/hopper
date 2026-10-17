@@ -6,26 +6,27 @@
 // then its end label. Paused while no account is attached, its token ended, or no project is picked. A job's merge request
 // judges done, and the issue's state gives the job's signals (issue #1642, completion.ts); the hopper follows it after the
 // job ends, labels the issue `hopper:pr-ready` while it waits, and merges it in yolo mode once its pipeline passed (part 2,
-// follow.ts).
+// follow.ts). An issue of another origin is a request card a person approves (intake.ts), as on GitHub; the job runs the text
+// approved.
 import type { JobSource, SourceSignal } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import type { SourceItem } from '../domain/source-item.ts';
-import type { IntakeOutcome } from '../domain/intake.ts';
+import { NO_INTAKE_TRUST, type IntakeContext, type IntakeOutcome, type IntakeTrust } from '../domain/intake.ts';
+import type { IntakeRequest } from '../domain/intake-origin.ts';
 import { GITLAB_LABEL, GITLAB_SOURCE_KIND, type GitLabIssue } from '../domain/gitlab-account.ts';
 import { LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from '../sources/github/labels.ts';
 import { CHECKS_LINE, untrustedBlock } from '../sources/github/context.ts';
 import type { GitLabAccount } from './account.ts';
 import { GitLabNotFound, type GitLabApi } from './api.ts';
 import { gitlabActs, untrustedActs } from './origin.ts';
+import { gitlabIntakeAct, gitlabVerdict, projectOfKey, takenOn, type GitLabVerdict } from './intake.ts';
+import { openRequests, requestOutcome, withdrawRequests } from '../sources/github/origin.ts';
 import { checkJobs, notComplete } from './completion.ts';
 import { endLabels, followMergeRequest, readyMergeRequest } from './follow.ts';
 
 /** The labels a job's end leaves on a GitLab issue: any of them keeps the issue out until a person removes it. */
 const END_LABELS = [LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, LABEL_PR_READY, LABEL_PR_CLOSED] as const;
-
-/** Why an issue not of a trusted origin is not taken: request cards from GitLab are a later part. */
-export const NOT_TRUSTED = 'not of a trusted origin';
 
 export interface GitLabSourceOptions {
   name: string;
@@ -42,6 +43,11 @@ export interface GitLabSourceOptions {
    * never its path alone, which a GitHub repository may share. Absent: never. And the clock of the no-pipeline grace window.
    */
   yoloMode?: (project: string) => boolean; clock?: { now(): Date };
+  /**
+   * The user's approvals and declines of request cards (issue #1642), and the intake's events (a card opened, withdrawn).
+   * Absent: nothing is approved, and an Approve is refused.
+   */
+  trust?: IntakeTrust; intake?: IntakeContext;
 }
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
@@ -87,6 +93,10 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   let outcomes: IntakeOutcome[] = [];
   let repoErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
+  const trust = o.trust ?? NO_INTAKE_TRUST;
+  /** The cards approved here that no sync since listed otherwise: key → the hash approved. The texts opened (`openRequests`). */
+  const fresh = new Map<string, string>();
+  const opened = new Set<string>();
   /** Yolo mode for a project, by its URL at the account's GitLab; no account connected: off. */
   const yolo = (project: string): boolean => {
     const s = o.account.status();
@@ -116,7 +126,6 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       author: i.author, assignee: account, priority: p.priority, priorityReason: p.reason,
       labels: i.labels, repo: i.project, number: i.iid,
       executor: o.executor ?? 'herdr-claude', ...(o.model ? { model: o.model } : {}),
-      origin: 'trusted',
       ...(i.description.trim() === '' ? { invalid: 'empty issue body' } : {}),
     };
   };
@@ -130,12 +139,12 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
     return undefined;
   };
 
-  /** Why the issue's origin is not trusted, one reason each; empty: it is. */
-  async function originOf(i: GitLabIssue, account: string): Promise<string[]> {
+  /** The issue's origin: trusted, approved, or its request card. */
+  async function originOf(i: GitLabIssue, account: string): Promise<GitLabVerdict> {
     const [events, notes] = await o.account.act((a) => Promise.all([a.labelEvents(i.project, i.iid), a.systemNotes(i.project, i.iid)]));
     const acts = gitlabActs(i, events, notes, label, account);
     const trusted = await o.account.trusted(acts.flatMap((a) => (a.userId === undefined ? [] : [a.userId])));
-    return untrustedActs(acts, trusted);
+    return gitlabVerdict(i, acts, untrustedActs(acts, trusted), trusted, trust);
   }
 
   return {
@@ -153,6 +162,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       if (s.state !== 'connected') return clear();
       const items: SourceItem[] = [];
       const listed: IntakeOutcome[] = [];
+      const requests = new Map<string, IntakeRequest>();
       const errors: Record<string, string> = {};
       for (const project of s.projects) {
         try {
@@ -162,15 +172,15 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
             const base = { key: i.url, title: i.title, repo: i.project };
             const out = notTaken(i, s.account);
             if (out) { listed.push({ ...base, ...out }); continue; }
-            let why: string[];
-            try { why = await originOf(i, s.account); } catch (err) {
+            let v: GitLabVerdict;
+            try { v = await originOf(i, s.account); } catch (err) {
               if (o.account.status().state !== 'connected') throw err;
               listed.push({ ...base, reason: `its origin cannot be read: ${(err as Error).message}`, group: 'other' });
               continue;
             }
-            if (why.length > 0) { listed.push({ ...base, reason: `${NOT_TRUSTED}: ${why.join('; ')}`, group: 'other' }); continue; }
+            if ('request' in v) { requests.set(i.url, v.request); listed.push(requestOutcome(base, v.request, trust)); continue; }
             branch ??= { name: await o.account.act((a) => a.defaultBranch(project)) };
-            items.push(toItem(i, s.baseUrl, branch.name, s.account));
+            items.push({ ...toItem(i, s.baseUrl, branch.name, s.account), origin: v.origin });
             listed.push(base);
           }
         } catch (err) {
@@ -180,11 +190,17 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       }
       if (o.account.status().state !== 'connected') return clear(); // ended now: paused from the next sync
       outcomes = listed; repoErrors = errors;
+      for (const [key, hash] of [...fresh]) if (requests.get(key)?.hash !== hash) fresh.delete(key);
+      if (o.intake) {
+        openRequests(o.name, o.intake, requests, opened);
+        withdrawRequests(o.name, o.intake, requests, { repos: s.projects, repoErrors: errors }, opened, (key) => projectOfKey(s.baseUrl, key));
+      }
       const projects = s.projects.length;
       if (projects > 0 && Object.keys(errors).length === projects) throw new Error(`GitLab answered no project: ${Object.values(errors)[0]}`);
       return items;
     },
-    intake: () => outcomes,
+    intake: () => takenOn(outcomes, fresh),
+    intakeAction: async (a) => gitlabIntakeAct({ source: o.name, offered: takenOn(outcomes, fresh), trust, approved: (key, hash) => fresh.set(key, hash) }, a),
     async check(active: Job[]): Promise<SourceSignal[]> {
       if (o.account.status().state !== 'connected' || !active.some((j) => j.source?.source === o.name)) { checkErrors = {}; return []; }
       const r = await o.account.act((a) => checkJobs(a, o.name, label, active));

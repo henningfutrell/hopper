@@ -15,6 +15,7 @@ import { createGitLabSource } from '../../src/gitlab/source.ts';
 import { requestHash, type IntakeRequest } from '../../src/domain/intake-origin.ts';
 import type { IntakeContext, IntakeTrust } from '../../src/domain/intake.ts';
 import type { GitLabActorRef } from '../../src/domain/access.ts';
+import type { GitLabAccountRecord } from '../../src/domain/gitlab-account.ts';
 import { REQUEST_REASON, DECLINED_REASON } from '../../src/sources/github/origin.ts';
 import { TEXT_CHANGED_SINCE_SHOWN } from '../../src/sources/github/intake-actions.ts';
 import { createFakeGitLab, type FakeGitLabIssue } from '../support/fake-gitlab.ts';
@@ -63,7 +64,7 @@ async function connected() {
   cleanups.push(() => gitlab.close());
   gitlab.tokens.set('glpat-ada', { id: 7, username: 'ada', email: 'ada@example.com', projects: ['ada/tools'] });
   gitlab.ids.set('bob', 8);
-  let kept: Parameters<Parameters<typeof createGitLabAccount>[0]['settings']['setGitLabAccount']>[0];
+  let kept: GitLabAccountRecord | undefined;
   const account = createGitLabAccount({
     settings: { getGitLabAccount: () => (kept ? structuredClone(kept) : undefined), setGitLabAccount: (r) => { kept = r ?? undefined; } },
     secrets: systemOf(memoryAccountStore().store), clock: { now: () => new Date() }, logger: { info: () => undefined, warn: () => undefined }, startsJobs: access,
