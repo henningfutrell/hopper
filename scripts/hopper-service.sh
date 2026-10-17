@@ -85,6 +85,14 @@ quoted() {
   printf '"%s"' "${v//%/%%}"
 }
 
+# A path setting of a unit file (WorkingDirectory=): systemd takes its value as it is, with no quotes (issue #1453).
+unit_path() {
+  local v=$1
+  [[ "$v" == /* && "$v" != *$'\n'* && "$v" != *'"'* && "$v" != *'\'* && "$v" != *[[:space:]] ]] \
+    || fail "this path cannot go in a unit file (not absolute, a newline, a quote, a backslash or a space at its end): $v"
+  printf '%s' "${v//%/%%}"
+}
+
 # An argument of a command line in a unit file: quoted, and $ kept as it is too.
 argument() {
   local v; v="$(quoted "$1")"
@@ -128,7 +136,7 @@ After=podman.socket
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=$(quoted "$dir")
+WorkingDirectory=$(unit_path "$dir")
 $env
 ImportCredential=$CREDENTIAL
 ExecStart=$exec start
@@ -146,7 +154,7 @@ Description=hopper: check the published port from this host
 
 [Service]
 Type=oneshot
-WorkingDirectory=$(quoted "$dir")
+WorkingDirectory=$(unit_path "$dir")
 $env
 ExecStart=$exec check
 EOF

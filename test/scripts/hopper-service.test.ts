@@ -99,7 +99,9 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     const r = f.run(['install'], { HOPPER_BIND: '0.0.0.0', HOPPER_PORT: '4791', HOPPER_MASTER_KEY: KEY, HOPPER_KMS_KEY: 'kms', HOPPER_IMAGE: 'ghcr.io/henningfutrell/hopper:dev' });
     expect(r.status, r.err).toBe(0);
     const service = f.unit('hopper-compose.service');
-    expect(service).toContain(`WorkingDirectory="${f.dir}"`);
+    // systemd takes a path setting as it is: a quoted one is no absolute path, and the unit fails to load (issue #1453).
+    expect(service).toMatch(new RegExp(`^WorkingDirectory=${f.dir}$`, 'm'));
+    expect(f.unit('hopper-compose-check.service')).toMatch(new RegExp(`^WorkingDirectory=${f.dir}$`, 'm'));
     expect(service).toMatch(/^Type=oneshot$/m);
     expect(service).toMatch(/^RemainAfterExit=yes$/m);
     expect(service).toContain(`ExecStart="${spawnSync('/bin/bash', ['-c', 'command -v bash'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } }).stdout.trim()}" "${f.dir}/hopper-service.sh" start`);

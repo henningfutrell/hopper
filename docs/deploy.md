@@ -362,7 +362,9 @@ is only in the hopper's environment, given at launch.
        override setting that gives another value than one `compose.yaml` fixes is a warning: the override's value wins.
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
        data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image; when `hopper-compose.service` owns the stack
-       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Every container is made again on the new
+       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Before that restart, it takes the
+       quotes out of a `WorkingDirectory="…"` that an older `hopper-service.sh` wrote in the units, which systemd refuses,
+       and runs `systemctl --user daemon-reload` (issue #1453). Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
        `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
        the old `compose.yaml` and `compose.override.yaml` back, points the image tag the old file names at the image
