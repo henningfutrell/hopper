@@ -8,7 +8,8 @@
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997). Its
 // transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169). Its facts name the GitHub
 // identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account. A held
-// job says why it is held (issue #874), a gate hold with the machines' names.
+// job says why it is held (issue #874), a gate hold with the machines' names. File an issue beside its state opens with
+// this job as the context (issue #471).
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { JobTitle, LinkLostFlag, Since } from '@/components/job';
@@ -26,6 +27,7 @@ import type { ConnectedAccountStatus, DomainEvent, Job, JobBom } from '@/model/w
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
+import { FileIssueButton } from '@/app/file-issue';
 import { JobPromotion } from './direct-job-promotion';
 import { JobNotes } from './job-notes';
 import { JobTerminal } from './job-terminal';
@@ -107,6 +109,7 @@ export function JobView() {
             <div className="flex items-start gap-2">
               <JobTitle job={read.job} className="flex-1" />
               <StatusBadge status={read.job.status} />
+              <FileIssueButton jobId={read.job.id} />
             </div>
             <LinkLostFlag job={read.job} />
             <JobAct jobId={read.job.id} />

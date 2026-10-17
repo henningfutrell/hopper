@@ -71,6 +71,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/issue-drafts/` | File an issue (issue #471, "File an issue"): one user's drafts and filed issues — the status and why not, a job's context masked, the prompt as sent, the draft with its timeout and cancel, the confirm step, the filing on the person's confirmation with no label and no assignee, the events (`service.ts`); the drafter, the user's own `claude` CLI in print mode (`claude.ts`, composed by the user runtime alone); the request, the prompt, the draft and the note are `src/domain/issue-drafts.ts`, the scan is Promote to GitHub's (`src/promotions/scan.ts`), the user's GitHub for it `src/users/github-proxy.ts`, the routes `src/http/ui/issue-drafts.ts` | engine, http, store, decider; plugins but in `claude.ts` |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -24215,3 +24216,68 @@ state is what the instance reported (T1).
 Open (for a person): where the hopper.io code lives — a directory of this repo, public, that imports the snapshot type,
 or a repository of its own — with the tracking issue's decision 7 (who runs hopper.io, where, and its retention); and
 whether a machine's own label may go out after all, by a setting the admin turns on.
+
+## File an issue (issue #471, 2026-10-17)
+
+Part of #470 (AI-native hopper). The owner's decision on the issue: build it — a **File an issue** button that uses the
+user's own signed-in Claude to draft the issue, then files it. Nothing is filed without the person's confirmation.
+
+- **Where.** A button in the header on every screen, and **File an issue** in the user menu (a phone's top bar holds no
+  more, issue #666), and **File an issue** beside a job's state in the job
+  view, which attaches that job as the context. An operator's or admin's: a viewer sees no button, and the daemon refuses
+  a viewer's every call (the operator guard), whatever the UI shows. While the flow cannot run the button is off and says
+  why: no `claude` on the hopper's PATH, no GitHub connection, or no job repository (`GET /api/issue-drafts`:
+  `{ provider, available, usable, reason?, repos }`).
+- **Describe.** The repository, one of the user's job repositories (decision D7 of #470: no other list); the person's own
+  words; and the context — for a job, its id and state, its item's title and link, its error and its last 20 log lines,
+  masked as Report a bug's context is and cleaned as a promotion's text is (`POST /ui/api/issue-drafts/context`), editable.
+  **Show what is sent to Claude** answers the prompt exactly as the drafter gets it (`POST /ui/api/issue-drafts/prompt`).
+- **Draft.** `POST /ui/api/issue-drafts/draft { repo, text, context?, instructions?, previous? }`. The drafting skill
+  (`issue-draft@1`, `issueDraftPrompt`): neutral, Simplified Technical English, only the facts given, no person named, no
+  personal or machine details, a short title, a Markdown body with the sections that fit; the person's text and context
+  fenced as data. It runs as the user's own `claude` CLI (`src/issue-drafts/claude.ts`): print mode, no tools, no MCP, no
+  settings, no session, a JSON Schema for `{ title, body }`, the prompt on stdin, in the user's work dir with the user's
+  CLI config dirs, as the TL;DR runs. The hopper holds no model credential. **Cancel** closes the request; the daemon
+  aborts the run when its request closes. A run past 180 s is 504, Claude's error 502, both in plain words that say the
+  text is kept; the UI keeps it. The answer is cleaned of secrets and personal data (`cleanText`), with `findings`: what
+  was masked, shown beside the draft.
+- **Review and edit.** The title and the body are editable, the body with a Markdown preview. **Draft again** sends the
+  edited draft and what to change. **Discard** closes the dialog: the draft is gone.
+- **Confirm.** `POST /ui/api/issue-drafts/check { repo, title, body, allowPersonalData? }` answers the confirm step on the
+  edited text: the repository and its visibility, the title, the body as it would be filed, the labels and the assignees
+  (always none), the scan's findings and the refusal. Promote to GitHub's scan and rules (`postRefusal`): a secret never;
+  personal data only on a private repository with **File the personal data on this private repository**; a public
+  repository only with **File on this public repository**.
+- **File.** `POST /ui/api/issue-drafts { repo, title, body, confirmed: true, confirmPublic?, allowPersonalData?, jobId? }`.
+  Without `confirmed: true` it is 400: no path files without the confirmation, an API call's included. The scan runs again
+  on this text (422). Filed with the person's own GitHub connection, the account of the repository (issue #1448), with
+  `labels: []` and no assignee, so it never starts a job (decision D8 of #470). The body ends with a fixed note that it was
+  drafted with Claude through File an issue and read, edited and filed by its author (`FILED_NOTE`): it names no person.
+  The answer links the issue.
+- **Events.** `issue_draft.drafted` (`repo`, `provider`, `model`, `skill`, `masked`) and `issue_draft.filed` (`repo`,
+  `number`, `url`, `by` who confirmed, `provider`, `skill`; on the attached job's timeline). Never the text.
+
+**Decisions:**
+- **D1: the hopper files**, with the person's own connection, after the confirm step: the confirm step and the scan stay in
+  the hopper, and the same path as Promote to GitHub and Report a bug is used.
+- **D2, D5: the user's `claude` CLI on the hopper's own machine**, as the TL;DR runs it, behind one seam (`IssueDrafter`).
+  Other providers and linked machines (#474) and the skills packaged for them (#472) plug in at that seam.
+- **D6: the context is what the person types or attaches**, shown and editable before it is sent. No checkout or file of a
+  machine is read.
+- **D7: the user's job repositories only.**
+- **D8: never a label or an assignee.** A person who wants a job labels the issue on GitHub.
+- **D9: block, with the masked draft shown**: the draft comes back masked; the edited text is refused at filing, with the
+  reason, never filed in part.
+- **D10: operator and admin**, per user, as Promote to GitHub and Report a bug.
+- **Drafts are kept nowhere**: only the dialog holds one, so a draft cannot outlive the person's session or leak through a
+  table. An abandoned draft is gone when the dialog closes.
+- **Not a box action**: it starts no job and acts on no machine a person names.
+- **The constraint model of #475** (size, wording, redaction beyond the promotion scan) refines `check` and `file` at the
+  same place.
+
+**Verification:** `test/issue-drafts/service.test.ts` (the status and why not; the prompt as sent; the draft cleaned; a
+cancel, a timeout and a provider's error file nothing; filing needs the confirmation; the edited text scanned again; a public
+repository; no label and no assignee), `test/integration/issue-drafts.test.ts` (the daemon: a job attached, a draft, the
+confirm step, the issue filed as the person with no label and no assignee, the event on the job's timeline; a viewer refused;
+no provider), `test/ui/file-issue.test.ts` (hidden from a viewer; off with the reason; what is sent; cancel mid-draft; a
+timeout; filed only after Confirm; a blocked value keeps Confirm off).
