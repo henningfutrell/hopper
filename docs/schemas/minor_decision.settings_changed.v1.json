@@ -11,6 +11,7 @@
         "job-machine",
         "intake-order",
         "merge-order",
+        "intake-trust",
         "question-answer"
       ]
     },

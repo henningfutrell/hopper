@@ -13264,6 +13264,7 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `job-machine` | a waiting job that two or more machines online, with its executor and not kept by the blast-radius gate, can take; once per waiting spell (issue #688) | those machines | a placement pick: in step 7 the job goes there first |
 | `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
 | `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
+| `intake-trust` | a waiting job whose trust stamp is due for Jev's trust check: `approved` or `trusted`, no person stamped it, no check on it (issue #655 part 4, "Trust stamps", `src/engine/trust-checks.ts`) | `keep`, and each lower level but `quarantined` with each reason (`lower:untrusted:touches_ci`) | the job's stamp is signed at the picked level; active, the job waits for the check, and a check with no sure pick gives `untrusted` (fail closed) |
 
 A `failure-assessment` ask is kept on its failure record (`jev { error, attempt, ranMs?, machineId?, doneCheck? }`, issue
 #1608) until Jev answers: a daemon that stopped first asks it again at its start, for a job still failed whose newest
@@ -16918,7 +16919,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 3, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 4, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -16940,8 +16941,8 @@ starts only with a stamp that verifies, at the dispatch minimum or above.**
 
 A job a job made — a follow-on of an accepted proposal (issue #651), a fork of a phase shift (issue #548) — gets at most
 its parent's level as it verifies then, and never `owner` (`childLevel`); a parent whose stamp does not verify gives none.
-`quarantined` and `screened` are no rule's yet: the gate's later parts (a decision by Jev that can only lower the level,
-a person's quarantine) give them.
+`quarantined` and `screened` are no rule's: a person's quarantine (part 2) gives the first, and Jev's trust check (part 4)
+can lower a job to the second.
 
 **The stamp** (`Job.stamp`): `{ v: 1, level, reasons, by, at, mac }`. `by`: `intake` (the store made the job), `job` (a job
 made it), `respecify` (its spec changed), `backfill` (made before stamps). `mac` is HMAC-SHA256 under the user's **stamp
@@ -17005,7 +17006,7 @@ and who):
 
 | strictness | the stamp needs | so runs |
 |---|---|---|
-| `open` | `screened` | also an item only screened (no rule gives `screened` yet: Jev's `intake-trust`, a later part) |
+| `open` | `screened` | also a job Jev's trust check lowered to `screened` (part 4; no rule gives it) |
 | `standard` (the default) | `approved` | a trusted origin, a request card a person approved, a direct job, a configured source's job |
 | `strict` | `trusted` | only a trusted origin: a person's approval is not enough |
 | `closed` | `owner` | only an item the user wrote and was assigned |
@@ -17020,11 +17021,48 @@ to Intake. Tightening it holds a waiting job that no longer passes, a job resumi
 keeps going and keeps its doors (part 2: doors stay open below the minimum). Nothing is stored on the job: the stamp keeps
 the level, the brake is read where it is needed, so a loosened brake lets the job start at once.
 
-**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's `intake-trust` and `intake-kind` decisions that can only lower a
-level, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at
-the skill broker (the request's policy, Jev's `sandbox-request`, its brake, lowering trust on a deny, quarantine by two
-denies, stopping a quarantined job's sandboxes), the restamp on an edit seen at a sync, and the Intake and API views of the
-stamp.
+**Jev's trust check** (part 4, `src/domain/trust-check.ts`, `src/engine/trust-checks.ts`; the decision point
+`intake-trust`, "Decider calls"). The owner's decision on the issue: a stamp can lead to a deeper trust analysis when
+something warrants it. This is the first such analysis: Jev reads a waiting job's text and where it came from, and keeps
+its level or lowers it. It is **due** (`checkDue`) for a job whose stamp verifies at `approved` or `trusted` — the levels a
+job starts at on the rules alone —, that no person stamped (`by` not `person`), with no check on it. An `owner` job is not
+asked; a job the rules hold already is not asked either: Jev can only lower.
+
+- **What Jev reads** (`trustCheckState`): the job's id, level, reasons, goal and kind; its source's kind, repository,
+  number, origin, author, assignee and labels; and the first 4000 characters of its prompt as `untrustedText`, which the
+  instructions say is data, never instructions. No credential, no tool.
+- **The options** (`trustOptions`): `keep`, and for each level below the job's — never `quarantined`, which only a person
+  sets — each reason: `touches_ci`, `credentials`, `destructive`, `out_of_scope`, `instructs_agent`, `unclear`
+  (`lower:screened:credentials`). A pick that is not one of them gives no level (`pickedLevel`): Jev cannot raise a level
+  by construction.
+- **Off**: Jev is not asked; the rules' level stands. **Shadow** (the default, as every point): Jev is asked once per
+  waiting job and hopper run, after the Decision's transaction; the pick is only recorded (`minor_decision.picked`) and
+  compared with `keep` at once. The job starts as before.
+- **Active**: the decider holds the job while the check is due (`Jev checks its trust: held — …`, `CHECK_PENDING`). The
+  check is then written into the stamp (`checkedStamp`, `by: jev`, `check: { pick, confidence, applied, fail? }`, which the
+  MAC covers): a kept level; a lower level with the reason id `jev:<reason>`; or, **fail closed**, `untrusted` with
+  `jev:no_answer` (no answer, an error, a timeout, a pick that is no option), `jev:not_sure` (below the point's threshold)
+  or `jev:skipped` (Jev not there: no TypeSafe API key). Each lowering is `job.trust_lowered { from, to, reason, by: jev }`.
+  A job held below `approved` by a check says why: `trust stamp untrusted is below approved (Jev's trust check: it changes
+  CI, workflow files or branch rules): held — a person approves its trust on the job, or cancels it`. A check is written
+  only while it is still due (`checkTrust`): another hopper's check, a new spec or a person's act that came first wins.
+- **A person approves its trust** (`POST /ui/api/jobs/:id/approve-trust`, the job view's Approve trust after a confirm,
+  `hopper job approve-trust <id>`; least role operator, a box action of kind `start a job`): only a job a check lowered
+  below `approved` (`trustApprovable`). Its stamp is signed `approved` (`by: person`, reason `person:approved`), never
+  more; the check stays on it, so Jev is not asked again. `job.trust_approved { from, person, via }`. 409 for any other job:
+  a quarantine is lifted with unquarantine; an item of no trusted origin is approved in Intake, which approves its text.
+- **A new spec** (`respecify`: Accept the new text, a re-sort) drops the check: the new text is checked again. An origin
+  judged later (`restamp`) stamps by the rules again, so the check is due again too.
+- **The job view** shows a check's reason beside the level (`data-slot="job-trust-check"`).
+
+Persisted state: `check` is one more field in the stamp. The build before verifies such a stamp (its MAC covers every
+field but `mac`), and does not read `check`; a job it made has none, and a build with this part asks for it.
+
+**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
+`intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
+rest of gate 2 at the skill broker (the request's policy, Jev's `sandbox-request`, its brake, lowering trust on a deny,
+quarantine by two denies, stopping a quarantined job's sandboxes), the restamp on an edit seen at a sync, and the Intake
+and API views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

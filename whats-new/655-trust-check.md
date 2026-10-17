@@ -1,0 +1,1 @@
+- Jev can now check a job's text before it runs and hold it when something needs a person. You turn the check on in Settings → Decider, and you approve a held job's trust on its page.

@@ -3,20 +3,22 @@
 // The rules give the level (the simple first tier: who wrote and nominated the item); a job a job made gets at most its
 // parent's level, and never `owner`. A job starts only with a stamp that verifies, at the dispatch minimum or above.
 // A person can quarantine a job (part 2): its level is `quarantined` until a person lifts it, and its proxy token opens
-// no door meanwhile, as for a job whose stamp does not verify. Pure: the key is passed in.
+// no door meanwhile, as for a job whose stamp does not verify. Jev's trust check (part 4, ./trust-check.ts) can lower a
+// level the rules gave, never raise it; a person approves the trust of a job it lowered. Pure: the key is passed in.
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import type { Job } from './types.ts';
 import { brakeWhere, type Brake } from './intake-strictness.ts';
+import { CHECKED_LEVELS, checkedLevel, checkReasonOf, checkReasonText, type TrustCheck } from './trust-check.ts';
 
 /** The trust levels, lowest first. */
 export const TRUST_LEVELS = ['quarantined', 'untrusted', 'screened', 'approved', 'trusted', 'owner'] as const;
 export type TrustLevel = typeof TRUST_LEVELS[number];
 
 /**
- * Who stamped a job: intake (the store at its making), a job that made it, a new spec, the backfill at a start, or a
- * person (a quarantine, or its lift).
+ * Who stamped a job: intake (the store at its making), a job that made it, a new spec, the backfill at a start, a person
+ * (a quarantine, its lift, an approval of its trust), or Jev's trust check (part 4).
  */
-export const STAMPED_BY = ['intake', 'job', 'respecify', 'backfill', 'person'] as const;
+export const STAMPED_BY = ['intake', 'job', 'respecify', 'backfill', 'person', 'jev'] as const;
 export type StampedBy = typeof STAMPED_BY[number];
 
 /** A job's trust stamp: its level, why, who stamped it and when, and the MAC over these, the job's id and its spec. */
@@ -30,6 +32,8 @@ export interface TrustStamp {
   at: string;
   /** A quarantined job's level before its quarantine: the level its lift gives back. Absent: none, or no quarantine. */
   was?: TrustLevel;
+  /** Jev's trust check on this stamp (part 4): absent, none was made, or the point was not active. */
+  check?: TrustCheck;
   /** HMAC-SHA256, base64url, under the user's stamp key. */
   mac: string;
 }
@@ -40,6 +44,7 @@ export const DISPATCH_MIN: TrustLevel = 'approved';
 export const STAMP_MISSING = 'no trust stamp: held — the hopper did not make this job, or made it before stamps; cancel it, or run its item again';
 export const STAMP_MISMATCH = 'its trust stamp does not match the job: held — the job changed outside the hopper; cancel it, or run its item again';
 export const QUARANTINED_HOLD = 'quarantined by a person: held — a person lifts the quarantine, or cancels it';
+export const CHECK_PENDING = 'Jev checks its trust: held — it starts when the check keeps its level; a person can cancel it';
 /** The reason id a quarantine adds to the stamp's reasons; its lift takes it away. */
 const QUARANTINED = 'quarantined';
 
@@ -90,8 +95,8 @@ const macOf = (key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: Omit<TrustStamp, '
 };
 
 /** The stamp of `job` at `level`, signed under `key`. */
-export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level: TrustLevel; reasons: string[]; by: StampedBy; at: string; was?: TrustLevel }): TrustStamp {
-  const body = { v: 1 as const, level: s.level, reasons: [...s.reasons], by: s.by, at: s.at, ...(s.was ? { was: s.was } : {}) };
+export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level: TrustLevel; reasons: string[]; by: StampedBy; at: string; was?: TrustLevel; check?: TrustCheck }): TrustStamp {
+  const body = { v: 1 as const, level: s.level, reasons: [...s.reasons], by: s.by, at: s.at, ...(s.was ? { was: s.was } : {}), ...(s.check ? { check: { ...s.check } } : {}) };
   return { ...body, mac: macOf(key, job, body) };
 }
 
@@ -118,6 +123,8 @@ export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, 
   if (level === 'quarantined') return QUARANTINED_HOLD;
   const min = brake?.min ?? DISPATCH_MIN;
   if (atLeast(level, min)) return undefined;
+  const checked = checkReasonOf(job.stamp.reasons);
+  if (checked && !atLeast(level, DISPATCH_MIN)) return `trust stamp ${level} is below ${min} (Jev's trust check: ${checkReasonText(checked)}): held — a person approves its trust on the job, or cancels it`;
   if (!atLeast(level, DISPATCH_MIN) || !brake) return `trust stamp ${level} is below ${min}: held — a person approves its item in Intake, or cancels it`;
   return `trust stamp ${level} is below ${min} (intake strictness ${brake.strictness} ${brakeWhere(brake)}): held — an admin changes the intake strictness in Settings → Intake, or a person cancels it`;
 }
@@ -147,3 +154,31 @@ export function opensDoors(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>)
   const level = verifiedLevel(key, job);
   return level !== undefined && level !== 'quarantined';
 }
+
+/**
+ * Whether Jev's trust check is due for the job: its stamp verifies at a level it would start at on the rules alone
+ * (`approved`, `trusted`), no person stamped it, and no check was made on it. A new spec or an origin judged later makes a
+ * new stamp, so the check is due again.
+ */
+export function checkDue(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
+  const level = verifiedLevel(key, job);
+  return level !== undefined && CHECKED_LEVELS.includes(level) && job.stamp?.by !== 'person' && job.stamp?.by !== 'jev' && job.stamp?.check === undefined;
+}
+
+/** The stamp after Jev's check (the point active), at `at`: the level it keeps or the lower one, with the check and its reason. */
+export function checkedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, out: Parameters<typeof checkedLevel>[1], at: string): TrustStamp | undefined {
+  const level = verifiedLevel(key, job);
+  if (level === undefined || !job.stamp) return undefined;
+  const c = checkedLevel(level, out);
+  return signStamp(key, job, { level: c.level, reasons: [...job.stamp.reasons, ...(c.reason ? [c.reason] : [])], by: 'jev', at, check: c.check });
+}
+
+/** Whether a person may approve the job's trust: Jev's check lowered it below the dispatch minimum, and its stamp verifies. */
+export function trustApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
+  const level = verifiedLevel(key, job);
+  return level !== undefined && level !== 'quarantined' && !atLeast(level, DISPATCH_MIN) && checkReasonOf(job.stamp?.reasons ?? []) !== undefined;
+}
+
+/** The job's trust approved by a person, at `at`: `approved`, never more; Jev's check stays on the stamp, so it is not asked again. */
+export const trustApprovedStamp = (key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, at: string): TrustStamp =>
+  signStamp(key, job, { level: 'approved', reasons: [...(job.stamp?.reasons ?? []), 'person:approved'], by: 'person', at, ...(job.stamp?.check ? { check: job.stamp.check } : {}) });

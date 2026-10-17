@@ -25,6 +25,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/jobs/:id/requeue', kind: 'start a job' },
   { route: '/ui/api/jobs/:id/gate-pass', kind: 'start a job' },
   { route: '/ui/api/jobs/:id/unquarantine', kind: 'start a job' }, // issue #655: the job may start, and reach the hopper again
+  { route: '/ui/api/jobs/:id/approve-trust', kind: 'start a job' }, // issue #655 part 4: the job Jev's check lowered may start
   { route: '/ui/api/sources/:name/intake', kind: 'start a job' },
   { route: '/ui/api/direct-jobs', kind: 'start a job' }, // issue #901
   { route: '/ui/api/repo-checks/queue', kind: 'start a job' },

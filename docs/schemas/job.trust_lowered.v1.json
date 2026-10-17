@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "to": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string",
+      "const": "jev"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "reason",
+    "by"
+  ],
+  "additionalProperties": false
+}
