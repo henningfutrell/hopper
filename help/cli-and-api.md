@@ -101,7 +101,7 @@ See [Lanes and lane tuning](lanes.md) and [Artifacts](artifacts.md).
 | Command | What it does |
 |---|---|
 | `hopper vault` | The vault: its secrets and templates, never a value. |
-| `hopper vault set <name> [--scope <text>] [--shared [--reader <user id>]...]` | Set a secret from standard input. |
+| `hopper vault set <name> [--scope <text>] [--mints <kind>/<name>\|none] [--shared [--reader <user id>]...]` | Set a secret from standard input. `--mints aws-account/<account id>` or `--mints cluster/<name>` makes it a minting credential; `none` makes it a plain secret again. |
 | `hopper vault remove <name> [--shared]` | Remove a secret. |
 | `hopper vault grant\|revoke <job>` | Grant a job the vault, or take the grant back. |
 | `hopper vault mint-test aws-role/<account>/<role>` | Test an AWS minting credential. |

@@ -1000,6 +1000,16 @@ OpenFGA no login is a trusted actor, every issue is a request card, and Approve 
   hopper gets `HOPPER_OPENFGA_URL=http://openfga:8080` and `HOPPER_OPENFGA_KEY_FILE`. A stack from before picks
   it up with the new `compose.yaml` and `podman compose up -d`: the `postgres` service is recreated (a restart of
   the database) and writes the new files.
+- **On a host install** (issue #791) it is set up too: `scripts/install.sh` runs `scripts/host-openfga.ts`, which puts
+  the release binary of the version `compose.yaml` runs in `~/.local/lib/hopper/openfga` (its SHA-256 checked against
+  the release's `checksums.txt`), writes its config (`~/.config/hopper/openfga/config.yaml`, mode 600: the database
+  URL with `search_path=openfga`, the preshared key, every address on loopback — the API on `127.0.0.1:4793`, gRPC on
+  `127.0.0.1:4794`, metrics on `127.0.0.1:2112`) and its key (`~/.config/hopper/openfga/key`), makes the `openfga`
+  schema, and adds `HOPPER_OPENFGA_URL=http://127.0.0.1:4793` and `HOPPER_OPENFGA_KEY_FILE` to `daemon.env`.
+  `systemd/hopper-openfga.service` runs `openfga migrate`, then `openfga run`. A `daemon.env` that names another
+  OpenFGA is kept, and none is set up. Each run of the install follows the version `compose.yaml` names; a self-update
+  does not, so run the install line again after an update that moves it. `scripts/uninstall.sh` removes the unit and
+  the binary, and keeps the config, the key and the schema.
 - **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
   `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
   The key is read at each call: rotate it in OpenFGA and the runtime together.

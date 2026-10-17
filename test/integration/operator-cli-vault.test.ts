@@ -107,6 +107,23 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(json<VaultAnswer>(await hopper(a, ['vault'])).secrets).toEqual([]);
   });
 
+  it('sets what a minting credential mints for with --mints; a later set without it keeps it, none clears it (issue #791)', async () => {
+    const { a } = await boot();
+    type Mints = { secrets: { name: string; mints?: { kind: string; name: string } }[] };
+    const mints = async () => json<Mints>(await hopper(a, ['vault'])).secrets.find((s) => s.name === 'AWS_MINT')?.mints;
+    const aws = JSON.stringify({ AccessKeyId: 'AKIAEXAMPLE0123456789', SecretAccessKey: 'secret-0123456789abcdef' });
+
+    expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'aws-account/123456789012'], aws)).toMatchObject({ code: 0 });
+    expect(await mints()).toEqual({ kind: 'aws-account', name: '123456789012' });
+    expect(await hopper(a, ['vault', 'set', 'AWS_MINT'], aws)).toMatchObject({ code: 0 });
+    expect(await mints()).toEqual({ kind: 'aws-account', name: '123456789012' });
+    expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'none'], aws)).toMatchObject({ code: 0 });
+    expect(await mints()).toBeUndefined();
+
+    expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'namespace/lab/web'], aws)).toMatchObject({ code: 2, err: expect.stringContaining('--mints namespace/lab/web: write aws-account/<account id> or cluster/<name>, or none') });
+    expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'cluster/lab', '--shared'], aws)).toMatchObject({ code: 2, err: expect.stringContaining('a shared secret mints nothing') });
+  });
+
   it('saves a template with secrets and profiles; it waits for a person, is approved, and keeps what a later save leaves out', async () => {
     const { a } = await boot();
     await hopper(a, ['vault', 'set', 'KUBE_TOKEN'], 'kube-value-0123456789');
