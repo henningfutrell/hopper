@@ -1,9 +1,10 @@
 // The cloud link (issue #467, design.md "The cloud link"): Settings → hopper.io, the hopper's admin's. GET /api/cloud-link
 // shows the link record; POST /ui/api/cloud-link links this install to a hopper.io account, POST /ui/api/cloud-link/unlink
-// removes the link. Each applies at once, with no restart.
+// removes the link. Each applies at once, with no restart. POST /ui/api/cloud-link/registration-code mints the one-time
+// code hopper.io's account owner registers the link with (issue #465).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { cloudAccountProblem, normalCloudAccount, type CloudLinkView } from '../../domain/cloud-link.ts';
+import { cloudAccountProblem, normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkView, type RegistrationCodeMinted } from '../../domain/cloud-link.ts';
 import type { CloudLink } from '../cloud-link.ts';
 import { assertInstanceRead, type InstanceAdmin } from '../instance-admin.ts';
 import type { Operation } from '../openapi-operation.ts';
@@ -18,12 +19,15 @@ export const cloudLinkBody = z.strictObject({ account: z.string().max(100) }).su
 
 export const cloudUnlinkBody = z.strictObject({});
 
-const RECORD = '`link`: the link record, or `null` while this install is not linked — `installId` (this install\'s id at hopper.io, made at the link), `account` (the hopper.io account), `state` (`pending`: hopper.io has not confirmed the link yet), `linkedAt` and `by`.';
+export const registrationCodeBody = z.strictObject({});
+
+const RECORD = '`link`: the link record, or `null` while this install is not linked — `installId` (the instance id, the same at every link, issue #465), `account` (the hopper.io account), `state` (`pending` until it registers, then `registered`), `linkedAt`, `registeredAt` (once registered) and `by`. `registrationCode`, while one is open: `expiresAt` and `by`, never the code.';
 
 export const CLOUD_LINK_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/cloud-link', tag: 'Cloud link', summary: 'The link of this install to hopper.io', description: `Only the instance admin (issue #467). ${RECORD}`, returns: '`CloudLinkView`', errors: [403] },
   { method: 'post', path: '/ui/api/cloud-link', tag: 'Cloud link', summary: 'Link this install to a hopper.io account', description: `Only the instance admin (issue #467). \`account\`: the hopper.io account, letters, digits and single hyphens inside, at most 39 characters, kept trimmed and lowercase. Writes the link record in the instance's settings and nothing else: no data moves, no job or lane stops, no restart. 409 while this install is linked. A link is \`cloud_link.linked\`. ${RECORD}`, role: 'admin', body: cloudLinkBody, returns: '`CloudLinkView`', errors: [400, 403, 409] },
-  { method: 'post', path: '/ui/api/cloud-link/unlink', tag: 'Cloud link', summary: 'Unlink this install from hopper.io', description: 'Only the instance admin (issue #467). Body `{}`. Removes the link record and nothing else; not linked, nothing changes. An unlink is `cloud_link.unlinked`. Answers `{ link: null }`.', role: 'admin', body: cloudUnlinkBody, returns: '`CloudLinkView`', errors: [400, 403] },
+  { method: 'post', path: '/ui/api/cloud-link/registration-code', tag: 'Cloud link', summary: 'Mint a registration code for hopper.io', description: `Only the instance admin (issue #465). Body \`{}\`. A one-time code the hopper.io account owner enters at hopper.io to register this install: answered here once, kept only hashed, for ${REGISTRATION_CODE_MINUTES} minutes, in place of any code before it. 409 while this install is not linked. A mint is \`cloud_link.registration_code_minted\`, with no code.`, role: 'admin', body: registrationCodeBody, returns: '`{ code: string, expiresAt: string }`', errors: [400, 403, 409] },
+  { method: 'post', path: '/ui/api/cloud-link/unlink', tag: 'Cloud link', summary: 'Unlink this install from hopper.io', description: 'Only the instance admin (issue #467). Body `{}`. Removes the link record and its registration code, and nothing else; not linked, nothing changes. An unlink is `cloud_link.unlinked`. Answers `{ link: null }`.', role: 'admin', body: cloudUnlinkBody, returns: '`CloudLinkView`', errors: [400, 403] },
 ];
 
 export function registerCloudLinkRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; cloudLink: CloudLink; by: (req: FastifyRequest) => string }): void {
@@ -32,6 +36,10 @@ export function registerCloudLinkRoutes(app: FastifyInstance, o: { instance: Gua
     return o.cloudLink.view();
   });
   app.post('/ui/api/cloud-link', o.instance, async (req): Promise<CloudLinkView> => o.cloudLink.link(parseWith(cloudLinkBody, req.body).account, o.by(req)));
+  app.post('/ui/api/cloud-link/registration-code', o.instance, async (req): Promise<RegistrationCodeMinted> => {
+    parseWith(registrationCodeBody, req.body);
+    return o.cloudLink.mintRegistrationCode(o.by(req));
+  });
   app.post('/ui/api/cloud-link/unlink', o.instance, async (req): Promise<CloudLinkView> => {
     parseWith(cloudUnlinkBody, req.body);
     return o.cloudLink.unlink(o.by(req));

@@ -7,6 +7,7 @@
 import type { Migration } from './migrations.ts';
 import { remoteAccessProvider } from './migration-remote-access.ts';
 import { SANDBOX_RUN_TABLE } from './sandbox-runs.ts';
+import { cloudLinkInstanceId } from './migration-cloud-link-id.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -39,4 +40,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // added at and its signature counter; an account's removal removes its passkeys. A table only: the build before never
   // reads it, and signs nobody in with it.
   'CREATE TABLE IF NOT EXISTS local_account_passkeys (id TEXT PRIMARY KEY, email TEXT NOT NULL REFERENCES local_accounts (email) ON DELETE CASCADE, rp_id TEXT NOT NULL, public_key TEXT NOT NULL, counter BIGINT NOT NULL, transports TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT); CREATE INDEX IF NOT EXISTS local_account_passkeys_email ON local_account_passkeys (email);',
+  // 45: the cloud link's id is the instance id (issue #465), so a link again is the same instance at hopper.io. A record
+  // from before takes it; the build before reads `installId` as before.
+  cloudLinkInstanceId,
 ];

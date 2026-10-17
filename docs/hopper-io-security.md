@@ -1,7 +1,8 @@
 # hopper.io — threat model, account isolation and privacy
 
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
-itself does not exist. On the instance, only the cloud link's record is built (issue #467 part 1, "What is built" below).
+itself does not exist. On the instance, only the cloud link's record (issue #467 part 1) and its registration code (issue #465 part 2) are built
+("What is built" below).
 This document states the threats and the rules that every hopper.io change must obey. The open owner
 decisions of #469 (scope, what the link carries, transport, sign-in on instances, sharing, who operates hopper.io) do
 not change these rules. Where a decision changes what a rule demands, the rule says so.
@@ -196,8 +197,14 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   - R4: it holds no credential. Its `installId` is random, made at the link, and opens nothing.
   - R5: a link moves no data (`test/http/cloud-link-fixture.test.ts` compares every row of every schema before and after).
   - R6, on the instance side: `cloud_link.linked` and `cloud_link.unlinked`, with who.
-- Nothing else. The connection, the cloud link key, registration, the allow-list and everything at hopper.io wait for
-  the issues in the table below.
+- **The instance's half of registration** (issue #465 part 2, `docs/design.md` "Registering at hopper.io"). It obeys:
+  - R4: the **registration code** is minted only by the instance admin, through the UI session, while the instance is
+    linked; 10 minutes, kept only as its SHA-256, taken once, one at a time; never in a view or an event.
+  - R3: the instance registers only for the hopper.io account its admin linked; a code handed back for another account is
+    refused. The link's id is the instance id, so one instance is one registration per account.
+  - R6, on the instance side: `cloud_link.registration_code_minted` and `cloud_link.registered`.
+- Nothing else. The connection (and so who calls the registration), the cloud link key, the allow-list and everything at
+  hopper.io wait for the issues in the table below.
 
 ## What each child issue must show
 
