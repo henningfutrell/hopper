@@ -93,6 +93,13 @@ describe('the applies and drift timeline', () => {
     ]);
   });
 
+  it('names what each entry touched: the plan\'s asset, or the change\'s target (issue #1781)', () => {
+    const approved = { ...plan, approval: { plan: plan.id, by: 'Ada', at: '2026-10-12T10:05:00.000Z' } };
+    expect(infraTimeline([approved], [apply], [drift, write]).map((e) => e.subject)).toEqual([
+      { target: 'sg-1' }, { target: 'argocd app web' }, { asset: plan.asset }, { asset: plan.asset }, { asset: plan.asset }, { target: 'sg-1' },
+    ]);
+  });
+
   it('is empty when nothing happened', () => {
     expect(infraTimeline([], [], [])).toEqual([]);
   });

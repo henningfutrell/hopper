@@ -1337,6 +1337,44 @@ Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with
 }
 ```
 
+## `job.trust_lowered`
+
+Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`.
+
+| field | type | required |
+|---|---|---|
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `to` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `reason` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": "trusted",
+  "to": "untrusted",
+  "reason": "jev:touches_ci",
+  "by": "jev"
+}
+```
+
+## `job.trust_approved`
+
+Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check lowered (issue #655 part 4, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
+
+| field | type | required |
+|---|---|---|
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "from": "untrusted",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
 ## `terminal.opened`
 
 Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/screen`), or the machine's (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
@@ -3170,12 +3208,12 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -3222,7 +3260,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -3246,7 +3284,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -3265,7 +3303,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 

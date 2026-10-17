@@ -1,0 +1,1 @@
+- On Infra, each plan, apply and drift entry now shows which parts of your map it touched. Click one to see it on the map, and see every change made to a part of the map in its details.
