@@ -7,7 +7,7 @@ import type { ExecutionOutcome, Executor } from '../domain/ports.ts';
 import { finishBrief, MAX_FINISH_BRIEFS, type Job, type UnfinishedPullRequest } from '../domain/types.ts';
 import { withCorrection } from './answers.ts';
 import type { EngineContext } from './context.ts';
-import { contextOf, guarded, left, machineOf, progressOf, runJob, type JobRunData, type RunEntry, type TakenUp } from './job-run.ts';
+import { cancelOf, contextOf, guarded, left, machineOf, progressOf, runJob, type JobRunData, type RunEntry, type TakenUp } from './job-run.ts';
 import type { Lost } from './lost-move.ts';
 import { elsewhereBrief, freshStartBrief, startsFresh } from './park.ts';
 import { forkResume } from './phase-shifts.ts';
@@ -104,6 +104,8 @@ export async function runStep(c: EngineContext, e: RunEntry, d: JobRunData, take
   const { store } = c;
   const started = runJob(c, d);
   if (d.gone || d.outcome || !started) return {};
+  // Cancelled before it ran (its pane opening): the task is not sent; the end's cleanup closes the pane.
+  if (e.cancelReason !== undefined) return { outcome: { kind: 'failed', error: 'aborted' }, ...cancelOf(e) };
   const executor = c.executors.get(started.spec.executor);
   if (takenUp && executor?.idempotent !== false) return { requeue: takenUp };
   const machine = await machineOf(c, d.laneId);
@@ -164,5 +166,5 @@ export async function runStep(c: EngineContext, e: RunEntry, d: JobRunData, take
   if (left(c, e)) throw new Error('the run is left here: this hopper stops, or another one holds the job');
   // Its pane gone when its run was taken up (issue #1569): the move says why, as a restart's recovery does.
   const lostWhy = takenUp && lost === 'gone' ? { lostWhy: `its pane was gone after ${takenUp === 'daemon restart' ? 'a daemon restart' : 'its hopper stopped'}` } : {};
-  return { outcome, ...(lost ? { lost } : {}), ...lostWhy, ...(e.cancelReason !== undefined ? { cancel: { reason: e.cancelReason, ...(e.cancelNote ? { note: e.cancelNote } : {}) } } : {}) };
+  return { outcome, ...(lost ? { lost } : {}), ...lostWhy, ...cancelOf(e) };
 }

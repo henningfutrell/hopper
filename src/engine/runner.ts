@@ -155,7 +155,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       if (!entry) return false;
       entry.dropped = true;
       entry.controller.abort(SHUTDOWN);
-      // No step of it runs here now: it leaves at once. One that runs leaves when it ends.
+      // It leaves at once: a step of it that still runs writes nothing more.
       running.delete(jobId);
       entry.end();
       return true;

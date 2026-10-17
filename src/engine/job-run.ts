@@ -135,6 +135,10 @@ export async function guarded(e: RunEntry, go: () => Promise<ExecutionOutcome>):
 /** The run is left here: this hopper stops, or another one holds it. The step ends with no outcome, and is done again. */
 export const left = (c: EngineContext, e: RunEntry): boolean => (c.stopping() || e.dropped === true) && e.cancelReason === undefined;
 
+/** A person's cancel of the run, kept in the saga's data, so its end records it on any host. */
+export const cancelOf = (e: RunEntry): Pick<JobRunData, 'cancel'> =>
+  (e.cancelReason !== undefined ? { cancel: { reason: e.cancelReason, ...(e.cancelNote ? { note: e.cancelNote } : {}) } } : {});
+
 /** What the executor gets for job `j` on machine `m`. */
 export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, m: MachineSnapshot): ExecutionContext {
   const { store } = c;
@@ -227,7 +231,9 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       const ended = machine ? await guarded(e, async () => (await executor.open(contextOf(c, e, d, job, machine), again)) ?? { kind: 'finished', result: OPENED })
         : { kind: 'failed' as const, error: `machine of lane ${d.laneId} is not attached` };
       if (left(c, e)) throw new Error('the run is left here');
-      if (!(ended.kind === 'finished' && ended.result === OPENED)) return { outcome: ended };
+      // Parked while its pane opened (issue #501): parked as a run is, by the checkpoint step.
+      if (e.parking && e.cancelReason === undefined) return { park: true };
+      if (!(ended.kind === 'finished' && ended.result === OPENED)) return { outcome: ended, ...cancelOf(e) };
       const now = store.jobs.get(job.id);
       return { session: { ...(now?.executorState ? { executorState: now.executorState } : {}), ...(now?.agentSession ? { agentSession: now.agentSession } : {}) } };
     },
@@ -254,9 +260,11 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       if (d.requeue) { const why = d.requeue; store.tx(() => { const j = runJob(c, d); if (j) requeue(c, j, j.status, why); }); return {}; }
       progressOf(c, e, d).flush();
       const outcome = d.outcome ?? { kind: 'failed', error: 'the run left no outcome' };
+      // A cancel this hopper took after the step that kept the outcome.
+      const cancel = d.cancel ?? cancelOf(e).cancel;
       // Its machine lost (issue #1569): it resumes there in its kept work tree, or elsewhere from its checkpoint, when it can.
-      if (d.lost && outcome.kind === 'failed' && !d.cancel && moveLost(c, job.id, d.laneId, d.lost, d.lostWhy ?? outcome.error)) return {};
-      const recorded = recordOutcome(c, job, d.laneId, outcome, d.cancel, await machineOf(c, d.laneId));
+      if (d.lost && outcome.kind === 'failed' && !cancel && moveLost(c, job.id, d.laneId, d.lost, d.lostWhy ?? outcome.error)) return {};
+      const recorded = recordOutcome(c, job, d.laneId, outcome, cancel, await machineOf(c, d.laneId));
       if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
       else if (recorded.kind === 'report') c.reviews[recorded.review].handle(recorded.itemId);
       // Its own wait (issue #483) keeps its pane: nothing to clean up.
