@@ -303,8 +303,10 @@ function runnerOnly(context: string, tag: string | undefined): string | null {
   }
   const kubectl = (...args: string[]): number | null => sh('kubectl', ['--context', context, ...args]).status;
   if (kubectl('create', 'namespace', RUNNER_NAMESPACE) !== 0) return `kubectl could not make the namespace ${RUNNER_NAMESPACE}`;
-  const secret = spawnSync('kubectl', ['--context', context, '--namespace', RUNNER_NAMESPACE, 'create', 'secret', 'generic', 'runner-pool-key', '--from-file=key=/dev/stdin'],
-    { input: key, encoding: 'utf8', stdio: ['pipe', 'inherit', 'inherit'] });
+  // The manifest on stdin (`-f -`): Node gives a child's stdin as a socket, which /dev/stdin cannot open (ENXIO).
+  const manifest = JSON.stringify({ apiVersion: 'v1', kind: 'Secret', metadata: { name: 'runner-pool-key' }, type: 'Opaque', stringData: { key } });
+  const secret = spawnSync('kubectl', ['--context', context, '--namespace', RUNNER_NAMESPACE, 'create', '-f', '-'],
+    { input: manifest, encoding: 'utf8', stdio: ['pipe', 'inherit', 'inherit'] });
   if (secret.status !== 0) return 'kubectl could not make the Secret runner-pool-key';
   const install = sh('helm', ['install', 'runner', CHART, '--kube-context', context, '--namespace', RUNNER_NAMESPACE, '--wait', '--timeout', '15m',
     ...[...(tag ? [`image.tag=${tag}`] : []), 'hopper.enabled=false', 'lanes.replicas=1', `lanes.hopperUrl=${HOPPER_URL}`, 'lanes.existingSecret=runner-pool-key'].flatMap((v) => ['--set', v])]);
