@@ -60,6 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 part 2, "A GitLab source"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal (`account.ts`), and the `gitlab-account` job source over it (`source.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -23818,7 +23819,8 @@ The header's **GitHub: reconnect needed** shows for any account that ended, the 
 - **The same GitHub login twice is refused.** A second key for the same account adds nothing but a second token to keep.
 
 **Left for later parts of issue #1448:** sources from other forges (GitLab first: OAuth or a personal access token, kept in
-the user's vault, with repositories picked per source, and Intake, jobs and git through it); and the user's own GitHub acts
+the user's vault, with repositories picked per source, and Intake, jobs and git through it; part 2, "A GitLab source", attaches
+it with a token and lists its issues in Intake); and the user's own GitHub acts
 that name no job repository still go through the first account: Report a bug, the trusted actor picker, Promote to GitHub,
 the GitHub watches, the component watchers, the work-item ledger's fallback read, repository checks (`no checks`) and landing
 batches, which list and act on the first account's job repositories only.
@@ -23864,14 +23866,42 @@ on the machine.
   project dir stayed. Both now take the real path (`pwd -P`, `realpathSync`).
 
 **Not done here.** The UI flow and the GitHub write (issue #471) call `draftIssue` and record the skill id with the draft;
-the machine choice per provider (issue #474); the run dir's removal when a run times out or is cancelled (the kill
-reaches the local process, not the shell on the machine), and a run reported failed when its dir could not be removed.
+the machine choice per provider (issue #474).
 
 **Verification:** `test/run-skills/run-skills.test.ts` (the id, the tampered skill refused, every constraint's text in
 the prompt and its check, the user text as data between markers, the shared login line in the job rules),
 `test/run-skills/draft.test.ts` (against a fake `claude`: the skill on stdin, locked down, the draft with its findings and
 the skill id; a tampered skill refused before claude runs; a device code to the logins, never into the answer; no file
 left in the run dir or the project dir after success, an error and an expired login, and the user's config dirs unchanged).
+
+### Run skills: nothing left after a timeout or a cancel (issue #472, part 2, 2026-10-17)
+
+**The problem.** A run that timed out or was cancelled was stopped with a kill of the local process: `sh` here, or
+`ssh`. The kill does not reach the shell on the machine, so `ON_MACHINE`'s removal never ran, and claude could go on
+there. A run dir that could not be removed was not said: `rm -rf` failed in silence, and the client's `runClaude` threw
+in its callback and never answered.
+
+**The change.**
+- `ON_MACHINE` (`src/plugins/claude-print.ts`) runs claude in the background, on the script's own stdin (fd 3), and says
+  first, on stderr, which process and dir the run is: `hopper-run: <pid> <dir>`. After the run it says each path that
+  stays: `hopper-run-left: <path>`.
+- On a timeout or a cancel, `claudePrint` kills the local process, then reaps the run through the same connection
+  (`reapRun`, the script `REAP_RUN`): claude killed on the machine, the dir and claude's project dir for it removed. The
+  reap takes the dir only from the first `hopper-run:` line, only when it is a `mktemp -d` dir (`…/tmp.<x>`, no `..`),
+  and the script refuses any other before it removes anything. A reap that fails or times out (30 s) says the dir stays.
+- **A path that stays fails the run**, with the path: `the run left files on the machine: <path>`, after an answer too.
+  The client's `runClaude` (`src/client/level.ts`) does the same, and no longer throws when a removal fails.
+- The two lines never show in a reason: `withoutRunMarks` takes them out (claude-print, the claude-plan usage source).
+- A draft run of any provider on this machine or an ssh target (`src/drafting/run.ts`, issue #474, "Drafting on the
+  user's AI CLI") goes through `ON_MACHINE` too, and is reaped and checked the same way.
+- **Residual.** A run stopped before the shell said its line (between `mktemp` and the `printf`) is not reaped. A run
+  through `ssh` whose `ssh` was killed still stops by itself: claude dies on its next write, and the shell then removes
+  the dirs; the reap only makes it at once and checked.
+
+**Verification:** `test/run-skills/draft.test.ts` (on a timeout and on a cancel, claude is no longer alive and no file
+of the run stays, the user's config dirs unchanged; a run dir that cannot be removed fails the run with its path, after
+an answer and after a timeout), `test/client/level.test.ts` (the same for a client's run), `test/drafting/run.test.ts` (a
+draft run stopped on this machine and on an ssh target: the CLI no longer alive, its run dir gone).
 
 ## The cloud link (issue #467, part 1, 2026-10-17)
 
@@ -23880,10 +23910,11 @@ an account at hopper.io without moving its data, rebuilding it or changing how i
 undone: it arrives as a normal update, applies while the hopper runs, and an install that never links behaves as before.
 
 **The link record** (`src/domain/cloud-link.ts`, `src/store/cloud-link-settings.ts`): the instance's settings key
-`cloudLink`, absent while the install is not linked: `{ installId, account, state, linkedAt, by }`. `installId` is
-random (16 bytes, hex), made at the link, so a link after an unlink is a new install at hopper.io. `account` is the
-hopper.io account name (letters, digits and single hyphens inside, at most 39 characters, kept lowercase). `state` is
-`pending`: hopper.io has not confirmed the link. The record is the only thing a link writes: no table, user, identity,
+`cloudLink`, absent while the install is not linked: `{ installId, account, state, linkedAt, registeredAt?, by }`.
+`installId` is the **instance id** (issue #465 part 2, "Registering at hopper.io"), so a link after an unlink is the same
+instance at hopper.io; part 1 made a random id at each link, and migration 45 gives such a record the instance id.
+`account` is the hopper.io account name (letters, digits and single hyphens inside, at most 39 characters, kept
+lowercase). `state` is `pending` until the link registers, then `registered`. The record is the only thing a link writes: no table, user, identity,
 job, machine or setting is moved, copied or changed (`test/http/cloud-link-fixture.test.ts` compares every row of every
 schema of a fixture install before and after). An unlink deletes the row, and nothing else.
 
@@ -23894,15 +23925,135 @@ restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links
 link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
 UI: Settings → hopper.io.
 
-**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. An install that never links
-connects to nothing outside its machine but its database: `test/integration/cloud-link.test.ts` watches every socket
-and fetch the daemon's main thread opens (`Socket.prototype.connect`, which every TCP and TLS connection in the thread
-passes) while it starts, signs in and runs a job, and fails on any host but loopback; the database's worker thread is not
-watched. The link agent must run in the main thread and keep it so. The connection — an outbound
+**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
 link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
 hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
 keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
 Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+
+## The instance's display name (issue #465, part 1, 2026-10-17)
+
+Issue #465 asks that one hopper.io account register many hoppers and see the machines of each. Each hopper keeps its own
+data. The issue says "install"; this repository's word is **instance** (glossary): "install" is the directory the daemon
+runs from. Its first need is a stable id that the instance makes once and keeps in its database, and a display name that
+its owner can change. The id is there already: `instanceId()` (issue #603, `src/store/settings.ts`), made at its first ask,
+kept in the instance's settings, and the label of the sandbox boxes the hopper launches. A restart, a new container or an
+update on the same database keeps it. This part adds the display name and shows both.
+
+**The setting** (`src/http/display-name.ts`, `src/http/ui/display-name.ts`): the instance's settings key `displayName`
+(never set: empty). `GET /api/display-name` (an instance read) answers `{ instanceId, displayName }`; `POST
+/ui/api/display-name` `{ displayName }` (the instance admin) sets it: one line, trimmed, 80 characters at most, empty clears
+it. Each change is `display_name.changed` (`from`, `to`, `by`). UI: Settings → Version → This hopper, shown to the instance
+admin only.
+
+**Decisions:**
+- **The display name is the instance's, not a user's.** The issue's terms put users inside an install; the instance admin
+  owns its settings. Whether each user links their own part to their own account is an open question of the issue.
+- **No new id.** The id of issue #603 is already made once and kept, which is what the issue asks. A second id would be
+  two names for one thing.
+- **No migration.** `displayName` is a new key of the instance's key-value settings; the build before never reads it.
+
+**Left for later parts of issue #465:** these need the hopper.io service, which is not in this repository, and the issue's
+open questions decided (who registers a multi-user instance, sharing with more than one account, a cap on instances).
+They follow the security rules of `docs/hopper-io-security.md` (issue #468) and the decisions of issue #469.
+- Registering from the instance: the admin starts it in Settings, the account owner approves it at hopper.io with a
+  short-lived, single-use code; nothing registered without approval on both sides. The instance's half is built in part
+  2 ("Registering at hopper.io").
+- Re-registering reuses the instance id and replaces the old registration. Built on the instance in part 2
+  ("Registering at hopper.io"); hopper.io keys its registration by that id.
+- The link reports the instance's machines (name, online state, lanes, executors offered); machines are still added and
+  removed only on the instance.
+- Unregistering from either side: hopper.io revokes the link, or the instance unlinks and hopper.io removes it; neither
+  deletes anything on the instance.
+- The link state and last-seen time the account shows.
+
+**Verification:** `test/integration/display-name.test.ts`: a fresh hopper shows a 16-hex instance id and no name; the admin
+sets, changes and clears the name; the name and the id are kept across a restart; each change is one event; a body that is
+not one line of 80 characters at most is 400.
+
+## Registering at hopper.io (issue #465, part 2, 2026-10-17)
+
+Issue #465: a hopper.io account registers many instances. Nothing is registered without approval on both sides, and an
+instance that registers again never makes a second entry. This part builds the instance's half. It obeys
+`docs/hopper-io-security.md` R3 (the instance names only its own link's account), R4 (the registration code) and R6 (the
+instance's events). hopper.io itself, and the cloud link's connection (issue #464), are not built.
+
+**One id, at every link.** A link (`createCloudLink`, `src/http/cloud-link.ts`) writes the **instance id** (issue #603) as
+the link record's `installId`, not a new random id. An unlink and a link again, a new container or a reinstall on the same
+database: the same id each time, so hopper.io replaces its registration of that id and never adds a second. The field keeps
+its name `installId`: it is persisted state and the build before reads it. Migration 45
+(`src/store/migration-cloud-link-id.ts`) gives a record from part 1 the instance id, and makes the instance id first when
+there is none yet; no record, nothing changes.
+
+**The registration code** (`src/domain/cloud-link.ts`): the instance admin's approval. `POST /ui/api/cloud-link/registration-code`
+`{}` (the instance admin; no box action), only while the instance is linked (else 409), answers `{ code, expiresAt }` once:
+32 random bytes as hex, for 10 minutes (`REGISTRATION_CODE_MINUTES`, as a **join code**). Only its SHA-256 is kept, in the
+instance's settings key `cloudRegistrationCode` (`{ codeHash, expiresAt, by }`), one at a time: a new code replaces the one
+before. `GET /api/cloud-link` shows `registrationCode: { expiresAt, by }` while one is open, never the code. Each mint is
+`cloud_link.registration_code_minted`, with no code. An unlink removes the open code with the link. UI: Settings →
+hopper.io, Get a registration code; the code shows once.
+
+**Registering** (`CloudLink.register(code, account)`): the account owner's approval. The owner enters the code at hopper.io,
+signed in as the link's account; hopper.io hands the code and the account back over the cloud link. The instance takes the
+open, unexpired code (compared in constant time) of the link's own account, spends it, sets `state: 'registered'` and
+`registeredAt`, and records `cloud_link.registered`. Anything else changes nothing and answers why: `not-linked`,
+`other-account`, or `no-code` (none open, wrong, spent or expired, one answer for all, so it tells nothing of a code). A
+wrong account does not spend the code. No route calls it yet: the cloud link's agent (issue #464) calls it when hopper.io
+sends a registration, and answers hopper.io with the outcome.
+
+**Decisions:**
+- **One code per instance, in the instance's settings.** The cloud link is the instance's (part 1), so is its code. A table
+  for one row would add a migration for nothing.
+- **The account must match.** A code taken by another hopper.io account than the one the admin linked is refused: the
+  admin linked to that account, and R3 lets hopper.io write under no other.
+- **Re-registering needs a new code.** A registered link mints again, and its registration is replaced, the same id.
+
+**Left for later parts of issue #465:** these need the cloud link's connection (issue #464) or hopper.io itself.
+- The agent calls `register` when hopper.io sends a code, and sends the outcome back.
+- The machines the link reports: the **hopper.io state snapshot** (issue #466, its allow-list) carries them.
+- Unregistering at hopper.io: hopper.io tells the instance over the link; an unlink on the instance tells hopper.io before
+  the connection closes. Neither deletes anything else. The instance's half is part 3 ("Unregistering at hopper.io").
+- The link state and last-seen time the account shows, kept at hopper.io.
+- The issue's open questions (issue #469 decision 6, and a cap on instances per account).
+
+**Verification:** `test/http/cloud-registration.test.ts` (the real instance store): the minted code registers the link of
+its own account once, with the instance id; none, a wrong, spent or expired code, another account or no link registers
+nothing; a new code replaces the old; an unlink removes the code, and a link again keeps the id and is pending.
+`test/integration/cloud-registration.test.ts` (a real daemon): the link's id is the instance id also after a link again; the
+code is answered once, never in the view or an event; 409 not linked, 400 a body other than `{}`, 403 not the admin.
+`test/store/migration-45.test.ts`; `test/http/cloud-link-fixture.test.ts` (a mint writes only its row; an unlink leaves every
+table as before).
+
+## Unregistering at hopper.io (issue #465, part 3, 2026-10-17)
+
+**The problem.** Issue #465 item 5: an instance is unregistered from either side, and neither side deletes anything on the
+instance. An unlink on the instance (part 1) is the instance's side. The account owner's side is at hopper.io: the owner
+removes the instance there, and the instance must learn that it is no longer registered.
+
+**The change.** `CloudLink.unregister(account)` (`src/http/cloud-link.ts`): hopper.io says that the account owner removed
+this instance, for `account`. A `registered` link of that account goes back to `state: 'pending'`, and its `registeredAt`
+is removed. Its record stays, with the same `installId`, `account`, `linkedAt` and `by`; the open registration code stays;
+nothing else on the instance changes. It records `cloud_link.unregistered` (`installId`, `account`), an instance event.
+Anything else changes nothing, records nothing, and answers why: `not-linked`, `other-account` (R3: hopper.io speaks for the
+linked account only), or `not-registered`. A new registration code registers it again, with the same id, so hopper.io adds
+no second instance. No route calls it yet: the cloud link's agent (issue #464) calls it when hopper.io sends the removal.
+
+**Decisions:**
+- **Pending, not unlinked.** The link record is the instance admin's switch (R8): only the admin turns the cloud link on
+  or off, and R1 and the repo law let nothing from hopper.io change the cloud link beyond its registration. hopper.io's
+  removal is a fact about the registration, which hopper.io owns; so it changes the state only. The admin then registers
+  again with a new code, or unlinks.
+- **No new field.** The time and the side of the removal are in the event (R6). The record keeps the shape the build
+  before reads, so no migration.
+- **The open code stays.** The admin minted it to register; the removal does not take back that approval.
+
+**Left for later parts of issue #465:** the agent's call of `register` and `unregister` and its answers, and the unlink that
+tells hopper.io (issue #464); the machines (issue #466); the link state and last-seen time at hopper.io; the open questions
+(issue #469 decision 6).
+
+**Verification:** `test/http/cloud-unregister.test.ts` (the real instance store): a registered link that hopper.io removes is
+pending, with the same id, and a new code registers it again; no link, another account and a pending link change and record
+nothing; an unregister changes the `cloudLink` row only, and every other setting is as before.
 
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
@@ -23941,8 +24092,7 @@ in on. The hopper holds no model key for it.
 
 **Not done here.** The UI's machine and provider picker (issue #471) and a probe that says, before a run, whether the
 CLI is installed and signed in there; model lists for the CLIs other than claude (claude's is `claudeModels`); session
-records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); the run dir
-on the machine when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft
+records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); whether a draft
 counts toward usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
 as their dialects call them: the machine's other users can see it in its process list while the turn runs.
 
@@ -23951,41 +24101,61 @@ run dir removed after, the draft checked; over ssh; the model and effort flags; 
 not installed, an offline, unknown or container machine, a timeout and a cancel; a client target's claude through its
 client and another CLI refused there; a user added later with their own claude config dir, refused another CLI here.
 
-## The instance's display name (issue #465, part 1, 2026-10-17)
+## A GitLab source (issue #1448, part 2, 2026-10-17)
 
-Issue #465 asks that one hopper.io account register many hoppers and see the machines of each. Each hopper keeps its own
-data. The issue says "install"; this repository's word is **instance** (glossary): "install" is the directory the daemon
-runs from. Its first need is a stable id that the instance makes once and keeps in its database, and a display name that
-its owner can change. The id is there already: `instanceId()` (issue #603, `src/store/settings.ts`), made at its first ask,
-kept in the instance's settings, and the label of the sandbox boxes the hopper launches. A restart, a new container or an
-update on the same database keeps it. This part adds the display name and shows both.
+Part 2 of issue #1448: sources from other forges, GitLab first. A user attaches a **GitLab account** with a personal access
+token, picks its projects, and Intake lists their issues. Jobs do not act through GitLab yet: that is the next part.
 
-**The setting** (`src/http/display-name.ts`, `src/http/ui/display-name.ts`): the instance's settings key `displayName`
-(never set: empty). `GET /api/display-name` (an instance read) answers `{ instanceId, displayName }`; `POST
-/ui/api/display-name` `{ displayName }` (the instance admin) sets it: one line, trimmed, 80 characters at most, empty clears
-it. Each change is `display_name.changed` (`from`, `to`, `by`). UI: Settings → Version → This hopper, shown to the instance
-admin only.
+**The account** (`src/gitlab/account.ts`). One per user, at https://gitlab.com or at a GitLab of the user's own (its URL:
+https, or http only on a loopback host; no user, query or fragment). `POST /ui/api/gitlab-account` (admin of the user):
+
+- `connect` `{ token, baseUrl? }`: GitLab must take the token (`GET /api/v4/user`); the **source email match** applies as for a
+  GitHub token, over the account's confirmed emails (its primary email and the confirmed ones of `GET /api/v4/user/emails`);
+  a token that may not read them is refused while the match is on, as GitHub's is. The token is kept as the system secret
+  `gitlab-account.access-token` in the user's vault, sealed under the master key; without the key nothing is kept. The record
+  (the user setting `gitlabAccount`: the URL, the username and id, when, the email it was connected for, the picked projects,
+  and the projects the token reaches as last read) never holds it. A refusal answers `failed` with why and keeps nothing; an
+  account there was stays as it was. A new token of the same account (the same URL and user id) keeps its picked projects.
+- `choose` `{ projects }`: the picked projects, the whole list. `refresh`: read again the projects the token reaches (its
+  memberships, `GET /api/v4/projects?membership=true`). `disconnect`: forget the record and the token; nothing is deleted at
+  GitLab. With no account, `choose` and `refresh` answer 404.
+- `GET /api/gitlab-account` answers its status: connected, expired, unreadable, or not connected (with why the last connect
+  failed). Never the token.
+
+**A source expiring marks only the source** (issue #1380). GitLab answering 401 to the token ends the account: the record
+keeps `ended`, its status reads `expired`, its source pauses, and a new token connects it again. The GitHub accounts go on.
+
+**The source** (`src/gitlab/source.ts`, the `gitlab-account` plugin). The hopper adds an instance of it while a GitLab account
+is attached, unless the plugins config has one (`gitlabAccountSources`, `src/users/further-sources.ts`), as it adds a further
+GitHub account's: attaching or removing the account reloads the plugins. Each sync reads the open issues labelled `hopper`
+(the option `label`) of each picked project, paged, and lists each in `detail.intake`: assigned to the account, not taken with
+why (`jobs do not act through GitLab yet`, group `other`); else `not assigned to your GitLab account` (group `not-assigned`).
+`discover` answers no item, so no job is made, and nothing is written to GitLab: no label, no comment. A project GitLab does not
+answer is named in `detail.repoErrors`; none answering is the source's error. Paused while no account is attached, none is
+picked, or its token ended. Its key is the issue's URL (`…/-/issues/<iid>`).
+
+**The UI** (`ui/src/views/gitlab-account.tsx`). Sources → **GitLab**, below GitHub: the URL and the token to connect; connected,
+who and where, the projects the token reaches to pick, Refresh projects, the source's sync, and **Remove this account**;
+expired, **reconnect needed** and a field for a new token. Its words say that jobs do not act through GitLab yet.
 
 **Decisions:**
-- **The display name is the instance's, not a user's.** The issue's terms put users inside an install; the instance admin
-  owns its settings. Whether each user links their own part to their own account is an open question of the issue.
-- **No new id.** The id of issue #603 is already made once and kept, which is what the issue asks. A second id would be
-  two names for one thing.
-- **No migration.** `displayName` is a new key of the instance's key-value settings; the build before never reads it.
+- **A personal access token only, in this part.** OAuth needs an application registered at each GitLab, with its secret kept by
+  the hopper; a token needs neither, and names its account without doubt. OAuth stays for a later part.
+- **Not a connected account.** The connected-accounts service is GitHub's: the hopper's app, its device and web flows, renewal,
+  installations. A GitLab token has none of these, so the GitLab account is a small service of its own over the same vault and
+  the same email match, not a provider of that service.
+- **Plain fetch, no GitLab client library.** Four GET calls with a header and a page number; a client library would add a
+  dependency larger than the code it replaces.
+- **List, do not take.** A job from GitLab needs git and the API through the hopper for GitLab, which do not exist yet. Taking
+  the issue would make a job that cannot push. So Intake lists the issue and says why it is not taken, and the next part takes it.
+- **One GitLab account per user, in this part.** The second criterion asks for one; a second one is a later need.
 
-**Left for later parts of issue #465:** these need the hopper.io service, which is not in this repository, and the issue's
-open questions decided (who registers a multi-user instance, sharing with more than one account, a cap on instances).
-They follow the security rules of `docs/hopper-io-security.md` (issue #468) and the decisions of issue #469.
-- Registering from the instance: the admin starts it in Settings, the account owner approves it at hopper.io with a
-  short-lived, single-use code; nothing registered without approval on both sides.
-- Re-registering reuses the instance id and replaces the old registration. The cloud link (issue #467, "The cloud
-  link") makes a new `installId` at each link; the registration part makes it the instance id.
-- The link reports the instance's machines (name, online state, lanes, executors offered); machines are still added and
-  removed only on the instance.
-- Unregistering from either side: hopper.io revokes the link, or the instance unlinks and hopper.io removes it; neither
-  deletes anything on the instance.
-- The link state and last-seen time the account shows.
+**Left for later parts of issue #1448:** jobs through GitLab — the issue taken as a job, its claim and end labels, its git and its
+API through the hopper with the account's token (the acting identity per job, named on the job page), and its merge request
+followed; OAuth for GitLab; more than one GitLab account.
 
-**Verification:** `test/integration/display-name.test.ts`: a fresh hopper shows a 16-hex instance id and no name; the admin
-sets, changes and clears the name; the name and the id are kept across a restart; each change is one event; a body that is
-not one line of 80 characters at most is 400.
+**Verification:** `test/gitlab/account.test.ts` (connect, the sealed token, refusals keep nothing, the URL rule, the source email
+match, picked projects, the end marks only the account, removal), `test/gitlab/source.test.ts` (Intake lists the labelled open
+issues of the picked projects, paged; a project not answered; paused; the token refused), `test/users/further-sources.test.ts`,
+`test/integration/gitlab-source.test.ts` (the daemon with a fake GitLab: connect, pick, Intake lists; 404; the token never
+answered; removal removes the source), `test/ui/gitlab-view.test.ts` and `test/ui/sources.test.ts`.

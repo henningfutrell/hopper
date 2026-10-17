@@ -1,7 +1,8 @@
 // A draft run on the user's own AI CLI (issue #474): each provider — claude, codex, Cursor's agent, opencode, omp — run
 // locked down on the machine the user picked, against fake CLIs. A valid draft comes back checked; an answer that is no
 // draft, a CLI not signed in or not installed, an offline machine, a timeout and a cancel each end in plain words; a
-// client target runs claude through its client and refuses the others; a user added later runs claude with their own
+// client target runs claude through its client and refuses the others; a stopped run is stopped on the machine too
+// and leaves no run dir there (issue #472); a user added later runs claude with their own
 // config dir, and is refused another CLI on this machine, which would run on someone else's login.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,7 @@ import { draftOn, type DraftChoice, type DraftHost } from '../../src/drafting/ru
 import { NOT_A_DRAFT } from '../../src/run-skills/draft.ts';
 import { loadRunSkill } from '../../src/run-skills/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
+import { gone } from '../support/sweep.ts';
 import { testSshAuth } from '../support/ssh.ts';
 
 const FAKE_AGENT = join(import.meta.dirname, '..', 'adapters', 'fake-print-agent.mjs');
@@ -152,6 +154,17 @@ describe('draftOn: what goes wrong, in plain words', () => {
     process.env.FAKE_AGENT_MODE = 'hang';
     expect(await draftOn(host([HERE]), pick('codex', 'local', { timeoutMs: 500 }), input, signal())).toEqual({ error: 'codex on this machine: timed out after 500 ms' });
   });
+
+  for (const [where, m, on] of [['this machine', HERE, 'this machine'], ['an ssh target', DESK, 'machine desk']] as const) {
+    it(`a run stopped on ${where} is stopped there too, and leaves no run dir (issue #472)`, async () => {
+      process.env.FAKE_AGENT_MODE = 'hang';
+      expect(await draftOn(host([m]), pick('codex', m.id, { timeoutMs: 1500 }), input, signal())).toEqual({ error: `codex on ${on}: timed out after 1500 ms` });
+      const call = lastCall('codex') as Call & { sandbox: { pid: number } };
+      // Killed, it can stay a zombie a moment, until its new parent reaps it.
+      await expect.poll(() => gone(call.sandbox.pid), { timeout: 2000 }).toBe(true);
+      expect(existsSync(call.cwd)).toBe(false);
+    });
+  }
 
   it('a cancelled run is stopped, and says so', async () => {
     process.env.FAKE_AGENT_MODE = 'hang';

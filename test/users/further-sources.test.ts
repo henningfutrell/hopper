@@ -6,8 +6,11 @@
 //   Scenario: each further key gets a copy of the first account's instance, named for it
 //   Scenario: no GitHub intake configured, no source for a further account either
 //   Scenario: an instance the config names already for the key, or by the name, is not doubled
+//
+// Feature: the GitLab account's source (issue #1448 part 2)
+//   Scenario: while a GitLab account is attached, the hopper adds a gitlab-account instance, unless the config has one
 import { describe, expect, it } from 'vitest';
-import { furtherAccountSources } from '../../src/users/further-sources.ts';
+import { furtherAccountSources, gitlabAccountSources } from '../../src/users/further-sources.ts';
 import { githubAccountOptions, sameAccountWork } from '../../src/sources/config.ts';
 
 const FIRST = { name: 'github-account', plugin: 'github-account', options: { label: 'hopper', pollSeconds: 30 } };
@@ -38,5 +41,14 @@ describe('a job source for each further GitHub account (issue #1448)', () => {
     expect(githubAccountOptions.safeParse({ account: 'gitlab' }).success).toBe(false);
     expect(sameAccountWork(first, further)).toBe(false);
     expect(sameAccountWork(further, githubAccountOptions.parse({ account: 'github-2' }))).toBe(true);
+  });
+});
+
+describe('the GitLab account\'s source (issue #1448 part 2)', () => {
+  it('is added while a GitLab account is attached, unless the plugins config has one', () => {
+    expect(gitlabAccountSources([FIRST], false)).toEqual([]);
+    expect(gitlabAccountSources([FIRST], true)).toEqual([{ name: 'gitlab-account', plugin: 'gitlab-account' }]);
+    expect(gitlabAccountSources([FIRST, { name: 'mine', plugin: 'gitlab-account' }], true)).toEqual([]);
+    expect(gitlabAccountSources([{ name: 'gitlab-account', plugin: 'direct' }], true)).toEqual([{ name: 'gitlab-account-source', plugin: 'gitlab-account' }]);
   });
 });

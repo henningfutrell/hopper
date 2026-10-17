@@ -40,7 +40,7 @@ import type { SystemSecrets } from '../vault/system.ts';
 import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createDirectPullRequests, createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
-import type { AccountSet } from '../connected-accounts/account-set.ts'; import { userAccounts } from './connected-accounts.ts'; import { furtherAccountSources } from './further-sources.ts';
+import type { AccountSet } from '../connected-accounts/account-set.ts'; import { userAccounts } from './connected-accounts.ts'; import { furtherAccountSources, gitlabAccountSources } from './further-sources.ts'; import { createGitLabAccount, type GitLabAccount } from '../gitlab/account.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
 
@@ -156,6 +156,8 @@ export interface UserRuntime {
   directJobs: DirectJobs; // issue #901: jobs a person submits straight to the hopper, with no GitHub issue
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: AccountSet;
+  /** The user's GitLab account (issue #1448 part 2). */
+  gitlabAccount: GitLabAccount;
   webhooksEditor: WebhooksEditor;
   /** Why a webhook subscription has no secret to sign with (issue #451); undefined when it has one. Never the secret. */
   secretProblem: (sub: WebhookSubscription) => string | undefined;
@@ -255,6 +257,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   } });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
   const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }) }); // the shrink guard's (issue #1096), in the user's mirrors
+  // The user's GitLab account (issue #1448 part 2): its source comes and goes with it, and syncs at each change.
+  const gitlabAccount = createGitLabAccount({ settings: store.settings, secrets: system, clock, logger, ...(o.sourceEmailMatch ? { emailMatch: () => o.sourceEmailMatch!() } : {}), onChange: (presence) => {
+    if (presence) void host.reload().catch(() => undefined);
+    for (const s of sync.statuses().filter((j) => j.kind === 'gitlab-account')) void sync.syncNow(s.name).catch(() => undefined);
+  } });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine); const lanePodSignIn = laneSignIn(() => host.targets(), (ask) => vault.podCredential(ask)); // a lane pod's agent sign-in, its jobs' and its usage reads' (issue #1287); reached only after `vault` exists
   let searchChanged = (_keys: readonly string[]): void => undefined; const host = createPluginHost({ // searchChanged: set once search exists (issue #945)
@@ -263,13 +270,13 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams, outbound),
-    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts },
+    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts, gitlabAccount },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed, ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
     usageSourceContext: { agentSignIn: (machine) => lanePodSignIn(machine) }, intervalMs: o.pluginsConfigIntervalMs,
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),
-    derivedJobSources: (configured) => furtherAccountSources(configured, connectedAccounts.keys()), // a source for each further GitHub account (issue #1448)
+    derivedJobSources: (configured) => [...furtherAccountSources(configured, connectedAccounts.keys()), ...gitlabAccountSources(configured, store.settings.getGitLabAccount() !== undefined)], // a source for each further GitHub account, and the GitLab account's (issue #1448)
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: {
       inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
@@ -395,7 +402,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
-    levelNames: () => levels().map((l) => l.name), connectedAccounts,
+    levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586

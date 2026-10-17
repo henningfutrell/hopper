@@ -93,3 +93,14 @@ describe('sourcesView: a further GitHub account', () => {
     expect(connectionEnded([work, source('github-account', 'github-account', 'disabled', { expired: true, paused: 'first ended' })])).toBe('first ended');
   });
 });
+
+describe('sourcesView: the GitLab source (issue #1448 part 2)', () => {
+  it('shows the GitLab account\'s source in the GitLab panel, never as a card of its own', () => {
+    const gitlab = source('gitlab-account', 'gitlab-account', 'ok', { login: 'ada' });
+    const other = source('direct', 'direct', 'ok');
+    const v = sourcesView([gitlab, other], signedIn());
+    expect(v.gitlab).toBe(gitlab);
+    expect(v.others).toEqual([other]);
+    expect(sourcesView([other]).gitlab).toBeUndefined();
+  });
+});

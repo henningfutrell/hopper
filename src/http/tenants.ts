@@ -10,6 +10,7 @@
 // GitHub account it is. A token given and refused is refused, on loopback too. A sign-in's token reads only;
 // what it may do beyond is exchange itself for an API token (issue #718, src/http/api-tokens.ts). An API token is a
 // session (src/http/ui/sessions.ts) and reads as its user, once Access allows its read (`api_token#can_view`).
+import type { GitLabAccount } from '../gitlab/account.ts';
 import type { Outbound } from '../outbound/index.ts';
 import type { DirectJobs } from '../direct-jobs/index.ts';
 import type { UserSearch } from '../search/index.ts';
@@ -81,6 +82,8 @@ export interface TenantParts {
   outbound: Pick<Outbound, 'circuits'>;
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccounts;
+  /** The user's GitLab account (issue #1448 part 2). */
+  gitlabAccount: GitLabAccount;
   webhooksEditor: WebhooksEditor;
   /** Why a webhook subscription has no secret to sign with (issue #451); never the secret. */
   secretProblem: SecretProblem;

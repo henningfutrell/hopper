@@ -151,6 +151,9 @@ export const rateLimiterEvents = {
   'allowed_hosts.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
   'cloud_link.linked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
   'cloud_link.unlinked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
+  'cloud_link.registration_code_minted': strict({ installId: z.string(), account: z.string(), expiresAt: z.string(), by: z.string() }),
+  'cloud_link.registered': strict({ installId: z.string(), account: z.string() }),
+  'cloud_link.unregistered': strict({ installId: z.string(), account: z.string() }),
   'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
   'display_name.changed': strict({ from: z.string(), to: z.string(), by: z.string() }),
 };

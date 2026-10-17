@@ -1,4 +1,4 @@
-// A job source for each further connected account (issue #1448, design.md "More than one GitHub account"): Intake lists the
+// A job source for each further connected account, and the GitLab account's (issue #1448, design.md "More than one GitHub account"): Intake lists the
 // issues of each account's job repositories through that account. The source is the configured `github-account` instance of
 // the first account, copied, with `account` set to the further key and named for it (`github-account-2`). The hopper adds it
 // at each reload of the plugins; it is never written to the plugins config, so removing the account removes its source.
@@ -18,4 +18,14 @@ export function furtherAccountSources(configured: readonly InstanceSpec[], keys:
     const name = `${PLUGIN}-${key.slice(key.lastIndexOf('-') + 1)}`;
     return names.has(name) ? [] : [{ ...first, name, options: { ...first.options, account: key } }];
   });
+}
+
+/**
+ * The GitLab source (issue #1448 part 2): while the user has a GitLab account attached, the hopper adds an instance of the
+ * `gitlab-account` plugin, unless the plugins config has one already. Never written to the plugins config.
+ */
+export function gitlabAccountSources(configured: readonly InstanceSpec[], attached: boolean): InstanceSpec[] {
+  if (!attached || configured.some((s) => s.plugin === 'gitlab-account')) return [];
+  const name = configured.some((s) => s.name === 'gitlab-account') ? 'gitlab-account-source' : 'gitlab-account';
+  return [{ name, plugin: 'gitlab-account' }];
 }

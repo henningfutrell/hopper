@@ -362,6 +362,26 @@ A person can work from more than one GitHub account, for example a work account 
 - **When it ends.** Only that account pauses. Its panel asks for a new token. The other accounts go on.
 - **Remove this account** forgets the account, its token and its job repositories. Delete the token at GitHub yourself.
 
+## A GitLab account
+
+A person can also attach a GitLab account, at https://gitlab.com or at a GitLab of their own (issue #1448, part 2). The
+hopper lists the issues labelled `hopper` in the projects picked for it in Intake. Jobs do not act through GitLab yet, so no
+GitLab issue becomes a job.
+
+1. Make a personal access token at GitLab (on gitlab.com: https://gitlab.com/-/user_settings/personal_access_tokens), with
+   the scopes `read_api` and `read_user`.
+2. In Sources → GitLab, give the GitLab URL (`https://gitlab.com` when it is not your own), paste the token and click
+   **Connect GitLab**.
+3. Pick the projects whose issues Intake lists, and click **Save**.
+
+- **Checks.** GitLab must take the token, and the source email match applies: one confirmed email of the GitLab account
+  must be the email you signed in with. A token that may not read the account's emails is refused while the match is on.
+- **The token** is kept in your vault as a system secret, sealed under the master key. No route answers it.
+- **The URL** is https, or http only on this machine (`localhost`, `127.0.0.1`).
+- **When it ends.** When GitLab refuses the token, only the GitLab account pauses. Its panel says **reconnect needed** and
+  asks for a new token. The GitHub accounts go on.
+- **Remove this account** forgets the account and its token. Revoke the token at GitLab yourself.
+
 ## LDAP realm
 
 People sign in on the same username and password form with their directory account. The hopper

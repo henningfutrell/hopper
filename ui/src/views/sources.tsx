@@ -5,6 +5,7 @@
 // A source that takes the same work as an earlier one (issue #1264) is named in a banner at the top, with one click to remove it.
 // More than one GitHub account (issue #1448): each further account has a panel of its own, with its source inside it, and Add
 // another GitHub account, in the first account's panel once it is connected, takes a personal access token of another account.
+// Below GitHub, the GitLab account (issue #1448 part 2), with its source's sync inside its panel.
 import { useCallback, useEffect, useState } from 'react';
 import { CopyX, Inbox, Trash2 } from 'lucide-react';
 import { sendPluginsEdit } from '@/components/plugin-form';
@@ -16,6 +17,7 @@ import type { ConnectedAccountStatus, SourceStatus } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { AfterAnswer } from './after-answer';
 import { ConnectedAccountPanel } from './connected-account';
+import { GitLabSection } from './gitlab-account';
 import { get } from '@/lib/api';
 import { RepoSetupSection } from './repo-setup';
 import { SourceSync } from './source-sync';
@@ -83,6 +85,7 @@ export function Sources() {
           {v.github.map((s) => <SourceCard key={s.name} s={s} />)}
         </div>
       </section>
+      <GitLabSection source={v.gitlab} />
       <RepoSetupSection />
       {v.others.length > 0 && (
         <section className="grid gap-3 lg:grid-cols-2">{v.others.map((s) => <SourceCard key={s.name} s={s} />)}</section>
