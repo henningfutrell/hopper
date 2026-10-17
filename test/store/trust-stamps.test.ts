@@ -97,3 +97,16 @@ function userSchema(url: string): string {
   u.searchParams.set('schema', `${u.searchParams.get('schema')!}_u_admin`);
   return u.toString();
 }
+
+describe('a job whose origin is judged after it was made (issue #652, the backfill)', () => {
+  it('is stamped again by the rules', () => {
+    const s = t.open(t.url());
+    s.jobs.useStampKey(KEY);
+    const j = s.jobs.create(spec, 50, issue({ origin: undefined }));
+    expect(j.stamp?.level).toBe('untrusted');
+    s.jobs.update(j.id, { source: { ...j.source!, origin: 'trusted' } });
+    expect(s.jobs.restamp(j.id).stamp).toMatchObject({ level: 'owner', by: 'intake' });
+    expect(s.jobs.stampHold(s.jobs.get(j.id)!)).toBeUndefined();
+    s.close();
+  });
+});

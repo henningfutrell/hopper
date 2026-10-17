@@ -1,5 +1,6 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
-import type { Job } from '../domain/types.ts';
+import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
+import { childLevel, lowest, ruleCeiling, signStamp, stampHold, verifiedLevel, type StampedBy } from '../domain/trust-stamp.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
@@ -25,6 +26,13 @@ const chunks = (ids: readonly string[]): string[][] => {
  */
 export function createJobRepository(c: StoreContext): JobRepository {
   const kept = new Map<string, { v: string; job: Job }>();
+  /** The user's trust stamp key (issue #655): absent until the runtime gives it, and then no job is stamped or checked. */
+  let stampKey: Buffer | undefined;
+  /** The job stamped by the rules: at its rule ceiling, or `cap` when lower. */
+  const stampByRules = (key: Buffer, job: Job, by: StampedBy, cap?: Job['stamp']): Job['stamp'] => {
+    const ceiling = ruleCeiling(job);
+    return signStamp(key, job, { level: cap ? lowest(ceiling.level, cap.level) : ceiling.level, reasons: ceiling.reasons, by, at: c.clock.now().toISOString() });
+  };
   const keep = (r: Row): Job => {
     const job = parse<Job>(r.body);
     kept.set(String(r.id), { v: String(r.v), job });
@@ -63,11 +71,24 @@ export function createJobRepository(c: StoreContext): JobRepository {
     if (r) kept.set(id, { v: String(r.v), job: next });
     return next;
   };
+  /** The backfill's stamp: by the rules; a job a job made (a fork, a follow-on) at most its parent's rule level, never owner. */
+  const backfillStamp = (key: Buffer, job: Job): Job['stamp'] => {
+    const parentId = job.forkOf?.jobId ?? job.followOn?.jobId;
+    const parent = parentId === undefined ? undefined : get(parentId);
+    if (!parent) return stampByRules(key, job, 'backfill');
+    return signStamp(key, job, { level: childLevel(ruleCeiling(parent).level), reasons: [`parent:${parent.id}`], by: 'backfill', at: c.clock.now().toISOString() });
+  };
   return {
-    create(spec, priority, source) {
+    create(spec, priority, source, parent) {
       const at = c.clock.now().toISOString();
       const job: Job = { id: c.idGen(), spec, priority, status: 'queued', approved: false, createdAt: at, updatedAt: at, attempts: 0 };
       if (source) job.source = source;
+      if (stampKey && !parent) job.stamp = stampByRules(stampKey, job, 'intake');
+      if (stampKey && parent) {
+        // A job a job made: at most its parent's level as verified now, never owner; none when the parent's does not verify.
+        const of = verifiedLevel(stampKey, parent);
+        if (of !== undefined) job.stamp = signStamp(stampKey, job, { level: childLevel(of), reasons: [`parent:${parent.id}`], by: 'job', at });
+      }
       const r = c.db.get('INSERT INTO jobs (id, status, created_at, source_key, body) VALUES (?, ?, ?, ?, ?) RETURNING xmin::text AS v',
         job.id, job.status, at, source?.key ?? null, JSON.stringify(job));
       if (r) kept.set(job.id, { v: String(r.v), job });
@@ -112,7 +133,29 @@ export function createJobRepository(c: StoreContext): JobRepository {
       return write(id, (cur) => applyPatch<Job>(cur, patch));
     },
     respecify(id, spec) {
-      return write(id, (cur) => ({ ...cur, spec }));
+      return write(id, (cur) => {
+        const next = { ...cur, spec };
+        if (!stampKey) return next;
+        // Stamped again for the new spec, at the level it had or lower; a stamp that does not verify now stays as it is.
+        const had = verifiedLevel(stampKey, cur);
+        if (had === undefined || !cur.stamp) return next;
+        const stamp = signStamp(stampKey, next, { ...cur.stamp, level: had, by: 'respecify', at: c.clock.now().toISOString() });
+        return { ...next, stamp };
+      });
+    },
+    useStampKey(key) {
+      stampKey = key;
+      const unstamped = c.db.all(`SELECT id FROM jobs WHERE status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(',')}) ORDER BY seq`, ...TERMINAL_STATUSES)
+        .map((r) => String(r.id)).filter((id) => get(id)?.stamp === undefined);
+      for (const id of unstamped) write(id, (cur) => ({ ...cur, stamp: backfillStamp(key, cur) }));
+      return unstamped;
+    },
+    restamp(id) {
+      const key = stampKey;
+      return key ? write(id, (cur) => ({ ...cur, stamp: stampByRules(key, cur, 'intake') })) : get(id)!;
+    },
+    stampHold(job) {
+      return stampKey ? stampHold(stampKey, job) : undefined;
     },
   };
 }

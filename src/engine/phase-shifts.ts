@@ -82,7 +82,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
       jobId: parent.id, questionId: q.id, kind: to, ...(note ? { note } : {}), question: q.text,
       ...(source ? { source: { source: source.source, key: source.key, kind: source.kind, ...(source.url ? { url: source.url } : {}), ...(source.title ? { title: source.title } : {}), ...(source.repo ? { repo: source.repo } : {}) } } : {}),
     };
-    const created = store.jobs.create(spec, parent.priority);
+    const created = store.jobs.create(spec, parent.priority, undefined, parent);
     store.events.append({ type: 'job.queued', jobId: created.id, data: { spec, priority: parent.priority, forkOf: { jobId: parent.id, questionId: q.id, kind: to } } });
     // A person or an allowed level asked for it: it passes the queue gate at once, pinned where its parent's work tree is.
     const fork = store.jobs.update(created.id, { accepted: true, forkOf, phase: to });

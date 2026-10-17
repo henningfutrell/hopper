@@ -56,7 +56,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts'; import { traceJobs } from '../telemetry/jobs.ts'; import { recordOutcomes } from '../telemetry/outcomes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import { stampKeyOf } from '../domain/trust-stamp.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -224,7 +224,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
-  const { key: hopperLink, transport: clientTransport, named: clientNamed } = link;
+  // Trust stamps (issue #655): every job made from here on is stamped; a job that has not ended and has none is stamped now.
+  const { key: hopperLink, transport: clientTransport, named: clientNamed } = link; const backfilled = store.jobs.useStampKey(stampKeyOf(hopperLink.privateKey, user.id)); if (backfilled.length) logger.info(`hopper: ${backfilled.length} job(s) of ${user.id} had no trust stamp and were stamped by the rules`);
   // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];

@@ -138,7 +138,8 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * were judged (tenant migration 39). Held until a sync finds its issue of a trusted origin, or a person approves its
    * request card; then its `source.origin` is set and this goes.
    */
-  originPending?: true;
+  /** `stamp`: its trust stamp (issue #655, src/domain/trust-stamp.ts), its trust level signed. Absent: made before stamps, or outside the hopper. */
+  originPending?: true; stamp?: import('./trust-stamp.ts').TrustStamp;
   /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
   userRank?: number;
   laneId?: LaneId;
@@ -386,10 +387,11 @@ export interface DecisionInputs {
    * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none. `credentialHeld` (issue #1467):
    * the machines the credential check holds (an admin stopped them, or strict mode is on and no admin acknowledged them); a
    * machine with infra credentials that is not named takes jobs. Absent: none. `sandboxesHeld` (issue #1471): the waiting jobs
-   * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none.
+   * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none. `stampHeld`
+   * (issue #655): the waiting jobs whose trust stamp is missing, does not verify, or is below the dispatch minimum, with why. Absent: none.
    */
   /** Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it. */
-  preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[];
+  preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 

@@ -208,6 +208,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // origin or a person approved it; the job takes that origin, and its hold goes.
         if (job.originPending && item.origin && job.source) {
           store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin } });
+          store.jobs.restamp(jobId); // its trust stamp from the origin now judged (issue #655)
           store.events.append({ type: 'job.origin_judged', jobId, data: { key: item.key, origin: item.origin } });
           changed = true;
         }

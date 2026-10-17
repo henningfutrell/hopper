@@ -32,6 +32,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
     const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
+    const stampHeld = waiting.flatMap((j) => { const reason = c.store.jobs.stampHold(j); return reason ? [{ jobId: j.id, reason }] : []; });
     return {
       at: nowIso(c),
       trigger,
@@ -52,6 +53,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
       ...(preemption ? { preemption } : {}),
+      ...(stampHeld.length ? { stampHeld } : {}),
       policy: policyOf(c),
     };
   } };

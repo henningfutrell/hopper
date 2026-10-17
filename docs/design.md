@@ -16964,6 +16964,70 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
+## Trust stamps (issue #655, part 1, 2026-10-17)
+
+Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
+can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
+first tier. This part builds that first tier: **each job carries a trust level from where its work came, signed, and a job
+starts only with a stamp that verifies, at the dispatch minimum or above.**
+
+**The trust level** (`src/domain/trust-stamp.ts`), lowest first: `quarantined`, `untrusted`, `screened`, `approved`,
+`trusted`, `owner`. The rules (`ruleCeiling`) read the job's source and its job origin (issue #652):
+
+| the job's source | level | reasons |
+|---|---|---|
+| GitHub, a trusted origin, its author is the login it was taken for | `owner` | `origin:trusted`, `author:assignee` |
+| GitHub, a trusted origin, another trusted actor wrote it | `trusted` | `origin:trusted` |
+| GitHub, a request card a person approved (or auto-approval approved) | `approved` | `origin:approved` |
+| GitHub, no job origin | `untrusted` | `origin:none` |
+| a direct job (a signed-in person submitted it, issue #901) | `approved` | `source:direct` |
+| another job source, which an admin configured and which judges no origin | `approved` | `source:configured` |
+| no source | `untrusted` | `source:none` |
+
+A job a job made — a follow-on of an accepted proposal (issue #651), a fork of a phase shift (issue #548) — gets at most
+its parent's level as it verifies then, and never `owner` (`childLevel`); a parent whose stamp does not verify gives none.
+`quarantined` and `screened` are no rule's yet: the gate's later parts (a decision by Jev that can only lower the level,
+a person's quarantine) give them.
+
+**The stamp** (`Job.stamp`): `{ v: 1, level, reasons, by, at, mac }`. `by`: `intake` (the store made the job), `job` (a job
+made it), `respecify` (its spec changed), `backfill` (made before stamps). `mac` is HMAC-SHA256 under the user's **stamp
+key** over the other fields, the job's id and the SHA-256 of its spec as canonical JSON (keys sorted). The stamp key is
+HKDF of the hopper's link key for the user (issue #308), label `hopper-job-stamp/1`, as the proxy token's key is (issue
+#563): never stored, never sent. So a stamp of another job, a raised level or a changed prompt does not verify.
+
+**Where it is made.** In the job store (`src/store/jobs.ts`), the one code path every job is made by: the runtime gives the
+store the key at its start (`useStampKey`), and from then `create` stamps each job by the rules, or by its parent
+(`create(spec, priority, source, parent)`). `respecify` — a routing rule's re-sort (issue #375), Accept the new text
+(issue #662), a review kind set — stamps the new spec again at the level the old stamp verified at, never higher; a stamp
+that does not verify stays as it is. A job whose origin a sync judges after it was made (issue #652, the backfill) is
+stamped again by the rules (`restamp`), as intake would stamp it now. `update` cannot set a stamp. A row a writer changes outside the store has no stamp,
+or one that does not verify.
+
+**The dispatch check.** At each Decision the engine asks the store why each waiting job's stamp holds it
+(`stampHold`), and gives the decider `stampHeld`. The decider holds such a job before every other judgement but its
+origin pending (issue #652), a job resuming after a question too:
+
+- no stamp: `no trust stamp: held — …` (`STAMP_MISSING`);
+- a stamp that does not verify: `its trust stamp does not match the job: held — …` (`STAMP_MISMATCH`);
+- a level below the **dispatch minimum** `approved`: `trust stamp <level> is below approved: held — …`.
+
+Cancel and Run again are the ways out: Run again makes a new job, which intake stamps again from its item.
+
+**The backfill** (requirement 10). At each start, the store stamps every job that has not ended and has none, by the rules
+(`by: backfill`; a fork or a follow-on at most its parent's rule level), and the runtime logs how many. A job queued before
+this build, and one a steadier channel's older build made on the same store (`docs/deploy.md` "Update channels and
+promotion"), so runs as before. No migration: `stamp` is one more field in the job's body, which the build before ignores.
+
+**Not in this part** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, the brake
+per source and repository (intake strictness), Jev's `intake-trust` and `intake-kind` decisions that can only lower a level,
+the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the stamp read at the GitHub
+proxy and the skill broker (gate 2: the sandbox boundary, its brake, lowering trust and quarantine), the restamp on an edit
+seen at a sync, and the Intake and API views of the stamp.
+
+**Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
+job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
+is held. The stamp key comes from the link key, which is kept in the user's schema: a writer who can read it can sign.
+
 ## Vault grants (issue #652, 2026-10-11)
 
 Owner requirement (the 2026-10-10 intake security review, path F, requirement 5): "A job does not get the host's SSH
