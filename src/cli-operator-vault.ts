@@ -5,13 +5,17 @@
 // What waits for a person — a job's grant ask, a sandbox request — is decided here too (issue #1138), by a person or by a
 // delegate approver with its refresh token alone (cli-operator.ts, HOPPER_REFRESH_TOKEN_FILE).
 import { parseArgs } from 'node:util';
-import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
+import { ASSET_KINDS, OPERATIONS, type Asset, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
+import { MINTS_FOR_KINDS, mintsForProblem } from './domain/minting.ts';
 import type { StateBackend } from './domain/state-backend.ts';
 import type { VaultView } from './domain/vault.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const VAULT_USAGE = `  hopper vault                                       the vault: its secrets and templates, with what waits for a person; never a value
-  hopper vault set <name> [--scope <text>]           set a vault secret from stdin (never as an argument); kept sealed, never answered back
+  hopper vault set <name> [--scope <text>] [--mints <kind>/<name>|none]
+                                                     set a vault secret from stdin (never as an argument); kept sealed, never answered back.
+                                                     --mints: a minting credential for aws-account/<id> or cluster/<name>, which the
+                                                     hopper mints from and never gives out; none: a plain secret again; left out: as it was
   hopper vault set <name> --shared [--scope <text>] [--reader <user id>]...
                                                      share a secret with every user's agents, or the readers named (the hopper's admin)
   hopper vault remove <name> [--shared]              remove a vault secret, or a shared secret
@@ -53,7 +57,7 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper sandbox approve <request>                   approve a sandbox request: the job's box steps run, each in a sandbox
   hopper sandbox decline <request> --reason <text>   decline a sandbox request: the job is told why`;
 
-const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
+const VAULT_SET = 'vault set <name> [--scope <text>] [--mints aws-account/<id>|cluster/<name>|none] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_GRANT = 'vault grant|revoke <job>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_GRANT} | hopper ${VAULT_MINT_TEST}`;
@@ -68,8 +72,21 @@ const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/
 /** A shared secret's edit (issue #718): the hopper's admin's route, `POST /ui/api/vault/shared`. */
 const shared = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault/shared', body: async () => body });
 
+/**
+ * `--mints <kind>/<name>` (issue #872): what a minting credential mints for, as Settings → Vault takes it; `none` makes
+ * it a plain secret again (null). The vault checks it again, as for a click.
+ */
+function mintsOf(raw: string): Asset | null {
+  if (raw === 'none') return null;
+  const at = raw.indexOf('/');
+  const asset = { kind: raw.slice(0, at), name: raw.slice(at + 1) };
+  const problem = at > 0 ? mintsForProblem(asset) : `write <kind>/<name>, the kind ${MINTS_FOR_KINDS.join(' or ')}`;
+  if (problem) throw new OperatorRefusal(`--mints ${raw}: ${problem}`);
+  return asset as Asset;
+}
+
 export function vaultCall(args: string[], stdin: () => string): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { scope: { type: 'string' }, shared: { type: 'boolean' }, reader: { type: 'string', multiple: true } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { scope: { type: 'string' }, mints: { type: 'string' }, shared: { type: 'boolean' }, reader: { type: 'string', multiple: true } } });
   const [verb, name, ...extra] = positionals;
   const flags = Object.keys(values).length > 0;
   if (verb === undefined && !flags) return { role: 'viewer', path: '/api/vault' };
@@ -85,12 +102,14 @@ export function vaultCall(args: string[], stdin: () => string): Call {
     if (!name || extra.length > 0 || flags) throw usage(VAULT_GRANT);
     return { role: 'operator', path: `/ui/api/jobs/${encodeURIComponent(name)}/${verb}-vault`, body: async () => ({}) };
   }
-  if (verb === 'remove' && name && extra.length === 0 && values.scope === undefined && !values.reader) return (values.shared ? shared : edit)({ action: 'remove', name });
+  if (values.mints !== undefined && values.shared) throw new OperatorRefusal('--mints marks a minting credential of the user\'s vault: a shared secret is never one');
+  if (verb === 'remove' && name && extra.length === 0 && values.scope === undefined && values.mints === undefined && !values.reader) return (values.shared ? shared : edit)({ action: 'remove', name });
   if (verb !== 'set' || !name || extra.length > 0) throw usage(verb === 'set' ? VAULT_SET : VAULT_VERBS);
+  const mints = values.mints === undefined ? undefined : mintsOf(values.mints);
   const value = stdin().trim();
   if (!value) throw new OperatorRefusal(`no value on stdin: pipe it in, e.g. hopper vault set ${name} < value-file`);
   const body = { action: 'set', name, value, ...(values.scope === undefined ? {} : { scope: values.scope }) };
-  return values.shared ? shared({ ...body, ...(values.reader ? { readers: values.reader } : {}) }) : edit(body);
+  return values.shared ? shared({ ...body, ...(values.reader ? { readers: values.reader } : {}) }) : edit({ ...body, ...(mints === undefined ? {} : { mints }) });
 }
 
 /** `<operation>/<kind>/<asset>`, the key a launch names a profile by; the asset may hold `/` (a namespace, an AWS role). */

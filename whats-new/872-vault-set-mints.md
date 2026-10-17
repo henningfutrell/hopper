@@ -1,0 +1,1 @@
+- The command line can now mark a vault secret as a minting credential, as the Vault settings page does.
