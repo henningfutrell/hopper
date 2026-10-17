@@ -3,6 +3,7 @@
 // as the account's read role `hopper-read`, and each Kubernetes cluster: those EKS lists in the accounts, and those a
 // `cluster` minting credential mints for. Read-only: nothing here acts on a cloud or a cluster. Pure.
 import type { Asset } from './access.ts';
+import type { ClusterOverride } from './clusters.ts';
 import type { Minted } from './minting.ts';
 import type { AwsAnswers, KubeAnswers } from './topology-discover.ts';
 import type { SourceReport, TopologySource } from './topology.ts';
@@ -43,9 +44,13 @@ export interface ClusterToRead { name: string; id: string }
 /**
  * The clusters to read: each EKS cluster the accounts listed, by its ARN, then each cluster with a minting credential of its
  * own that no account listed, by its name. One name EKS has in two accounts is read twice: the vault refuses both, and says why.
+ * A cluster an override (issue #1766) names for EKS (`eksName`, in its one `account` when it names one) is minted for by the
+ * override's name, the hopper's.
  */
-export function clustersToRead(listed: readonly NonNullable<AwsAnswers['clusters']>[number][], own: readonly string[]): ClusterToRead[] {
-  const out = listed.map((c) => ({ name: c.name, id: c.arn }));
+export function clustersToRead(listed: readonly NonNullable<AwsAnswers['clusters']>[number][], own: readonly string[], overrides: readonly ClusterOverride[] = []): ClusterToRead[] {
+  const nameOf = (c: { name: string; arn: string }): string =>
+    overrides.find((o) => (o.eksName ?? o.name) === c.name && (!o.account || c.arn.split(':')[4] === o.account))?.name ?? c.name;
+  const out = listed.map((c) => ({ name: nameOf(c), id: c.arn }));
   for (const name of own) if (!out.some((c) => c.name === name)) out.push({ name, id: name });
   return out.filter((c, i) => out.findIndex((d) => d.id === c.id) === i);
 }

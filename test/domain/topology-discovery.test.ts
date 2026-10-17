@@ -4,7 +4,8 @@
 //
 // Feature: the hopper discovers each user's topology on a schedule and when a person asks
 //   Scenario: the targets are the accounts and clusters the minting credentials mint for, each once
-//   Scenario: the clusters EKS listed are read by their ARN; a cluster of its own credential that no account listed, by its name
+//   Scenario: the clusters EKS listed are read by their ARN; a cluster of its own credential that no account listed, by its name;
+//     an EKS alias an override names, by the override's name
 //   Scenario: an account the vault minted nothing for reports each of its kept sources as failed
 //   Scenario: the schedule begins one run per user and slot, and none for a user whose vault mints for nothing
 import { describe, expect, it } from 'vitest';
@@ -27,6 +28,10 @@ describe('what a discovery run reads', () => {
     // One name in two accounts: both are read, and the vault refuses both.
     const other = { name: 'prod', arn: 'arn:aws:eks:eu-west-1:222222222222:cluster/prod' };
     expect(clustersToRead([prod, other], [])).toEqual([{ name: 'prod', id: prod.arn }, { name: 'prod', id: other.arn }]);
+    // An override names prod-eks for EKS in one account: that cluster is minted for by the hopper's name.
+    const alias = { name: 'prod-eks', arn: 'arn:aws:eks:eu-west-1:111111111111:cluster/prod-eks' };
+    const there = { name: 'prod-eks', arn: 'arn:aws:eks:eu-west-1:222222222222:cluster/prod-eks' };
+    expect(clustersToRead([alias, there], [], [{ name: 'shop', eksName: 'prod-eks', account: '111111111111' }])).toEqual([{ name: 'shop', id: alias.arn }, { name: 'prod-eks', id: there.arn }]);
   });
 
   it('reports each kept source of an account the vault minted nothing for as failed, so its snapshot says why', () => {

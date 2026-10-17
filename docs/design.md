@@ -26447,8 +26447,9 @@ cluster.
     `Endpoint` (an AWS other than AWS's) is read at that endpoint for every service. A list the session may not read is left
     out; an account none of whose lists answer is reported failed, with the first error.
   - **A cluster** (`clustersToRead`): each cluster EKS listed, by its ARN, then each cluster of its own minting credential no
-    account listed, by its name. The vault mints a read token for `cluster/<name>` — its own minting credential, else found
-    in the AWS accounts as `hopper-read` (cluster discovery, issue #1766) — and the reader lists namespaces, deployments,
+    account listed, by its name; a cluster a cluster override names for EKS (`eksName`, in its `account` when it names one) by
+    the override's name. The vault mints a read token for `cluster/<name>` — its own minting credential, else found in the AWS
+    accounts as `hopper-read`, the override applied (cluster discovery, issue #1766) — and the reader lists namespaces, deployments,
     services, ingresses and service accounts in every namespace (`@kubernetes/client-node`, 500 a page). A plain `http:` API
     server is taken (the client's `skipTLSVerify`, with no TLS to skip); an `https:` one's certificate is always checked.
   - **Reported as a check reports** (`report`, reporter `topology discovery`, `infra.topology_reported`), through the same

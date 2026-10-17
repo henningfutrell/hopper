@@ -7,6 +7,7 @@
 // schedule, one run per user and slot whichever hopper begins it. Read-only: no compensation, nothing to undo.
 import { randomUUID } from 'node:crypto';
 import type { Asset } from '../domain/access.ts';
+import type { ClusterOverride } from '../domain/clusters.ts';
 import type { TopologyReader, UserStore } from '../domain/ports.ts';
 import { EKS_READ_ROLE } from '../domain/cluster-discovery.ts';
 import { awsTopology, kubeTopology } from '../domain/topology-discover.ts';
@@ -36,6 +37,8 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 export function createTopologyDiscovery(o: {
   store: Pick<UserStore, 'topology'>; topology: Pick<Topology, 'report'>; reader: TopologyReader;
   secrets(): readonly { mints?: Asset }[]; mint(asset: Asset): Promise<DiscoveryMintAnswer>;
+  /** The cluster overrides (issue #1766): an EKS alias is minted for by the hopper's name. */
+  overrides?(): readonly ClusterOverride[];
 }): TopologyDiscovery {
   /** Each report as `report` takes it: one that is not whole (too many nodes) is reported failed, saying why. */
   const report = (reports: SourceReport[]): void => {
@@ -69,7 +72,7 @@ export function createTopologyDiscovery(o: {
         }
       }
       if (reports.length) report(reports);
-      return { clusters: clustersToRead(listed, targets().clusters) };
+      return { clusters: clustersToRead(listed, targets().clusters, o.overrides?.() ?? []) };
     },
     async readClusters(clusters, signal) {
       const reports: SourceReport[] = [];

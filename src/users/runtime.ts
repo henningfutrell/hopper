@@ -19,7 +19,7 @@ import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } 
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import { createTopologyDiscovery, type DiscoverAnswer, type TopologyDiscovery } from '../infra-plans/topology-discovery.ts'; import { createTopologyReader } from '../infra-plans/topology-reader.ts'; import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts';
+import { createTopologyDiscovery, type DiscoverAnswer, type TopologyDiscovery } from '../infra-plans/topology-discovery.ts'; import { createTopologyReader } from '../infra-plans/topology-reader.ts'; import { readClusters } from '../vault/clusters.ts'; import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -413,7 +413,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault, topologyDiscovery: { ...createTopologyDiscovery({ store, topology: proxy.githubProxy.topology, reader: seams.topologyReader ?? createTopologyReader(), secrets: () => vault.view().secrets, mint: (asset) => vault.mintForDiscovery(asset) }), discover: () => o.discoverTopology?.() ?? Promise.resolve(undefined) }, // issues #558, #585, #586; topology discovery (issue #1781 part 3)
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault, topologyDiscovery: { ...createTopologyDiscovery({ store, topology: proxy.githubProxy.topology, reader: seams.topologyReader ?? createTopologyReader(), secrets: () => vault.view().secrets, mint: (asset) => vault.mintForDiscovery(asset), overrides: () => readClusters(store.config) }), discover: () => o.discoverTopology?.() ?? Promise.resolve(undefined) }, // issues #558, #585, #586; topology discovery (issue #1781 part 3)
     machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
       tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined), leave: machineLeave({ userId: user.id, links: o.links, targets: () => host.targets(), jobsOn: (name) => jobsOnMachine(name), config: store.config, edit: (e) => host.edit(e) }) }, // issue #1284
     async start() {
