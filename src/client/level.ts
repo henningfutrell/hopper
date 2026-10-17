@@ -5,7 +5,7 @@
 // for this machine and an ssh target. Also the client's one way to run claude (`runClaude`), which a usage
 // read's `POST /claude` shares. Imports nothing of hopper: it is installed on the target as plain files.
 import { execFile } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -45,14 +45,22 @@ export function levelCallOf(body: unknown): { argv: string[]; input: string; tim
 
 export interface Ran { code: number; stdout: string; stderr: string }
 
-/** One claude call, in a fresh private dir, `input` on its stdin; the dir and the project dir claude keeps for it removed after. `env`: default the client's. */
+/**
+ * One claude call, in a fresh private dir, `input` on its stdin; the dir and the project dir claude keeps for it removed
+ * after. A path that stays fails the call, with the path (issue #472). `env`: default the client's.
+ */
 export function runClaude(bin: string, args: string[], timeoutMs: number, input = '', env?: NodeJS.ProcessEnv): Promise<Ran> {
   // Its real path: claude names its project dir for the cwd it sees, which a TMPDIR through a link is not (issue #472).
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'hopper-claude-')));
   const done = (r: Ran): Ran => {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', dir.replace(/[^A-Za-z0-9]/g, '-')), { recursive: true, force: true });
-    return r;
+    const project = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', dir.replace(/[^A-Za-z0-9]/g, '-'));
+    const left = [dir, project].filter((path) => {
+      try { rmSync(path, { recursive: true, force: true }); } catch { /* said below */ }
+      return existsSync(path);
+    });
+    if (!left.length) return r;
+    const said = `the run left files on the machine: ${left.join(', ')}`;
+    return { code: r.code || 1, stdout: r.stdout, stderr: r.stderr ? `${r.stderr}\n${said}` : said };
   };
   return new Promise((resolve) => {
     const child = execFile(bin, args, { cwd: dir, ...(env ? { env } : {}), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {

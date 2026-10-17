@@ -23866,14 +23866,42 @@ on the machine.
   project dir stayed. Both now take the real path (`pwd -P`, `realpathSync`).
 
 **Not done here.** The UI flow and the GitHub write (issue #471) call `draftIssue` and record the skill id with the draft;
-the machine choice per provider (issue #474); the run dir's removal when a run times out or is cancelled (the kill
-reaches the local process, not the shell on the machine), and a run reported failed when its dir could not be removed.
+the machine choice per provider (issue #474).
 
 **Verification:** `test/run-skills/run-skills.test.ts` (the id, the tampered skill refused, every constraint's text in
 the prompt and its check, the user text as data between markers, the shared login line in the job rules),
 `test/run-skills/draft.test.ts` (against a fake `claude`: the skill on stdin, locked down, the draft with its findings and
 the skill id; a tampered skill refused before claude runs; a device code to the logins, never into the answer; no file
 left in the run dir or the project dir after success, an error and an expired login, and the user's config dirs unchanged).
+
+### Run skills: nothing left after a timeout or a cancel (issue #472, part 2, 2026-10-17)
+
+**The problem.** A run that timed out or was cancelled was stopped with a kill of the local process: `sh` here, or
+`ssh`. The kill does not reach the shell on the machine, so `ON_MACHINE`'s removal never ran, and claude could go on
+there. A run dir that could not be removed was not said: `rm -rf` failed in silence, and the client's `runClaude` threw
+in its callback and never answered.
+
+**The change.**
+- `ON_MACHINE` (`src/plugins/claude-print.ts`) runs claude in the background, on the script's own stdin (fd 3), and says
+  first, on stderr, which process and dir the run is: `hopper-run: <pid> <dir>`. After the run it says each path that
+  stays: `hopper-run-left: <path>`.
+- On a timeout or a cancel, `claudePrint` kills the local process, then reaps the run through the same connection
+  (`reapRun`, the script `REAP_RUN`): claude killed on the machine, the dir and claude's project dir for it removed. The
+  reap takes the dir only from the first `hopper-run:` line, only when it is a `mktemp -d` dir (`…/tmp.<x>`, no `..`),
+  and the script refuses any other before it removes anything. A reap that fails or times out (30 s) says the dir stays.
+- **A path that stays fails the run**, with the path: `the run left files on the machine: <path>`, after an answer too.
+  The client's `runClaude` (`src/client/level.ts`) does the same, and no longer throws when a removal fails.
+- The two lines never show in a reason: `withoutRunMarks` takes them out (claude-print, the claude-plan usage source).
+- A draft run of any provider on this machine or an ssh target (`src/drafting/run.ts`, issue #474, "Drafting on the
+  user's AI CLI") goes through `ON_MACHINE` too, and is reaped and checked the same way.
+- **Residual.** A run stopped before the shell said its line (between `mktemp` and the `printf`) is not reaped. A run
+  through `ssh` whose `ssh` was killed still stops by itself: claude dies on its next write, and the shell then removes
+  the dirs; the reap only makes it at once and checked.
+
+**Verification:** `test/run-skills/draft.test.ts` (on a timeout and on a cancel, claude is no longer alive and no file
+of the run stays, the user's config dirs unchanged; a run dir that cannot be removed fails the run with its path, after
+an answer and after a timeout), `test/client/level.test.ts` (the same for a client's run), `test/drafting/run.test.ts` (a
+draft run stopped on this machine and on an ssh target: the CLI no longer alive, its run dir gone).
 
 ## The cloud link (issue #467, part 1, 2026-10-17)
 
@@ -24064,8 +24092,7 @@ in on. The hopper holds no model key for it.
 
 **Not done here.** The UI's machine and provider picker (issue #471) and a probe that says, before a run, whether the
 CLI is installed and signed in there; model lists for the CLIs other than claude (claude's is `claudeModels`); session
-records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); the run dir
-on the machine when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft
+records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); whether a draft
 counts toward usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
 as their dialects call them: the machine's other users can see it in its process list while the turn runs.
 

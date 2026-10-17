@@ -22,7 +22,7 @@ import { commandOn } from '../../../executors/command.ts';
 import { dockerArgv, dockerHost } from '../../../executors/docker.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { pickMachine } from '../../../domain/machine-pick.ts';
-import { ON_MACHINE, scrubbedEnv } from '../../claude-print.ts';
+import { ON_MACHINE, scrubbedEnv, withoutRunMarks } from '../../claude-print.ts';
 import { userProcessEnv } from '../../../executors/env.ts';
 import type { PluginDefinition, ToolSignIn } from '../../sdk.ts';
 import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
@@ -37,7 +37,7 @@ const TIMEOUT_MS = 45_000;
 const USAGE_ARGS = ['-p', '/usage', '--output-format', 'json', '--no-session-persistence'];
 const AUTH_ARGS = ['auth', 'status', '--json'];
 
-const failed = (what: string, r: CliRun): string => `claude ${what} failed: ${'error' in r ? r.error : `exited ${r.code}: ${r.stderr.trim().slice(0, 300)}`}`;
+const failed = (what: string, r: CliRun): string => `claude ${what} failed: ${'error' in r ? r.error : `exited ${r.code}: ${withoutRunMarks(r.stderr).trim().slice(0, 300)}`}`;
 
 /** The project dir `claude` keeps for a working directory: every non-alphanumeric as `-`; in the user's claude config dir (issue #158). */
 const projectDirOf = (cwd: string, userEnv: Readonly<Record<string, string>>): string =>
