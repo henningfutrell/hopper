@@ -2971,6 +2971,42 @@ Version 1 (`docs/schemas/machine.leftover_removed.v1.json`). A person removes a 
 }
 ```
 
+## `machine.drained`
+
+Version 1 (`docs/schemas/machine.drained.v1.json`). A person drained `machineId` (issue #1511): from now on no new job is placed on it, and the jobs on it run to their end. A job resuming there returns to its pane. Kept across restarts until a person undrains it. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "machineId": "desk",
+  "person": "Pat",
+  "via": "cli"
+}
+```
+
+## `machine.undrained`
+
+Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machineId` (issue #1511): new jobs are placed on it again. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "machineId": "desk",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `minor_decision.picked`
 
 Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).

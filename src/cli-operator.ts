@@ -32,6 +32,7 @@ import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCal
 import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
+import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
 import { QUEUE_USAGE, queueCall } from './cli-operator-queue.ts';
@@ -42,7 +43,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job: its state, and why it is held or waits (holdReason, waitReason)
   hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
@@ -95,6 +96,7 @@ ${ARTIFACT_USAGE}
 ${REPORT_USAGE}
 ${SEARCH_USAGE}
 ${LANES_USAGE}
+${MACHINE_USAGE}
 ${ACCOUNTS_USAGE}
 ${TERMINAL_USAGE}
 ${VAULT_USAGE}
@@ -238,6 +240,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'update') return driftCall(args);
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
+  if (command === 'machine') return machineCall(args);
   if (command === 'accounts') return accountsCall(args, stdin);
   if (command === 'terminal') return terminalCall(args, stdin);
   if (command === 'token') return tokenCall(args);
@@ -292,7 +295,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|machine|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON; the exit code the call gives it.
  */
 export async function runOperatorAction(

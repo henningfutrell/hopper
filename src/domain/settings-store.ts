@@ -10,6 +10,7 @@ import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
+import type { MachineDrains } from './machines.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
@@ -54,6 +55,9 @@ export interface UserSettingsRepository {
   /** Each machine's dismissed lane recommendation (issue #688); a machine absent: none dismissed. */
   getLaneDismissals(): LaneDismissals;
   setLaneDismissals(dismissals: LaneDismissals): void;
+  /** The drained machines (issue #1511); a machine absent: not drained. */
+  getMachineDrains(): MachineDrains;
+  setMachineDrains(drains: MachineDrains): void;
   /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
   getPriorityLanes(): PriorityLaneSettings | undefined;
   setPriorityLanes(settings: PriorityLaneSettings): void;
