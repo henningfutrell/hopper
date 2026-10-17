@@ -243,11 +243,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     };
     try {
       let said;
-      try {
-        said = await shell.reap(jobId, d.scratch, false, true);
-      } catch (e) {
-        return failed((e as Error).message);
-      }
+      try { said = await shell.reap(jobId, d.scratch, false, true); } catch (e) { return failed((e as Error).message); }
       if (c.stopping()) return false;
       recordRemoved(jobId, m, said);
       if (said.kept.length > 0) return failed(`the machine ${m.id} kept it: update its client, then discard it again`);
@@ -258,9 +254,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [d.scratch], discarded: true, ...d.by } });
       });
       return true;
-    } finally {
-      removingNow.delete(jobId);
-    }
+    } finally { removingNow.delete(jobId); }
   }
 
   /** `discards`: the jobs whose discard record is under way (issue #1570), done first on their machine. */
