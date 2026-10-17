@@ -24916,7 +24916,7 @@ before (`approved`): GitLab's text is compared with the approved snapshot at eac
 - **Approve only on what the last sync showed.** GitHub's Approve reads the issue again when the sync has not listed it (no
   sync since a restart); a GitLab Approve then says `not in this source's scope`, and the next sync shows the card.
 
-**Left for later parts of issue #1642:** auto-approval for GitLab cards; reopened cards from GitLab (an issue reopened after its
+**Left for later parts of issue #1642:** auto-approval for GitLab cards (done in part 4); reopened cards from GitLab (an issue reopened after its
 job was done); a GitLab route for a job's API reads and writes; OAuth for GitLab; more than one GitLab account; the user's own
 GitHub acts that name no job repository; tending a GitLab merge request, a person's Merge now and Close PR on GitLab, and yolo
 mode per GitLab project.
@@ -24925,6 +24925,41 @@ mode per GitLab project.
 at the next sync as approved, another hash refused; an edit makes a card again with the text approved before; Decline; other
 actions refused; a card withdrawn), `test/gitlab/source.test.ts`, `test/integration/gitlab-source.test.ts` (Approve through the
 UI route, and the job of origin `approved`).
+
+### Part 4: auto-approval of GitLab cards (2026-10-17)
+
+A GitLab request card that the user's own act already asks for is now approved by the hopper, as on GitHub ("Auto-approval").
+Before, every GitLab card waited for a person.
+
+**The rules** (`src/gitlab/intake.ts`, `gitlabAutoApproval`, over `autoApproval` in `src/domain/intake-auto-approve.ts`):
+
+- `author`: a trusted actor wrote the issue, whoever labelled or assigned it.
+- `high-label`: the issue has `hopper:high`, and the newest label event that added it is a trusted actor's
+  (`origin.ts`, `labelledBy`). Access decides that GitLab user with the card's other acts, in the same ask.
+
+`reopened` and `app` do not apply: GitLab has no reopened cards yet, and a GitLab act names no app.
+
+**Guards.** The card waits for a person when the setting is off, a person declined this text, a person took it into Intake,
+its text changed since a person approved it, or someone who is no trusted actor edited its title or description (an `edited`
+act). When Access cannot be asked, no GitLab user is a trusted actor, so no rule matches.
+
+**Recording** is GitHub's: `IntakeTrust.autoApprove` keeps the text as the item's snapshot (reason `approved`) and records
+`source.request_auto_approved` with the rule and the actor. No `source.request_opened`. Intake lists the item `approved by the
+hopper: <rule> <actor>; taken at the next sync`, and the next sync takes it as a job of origin `approved`. Nothing is written
+to GitLab: a GitLab card has no outbox work.
+
+**Decisions:**
+- **The setting is the user's one setting** (Settings → Intake), for GitHub and GitLab. Its listed apps are GitHub apps: a
+  GitLab act names no app, so the list does not apply on GitLab.
+- **A declined text stays declined.** A person's Decline wins over a rule: a card declined, then labelled `hopper:high`, waits.
+
+**Left for later parts of issue #1642:** reopened cards from GitLab; a GitLab route for a job's API reads and writes; OAuth for
+GitLab; more than one GitLab account; the user's own GitHub acts that name no job repository; tending a GitLab merge request,
+a person's Merge now and Close PR on GitLab, and yolo mode per GitLab project.
+
+**Verification:** `test/gitlab/auto-approval.test.ts` (`high-label` and `author` approved, recorded and taken at the next sync
+as `approved`; a card waits when no rule matches, the setting is off, another edited it, a person declined it, or its text
+changed since an approval).
 
 ## Sagas: work that survives a stop (issue #1524, part 1, 2026-10-17)
 

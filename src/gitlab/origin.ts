@@ -22,16 +22,21 @@ const assigns = (body: string, account: string): boolean => {
 const act = (role: GitLabAct['role'], who: { account: string; userId?: number } | undefined): GitLabAct =>
   ({ role, ...(who?.account ? { account: who.account } : {}), ...(who?.userId !== undefined ? { userId: who.userId } : {}) });
 
+/** Who added `label` to the issue last, as its label events say; undefined when none did. */
+export function labelledBy(events: readonly GitLabLabelEvent[], label: string): GitLabAct | undefined {
+  const e = events.filter((x) => x.action === 'add' && same(x.label, label)).at(-1);
+  return e && act('labelled', e);
+}
+
 /**
  * The acts an issue's origin is judged by: its author; who added `label` last; who assigned it to `account` last; and each
  * edit of its title or description.
  */
 export function gitlabActs(issue: Pick<GitLabIssue, 'author' | 'authorId'>, events: readonly GitLabLabelEvent[], notes: readonly GitLabNote[], label: string, account: string): GitLabAct[] {
-  const labelled = events.filter((e) => e.action === 'add' && same(e.label, label)).at(-1);
   const assigned = notes.filter((n) => assigns(n.body, account)).at(-1);
   return [
     act('author', { account: issue.author, ...(issue.authorId !== undefined ? { userId: issue.authorId } : {}) }),
-    act('labelled', labelled),
+    labelledBy(events, label) ?? act('labelled', undefined),
     act('assigned', assigned),
     ...notes.filter((n) => EDITED.test(n.body.trim())).map((n) => act('edited', n)),
   ];
