@@ -11,7 +11,7 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -31,7 +31,10 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       if (o.reapFails) throw new Error(o.reapFails);
       // `containers`: the jobs whose reap removed a container and a volume (issue #1120).
       const removed = o.containers?.includes(jobId) ? { removed: { containers: [`c-${jobId}`], volumes: [`v-${jobId}`] } } : {};
-      return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [], ...removed };
+      const kept = scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [];
+      // `lefts`: the jobs whose scratch dir the reap could not remove (issue #1452).
+      const left = scratch && kept.length === 0 && o.lefts?.includes(jobId) ? { left: [scratch] } : {};
+      return { kept, ...left, ...removed };
     },
     async keepCredential() { throw new Error('not asked'); },
     async reach() { throw new Error('not asked'); },
