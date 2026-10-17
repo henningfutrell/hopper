@@ -45,7 +45,8 @@ async function queueBehindBlocker(a: TestApp): Promise<{ blocker: Job; older: Jo
 async function firstClaimed(a: TestApp, blocker: Job, ids: string[]): Promise<string> {
   const token = await a.login();
   expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
-  for (const id of ids) await a.waitForStatus(id, 'finished');
+  // Two jobs run one after the other in the one lane: on a loaded CI runner that takes more than the default 5 s.
+  for (const id of ids) await a.waitForStatus(id, 'finished', 20000);
   const claims = (await a.events('types=job.claimed&limit=1000')).map((e) => e.jobId).filter((id) => ids.includes(id!));
   return claims[0]!;
 }
