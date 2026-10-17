@@ -82,7 +82,12 @@ export interface ReviewEntry {
   paths?: { added: string[]; notViable: string[] };
   startedAt: string;
   finishedAt: string;
+  /** The level's call it records (issue #1608): the key of the item's `call` when it was asked. */
+  callKey?: string;
 }
+
+/** A reviewer level's call in flight (issue #1608): its key, the level, and the version it reviews. */
+export interface ReviewCall { key: string; stage: string; version: number; startedAt: string }
 
 /** Who signed a review item off, and when. */
 export interface ReviewSignOff {
@@ -129,6 +134,10 @@ export interface ReviewItem {
   selection?: PathSelection;
   /** The TL;DR of its newest version (issue #569), once a long one has one. */
   tldr?: Tldr;
+  /** The hash of the text the model failed to write a TL;DR for (issue #1608): not asked again for that text. */
+  tldrFailedOf?: string;
+  /** A reviewer level's call in flight (issue #1608): set before the model is asked, cleared when its review is recorded. */
+  call?: ReviewCall;
   createdAt: string;
   updatedAt: string;
 }

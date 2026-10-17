@@ -120,8 +120,11 @@ export interface QuestionRepository {
   list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
-  /** Append one attempt to the question's trail. */
-  addAttempt(id: string, attempt: QuestionAttempt): Question;
+  /**
+   * Append one attempt to the question's trail. `finishAttempt`: replace the attempt of `callKey` (issue #1608) with
+   * `attempt`, which keeps the key; none of that key: append it.
+   */
+  addAttempt(id: string, attempt: QuestionAttempt): Question; finishAttempt(id: string, callKey: string, attempt: QuestionAttempt): Question;
 }
 
 /** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */

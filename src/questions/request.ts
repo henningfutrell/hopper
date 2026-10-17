@@ -15,7 +15,8 @@ export function levelRequest(o: { store: UserStore; config: ConfigRecords; login
     jobPrompt: typeof job?.spec.payload.prompt === 'string' ? job.spec.payload.prompt : '',
     jobGoal: job?.spec.goal,
     rules: rules.text,
-    previous: q.attempts,
+    // A call in flight, or one the daemon stopped during (issue #1608), has no reply to read.
+    previous: q.attempts.filter((a) => a.outcome !== 'started' && a.outcome !== 'interrupted'),
     level: { number, of },
     ...(jobMachine ? { jobMachine } : {}),
     // A login the level's run waits on (issue #476) names the question and the level, never the job: it waits on the answer.

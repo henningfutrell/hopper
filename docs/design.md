@@ -619,7 +619,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), the escalation levels, lowest first → the risk check on an answer (the Decider's risk call, else the risk rules, issue #679) → auto-answer, issue #632 → accepted or human; the confidence spread (`calibration.ts`, issue #679); timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam; the not-signed-in questions a completed tool sign-in answers (`signed-out.ts`, issue #1128). The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
+| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), the escalation levels, lowest first → the risk check on an answer (the Decider's risk call, else the risk rules, issue #679) → auto-answer, issue #632 → accepted or human; the confidence spread (`calibration.ts`, issue #679); timers, recovery — a level's call recorded before the model is asked, and a restart going on at the stored level (`calls.ts`, issue #1608); a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam; the not-signed-in questions a completed tool sign-in answers (`signed-out.ts`, issue #1128). The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -3226,9 +3226,13 @@ and options kept, and moves an open question at that stage to the new name; a qu
 history and keeps the names it was written with.
 
 Stage owner: `questions.body.tier` holds the instance name of the level holding the question, or
-`human`. Created with the first level's name (or `human` with none). **Recovery** restarts every
-open non-human question from the first level whatever its `tier` (replies are not persisted
-mid-flight; the cost is the repeated calls), so old rows at `tier: fable` are safe.
+`human`. Created with the first level's name (or `human` with none). **A level's call leaves a record**
+(issue #1608): before the model is asked, the trail gets a `started` attempt with a **call key**
+(`<question id>:<its place in the trail>`); the reply, or `superseded`, replaces that attempt under the same key, in its
+place. **Recovery** goes on at the stored `tier`, so no level below it is called again: a `started` attempt there
+is marked `interrupted` and that level is asked again (a level reads no `started` or `interrupted` attempt in
+`previous`); when the trail's last attempt is that level's kept reply, the next level up is asked. A `tier` no level
+has now (a level renamed or removed, old rows at `tier: fable`) climbs from the first level.
 
 ### Plugin contract
 
@@ -12772,7 +12776,10 @@ out or empty is listed in `missing`. Nothing is refused for a missing part: the 
 (`recordReport`, `src/engine/reviews.ts`): a new proposal at version 1, or — when the job's proposal was sent back
 (`revising`) — its next version. The job goes `waiting_answer` with `proposalId` (no `questionId`): it holds no lane,
 its pane stays, it can be parked (#501) and re-queued; re-queued while its proposal is in review, it waits on it again. A restart keeps it waiting (recovery leaves a `waiting_answer` job on an open proposal
-alone); a review a level held is started again from that level (`ReviewService.recover`).
+alone); a review a level held is started again from that level (`ReviewService.recover`, issue #1608): the item keeps
+the call in flight (`call { key, stage, version, startedAt }`, cleared when its review is recorded, which keeps the key as
+`callKey`), so no level below it reviews it again; when its last review is that level's of this version, the next level
+up reviews it. At the first level, or at a stage no reviewer has now, the structural pre-check runs again first.
 `proposal.submitted` (version, Goal, missing parts, the raising machine, the job's priority). A job cancelled or gone
 takes its open proposal with it (`proposal.cancelled`, the sweep on each tick and at start).
 
@@ -13267,6 +13274,10 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `job-machine` | a waiting job that two or more machines online, with its executor and not kept by the blast-radius gate, can take; once per waiting spell (issue #688) | those machines | a placement pick: in step 7 the job goes there first |
 | `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
 | `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
+
+A `failure-assessment` ask is kept on its failure record (`jev { error, attempt, ranMs?, machineId?, doneCheck? }`, issue
+#1608) until Jev answers: a daemon that stopped first asks it again at its start, for a job still failed whose newest
+record it is, within a day of the record; any other is cleared.
 
 Grouping stays the rules' own (a problem needs failures on several items), so it is not an option. The other decider
 calls the issue names — the queue gate and pre-sort, priority, phase shifts, stale cleanup, client repair — are not
@@ -15702,7 +15713,8 @@ decide (for a question, its options in a few words each). The agent's Markdown i
   reports and hand-offs asks the model, one card at a time, for each long card whose stored TL;DR (`tldr: { text, of,
   model?, at }` in its body; no migration) was not written from its text as it is now — `of` is the SHA-256 of that
   text. So a research report's next round gets a new one, and nothing is written again on a render or a restart. A text
-  the model failed on is not asked again for the same text (in memory: a restart tries once more). A card is never
+  the model failed on is not asked again for the same text: the card keeps its hash (`tldrFailedOf`, issue #1608), so a
+  restart does not ask again either, and a TL;DR written later clears it. A card is never
   waited on; a text that changed while the model wrote is left for the next sweep. Each one written is
   `tldr.written { kind, id, text, model? }` on the card's job.
 - **Shown while it matches** (`withShownTldr`). The question, research and hand-off routes answer a card's `tldr`
