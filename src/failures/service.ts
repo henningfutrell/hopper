@@ -130,8 +130,7 @@ export function createFailures(o: FailuresOptions): Failures {
         job: { executor: job.spec.executor, pinned: job.spec.machineId !== undefined, ...(machineId ? { machineId } : {}) },
         ...(ranMs !== undefined ? { ranMs } : {}), ...(job.errorTail ? { tail: job.errorTail } : {}),
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
-        ...causeInputOf(store, job, cause?.id), repeated: repeatedOf(store, job, signature),
-        ...(workReason ? { causeReason: workReason } : {}),
+        ...causeInputOf(store, job, cause?.id), repeated: repeatedOf(store, job, signature), ...(workReason ? { causeReason: workReason } : {}),
         ...(report ? { hopperBug: { title: reportTitle(report), reason: reportReason(report), ...(reportOpen ? { open: reportOpen.id } : {}) } } : {}),
       });
       let problem: Problem | undefined;
