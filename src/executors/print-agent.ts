@@ -1,7 +1,8 @@
 // The print-mode agent executors (design.md "Print-mode agent executors"; issue #142 for Cursor's agent,
 // #307 for codex, opencode and omp): one job is an agent CLI in print mode, run on the job's machine
-// through its connection — this machine or an ssh target — in the job's work tree. Each turn is one run;
-// its last message ends with the hopper protocol's marker. A question pauses the job with the agent's
+// through its connection — this machine, an ssh target or a client target — in the job's work tree. Each turn is one run;
+// its last message ends with the hopper protocol's marker; on a client target (issue #865) the turn goes down the
+// machine's link as `POST /turn`, the same script, and the reap as its `/reap`. A question pauses the job with the agent's
 // session id, and the answer resumes that session. Not idempotent: a restart fails a running job and
 // never runs the agent twice. As a herdr-claude job (issue #410): its own scratch dir, each turn in the
 // job's systemd user scope where the machine has one (the turn before stopped first), and the reap when
@@ -12,12 +13,13 @@ import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/t
 import { scopeUnitOf } from '../client/reap.ts';
 import { runtimeCommand, runtimeEnvOf, turnServiceCommand } from '../client/job-runtime.ts';
 import { SANDBOX_SUBDIR, sandboxCommand } from '../client/job-sandbox.ts';
-import { commandOn, run } from './command.ts';
+import { commandOn, run, type Ran } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter, waitFields } from './herdr/screen.ts';
 import { JOB_TOOL_ENV, jobScratchOf, jobTmpOf, linkTmpCommand, mkScratchCommand } from './herdr/start.ts';
-import { localShell, sshShell } from './machine-shell.ts';
+import { clientShell, localShell, sshShell } from './machine-shell.ts';
+import { clientTurn, type ClientTransport } from './client.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
 import { hideCodes } from '../logins/recognise.ts';
@@ -43,13 +45,15 @@ export interface PrintAgentExecutorOptions {
   sshAuth: () => SshAuth;
   /** Over the daemon's environment for what runs on this machine: the user's CLI config dirs (issue #158). */
   userEnv?: Readonly<Record<string, string>>;
+  /** A client target's link, by its machine id (issue #865); undefined while none has it. */
+  client?: (machine: string) => ClientTransport | undefined;
 }
 
 /**
- * What a job keeps: the work tree it runs in and the ssh target it runs on (absent: this machine), for the
+ * What a job keeps: the work tree it runs in and the ssh or client target it runs on (absent: this machine), for the
  * reap; once on a question, the agent's session (its chat) to resume.
  */
-type PrintAgentState = { cwd: string; ssh?: string; chatId?: string };
+type PrintAgentState = { cwd: string; ssh?: string; client?: string; chatId?: string };
 
 const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP) : s);
 
@@ -105,7 +109,6 @@ export function isolatedTurn(jobId: string, scratch: string, run: string): strin
 function refusal(agent: PrintAgent, ctx: ExecutionContext): string | undefined {
   const m = ctx.machine;
   if (m.docker) return `${agent} does not run on container target ${m.id}: it has no agent`;
-  if (m.client) return `${agent} does not run on client target ${m.id}: a client serves herdr only`;
   return undefined;
 }
 
@@ -113,11 +116,30 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   const dialect = DIALECTS[o.agent];
   const label = o.agent;
   if (o.sshControlDir) mkdirSync(o.sshControlDir, { recursive: true, mode: 0o700 });
-  /** The machine as this executor reaches it: this one, or an ssh target. */
-  const shellOn = (ssh: string | undefined): MachineShell => (ssh
-    ? sshShell({ target: ssh, auth: o.sshAuth, ...(o.sshBin ? { bin: o.sshBin } : {}), ...(o.sshControlDir ? { controlDir: o.sshControlDir } : {}) })
+  /** A client target's link, looked up at each call: it may join, be renamed or dial in again while the job runs. */
+  const transportOf = (machine: string): ClientTransport => ({
+    machine, link: () => o.client?.(machine)?.link(), token: () => o.client?.(machine)?.token() ?? '',
+  });
+  /** The machine as this executor reaches it: this one, an ssh target or a client target. */
+  const shellOn = (s: { ssh?: string; client?: string }): MachineShell => (s.client ? clientShell(transportOf(s.client)) : s.ssh
+    ? sshShell({ target: s.ssh, auth: o.sshAuth, ...(o.sshBin ? { bin: o.sshBin } : {}), ...(o.sshControlDir ? { controlDir: o.sshControlDir } : {}) })
     : localShell(o.userEnv));
-  const stateOf = (ctx: ExecutionContext, cwd: string): PrintAgentState => ({ cwd, ...(ctx.machine.ssh ? { ssh: ctx.machine.ssh } : {}) });
+  const stateOf = (ctx: ExecutionContext, cwd: string): PrintAgentState => ({ cwd, ...(ctx.machine.client ? { client: ctx.machine.id } : ctx.machine.ssh ? { ssh: ctx.machine.ssh } : {}) });
+  /** One run of the turn's script on the job's machine; on a client target its output comes at its end, so no login is seen while it waits. */
+  const runOn = async (ctx: ExecutionContext, script: string, timeoutMs: number, feed: (chunk: string) => void): Promise<Ran | 'aborted' | 'timeout'> => {
+    if (!ctx.machine.client) {
+      const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
+      return run(file, args, timeoutMs, ctx.signal, o.userEnv, feed);
+    }
+    if (!o.client?.(ctx.machine.id)?.link()) throw new Error(`client ${ctx.machine.id} is not dialled in`);
+    try {
+      const r = await clientTurn(transportOf(ctx.machine.id), script, timeoutMs, ctx.signal);
+      return r.timedOut ? 'timeout' : { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
+    } catch (e) {
+      if (ctx.signal.aborted) return 'aborted';
+      throw e;
+    }
+  };
   /** One turn; `notes` is how many answers in a row before it carried no marker. */
   async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string, notes = 0): Promise<ExecutionOutcome> {
     const refused = refusal(label, ctx);
@@ -140,11 +162,10 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`)}; }`;
     const where = ctx.machine.id;
     try {
-      const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
       ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
       // A device code the agent's tools print goes to the logins while the turn waits on it (issue #476).
       const login = watchRunOutput(ctx.logins, { now: () => new Date() }, (line) => ctx.progress(line));
-      const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv, login.feed).then((ran) => {
+      const r = await runOn(ctx, script, p.timeoutMs, login.feed).then((ran) => {
         login.end(ran === 'aborted' || ran === 'timeout' ? { ok: false, reason: ran === 'aborted' ? 'aborted' : 'timed out' } : ran.exitCode === 0 ? { ok: true } : { ok: false, reason: `exited ${ran.exitCode}` });
         return ran;
       });
@@ -206,8 +227,8 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     async cleanup(job) {
       const s = job.executorState as Partial<PrintAgentState> | undefined;
       if (!s?.cwd) return undefined;
-      return shellOn(s.ssh).reap(job.id, jobScratchOf(s.cwd, job.id));
+      return shellOn(s).reap(job.id, jobScratchOf(s.cwd, job.id));
     },
-    machineShell: (machine: MachineSnapshot) => (machine.docker || machine.client ? undefined : shellOn(machine.ssh)),
+    machineShell: (machine: MachineSnapshot) => (machine.docker ? undefined : shellOn(machine.client ? { client: machine.id } : { ssh: machine.ssh })),
   };
 }
