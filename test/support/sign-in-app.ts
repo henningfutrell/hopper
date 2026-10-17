@@ -54,8 +54,8 @@ export async function restartSame(h: Harness, app: TestApp, env: Record<string, 
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tests read loose JSON
-export const session = async (app: TestApp, token?: string): Promise<any> => JSON.parse((await rawRequest(app.url, {
-  path: '/ui/api/session', headers: token ? { 'x-hopper-session': token } : {},
+export const session = async (app: TestApp, token?: string, headers: Record<string, string> = {}): Promise<any> => JSON.parse((await rawRequest(app.url, {
+  path: '/ui/api/session', headers: { ...headers, ...(token ? { 'x-hopper-session': token } : {}) },
 })).text);
 
 export async function oidcIdp(h: Harness, o: { claims?: Record<string, unknown>; userinfo?: Record<string, unknown> } = {}): Promise<OidcIdp> {
