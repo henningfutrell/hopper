@@ -1,6 +1,7 @@
 // Several hoppers on one database (issue #1662): a running job is held by a lease of the hopper that drives it. Another
 // hopper on the same database leaves it alone while that lease lives, and takes the job once the lease ends: here its
-// hopper stops, and the other reattaches the job's pane, which is still alive on its machine. The task is sent once.
+// hopper stops, and the other reattaches the job's pane, which is still alive on its machine. The task is sent once. A
+// person's cancel or park on the other hopper reaches the run of the hopper that drives the job.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
@@ -24,11 +25,16 @@ function machine() {
   const sent: { jobId: string; by: string }[] = [];
   /** Each reattach: the job, and which hopper watches it again. */
   const reattached: { jobId: string; by: string }[] = [];
+  /** Each run aborted: the job, the hopper that drove it, and why (`cancel`, `park`, `shutdown`). */
+  const aborted: { jobId: string; by: string; reason: unknown }[] = [];
   /** The job's pane ends done; or the watch ends with the hopper (abort), and the pane lives on. */
-  const watch = (ctx: ExecutionContext): Promise<ExecutionOutcome> => new Promise((resolve) => {
+  const watch = (ctx: ExecutionContext, by: string): Promise<ExecutionOutcome> => new Promise((resolve) => {
     if (ctx.signal.aborted) { resolve({ kind: 'failed', error: 'aborted' }); return; }
     void panes.get(ctx.job.id)!.ended.then(() => resolve({ kind: 'finished', result: 'done' }));
-    ctx.signal.addEventListener('abort', () => resolve({ kind: 'failed', error: 'aborted' }), { once: true });
+    ctx.signal.addEventListener('abort', () => {
+      aborted.push({ jobId: ctx.job.id, by, reason: ctx.signal.reason });
+      resolve({ kind: 'failed', error: 'aborted' });
+    }, { once: true });
   });
   /** The executor as hopper `by` runs it: not idempotent, and it reattaches a pane that is alive. */
   const executor = (by: string): Executor => ({
@@ -38,15 +44,17 @@ function machine() {
       const ended = new Promise<void>((r) => { end = r; });
       panes.set(ctx.job.id, { end, ended });
       sent.push({ jobId: ctx.job.id, by });
-      return watch(ctx);
+      return watch(ctx, by);
     },
     async canReattach(job) { return panes.has(job.id); },
     reattach(ctx) {
       reattached.push({ jobId: ctx.job.id, by });
-      return watch(ctx);
+      return watch(ctx, by);
     },
+    // Parked: its pane ends, its work tree is kept.
+    async park(job) { panes.get(job.id)?.end(); },
   });
-  return { panes, sent, reattached, executor };
+  return { panes, sent, reattached, aborted, executor };
 }
 
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
@@ -108,5 +116,33 @@ describe('several hoppers on one database (issue #1662)', () => {
     }
     for (const j of jobs) await first.waitForStatus(j.id, 'finished', 8000);
     expect(m.sent).toHaveLength(4);
+  });
+
+  it('a cancel on the other hopper reaches the run of the hopper that drives the job: it ends cancelled once', async () => {
+    const { m, first, start } = await twoHoppers(1);
+    const job = await first.pull({}, { executor: 'pane' });
+    await first.waitForStatus(job.id, 'running');
+    const second = await start();
+
+    expect(second.user(ADMIN_ID).engine.cancel(job.id, 'cancelled in UI', 'wrong repo').status).toBe('running');
+    const cancelled = await first.waitForStatus(job.id, 'cancelled', 8000);
+    expect(cancelled.attempts).toBe(1);
+    expect(m.aborted).toEqual([{ jobId: job.id, by: 'first', reason: 'cancel' }]);
+    expect(eventsOf(first, 'job.cancelled').filter((e) => e.jobId === job.id).map((e) => e.data))
+      .toEqual([{ reason: 'cancelled in UI', note: 'wrong repo' }]);
+    expect(m.sent).toEqual([{ jobId: job.id, by: 'first' }]);
+  });
+
+  it('a park on the other hopper reaches the run of the hopper that drives the job: it is parked, its lane free', async () => {
+    const { m, first, start } = await twoHoppers(1);
+    const job = await first.pull({}, { executor: 'pane' });
+    await first.waitForStatus(job.id, 'running');
+    const second = await start();
+
+    expect(second.user(ADMIN_ID).engine.park(job.id).status).toBe('running');
+    const parked = await first.waitForStatus(job.id, 'parked', 8000);
+    expect(parked.laneId).toBeUndefined();
+    expect(m.aborted).toEqual([{ jobId: job.id, by: 'first', reason: 'park' }]);
+    expect(eventsOf(first, 'job.parked').filter((e) => e.jobId === job.id)).toHaveLength(1);
   });
 });
