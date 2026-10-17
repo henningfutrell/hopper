@@ -11,7 +11,7 @@ import type { SourceStatus } from '../../src/domain/types.ts';
 import type { GitLabAccountStatus } from '../../src/domain/gitlab-account.ts';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
 import type { Job } from '../../src/domain/types.ts';
-import { NOT_TRUSTED } from '../../src/gitlab/source.ts';
+import { REQUEST_REASON } from '../../src/sources/github/origin.ts';
 import { createFakeGitLab } from '../support/fake-gitlab.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -63,7 +63,7 @@ describe('a GitLab source', () => {
     await waitFor(() => gitlab.issues.find((i) => i.iid === 1)!.labels.includes('hopper:claimed') || undefined, { what: 'the claimed label at GitLab' });
     const listed = await waitFor(async () => { const i = (await gitlabSource(app))?.detail.intake as IntakeOutcome[] | undefined; return i?.length === 2 ? i : undefined; }, { what: 'Intake to list the GitLab issues' });
     expect(listed.find((x) => x.key === key)).toMatchObject({ jobId: job.id });
-    expect(listed.find((x) => x.title === 'From bob')).toMatchObject({ reason: `${NOT_TRUSTED}: bob wrote it, and is not a trusted actor`, group: 'other' });
+    expect(listed.find((x) => x.title === 'From bob')).toMatchObject({ reason: REQUEST_REASON, group: 'request', action: 'approve', request: { why: ['bob wrote it, and is not a trusted actor'] } });
     expect(gitlab.requests.every((r) => r.token === 'glpat-ada')).toBe(true);
     expect(gitlab.requests.some((r) => r.path.includes('acme%2Fapi/issues'))).toBe(false);
     // The test daemon has no herdr-claude executor, so the job fails at once: its end label replaces the claim.
