@@ -28,13 +28,13 @@ if (argv[0] === '--version') { process.stdout.write(`herdr ${mine[0]}\n`); proce
 const ws = { workspace_id: 'w7', label: 'hopper' };
 if (cmd === 'workspace list') out({ result: { type: 'workspace_list', workspaces: process.env.FAKE_HERDR_HAS_WS ? [{ workspace_id: 'w1', label: 'other' }, ws] : [{ workspace_id: 'w1', label: 'other' }] } });
 else if (cmd.startsWith('workspace create')) out({ result: { type: 'workspace_created', workspace: { workspace_id: 'w9', label: 'hopper' }, tab: { tab_id: 'w9:t1' }, root_pane: { pane_id: 'w9:p1' } } });
-else if (cmd.startsWith('tab create')) out({ result: { type: 'tab_created', tab: { tab_id: 'w7:t3' }, root_pane: { pane_id: 'w7:p5' } } });
+else if (cmd.startsWith('tab create')) out({ result: { type: 'tab_created', tab: { tab_id: 'w7:t3' }, root_pane: { pane_id: 'w7:p5', terminal_id: 'term_a1' } } });
 else if (cmd.startsWith('agent start jh-blocked')) fail('agent_not_ready', 'agent jh-blocked is blocked during startup and is not ready for prompts');
 else if (cmd.startsWith('agent start jh-busy')) fail('agent_pane_busy', 'agent target pane w7:p5 is not an available shell');
 else if (cmd.startsWith('agent start jh-boom')) fail('pane_not_found', 'pane w7:p404 not found');
 else if (cmd.startsWith('agent start')) out({ result: { type: 'agent_started' } });
 else if (cmd === 'agent get jh-gone') fail('agent_not_found', 'agent target jh-gone not found');
-else if (cmd.startsWith('agent get')) out({ result: { type: 'agent_info', agent: { name: argv[4], agent_status: 'idle', state_change_seq: 4, pane_id: 'w7:p5' } } });
+else if (cmd.startsWith('agent get')) out({ result: { type: 'agent_info', agent: { name: argv[4], agent_status: 'idle', state_change_seq: 4, pane_id: 'w7:p5', terminal_id: 'term_a1' } } });
 else if (cmd.startsWith('pane wait-output') && argv.includes('never-printed')) fail('timeout', 'timed out waiting for output match');
 else if (cmd.startsWith('pane wait-output')) out({ result: { matched_line: argv[6], pane_id: argv[4] } });
 else if (cmd.startsWith('pane run')) process.stdout.write(''); // herdr prints nothing

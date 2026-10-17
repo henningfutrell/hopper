@@ -12,6 +12,8 @@ export interface AgentInfo {
   /** Increments on every lifecycle change; a turn has ended once it moved past the send. */
   stateChangeSeq: number;
   paneId: string;
+  /** The terminal of its pane: herdr gives the pane a new one when it restores it after a server restart (issue #1465). */
+  terminalId?: string;
 }
 
 export type ReadSource = 'visible' | 'recent' | 'recent-unwrapped';
@@ -47,7 +49,7 @@ export interface HerdrClient extends MachineShell {
   /** Workspace id of the workspace with this label; created without focus when absent. */
   ensureWorkspace(label: string, cwd: string): Promise<string>;
   /** `env`: variables for the process launched in the tab (`herdr tab create --env K=V`). */
-  createTab(o: { workspaceId: string; cwd: string; label: string; env: Record<string, string> }): Promise<{ tabId: string; paneId: string }>;
+  createTab(o: { workspaceId: string; cwd: string; label: string; env: Record<string, string> }): Promise<{ tabId: string; paneId: string; terminalId?: string }>;
   /** Start Claude in the pane. `notReady`: blocked at startup (e.g. the folder-trust dialog). `paneBusy`: shell not up yet. */
   startAgent(o: { name: string; paneId: string; args: string[]; timeoutMs: number }): Promise<StartAgentResult>;
   /** null when no live agent has that name. */

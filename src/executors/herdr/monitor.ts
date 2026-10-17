@@ -7,6 +7,7 @@ import { hideCodes, recogniseDeviceCode } from '../../logins/recognise.ts';
 import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
+import { restoredByHerdr, type PaneRestored } from './restored.ts';
 import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
@@ -77,6 +78,8 @@ export interface TurnWatch {
   ctx: ExecutionContext;
   agentName: string;
   paneId: string;
+  /** The pane's terminal when the hopper opened it (issue #1465); absent: not checked. */
+  terminal?: string;
   /** Last line of what was sent, as Claude echoes it. */
   anchor: string;
   /** state_change_seq read just before the send. */
@@ -136,7 +139,7 @@ export async function blockedQuestion(w: Pick<TurnWatch, 'herdr' | 'paneId' | 'c
   return { kind: 'question', question: { text: hideCodes(text, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'blocked', ...lapsesAt } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting> {
+export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting | PaneRestored> {
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
@@ -163,6 +166,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       const agent = await herdr.getAgent(w.agentName);
       if (ctx.signal.aborted) continue;
       if (!agent) return { kind: 'failed', error: await exitedError(w) };
+      if (restoredByHerdr(agent, w.terminal)) return { paneRestored: true };
       let recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
       if (isScrolledUp(recent)) {
         // The reply sits below the viewport (seen after long prompts): scroll, then read again.

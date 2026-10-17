@@ -22842,3 +22842,41 @@ before the job starts, and asks a person for them up front.
 (the decider holds; the queue gate first; never a job resuming), `test/users/sandboxes-held.test.ts` (asked once, all at
 once; declined and skip sandbox approval do not hold; nothing asked for a job at the gate, not judged or resuming), and
 `test/integration/job-sandboxes.test.ts` (a held job starts once a person approves its request; `--template`).
+
+## A pane herdr restored (issue #1465, 2026-10-16)
+
+**The problem.** Jobs failed right after their Claude session resumed: in the resumed session `HOPPER_GH`, `HOPPER_URL`,
+the rest of the `HOPPER_*` variables and git's way to GitHub through the hopper (`GIT_CONFIG_*`) were unset, so git had no
+credential and the job could not reach the hopper. The hopper did not resume those sessions. herdr did: its
+`[session] resume_agents_on_restore` (on by default) restores every pane after a restart of its server and resumes each
+supported agent into its own session. A restored pane keeps its pane id but gets a new terminal (`terminal_id`) and a new
+shell, started with the server's environment, not the tab's: the variables the hopper gave with `herdr tab create --env`
+are gone (seen with herdr 0.8.2: a tab created with `--env` loses the variable after `herdr server stop` and a new server).
+The new shell is also outside the job's scope (the reap) and its sandbox (issue #1295), and never ran the job's start
+steps.
+
+**The change.** The hopper records the pane's terminal at its start (`PaneState.terminal`, from `tab create`'s
+`root_pane.terminal_id`), and the agent session there too (`PaneState.agentSession`). `herdr agent get` already says the
+agent's `terminal_id`, so each poll of the watch compares it at no extra call (`restoredByHerdr`,
+`src/executors/herdr/restored.ts`). Another terminal is a **restored pane**: the watch ends with `paneRestored`, and the
+executor stops that Claude and closes the pane as at a park (the reap without the scratch dir: worktree and session kept),
+then starts as a parked job's resume does — a new pane with the job's environment placed afresh (its credentials, its
+variables), the scope, the job's container runtime and sandbox, the same job worktree — and `claude --resume <session>`.
+It sends `RESTORED_NOTE`: what failed since the restart failed for want of the environment, and can run again. An answer
+to a job whose pane was restored while it waited on a question goes the same way, after that note. A job with no agent
+session recorded fails with the reason: a fresh session would lose what it did.
+
+**Not changed.** A pane saved before this change has no terminal and is not checked. The hopper does not change herdr's
+config: `resume_agents_on_restore` is the machine owner's, and herdr reads one config for the whole server.
+
+**Decisions:**
+- **Detect and start again, not prevent.** Turning `resume_agents_on_restore` off would need a write to the machine's herdr
+  config, which the hopper does not own ("Deployable": nothing leans on the machine), and would still
+  leave a restored pane with a plain shell and no Claude. Starting again also puts back the scope and the sandbox, which no
+  variable could.
+- **The terminal id, not a probe of the environment.** herdr says it with every `agent get`; reading the shell's variables
+  would need a command typed into a pane that Claude holds.
+
+**Verification:** `test/herdr/executor-herdr-restore.test.ts` (restored while watched; restored while it waited on a
+question; a pane saved with no terminal), `test/herdr/cli-client.test.ts` and `test/herdr/cli-client-ssh.test.ts`
+(`terminal_id` read from `tab create` and `agent get`), `test/herdr/executor-run.test.ts` (the terminal saved).

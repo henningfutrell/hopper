@@ -1,10 +1,10 @@
 // The end of a herdr-claude job's pane (issues #371, #401, #410): Claude gets a moment to exit, the job's machine stops its
 // scope and processes and reaps its scratch dir, and the pane closes. Split from executor.ts for its line budget.
-import type { Reaped } from '../../domain/ports.ts';
+import type { ExecutionOutcome, Reaped } from '../../domain/ports.ts';
 import type { LaneId } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
-import type { Sleep } from './monitor.ts';
-import { samePane, type HeldPane, type Scratch, type Where } from './panes.ts';
+import type { Interrupt, Sleep } from './monitor.ts';
+import { samePane, timeoutLiveness, type HeldPane, type Scratch, type Where } from './panes.ts';
 import { jobScratchOf } from './start.ts';
 
 /** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
@@ -18,6 +18,8 @@ export interface PaneEndDeps {
   reaped: Map<string, Reaped>;
   /** The lanes and the panes they hold: a closed pane frees its lane. */
   lanes: Map<LaneId, HeldPane>;
+  /** When each running job's pane output last changed (issue #630): at a timeout, its liveness. */
+  outputAt: Map<string, number>;
 }
 
 export function paneEnds(o: PaneEndDeps) {
@@ -54,5 +56,17 @@ export function paneEnds(o: PaneEndDeps) {
     return open;
   }
 
-  return { reap, exitAndClose };
+  /** The outcome of a run that ended on `result`: an interrupt ends its pane, but a park's, which `park` ends. */
+  async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
+    if (!('interrupt' in result)) return result;
+    if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
+    // The engine parks the job, then asks `park` to end its pane: nothing of it is closed here.
+    if (result.interrupt === 'park') return { kind: 'failed', error: 'parked' };
+    if (result.interrupt !== 'timeout') { await exitAndClose(pane); return { kind: 'failed', error: 'aborted' }; }
+    // A timeout (issue #630): its scratch dir kept, as a park keeps it — it may go on there —, and its liveness said.
+    await exitAndClose(pane, 'keep');
+    return { kind: 'failed', error: 'timed out', liveness: timeoutLiveness(o.outputAt.get(pane.jobId), reaped.get(pane.jobId)) };
+  }
+
+  return { reap, exitAndClose, settle };
 }

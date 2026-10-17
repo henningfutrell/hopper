@@ -169,6 +169,11 @@ export interface FakeHerdrClient extends HerdrClient {
   dropPrompts(n: number): void;
   /** Claude denies its dialog by itself, its countdown run out (issue #376): it goes on with the next scripted turn, nothing typed. */
   lapseDialog(name: string): void;
+  /**
+   * The herdr server restarts (issue #1465): each open pane is restored in a new terminal, and Claude in it is resumed into
+   * its session by herdr itself, ready, its turn in flight cut off.
+   */
+  restartServer(): void;
   /** Claude disappears from its pane (crashed, closed by hand). */
   killAgent(name: string): void;
   /** Claude goes on with the next scripted turn by itself, nothing sent: a background notification, or a person typing in its pane. */
