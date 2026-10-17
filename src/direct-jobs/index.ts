@@ -6,9 +6,14 @@
 // open questions, its job's artifacts (its outputs, private in the hopper) and its live promotion to GitHub (issue #946).
 // A submission that authorizes `vault` grants its item the vault in that transaction too, by the submitter:
 // the caller has had Access decide it first, as for a person's Grant (design.md "Direct jobs", part 3).
-import { authorizesVault, DIRECT_SOURCE, directJobView, directKey, type DirectJob, type DirectJobInput, type DirectJobView } from '../domain/direct-jobs.ts';
+// Its pull request (issue #1068): a direct job that ended done and opened a pull request on its repository through the
+// hopper's GitHub proxy follows it, as a job of an issue does — shown in Pull requests, tended through Run again with the
+// tend brief, merged by yolo mode — with the user's own GitHub connection (`pullRequests`). A tend job follows the pull
+// request it was handed. A direct job has no issue, so the merge closes nothing.
+import { authorizesVault, DIRECT_SOURCE, directJobView, directKey, openedPullRequest, type DirectJob, type DirectJobInput, type DirectJobView, type DirectPullRequests } from '../domain/direct-jobs.ts';
 import type { ActingPerson } from '../domain/failures.ts';
 import { staleArtifacts } from '../domain/promotions.ts';
+import { tendOf } from '../domain/pull-requests.ts';
 import type { JobSource, SourceHost } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { Job } from '../domain/types.ts';
@@ -31,7 +36,11 @@ export interface DirectJobs {
 
 const SOURCE_REF = { name: DIRECT_SOURCE, kind: DIRECT_SOURCE };
 
-export function createDirectJobs(o: { store: UserStore; host: () => SourceHost; url: (id: string) => string; artifactUrl: (id: string) => string; now: () => string }): DirectJobs {
+export function createDirectJobs(o: {
+  store: UserStore; host: () => SourceHost; url: (id: string) => string; artifactUrl: (id: string) => string; now: () => string;
+  /** How a direct job's pull request is followed (issue #1068); absent: none is. */
+  pullRequests?: DirectPullRequests;
+}): DirectJobs {
   const { store } = o;
   const view = (d: DirectJob): DirectJobView => {
     const job = store.jobs.getBySourceKey(directKey(d.id));
@@ -48,6 +57,13 @@ export function createDirectJobs(o: { store: UserStore; host: () => SourceHost; 
     return key.startsWith(`${DIRECT_SOURCE}:`) ? key.slice(DIRECT_SOURCE.length + 1) : undefined;
   };
 
+  // The pull request the job opened on its repository, else the one a tend handed it (issue #1068).
+  const ownPullRequest = (job: Job): string | undefined => {
+    const repo = job.source?.repo;
+    if (!repo) return undefined;
+    return openedPullRequest(store.events.recent(1000, ['github_proxy.done'], job.id), repo) ?? tendOf(job, (id) => store.jobs.get(id))?.pullRequest;
+  };
+
   const source: JobSource = {
     name: DIRECT_SOURCE,
     kind: DIRECT_SOURCE,
@@ -55,14 +71,20 @@ export function createDirectJobs(o: { store: UserStore; host: () => SourceHost; 
     // Its items come through `submit`, never a poll.
     discover: async () => [],
     check: async () => [],
-    // Nothing goes out: the job keeps what was reported, and its result stays in the hopper.
-    report: async (r) => ({ ...(r.job.sourceState?.source ?? {}), reported: r.kind }),
+    // Nothing goes out: the job keeps what was reported, and its result stays in the hopper. A done job's own pull request
+    // is kept to follow (issue #1068).
+    report: async (r) => {
+      const state = { ...(r.job.sourceState?.source ?? {}), reported: r.kind };
+      const pullRequest = r.kind === 'finished' && o.pullRequests ? ownPullRequest(r.job) : undefined;
+      return pullRequest ? { ...state, pullRequest, follow: 'open' } : state;
+    },
     async rerun(job) {
       const id = idOf(job);
       const d = id === undefined ? undefined : store.directJobs.get(id);
       if (!d) throw new Error(`job ${job.id} is of no direct job this hopper keeps`);
       return directItem(d, o.url(d.id));
     },
+    ...o.pullRequests,
   };
 
   return {

@@ -68,7 +68,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
-| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
+| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
@@ -12280,9 +12280,9 @@ one press per cause where the hopper can move each item.
   job needs its own answer. Those causes say so.
 - **Direct jobs** (issue #901). A direct job has no issue, so nothing is assigned: the `direct` source gives its
   submission back (`JobSource.rerun`), and a failed direct job is in Stuck as any failure, by its hand-off or as `retry`,
-  and its bulk action runs it again. Tending does not apply: the `direct` source follows no pull request (no
-  `JobSource.follow`), so a direct job's pull request never waits on the hopper and is never given up. Following one is
-  a new capability, not a way out of stuck work: issue #1068.
+  and its bulk action runs it again. Since issue #1068 the `direct` source follows a direct job's pull request
+  ("Direct jobs", "Its pull request"): one the hopper gave up tending is an open pull request card like any other
+  (`tend`, `checks`).
 
 **Verification:** `test/domain/stuck.test.ts` (each cause, an item counted once, the order),
 `test/integration/stuck.test.ts` (two hand-offs resolved by one press; a cause with no bulk action refused),
@@ -18259,6 +18259,42 @@ own: the hopper holds no address of a person (no mail, no chat id), and a notifi
 someone outside; the receiver maps the name to its own channel. In the hopper, the submitter reads the job back in Direct
 jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
 the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
+
+## Direct jobs: its pull request (issue #1068, 2026-10-16)
+
+Requirement: a direct job that opens a pull request on its repository gets the same care as a job of an issue: the
+hopper shows it in Pull requests, tends it (rebase, fix checks), and merges it in yolo mode. Before, the `direct` source
+had no `JobSource.follow`, and a person handled the pull request on GitHub.
+
+- **Which pull request.** The one the job opened on its repository through the hopper's GitHub proxy: the newest
+  `github_proxy.done` of op `pr.create` on the job's timeline whose `repo` is the direct job's (`openedPullRequest`,
+  `src/domain/direct-jobs.ts`). A tend job opens none: it follows the pull request it was handed (`tendOf`). The `direct`
+  source's report of a job that ended done keeps it, `pullRequest` and `follow: open`, as a GitHub source's report does.
+  A job that opened none follows nothing. Why the proxy's record, not a branch push the git proxy recorded: a push names
+  a branch, not a pull request, and the job opens its pull request through the proxy in any case — no job holds a GitHub
+  token (issue #652).
+- **Whose connection.** The user's own connected GitHub account, the one the job's proxy acted with (issue #1380):
+  `createDirectPullRequests` (`src/sources/compose.ts`) builds the follow, the merge gate (`mergesOnReady`), the tend
+  note (`tendStarted`) and the failed checks' logs (`checkLogs`) over it, with the user's yolo mode, landing branches and
+  change rules (`pullRequestSettings`, `src/users/source-context.ts`). The `direct` source takes them as a port
+  (`DirectPullRequests`): `src/direct-jobs/` knows no GitHub. While no account is connected, a follow throws and is
+  asked again at a later sync, and nothing is merged.
+- **The follow** (`followDirectPullRequest`, `src/sources/github/direct-follow.ts`). It reads the pull request only.
+  Merged or closed on GitHub: it ends there. Open: what is seen of it is kept, it is moved to the landing branch or closed
+  as superseded (issue #1143), and the hopper merges it once ready when its change kind's gate allows — yolo mode on for its
+  repository, or a kind merged with no person (issue #1076). A direct job has no issue, so the merge closes nothing, and no
+  issue is read, labelled or commented on.
+- **Tending.** The sync loop's after done is the same as for any source (`src/sources/after-done.ts`): a pull request seen
+  with merge conflicts or failing checks runs its item again with the tend brief (`JobSource.rerun`, the same submission
+  again), and the tend job pushes to the same branch.
+- **In Pull requests.** A direct job's card has no `issue`; it has `directJob`, the link to its direct job view, shown as
+  "direct job". It has no Merge now, Close PR or Send back for rework: those go through a GitHub source's outbox (issue
+  #1238), which the `direct` source has not. A person does those on GitHub.
+
+**Verification:** `test/sources/github-direct-follow.test.ts` (open and kept, merged by yolo mode, failing checks kept,
+merged or closed by a person, nothing followed), `test/direct-jobs/pull-request.test.ts` (the opened pull request kept to
+follow, none for another repository, a tend job's handed pull request, no follower), `test/sources/pull-request-list.test.ts`
+(a direct job's card), `test/ui/pull-requests-view.test.ts` (its link, and no Merge now or Close PR).
 
 ## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
 

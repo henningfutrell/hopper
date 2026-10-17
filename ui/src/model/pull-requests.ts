@@ -91,7 +91,8 @@ export const MERGEABLE_TEXT: Record<PullRequestCard['mergeable'], string> = {
   mergeable: 'mergeable', conflicts: 'merge conflicts', unknown: 'merge state not seen yet',
 };
 
-export const closesText = (c: PullRequestCard): string => `${c.part ? 'part of' : 'closes'} #${c.issue.number}`;
+/** What it closes: its issue, or, for a direct job's (issue #1068), no issue: it is the direct job's. */
+export const closesText = (c: PullRequestCard): string => (c.issue ? `${c.part ? 'part of' : 'closes'} #${c.issue.number}` : 'direct job');
 
 /** What Merge now and Close PR ask before they act (issue #677). */
 export const mergeQuestion = (c: PullRequestCard): string => `Merge #${c.pullRequest?.number} into ${c.base ?? 'its base branch'} now?`;
@@ -113,7 +114,7 @@ export const conflictedPullRequests = (v: PullRequestsView | undefined): number 
  */
 export const gaveUpLines = (v: PullRequestsView | undefined): string[] =>
   Array.isArray(v?.repos) ? v.repos.flatMap((r) => r.pullRequests.flatMap((c) =>
-    c.state === 'open' && c.gaveUp ? [`${r.repo}#${c.pullRequest?.number ?? c.issue.number}: ${c.gaveUp}`] : [])) : [];
+    c.state === 'open' && c.gaveUp ? [`${r.repo}#${c.pullRequest?.number ?? c.issue?.number ?? ''}: ${c.gaveUp}`] : [])) : [];
 
 /** The pull request numbers in plain words: `#7`, `#7 and #8`, `#7, #8 and #9`. */
 const numbers = (ns: readonly number[]): string =>
