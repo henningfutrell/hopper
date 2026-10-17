@@ -6,7 +6,8 @@
 // (a pending answer is kept). waiting_answer jobs follow their question. Every other lane closes.
 // Several hoppers on one database (issue #1662, design.md "Several hoppers on one database"): a job another live hopper
 // holds a lease on is that hopper's, and so is its lane. A job whose lease ended later (its hopper stopped or crashed) is
-// taken over the same way (`takeOver`), from the next tick of any hopper on the database.
+// taken over the same way (`takeOver`), from the next tick of any hopper on the database. A job on an open `job-run` saga
+// (issue #1662 part 4, job-run.ts) is its saga's, and so is its lane: the saga pass takes its run up, on whichever hopper.
 import type { Job, Question } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { cleanupDue } from './cleanup.ts';
@@ -21,12 +22,24 @@ export interface Recovered {
   reattach: Claim[];
   /** Running jobs whose machine did not answer: the caller reattaches each once it does (Runner.reattachWhenReachable). */
   awaiting: Claim[];
+  /** Claimed and running jobs on an open `job-run` saga, left to it: its pass takes their runs up. */
+  onSaga: string[];
 }
 
 /** Why a job is recovered: this hopper started, or the hopper that drove it stopped (issue #1662). */
 export type RecoveryReason = 'daemon restart' | 'its hopper stopped';
 
 const RUNNING = ['claimed', 'running'] as const;
+
+/**
+ * Of `jobs`, the ones left to their open `job-run` saga (issue #1662): running, on an executor that watches its work again.
+ * Its pass takes their runs up. A claimed job, or one whose executor runs again from scratch or cannot reattach, is
+ * recovered here as before; its saga's steps then find it no longer running, and do nothing.
+ */
+function onSaga(c: EngineContext, jobs: readonly Job[]): Set<string> {
+  const left = jobs.filter((j) => { const x = c.executors.get(j.spec.executor); return j.status === 'running' && x?.idempotent === false && x.reattach && x.canReattach; });
+  return c.jobRuns && left.length ? c.jobRuns.open(left.map((j) => j.id)) : new Set<string>();
+}
 
 /** The running jobs whose executor can reattach them, or cannot tell yet: probed before the transaction (herdr calls). */
 async function reattachable(c: EngineContext, jobs: readonly Job[]): Promise<{ reattach: Claim[]; awaiting: Claim[] }> {
@@ -52,13 +65,13 @@ async function reattachable(c: EngineContext, jobs: readonly Job[]): Promise<{ r
  * The claimed and running jobs of `jobIds` this hopper takes the lease of, recovered: reattached, moved, requeued or failed.
  * The leases of the jobs not kept running here are released after.
  */
-async function recoverJobs(c: EngineContext, jobIds: readonly string[], why: RecoveryReason): Promise<Recovered> {
+async function recoverJobs(c: EngineContext, jobIds: readonly string[], why: RecoveryReason): Promise<Omit<Recovered, 'onSaga'>> {
   const taken = jobIds.filter((id) => c.leases.take(id));
   const unkeep = c.leases.keep(taken);
   try { return await decide(c, taken, why); } finally { unkeep(); }
 }
 
-async function decide(c: EngineContext, taken: readonly string[], why: RecoveryReason): Promise<Recovered> {
+async function decide(c: EngineContext, taken: readonly string[], why: RecoveryReason): Promise<Omit<Recovered, 'onSaga'>> {
   const { store } = c;
   const read = store.jobs.getMany(taken);
   const jobs = taken.flatMap((id) => { const j = read.get(id); return j && (RUNNING as readonly string[]).includes(j.status) ? [j] : []; });
@@ -90,7 +103,7 @@ function failJob(c: EngineContext, job: Job, error: string): void {
   c.store.events.append({ type: 'job.failed', jobId: job.id, data: { error, ...priorityTagOf(c, job.id) } });
 }
 
-function requeue(c: EngineContext, job: Job, from: string, reason: string, patch: Partial<Job> = {}): void {
+export function requeue(c: EngineContext, job: Job, from: string, reason: string, patch: Partial<Job> = {}): void {
   c.store.jobs.update(job.id, {
     status: 'queued', laneId: undefined, holdReason: undefined, waitReason: undefined, tasks: undefined, progressMessage: undefined, ...patch,
   });
@@ -101,9 +114,12 @@ export async function recover(c: EngineContext): Promise<Recovered> {
   const { store } = c;
   // Another live hopper's jobs, and their lanes, are its own (issue #1662).
   const others = c.leases.heldByOthers();
-  const mine = store.jobs.list({ status: [...RUNNING] }).filter((j) => !others.has(j.id));
+  const unheld = store.jobs.list({ status: [...RUNNING] }).filter((j) => !others.has(j.id));
+  const saga = onSaga(c, unheld);
+  const mine = unheld.filter((j) => !saga.has(j.id));
   const recovered = await recoverJobs(c, mine.map((j) => j.id), 'daemon restart');
   const kept = new Set([...recovered.reattach, ...recovered.awaiting].map((r) => r.laneId));
+  for (const j of unheld) if (saga.has(j.id) && j.laneId) kept.add(j.laneId);
   const toClean = recovered.toClean;
   const byQuestion = (job: Job, q: Question | undefined): void => {
     if (q?.status === 'open') return; // QuestionService.recover re-drives it
@@ -124,15 +140,18 @@ export async function recover(c: EngineContext): Promise<Recovered> {
       store.events.append({ type: 'lane.closed', laneId: lane.id, machineId: lane.machineId, data: { reason: 'daemon restart' } });
     }
   });
-  return { toClean, reattach: recovered.reattach, awaiting: recovered.awaiting };
+  return { toClean, reattach: recovered.reattach, awaiting: recovered.awaiting, onSaga: [...saga] };
 }
 
 /**
  * The claimed and running jobs no live lease holds (issue #1662): the hopper that drove them stopped or crashed, and this
  * one takes them over. Their lanes stay; a lane whose job left it is freed by the next Decision (`freeStrandedLanes`).
  */
-export async function takeOver(c: EngineContext, driving: readonly string[]): Promise<Recovered> {
-  const ids = c.leases.unheld().filter((id) => !driving.includes(id));
+export async function takeOver(c: EngineContext, driving: readonly string[]): Promise<Omit<Recovered, 'onSaga'>> {
+  const unheld = c.leases.unheld().filter((id) => !driving.includes(id));
+  // A run on an open `job-run` saga is taken up by the saga pass of the hopper that claims the saga.
+  const saga = unheld.length ? onSaga(c, [...c.store.jobs.getMany(unheld).values()]) : new Set<string>();
+  const ids = unheld.filter((id) => !saga.has(id));
   if (!ids.length) return { toClean: [], reattach: [], awaiting: [] };
   console.warn(`hopper: taking over ${ids.length} job(s) whose hopper stopped: ${ids.join(', ')}`);
   return recoverJobs(c, ids, 'its hopper stopped');

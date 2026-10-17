@@ -15,7 +15,7 @@ import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './
 import { ownCommandProbes, paneLostProbe, paneSessionOn, readPaneAnswer, terminalProbes } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
-import { paneEnds } from './pane-ends.ts'; import { paneLeft } from './pane-left.ts';
+import { paneEnds } from './pane-ends.ts'; import { paneLeft } from './pane-left.ts'; import { paneOpen } from './pane-open.ts';
 import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
 import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
 
@@ -313,6 +313,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       // Notes a person sent before it started (issue #997) go in its task.
       return startAndSend(ctx, p, {}, (s) => [taskText(ctx, p, s, ctx.notes?.take('start')), FOOTER_ANCHOR]);
     },
+
+    // The `job-run` saga's steps (issue #1662): the credentials, then the pane, then `reattach` sends the task and watches it.
+    ...paneOpen({ onLane, startIn, exitAndClose }),
 
     resume(ctx, answer) {
       const state = paneStateOf(ctx.job);

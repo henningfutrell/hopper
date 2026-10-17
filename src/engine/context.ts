@@ -5,6 +5,7 @@ import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFir
 import type { Logins } from '../logins/index.ts';
 import type { Checkpoints } from './checkpoints.ts';
 import type { JobMoveData } from './lost-move.ts';
+import type { JobRunData } from './job-run.ts';
 import type { JobLeases } from './leases.ts';
 import type { WaitReads } from './wait-checks.ts';
 
@@ -97,6 +98,12 @@ export interface EngineOptions {
    * job whose machine stays away fails, as nothing would end the agent it left there.
    */
   jobMoves?: { begin(key: string, data: JobMoveData): void };
+  /**
+   * The `job-run` saga (issue #1662, job-run.ts): `begin` keeps one per job and attempt, which the saga coordinator drives on
+   * whichever hopper holds it, and says whether a new one does (false: one of that key ended already); `open`, the jobs of
+   * `jobIds` whose job-run saga has not ended. Absent: the runner drives each run itself, and a stop leaves it to recovery.
+   */
+  jobRuns?: { begin(key: string, data: JobRunData): boolean; open(jobIds: readonly string[]): Set<string> };
   /** How long a job lease holds without a renewal (issue #1662): the most a hopper that crashed keeps its jobs from the others. Default a minute. */
   jobLeaseMs?: number;
   /** What a wait check of items reads (issue #1694, wait-checks.ts): the job's source. Absent: such a check reads nothing, and waits for its deadline. */
@@ -104,9 +111,9 @@ export interface EngineOptions {
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'lease' | 'jobMoves' | 'jobLeaseMs' | 'waitReads'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'lease' | 'jobMoves' | 'jobRuns' | 'jobLeaseMs' | 'waitReads'>> {
   fakeUsage?: SettableUsageSource;
-  jobMoves?: EngineOptions['jobMoves']; waitReads?: WaitReads;
+  jobMoves?: EngineOptions['jobMoves']; jobRuns?: EngineOptions['jobRuns']; waitReads?: WaitReads;
   /** Ask for a Decision; coalesces with one already running. */
   trigger(reason: string): void;
   /** True once stop() began: nothing may write to the store after this. */
