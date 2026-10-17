@@ -238,19 +238,29 @@ esac`, [read('aws-account', '123456789012')]);
     ]);
   });
 
-  it('helm list refused on a view role: it fails, and its result says a view role cannot read the secrets helm keeps releases in', async () => {
-    const { results } = await runWith('helm', `case "$1" in
-  list) echo 'Error: list: failed to list: secrets is forbidden: User "system:serviceaccount:hopper:view" cannot list resource "secrets"' >&2; exit 1 ;;
+  // Issue #1736: a view role that is right refuses helm list on secrets. That refusal passes the probe, with no mark.
+  const helm = (list: string): string => `case "$1" in
+  list) ${list} ;;
   create) mkdir -p "$2" ;;
   template) echo 'kind: Deployment' ;;
-esac`);
+esac`;
+  it('helm list refused on secrets, as a view role refuses it: it passes, and its result says why (issue #1736)', async () => {
+    const { results } = await runWith('helm', helm(`echo 'Error: list: failed to list: secrets is forbidden: User "system:serviceaccount:hopper:view" cannot list resource "secrets" in API group "" at the cluster scope' >&2; exit 1`));
     const list = results.find((r) => r.id === 'helm.list')!;
-    expect(list).toMatchObject({ outcome: 'denied', passed: false, note: HELM_LIST_NOTE });
+    expect(list).toMatchObject({ expect: 'allowed', outcome: 'denied', passed: true, note: HELM_LIST_NOTE });
     expect(HELM_LIST_NOTE).toContain('A view role cannot read secrets');
-    // A probe that passed carries no note.
+    expect(results.filter((r) => r.id.startsWith('helm.list') || r.id.startsWith('kube.')).filter((r) => !r.passed)).toEqual([]);
+    // A probe that worked carries no note.
     const { results: ok } = await run('read-only', CLUSTER);
-    expect(ok.find((r) => r.id === 'helm.list')).toMatchObject({ passed: true });
+    expect(ok.find((r) => r.id === 'helm.list')).toMatchObject({ outcome: 'allowed', passed: true });
     expect(ok.find((r) => r.id === 'helm.list')!.note).toBeUndefined();
+  });
+
+  it('helm list refused on anything but secrets, or failing some other way: it fails (issue #1736)', async () => {
+    const { results: other } = await runWith('helm', helm(`echo 'Error: list: failed to list: configmaps is forbidden: User "view" cannot list resource "configmaps"' >&2; exit 1`));
+    expect(other.find((r) => r.id === 'helm.list')).toMatchObject({ outcome: 'denied', passed: false, note: HELM_LIST_NOTE });
+    const { results: down } = await runWith('helm', helm(`echo 'Error: Kubernetes cluster unreachable: dial tcp: lookup lab' >&2; exit 1`));
+    expect(down.find((r) => r.id === 'helm.list')).toMatchObject({ outcome: 'error', passed: false });
   });
 });
 

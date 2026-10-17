@@ -61,6 +61,14 @@ describe('the read-only check\'s report (issue #715)', () => {
     expect(marked.content.toString('utf8')).toContain('<td>pass</td><td>helm.list</td><td>lab</td><td>denied (marked expect-denied)</td>');
     expect(marked.content.toString('utf8')).toContain('<td>skip</td><td>kube.get</td>');
 
+    // A read refused as a right credential refuses it (issue #1736): the summary names it, and its row says pass.
+    const refused = checkReport(template, { ...check, state: 'passed', problem: undefined as never, probes: [check.probes[0]!,
+      { id: 'helm.list', asset: 'lab', expect: 'allowed', outcome: 'denied', passed: true, exit: 1, output: 'secrets is forbidden', note: 'helm list reads secrets' },
+    ] });
+    expect(refused.summary).toBe('passed: 2 probes, every write refused, every read worked but helm.list on lab, refused as a right credential refuses it');
+    expect(refused.content.toString('utf8')).toContain('<td>pass</td><td>helm.list</td><td>lab</td><td>allowed</td><td>denied</td>');
+    expect(refused.content.toString('utf8')).toContain('<p class="note">helm list reads secrets</p>');
+
     // A probe the check did not run (issue #715: a workspace with no state backend) is not a pass: its row says NOT RUN and why.
     const notRun = checkReport(template, { ...check, problem: undefined as never, probes: [check.probes[0]!, {
       id: 'terraform.state-push-direct', asset: 'shop-prod', expect: 'denied', outcome: 'not-run', passed: false, output: 'not run: no backend configured.',
