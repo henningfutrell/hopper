@@ -14,12 +14,13 @@ import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
 import { outcomeOf, type SandboxRun, type SandboxRunRepository } from '../domain/sandbox-runs.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
+import { createWarmPass } from './warm.ts';
 import type { Egress } from './egress.ts';
 import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
-import { runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
+import { phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
 import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
 
 export { BOX_IMAGE } from './box-image.ts';
@@ -155,6 +156,8 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const checkPass = o.checks
     ? createCheckPass({ ...(o.runtime ? { local: o.runtime } : {}), place: places.forCheck, credentials: o.checks, instanceId: o.instanceId, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
     : undefined;
+  // The tools images of approved templates, built ahead of their first step where it runs (issue #1737).
+  const warmPass = o.checks ? createWarmPass({ place: places.forCheck, templates: () => o.checks!.templates(), clock: o.clock, logger: o.logger }) : undefined;
   // The need boxes running now (issue #1007): a sweep burns the hopper's other need boxes, left by a step whose remove
   // failed or by a hopper that stopped mid-step (issue #1349), and notes each burn in the ledger.
   const stepping = new Set<string>();
@@ -239,7 +242,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     for (const at of sweepPlaces()) await sweepSteps(at).then(() => sweepStepHomes(at));
     closeRemoved();
   };
-  const check = (): Promise<void> => (checking ??= Promise.all([sweep(), checkPass?.() ?? Promise.resolve()]).then(() => undefined)
+  const check = (): Promise<void> => (checking ??= Promise.all([sweep(), checkPass?.() ?? Promise.resolve(), warmPass?.() ?? Promise.resolve()]).then(() => undefined)
     .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
     .finally(() => { checking = undefined; }));
 
@@ -267,8 +270,9 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
           return r;
         }
         const placed = egress ? { network: egress.network, env: { ...box.env, ...egress.env } } : { network: at.network };
-        r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, ...placed }, io);
-        o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${r.problem ? `: ${r.problem}` : ''}`);
+        let took = '';
+        r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, ...placed }, { ...io, phases: (p) => { took = phaseTimes(p); } });
+        o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${took}${r.problem ? `: ${r.problem}` : ''}`);
         return r;
       } finally {
         o.runs.end(ledger.id, { at: o.clock.now().toISOString(), exit: r.exit, outcome: outcomeOf(r), ...(r.problem ? { problem: r.problem } : {}) });

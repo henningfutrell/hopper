@@ -10549,6 +10549,18 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   id: the same tools on the same base build once. The runtime port has `build(tag, containerfile)` (Podman's
   `/libpod/build`, Docker's `/build`; the context is a tar of the one Containerfile, `containerfileTar`). It builds only
   when no image of that tag is there. The image stays local: it is never pushed.
+- **Built ahead of the first step** (issue #1737). The first need step of a template paid the build, 10 to 60 s, and a
+  download error in it failed the step. The **warm pass** (`createWarmPass`, `src/sandbox/warm.ts`) runs with the check
+  pass, every 10 s and at start. For each template with tools whose image (and tools) are approved, it runs `boxImage`
+  where the user's steps run (`forCheck`: beside the hopper, else a client target that is dialled in): the base image is
+  pulled and the tools image built when they are not there. A template a read-only check is due for is left to the check,
+  which builds the same image. It looks at each image again `WARM_EVERY_MS` (an hour) after, so one the leftover-builds pass
+  removed is built again; a build that fails is logged and tried again `WARM_RETRY_MS` (5 minutes) after. The memory of
+  what it built is in memory only: a hopper that starts looks at each image once more, which costs an exists call.
+- **The time of each part of a step** (issue #1737). `runNeedBox` gives the time of its image (pull and build), the box's
+  start (volume, create, start, copy in) and its run (`NeedBoxPhases`), and the line `need box … ended with <exit>` in the
+  hopper's log carries them: `(image 0.2 s, start 1.1 s, run 9.8 s)`. A slow step then says which part was slow. The
+  credential mint before the box is not in it.
 - **A template's tools** (`Template.tools`). Saved with the template (`POST /ui/api/vault` `save-template` `tools`, Settings
   → Vault **Tools**, `hopper template save --tool <name>`); a save that names none keeps the ones it has. They are part of
   what its boxes run, so they are approved with its image (`approval.tools`, `imageApproved`): a change of tools waits for
@@ -10573,6 +10585,8 @@ The tools run as the box's user, under the sandbox flags; what they can reach is
 allow, unchanged.
 
 Tests: `test/sandbox/tools.test.ts` (the Containerfile, the tag, the catalog, the tools of each asset kind),
+`test/sandbox/warm.test.ts` (the warm pass: built once, which templates, a failed build tried again later, an image
+looked at again), `test/sandbox/need-box.test.ts` (the time of each part),
 `test/sandbox/params.test.ts`, `test/integration/sandbox-tools.test.ts` (the real daemon, the runtime as a double: a box of
 a template with tools runs the built image, built once; a change of tools waits for approval; tools outside refused; a box
 of no template; a build that fails leaves nothing), `test/adapters/podman-runtime.test.ts` and `docker-runtime.test.ts`
