@@ -59,6 +59,18 @@ export interface ApiGrantMinted extends ApiTokenRefreshed { view: ApiGrantView; 
 /** Why a grant ended (issue #881, the `api_grant.revoked` event). */
 export type GrantEndReason = 'revoked' | 'revoked-all' | 'reuse-detected' | 'expired-idle' | 'expired-absolute' | 'realm-changed' | 'refused';
 export const GRANT_END_REASONS: readonly GrantEndReason[] = ['revoked', 'revoked-all', 'reuse-detected', 'expired-idle', 'expired-absolute', 'realm-changed', 'refused'];
+/** A **device grant request** (issue #892): an agent asks for a grant, a person approves it. How long it waits, how often its agent polls, how many wait at once. */
+export const DEVICE_GRANT = { minutes: 10, intervalS: 5, most: 50 } as const;
+/** The device code an agent polls with (issue #892): this prefix and 64 hex digits, kept only as its SHA-256. */
+export const DEVICE_CODE_PREFIX = 'hopper_dc_';
+/** What a device grant request asks for (issue #892): the fields of a grant's mint. The person who approves it is the minter. */
+export interface DeviceGrantAsk {
+  label: string; holder?: string; role?: UiRole; scopes?: string[]; preset?: string; box?: boolean; days?: number | null; minutes?: number; deny?: string[];
+}
+/** A device grant request just made (issue #892): the agent shows `userCode` and where to enter it, and polls with `deviceCode`. */
+export interface DeviceGrantStarted { deviceCode: string; userCode: string; verificationPath: string; verificationPathComplete: string; expiresAt: string; interval: number }
+/** A device grant request as a signed-in person sees it by its user code (issue #892): never its device code. `from`: who asked. */
+export interface DeviceGrantView { userCode: string; ask: DeviceGrantAsk; from: string; createdAt: string; expiresAt: string }
 /** The admin's API token settings (issue #881): the API-token lifetime, and its bounds. */
 export interface ApiTokenSettings { tokenMinutes: number; min: number; max: number }
 

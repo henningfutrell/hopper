@@ -337,7 +337,8 @@ services:
   # no ngrok. It forwards to http://hopper over the `tunnel` network, which only the
   # hopper shares, never to the hopper's loopback: an internet request is a public request (the API only with a session
   # or an API token), and no box reaches the agent's local API. Its edge lets only the API through (/api/ but the event
-  # stream, /ui/api/, /ui/auth/api-token, and /ui/auth/token/refresh where a grant's agent trades its refresh token):
+  # stream, /ui/api/, /ui/auth/api-token, /ui/auth/token/refresh where a grant's agent trades its refresh token, and
+  # /ui/auth/device-grant with its poll, where an agent asks for a grant a person approves):
   # never the UI, its sign-in pages, the installer or /tunnel/agent; and it limits
   # each caller's requests a minute. It names each caller to the hopper in `x-hopper-caller` (one a caller sent is
   # dropped), which the hopper reads from this agent alone, so its own sign-in limit counts each caller, not the agent
@@ -372,14 +373,14 @@ services:
                   headers:
                     x-hopper-caller: "$${conn.client_ip}"
           - expressions:
-              - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh') || req.url.path.startsWith('/api/events/stream')"
+              - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh' || req.url.path == '/ui/auth/device-grant' || req.url.path == '/ui/auth/device-grant/poll') || req.url.path.startsWith('/api/events/stream')"
             actions:
               - type: custom-response
                 config:
                   status_code: 404
                   body: not found
           - expressions:
-              - "req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh'"
+              - "req.url.path == '/ui/auth/api-token' || req.url.path == '/ui/auth/token/refresh' || req.url.path == '/ui/auth/device-grant'"
             actions:
               - type: rate-limit
                 config:

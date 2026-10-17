@@ -1345,11 +1345,13 @@ What it does, and what it keeps out:
   hopper and the two services share. It never forwards to the hopper's loopback: an internet request is a **public
   request**, which reads the API only with a session or an API token. No box the hopper starts is on that network, so none
   reaches an agent's local API.
-- **Only the API.** Every path but `/api/`, `/ui/api/`, `/ui/auth/api-token` and `/ui/auth/token/refresh` is `404`, and so
+- **Only the API.** Every path but `/api/`, `/ui/api/`, `/ui/auth/api-token`, `/ui/auth/token/refresh`, and
+  `/ui/auth/device-grant` with its poll (issue #892) is `404`, and so
   is the event stream (`/api/events/stream`, whose session is in the query). ngrok's edge says so in its traffic policy;
   Cloudflare's tunnel in the ingress the hopper sets; the hopper holds the same edge for every request through a tunnel.
   The UI, its sign-in pages, the installer and the services' own ask stay off the internet.
-- **A limit per caller.** 120 requests a minute per address, and 5 API-token exchanges or refreshes a minute: at ngrok's
+- **A limit per caller.** 120 requests a minute per address, and 5 API-token exchanges, refreshes or device grant
+  requests a minute: at ngrok's
   edge, and in the hopper for both providers. Each edge names the caller's address to the hopper (ngrok in
   `x-hopper-caller`, after it drops one the caller sent; Cloudflare in `cf-connecting-ip`), which the hopper reads only
   from that provider's agent. The sign-in limit (20 a minute) counts each caller too. A stranger cannot use up your

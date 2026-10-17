@@ -73,7 +73,13 @@ export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset 
   hopper token list                                  the user's live grants and exchanged API tokens, and the scopes there are;
                                                      never a token
   hopper token revoke <id>                           end one grant or API token, and every API token of it
-  hopper token revoke-all                            end every grant and API token of the user`;
+  hopper token revoke-all                            end every grant and API token of the user
+  hopper token device <code>                         the device grant request an agent shows this user code for (issue #892):
+                                                     the grant it asks for, and who asked
+  hopper token approve <code> [--role viewer|operator|admin]
+                                                     approve it: the grant it asks for, minted for you when its agent polls
+                                                     next; its role at most --role (admin by default)
+  hopper token deny <code>                           deny it: its agent is told`;
 
 const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]...';
 
@@ -84,7 +90,7 @@ const whole = (flag: string, v: string | undefined): number | undefined => {
   return n;
 };
 
-/** `hopper token mint|list|revoke|revoke-all`: `POST /ui/api/api-tokens` and `GET /api/api-tokens`, under a session of the role minted (admin by default). */
+/** `hopper token mint|list|revoke|revoke-all|device|approve|deny`: `POST /ui/api/api-tokens` and `GET /api/api-tokens`, under a session of the role minted (admin by default). */
 export function tokenCall(args: string[]): Call {
   const { values, positionals } = parseArgs({
     args, allowPositionals: true,
@@ -96,7 +102,13 @@ export function tokenCall(args: string[]): Call {
   if (verb === 'scopes' && rest.length === 0 && !flags) return { role: 'viewer', path: '/api/scopes' };
   if (verb === 'revoke' && rest.length === 1 && !flags) return { role: 'viewer', path: '/ui/api/api-tokens', body: async () => ({ action: 'revoke', id: rest[0] }) };
   if (verb === 'revoke-all' && rest.length === 0 && !flags) return { role: 'viewer', path: '/ui/api/api-tokens', body: async () => ({ action: 'revoke-all' }) };
-  if (verb !== 'mint' || rest.length > 0) throw usage(`${TOKEN_MINT} | hopper token list | hopper token scopes | hopper token revoke <id> | hopper token revoke-all`);
+  if (verb === 'device' && rest.length === 1 && !flags) return { role: 'viewer', path: `/api/api-tokens/device/${encodeURIComponent(rest[0]!)}` };
+  if (verb === 'deny' && rest.length === 1 && !flags) return { role: 'viewer', path: '/ui/api/api-tokens', body: async () => ({ action: 'deny-device', code: rest[0] }) };
+  if (verb === 'approve' && rest.length === 1 && Object.keys(values).every((k) => k === 'role')) {
+    if (values.role !== undefined && !(UI_ROLES as readonly string[]).includes(values.role)) throw new OperatorRefusal(`--role ${values.role}: one of ${UI_ROLES.join(', ')}`);
+    return { role: (values.role ?? 'admin') as UiRole, path: '/ui/api/api-tokens', body: async () => ({ action: 'approve-device', code: rest[0] }) };
+  }
+  if (verb !== 'mint' || rest.length > 0) throw usage(`${TOKEN_MINT} | hopper token list | hopper token scopes | hopper token revoke <id> | hopper token revoke-all | hopper token device|approve|deny <code>`);
   if (!values.label?.trim() || (!values.scope?.length && !values.preset)) throw usage(TOKEN_MINT);
   if (values.role !== undefined && !(UI_ROLES as readonly string[]).includes(values.role)) throw new OperatorRefusal(`--role ${values.role}: one of ${UI_ROLES.join(', ')}`);
   if (values.days !== undefined && values['no-expiry']) throw new OperatorRefusal('--days and --no-expiry: name one');
