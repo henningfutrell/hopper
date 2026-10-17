@@ -17,15 +17,29 @@ set "HOPPER_PROJECT=%HOPPER_COMPOSE_PROJECT%"
 if not defined HOPPER_PROJECT set "HOPPER_PROJECT=hopper"
 set "HOPPER_WSL="
 if defined HOPPER_WSL_DISTRO set "HOPPER_WSL=-d %HOPPER_WSL_DISTRO%"
-rem The container's name changes with the compose project, so find it by its compose labels.
+rem The container's name changes with the compose project, so find it by its compose labels. wsl.exe -e reads no shell
+rem profile, so podman can get another runtime dir than in a WSL terminal and see no container run (issue #1512): try
+rem podman as wsl.exe starts it, then with the runtime dir of the systemd user session, /run/user/<uid>.
 set "HOPPER_CONTAINER="
-for /f "usebackq delims=" %%c in (`wsl.exe %HOPPER_WSL% -e podman ps -q --filter label^=com.docker.compose.project^=%HOPPER_PROJECT% --filter label^=com.docker.compose.service^=hopper`) do if not defined HOPPER_CONTAINER set "HOPPER_CONTAINER=%%c"
+set "HOPPER_RUNTIME="
+call :find
+if defined HOPPER_CONTAINER goto run
+set "HOPPER_UID="
+for /f "usebackq delims=" %%u in (`wsl.exe %HOPPER_WSL% -e id -u`) do if not defined HOPPER_UID set "HOPPER_UID=%%u"
+if not defined HOPPER_UID goto none
+set "HOPPER_RUNTIME=env XDG_RUNTIME_DIR=/run/user/%HOPPER_UID%"
+call :find
 if not defined HOPPER_CONTAINER goto none
-wsl.exe %HOPPER_WSL% -e podman exec -i %HOPPER_CONTAINER% hopper %*
+:run
+wsl.exe %HOPPER_WSL% -e %HOPPER_RUNTIME% podman exec -i %HOPPER_CONTAINER% hopper %*
 exit /b %ERRORLEVEL%
 
+:find
+for /f "usebackq delims=" %%c in (`wsl.exe %HOPPER_WSL% -e %HOPPER_RUNTIME% podman ps -q --filter label^=com.docker.compose.project^=%HOPPER_PROJECT% --filter label^=com.docker.compose.service^=hopper 2^>nul`) do if not defined HOPPER_CONTAINER set "HOPPER_CONTAINER=%%c"
+exit /b 0
+
 :none
-echo hopper: no hopper container of the compose project '%HOPPER_PROJECT%' runs in WSL. In WSL, run podman compose up -d in the hopper's folder. Set HOPPER_WSL_DISTRO or HOPPER_COMPOSE_PROJECT if the hopper runs in another distro or project. 1>&2
+echo hopper: no hopper container of the compose project '%HOPPER_PROJECT%' runs in WSL. In WSL, run podman compose up -d in the hopper's folder. Set HOPPER_WSL_DISTRO or HOPPER_COMPOSE_PROJECT if the hopper runs in another distro or project. Run hopper doctor to check more. 1>&2
 exit /b 1
 
 :ps1

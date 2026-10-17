@@ -30,6 +30,30 @@ function Read-Distro([string[]] $command) {
   return (@($out) -join "`n").Trim()
 }
 
+# The hopper's container, found by its compose labels, since its name changes with the compose project. Returns the
+# podman command that sees it (podman, or env with a runtime dir, then podman) and its id; else the podman command
+# that was tried last, no id, and what podman said.
+# wsl.exe -e runs no shell, so it reads no shell profile. In a WSL terminal a profile can set XDG_RUNTIME_DIR to the
+# runtime dir of the systemd user session, /run/user/<uid>, which podman-restart.service uses too, while wsl.exe -e
+# gives podman another one (WSLg sets /mnt/wslg/runtime-dir). There podman sees no container run (issue #1512). So it
+# tries podman as wsl.exe starts it first, then with the runtime dir of the systemd user session.
+function Find-Hopper {
+  $ErrorActionPreference = 'Continue'
+  $uid = Read-Distro @('id', '-u')
+  $runtimes = @('')
+  if ($uid -match '^\d+$' -and (Read-Distro @('printenv', 'XDG_RUNTIME_DIR')) -ne "/run/user/$uid") { $runtimes += "/run/user/$uid" }
+  $found = @{ podman = @('podman'); container = ''; said = '' }
+  foreach ($runtime in $runtimes) {
+    $podman = if ($runtime) { @('env', "XDG_RUNTIME_DIR=$runtime", 'podman') } else { @('podman') }
+    try { $out = @(& wsl.exe @wsl -e @podman ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=hopper' 2>&1) } catch { $out = @($_) }
+    $container = @($out | Where-Object { $_ -is [string] -and $_.Trim() -match '^[0-9a-f]{12,64}$' }) | Select-Object -First 1
+    $found = @{ podman = $podman; container = $(if ($container) { $container.Trim() } else { '' }) }
+    $found.said = (@($out | Where-Object { $_ -isnot [string] } | ForEach-Object { "$_".Trim() }) -join ' ').Trim()
+    if ($found.container) { return $found }
+  }
+  return $found
+}
+
 # Stop keep-alive loops, and the processes each started.
 function Stop-Loops($loops) {
   foreach ($p in $loops) {
@@ -80,7 +104,16 @@ $project = '__PROJECT__'
 $urls = @('http://localhost:__PORT__/job/address', 'http://127.0.0.1:__PORT__/job/address')
 $ProgressPreference = 'SilentlyContinue'
 function Send-WindowsLink {
-  $container = @(& wsl.exe @wsl -e podman ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=hopper' 2>$null) | Select-Object -First 1
+  # As hopper does (Find-Hopper in hopper.ps1): podman as wsl.exe starts it, then with the systemd user session's runtime dir.
+  $uid = (@(& wsl.exe @wsl -e id -u 2>$null) -join '').Trim()
+  $container = $null
+  $runtimes = @('')
+  if ($uid -match '^\d+$') { $runtimes += "/run/user/$uid" }
+  foreach ($runtime in $runtimes) {
+    $podman = if ($runtime) { @('env', "XDG_RUNTIME_DIR=$runtime", 'podman') } else { @('podman') }
+    $container = @(& wsl.exe @wsl -e @podman ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=hopper' 2>$null) | Select-Object -First 1
+    if ($container) { break }
+  }
   if (-not $container) { return }
   # Any HTTP answer, an error status too, means the hopper answered. The link is the URL that answered, else localhost.
   $url = $urls[0]
@@ -97,7 +130,7 @@ function Send-WindowsLink {
   if (-not $result) { $result = $firstError }
   $mode = (@(& wsl.exe @wsl -e wslinfo --networking-mode 2>$null) -join '').Trim().ToLower()
   if ($mode -match '^[a-z]{1,20}$') { $result += @('--mode', $mode) }
-  & wsl.exe @wsl -e podman exec $container.Trim() hopper windows-link report --link $url @result *> $null
+  & wsl.exe @wsl -e @podman exec $container.Trim() hopper windows-link report --link $url @result *> $null
 }
 $keep = $null
 $next = Get-Date
@@ -240,6 +273,12 @@ function Invoke-Doctor {
       'In the WSL distro, run: sudo loginctl enable-linger "$USER"')
     Write-Check 'podman-restart.service is enabled' ((Read-Distro @('systemctl', '--user', 'is-enabled', 'podman-restart.service')) -eq 'enabled') @(
       'In the WSL distro, run: systemctl --user enable podman-restart.service')
+    # hopper <command> runs the CLI in this container (Find-Hopper): podman ps only reads.
+    $hopper = Find-Hopper
+    $said = if ($hopper.said) { @("Podman said: $($hopper.said)") } else { @() }
+    Write-Check "a hopper container of the compose project '$project' runs (podman ps, as hopper <command> runs it)" ([bool] $hopper.container) ($said + @(
+      "In WSL, run podman compose up -d in the hopper's folder, as the distro user $user.",
+      'If the hopper runs in another distro or compose project, set HOPPER_WSL_DISTRO or HOPPER_COMPOSE_PROJECT.'))
   }
 
   if ($script:failed) { exit 1 }
@@ -249,14 +288,15 @@ function Invoke-Doctor {
 
 if ($args.Count -gt 0 -and $args[0] -eq 'doctor') { Invoke-Doctor }
 
-# The container's name changes with the compose project, so find it by its compose labels.
-$container = & wsl.exe @wsl -e podman ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=hopper' |
-  Select-Object -First 1
-if ($LASTEXITCODE -ne 0 -or -not $container) {
-  [Console]::Error.WriteLine("hopper: no hopper container of the compose project '$project' runs in WSL. In WSL, run podman compose up -d in the hopper's folder. Set HOPPER_WSL_DISTRO or HOPPER_COMPOSE_PROJECT if the hopper runs in another distro or project.")
+# The container's name changes with the compose project, so find it by its compose labels (Find-Hopper).
+$hopper = Find-Hopper
+if (-not $hopper.container) {
+  $said = if ($hopper.said) { " Podman said: $($hopper.said)" } else { '' }
+  [Console]::Error.WriteLine("hopper: no hopper container of the compose project '$project' runs in WSL.$said In WSL, run podman compose up -d in the hopper's folder. Set HOPPER_WSL_DISTRO or HOPPER_COMPOSE_PROJECT if the hopper runs in another distro or project. Run hopper doctor to check more.")
   exit 1
 }
+$podman = $hopper.podman
 $exec = @('exec', '-i')
 if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $exec += '-t' }
-& wsl.exe @wsl -e podman @exec $container.Trim() hopper @args
+& wsl.exe @wsl -e @podman @exec $hopper.container hopper @args
 exit $LASTEXITCODE
