@@ -7,6 +7,7 @@ import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckpointCapture, DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
+import { PROXY_TOKEN_FILE } from '../../src/github-proxy/script.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -49,6 +50,21 @@ async function boot(h: Herdrs, dbPath: string, env: Record<string, string> = {})
 }
 
 const ofJob = async (a: TestApp, id: string): Promise<DomainEvent[]> => (await a.events()).filter((e) => e.jobId === id);
+
+/** The proxy token a machine was given last for the job: what the agent there asks the hopper with. */
+const tokenOn = (h: FakeHerdrClient, jobId: string): string => {
+  const kept = h.credentials.filter((c) => c.jobId === jobId && c.file === PROXY_TOKEN_FILE).at(-1);
+  expect(kept).toBeDefined();
+  return kept!.content.trim();
+};
+
+/** What `hopper-gh` sends: an ask of the GitHub proxy, with a token. */
+async function askGitHub(a: TestApp, token: string): Promise<{ status: number; body: unknown }> {
+  const r = await fetch(`${a.url}/job/github`, {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ op: 'issue.view', repo: 'octo/shed', number: 1 }),
+  });
+  return { status: r.status, body: await r.json() };
+}
 
 /** A job at work on one of the two machines, its checkpoint taken: the machine it runs on, and the other. */
 async function atWork(a: TestApp, h: Herdrs): Promise<{ job: Job; on: 'seat' | 'host'; other: 'seat' | 'host'; paneId: string }> {
@@ -120,6 +136,33 @@ describe('the lost-machine move', () => {
     expect(events.find((e) => e.type === 'job.reattached')).toMatchObject({ laneId: expect.stringContaining(other) });
     expect(events.some((e) => e.type === 'job.failed')).toBe(false);
     expect(h[on].prompts).toHaveLength(1);
+  }, MOVE_TIMEOUT_MS);
+
+  it('once the job moved, the hopper refuses the agent left on the lost machine and answers the resumed one', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const h = herdrs({ seatTurns: [LONG, LONG], hostTurns: [LONG, LONG] });
+    const a = await boot(h, db.dbPath);
+    const { job, on, other } = await atWork(a, h);
+    const left = tokenOn(h[on], job.id);
+    // Before the move, the agent there is answered.
+    expect((await askGitHub(a, left)).status).not.toBe(401);
+
+    h[on].setUnreachable(true);
+    await waitFor(() => (h[other].prompts.length === 1 ? true : undefined), { what: 'the resumed session told', timeoutMs: 15000 });
+    const resumed = tokenOn(h[other], job.id);
+    expect(resumed).not.toBe(left);
+    expect((await a.job(job.id)).status).toBe('running');
+
+    // The agent left there holds the token of the run before the move: refused on every job route.
+    const refused = await askGitHub(a, left);
+    expect(refused.status).toBe(401);
+    expect(JSON.stringify(refused.body)).toContain('not a job\'s');
+    const stream = await fetch(`${a.url}/job/stream`, { headers: { authorization: `Bearer ${left}` } });
+    expect(stream.status).toBe(401);
+    await stream.body?.cancel();
+    // The resumed agent asks with its own.
+    expect((await askGitHub(a, resumed)).status).not.toBe(401);
   }, MOVE_TIMEOUT_MS);
 
   it('a job with no checkpoint fails as before when its machine stays away', async () => {

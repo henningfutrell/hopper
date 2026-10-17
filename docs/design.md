@@ -24723,7 +24723,17 @@ placed on the machine it moved off while the agent it left there may run: it wai
 `end-left` step lifts the mark, so the job may then go back there. A relocation start reaps what of the job still runs on
 the machine it starts on, first (the herdr executor's `relocate`): a second guard for a job that goes back.
 
+**The agent left is refused** (issue #1569). An `away` move adds one to the job's `movedAway`, in the move's
+transaction. The job's proxy token is bound to it (`src/github-proxy/token.ts`: the HMAC signs `<job>/<movedAway>`, or
+the job id alone while it is 0), and every job route checks the token against the job's count now
+(`ProxyUser.holds`). The new run gets the new token in its credentials dir; the agent left on the lost machine holds the
+one before. From the move on, the hopper refuses its every ask — GitHub, git, the vault, skills, steps, artifacts, the
+stream — with 401, before the `end-left` step ends it. A stream it holds open ends at its next ping.
+
 **Decisions:**
+- **The token counts moves away, not claims.** A claim adds an attempt, but a job answered on its question goes on in the
+  same pane with the token it has. A move away is the one case where an agent that is not the job's run can still ask. A
+  job never moved away keeps the token it had before, so a job at work across an update of the hopper keeps working.
 - **Resume in place for `gone`, not elsewhere.** The machine answers and its work tree holds the work after the last
   checkpoint; elsewhere would lose it.
 - **A park and a pick up, not new events.** The move is what a person's Park and Requeue (or Resume elsewhere) record, with
@@ -24734,18 +24744,21 @@ the machine it starts on, first (the herdr executor's `relocate`): a second guar
   the issue's tests — a job stopped mid-run on one machine resumes on another, with no task sent twice — pass with the move.
 
 **Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers; a checkpoint at the first
-missed heartbeat and at link loss (the machine cannot be read once its link is down); a job proxy that refuses the old agent's asks between the move and `end-left`.
+missed heartbeat and at link loss (the machine cannot be read once its link is down).
 
-**Residual risk, stated.** Between an `away` move and the `end-left` step (at most about 5 minutes after the machine answers
-again), the agent left there may still push through the hopper. Its pushes go to the job's own branch, under the shrink
-guard; a second pull request for one branch is refused by GitHub.
+**Residual risk, stated.** Between the lost machine's last answer and the move (the grace, 30 s by default), the agent there
+may still ask the hopper, with the token of the job's run then: its asks are the job's, as before the machine was lost. Its
+pushes go to the job's own branch, under the shrink guard. After the move it can still change its own work tree on that
+machine, which nothing reads until a person or a move back does; `end-left` ends it.
 
 **Verification:** `test/integration/lost-machine-move.test.ts` (the real daemon, two machines each with its own fake herdr:
 a machine away past the link grace, the job resumes on the other from its checkpoint in the same session, the task never
 sent twice, and the agent left is ended once the machine answers; the same with the hopper stopped after the move and
 another started, which ends it; a job with no checkpoint fails as before), `test/integration/herdr-link-lost.test.ts` and
 `test/integration/herdr-reattach.test.ts` (`gone`: it resumes its session on its machine; with no session it fails as
-before), `test/decider/left-machine.test.ts` (not placed back on the machine it left until the mark is lifted).
+before), `test/decider/left-machine.test.ts` (not placed back on the machine it left until the mark is lifted); the agent
+left is refused on the GitHub proxy and the job stream once the job moved, and the resumed run is answered
+(`test/integration/lost-machine-move.test.ts`), and the token after a move (`test/github-proxy/proxy.test.ts`).
 
 ## The pane key (issue #1524 part 4, issue #1569, 2026-10-17)
 
