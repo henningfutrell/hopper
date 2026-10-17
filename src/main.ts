@@ -37,7 +37,7 @@ import { createRuntimes } from './users/runtimes.ts'; import { createOutboundGua
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
-import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts'; import { createEgress } from './sandbox/egress.ts';
 import { createSagas } from './sagas/index.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts'; import { jobMoveSaga } from './engine/job-move-saga.ts'; import { JOB_MOVE_SAGA } from './engine/lost-move.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
@@ -290,6 +290,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const sandboxRuntime = seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }), sandboxes = createSandboxes({
     runtime: sandboxRuntime, repo: instance.sandboxes, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config), cluster: inPod,
+    // A read-only box's egress (issue #849): on a socket runtime only; a Kubernetes box has its own egress policy.
+    ...(config.egress && (sandboxRuntime?.kind === 'podman' || sandboxRuntime?.kind === 'docker') ? { egress: createEgress(config.egress) } : {}),
     clients: sandboxClientsOf(runtimes),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });

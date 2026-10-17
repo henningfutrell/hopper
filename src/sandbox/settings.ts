@@ -1,6 +1,7 @@
 // The settings of the sandbox boxes the hopper starts: which container runtime, its socket or cluster, the boxes'
 // network. Part of the daemon's settings (src/config.ts), kept here beside the runtimes they choose.
 import { z } from 'zod';
+import type { EgressSettings } from './egress.ts';
 import { PLAYGROUND_LIMITS, type PlaygroundLimits } from './playground.ts';
 
 export interface SandboxSettings {
@@ -18,6 +19,12 @@ export interface SandboxSettings {
   kubernetes?: { namespace?: string; hopperLabels: Record<string, string>; priorityClass?: string; most?: { cpus?: number; memoryMb?: number } };
   /** The network the boxes it starts join; unset: `hopper_default` in the container, `host` on the host. */
   sandboxNetwork?: string;
+  /**
+   * The egress of a read-only box beside the hopper (issue #849): the internal network it joins, the proxy it reaches out
+   * through, and the directory the hopper shares the allowlist with the proxy in. Unset: a read-only box joins
+   * `sandboxNetwork`, and its egress is open, which its read-only check finds.
+   */
+  egress?: EgressSettings;
   /** The sandbox playground's limits (issue #1410). */
   playground: PlaygroundLimits;
 }
@@ -33,6 +40,9 @@ export const SANDBOX_SETTINGS = {
   HOPPER_PODMAN_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Podman API socket').optional(),
   HOPPER_SANDBOX_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be a Podman network name, or host').optional(),
   HOPPER_DOCKER_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Docker Engine API socket').optional(),
+  HOPPER_SANDBOX_EGRESS_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be the name of an internal Podman network').refine((v) => v !== 'host', 'must be an internal network, not host').optional(),
+  HOPPER_SANDBOX_EGRESS_PROXY: z.string().regex(/^http:\/\/[A-Za-z0-9.-]+:\d+\/?$/, 'must be the proxy\'s URL, http://<name>:<port>').optional(),
+  HOPPER_SANDBOX_EGRESS_DIR: z.string().regex(/^\//, 'must be an absolute path: the directory shared with the egress proxy').optional(),
   HOPPER_SANDBOX_RUNTIME: z.enum(['podman', 'docker', 'kubernetes']).optional(),
   HOPPER_KUBERNETES_NAMESPACE: z.string().regex(/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/, 'must be a Kubernetes namespace name').optional(),
   HOPPER_KUBERNETES_HOPPER_LABELS: z.string()
@@ -54,6 +64,9 @@ export const SANDBOX_SETTINGS = {
 export const SANDBOX_SETTING_HELP: Record<keyof typeof SANDBOX_SETTINGS, string> = {
   HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandboxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandboxes the hopper starts"). Unset: a step runs on a machine of the user with a runtime, else it fails',
   HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
+  HOPPER_SANDBOX_EGRESS_NETWORK: 'the internal network a read-only box and the read-only check box join beside the hopper (hopper_egress in compose.yaml): no route out but the egress proxy (docs/deploy.md "A read-only box\'s egress"). Set with HOPPER_SANDBOX_EGRESS_PROXY and HOPPER_SANDBOX_EGRESS_DIR. Unset: their egress is open, and their read-only check fails',
+  HOPPER_SANDBOX_EGRESS_PROXY: 'the egress proxy a read-only box reaches out through (http://egress:3128 in compose.yaml): it allows only AWS, the clusters the vault mints for, and nothing else',
+  HOPPER_SANDBOX_EGRESS_DIR: 'the directory the hopper writes the egress proxy\'s allowlist into, shared with the proxy (/run/hopper-egress in compose.yaml)',
   HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
   HOPPER_SANDBOX_RUNTIME: 'podman, docker or kubernetes: the container runtime the hopper starts sandbox boxes through (kubernetes: as pods in a cluster, with no socket: docs/deploy.md "Sandbox boxes on Kubernetes"). Unset: Podman whenever it is reachable, else Docker',
   HOPPER_KUBERNETES_NAMESPACE: 'with HOPPER_SANDBOX_RUNTIME=kubernetes: the namespace sandbox boxes start in. Unset: the hopper\'s own',
@@ -87,12 +100,23 @@ export function kubernetesSettings(e: Pick<Parsed, 'HOPPER_KUBERNETES_NAMESPACE'
   };
 }
 
+const EGRESS = ['HOPPER_SANDBOX_EGRESS_NETWORK', 'HOPPER_SANDBOX_EGRESS_PROXY', 'HOPPER_SANDBOX_EGRESS_DIR'] as const;
+
+/** Why the egress variables cannot run (issue #849): each one is set with the others, or none is. */
+export function egressProblem(e: Pick<Parsed, (typeof EGRESS)[number]>): string | undefined {
+  const set = EGRESS.filter((k) => e[k] !== undefined);
+  return set.length === 0 || set.length === EGRESS.length ? undefined : `${EGRESS.filter((k) => e[k] === undefined).join(' and ')} must be set with ${set.join(' and ')}`;
+}
+
 /** The sandbox part of the daemon's config, from its parsed variables. */
 export function sandboxSettings(e: Parsed): SandboxSettings {
   return {
     ...(e.HOPPER_PODMAN_SOCKET ? { podmanSocket: e.HOPPER_PODMAN_SOCKET } : {}),
     ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
     ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),
+    ...(e.HOPPER_SANDBOX_EGRESS_NETWORK && e.HOPPER_SANDBOX_EGRESS_PROXY && e.HOPPER_SANDBOX_EGRESS_DIR
+      ? { egress: { network: e.HOPPER_SANDBOX_EGRESS_NETWORK, proxy: e.HOPPER_SANDBOX_EGRESS_PROXY.replace(/\/$/, ''), dir: e.HOPPER_SANDBOX_EGRESS_DIR } }
+      : {}),
     ...(e.HOPPER_SANDBOX_RUNTIME ? { sandboxRuntime: e.HOPPER_SANDBOX_RUNTIME } : {}),
     ...(e.HOPPER_SANDBOX_RUNTIME === 'kubernetes' ? { kubernetes: kubernetesSettings(e) } : {}),
     playground: {

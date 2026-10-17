@@ -4186,7 +4186,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 
 | Part | Stands | Carried by |
 |------|--------|------------|
-| Container sandbox for agent jobs | built: the hopper starts and stops each sandbox itself, through the sandbox module: a need box for each need step or box step, burned when the step ends, and a check box for the read-only check; each gets only what its template is approved for ("Sandboxes are burned after each step", "Templates"). The **sandbox box** an older build had join as a client target is gone (issue #1349). Not built: the box's egress is open | #308, #1349; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
+| Container sandbox for agent jobs | built: the hopper starts and stops each sandbox itself, through the sandbox module: a need box for each need step or box step, burned when the step ends, and a check box for the read-only check; each gets only what its template is approved for ("Sandboxes are burned after each step", "Templates"). The **sandbox box** an older build had join as a client target is gone (issue #1349). Not built: the box's egress is open, but for a read-only box's, limited to an allowlist ("A read-only box's egress", #849) | #308, #1349; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
@@ -11084,13 +11084,13 @@ and the next check passes with the push refused; a backend it cannot use is refu
 
 **What stays of #715.** Nothing. Egress limited to the AWS, Kubernetes and GitHub endpoints moved out of #715 to its
 own issue (#849, after #315's open question): read-only boxes and the check box on an internal Podman network with an
-allowlisting HTTPS proxy. Until it is built, **the egress of a read-only box and of its check box is open**: they run on
-the hopper's network and reach any host.
+allowlisting HTTPS proxy. Built since: "A read-only box's egress" (issue #849).
 
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
 design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and
 download a provider: the mirror stops the downloads terraform makes through the wrapper and by default, not every
-download a box can make, until egress is limited (#849). `ec2:Create*` and its kind match by the action's name: a write whose name
+download a box can make, until egress is limited (#849; built since: such a download finds no route and no proxy that
+allows the registry). `ec2:Create*` and its kind match by the action's name: a write whose name
 starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and neither is a write of a service the deny
 policy does not name; each is refused only when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
 a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked in tests
@@ -24821,3 +24821,72 @@ terminal (issue #1128) lists it as a pane no job holds; nothing closes it by its
 a create whose answer was lost: its tab is found and used, one tab, Claude started once, the task sent once; a create that
 failed before herdr made the tab: tried again with the same key; a create that fails at every try fails the job, nothing
 sent), `test/herdr/cli-client.test.ts` (`findTab` over the herdr CLI).
+
+## A read-only box's egress (issue #849, 2026-10-16)
+
+Issue #715 left the egress of a read-only box open, and moved its allowlist here (after #315's open question). Open
+egress made two layers weaker: past the wrapper, a process could unset `TF_CLI_CONFIG_FILE` and download a provider; and
+a process could send what it reads to any host.
+
+- **The internal network** (`hopper_egress`, compose.yaml `networks.egress`, `internal: true`). A need box of a read-only
+  template (`NeedBox.template.readOnly`) and the read-only check box, beside the hopper, join it in place of the hopper's
+  network (`Sandboxes.needStep`, `runCheck`, `src/sandbox/service.ts`, `src/sandbox/check.ts`). It has no route out. The
+  hopper is on it too, so a box reaches the hopper past the proxy. A write box, a box step of a write template and a
+  playground sandbox keep the hopper's network: their egress is #315's.
+- **The egress proxy** (the compose service `egress`). tinyproxy (Debian's package, in the hopper's image, as cloudflared
+  is), on the internal network and on `hopper_default`: the one way out. It allows CONNECT (and plain HTTP) only to the
+  hosts its filter matches — `^([a-z0-9-]+\.)*amazonaws\.com$` and one exact host per cluster — and only on the ports
+  the allowlist names (443 and each cluster's). Every other host is refused with 403. An established tool, as the issue
+  asks: the allowlist is its own `Filter`, `FilterDefaultDeny` and `ConnectPort`, and SIGUSR1 reloads them.
+- **The allowlist is the hopper's** (`createEgress`, `src/sandbox/egress.ts`). The hosts are what the vault mints for a
+  read-only box: each `kube` reach's `server`, and an `aws` reach's `stsEndpoint` when it is not AWS's (`egressHosts`).
+  Before such a box is made, the hopper adds the hosts of its credentials and writes `filter`, `ports` and, last,
+  `version` (a hash of both) into the directory it shares with the proxy (`HOPPER_SANDBOX_EGRESS_DIR`, the `egress`
+  volume), each file written whole. The proxy checks `version` each second; on a change it builds its config, reloads,
+  and writes the version into `loaded`. The box is made only once `loaded` names the hopper's version; in 30 seconds
+  (`LOAD_WAIT_MS`) with none, the step ends 125, or the check fails, with the reason (transient: the check runs again
+  in 5 minutes, issue #1468). So no read-only box runs with egress
+  the hopper did not set. The allowlist only grows while the hopper runs: a cluster's host stays allowed for the boxes
+  after it, and a restart starts it again from AWS alone.
+- **The box's variables** (`proxyEnv`). `HTTPS_PROXY`, `HTTP_PROXY` (and the lower-case forms) name the proxy, `NO_PROXY`
+  the hopper. `aws`, `kubectl`, `helm` and `terraform` obey them. A process that unsets them has no route.
+- **The settings** (`HOPPER_SANDBOX_EGRESS_NETWORK`, `HOPPER_SANDBOX_EGRESS_PROXY`, `HOPPER_SANDBOX_EGRESS_DIR`): all
+  three or none (`egressProblem`, the daemon does not start otherwise). compose.yaml sets them. They apply to a Podman or
+  Docker runtime beside the hopper only; a Kubernetes box has its own egress policy (issue #1286), and a box on a client
+  target is on that machine's network.
+- **The egress probes** (`egress.aws`, `egress.kube`, `EGRESS_PROBES`, `src/sandbox/probes.ts`). Once per check (the
+  probe's `once`), for the first need of their kinds: the box's `aws` (or `kubectl`) sends one request to
+  `https://example.com`, past the proxy (its variables unset) and through it. Each must fail to connect, in the tool's
+  words (`Could not connect to the endpoint URL`, `Failed to connect to proxy URL`; `Unable to connect to the server`).
+  A request that got any answer reached the host: the probe's outcome is `allowed`, and the check fails. Neither request
+  carries a credential of the check: `aws` signs with a fixed key and reads no profile, `kubectl` sends a fixed token. The
+  read probes (`aws.caller-identity`, `kube.get`, `helm.list`, `terraform.plan`) go through the proxy as before: the
+  allowlist holds their hosts.
+
+Considered and not built: squid (a larger daemon for the same allowlist, and no image the hopper already ships); the
+proxy in the daemon (a listener on the boxes' network, under the daemon's route rules, and its event loop carrying the
+boxes' traffic); a fixed list of cluster hosts set by a person (the vault already knows each `server` when it mints);
+removing a host when no box needs it (a host stays allowed for the hopper's life; the next start forgets it).
+
+Friction, stated: where the egress is not limited — a hopper on the host with no egress variables, a check on a client
+target —, the egress probes reach the host and the check fails, so a read-only template takes no box there. A write probe
+takes no mark ("The read-only check"), and these are write probes: the way on is to run the check where the egress is
+limited. A read-only template whose `aws` or `kubectl` reaches a host off the allowlist (a registry, a private endpoint
+that is not AWS's and not a minted cluster's) fails there: such a host is a change to the allowlist, read and reviewed.
+
+**Residual risk, stated.** `*.amazonaws.com` is wide: a box can still send what it reads to an S3 bucket of anyone's,
+signed with any key. The deny policy stops writes with the read session only. DNS: the internal network's resolver answers
+the names of the containers on it; whether it forwards other names is the runtime's. A name that resolves gives no route.
+The proxy holds no secret and reaches nothing of the hopper's but its network.
+
+Tests: `test/sandbox/egress.test.ts` (the allowlist, matched as tinyproxy matches it; the handshake, and a box that does
+not start when the proxy does not take it; a read-only need box on the internal network with the proxy's variables, a
+write box not; the check box behind the proxy, its egress probes passing with the fake tools' egress limited and failing
+open past the proxy or through it; the settings together), `test/scripts/compose-egress.test.ts` (the rendered compose
+file: the internal network, the proxy service, the hopper's variables, volume and networks). Checked by hand with rootless
+Podman: tinyproxy 1.11.1 from Debian bookworm on an internal network and a routed one, the compose service's script, and
+`createEgress` writing the allowlist. A box on the internal network reached `sts.amazonaws.com` through the proxy (302);
+`example.com` was refused (403, `Proxying refused on filtered domain`), and past the proxy did not resolve; `1.1.1.1` had
+no route. A host added to the allowlist was reached after the reload (200), within 1.2 s. The egress probes' scripts with
+the real `aws` 2.37.12 and `kubectl` v1.37.1: refused both ways on the internal network (`egress refused`), reached on an
+open one.
