@@ -11974,6 +11974,7 @@ again, resolved, superseded, its item closed, its job finished — or when its j
 in the last day and the records that ended in the last day are history: Failures shows them under **Ended in the last
 day** (`handoffs` with `status: closed`, `ended` in `GET /api/failures`), out of the counts and the badge. The same rule clears questions and
 logins: an open question whose job ended or is gone is cancelled at `recover` and on each tick (`QuestionService.sweep`),
+with `question.cancelled`, so the UI's open questions and the Needs you count drop it (issue #1457),
 and a login, below in "Logins".
 
 **Events.** `handoff.opened` (reason, summary, `notify`), `handoff.closed` (end, `nextJobId`) and `handoff.checked`
@@ -12102,7 +12103,8 @@ Now Failures lists it, and each has an action that moves it.
 - **The list** (`src/domain/kept-work.ts`, pure; `src/failures/kept-work.ts`). An ended job whose newest work event is
   `job.work_kept` is **work not pushed** while its work item still waits on it (issue #1067, `keptWorkLeft`): the
   work-item ledger's items name their jobs with kept work, and `keptWorkShown` leaves out an item done or closed and an
-  older job's of an item a newer job works. So a merged or closed item lists none, however old: `keptWork` in `GET /api/failures`,
+  older job's of an item a newer job took over, even when the newer job failed too; `keptWorkLeft` leaves out a job a
+  person dismissed (issue #1457: nothing waits on it). So a merged or closed item lists none, however old: `keptWork` in `GET /api/failures`,
   newest first, each with its paths, its machine (`machineRanOn`), its open hand-off, and `actions.push` and
   `actions.discard` (`{ ok }` or `{ ok: false, why }`). The Failures badge and `GET /api/sections` count each one that
   no open hand-off counts already.
