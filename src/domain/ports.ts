@@ -11,10 +11,8 @@ import type { UserStore } from './store.ts'; import type { NoteDelivery } from '
 export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
-import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
-export type * from './escalation-ports.ts';
-export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
+import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
+export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
 export type { CredentialMinter } from './minting.ts';
 
@@ -182,6 +180,15 @@ export interface Executor extends ExecutorTerminal {
    * cannot park. Rejects only when it could not reach the job's machine: the sweep stops what runs there later.
    */
   park?(job: Job): Promise<void>;
+  /**
+   * The lost-machine move (issue #1569): end the agent a job left on a machine it moved off, its pane named by `left` (the
+   * job's executor state there), so it does no more work beside the job's new run. Its work tree stays. Idempotent; when
+   * the job runs on that machine again, only the old pane closes. Rejects when that machine cannot be reached yet.
+   * `left` is what `leftOf` gave as the job moved: present exactly when `endLeft` is.
+   */
+  endLeft?(job: Job, left: Job['executorState']): Promise<void>;
+  /** What of the job's executor state names the pane it leaves on its machine, and no more (no text it sent): kept with its move. */
+  leftOf?(job: Job): Job['executorState'];
   /**
    * Take a running job's checkpoint (issue #921): its agent session and its work not pushed, read on its machine.
    * Undefined when the job has none to take (no agent session, no worktree of its own). Rejects when its machine

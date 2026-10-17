@@ -9,6 +9,8 @@ export interface Pane {
   /** Its tab, and the title its terminal set (`openPane`). */
   tabId?: string;
   title?: string;
+  /** Its tab's label, as `createTab` gave it. */
+  label?: string;
   lines: string[];
   closed: boolean;
   /** Its terminal: a new one each time herdr restores the pane after a server restart (issue #1465). */

@@ -19,6 +19,8 @@ import type { GitHubApi } from '../sources/index.ts';
 export interface UserSeams {
   /** Replaces the herdr CLI client of every herdr-claude executor instance (detection then says available). */
   herdr?: HerdrClient;
+  /** A herdr of its own for each named herdr session of this machine (a machine added with `session`), so each fails apart (issue #1569). Others: `herdr`. */
+  herdrSessions?: Readonly<Record<string, HerdrClient>>;
   /** Replaces the Kubernetes API of the job pods (issue #1283): the `kubernetes` executor and the `kubernetes-cluster` machine. */
   kubernetes?: (namespace?: string) => KubernetesPods;
   /** Registered after the configured executor instances. */
@@ -65,7 +67,7 @@ export interface UserSeams {
  */
 export function withSeams(seams: UserSeams, outbound: Outbound) {
   return BUILTIN_PLUGINS.map((p) => {
-    if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
+    if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr, seams.herdrSessions);
     if (p.id === 'kubernetes' && seams.kubernetes) return kubernetesPlugin({ pods: seams.kubernetes, ...(seams.herdr ? { herdr: seams.herdr } : {}) });
     if (p.id === 'kubernetes-cluster' && seams.kubernetes) return kubernetesMachinePlugin(seams.kubernetes);
     if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);

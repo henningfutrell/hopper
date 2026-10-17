@@ -24,6 +24,16 @@ describe('a job\'s proxy token', () => {
     expect(holdsProxyToken(key, { ...parts, userId: 'u2' })).toBe(false);
   });
 
+  it('is a new one after each move away of its job, and the one before no longer holds (issue #1569)', () => {
+    const before = parseProxyToken(proxyToken(key, 'u1', 'job-1'))!;
+    const moved = parseProxyToken(proxyToken(key, 'u1', 'job-1', 1))!;
+    expect(moved.mac).not.toBe(before.mac);
+    expect(holdsProxyToken(key, moved, 1)).toBe(true);
+    expect(holdsProxyToken(key, before, 1)).toBe(false);
+    expect(holdsProxyToken(key, moved, 2)).toBe(false);
+    expect(holdsProxyToken(key, before, 0)).toBe(true);
+  });
+
   it('parses only its own shape', () => {
     expect(parseProxyToken('')).toBeUndefined();
     expect(parseProxyToken('a.b')).toBeUndefined();

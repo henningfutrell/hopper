@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
@@ -637,7 +637,7 @@ forbids driving a user's session from outside it. Spawned processes get an envir
 
 **Lanes → panes.** One herdr workspace labelled `hopper` (found by label, else created
 `--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
-`<laneId> · <jobId first 8>`; its root pane hosts Claude. The executor keeps `laneId →
+`<laneId> · <pane key>` (`<jobId first 8> · <attempts>.<pane of the run>`, "The pane key"); its root pane hosts Claude. The executor keeps `laneId →
 paneId` for the job now on that lane and saves `{ session, workspaceId, tabId, paneId,
 agentName, cwd }` with `ctx.saveState` the moment the pane exists. A job in
 `waiting_answer` keeps its pane (the waiting pane) while its lane is freed; on resume the lane it
@@ -1335,10 +1335,11 @@ so a running job's pane and Claude outlive a restart.
   a lost send after `idleNudgeMs` and sent again; `timeoutMs` and
   the progress clock restart at reattach. No `job.started`; the outcome is recorded as any
   other run's. The decider is unchanged: the kept lane is an ordinary busy lane.
-- Same job, work gone (no `turn`, agent gone, pane differs, or the lane row lost) →
-  `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
-  re-run: a second run repeats real side effects. A non-idempotent executor without
-  `reattach` always takes this path.
+- Same job, work gone (no `turn`, agent gone, pane differs) → with an agent session to resume, it resumes that session in
+  its kept work tree on its machine (issue #1569, "The lost-machine move"): parked and picked up again in the recovery tx,
+  never failed. With none, or with the lane row lost → `executor.cleanup(job)`, job `failed` `interrupted by daemon
+  restart`, `job.failed`. Not re-run: a second run repeats real side effects. A non-idempotent executor without
+  `reattach` takes this path too.
 - Same job, its machine **not answering yet** (issue #368: `canReattach` rejects — a client target
   not dialled in, an ssh target not replying; recovery runs before either can) → in the tx the job
   stays `running` with its `laneId` and its lane is kept, as a reattached one, but no event yet.
@@ -1346,7 +1347,8 @@ so a running job's pane and Claude outlive a restart.
   run is (cancel and shutdown abort the wait): alive → `job.reattached { reason: "daemon restart" }`
   and reattach as above; gone → failed `interrupted by daemon restart`; still no answer after the
   **reconnect grace** (`HOPPER_RECONNECT_GRACE_MS`, default 120 s) → failed `machine <id> did not
-  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up;
+  reconnect within <n> s after the daemon restart`. Either one resumes the job instead when it can (issue #1569, "The
+  lost-machine move"): gone, on its machine; no answer, on another machine from its checkpoint. Either failure frees the lane and cleans up;
   a pane its cleanup cannot reach then may still run, so that cleanup is deferred and tried again
   (issue #371, "Deferred cleanup").
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
@@ -1373,7 +1375,8 @@ record that outcome: it sets `linkLost { machine, since, failsAt }` on the job, 
 data, and asks `canReattach` every second as above. Alive → `job.reattached { reason: "link restored" }`, `linkLost`
 cleared, and `executor.reattach` watches the turn again from its saved anchor; nothing is sent. Gone → failed
 `interrupted while the link to machine <id> was down`. No answer within the link grace (`failsAt`; `HOPPER_LINK_GRACE_MS`, default 10 min) → failed
-`machine <id> did not reconnect within <n> s`; its cleanup cannot reach the machine, so it is deferred. Cancel, park and
+`machine <id> did not reconnect within <n> s`; its cleanup cannot reach the machine, so it is deferred. A job that can resume
+does so in place of either failure (issue #1569, "The lost-machine move"). Cancel, park and
 shutdown abort the hold as they abort a run; a job held at shutdown keeps `linkLost` and is recovered as above, which
 clears it. The lane stays busy for the hold, as for the wait at recovery. The UI shows the hold on the job's lane and its job page (*held: link lost*, when it fails) and on its machine's card
 (*out of reach since <time>, <n> job held*), in place of an idle look. The hold adds no authority: the box keeps
@@ -24562,6 +24565,9 @@ drops an abort asked meanwhile.
 
 **The coordinator** (`src/sagas/coordinator.ts`, one per process, started after the sandboxes, stopped before the database
 closes):
+- **Driven after its begin's caller.** A begin keeps the saga and starts to drive it once the caller's synchronous work is
+  done (a microtask), so its first step reads what the caller did right after the begin (the `job-move` saga below: the
+  move's transaction).
 - **One step at a time, recorded before the next.** A try is counted, and the step marked started, before its do runs; its
   outcome, and its output, are written before the next step starts. A step done is never done again.
 - **The same key on each try.** A step's do gets `stepKey` (`<saga>/<step>`), the same on every try and every host; a step
@@ -24679,3 +24685,110 @@ credential), `test/sandbox/need-steps.test.ts` (the same key is the same step; t
 outputs from the database; a step whose box started is not run again; a job not at work; the compensation once),
 `test/integration/box-steps.test.ts` and `test/integration/need-steps.test.ts` (the real daemon and `hopper-step`: the
 same key over HTTP, no key refused, a hopper-step stopped by a signal stops its step and no box is left).
+
+## The lost-machine move (issue #1524 part 3, issue #1569, 2026-10-17)
+
+**The problem.** A running job whose machine was lost failed: after a hopper restart that found its pane gone
+(`interrupted by daemon restart`), after a link that came back with its pane gone (`interrupted while the link to machine
+<id> was down`), and after a machine that did not answer within the reconnect grace or the link grace (`machine <id> did
+not reconnect within <n> s`). The work after the job's last push was then up to a person (Continue, Run again). The job's
+agent session and its checkpoint ("Checkpoints and resume elsewhere") already held what it needs to go on.
+
+**The move** (`src/engine/lost-move.ts`). In place of each of those failures, a job that can resume does, with no person:
+- **`gone`: its machine answers, its work does not** (the pane or its agent went with a restart). It resumes its agent
+  session in its kept work tree **on the same machine**: parked (`job.parked`, `auto`, `why` the failure it replaces) and
+  picked up again pinned to that machine, as Park then Requeue do. Needs an agent session.
+- **`away`: its machine did not answer within the grace.** It resumes **on another machine from its last checkpoint**: parked
+  and picked up to resume elsewhere (`job.unparked { elsewhere }`), as the signed-out move does. Needs a checkpoint that
+  holds its agent session, and an executor that can end what it left (`Executor.endLeft`, `leftOf`).
+- The resumed agent is told why its run was cut off, and to look at `git status` first (`lostResumeText`); a job resuming
+  elsewhere gets the elsewhere brief before it. The task is never sent again: the same session goes on.
+- A job with nothing to resume from (no agent session; for `away`, no checkpoint with one; an executor that cannot park) fails
+  as before, with the same error. A cancel or a stop of the hopper is never a move.
+
+**The `job-move` saga** (`src/engine/job-move-saga.ts`, the sagas of "Sagas: work that survives a stop"). The machine of an
+`away` job may still run the agent it left: a client target cut off from the hopper, an ssh target that stopped answering.
+That agent must not work on beside the job's new run. The move begins a saga of kind `job-move`, keyed by the job and its
+attempt (`<job>/<attempts>`: a second move of the same run is the same saga), with the job, the machine and what of its
+executor state names the pane there (`leftOf`: the pane's place and agent, never the text a turn sent). The saga is begun
+**before** the transaction that moves the job, so a stop between the two leaves the intent kept. Its one step, `end-left`,
+calls `Executor.endLeft` once that machine answers: Claude exits, the job's scope there stops, the pane closes; the work tree
+there stays (it may hold work after the checkpoint). It is tried again with the saga's backoff (at most 5 minutes apart) for
+about a week (`END_LEFT_ATTEMPTS`), on whichever hopper holds the saga, also one started after the first stopped. The step is
+idempotent: a pane already gone ends nothing; a pane that is still the one the job works in (the move not recorded yet)
+waits for the next try; a job back on that machine keeps its new run's scope, and only the old pane closes.
+
+**Not back to the machine it left** (`ParkedElsewhere.lost`, the decider's `leftHolds`). A job of an `away` move is not
+placed on the machine it moved off while the agent it left there may run: it waits for another machine, held with why. The
+`end-left` step lifts the mark, so the job may then go back there. A relocation start reaps what of the job still runs on
+the machine it starts on, first (the herdr executor's `relocate`): a second guard for a job that goes back.
+
+**The agent left is refused** (issue #1569). An `away` move adds one to the job's `movedAway`, in the move's
+transaction. The job's proxy token is bound to it (`src/github-proxy/token.ts`: the HMAC signs `<job>/<movedAway>`, or
+the job id alone while it is 0), and every job route checks the token against the job's count now
+(`ProxyUser.holds`). The new run gets the new token in its credentials dir; the agent left on the lost machine holds the
+one before. From the move on, the hopper refuses its every ask — GitHub, git, the vault, skills, steps, artifacts, the
+stream — with 401, before the `end-left` step ends it. A stream it holds open ends at its next ping.
+
+**Decisions:**
+- **The token counts moves away, not claims.** A claim adds an attempt, but a job answered on its question goes on in the
+  same pane with the token it has. A move away is the one case where an agent that is not the job's run can still ask. A
+  job never moved away keeps the token it had before, so a job at work across an update of the hopper keeps working.
+- **Resume in place for `gone`, not elsewhere.** The machine answers and its work tree holds the work after the last
+  checkpoint; elsewhere would lose it.
+- **A park and a pick up, not new events.** The move is what a person's Park and Requeue (or Resume elsewhere) record, with
+  `auto` and `why`: the job page, the timeline and the reports read it already.
+- **A saga for the end of the agent left, not the deferred cleanup.** The cleanup is for an ended job and reads the job's
+  executor state, which the new run overwrites; the saga keeps the old pane with it and survives a stop on any host.
+- **The job's whole run is not a saga yet.** Its steps (claim, credentials, pane, run, checkpoint, end) stay in the runner;
+  the issue's tests — a job stopped mid-run on one machine resumes on another, with no task sent twice — pass with the move.
+
+**Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers; a checkpoint at the first
+missed heartbeat and at link loss (the machine cannot be read once its link is down).
+
+**Residual risk, stated.** Between the lost machine's last answer and the move (the grace, 30 s by default), the agent there
+may still ask the hopper, with the token of the job's run then: its asks are the job's, as before the machine was lost. Its
+pushes go to the job's own branch, under the shrink guard. After the move it can still change its own work tree on that
+machine, which nothing reads until a person or a move back does; `end-left` ends it.
+
+**Verification:** `test/integration/lost-machine-move.test.ts` (the real daemon, two machines each with its own fake herdr:
+a machine away past the link grace, the job resumes on the other from its checkpoint in the same session, the task never
+sent twice, and the agent left is ended once the machine answers; the same with the hopper stopped after the move and
+another started, which ends it; a job with no checkpoint fails as before), `test/integration/herdr-link-lost.test.ts` and
+`test/integration/herdr-reattach.test.ts` (`gone`: it resumes its session on its machine; with no session it fails as
+before), `test/decider/left-machine.test.ts` (not placed back on the machine it left until the mark is lifted); the agent
+left is refused on the GitHub proxy and the job stream once the job moved, and the resumed run is answered
+(`test/integration/lost-machine-move.test.ts`), and the token after a move (`test/github-proxy/proxy.test.ts`).
+
+## The pane key (issue #1524 part 4, issue #1569, 2026-10-17)
+
+**The problem.** `herdr tab create` had no key. When its answer was lost (a client target's link that dropped, a timeout on
+a busy machine), the job failed with herdr's error. The tab herdr had made stayed open with the job's environment, a pane no
+run held. A create tried again made a second tab.
+
+**The change** (`src/executors/herdr/pane-key.ts`). Each tab of a job's pane carries its **pane key** in its label:
+`<laneId> · <jobId first 8> · <attempts>.<n>` — the job, its attempt (each claim adds one) and the pane of the run (`n`: 1
+for the first; a start tried again in a new pane, or a pane herdr restored, opens the next). A create that fails is tried
+again, three tries at most, 2 s apart. Before each next try the hopper looks for the tab with that label in the `hopper`
+workspace (`HerdrClient.findTab`: `herdr tab list --workspace`, then `pane list` for its pane). A tab it finds is the one the
+lost create made: the run takes it, records it as its pane at once, and says so in its progress. No second tab is made. A tab
+it does not find is created again. A create that fails at every try fails the job with herdr's error, as before.
+
+**Decisions:**
+- **The key is in the label, not in a record of the hopper.** herdr gives back the label in `tab list`, on any host, also
+  after a restart of the hopper. A record would need a write before the create, and a create has nothing to undo.
+- **The first 8 characters of the job id, not all of it.** The label is shown in herdr's tab bar. With the lane, the
+  attempt and the pane of the run, two jobs in one workspace with the same key are not to be expected.
+- **A tab whose pane runs an agent is never taken.** A tab a lost create just made holds only a shell. One with Claude in it
+  is another run's.
+- **The pane number is counted in the process, per run.** A run that a restart of the hopper cut off is claimed again, so its
+  attempt is a new one, and so is its key.
+
+**Residual risk, stated.** A create that herdr finishes only after the hopper looked for its tab (a create still in flight
+after its timeout) leaves that tab open beside the one the next try made, a shell with the job's environment. The machine's
+terminal (issue #1128) lists it as a pane no job holds; nothing closes it by itself yet.
+
+**Verification:** `test/herdr/executor-pane-key.test.ts` (the label carries the key, the next pane of a run the next number;
+a create whose answer was lost: its tab is found and used, one tab, Claude started once, the task sent once; a create that
+failed before herdr made the tab: tried again with the same key; a create that fails at every try fails the job, nothing
+sent), `test/herdr/cli-client.test.ts` (`findTab` over the herdr CLI).

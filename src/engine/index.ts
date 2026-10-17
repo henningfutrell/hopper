@@ -16,7 +16,7 @@ import { createPaneAnswers } from './pane-answers.ts';
 import { askFor, createReviewHandlers, type ReviewHandlers } from './reviews.ts';
 import { createQueries, type Queries } from './queries.ts';
 import { createQueueGateCommands, type QueueGateCommands } from './queue-gate.ts';
-import { recover } from './recovery.ts';
+import { recover } from './recovery.ts'; import { liftLost } from './lost-move.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
@@ -97,6 +97,11 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   discardWork(jobId: string, by: ActingPerson): Promise<{ jobId: string; paths: string[] }>;
   /** A discard's removal under way, or why it failed (issue #1194). */
   discarding(jobId: string): Discarding | undefined;
+  /**
+   * The `job-move` saga's step (issue #1569): ends the agent the job left on the machine it moved off, its pane named by
+   * `left`. Nothing when the job or its executor's `endLeft` is gone. Rejects while that machine cannot be reached.
+   */
+  endLeft(jobId: string, left: Job['executorState']): Promise<void>;
   /** A person keeps or removes a leftover the sweep listed on a machine (issue #1116, `Sweep.decideLeftover`). */
   decideLeftover(machineId: string, path: string, decision: 'keep' | 'remove', by: ActingPerson): Promise<{ machineId: string; path: string; decision: 'keep' | 'remove' }>;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
@@ -130,7 +135,7 @@ export function createEngine(o: EngineOptions): Engine {
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
     jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
-    ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
+    ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
   };
@@ -169,6 +174,12 @@ export function createEngine(o: EngineOptions): Engine {
     discardWork: (jobId, by) => sweep.discard(jobId, by),
     discarding: (jobId) => sweep.discarding(jobId),
     decideLeftover: (machineId, path, decision, by) => sweep.decideLeftover(machineId, path, decision, by),
+    async endLeft(jobId, left) {
+      const job = store.jobs.get(jobId);
+      const executor = job ? o.executors.get(job.spec.executor) : undefined;
+      if (job && executor?.endLeft) await executor.endLeft(job, left);
+      if (!stopping) liftLost(c, jobId);
+    },
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),

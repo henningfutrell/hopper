@@ -2,7 +2,9 @@
 // to ask it for a GitHub operation. Derived, never stored: an HMAC of the user and the job under a key the
 // hopper derives from that user's link key (issue #308), which never leaves the hopper. The same job always
 // gets the same token, so a restart or a renewal changes nothing on its machine; it is honoured only while
-// its job is at work, so a token of an ended job opens nothing.
+// its job is at work, so a token of an ended job opens nothing. A job the lost-machine move took off a machine
+// that stayed away (issue #1569) gets a new token for each such move (`moves`): the agent left there holds the
+// one before, and the hopper refuses it.
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 
 /** A job's proxy token: `<user id, base64url>.<job id>.<mac>`. */
@@ -11,12 +13,13 @@ export interface ProxyTokenParts { userId: string; jobId: string; mac: string }
 const keyOf = (linkPrivateKey: string, userId: string): Buffer =>
   Buffer.from(hkdfSync('sha256', linkPrivateKey, 'hopper-job-proxy/1', userId, 32));
 
-const macOf = (linkPrivateKey: string, userId: string, jobId: string): string =>
-  createHmac('sha256', keyOf(linkPrivateKey, userId)).update(jobId).digest('base64url');
+/** A job moved away no time signs its id alone: the token it had before moves were counted. */
+const macOf = (linkPrivateKey: string, userId: string, jobId: string, moves: number): string =>
+  createHmac('sha256', keyOf(linkPrivateKey, userId)).update(moves === 0 ? jobId : `${jobId}/${moves}`).digest('base64url');
 
-/** The proxy token of `jobId`, a job of `userId`, under that user's link key. */
-export function proxyToken(linkPrivateKey: string, userId: string, jobId: string): string {
-  return `${Buffer.from(userId).toString('base64url')}.${jobId}.${macOf(linkPrivateKey, userId, jobId)}`;
+/** The proxy token of `jobId`, a job of `userId` moved away `moves` times (`Job.movedAway`), under that user's link key. */
+export function proxyToken(linkPrivateKey: string, userId: string, jobId: string, moves = 0): string {
+  return `${Buffer.from(userId).toString('base64url')}.${jobId}.${macOf(linkPrivateKey, userId, jobId, moves)}`;
 }
 
 const PART = /^[A-Za-z0-9_-]{1,200}$/;
@@ -28,9 +31,9 @@ export function parseProxyToken(token: string): ProxyTokenParts | undefined {
   return { userId: Buffer.from(user, 'base64url').toString('utf8'), jobId, mac };
 }
 
-/** Whether `mac` is the one the user's link key gives the job: compared in constant time. */
-export function holdsProxyToken(linkPrivateKey: string, parts: ProxyTokenParts): boolean {
-  const want = Buffer.from(macOf(linkPrivateKey, parts.userId, parts.jobId));
+/** Whether `mac` is the one the user's link key gives the job, moved away `moves` times now: compared in constant time. */
+export function holdsProxyToken(linkPrivateKey: string, parts: ProxyTokenParts, moves = 0): boolean {
+  const want = Buffer.from(macOf(linkPrivateKey, parts.userId, parts.jobId, moves));
   const got = Buffer.from(parts.mac);
   return want.length === got.length && timingSafeEqual(want, got);
 }

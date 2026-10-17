@@ -38,7 +38,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
-import { createSagas } from './sagas/index.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts';
+import { createSagas } from './sagas/index.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts'; import { jobMoveSaga } from './engine/job-move-saga.ts'; import { JOB_MOVE_SAGA } from './engine/lost-move.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
 
@@ -217,7 +217,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), sandboxes: sandboxLauncher, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
+      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), sandboxes: sandboxLauncher, jobMoves: { begin: (userId, key, data) => { sagas.begin(JOB_MOVE_SAGA, key, { ...data }, { userId }); } }, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
       installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), sourceEmailMatch: () => instance.settings.getSourceEmailMatch(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -293,7 +293,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     clients: sandboxClientsOf(runtimes),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
-  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps })], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
+  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps }), jobMoveSaga({ engine: (userId) => runtimes.get(userId)?.engine })], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
   const playground = createPlayground({ runtime: sandboxRuntime, noRuntime: inPod ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME, instanceId: instance.settings.instanceId(), network: hopperNetwork(config), limits: config.playground, clock, logger }); // the sandbox playground (issue #1410): many sandboxes at once, on the same runtime, none a machine
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
