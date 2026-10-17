@@ -75,7 +75,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
-| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run through the locked-down `claude` print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its answer checked in the form asked for and against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), and the machines it can run on (`providers.ts`, pure); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -23854,3 +23855,50 @@ link agent (no inbound port, so a container install needs no change), the link k
 hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
 keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
 Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.
+
+## Drafting on the user's AI CLI (issue #474, 2026-10-17)
+
+**The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
+for. The File an issue flow (issue #471) lets the user pick the AI CLI they signed in to, and the machine it is signed
+in on. The hopper holds no model key for it.
+
+**The change.**
+- A **draft provider** is one of `claude`, `codex`, `cursor-agent`, `opencode`, `omp` (`src/drafting/providers.ts`). Each
+  draft is one turn, locked down for its CLI:
+  - `claude`: the client's `levelArgv` — `--no-session-persistence`, `--setting-sources ''`, `--strict-mcp-config`,
+    `--tools ''`, the answer bound to the JSON Schema, the prompt on stdin.
+  - `codex exec --json --ephemeral --ignore-user-config --ignore-rules --skip-git-repo-check --sandbox read-only`, the
+    prompt on stdin (`-`).
+  - `cursor-agent -p --mode ask --sandbox enabled --trust`: ask mode is read-only.
+  - `opencode run --format json --pure`, with `OPENCODE_PERMISSION={"*":"deny"}`, no project config and no Claude Code
+    prompt or skills, set by `env` in the argv so it holds over ssh too.
+  - `omp -p --no-tools --no-session --no-skills --no-rules --no-extensions --no-lsp`.
+  The argv and the reading of the print-mode CLIs are the print-mode executors' dialects (`print-agents.ts`): a dialect's
+  `said` reads the answer without a session, which a draft keeps none of; `read`, a job's, still needs one. A CLI with
+  no `--json-schema` is told to answer one JSON object; the hopper takes it as it is, from a Markdown fence, or between
+  its first `{` and last `}`. `draftIssueWith` (`src/run-skills/draft.ts`) checks every provider's answer in the same
+  form (`ISSUE_DRAFT`), then against the draft constraints.
+- **The machine** is the user's pick (`src/drafting/run.ts` `draftOn`), never a default. Refused before anything runs,
+  each in plain words: not configured, offline, a container target (`docker exec` passes no stdin), a client target for
+  a provider other than claude, and this machine for a user added later with a provider other than claude.
+- **Client targets** (issue #470 D3): claude runs through the client's signed `POST /level` (issue #482), which builds
+  the same argv. No new client call: `/level` runs claude only, and the other CLIs are refused there.
+- **Identity.** The CLI finds its own login on its machine; the hopper never reads or copies it. This machine runs a
+  user added later with their CLI config dirs (`userCliEnv`): only claude has one, so another CLI here would run on the
+  daemon's account, and is refused. An ssh target runs its CLI with that machine's environment.
+- **Failures in plain words.** Exit 127 or `<bin>: not found`: not installed. A CLI's sign-in text (not logged in,
+  authentication required, unauthorized, invalid or no API key, 401): not signed in, with the provider's sign-in
+  command. An answer that is no draft: refused. A timeout or a cancel stops the run and says which. A device code the
+  run prints goes to the logins (issue #476) and is hidden in the error.
+
+**Not done here.** The UI's machine and provider picker (issue #471) and a probe that says, before a run, whether the
+CLI is installed and signed in there; model lists for the CLIs other than claude (claude's is `claudeModels`); session
+records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); the run dir
+on the machine when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft
+counts toward usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
+as their dialects call them: the machine's other users can see it in its process list while the turn runs.
+
+**Verification:** `test/drafting/run.test.ts`, against fake CLIs: each provider locked down, the prompt delivered, the
+run dir removed after, the draft checked; over ssh; the model and effort flags; an answer that is no draft, not signed in,
+not installed, an offline, unknown or container machine, a timeout and a cancel; a client target's claude through its
+client and another CLI refused there; a user added later with their own claude config dir, refused another CLI here.
