@@ -89,6 +89,16 @@ describe('trust stamps in the job store (issue #655)', () => {
     expect(s.jobs.useStampKey(KEY)).toEqual([]);
     s.close();
   });
+
+  it('a job with no source, queued before stamps, is stamped approved and runs as before', () => {
+    const s = t.open(t.url());
+    const old = s.jobs.create(spec, 50);
+    expect(s.jobs.useStampKey(KEY)).toEqual([old.id]);
+    const stamped = s.jobs.get(old.id)!;
+    expect(stamped.stamp).toMatchObject({ level: 'approved', reasons: ['source:none'], by: 'backfill' });
+    expect(s.jobs.stampHold(stamped)).toBeUndefined();
+    s.close();
+  });
 });
 
 /** The user `admin`'s own schema, as the store opens it. */
