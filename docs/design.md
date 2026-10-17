@@ -83,7 +83,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the kinds this build drives and the lease owner of this process (`index.ts`). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
@@ -19703,12 +19703,14 @@ Two kinds of sandbox step, one way in (`hopper-step`, `HOPPER_STEP`, `/job/step`
 | credentials | vault secrets the host gives, by name, after the job's vault grant | each need's **minted credential**, for the step only, after Access and the apply gate |
 | skill text | `windows-step` | `need-step` |
 
-Both stream the output to the job as it comes, then answer the exit code and the outputs (`GET /job/step/:id`), keep the
-result an hour, and record `step.started`, `step.finished`, `step.refused` on the job's timeline. "Windows sandbox steps"
+Both give the output to the job as it comes, then answer the exit code and the outputs (`GET /job/step/:id`), keep the
+result an hour, and record `step.started`, `step.finished`, `step.refused` on the job's timeline. Since issue #1568 a need
+or box step is kept in the database and run by a saga, and the job reads its log and result by polling ("Need steps
+kept as sagas"); a Windows step still streams in its request (#1611). "Windows sandbox steps"
 above holds the Windows half; this section the Linux half.
 
-- **The ask.** `POST /job/step?needs=&why=&plan=&planId=&command=&timeout=&output=…`, the inputs as a tar body (as much
-  as a Windows step's: they are copied into the box; a need box on a machine of the user's takes 64 KiB, see below). NEEDS as a template request writes them, `<operation>/<kind>/<asset>`.
+- **The ask.** `POST /job/step?needs=&why=&plan=&planId=&command=&timeout=&output=…`, the inputs as a tar body (at most
+  32 MiB since issue #1568, kept in the database until the step runs: they are copied into the box; a need box on a machine of the user's takes 64 KiB, see below). NEEDS as a template request writes them, `<operation>/<kind>/<asset>`.
   A need the vault mints nothing for (only `aws-role`, `cluster` and `namespace` are minted) is a 400 before any template
   is made. `--secret` is refused: a step gets what its needs name, never a vault secret by name.
 - **The template** (`coveringTemplate`, `src/sandbox/need-steps.ts`). A template of the user's that is ready — approved, its
@@ -24255,8 +24257,11 @@ closes):
   is idempotent by its key, and compensated.
 - **A kind this build does not know** is left for a hopper that does (an older build on a steadier update channel).
 
-**What is not done yet** (part 1 ships the saga, its store and its coordinator; `SAGA_DEFINITIONS` names no kind yet). The
-sandbox work — create the sandbox, mint and grant its credentials, set up the worktree, run the executor, push, open the
+**The kinds.** The composition root gives the coordinator its kinds (`createSagas`, `definitions`): each module that moves its
+work onto a saga defines its own kind. The first is the sandbox module's `need-step` ("Need steps kept as sagas"
+below, part 2).
+
+**What is not done yet** (part 1 ships the saga, its store and its coordinator). The sandbox work — create the sandbox, mint and grant its credentials, set up the worktree, run the executor, push, open the
 pull request, tear down, revoke — moves onto a saga kind in a later part, with the executor's session state (#1465) in its
 data. The audit on the issue lists every boundary call that is no durable record today, each with a child issue.
 
@@ -24277,3 +24282,77 @@ steps, then another host, once the lease ends (and not before), goes on with no 
 again; an abort mid-saga compensates and leaves no sandbox, credential or worktree; an abort of a saga a stopped hopper
 left is compensated by another host, the worktree its cut-short step made included; a step that keeps failing is tried
 five times after a backoff, then compensated; a stop releases the saga at once.
+
+## Need steps kept as sagas (issue #1524 part 2, issue #1568, 2026-10-17)
+
+The problem (the audit on #1524, gap 1): a need step or a box step ran inside the job's HTTP request. A broken connection
+stopped it; the job's retry was a new step with no key, so an apply could run twice; the result was in one hopper's
+memory and the outputs in a file on its disk, so after a restart, or on another host, `GET /job/step/:id` answered 404.
+
+**The need steps kept** (`NeedStep`, `src/domain/need-steps.ts`; the instance's `need_steps` table, migration 47,
+`src/store/need-steps.ts`). One row per step, from the job's ask to an hour after its end: the job, the job's key for
+the ask (one step per job and key), its saga, its need box's name, the template as it was at the ask (image, tools,
+read-only, limits), what it is minted, the command, the time limit, the outputs it asks for, the plan it applies, the
+inputs (bytes, dropped at its end), its log (text, at most 4 MiB, then a note that it is cut), its result and its outputs
+(bytes). No credential: each try mints its own, in memory, for that try only.
+
+**The ask.** `POST /job/step?box=…&key=…` or `?needs=…&key=…`, the inputs as a tar body (at most 32 MiB: they are kept in
+the database until the step runs, so any host can run it). `key` is 8 to 64 letters, digits, `-` or `_`; no key is a 400.
+The hopper checks the ask as before (the approved sandbox, the template ready, the command, the time limit, the outputs),
+keeps the step and begins its `need-step` saga — one per step, so the same key again answers the same step and begins
+nothing new —, and answers 202 with the step's id in `x-hopper-step`. A mint that is refused is no longer the ask's 403:
+the step ends with exit 125 and the reason as its problem, with `step.refused` as before.
+
+**The saga** (`needStepSaga`, `src/sandbox/need-step-saga.ts`; its steps `NeedSteps.run`, `release` and `cancel`):
+- `run`: a step that ended already does nothing. A step the sandbox runs ledger holds a run of — its need box started on a
+  hopper that stopped — is **not run again**: it may have had its effect (an apply), so it ends with exit 125 and
+  `STEP_INTERRUPTED`, which tells the job to look at what it changed first. A job not at work: the step ends cancelled.
+  Else it mints each need, writes the inputs to the step's own directory in the work dir, runs the need box (as before,
+  through the sandbox module's `needStep`, which writes the ledger), appends the box's output, each credential masked, to
+  the step's log, keeps the result and the outputs, and then releases the need box's credentials. A job no longer at work
+  (looked at every 5 s) stops the box. An abort, or a stop of the hopper, keeps no result: the compensation ends it, or
+  the next host's try does.
+- `release`: the need box's credentials end (the vault's `releaseMints`), so a stop between the keep and the release
+  leaves no credential.
+- the compensation of `run` (an abort, or `run` past its tries): the credentials end, and a step not ended ends with exit
+  125, `cancelled: <why>`. The sandbox module's sweep burns a need box a stopped hopper left, as before.
+
+**The job reads.** `GET /job/step/:id/log?from=N`: the log from character N, where the next read starts
+(`x-hopper-step-log-next`), and `x-hopper-step-state` `running` or `ended` (read first, so a log read as ended is whole).
+`GET /job/step/:id`: 202 while it runs, then the exit code, the problem and the outputs as before, from the database.
+`DELETE /job/step/:id`: the job stops its step; its saga is aborted. Each answers only the job's own step.
+
+**hopper-step** (`STEP_SCRIPT`). For `box` and `need`: a key of the ask's own from `/dev/urandom`; the ask sent up to 5
+times with that key when the hopper cannot be reached; then the log read every second until the step ends, a read that
+fails tried again for 300 s (a hopper restart fits in it), then the outputs. A signal (INT, TERM, HUP) sends the DELETE and
+ends with 130. `run` (a Windows step) streams in its request as before.
+
+**Decisions:**
+- **The inputs at most 32 MiB, not 1 GiB.** They are kept in the database (as an artifact's content, through base64), so
+  any host can run the step after a stop; a store call blocks the process while it lasts. A step that needs more fetches
+  it in the box, or is split.
+- **A step whose need box started is never run again after a stop.** At most once, not at least once: the receiver (a
+  cloud API, terraform) does not dedupe by our key, and running an apply twice is the harm the issue names. The job is
+  told, and decides.
+- **The log in the database, polled each second, not a stream.** A stream belongs to one connection on one host; a row
+  is read from any host after a restart. One read a second per running step is small.
+- **A new table, not the sandbox runs ledger.** A run is one sandbox, written by the sandbox module; a step is the job's
+  ask, which may run no sandbox at all (refused, cancelled, interrupted).
+- **A Windows step is not moved here.** It is gap 15 of the audit (#1611): its host lease and its host's scratch are their
+  own work.
+
+**Not built.** A step's log on the job stream. A step stopped by a signal hopper-step cannot catch (KILL) runs to its end
+or its time limit.
+
+**Residual risk, stated.** A step's inputs and outputs are in the database for an hour: whoever reads the instance's
+database reads them, as an artifact's content. A step's log is masked as before; the mask is a guard against an
+accident, not a boundary.
+
+**Verification:** `test/sandbox/need-step-saga.test.ts` (the real database and coordinator, two hosts: a hopper stopped at the
+mint, in the need box, and at the release; the other host goes on once the lease ends; the box runs once at the most, the
+job reads one result from either host, no credential is left; an abort mid-step compensates and leaves no box and no
+credential), `test/sandbox/need-steps.test.ts` (the same key is the same step; the log masked, then the result and the
+outputs from the database; a step whose box started is not run again; a job not at work; the compensation once),
+`test/integration/box-steps.test.ts` and `test/integration/need-steps.test.ts` (the real daemon and `hopper-step`: the
+same key over HTTP, no key refused, a hopper-step stopped by a signal stops its step and no box is left).
+
