@@ -1301,6 +1301,42 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
 }
 ```
 
+## `job.quarantined`
+
+Version 1 (`docs/schemas/job.quarantined.v1.json`). A person, or an agent over the API, quarantined the job (issue #655, `POST /ui/api/jobs/:id/quarantine`): its trust stamp is signed `quarantined`, so the decider holds it, and its proxy token opens no door of the hopper (the GitHub proxy, git, the vault, skills, steps, artifacts, its stream) — a running job keeps its pane, but reaches nothing through the hopper. `was`: its trust level before, the level a lift gives back; absent when its stamp did not verify. Who (`person`) and how (`via`).
+
+| field | type | required |
+|---|---|---|
+| `was` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "was": "trusted",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
+## `job.unquarantined`
+
+Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with a box token, lifted the job's quarantine (issue #655, `POST /ui/api/jobs/:id/unquarantine`): its stamp is signed at `level` again — the level it had before its quarantine, or the rules' level when none was kept. Who (`person`) and how (`via`).
+
+| field | type | required |
+|---|---|---|
+| `level` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "level": "trusted",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
 ## `terminal.opened`
 
 Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/screen`), or the machine's (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.

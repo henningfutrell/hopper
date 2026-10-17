@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { GITLAB_EVENT_SCHEMAS } from './gitlab-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { ISSUE_DRAFT_EVENT_SCHEMAS } from './issue-draft-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { GITLAB_EVENT_SCHEMAS } from './gitlab-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TRUST_EVENT_SCHEMAS } from './trust-schemas.ts'; import { ISSUE_DRAFT_EVENT_SCHEMAS } from './issue-draft-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitOn, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -385,7 +385,7 @@ export const EVENT_SCHEMAS = {
   ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...MACHINE_DRAIN_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, ...PREEMPTION_EVENT_SCHEMAS, // preemption (issue #1525: preemption-schemas.ts), the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  ...THREAD_ASK_EVENT_SCHEMAS, ...GITLAB_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, ...ISSUE_DRAFT_EVENT_SCHEMAS, // issues #997, #1128, #471: notes to a job, the job's terminal, File an issue
+  ...THREAD_ASK_EVENT_SCHEMAS, ...GITLAB_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, ...ISSUE_DRAFT_EVENT_SCHEMAS, ...TRUST_EVENT_SCHEMAS, // issues #997, #1128, #471, #655: notes to a job, the job's terminal, File an issue, quarantine
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...driftEvents, ...infraPlanEvents, ...apiGrantEvents, ...windowsStepEvents, ...sandboxRequestEvents, ...landingBatchEvents,
 } satisfies Record<EventType, z.ZodType>;
 

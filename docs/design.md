@@ -16845,7 +16845,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, part 1, 2026-10-17)
+## Trust stamps (issue #655, parts 1 and 2, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -16900,11 +16900,37 @@ Cancel and Run again are the ways out: Run again makes a new job, which intake s
 this build, and one a steadier channel's older build made on the same store (`docs/deploy.md` "Update channels and
 promotion"), so runs as before. No migration: `stamp` is one more field in the job's body, which the build before ignores.
 
-**Not in this part** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, the brake
-per source and repository (intake strictness), Jev's `intake-trust` and `intake-kind` decisions that can only lower a level,
-the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the stamp read at the GitHub
-proxy and the skill broker (gate 2: the sandbox boundary, its brake, lowering trust and quarantine), the restamp on an edit
-seen at a sync, and the Intake and API views of the stamp.
+**Quarantine and the doors** (part 2). A person can **quarantine** a job that has not ended (`POST
+/ui/api/jobs/:id/quarantine`, the job view's Quarantine, `hopper job quarantine <id>`; least role operator). The store signs
+its stamp `quarantined` (`by: person`), and keeps the level it had as `was`, which the MAC covers; a job whose stamp did not
+verify keeps none. Then:
+
+- the decider holds it, a job about to resume too: `quarantined by a person: held — …` (`QUARANTINED_HOLD`);
+- its **proxy token opens no door** of the hopper (gate 2's first step). The one check is in the user's `holds`
+  (`src/users/github-proxy.ts`), which every door that takes a proxy token asks — the GitHub proxy, git and GitLab git,
+  the vault's ask, skills, Windows and box steps, logins, artifacts, infra plans, checkpoints and the job stream: the token
+  opens a door only while the job's stamp verifies and is not `quarantined` (`opensDoors`). A door answers such a job as a
+  token that is no job's (401), so it learns nothing of why. A stamp that does not verify — a row changed outside the
+  hopper — closes the doors too, not only the start;
+- a running job keeps its pane and its work on its machine: a person cancels or parks it as any job. Its sandboxes and
+  vault grants stay; with no door, the job cannot use them through the hopper.
+
+A new spec keeps the quarantine (`respecify` signs the level it verified at). An origin judged later (the #652 backfill,
+`restamp`) keeps it too, and the level the rules give then is the one its lift gives back. **Lift quarantine** (`POST
+/ui/api/jobs/:id/unquarantine`, a box action of kind `start a job`: the job may start and reach the hopper again) signs the
+level the job had before, never higher, and with none kept, the rules' level now. Each act is one event with who acted and
+how: `job.quarantined` (`was`), `job.unquarantined` (`level`). 409: the job ended, is quarantined already, is not
+quarantined, or has no stamp (no stamp key).
+
+What part 2 does not do: a deny at gate 2 that lowers the level, and a second that quarantines; revoking a quarantined
+job's sandboxes and vault grants; Jev's decisions. Those are later parts.
+
+**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, the
+brake per source and repository (intake strictness), Jev's `intake-trust` and `intake-kind` decisions that can only lower a
+level, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at
+the skill broker (the request's policy, Jev's `sandbox-request`, its brake, lowering trust on a deny, quarantine by two
+denies, stopping a quarantined job's sandboxes), the restamp on an edit seen at a sync, and the Intake and API views of the
+stamp.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

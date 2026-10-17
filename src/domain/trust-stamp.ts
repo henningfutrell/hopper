@@ -2,7 +2,8 @@
 // stamped when the job is made and signed with a key of its user's, so a row changed outside the hopper's code shows.
 // The rules give the level (the simple first tier: who wrote and nominated the item); a job a job made gets at most its
 // parent's level, and never `owner`. A job starts only with a stamp that verifies, at the dispatch minimum or above.
-// Pure: the key is passed in.
+// A person can quarantine a job (part 2): its level is `quarantined` until a person lifts it, and its proxy token opens
+// no door meanwhile, as for a job whose stamp does not verify. Pure: the key is passed in.
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import type { Job } from './types.ts';
 
@@ -10,8 +11,11 @@ import type { Job } from './types.ts';
 export const TRUST_LEVELS = ['quarantined', 'untrusted', 'screened', 'approved', 'trusted', 'owner'] as const;
 export type TrustLevel = typeof TRUST_LEVELS[number];
 
-/** Who stamped a job: intake (the store at its making), a job that made it, a new spec, or the backfill at a start. */
-export const STAMPED_BY = ['intake', 'job', 'respecify', 'backfill'] as const;
+/**
+ * Who stamped a job: intake (the store at its making), a job that made it, a new spec, the backfill at a start, or a
+ * person (a quarantine, or its lift).
+ */
+export const STAMPED_BY = ['intake', 'job', 'respecify', 'backfill', 'person'] as const;
 export type StampedBy = typeof STAMPED_BY[number];
 
 /** A job's trust stamp: its level, why, who stamped it and when, and the MAC over these, the job's id and its spec. */
@@ -23,6 +27,8 @@ export interface TrustStamp {
   reasons: string[];
   by: StampedBy;
   at: string;
+  /** A quarantined job's level before its quarantine: the level its lift gives back. Absent: none, or no quarantine. */
+  was?: TrustLevel;
   /** HMAC-SHA256, base64url, under the user's stamp key. */
   mac: string;
 }
@@ -32,6 +38,9 @@ export const DISPATCH_MIN: TrustLevel = 'approved';
 
 export const STAMP_MISSING = 'no trust stamp: held — the hopper did not make this job, or made it before stamps; cancel it, or run its item again';
 export const STAMP_MISMATCH = 'its trust stamp does not match the job: held — the job changed outside the hopper; cancel it, or run its item again';
+export const QUARANTINED_HOLD = 'quarantined by a person: held — a person lifts the quarantine, or cancels it';
+/** The reason id a quarantine adds to the stamp's reasons; its lift takes it away. */
+const QUARANTINED = 'quarantined';
 
 /** The user's stamp key: HKDF of the hopper's link key for that user (issue #308), as the job proxy token's (issue #563). */
 export const stampKeyOf = (linkPrivateKey: string, userId: string): Buffer =>
@@ -80,8 +89,8 @@ const macOf = (key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: Omit<TrustStamp, '
 };
 
 /** The stamp of `job` at `level`, signed under `key`. */
-export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level: TrustLevel; reasons: string[]; by: StampedBy; at: string }): TrustStamp {
-  const body = { v: 1 as const, level: s.level, reasons: [...s.reasons], by: s.by, at: s.at };
+export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level: TrustLevel; reasons: string[]; by: StampedBy; at: string; was?: TrustLevel }): TrustStamp {
+  const body = { v: 1 as const, level: s.level, reasons: [...s.reasons], by: s.by, at: s.at, ...(s.was ? { was: s.was } : {}) };
   return { ...body, mac: macOf(key, job, body) };
 }
 
@@ -89,6 +98,7 @@ export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level
 export function verifiedLevel(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): TrustLevel | undefined {
   const s = job.stamp;
   if (!s || s.v !== 1 || !TRUST_LEVELS.includes(s.level) || typeof s.mac !== 'string') return undefined;
+  if (s.was !== undefined && !TRUST_LEVELS.includes(s.was)) return undefined;
   const { mac, ...body } = s;
   const want = Buffer.from(macOf(key, job, body));
   const got = Buffer.from(mac);
@@ -100,6 +110,33 @@ export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>):
   if (!job.stamp) return STAMP_MISSING;
   const level = verifiedLevel(key, job);
   if (level === undefined) return STAMP_MISMATCH;
+  if (level === 'quarantined') return QUARANTINED_HOLD;
   return atLeast(level, DISPATCH_MIN) ? undefined
     : `trust stamp ${level} is below ${DISPATCH_MIN}: held — a person approves its item in Intake, or cancels it`;
+}
+
+/**
+ * The job quarantined by a person, at `at`: its level `quarantined`, its level before kept as `was` when its stamp
+ * verifies. A job whose stamp does not verify keeps no level and no reasons: its lift gives it the rules' level.
+ */
+export function quarantinedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, at: string): TrustStamp {
+  const was = verifiedLevel(key, job);
+  const reasons = was !== undefined && job.stamp ? job.stamp.reasons : [];
+  return signStamp(key, job, { level: 'quarantined', reasons: [...reasons, QUARANTINED], by: 'person', at, ...(was ? { was } : {}) });
+}
+
+/** The quarantine lifted by a person, at `at`: the level the job had before it, never more; with none kept, the rules' level. */
+export function liftedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp' | 'source'>, at: string): TrustStamp {
+  const was = job.stamp?.was;
+  if (!was) { const ceiling = ruleCeiling(job); return signStamp(key, job, { level: ceiling.level, reasons: ceiling.reasons, by: 'person', at }); }
+  return signStamp(key, job, { level: was, reasons: (job.stamp?.reasons ?? []).filter((r) => r !== QUARANTINED), by: 'person', at });
+}
+
+/**
+ * Whether the job's proxy token opens the hopper's doors (gate 2's first step): only with a stamp that verifies, at any
+ * level but `quarantined`. A running job was at the dispatch minimum when it started; a level below it now opens them still.
+ */
+export function opensDoors(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
+  const level = verifiedLevel(key, job);
+  return level !== undefined && level !== 'quarantined';
 }

@@ -1,6 +1,7 @@
 // The UI session's actions on one job: cancel, approve, operator-led, reject, run again, rework (issue #724), park and re-queue
 // (issue #501), end its own wait (issue #483), send it a note (issue #997), dismiss — or many at once (issue #1123) —, mark cleaned up; for a job held because its item changed since
-// the snapshot (issue #662), keep the original text, or accept the new text — the owner only, as Access decides. Least role: operator.
+// the snapshot (issue #662), keep the original text, or accept the new text — the owner only, as Access decides; quarantine
+// a job, and lift it (issue #655). Least role: operator.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
@@ -23,6 +24,11 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   const signedIn = (req: FastifyRequest) => {
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to act on a changed item');
+    return s;
+  };
+  const signedInTo = (req: FastifyRequest, act: string) => {
+    const s = signedInOf(req);
+    if (!s) throw new HttpError(401, `sign in to ${act}`);
     return s;
   };
   const signedInWith = (req: FastifyRequest) => {
@@ -69,6 +75,11 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     if (!d.allowed) throw new HttpError(403, `accepting the new text is refused: ${d.reason}`);
     return t.engine.acceptNewText(job.id, actingOf(s));
   });
+  // Quarantine (issue #655): held, and its proxy token opens no door; lifted to the level it had. Who acted is kept.
+  app.post('/ui/api/jobs/:id/quarantine', o.operator, async (req) =>
+    o.tenant(req).engine.quarantine(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'quarantine a job'))));
+  app.post('/ui/api/jobs/:id/unquarantine', o.operator, async (req) =>
+    o.tenant(req).engine.liftQuarantine(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'lift a quarantine'))));
   app.post('/ui/api/jobs/:id/dismiss', o.operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   // Many at once (issue #1123): each as one Dismiss, a refusal kept with why; or every failed job nothing waits on any more.
   app.post('/ui/api/jobs/dismiss', o.operator, async (req) => {

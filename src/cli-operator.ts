@@ -53,6 +53,7 @@ export const OPERATOR_USAGE = `  hopper job show <id>                           
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
+  hopper job quarantine|unquarantine <id>            quarantine a job: held, and it reaches nothing through the hopper; or lift it
 ${DISMISS_USAGE}
 ${DIRECT_USAGE}
 ${QUEUE_USAGE}
@@ -125,7 +126,7 @@ function jobCall(args: string[]): Call {
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
+  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes;
   // The whole job as the job view reads it; a held job's `holdReason` says why it is held.
   if (verb === 'show' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}` };
@@ -134,7 +135,8 @@ function jobCall(args: string[]): Call {
   if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject|cancel <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
-  if (verb === 'rerun' || verb === 'keep-original' || verb === 'accept-new-text') return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
+  // Quarantine and its lift (issue #655) too.
+  if (['rerun', 'keep-original', 'accept-new-text', 'quarantine', 'unquarantine'].includes(verb ?? '')) return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
     // As the Queue view's Accept: the accepted waiting jobs in queue order, then this one.
     return { role: 'operator', path: '/ui/api/queue/order', body: async (get) => {
@@ -142,7 +144,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
+  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */
