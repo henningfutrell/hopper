@@ -7,9 +7,9 @@ sign-in at hopper.io, is built in `cloud/` ([What is built](#what-is-built)). Th
 pick a domain, a host or a database. It does not change any GitHub App setting or secret: the hosted
 app is registered by hand ([Run it](#run-it)).
 
-The terms *hopper.io account* and *hopper.io session* are in `docs/glossary.md`. The terms *install
-registration* and *linked install* are proposed here only; they go into the glossary with the
-registration part.
+The terms *hopper.io account*, *hopper.io session*, *hopper.io registration* and *registration
+tombstone* are in `docs/glossary.md`. This document says *install registration* for a hopper.io
+registration: the glossary's **install** is the directory the daemon runs from.
 
 ## What is fixed already
 
@@ -260,8 +260,9 @@ All five are accepted as recommended (2026-10-17).
 
 ## What is built
 
-Parts 2 to 4 of #463 (part 1 was this document): the hopper.io account, GitHub sign-in at hopper.io,
-account deletion, the hopper.io records and the privacy note, in `cloud/` (decision 2).
+Parts 2 to 5 of #463 (part 1 was this document): the hopper.io account, GitHub sign-in at hopper.io,
+account deletion, the hopper.io records and the privacy note, and the registrations with their
+tombstones, in `cloud/` (decision 2).
 
 - `cloud/store.ts`: the `account` table, keyed by GitHub's numeric user id (`github_user_id`), with `login`
   and `avatar_url` for display, `created_at` and `seen_at`. Each sign-in updates the login and the avatar,
@@ -286,8 +287,7 @@ account deletion, the hopper.io records and the privacy note, in `cloud/` (decis
   account now, not only a hopper.io session (`docs/hopper-io-security.md` T4). Another GitHub account at
   GitHub, or a denial, deletes nothing. When GitHub refuses the grant deletion, the account is still gone,
   and the page links to GitHub's *Authorized GitHub Apps*, so the person can remove the app there.
-  Tombstones for the installs come with hopper.io's side of the registrations: today hopper.io keeps no
-  registration, so there is nothing to tell an install.
+  The same statement leaves a tombstone for each of the account's registrations (part 5, below).
 - **hopper.io records** (part 4, `docs/hopper-io-security.md` R6). Each sign-in, each sign-out of an open
   session, and each deletion confirmed as another GitHub account is a row of `record` on the account: its
   kind and its time only, no address and no browser. The owner reads them on `GET /` and at
@@ -297,10 +297,26 @@ account deletion, the hopper.io records and the privacy note, in `cloud/` (decis
 - **The privacy note** (part 4, R5): `cloud/privacy.ts`, served at `GET /privacy` and linked from `GET /`.
   It lists each column of the store, what it holds, why and for how long, and what hopper.io never keeps.
   `test/cloud/privacy.test.ts` holds it to the store's columns, so a new column without its line fails.
+- **Registrations and their tombstones** (part 5, decision 5, with #465). `registration` keeps one
+  instance id under one account, and when: the instance's own id (8 random bytes as hex), never its name.
+  `cloud/link.ts` is hopper.io's side of the cloud link's registration messages, transport-free, as the
+  instance's side (`src/http/cloud-link-messages.ts`): the connection (#464) is not built. When the
+  instance answers `{ type: 'registration', outcome: 'registered' }` to the code its owner entered,
+  `registration()` keeps it; a second answer keeps no second row, and any other answer, shape or size
+  (over 1024 bytes) keeps nothing. An account deletion deletes the registrations with the account
+  (`ON DELETE CASCADE`) and, in the same statement, leaves a `registration_tombstone` for each: the
+  instance id and the time, nothing of the account. At the instance's next hello, `hello()` answers
+  `{ type: 'unregister', account }`, with the account the hello names, so the instance takes it as it
+  takes an owner's removal: its link goes back to `pending`, and nothing else on it changes. An instance
+  still registered under another account, and an instance hopper.io never knew, get no answer. A tombstone
+  older than 90 days (`TOMBSTONE_MS`) is not read, and is deleted at the next deletion. When the instance
+  registers again, its tombstone goes. This replaces the registration token of "How linked installs are
+  told": the instance proves itself at its hello with its cloud link key (`docs/design.md` "Cloud link"),
+  so hopper.io keeps no token for it.
 - Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
   instance realm changes (decision 4).
-- Tests: `test/cloud/sign-in.test.ts`, `test/cloud/delete-account.test.ts`, `test/cloud/records.test.ts`
-  and `test/cloud/privacy.test.ts` (real Postgres, real
+- Tests: `test/cloud/sign-in.test.ts`, `test/cloud/delete-account.test.ts`, `test/cloud/records.test.ts`,
+  `test/cloud/registrations.test.ts` and `test/cloud/privacy.test.ts` (real Postgres, real
   server, a fake GitHub, `test/cloud/harness.ts`) and
   `test/cloud/config.test.ts` (the config, and the `cloud/` seam both ways).
 
@@ -326,6 +342,7 @@ No deploy is part of this: where hopper.io runs is decision 7 of #469.
 ## After the decisions
 
 The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io
-(built, part 2), account deletion (built, part 3), the records and the privacy note (built, part 4), the install registrations (with the multiple-installs issue) and their tombstones, then
-the install side of the heartbeat. Each part adds its glossary entries and its row in
+(built, part 2), account deletion (built, part 3), the records and the privacy note (built, part 4), the install registrations and their tombstones
+(built, part 5, transport-free), then the cloud link's connection (#464), which carries the messages
+and the hello, and the install side of the heartbeat. Each part adds its glossary entries and its row in
 `docs/design.md` "Directories and what each must not know" in the same change.

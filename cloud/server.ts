@@ -128,7 +128,7 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
         await store.record(taken.deletes, 'deletion_refused', now());
         return page(reply.header('set-cookie', clear), 403, '<p>You confirmed as another GitHub account. Nothing was deleted. <a href="/">Back</a>.</p>');
       }
-      await store.deleteAccount(taken.deletes);
+      await store.deleteAccount(taken.deletes, now());
       const gone = await deleteGrant(accessToken).then(() => true, () => false);
       const grantNote = gone ? '<p>hopper.io no longer has your permission at GitHub.</p>'
         : `<p>GitHub did not remove hopper.io's permission. Remove it at <a href="${GITHUB_AUTHORIZATIONS}">${GITHUB_AUTHORIZATIONS}</a>.</p>`;
