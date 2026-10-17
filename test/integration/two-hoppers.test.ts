@@ -266,6 +266,23 @@ describe('several hoppers on one database (issue #1662)', () => {
     expect(eventsOf(second, 'job.started').filter((e) => e.jobId === job.id)).toHaveLength(1);
   }, 30_000);
 
+  it('a cancel while the pane opens ends the job cancelled, and its task is never sent', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const m = splitMachine();
+    cleanups.push(() => { for (const p of m.panes.values()) p.end(); });
+    const held = m.holdOpen();
+    const a = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source: createManualSource(), seams: { executors: [m.executor('first')] } });
+    apps.push(a);
+    const job = await a.pull({}, { executor: 'split' });
+    await held.begun;
+    expect(a.user(ADMIN_ID).engine.cancel(job.id, 'cancelled in UI').status).toBe('running');
+    held.release();
+    expect((await a.waitForStatus(job.id, 'cancelled', 8000)).attempts).toBe(1);
+    expect(eventsOf(a, 'job.cancelled').filter((e) => e.jobId === job.id).map((e) => e.data)).toEqual([{ reason: 'cancelled in UI' }]);
+    expect(m.sent).toEqual([]);
+  });
+
   it('each pass over the jobs runs on one hopper at a time: a waiting job\'s pane is read by one, by the other once it stops', async () => {
     const { m, first, start } = await twoHoppers(1);
     const job = await first.pull({ wait: true }, { executor: 'pane' });
