@@ -11911,6 +11911,12 @@ Now Failures lists it, and each has an action that moves it.
   the click on. Out of reach, or kept all the same — a client older than this ignores `discard` —, the removal fails:
   `job.work_discard_failed` with why and who, `discarding` `failed` with the error (the refusal says to update the
   client), and Discard is offered again. `discarding` is kept in memory: after a restart the work shows kept, as it is.
+- **Kept again** (issue #1470, `keptAgainOf`). A job pushes only to its own repository, so work in a clone of another
+  repository in its scratch dir is never pushed by the job: Push it went on, the push was refused, and the reap kept it
+  again, so Push it was offered again with the same brief, in a loop. Now, when the job went on in its kept work tree
+  (`job.continued`: Push it, a Continue) and its reap kept no path it did not keep before, Push it is refused with why
+  (Stuck lists it under `kept_work`); Discard stays. `pushBrief` also says a push goes only to the job's own repository,
+  so the job names the work that stays and ends, and does not try the push.
 - **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
 - **Discarded once done** (issue #1105). Kept work of a job whose work item is `done`, as the ledger has it, waits on
   nobody: the sweep reaps its scratch dir with `discard`, as Discard does, and records `job.work_removed` with
@@ -11932,11 +11938,11 @@ for a finished or cancelled job — its source takes the item back as for Run ag
 Continue only), and `SourceHost.continueJob` takes those ends only `by` `keptWork` (a hand-off's Continue stays a failed
 job's).
 
-**Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (the log once), `test/engine/sweep-discard.test.ts` (discard, its refusals, the removal after the answer and its failure),
+**Verification:** `test/domain/kept-work.test.ts` (`keptAgainOf`, issue #1470), `test/engine/sweep.test.ts` (the log once), `test/engine/sweep-discard.test.ts` (discard, its refusals, the removal after the answer and its failure),
 `test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,
 the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squash-merged, rebased and re-made commits
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
-the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused).
+the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused; issue #1470: the same work kept again, Push it refused).
 
 ### Actions answer at once (issue #1194, 2026-10-14)
 

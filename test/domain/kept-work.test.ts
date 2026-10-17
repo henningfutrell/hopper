@@ -2,10 +2,10 @@
 // read from the work trail. Pure.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
-import { discardReasonOf, keptWorkOf, scratchOf } from '../../src/domain/kept-work.ts';
+import { discardReasonOf, keptAgainOf, keptWorkOf, scratchOf } from '../../src/domain/kept-work.ts';
 
 let seq = 0;
-const ev = (type: 'job.work_kept' | 'job.work_removed', jobId: string, paths: string[], at = '2026-10-13T00:00:00.000Z'): DomainEvent =>
+const ev = (type: 'job.work_kept' | 'job.work_removed' | 'job.continued', jobId: string, paths: string[], at = '2026-10-13T00:00:00.000Z'): DomainEvent =>
   ({ id: `e${++seq}`, seq, type, jobId, at, v: 1, data: { paths } }) as unknown as DomainEvent;
 
 describe('kept work, from the work trail (issue #1010)', () => {
@@ -59,5 +59,31 @@ describe('why nobody waits on kept work (issue #1187)', () => {
     expect(discardReasonOf(job('r', 'finished', {}, { research: true }), false, undefined, none)).toBe('research');
     expect(discardReasonOf(job('p', 'failed', {}, { proposal: true }), false, undefined, none)).toBeUndefined();
     expect(discardReasonOf(job('w', 'finished'), false, undefined, none)).toBeUndefined();
+  });
+});
+
+describe('kept again: the job went on in its work tree and the same work is kept (issue #1470)', () => {
+  const kept = (paths: string[]) => ev('job.work_kept', 'a', paths);
+  const on = ev('job.continued', 'a', []);
+  const removed = ev('job.work_removed', 'a', []);
+  const other = '/w/.worktrees/@scratch/a/other-repo';
+  const own = '/w/.worktrees/my-app/a';
+
+  it('kept, went on, kept the same or less: kept again', () => {
+    // Newest first, as the event log answers.
+    expect(keptAgainOf([kept([other]), on, kept([other])])).toBe(true);
+    expect(keptAgainOf([kept([other]), on, kept([own, other])])).toBe(true);
+    // Twice over: the newest go-on counts.
+    expect(keptAgainOf([kept([other]), on, kept([other]), on, kept([own, other])])).toBe(true);
+  });
+
+  it('never went on, kept new work since, or nothing kept now: not kept again', () => {
+    expect(keptAgainOf([kept([other])])).toBe(false);
+    expect(keptAgainOf([kept([own, other]), on, kept([other])])).toBe(false);
+    expect(keptAgainOf([removed, on, kept([other])])).toBe(false);
+    expect(keptAgainOf([on, kept([other])])).toBe(false);
+    // Went on with nothing kept before it: its work is new.
+    expect(keptAgainOf([kept([other]), on, removed, kept([other])])).toBe(false);
+    expect(keptAgainOf([])).toBe(false);
   });
 });
