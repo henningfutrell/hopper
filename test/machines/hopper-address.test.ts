@@ -133,8 +133,8 @@ describe('the URL a job is given', () => {
     expect(jobHopperUrl({ ...base, ssh: 'box', addressProblem: 'x' }, undefined, o)).toBeUndefined();
     expect(jobHopperUrl({ ...base, ssh: 'box' }, undefined, o)).toBeUndefined();
   });
-  it('a container target: the public URL, else the first LAN name', () => {
-    expect(jobHopperUrl({ ...base, docker: 'c' }, undefined, o)).toBe('http://hopper:4790');
+  it('a container target: none, its command boxes join no network (issue #865)', () => {
+    expect(jobHopperUrl({ ...base, containerImage: 'c' }, undefined, o)).toBeUndefined();
   });
 });
 

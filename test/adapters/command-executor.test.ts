@@ -1,41 +1,25 @@
 // Issue #58: the command executor runs a job's command on the machine its lane is on, reached
-// through that machine's connection — this machine (none), ssh, or docker exec into a container
-// target that runs no agent (design.md "Container targets"). The container is real: alpine, no
-// network, reached through an allowlisting socket proxy that lets through only it (issue #59). ssh
-// is the stand-in from test/herdr (it hands the command to a local shell).
-import { execFileSync } from 'node:child_process';
+// through that machine's connection — this machine (none), ssh, or, on a container target, a one-shot
+// sandbox box of its own that the sandbox module starts and burns (issue #865 part C, design.md
+// "Container targets"). The sandbox module is a double at the CommandBoxes seam; ssh is the stand-in
+// from test/herdr (it hands the command to a local shell).
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { CommandBox, CommandBoxes } from '../../src/domain/sandboxes.ts';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { createCommandExecutor, scriptOf } from '../../src/executors/index.ts';
-import { dockerHost } from '../../src/executors/docker.ts';
-import { probeContainer } from '../../src/machines/index.ts';
-import { startDockerProxy, type DockerProxy } from '../support/docker-proxy.ts';
 import { testSshAuth } from '../support/ssh.ts';
 
-const CONTAINER = `jh-test-target-${process.pid}`;
-const OTHER = `jh-test-other-${process.pid}`;
-let proxy: DockerProxy;
 const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online: true, executors: ['command'] };
-const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: ['command'], docker: CONTAINER };
+const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: ['command'], containerImage: 'example/box:1' };
 const FAKE_SSH = join(import.meta.dirname, '..', 'herdr', 'fake-ssh-bin.mjs');
 let sshDir: string;
 
-beforeAll(async () => {
-  execFileSync('docker', ['run', '-d', '--rm', '--name', CONTAINER, '--network', 'none', '--hostname', 'target-box', 'alpine:latest', 'sleep', '600']);
-  execFileSync('docker', ['run', '-d', '--rm', '--name', OTHER, '--network', 'none', 'alpine:latest', 'sleep', '600']);
-  proxy = await startDockerProxy([CONTAINER]);
-  sshDir = mkdtempSync(join(tmpdir(), 'jh-ssh-'));
-}, 60000);
-
-afterAll(() => {
-  proxy.stop();
-  execFileSync('docker', ['rm', '-f', CONTAINER, OTHER]);
-  rmSync(sshDir, { recursive: true, force: true });
-});
+beforeAll(() => { sshDir = mkdtempSync(join(tmpdir(), 'jh-ssh-')); });
+afterAll(() => { rmSync(sshDir, { recursive: true, force: true }); });
 
 function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, signal = new AbortController().signal): ExecutionContext {
   const job: Job = {
@@ -45,32 +29,47 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, sign
   return { job, laneId: `${machine.id}/lane-1`, machine, signal, progress() {}, saveState() {}, workTree() {} };
 }
 
+/** The sandbox module as the command executor sees it: each box it was asked for, and what the box writes and ends with. */
+function fakeBoxes(answer: (box: CommandBox, io: { log(chunk: string): void; signal: AbortSignal }) => Promise<{ exit: number; problem?: string; stopped?: 'timed-out' | 'cancelled' }>): CommandBoxes & { asked: CommandBox[] } {
+  const asked: CommandBox[] = [];
+  return { asked, problem: async () => undefined, run: async (box, io) => { asked.push(box); return answer(box, io); } };
+}
+
 describe('command executor', () => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
-  const ex = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, dockerHost: () => proxy.host });
+  const ex = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh });
 
-  it('runs the issue body in the container over docker exec and returns what it printed', async () => {
-    const out = await ex.run(ctxFor({ body: 'hostname; echo "job $HOPPER_JOB_ID on $HOPPER_REPO"', env: { HOPPER_REPO: 'o/r' } }, BOX));
+  it('on a container target, runs the body in a one-shot sandbox box of its image and returns what it wrote', async () => {
+    const boxes = fakeBoxes(async (_box, io) => { io.log('target-box\r\n'); io.log('job job-1234 on o/r\r\n'); return { exit: 0 }; });
+    const onBox = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, boxes });
+    const out = await onBox.run(ctxFor({ body: 'Run:\n\n```sh\nhostname\n```\n', env: { HOPPER_REPO: 'o/r' } }, BOX));
     expect(out).toEqual({ kind: 'finished', result: { machine: 'box', exitCode: 0, stdout: 'target-box\njob job-1234 on o/r\n', stderr: '' } });
+    expect(boxes.asked).toEqual([{ jobId: 'job-1234', image: 'example/box:1', script: 'hostname\n', env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: 'job-1234' }, timeoutMs: 20000 }]);
   });
 
-  it('a command that exits non-zero fails the job with its exit code and output', async () => {
-    const out = await ex.run(ctxFor({ body: 'echo nope >&2; exit 3' }, BOX));
-    expect(out).toEqual({ kind: 'failed', error: 'command exited 3 on box: nope' });
+  it('on a container target, a command that exits non-zero fails the job with its exit code and output', async () => {
+    const onBox = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, boxes: fakeBoxes(async (_b, io) => { io.log('nope\r\n'); return { exit: 3 }; }) });
+    expect(await onBox.run(ctxFor({ body: 'echo nope >&2; exit 3' }, BOX))).toEqual({ kind: 'failed', error: 'command exited 3 on box: nope' });
   });
 
-  it('a container the socket proxy does not let through, there or not: fails the job, nothing run (issue #59)', async () => {
-    for (const docker of [OTHER, 'jh-no-such-container']) {
-      const out = await ex.run(ctxFor({ body: 'touch /tmp/ran' }, { ...BOX, docker }));
-      expect(out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^command exited 1 on box: .*Forbidden/) });
-    }
-    expect(() => execFileSync('docker', ['exec', OTHER, 'test', '-e', '/tmp/ran'])).toThrow();
+  it('on a container target, a box that did not run, or ran past its time, fails the job with the reason', async () => {
+    const noRun = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, boxes: fakeBoxes(async () => ({ exit: 125, problem: 'the need box did not run: no image' })) });
+    expect(await noRun.run(ctxFor({ body: 'true' }, BOX))).toEqual({ kind: 'failed', error: 'command on box: the need box did not run: no image' });
+    const late = createCommandExecutor({ name: 'command', timeoutMs: 50, sshAuth: noSsh, boxes: fakeBoxes(async () => ({ exit: 125, problem: 'late', stopped: 'timed-out' })) });
+    expect(await late.run(ctxFor({ body: 'sleep 9' }, BOX))).toEqual({ kind: 'failed', error: 'command on box timed out after 50 ms' });
   });
 
-  it('without a socket only the hopper may open: fails the job, docker never run (issue #59)', async () => {
-    const bad = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, dockerHost: () => dockerHost(() => 'unix:///var/run/docker.sock') });
-    const out = await bad.run(ctxFor({ body: 'true' }, BOX));
-    expect(out).toMatchObject({ kind: 'failed', error: expect.stringMatching(/^command on box: HOPPER_DOCKER_HOST .* refused/) });
+  it('on a container target, a cancel stops the box', async () => {
+    const boxes = fakeBoxes((_b, io) => new Promise((resolve) => { io.signal.addEventListener('abort', () => resolve({ exit: 125, problem: 'stopped', stopped: 'cancelled' })); }));
+    const onBox = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshAuth: noSsh, boxes });
+    const ac = new AbortController();
+    const run = onBox.run(ctxFor({ body: 'sleep 30' }, BOX, ac.signal));
+    setTimeout(() => ac.abort('cancel'), 20);
+    expect(await run).toEqual({ kind: 'failed', error: 'aborted' });
+  });
+
+  it('on a container target with no sandbox module: fails the job, nothing run here', async () => {
+    expect(await ex.run(ctxFor({ body: 'touch ran' }, BOX))).toEqual({ kind: 'failed', error: 'command on box: this hopper starts no sandbox box, so a container target runs no command' });
   });
 
   it('runs on this machine when the lane is here', async () => {
@@ -79,7 +78,7 @@ describe('command executor', () => {
   });
 
   it('runs over ssh on an ssh target: one remote command, POSIX-quoted', async () => {
-    const overSsh = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshBin: FAKE_SSH, sshAuth: testSshAuth(join(sshDir, 'auth')), dockerHost: () => proxy.host });
+    const overSsh = createCommandExecutor({ name: 'command', timeoutMs: 20000, sshBin: FAKE_SSH, sshAuth: testSshAuth(join(sshDir, 'auth')) });
     process.env.FAKE_HERDR_DIR = sshDir;
     const out = await overSsh.run(ctxFor({ body: "echo 'it''s' there" }, { ...HERE, id: 'laptop', ssh: 'laptop' }));
     expect(out).toEqual({ kind: 'finished', result: { machine: 'laptop', exitCode: 0, stdout: 'its there\n', stderr: '' } });
@@ -114,13 +113,3 @@ describe('scriptOf', () => {
   });
 });
 
-describe('container probe', () => {
-  it('a running container is online, through the socket proxy', async () => {
-    expect(await probeContainer({ container: CONTAINER, dockerHost: () => proxy.host })).toBe(true);
-  });
-
-  it('one the proxy does not let through, or no socket only the hopper may open: rejected with the reason', async () => {
-    await expect(probeContainer({ container: OTHER, dockerHost: () => proxy.host })).rejects.toThrow(/Forbidden/);
-    await expect(probeContainer({ container: CONTAINER, dockerHost: () => dockerHost(() => undefined) })).rejects.toThrow(/no docker socket for the hopper/);
-  });
-});

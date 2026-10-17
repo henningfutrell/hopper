@@ -1,5 +1,5 @@
 // The test files that need a host service beyond the suite's own Postgres: containers they start
-// themselves (docker), a real sshd, a real LDAP directory, a real vault. The pull request check
+// themselves, a real sshd, a real LDAP directory, a real vault. The pull request check
 // (.github/workflows/pr.yml, issue #672) runs on a clean runner with HOPPER_TEST_HOST_SERVICES=0 and
 // leaves them out; everywhere else they run. A new test that needs one of those services goes here.
 // A machine with no container runtime at all (a seat with no docker or podman socket, issue #1038) also
@@ -10,15 +10,11 @@ import { join } from 'node:path';
 import { configDefaults } from 'vitest/config';
 
 export const HOST_SERVICE_TESTS = [
-  'test/adapters/command-executor.test.ts',
-  'test/integration/container-target.test.ts',
   'test/integration/realms-ldap.test.ts',
   'test/integration/ssh-auth-real.test.ts',
   'test/integration/ssh-no-dot-ssh-real.test.ts',
   'test/integration/vault-backends.test.ts',
   'test/plugins/vault-backends.test.ts',
-  'test/scripts/container-target.test.ts',
-  'test/scripts/docker-proxy.test.ts',
 ] as const;
 
 /** The tests, beyond HOST_SERVICE_TESTS, that start a container of their own (testcontainers: Solr, a HashiCorp Vault; Helm's image). */
