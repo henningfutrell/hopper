@@ -58,7 +58,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
-import type { AllowedHosts } from './allowed-hosts.ts';
+import type { AllowedHosts } from './allowed-hosts.ts'; import type { TelemetrySettingsService } from '../telemetry/settings.ts';
 import type { SourceEmailMatch } from './source-email-match.ts'; import type { InfraApplies } from './infra-applies.ts';
 import type { CloudLink } from './cloud-link.ts';
 import type { DisplayName } from './display-name.ts';
@@ -132,6 +132,8 @@ export interface ServerOptions {
   githubDeliveries: GitHubDeliveries;
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
+  /** The telemetry setting (issue #1486): GET /api/telemetry-settings, POST /ui/api/telemetry-settings. */
+  telemetrySettings: TelemetrySettingsService;
   /** The source email match (issue #1380): GET /api/source-email-match, POST /ui/api/source-email-match. */
   sourceEmailMatch: SourceEmailMatch; infraApplies: InfraApplies; // and infra applies (issue #1722): GET /api/infra-applies, POST /ui/api/infra-applies
   /** The cloud link (issue #467): GET /api/cloud-link, POST /ui/api/cloud-link and /ui/api/cloud-link/unlink. */
@@ -286,7 +288,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, proofs, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, infraApplies: o.infraApplies, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, telemetrySettings: o.telemetrySettings, sourceEmailMatch: o.sourceEmailMatch, infraApplies: o.infraApplies, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

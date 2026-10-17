@@ -1259,7 +1259,15 @@ events.
 ## Telemetry
 
 The hopper exports OpenTelemetry traces, metrics and logs (issue #1486, docs/design.md "Telemetry"). It is off until the
-launch names an exporter, with the usual `OTEL_*` variables. Nothing else is needed, and nothing is set in a file.
+launch names an exporter, with the usual `OTEL_*` variables, or the hopper's admin turns it on in Settings → Telemetry.
+Nothing else is needed, and nothing is set in a file.
+
+**In Settings** (docs/design.md "Telemetry settings"): turn on the export, give the collector's OTLP endpoint (for example
+`http://collector:4318`; each signal goes to its `/v1/traces`, `/v1/metrics` or `/v1/logs`) and pick the signals. It
+applies at once, with no restart, over OTLP HTTP and protobuf. A header the collector needs, such as its API key, is still
+given at launch as `OTEL_EXPORTER_OTLP_HEADERS`. When the launch names an exporter, the launch wins, and Settings says so.
+
+**At launch:**
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — your collector, for example `http://collector:4318`. Setting it turns telemetry on.
 - `OTEL_EXPORTER_OTLP_PROTOCOL` — `http/protobuf` (the compose default), `http/json` or `grpc`.

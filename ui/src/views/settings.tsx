@@ -4,7 +4,7 @@
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
-import { ArrowUpFromLine, Boxes, CirclePause, Cloud, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, Layers, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
+import { Activity, ArrowUpFromLine, Boxes, CirclePause, Cloud, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, Layers, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -13,6 +13,7 @@ import { Access } from '@/views/access';
 import { ApiTokens } from '@/views/api-tokens';
 import { ArtifactSettings } from '@/views/artifact-settings';
 import { AllowedHosts } from '@/views/allowed-hosts';
+import { TelemetrySettings } from '@/views/telemetry-settings';
 import { AutoPark } from '@/views/auto-park';
 import { Preemption } from '@/views/preemption';
 import { GitHubRateLimiter } from '@/views/github-rate-limiter';
@@ -44,7 +45,7 @@ import { LandingBatches } from '@/views/landing-batches';
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'auto-park', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'clusters', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'auto-park', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'clusters', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -64,6 +65,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'github-webhook': { label: 'GitHub webhook', icon: GitPullRequestArrow, view: GitHubDeliveries },
   'remote-access': { label: 'Remote access', icon: Globe, view: RemoteAccess },
   'allowed-hosts': { label: 'Allowed hosts', icon: Network, view: AllowedHosts },
+  telemetry: { label: 'Telemetry', icon: Activity, view: TelemetrySettings },
   'host-link': { label: 'Host link', icon: Link, view: HostLink },
   'cloud-link': { label: 'hopper.io', icon: Cloud, view: CloudLink },
   contribution: { label: 'Contribution', icon: GitFork, view: Contribution },
