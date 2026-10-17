@@ -309,6 +309,7 @@
         "infra.settings_changed",
         "infra.applies_changed",
         "infra.watchers_changed",
+        "infra.topology_reported",
         "approval.confirmation_asked",
         "api_grant.minted",
         "api_grant.refreshed",

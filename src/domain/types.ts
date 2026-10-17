@@ -524,7 +524,7 @@ export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, Signe
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
 export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
-export * from './lane-tuning.ts';
+export * from './lane-tuning.ts'; export type { GraphNode, LinkKind, NodeKind, SourceView, TopologyGraph, TopologyLink } from './topology.ts';
 export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts'; export type { IntakeStrictness, Strictness } from './intake-strictness.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';

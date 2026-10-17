@@ -5,7 +5,7 @@
 // The shrink guard (issue #1096) of their jobs' pushes: the push's lines from the user's mirror, with their own connection,
 // judged at the percent of their settings, read at each push.
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
-import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts';
+import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts'; import { createTopology, type Topology } from '../infra-plans/topology.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CountPushLines } from '../git-mirror/push-lines.ts';
@@ -90,8 +90,8 @@ export interface UserGitHubProxy {
    * because the gate reads each plan's branch head on GitHub with this user's connection.
    */
   infraPlans: InfraPlans;
-  /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. */
-  outOfBand: OutOfBandChanges;
+  /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. The infrastructure topology (issue #1781). */
+  outOfBand: OutOfBandChanges; topology: Topology;
 }
 
 export interface UserGitHubProxyOptions {
@@ -248,7 +248,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
           return api(key).head(repo, ref);
         },
       }),
-      outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }),
+      outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }), topology: createTopology({ store: o.store, clock: o.clock }),
       watches: createGitHubWatches({
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),
