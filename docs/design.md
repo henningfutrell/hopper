@@ -25665,7 +25665,7 @@ adds a table only.
 - **A time beside a condition does not replace it.** The hopper still tests the condition at each check; the time is a
   latest wake. A wait the hopper cannot test waits for the time alone.
 - **The line is not on `job.waiting`.** It is kept with the wait in the job; the event and its schema stay as they are.
-- **A review is still tested as the pull request's end.** No read of a review decision is added here.
+- **A review is still tested as the pull request's end.** No read of a review decision is added here. (Part 3 adds it.)
 
 **Not built (later parts).** A model-based condition (only where no deterministic kind fits, with its reason); a test of
 a pull request's review; the last output of an own command in what the job is told; stalled running jobs; the tailnet
@@ -25680,3 +25680,30 @@ know as failed at each pass and leaves the wait as it is, and End the wait still
 and two passes at once read and end a wait once; a hopper stopped mid-check is taken over once its lease ends, and its late
 answer writes nothing; a wait on a job; overdue once; a repeat not woken again), `test/integration/job-wait.test.ts` (a wait
 flagged stuck before is ended, and the job goes on), `test/ui/job-wait-view.test.ts` and `test/ui/board.test.ts` (the card).
+
+### Part 3: a pull request's review (2026-10-17)
+
+- **A pull request's review** (`pr_review_ended`). A wait on `pr <N> review` is tested on its reviews, not only on its end.
+  The job's source reads the pull request and its reviews (`JobSource.waitedReviews`; GitHub: `waitedReviews`,
+  `src/sources/github/watched.ts`, through `GitHubApi.pullRequestReviews`, REST `GET /repos/{owner}/{repo}/pulls/{n}/reviews`,
+  a review not yet sent left out). `reviewOutcome` says: a review sent at or after the wait began, met, and the newest one
+  says what (approved, asks for changes, comments, dismissed); none since, not met; the reviews not readable, not met;
+  merged or closed, met; no pull request of that number, met (the job names the right one).
+- **The job card** names the condition: "the hopper checks whether `<repo>#<N>` got a review".
+
+**Decisions:**
+- **Only a review after the wait began counts.** A review from before is the one the job read before it waited. A job that
+  pushed a fix and waits for a new review is not woken at once by the old "changes requested", again and again.
+- **Any review counts, a comment too.** The job reads it and decides. A wait that wants only an approval waits again.
+- **The last output of an own command is not put in what the job is told.** The hopper wakes the job in its own pane, where
+  the command's output already is, and the note tells it to read it. A pane that is lost has no output to give.
+
+**Not built (later parts).** A model-based condition (only where no deterministic kind fits, with its reason); stalled
+running jobs; the tailnet observation in the issue.
+
+**Persisted state.** `pr_review_ended` is a new condition kind in the job's JSON, and no migration is needed. A build before
+this one logs a check of that kind as failed at each pass and leaves the wait as it is; End the wait still ends it.
+
+**Verification:** `test/domain/wait-checks.test.ts` (`reviewOutcome`, the condition and its key),
+`test/engine/wait-checks.test.ts` (the real database: an old review does not end the wait, a new one does),
+`test/sources/waited-checks.test.ts` (`waitedReviews`), `test/ui/board.test.ts` (the card).

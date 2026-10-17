@@ -1,0 +1,1 @@
+- A job that waits for a review of its pull request now goes on by itself when a new review comes.
