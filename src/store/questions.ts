@@ -44,5 +44,11 @@ export function createQuestionRepository(c: StoreContext): QuestionRepository {
       const q = need(id);
       return save({ ...q, attempts: [...q.attempts, attempt] });
     },
+    finishAttempt(id, callKey, attempt) {
+      const q = need(id);
+      const at = q.attempts.findIndex((a) => a.callKey === callKey);
+      const next = { ...attempt, callKey };
+      return save({ ...q, attempts: at < 0 ? [...q.attempts, next] : q.attempts.map((a, i) => (i === at ? next : a)) });
+    },
   };
 }

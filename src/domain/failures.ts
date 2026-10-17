@@ -101,7 +101,12 @@ export interface FailureRecord {
   nextJobId?: string;
   /** The hand-off it opened (issue #516): set once, so it is never handed off twice. */
   handoffId?: string;
+  /** Jev's step to ask (issue #1608): kept until Jev answered, so a restart asks it again. */
+  jev?: JevStep;
 }
+
+/** What Jev is asked about a failed job (issue #550), kept on its record until answered (issue #1608). */
+export interface JevStep { error: string; attempt: number; ranMs?: number; machineId?: string; /** A done-check miss (issue #637). */ doneCheck?: boolean }
 
 /** A shared cause: the failures of one signature grouped, shown once with the jobs it hit. */
 export interface Problem {
@@ -321,6 +326,8 @@ export interface Handoff {
   work?: WorkState;
   /** The TL;DR of its summary and reasons (issue #569), once a long one has one. */
   tldr?: Tldr;
+  /** The hash of the text the model failed to write a TL;DR for (issue #1608): not asked again for that text. */
+  tldrFailedOf?: string;
 }
 
 /**
