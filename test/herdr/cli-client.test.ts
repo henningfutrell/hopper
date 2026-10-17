@@ -66,10 +66,10 @@ describe('herdr CLI client', () => {
     expect(calls()[0]!.argv.slice(2)).toEqual(['pane', 'list']);
   });
 
-  it('findTab finds the tab by its label in the workspace, with its pane and that pane\'s terminal (issue #1569)', async () => {
+  it('findTab finds the tab by its label in the workspace, with its pane, that pane\'s terminal and its agent (issue #1569)', async () => {
     process.env.FAKE_HERDR_PANE_LIST = '1';
     expect(await herdr().findTab({ workspaceId: 'w7', label: 'local/lane-1 · abcd1234 · 1.1' }))
-      .toEqual({ tabId: 'w7:t3', paneId: 'w7:p5', terminalId: 'term_a1' });
+      .toEqual({ tabId: 'w7:t3', paneId: 'w7:p5', terminalId: 'term_a1', agent: 'claude' });
     expect(calls().map((c) => c.argv.slice(2))).toEqual([['tab', 'list', '--workspace', 'w7'], ['pane', 'list']]);
   });
 

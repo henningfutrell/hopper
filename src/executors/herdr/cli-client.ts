@@ -129,6 +129,14 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
       const pane = r.root_pane as { pane_id: string; terminal_id?: string };
       return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}) };
     },
+    async findTab({ workspaceId, label }) {
+      const list = await run(['tab', 'list', '--workspace', workspaceId]);
+      const tab = (list.tabs as { tab_id: string; label?: string }[] | undefined)?.find((t) => t.label === label);
+      if (!tab) return null;
+      const panes = (await run(['pane', 'list'])).panes as HerdrListedPane[] | undefined;
+      const pane = panes?.find((x) => x.tab_id === tab.tab_id);
+      return pane ? { tabId: tab.tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}), ...(pane.agent ? { agent: pane.agent } : {}) } : null;
+    },
     async startAgent({ name, paneId, args, timeoutMs }) {
       try {
         await run(['agent', 'start', name, '--kind', 'claude', '--pane', paneId, '--timeout', String(timeoutMs), '--', ...args], timeoutMs + callTimeout);
@@ -178,7 +186,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
 }
 
 /** A pane as `herdr pane list` gives it: only what the machine's terminal shows, never its working directory. */
-interface HerdrListedPane { pane_id: string; tab_id: string; workspace_id: string; terminal_title_stripped?: string; terminal_title?: string; agent?: string; agent_status?: AgentStatus }
+interface HerdrListedPane { pane_id: string; tab_id: string; workspace_id: string; terminal_id?: string; terminal_title_stripped?: string; terminal_title?: string; agent?: string; agent_status?: AgentStatus }
 const paneOf = (p: HerdrListedPane): HerdrPane => {
   const title = p.terminal_title_stripped ?? p.terminal_title;
   return { paneId: p.pane_id, tabId: p.tab_id, workspaceId: p.workspace_id, ...(title ? { title } : {}), ...(p.agent ? { agent: p.agent } : {}), agentStatus: p.agent_status ?? 'unknown' };

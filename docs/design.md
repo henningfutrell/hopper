@@ -637,7 +637,7 @@ forbids driving a user's session from outside it. Spawned processes get an envir
 
 **Lanes → panes.** One herdr workspace labelled `hopper` (found by label, else created
 `--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
-`<laneId> · <jobId first 8>`; its root pane hosts Claude. The executor keeps `laneId →
+`<laneId> · <pane key>` (`<jobId first 8> · <attempts>.<pane of the run>`, "The pane key"); its root pane hosts Claude. The executor keeps `laneId →
 paneId` for the job now on that lane and saves `{ session, workspaceId, tabId, paneId,
 agentName, cwd }` with `ctx.saveState` the moment the pane exists. A job in
 `waiting_answer` keeps its pane (the waiting pane) while its lane is freed; on resume the lane it
@@ -24734,8 +24734,7 @@ the machine it starts on, first (the herdr executor's `relocate`): a second guar
   the issue's tests — a job stopped mid-run on one machine resumes on another, with no task sent twice — pass with the move.
 
 **Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers; a checkpoint at the first
-missed heartbeat and at link loss (the machine cannot be read once its link is down); `herdr tab create` keyed by (job,
-attempt); a job proxy that refuses the old agent's asks between the move and `end-left`.
+missed heartbeat and at link loss (the machine cannot be read once its link is down); a job proxy that refuses the old agent's asks between the move and `end-left`.
 
 **Residual risk, stated.** Between an `away` move and the `end-left` step (at most about 5 minutes after the machine answers
 again), the agent left there may still push through the hopper. Its pushes go to the job's own branch, under the shrink
@@ -24747,3 +24746,36 @@ sent twice, and the agent left is ended once the machine answers; the same with 
 another started, which ends it; a job with no checkpoint fails as before), `test/integration/herdr-link-lost.test.ts` and
 `test/integration/herdr-reattach.test.ts` (`gone`: it resumes its session on its machine; with no session it fails as
 before), `test/decider/left-machine.test.ts` (not placed back on the machine it left until the mark is lifted).
+
+## The pane key (issue #1524 part 4, issue #1569, 2026-10-17)
+
+**The problem.** `herdr tab create` had no key. When its answer was lost (a client target's link that dropped, a timeout on
+a busy machine), the job failed with herdr's error. The tab herdr had made stayed open with the job's environment, a pane no
+run held. A create tried again made a second tab.
+
+**The change** (`src/executors/herdr/pane-key.ts`). Each tab of a job's pane carries its **pane key** in its label:
+`<laneId> · <jobId first 8> · <attempts>.<n>` — the job, its attempt (each claim adds one) and the pane of the run (`n`: 1
+for the first; a start tried again in a new pane, or a pane herdr restored, opens the next). A create that fails is tried
+again, three tries at most, 2 s apart. Before each next try the hopper looks for the tab with that label in the `hopper`
+workspace (`HerdrClient.findTab`: `herdr tab list --workspace`, then `pane list` for its pane). A tab it finds is the one the
+lost create made: the run takes it, records it as its pane at once, and says so in its progress. No second tab is made. A tab
+it does not find is created again. A create that fails at every try fails the job with herdr's error, as before.
+
+**Decisions:**
+- **The key is in the label, not in a record of the hopper.** herdr gives back the label in `tab list`, on any host, also
+  after a restart of the hopper. A record would need a write before the create, and a create has nothing to undo.
+- **The first 8 characters of the job id, not all of it.** The label is shown in herdr's tab bar. With the lane, the
+  attempt and the pane of the run, two jobs in one workspace with the same key are not to be expected.
+- **A tab whose pane runs an agent is never taken.** A tab a lost create just made holds only a shell. One with Claude in it
+  is another run's.
+- **The pane number is counted in the process, per run.** A run that a restart of the hopper cut off is claimed again, so its
+  attempt is a new one, and so is its key.
+
+**Residual risk, stated.** A create that herdr finishes only after the hopper looked for its tab (a create still in flight
+after its timeout) leaves that tab open beside the one the next try made, a shell with the job's environment. The machine's
+terminal (issue #1128) lists it as a pane no job holds; nothing closes it by itself yet.
+
+**Verification:** `test/herdr/executor-pane-key.test.ts` (the label carries the key, the next pane of a run the next number;
+a create whose answer was lost: its tab is found and used, one tab, Claude started once, the task sent once; a create that
+failed before herdr made the tab: tried again with the same key; a create that fails at every try fails the job, nothing
+sent), `test/herdr/cli-client.test.ts` (`findTab` over the herdr CLI).

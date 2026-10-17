@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
+import { createKeyedTab, nextPaneKey } from './pane-key.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
@@ -209,8 +210,8 @@ export const scratchCommand = (cwd: string, jobId: string, make: boolean): strin
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
   const tmp = jobTmpOf(ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
-  const { tabId, paneId, terminalId } = await d.herdr.createTab({
-    workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
+  const { tabId, paneId, terminalId } = await createKeyedTab(d, ctx, {
+    workspaceId, cwd, label: `${ctx.laneId} · ${nextPaneKey(ctx)}`,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
