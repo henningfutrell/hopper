@@ -1,7 +1,9 @@
 // A source's intake outcomes grouped by why (issue #798), for Intake (issue #897): one heading per group with its count,
 // then each issue waiting on an intake decision (issue #1035) — its reason — with the action the source
 // offers: Assign to me, Release claim, Take off the backburner (GitHub writes the user makes), and a request card with
-// Approve and Decline (issue #1035). No inner scroll box: the page scrolls, so no row hides. Each row says its issue number; an issue on the
+// Approve and Decline (issue #1035). No inner scroll box: the page scrolls, so no row hides. Each row says its issue as
+// owner/repo#number, one link to the issue on GitHub with its title (issue #1463); Not assigned to you says why its issues
+// are not taken; with `repo`, only that repository's issues show, and the counts are of those. An issue on the
 // backburner says since when and by whom (issue #808), and has a dashed edge, so it never looks taken or dropped. An issue a
 // person approved here stays in its place in Needs approval, says approved and what the sync made of it, and takes the
 // focus (issue #811): the list does not move under the person who acted. So does an issue declined here (issue #1035). Taken and partly done issues are on Jobs.
@@ -9,13 +11,14 @@
 // an item whose job ended leaves Needs approval —, and an approved row says what it waits on: no job yet, or its job and state.
 // Assign to me, Release claim and Take off the backburner answer before their GitHub write (issue #1194): from the click on,
 // the row says the write runs and offers that action no more; a write that failed says why, and offers it again.
-import { Flame, Hand, Loader2, Unlock } from 'lucide-react';
+import { ExternalLink, Flame, Hand, Loader2, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GhLink } from '@/components/job';
 import { RequestCard } from '@/components/request-card';
 import type { IntakeActionKind, IntakeOutcome } from '../../../src/domain/intake.ts';
-import { INTAKE_GROUP_LABEL, intakeGroups, issueNumber, jobEnded } from '@/model/intake';
+import { INTAKE_GROUP_LABEL, intakeGroups, intakeRef, jobEnded, repoOf } from '@/model/intake';
+import type { IntakeGroupKind } from '@/model/intake';
 import { ago } from '@/model/format';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
@@ -92,14 +95,17 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
   };
   const offers = (kind: Send) => canOperate && x.action === kind && running !== kind;
   const backburner = x.group === 'backburner';
-  const n = issueNumber(x.key);
+  const ref = intakeRef(x);
   const { row, state } = useFocusOnApproved(x.key);
   const asked = x.action !== 'approve'; // the sync took the approved or declined issue: its request card is gone, the decision shows here
   return (
     <li ref={row} tabIndex={state === 'approved' || state === 'declined' ? -1 : undefined} data-intake-item={x.key} data-backburner={backburner || undefined}
       className={cn('flex flex-wrap items-center gap-x-2 gap-y-1 outline-none', backburner && 'border-l-2 border-dashed pl-2')}>
-      {n !== undefined && <span className="num text-muted-foreground">#{n}</span>}
-      <GhLink url={x.key}>{x.title || x.key}</GhLink>
+      <GhLink url={x.key}>
+        {ref !== undefined && <span data-intake-ref className="num font-mono">{ref}</span>}
+        <span>{x.title || x.key}</span>
+        <ExternalLink className="size-3 opacity-60" aria-hidden />
+      </GhLink>
       {asked && state === 'pending' && <span data-approving className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />approving ·</span>}
       {asked && state === 'approved' && <span data-approved className="text-ok">approved ·</span>}
       {asked && state === 'approved' && x.reason !== undefined && <span data-approved-waits className="text-muted-foreground">no job yet ·</span>}
@@ -121,8 +127,13 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
   );
 }
 
-/** The outcomes waiting on an intake decision, grouped. */
-export function IntakeGroups({ items, source }: { items: IntakeOutcome[]; source: string }) {
+/** Why a group's issues are not taken, where the reason on each row does not say it all (issue #1463). */
+const GROUP_WHY: Partial<Record<IntakeGroupKind, string>> = {
+  'not-assigned': 'Intake takes a labelled issue only when it is assigned to you. Nothing works on these issues until you assign them to you.',
+};
+
+/** The outcomes waiting on an intake decision, grouped; with `repo`, only that repository's (issue #1463). */
+export function IntakeGroups({ items, source, repo }: { items: IntakeOutcome[]; source: string; repo?: string }) {
   const canOperate = useCanOperate();
   const approvals = useApprovals();
   const jobs = useHopper((s) => s.jobs);
@@ -131,13 +142,14 @@ export function IntakeGroups({ items, source }: { items: IntakeOutcome[]; source
   useEffect(() => forgetEndedApprovals, []);
   return (
     <div className="space-y-3">
-      {intakeGroups(items, kept).map((g) => (
+      {intakeGroups(repo === undefined ? items : items.filter((x) => repoOf(x) === repo), kept).map((g) => (
         <section key={g.kind} data-intake-group={g.kind} className="space-y-1">
           <h3 className="flex items-center gap-1.5 font-medium">
             {g.kind === 'backburner' && <Flame className="size-3.5 text-muted-foreground" aria-hidden />}
             {INTAKE_GROUP_LABEL[g.kind]}
             <span data-intake-group-count className={`num rounded-full px-1.5 text-[11px] font-semibold ${g.kind === 'request' ? 'bg-warn text-background' : 'bg-muted text-foreground'}`}>{g.count}</span>
           </h3>
+          {GROUP_WHY[g.kind] && <p data-intake-group-why className="text-muted-foreground">{GROUP_WHY[g.kind]}</p>}
           <ul className="space-y-1">{g.items.map((x) => <Item key={x.key} x={x} source={source} canOperate={canOperate} />)}</ul>
         </section>
       ))}
