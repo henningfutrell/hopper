@@ -24139,6 +24139,94 @@ config, from the link (issue #464); an unknown name is `other` too.
 third-party plugin go out only as their kinds (`claude`, `codex`, `herdr-claude`, `other`); none of the names is in the
 snapshot; the schema refuses an executor outside the list and version 1; 50 machines with two executors each fit in 8 KiB.
 
+## Cloud link (issue #464, 2026-10-17 — a design, not built)
+
+**The problem.** Issue #464: a self-hosted instance links to hopper.io by dialing out. No port opens on the instance's
+host, and it needs no reverse proxy, DNS name or public URL. Today the instance reaches outside its host only through
+`HOPPER_PUBLIC_URL` or the LAN names, behind the Host guard (`src/http/reach.ts`). The cloud link's record, its
+registration, its two messages and the state snapshot are built ("The cloud link", "Registering at hopper.io",
+"Unregistering at hopper.io", "The cloud link's messages", "The hopper.io state snapshot"). The connection is not. This
+section fixes its data boundary, its stance on inbound actions and its transport. No code follows until a hopper.io
+server exists, with its key. The rules are `docs/hopper-io-security.md` (R1–R8); this section cites them and does not
+restate them.
+
+**What may leave the instance.** Only these messages, each a closed schema checked before it is sent (R5, R7):
+
+| Message | Content | Where its schema is |
+|---------|---------|---------------------|
+| the hello | the instance id (`installId`), the link's account, the proof of the cloud link key (below) | #464's install side |
+| the state snapshot | `HOPPER_IO_STATE_SCHEMA`: version and channel, queue and attention counts, per machine an opaque key, online state, lanes and executor kinds | `src/domain/hopper-io-state.ts` |
+| a heartbeat | `sentAt` only | #464's install side |
+| `registration`, `unregistration` | the outcome of `register` or `unregister`, a closed word | `src/http/cloud-link-messages.ts` |
+| `refused` | the reason, a closed word, never the message refused | `src/http/cloud-link-messages.ts` |
+| `unlinked` | the instance id and the account, before an unlink closes the connection | `src/http/cloud-link-messages.ts` |
+
+The issue proposed the instance's name and each machine's name too. They stay out: a name is free text and often a host
+name (R5, "The hopper.io state snapshot"); the owner names the instance and its machines at hopper.io. Last-seen time
+and link state are hopper.io's, from the connection itself, not a field.
+
+**What never leaves the instance.** No field of any message can hold:
+
+- a secret: the database URL, the master key, a GitHub or GitLab token or refresh token, a sealed or vault secret, a
+  webhook secret, a client token, a machine link key, a proxy token, an API token, a session, or the private half of the
+  cloud link key (R4);
+- job content: issue text, prompts, pane output and recent output, diffs, logs, artifacts;
+- question and answer text;
+- repository contents, local paths, host names, IP addresses, and people's names.
+
+The instance scans each outgoing message for secrets, and drops one that holds a secret, as an event (R4). A change to
+this boundary changes the schema, bumps its version, and changes the tables here and in "The hopper.io state snapshot",
+in the same change, as a reviewed change.
+
+**No inbound actions.** The link carries state out. hopper.io starts, cancels, answers and changes nothing on the
+instance, and installs no plugin (R1). The only messages the instance takes are `register` and `unregister`, which change
+the registration only ("The cloud link's messages"); anything else is refused and recorded. The link carries no UI and no
+HTTP request into the instance: the instance serves nothing on it. A remote action (R2), or the UI through the link
+(#469 decision 3b), is a later change that edits `docs/hopper-io-security.md` first, with the owner's decision.
+
+**Transport: one WebSocket over TLS, opened by the instance.**
+
+- The instance opens `wss://` to hopper.io on port 443, while the link record exists (R8), and only then. A container
+  instance needs no change: it is an outbound HTTPS connection, through NAT and a proxy that allows HTTPS.
+- It reconnects with backoff and jitter (1 second, doubling, at most 5 minutes). A connection that hopper.io refuses as
+  revoked is not tried again until the admin links again.
+- Each WebSocket text frame is one JSON message from the tables above. The cap is per message, on both sides (R7): 1024
+  bytes in, as built; the snapshot's own cap out.
+- **The instance checks hopper.io:** TLS with the system's roots, and a pin of hopper.io's public key, shipped in the
+  instance's code. A connection whose key does not match is closed before the hello.
+- **hopper.io checks the instance:** the hello proves the cloud link key over a fresh challenge from hopper.io; hopper.io
+  keeps only the public half (R4). Either side revokes the key (R4); a revoked key connects no more.
+- Each connect, disconnect, refused connection, revoke and refused or dropped message is an event on the instance (R6),
+  added to `docs/events.md` with the code.
+
+**Decisions:**
+
+- **A WebSocket, not `hopper-client/1`.** A machine's link (`src/http/client-link.ts`) runs HTTP/2 calls from the hopper
+  down the socket: the server acts on the client. The cloud link must not have that shape, since R1 lets hopper.io act on
+  nothing. A WebSocket carries one closed message at a time, which fits the messages already built
+  (`receive(text)`), and passes through the HTTPS proxies a container sits behind.
+- **Not a third-party tunnel or overlay network.** A tunnel (as remote access's providers, "Remote access providers")
+  carries inbound requests to the instance, which is what R1 forbids here. An overlay network adds a service and a
+  credential the owner must run and rotate.
+- **Full snapshots, not deltas**, as "The hopper.io state snapshot" says: a lost message heals at the next one.
+- **The key pin ships in the code.** hopper.io's key is not set in Settings: a key a person can change is a key a
+  person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
+
+**Left for the install side** (an issue filed once the hopper.io server and its key exist):
+
+- the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
+  scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519
+  agrees keys and cannot sign. That issue picks an Ed25519 key that signs the challenge, or keeps X25519 in a handshake an
+  established library implements, and changes R4 and the glossary in the same change;
+- the agent: connect while the link record exists, close at an unlink after `unlinked`, reconnect, send the snapshot and
+  heartbeat at the rate "The hopper.io state snapshot" names, and hand incoming text to `receive`;
+- the outgoing secret scan, the events, and `machineKey` and `executorPlugin` for the snapshot;
+- the WebSocket client: an established one (Node's own, or `ws`), the one that takes the key pin;
+- Settings → hopper.io shows the connection's state.
+
+**Verification:** a docs change; no code. The install-side issue's tests must show R1, R4, R5, R6, R7 and R8
+(`docs/hopper-io-security.md` "What each child issue must show").
+
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
 **The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
