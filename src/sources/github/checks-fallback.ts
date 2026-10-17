@@ -21,6 +21,10 @@ export const ACCOUNT_CONNECTION: ChecksConnection = {
 };
 
 const PERMISSIONS = { checks: 'Checks: read', statuses: 'Commit statuses: read' } as const;
+
+/** Why `connection` may not read a commit's checks: the permissions it lacks (all of them, or `either` one), and the fix. */
+export const checksLack = (connection: ChecksConnection, missing: readonly (keyof typeof PERMISSIONS)[], either = false): string =>
+  `${connection.name} lacks ${missing.map((m) => PERMISSIONS[m]).join(either ? ' or ' : ' and ')}: ${connection.fix}`;
 const PULL_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/\d+\/?$/;
 
 type Path = { read: 'rest' } | { read: 'none'; why: string; until: number };
@@ -29,8 +33,6 @@ type Checked = Pick<OpenPullRequest, 'checks' | 'checksWhy' | 'checksRefused' | 
 /** `api` with each `unknown` checks read again over REST, or said why not. */
 export function checksFallback(api: GitHubApi, connection: ChecksConnection, now: () => number = Date.now): GitHubApi {
   const paths = new Map<string, Path>();
-  const lacks = (missing: (keyof typeof PERMISSIONS)[], either = false): string =>
-    `${connection.name} lacks ${missing.map((m) => PERMISSIONS[m]).join(either ? ' or ' : ' and ')}: ${connection.fix}`;
 
   const answered = async <P extends Checked>(repo: string, pr: P): Promise<P> => {
     if (pr.checks !== 'unknown') return pr;
@@ -38,7 +40,7 @@ export function checksFallback(api: GitHubApi, connection: ChecksConnection, now
     const path = paths.get(key);
     if (path?.read === 'none' && now() < path.until) return { ...pr, checksWhy: path.why, checksRefused: true };
     const ref = pr.headOid ?? pr.headRef;
-    if (!ref || !api.headChecks) return { ...pr, checksWhy: lacks(['checks', 'statuses'], true), checksRefused: true };
+    if (!ref || !api.headChecks) return { ...pr, checksWhy: checksLack(connection, ['checks', 'statuses'], true), checksRefused: true };
     let got: HeadChecks;
     try {
       got = await api.headChecks(repo, ref);
@@ -46,7 +48,7 @@ export function checksFallback(api: GitHubApi, connection: ChecksConnection, now
       return { ...pr, checksWhy: `GitHub did not answer the read of its checks: ${(err as Error).message}` };
     }
     if ('unreadable' in got) {
-      const why = lacks(got.unreadable);
+      const why = checksLack(connection, got.unreadable);
       paths.set(key, { read: 'none', why, until: now() + UNREADABLE_KEEP_MS });
       return { ...pr, checksWhy: why, checksRefused: true };
     }

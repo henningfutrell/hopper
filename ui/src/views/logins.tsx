@@ -10,9 +10,12 @@
 // the code (the server answers it none either). A 403 on an action drops the UI to the landing page. A tool sign-in (issue #1128, kind
 // `paste_code`, no job) asks for the code its sign-in page shows instead (`SignInCode`). The hopper's Claude sign-in for pods
 // (issue #1287) is one on no machine: an admin starts it below the cards (`ClaudePodSignIn`), and its card names the account.
+// A card that shows the page to open names its browser profile, one per machine and account, and gives the ways to open the page
+// in it (issue #1249, `BrowserProfile`).
 import { Ban, Check, EyeOff, KeyRound, Lock, RotateCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { BrowserProfile } from '@/components/browser-profile';
 import { Confirm } from '@/components/confirm';
 import { DeviceCode } from '@/components/device-code';
 import { JobTitle } from '@/components/job';
@@ -22,6 +25,7 @@ import { RaisedOn } from '@/components/raised-by';
 import { SignInCode } from '@/components/sign-in-code';
 import { StatusBadge } from '@/components/status';
 import { cn } from '@/lib/utils';
+import { loginProfileName } from '@/model/browser-profile';
 import { clock } from '@/model/format';
 import { countdownText, isOpen, lastAccountText, onCard, phaseOf, sortByTimeLeft, type LoginPhase } from '@/model/logins';
 import type { LoginSettings, LoginView } from '@/model/wire';
@@ -137,7 +141,8 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
           </div>
         )}
         {open && canAct && l.userCode && l.verificationUrl && (
-          <DeviceCode provider={l.tool} userCode={l.userCode} verificationUri={l.verificationUrl} waiting="Waiting for the sign-in" actions={actions || undefined} />
+          <DeviceCode provider={l.tool} userCode={l.userCode} verificationUri={l.verificationUrl} waiting="Waiting for the sign-in" actions={actions || undefined}
+            profile={<BrowserProfile profile={loginProfileName(l)} url={l.verificationUrl} />} />
         )}
         {open && canAct && isSignIn(l) && l.codeKept && <SignInCode l={l} />}
         {open && l.reason && (

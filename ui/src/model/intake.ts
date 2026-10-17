@@ -88,3 +88,29 @@ export const requestsWaiting = (sources: readonly SourceStatus[]): number =>
 const ENDED: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 /** A taken item's job has ended since the sync that took it: the next sync says what became of the issue. */
 export const jobEnded = (status: JobStatus | undefined): boolean => status !== undefined && ENDED.includes(status);
+
+/** The owner/repo of an outcome (issue #1463): as the source named it, else from its key (a GitHub issue URL). */
+export const repoOf = (x: IntakeOutcome): string | undefined => x.repo ?? /^https:\/\/github\.com\/([^/]+\/[^/]+)\//.exec(x.key)?.[1];
+
+/** An outcome's reference, owner/repo#number (issue #1463); undefined for an item with no issue number. */
+export function intakeRef(x: IntakeOutcome): string | undefined {
+  const n = issueNumber(x.key);
+  if (n === undefined) return undefined;
+  const repo = repoOf(x);
+  return repo ? `${repo}#${n}` : `#${n}`;
+}
+
+/**
+ * The repositories of the outcomes, in name order, with how many each has, and the name a filter shows for each
+ * (issue #1463): the repository's name alone, or owner/repo when two owners have a repository of that name.
+ */
+export function reposOf(items: readonly IntakeOutcome[]): { repo: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const x of items) { const r = repoOf(x); if (r) counts.set(r, (counts.get(r) ?? 0) + 1); }
+  const name = (r: string) => r.split('/').pop()!;
+  const repos = [...counts.keys()].sort();
+  return repos.map((repo) => ({
+    repo, count: counts.get(repo)!,
+    label: repos.filter((r) => name(r) === name(repo)).length > 1 ? repo : name(repo),
+  }));
+}

@@ -47,17 +47,23 @@ describe('who may ask what', () => {
   const create: ProxyRequest = { op: 'issue.create', repo: 'octo/tools', title: 't', body: 'b' };
   const own = { jobId: 'j', repo: 'octo/tools' };
 
-  it('a job: every operation on its user\'s job repositories, a pull request only on its own', () => {
+  it('a job: every operation on its user\'s job repositories, a pull request too (issue #1275)', () => {
     expect(checkRequest(create, own, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'issue.comment', repo: 'octo/site', number: 1, body: 'b' }, own, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'pr.create', repo: 'octo/tools', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
-    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, own, repos))
-      .toEqual({ ok: false, reason: 'a job opens a pull request only on its own repository (octo/tools)' });
-    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, { jobId: 'j' }, repos))
-      .toEqual({ ok: false, reason: 'a job opens a pull request only on its own repository, and this job has none' });
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, { jobId: 'j' }, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.create', repo: 'else/where', head: 'x', title: 't', body: 'b' }, own, repos)).toMatchObject({ ok: false });
   });
 
-  it('a job closes only its own issue, and marks a pull request ready only on its own repository (issue #652)', () => {
+  it('a job opens a pull request from its user\'s fork only on its own repository (issue #1275)', () => {
+    const forking = { ...own, contribution: true, login: 'me' };
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/tools', head: 'me:x', title: 't', body: 'b' }, forking, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'me:x', title: 't', body: 'b' }, forking, repos))
+      .toEqual({ ok: false, reason: 'a job opens a pull request from its user\'s fork only on its own repository (octo/tools)' });
+  });
+
+  it('a job closes only its own issue, and marks a pull request ready on its user\'s job repositories (issues #652, #1275)', () => {
     const mine = { ...own, issue: 7 };
     expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 7 }, mine, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 8 }, mine, repos))
@@ -66,8 +72,8 @@ describe('who may ask what', () => {
     expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 7 }, own, repos))
       .toEqual({ ok: false, reason: 'a job closes only its own issue, and this job has none' });
     expect(checkRequest({ op: 'pr.ready', repo: 'octo/tools', number: 9 }, mine, repos)).toEqual({ ok: true });
-    expect(checkRequest({ op: 'pr.ready', repo: 'octo/site', number: 9 }, mine, repos))
-      .toEqual({ ok: false, reason: 'a job marks a pull request ready only on its own repository (octo/tools)' });
+    expect(checkRequest({ op: 'pr.ready', repo: 'octo/site', number: 9 }, mine, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.ready', repo: 'else/where', number: 9 }, mine, repos)).toMatchObject({ ok: false });
     expect(proxyRequest.safeParse({ op: 'issue.close', repo: 'o/r', number: 1, reason: 'not_planned' }).success).toBe(false);
   });
 

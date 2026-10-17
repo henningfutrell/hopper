@@ -34,9 +34,11 @@ Every row shows, also when its count is 0. The page says *Nothing waits on you* 
 **Intake** lists the open labelled issues your job sources list that wait on an intake decision, per source. The issues are in groups, each with a count:
 
 1. **Needs approval**: request cards. Select **Approve** to let the hopper take the issue. Select **Decline** when you do not want it done: the hopper makes no job and writes nothing on GitHub. The source shows one line with how many requests you declined. When someone edits the title or body of a declined issue, it shows here again.
-2. **Not assigned to you**: select **Assign to me**, or **Assign all to me**.
+2. **Not assigned to you**: the hopper takes a labelled issue only when it is assigned to you, so nothing works on these issues. Select **Assign to me**, or **Assign all to me**.
 3. **On the backburner**: select **Take off the backburner**.
 4. **Other reasons**.
+
+Each row shows the repository and number of the issue (`owner/repo#number`) and its title. Select it to open the issue on GitHub. When the issues of a source come from more than one repository, select a repository above the groups to show only its issues. **Assign all to me** then assigns only the issues shown. Select **All repositories** to show all issues again.
 
 An issue the hopper took leaves Intake. Its progress (taken, partly done, its pull request waits for review) shows on **Jobs**. Each source shows one line with how many such issues there are, with a link to Jobs. When nothing waits, the source says *Nothing waiting for intake*.
 

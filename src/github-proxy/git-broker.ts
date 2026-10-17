@@ -2,7 +2,9 @@
 // fetch or its push — done on GitHub with the connection of the job's own user. In order: the job's proxy token (git
 // sends it as the password of Basic auth, from the job's credential helper) and its job at work; the repository: a push
 // only to the job's own one, whether or not it is one of the user's job repositories (issue #1131: a job of the app
-// source, or of a repository chosen no more, has its own repository still), and only when the user can push to it; then
+// source, or of a repository chosen no more, has its own repository still), or to another of the user's job repositories
+// (issue #1275: a job whose issue is in one repository and whose change belongs in another), and only when the user can
+// push to it; then
 // a push's ref updates, read before anything reaches GitHub (`checkPush`). A fetch goes to GitHub with the user's connection whatever the
 // repository (issue #1015): the job repositories decide intake and where a job pushes, not what it reads, so a job reads
 // any repository its user sees; git's fetch (`git-upload-pack`) only reads, and the token never leaves the hopper. A push is an event on the job's timeline (`github_proxy.done`, `.refused`,
@@ -187,13 +189,17 @@ export function createGitProxy(o: GitProxyOptions) {
         try { facts = await git.repo(at.repo); } catch { facts = undefined; }
       }
       const fork = facts !== undefined && facts.fork && [facts.parent, facts.source].some((p) => p !== undefined && same(p, own!));
-      if (push && !toOwn && !fork) return refuse(`a job pushes only to its own repository${own ? ` (${own})${contribution ? ', or to its user\'s fork of it' : ''}` : ', and this job has none'}`);
+      if (push && !toOwn && !usedHere && !fork) {
+        const where = own ? `its own repository (${own}) or another of the repositories the hopper works on${contribution ? ', or to its user\'s fork of its own' : ''}` : 'the repositories the hopper works on';
+        return refuse(`a job pushes only to ${where}`);
+      }
       if ('problem' in git) {
         if (push || usedHere) return refuse(git.problem);
         return text(503, `refused: ${git.problem}`);
       }
-      if (push && toOwn) {
+      if (push && !fork) {
         try { facts = await git.repo(at.repo); } catch (e) { return refuse(`${at.repo} could not be read: ${(e as Error).message}`); }
+        if (!facts.canPush && !toOwn) return refuse(`your user cannot push to ${at.repo}`);
         if (!facts.canPush) {
           return refuse(contribution
             ? `your user cannot push to ${at.repo}: contribute through a fork: sh "$HOPPER_GH" repo fork --repo ${at.repo}, then push your branch to the fork`

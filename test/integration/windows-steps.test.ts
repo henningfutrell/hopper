@@ -25,6 +25,7 @@
 //       `vault.step_delivered` names the secret, the host and the job, never the value
 //     And a secret the host does not give is refused before the vault is asked
 import { execFile, execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,7 +44,7 @@ const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: 
 interface Seen { host: string; command: string; inputs: string[]; outputs: string[]; secrets?: Record<string, string> }
 
 /** A Windows host double: it lists the inputs it got, streams two lines, packs `bin/App.exe` as the outputs, exits 3. */
-function fakeHost(o: { hang?: boolean } = {}): { host: WindowsStepHost; seen: Seen[] } {
+function fakeHost(o: { hang?: boolean; exeBytes?: number } = {}): { host: WindowsStepHost; seen: Seen[] } {
   const seen: Seen[] = [];
   return {
     seen,
@@ -62,7 +63,7 @@ function fakeHost(o: { hang?: boolean } = {}): { host: WindowsStepHost; seen: Se
         if (step.outputs.length === 0) return { exit: 3 };
         const made = mkdtempSync(join(tmpdir(), 'win-out-'));
         mkdirSync(join(made, 'bin'));
-        writeFileSync(join(made, 'bin', 'App.exe'), 'MZ');
+        writeFileSync(join(made, 'bin', 'App.exe'), o.exeBytes ? randomBytes(o.exeBytes) : 'MZ');
         execFileSync('tar', ['-cf', join(step.dir, 'outputs.tar'), '-C', made, 'bin']);
         return { exit: 3, outputsBytes: statSync(join(step.dir, 'outputs.tar')).size };
       },
@@ -130,6 +131,17 @@ describe('Windows sandbox steps (issue #731)', () => {
     expect(started[0]!.data).toMatchObject({ host: 'build-host', command: 'msbuild App.sln /p:Configuration=Release', timeoutSeconds: 1800, outputs: ['bin'] });
     expect((started[0]!.data as { inputsBytes: number }).inputsBytes).toBeGreaterThan(0);
     expect(eventsOf(a, 'step.finished')[0]!.data).toMatchObject({ host: 'build-host', exit: 3, outputsBytes: expect.any(Number) });
+  }, 60_000);
+
+  it('brings back outputs of many megabytes whole (issue #1255)', async () => {
+    const fake = fakeHost({ exeBytes: 8 * 1024 * 1024 });
+    const { a, session, job } = await h.boot({ seams: { windowsStepHost: fake.host } });
+    expect((await saveHosts(a, session, [HOST])).status).toBe(200);
+    const cwd = workTree();
+    const r = await step(a, job, ['run', 'build-host', '--command', 'msbuild App.sln', '--output', 'bin', '--into', 'out'], { cwd });
+    expect(r.stderr).not.toContain('could not be unpacked');
+    expect(r.code).toBe(3);
+    expect(statSync(join(cwd, 'out', 'bin', 'App.exe')).size).toBe(8 * 1024 * 1024);
   }, 60_000);
 
   it('sends a script of any size with the inputs, and runs it from the step\'s scratch directory', async () => {

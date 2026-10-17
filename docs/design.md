@@ -4925,8 +4925,11 @@ before each step. Every remote command is `powershell -NoProfile -NonInteractive
 3. ssh: in the working directory, Windows' own `tar -xf` extracts the inputs (it refuses absolute paths and `..`); the
    step runs as `powershell -File step.ps1`, its stdout and stderr streamed back; the outputs that are there are packed
    with `tar -cf`, a missing one said on stderr; the exit code is the step's (`$LASTEXITCODE`, or 1 when its last
-   statement failed).
-4. scp: `outputs.tar` back, when the step asked for outputs.
+   statement failed). A `tar` that fails is said on stderr and its archive removed, so no part of one is taken as the
+   outputs; one that packs says the archive's size on stderr (`hopper-step: outputs packed, <n> bytes`, issue #1255).
+4. scp: `outputs.tar` back, when the step asked for outputs. A copy of another size than the one the host said is no
+   outputs: the step's problem says `the outputs came back cut short: <got> of <packed> bytes`. `GET /job/step/:id`
+   sends the archive with its `content-length`, so the job's copy that ends short fails in curl, not in `tar -xf`.
 5. ssh: the scratch directory is removed, whatever came before. The inputs stay in the working directory: that is
    where the build runs.
 
@@ -11114,7 +11117,11 @@ backburner issues had no action; and "taken" showed for an issue whose job had a
 - **Not-taken groups.** Each outcome not taken carries `group` (`NotTakenGroup`, `src/domain/intake.ts`): `request`,
   `not-assigned`, `backburner`, `pr-waiting` (`hopper:pr-ready`), `partly-done`, `other`. `discoverIssues` sets it from
   the reason; `source.ts` sets `request` where it makes the request card. The UI groups by it (`ui/src/model/intake.ts`,
-  `IntakeGroups`), in that order, a count per group, and never in an inner scroll region: the page scrolls.
+  `IntakeGroups`), in that order, a count per group, and never in an inner scroll region: the page scrolls. Each row's
+  link to its issue says `owner/repo#number` with the title (issue #1463: `intakeRef`, from the outcome's `repo`); a source
+  whose waiting issues are of more than one repository filters them by repository (`reposOf`; the page's own state, the
+  counts then of that repository, Assign all of the issues shown); `not-assigned` says under its heading that intake takes
+  only a labelled issue assigned to the user.
 - **Not taken, a view.** `#not-taken`, after Queue: per source, the issues not taken, grouped, with every action Sources
   has. Its nav badge counts the request cards (`requestsWaiting`). Sources keeps the full intake, grouped the same way,
   taken last. A request card has no job, so the Queue (which lists jobs) does not show it.
@@ -11359,6 +11366,18 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
 - **The active list.** The Logins section counts `pending` logins (`GET /api/sections`); the Logins view's cards are
   the pending ones, the expired ones a job still waits to renew, and, for a short while, the failed, cancelled and
   expired ones. A resolved login — completed or dismissed — leaves the cards at once (issue #1110) for Earlier logins.
+- **Browser profile** (issue #1249, `ui/src/model/browser-profile.ts`, `ui/src/components/browser-profile.tsx`). Signing two
+  machines in one after the other in the browser's default profile let the first sign-in's cookies sign the second machine's
+  tool in as the wrong account. So each card that shows a page to open names a **browser profile**: `hopper-<machine id>-<account>`,
+  lower case letters, digits and dashes, each part at most 40 characters. The account is the one the login names (the Claude
+  sign-in for pods names it), else the machine's last account (issue #1269); with none known, `hopper-<machine id>`; with no
+  machine, `self`. The name comes from nothing else, so a sign-in again on the same machine and account opens the same profile,
+  with its cookies. A web page cannot pick the browser's profile, so the card gives the ways to open the page in it: a command,
+  copied, that starts Chrome or Edge with the profile's own data dir (`--user-data-dir`; PowerShell on Windows, the dir under
+  `%LOCALAPPDATA%\hopper\browser-profiles\`; a shell on macOS and Linux), made at its first use; and a Firefox container
+  link (`ext+container:name=<profile>&url=<page>`), which the add-on Open external links in a container opens in the container of
+  that name. The page's own Open button is unchanged: a new tab of the browser's current profile, `noopener`. Nothing of the
+  profile is kept by the hopper or sent to it; the command carries the page's URL, as the Open button does.
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
   read at each expiry, so a change applies without a restart): `renew` (the default since issue #1016: two codes of a
   job expired before a person saw them, and the job stalled) — at each expiry the hopper asks the job for a new code
@@ -14015,9 +14034,10 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
 1. the token: the Basic auth password is a proxy token of a user whose job it names, at work — else **401** (git then
    asks its helper once more and stops);
 2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
-3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's), and only
-   when the user can push to it — whether or not it is one of its user's **job repositories** (issue #1131, below) —, or
-   to the **job's fork** ("The contribution flow") — else **403** with the reason, which git shows as `remote: …`;
+3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's) —
+   whether or not it is one of its user's **job repositories** (issue #1131, below) —, to another of its user's job
+   repositories (issue #1275, below), and only when the user can push to it, or to the **job's fork** ("The contribution
+   flow") — else **403** with the reason, which git shows as `remote: …`;
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -15407,6 +15427,14 @@ takes nothing new says why too — `sync pass <name> (nothing new taken: <the se
 `needs-setup`, never ok. The GitHub sign-in, and the hopper's app installed on every repository, do not configure the app
 source: it is an admin's own app, with its own id, slug and key (`help/github-app-setup.md`); without them, take the issues
 through the GitHub account source.
+
+**A job is told why too** (issue #1279, `src/github-proxy/api.ts`). A job's `pr status` and `pr wait` read on GitHub
+take a refused check-runs read (403, 404, not a rate limit) as `unknown` with `checksWhy` — the connected GitHub account,
+the permission it lacks, and the fix (`checksLack`, the fallback's own words) —; one answered from the hopper's records
+carries the card's `checksWhy`. `pr checks` reads the check runs and the statuses side by side: one refused, it answers the
+other with `unreadable` and `checksWhy`; both refused, it fails with GitHub's message and `checksWhy`. Every other
+"Resource not accessible by integration" a job's request gets says what the app needs and the fix (`explained`, as below).
+A `pr wait` cannot wait on checks it may not read: it answers at once, and the help says to pass `checksWhy` to a person.
 
 **Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
 `PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
@@ -22665,3 +22693,45 @@ a job's span tree, its parent links, attributes and metrics; a request's span na
 log record its children, its latency recorded; GitHub calls counted, a conditional hit as a hit, the calls left; the
 process's and the queue's gauges; and no secret — a prompt, a title, a question, an answer, an error, a session, a bearer
 token, a query, a body, a GitHub token, an id in a URL — in anything exported.
+
+## A job pushes to another job repository (issue #1275, 2026-10-16)
+
+**The problem.** A job's issue can sit in one repository while its change belongs in another: an orchestration
+repository whose issues name the work, and the application repositories it stewards, where the code is. The git broker
+let a job push only to its own repository (its source's), so such a job finished its code and tests, and could not
+push, open its pull request, or finish. Its user could push to the other repository (`canPush`), and the job had no
+other way: `repo fork` is for its own repository only.
+
+**The change.** A job may push, open a pull request, and mark one ready on any of its user's **job repositories**, not
+only its own: the job repositories already decide where a job writes (issue #1015, `checkRequest`), so a push follows
+the same line. In the git broker (`createGitProxy`, step 3 of "Git through the hopper"), a push goes to the job's own
+repository, to another job repository, or to the job's fork; on any of them only when its user can push there, with the
+same ref check (`checkPush`: no default or release branch, no delete) and the shrink guard. A push to another job
+repository its user cannot push to is refused before GitHub refuses it (`your user cannot push to <repo>`): the
+contribution flow forks only the job's own repository. In the GitHub proxy (`checkRequest`), `pr.create` and `pr.ready`
+are no longer held to the job's own repository; a pull request from the user's fork (`--head <login>:<branch>`) still
+opens only on the job's own repository. The job's issue stays where it is: the pull request closes it by its full name
+(`Closes OWNER/NAME#N`), which GitHub links as a closing reference when the pull request is on its repository's default
+branch, so the completion check finds it among the issue's closing pull requests. `hopper-gh help` says so.
+
+**Not changed.** A repository that is no job repository takes no push from a job but its own (issue #1131). A fetch
+reads any repository the user sees (issue #1015). A job without its own repository (a direct job) may push to the job
+repositories too: it was refused all pushes before, with no reason the job repositories did not already settle.
+
+**Decisions:**
+- **The job repositories, not a list of stewarded repositories.** The hopper has no notion of which repository stewards
+  which; the job repositories are the person's own choice of where the hopper works, and adding a repository there is
+  how a person allows a job's push to it. A second list would be a second answer to the same question.
+- **Any branch of the job's own work, not only a new one.** A job pushes its branch again after a review or a rebase
+  (`--force-with-lease`), as on its own repository; refusing updates would leave it with a branch it cannot fix.
+
+**Residual risk.** A job can now overwrite a branch other than the default or a release branch on any job repository
+its user can push to, not only on its own repository. One bad issue, or one injected agent, still cannot change a
+default or release branch, so `dev`, the published image and the hosts stay out of its reach; branch protection on
+GitHub keeps the rest, as before ("Git through the hopper", residual risk). Yolo mode merges only the pull requests the
+hopper follows, on the repositories where a person turned it on.
+
+**Verification:** `test/integration/git-proxy.test.ts` ("pushes a branch to another of its user's job repositories,
+forced too", "refuses a push to another job repository its user cannot push to", a repository the hopper does not work
+on refused), `test/integration/github-proxy.test.ts` (a pull request on another job repository, marked ready; one
+elsewhere refused), `test/github-proxy/proxy.test.ts` (`checkRequest`), `test/integration/contribution.test.ts`.

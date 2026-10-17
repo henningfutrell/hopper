@@ -244,7 +244,7 @@ token | curl -sS -N -H @- -H 'expect:' -H 'content-type: application/x-tar' --da
 status=$(awk '/^HTTP\\// { s = $2 } END { print s }' "$tmp/head")
 [ "$status" = 200 ] || exit ${STEP_NOT_RUN}
 id=$(header ${STEP_HEADER.id} "$tmp/head")
-code=$(token | curl -sS -H @- -D "$tmp/head2" -o "$tmp/out.tar" -w '%{http_code}' "$HOPPER_URL${STEP_PATH}/$id") || exit ${STEP_NOT_RUN}
+code=$(token | curl -sS -H @- -D "$tmp/head2" -o "$tmp/out.tar" -w '%{http_code}' "$HOPPER_URL${STEP_PATH}/$id") || { echo 'hopper-step: the hopper could not be reached, or the outputs did not arrive whole' >&2; exit ${STEP_NOT_RUN}; }
 [ "$code" = 200 ] || { cat "$tmp/out.tar" >&2; exit ${STEP_NOT_RUN}; }
 exit_code=$(header ${STEP_HEADER.exit} "$tmp/head2")
 problem=$(header ${STEP_HEADER.problem} "$tmp/head2")

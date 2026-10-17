@@ -31,7 +31,7 @@ function stepDir(inputs: boolean): string {
   return d;
 }
 
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'win-step-')); process.env.FAKE_WIN_DIR = dir; delete process.env.FAKE_WIN_EXIT; delete process.env.FAKE_WIN_HANG; });
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'win-step-')); process.env.FAKE_WIN_DIR = dir; delete process.env.FAKE_WIN_EXIT; delete process.env.FAKE_WIN_HANG; delete process.env.FAKE_WIN_CUT; });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.env.FAKE_WIN_DIR; });
 
 describe('the Windows step host over ssh', () => {
@@ -87,6 +87,13 @@ describe('the Windows step host over ssh', () => {
     expect(r).toEqual({ exit: 0 });
     expect(calls()[1]!.args.slice(-2)).toEqual([join(d, 'step.ps1'), 'builder@winbox:C:/work/app/.hopper-step/']);
     expect(scripts()[1]).not.toContain('tar -xf');
+  });
+
+  it('says the outputs came back cut short when the copy is smaller than the archive the host packed (issue #1255)', async () => {
+    const d = stepDir(false);
+    process.env.FAKE_WIN_CUT = '5';
+    const r = await host().run(HOST, { id: 's6', command: 'msbuild App.sln', dir: d, inputs: false, outputs: ['bin'] }, { log: () => undefined, signal: new AbortController().signal });
+    expect(r).toEqual({ exit: 0, problem: 'the outputs came back cut short: 5 of 15 bytes' });
   });
 
   it('stops the step when it is aborted, and still cleans up', async () => {
