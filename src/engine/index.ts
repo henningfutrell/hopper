@@ -145,9 +145,16 @@ export function createEngine(o: EngineOptions): Engine {
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
-  const leases = createLeaseKeeper(c, runner, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanups);
+  // A person's act another hopper relayed (issue #1662): a cancel as that hopper's would be; a park parks the run here, and
+  // a preempted job not run here loses its mark.
+  const leases = createLeaseKeeper(c, runner, cleanup, (jobId, act) => {
+    if (act.kind === 'cancel') { commands.cancel(jobId, act.reason, act.note); return; }
+    if (runner.park(jobId)) return;
+    console.warn(`hopper: job ${jobId}: another hopper relayed its park, but it does not run here`);
+    preemptRunning(c, runner, jobId, false);
+  });
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
   const checkpoints = createCheckpoints(c);
