@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { CLOUD_LINK_KEY, type CloudLinkView } from '../../src/domain/cloud-link.ts';
 import type { InstanceStore } from '../../src/domain/store.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
+import { systemBackendRefusal } from '../../src/domain/vault.ts';
 import { createCloudLink, type CloudLink } from '../../src/http/cloud-link.ts';
 import { HttpError } from '../../src/http/errors.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
@@ -53,6 +54,8 @@ describe('the hopper.io link key', () => {
     expect(JSON.stringify(view)).not.toContain(secret);
     expect(JSON.stringify(events)).not.toContain(secret);
     expect(events.map((e) => e.type)).toEqual(['vault.secret_set', 'cloud_link.linked', 'vault.secret_read']);
+    expect(secrets.list()).toEqual([expect.objectContaining({ name: CLOUD_LINK_KEY, kind: 'cloud-link' })]);
+    expect(systemBackendRefusal(CLOUD_LINK_KEY)).toContain('stays in the hopper');
   });
 
   it('a rotation replaces the key; the old one is gone; not linked, 409', () => {
