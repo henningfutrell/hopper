@@ -77,6 +77,7 @@ export function redBatchDetail(type: string, d: Record<string, unknown>): string
   if (type === 'landing_batch.canary_issue_filed') return `${at}issue #${String(d.issue)} filed for the held canary`;
   if (type === 'landing_batch.stuck') return `${at}the landing pass is stuck: ${String(d.error)}`;
   if (type === 'landing_batch.restarted') return `${at}the landing batch was restarted`;
+  if (type === 'landing_batch.due') return `${at}a batch run of ${short(String(d.tip))} is due: ${String(d.why)}`;
   if (type === 'landing_batch.canary_promoted') return `${at}stable moved to ${short(String(d.tip))}`;
   return `${at}${type}`;
 }

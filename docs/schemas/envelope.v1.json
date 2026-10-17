@@ -315,6 +315,7 @@
         "step.refused",
         "vault.step_delivered",
         "vault.step_refused",
+        "landing_batch.due",
         "landing_batch.started",
         "landing_batch.promoted",
         "landing_batch.failed",

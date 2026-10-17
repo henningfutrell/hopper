@@ -72,6 +72,12 @@ export function patchLandingBatches(s: LandingBatchSettings, p: LandingBatchPatc
 /** A batch run at work: its tip, branch and pull request. */
 export interface RunningBatch { tip: string; branch: string; pullRequest: number; url: string; startedAt: string; merges: number[] }
 
+/**
+ * A batch run the hopper starts (issue #1589): recorded before its branch and pull request, so a pass that stops between
+ * them and their record starts the same batch run, and finds its pull request by its head branch.
+ */
+export interface DueBatch { tip: string; branch: string; landing: string; merges: number[]; closes: string[]; why: string }
+
 /** Where one repository's landing batches stand, from its events. */
 export interface LandingBatchState extends BackMergeState, CanaryState {
   repo: string;
@@ -82,6 +88,10 @@ export interface LandingBatchState extends BackMergeState, CanaryState {
   /** When the newest batch run started: the timer counts from it. */
   lastStartedAt?: string;
   running?: RunningBatch;
+  /** A batch run due, not started yet (issue #1589). */
+  due?: DueBatch;
+  /** The pull requests of the batch and bisect runs that ended (issue #1589): each pass closes the ones still open. */
+  closedRuns?: number[];
   /** How the newest batch run ended. */
   last?: { outcome: 'promoted' | 'failed'; tip: string; at: string; pullRequest: number; url: string; reason?: string };
   /** A bisect at work within the newest red batch. */
@@ -99,13 +109,18 @@ export interface LandingBatchState extends BackMergeState, CanaryState {
 }
 
 export const LANDING_BATCH_EVENT_TYPES = [
-  'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
+  'landing_batch.due', 'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit',
   'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed',
   'landing_batch.back_merge_issue_filed', 'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed',
   'landing_batch.canary_promoted', 'landing_batch.stuck', 'landing_batch.restarted',
 ] as const;
+
+/** A batch or bisect run that ended: its pull request stays closed. */
+function closeRun(s: LandingBatchState, pullRequest: unknown): void {
+  if (typeof pullRequest === 'number' && !s.closedRuns?.includes(pullRequest)) (s.closedRuns ??= []).push(pullRequest);
+}
 
 /** A red batch's events onto the state: the bisect, its runs and results, the culprit, its revert and its fix issue. */
 function reduceRed(s: LandingBatchState, type: string, d: Record<string, unknown>, at: string): void {
@@ -120,6 +135,7 @@ function reduceRed(s: LandingBatchState, type: string, d: Record<string, unknown
   } else if (type === 'landing_batch.bisect_run' && b) {
     b.running = { index: Number(d.index), sha: String(d.sha), branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: at };
   } else if (type === 'landing_batch.bisect_tested' && b) {
+    closeRun(s, d.pullRequest);
     const r: BisectResult = { index: Number(d.index), sha: String(d.sha), outcome: d.outcome === 'good' ? 'good' : d.outcome === 'bad' ? 'bad' : 'unknown' };
     delete b.running;
     b.results.push(r);
@@ -156,7 +172,10 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
     const repo = key(d.repo);
     const s = (out[repo] ??= { repo });
     const tip = String(d.tip ?? '');
-    if (e.type === 'landing_batch.started') {
+    if (e.type === 'landing_batch.due') {
+      s.due = { tip, branch: String(d.branch), landing: String(d.landing), merges: (d.merges as number[] | undefined) ?? [], closes: (d.closes as string[] | undefined) ?? [], why: String(d.why ?? '') };
+    } else if (e.type === 'landing_batch.started') {
+      delete s.due;
       s.lastStartedAt = e.at;
       s.running = { tip, branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: e.at, merges: (d.merges as number[] | undefined) ?? [] };
       delete s.revertedSinceRun;
@@ -170,9 +189,13 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       s.lastTestedTip = tip;
       if (outcome === 'promoted') { s.lastPromotedTip = tip; delete s.backMergeIssue; }
       if (s.running?.tip === tip) delete s.running;
+      if (outcome === 'failed') closeRun(s, d.pullRequest);
+      // Merge conflicts: a back-merge is due, recorded with the failure (issue #1589).
+      if (d.conflicts === true) s.backMerge = { tip, state: 'due', batch: Number(d.pullRequest), at: e.at };
       s.last = { outcome, tip, at: e.at, pullRequest: Number(d.pullRequest), url: String(d.url), ...(typeof d.reason === 'string' ? { reason: d.reason } : {}) };
     } else if (e.type === 'landing_batch.restarted') {
       // A person ended the batch run and the bisect at work (issue #1333).
+      for (const n of (d.closed as number[] | undefined) ?? []) closeRun(s, n);
       delete s.running;
       delete s.bisect;
       s.restarted = { at: e.at, by: String(d.by ?? '') };
@@ -198,11 +221,13 @@ const short = (sha: string): string => sha.slice(0, 12);
 /** Whether a batch run starts now, and why (or why not). */
 export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg: LandingBatchRepo, now: Date): { due: boolean; why: string } {
   if (s?.running) return { due: false, why: `batch run #${s.running.pullRequest} is at work` };
+  if (s?.due) return { due: false, why: `the batch run of ${short(s.due.tip)} starts` };
   if (s?.bisect) return { due: false, why: `a bisect of the batch at ${short(s.bisect.tip)} is at work` };
   const c = s?.culprit;
   if (c?.pullRequest !== undefined && c.revertProblem === undefined && c.revert?.state !== 'merged') {
     return { due: false, why: c.revert ? `the revert #${c.revert.pullRequest} of #${c.pullRequest} waits to merge` : `the revert of #${c.pullRequest} is not open yet` };
   }
+  if (s?.backMerge?.state === 'due') return { due: false, why: `the merge of ${cfg.tested} into the landing branch starts` };
   if (s?.backMerge?.state === 'open') return { due: false, why: `the merge of ${cfg.tested} into the landing branch (#${s.backMerge.pullRequest}) waits to merge` };
   if (f.aheadBy <= 0) return { due: false, why: `nothing new on the landing branch beyond ${cfg.tested}` };
   if (s?.restarted) return { due: true, why: 'a person restarted the landing batch' };

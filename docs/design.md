@@ -20566,6 +20566,34 @@ Now:
   the error. Once the step isolation above is in, a refusal on one step no longer stops the merge of a green batch, so
   the case that needed it is gone.
 
+**A stop between a GitHub call and its record** (issue #1589). Each step was a GitHub write, then its event. A hopper
+that stopped between them lost the record of what GitHub did: the next pass opened a pull request again (GitHub refused
+it with 422, and the repository was stuck), read a batch run it had closed as "closed without a merge" (its failed checks
+lost, no bisect), opened a second revert, filed a second issue, or left `stable` moved with the canary still running.
+Now the record comes first, or the write is found before it is made again:
+
+- **A batch run is recorded due** (`landing_batch.due`: the tip, the branch, the merges, the issues its text closes, why)
+  before its branch and pull request. A pass that finds a due batch run with no `landing_batch.started` starts that one,
+  not a new one at a newer tip.
+- **A pull request is opened once** (`openOnce`, `src/landing-batches/once.ts`): when GitHub refuses it, the open pull
+  request from the same head branch into the same base is the one. This is the batch run's, the bisect run's and the
+  back-merge's; their branches are named by a sha, so the branch is the key. Making a branch that is there moves it to
+  the sha (`createBranch`), so a back-merge's merge is made again on a branch a stopped pass left.
+- **An end is recorded before its close.** `landing_batch.failed` (with the bisect's start or the culprit, whose points
+  are read first) and `landing_batch.bisect_tested` come before the close of the pull request and the removal of its
+  branch; `landing_batch.restarted` lists the ones it ends. The state keeps these pull requests (`closedRuns`), and each
+  pass closes the ones still open among the open pull requests into the tested branch it reads anyway. Merge conflicts
+  record the back-merge due with the failure (`conflicts`), and a pass starts a due back-merge.
+- **A revert and an issue are found first.** Before GitHub's revert of the culprit, the open pull request into the
+  landing branch with the revert's title; before a fix issue, a back-merge issue or a canary issue, the open issue with
+  its title and the hopper label changed since the culprit, the failure or the hold (`findIssue`: the issues list, which
+  shows a new issue at once, not the search).
+- **`stable` already at the candidate** while the canary runs records `landing_batch.canary_promoted`: a pass moved it
+  and stopped, or a maintainer did.
+
+No outbox: each write's intent is an event the state already reads, or the step's own state (a culprit with no revert, a
+held canary with no issue). A merge needs nothing: the next pass reads the pull request merged.
+
 **A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
 checks say that the batch itself fails; a red batch for no check in time waits for the next merge as before, and one with
 merge conflicts gets a back-merge (below). When checks failed:
