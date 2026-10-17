@@ -4,7 +4,7 @@
 // client target runs claude through its client and refuses the others; a stopped run is stopped on the machine too
 // and leaves no run dir there (issue #472); a user added later runs claude with their own
 // config dir, and is refused another CLI on this machine, which would run on someone else's login.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -116,6 +116,37 @@ describe('draftOn: each provider, locked down', () => {
     expect(lastCall('omp').argv).toContain('--thinking=high');
     await draftOn(host([HERE]), pick('claude', 'local', { model: 'fable', effort: 'low' }), input, scope, signal());
     expect(lastCall('claude').argv).toEqual(expect.arrayContaining(['--model', 'fable', '--effort', 'low']));
+  });
+});
+
+describe('draftOn: nothing of the run kept on the machine', () => {
+  it('opencode: the session the run kept is deleted after it, with the same lockdown', async () => {
+    expect(await draftOn(host([HERE]), pick('opencode'), input, scope, signal())).toMatchObject({ draft: DRAFT });
+    const deleted = readFileSync(join(dir, 'opencode-deleted.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { id: string; env: Record<string, string> });
+    expect(deleted).toEqual([{ id: 'ses_1', env: expect.objectContaining({ OPENCODE_PERMISSION: '{"*":"deny"}', OPENCODE_DISABLE_PROJECT_CONFIG: '1' }) }]);
+  });
+
+  it('opencode: a failed run\'s session is deleted too', async () => {
+    process.env.FAKE_AGENT_MODE = 'error';
+    expect(await draftOn(host([HERE]), pick('opencode'), input, scope, signal())).toMatchObject({ error: expect.any(String) });
+    expect(readFileSync(join(dir, 'opencode-deleted.jsonl'), 'utf8')).toContain('"id":"ses_1"');
+  });
+
+  it('cursor-agent: its chat for the run dir is removed after, and its project data stays in the run dir', async () => {
+    const config = join(dir, 'cursor-config');
+    Object.assign(process.env, { CURSOR_CONFIG_DIR: config, FAKE_CURSOR_KEEP: '1' });
+    expect(await draftOn(host([HERE]), pick('cursor-agent'), input, scope, signal())).toMatchObject({ draft: DRAFT });
+    const call = lastCall('cursor-agent') as Call & { env: { CURSOR_DATA_DIR?: string } };
+    expect(call.env.CURSOR_DATA_DIR).toBe(join(call.cwd, '.cursor-data'));
+    expect(readdirSync(join(config, 'chats'))).toEqual([]);
+    expect(existsSync(call.cwd)).toBe(false);
+  });
+
+  it('cursor-agent over ssh: the chat is removed there too', async () => {
+    const config = join(dir, 'cursor-config');
+    Object.assign(process.env, { CURSOR_CONFIG_DIR: config, FAKE_CURSOR_KEEP: '1' });
+    expect(await draftOn(host([DESK]), pick('cursor-agent', 'desk'), input, scope, signal())).toMatchObject({ draft: DRAFT });
+    expect(readdirSync(join(config, 'chats'))).toEqual([]);
   });
 });
 
