@@ -59,14 +59,14 @@ A **template** is a kind of box. It has:
 | **Secrets its boxes may ask for** | Vault secrets and `shared/<name>` shared secrets. A minting credential is never listed. |
 | **Tools** | `aws`, `helm`, `kubectl`, `terraform`. The hopper adds them to the image, each pinned and checked by its SHA-256. |
 | **Operation profiles** | An operation (`read`, `write`, `sync`, `apply`) on an asset (`cluster`, `namespace`, `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role`). Its jobs may ask for minted credentials for these. |
-| **Limits** | The default and the maximum of CPUs, memory and time limit, and whether a box's home volume stays when the box goes. |
-| **Agent credential** | Optional. One of its secrets: a Claude token. A box of the template starts with its agent signed in. See [Start a box signed in](#start-a-box-signed-in). |
+| **Limits** | The default and the maximum of CPUs and memory. A template sets no time limit. A box's home volume is removed with the box. |
+| **Agent credential** | Not used. No box starts signed in: see [No box starts signed in](#no-box-starts-signed-in). |
 
 Make one in **Settings → Vault**, panel **Templates**, with **Add template**, or:
 
 ```sh
 hopper template save kube --image ghcr.io/example/box:1 --secret KUBE_TOKEN --profile read/cluster/lab \
-  --tool kubectl --cpus 2:4 --memory-mb 4096:8192 --ttl-minutes 60:240 --keep-home on
+  --tool kubectl --cpus 2:4 --memory-mb 4096:8192
 hopper template list
 ```
 
@@ -74,36 +74,22 @@ A save keeps what it leaves out. Each template shows its **blast radius** rating
 
 ## Approval
 
-No box of a template takes a job or gets anything from the vault until a person approves the template. A template that waits shows on **Access requests**, panel **Template approvals**, with its approve buttons. You edit, revoke and remove templates on **Settings → Vault**.
+No step runs in a box of a template, and no box of it gets anything from the vault, until a person approves the template. A template that waits shows on **Access requests**, panel **Template approvals**, with its approve buttons. You edit, revoke and remove templates on **Settings → Vault**.
 
 - **Approve** approves the image, the tools, the secrets and the **read** profiles.
 - A **write**, **sync** or **apply** profile is high-radius. It needs an explicit approval: the card shows one **Approve all listed** action that approves the template and each listed profile, or `hopper template approve-profile <name> <operation>/<kind>/<asset>`.
 - A new secret, a new image, a change of tools or a new profile waits for approval again. Until then, boxes get only what was approved. A profile you remove loses its approval at once.
 - Limits are not part of the approval. A change of limits applies to the next box.
-- **Revoke** stops it at once: its boxes take no new job and get nothing from the vault. Jobs that run there now keep running.
+- **Revoke** stops it at once: no new step starts in a box of it, and its boxes get nothing from the vault.
 - **Remove** is refused while a box of the template is attached.
 
-While a template waits, its boxes show on **Machines** as *waiting for template approval*, and their jobs wait for another machine.
+While a template waits, the hopper refuses a step in a box of it, and the job is told that the template waits for a person or for its read-only check.
 
-Each launch fixes its own set of secrets and its one profile. A secret added to the template later reaches new boxes, not running ones.
+Each step gets a new box, which the hopper burns when the step ends. Credentials minted for the step stop working when it ends. A change to the template reaches the next step, not a step that runs now.
 
-## Start a box signed in
+## No box starts signed in
 
-A template can give its boxes an **agent credential**. Then a box starts with Claude signed in, and no person runs `/login` in it.
-
-1. On a computer where you use Claude Code, run `claude setup-token`. It prints a token that starts with `sk-ant-oat`. The token is good for one year.
-2. Set the token as a vault secret, for example `CLAUDE`: `hopper vault set CLAUDE` (the value from stdin), or **Settings → Vault**.
-3. Add the secret to the template's secrets. In the template's form, set **Agent credential** to it. Or: `hopper template save <name> --image <image> --secret CLAUDE --agent-credential CLAUDE`.
-4. Approve the template.
-
-A launch gives the token to the box as `CLAUDE_CODE_OAUTH_TOKEN`. Every job on the box uses it.
-
-- Use only a token from `claude setup-token`. The hopper refuses a `/login` credentials file: its refresh token changes when one box renews it, and that signs the other boxes out.
-- A launch that leaves the secret out of its secrets starts a box that is not signed in. Sign it in once by hand.
-- While the agent credential waits for approval, no box of the template starts.
-- A box keeps the token it started with. After you set a new token, launch the boxes again.
-- Every process on the box can read the token, as every job could read a sign-in made by hand.
-- `--agent-credential none` takes it off the template.
+A box runs one command of a job, and Claude does not run in it. So no box starts signed in. The **Agent credential** of a template has no effect: the hopper gives it to no box. You can leave it empty.
 
 ## Sandboxes jobs start
 
@@ -183,7 +169,7 @@ Or: `hopper template read-policy set cluster/lab 'namespace/lab/*'`. `set` with 
 
 ### The read-only check
 
-A template that a job asked for with read needs only must pass the **read-only check** before its first box. The hopper runs probes in a one-shot check box of the template: each write must be refused, and each read must work. Until the check of its current version passed, no box of it starts, and its boxes take no job. A save makes the check stale.
+A template that a job asked for with read needs only must pass the **read-only check** before its first box. The hopper runs probes in a one-shot check box of the template: each write must be refused, and each read must work. Until the check of its current version passed, no box of it starts. A save makes the check stale.
 
 The template shows the result in its **Read-only check** row. A failed check does not run again by itself: click **Run the check again**, or run `hopper template check <name>`.
 

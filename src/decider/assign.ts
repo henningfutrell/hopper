@@ -114,6 +114,12 @@ export const templateHolds = (m: MachineSnapshot, job: Job): boolean => m.templa
  */
 export const leavingHolds = (m: MachineSnapshot, job: Job): boolean => m.leaving === true && job.pendingAnswer === undefined;
 
+/**
+ * A machine a person drained takes no new job (issue #1511): the jobs on it run to their end. A job resuming there
+ * returns to the pane it holds.
+ */
+export const drainedHolds = (m: MachineSnapshot, job: Job): boolean => m.drained !== undefined && job.pendingAnswer === undefined;
+
 const GIB = 1024 ** 3;
 const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
 export const NO_NEW_JOB = 'no new job is claimed there';
@@ -132,9 +138,11 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (pin === undefined) {
     const staying = running.filter((m) => !leavingHolds(m, job));
     if (staying.length === 0) return `${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'are' : 'is'} leaving: ${NO_NEW_JOB}`;
-    const known = staying.filter((m) => !homeless(m));
+    const open = staying.filter((m) => !drainedHolds(m, job));
+    if (open.length === 0) return `${staying.map((m) => m.id).join(', ')} ${staying.length > 1 ? 'are' : 'is'} drained: ${NO_NEW_JOB}`;
+    const known = open.filter((m) => !homeless(m));
     if (known.length === 0) {
-      return `no machine that runs executor ${executor} has its home known yet: ${staying.map((m) => m.id).join(', ')} ${staying.length > 1 ? 'have' : 'has'} not answered a probe`;
+      return `no machine that runs executor ${executor} has its home known yet: ${open.map((m) => m.id).join(', ')} ${open.length > 1 ? 'have' : 'has'} not answered a probe`;
     }
     if (known.every((m) => workTreeHolds(m, job))) {
       return `no machine running executor ${executor} has a usable work tree: ${known.map((m) => `${m.id}: ${m.workTreeProblem}`).join('; ')}`;
@@ -167,6 +175,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   if (leavingHolds(pinned, job)) return `pinned machine ${pin} is leaving: ${NO_NEW_JOB}`;
+  if (drainedHolds(pinned, job)) return `pinned machine ${pin} is drained: ${NO_NEW_JOB}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
   if (addressHolds(pinned, job)) return `pinned machine ${pin} ${offNetwork(pinned)}`;
@@ -280,7 +289,7 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && windowsFits(m, job) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !leavingHolds(m, job) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
+    && !homeless(m) && !leavingHolds(m, job) && !drainedHolds(m, job) && !workTreeHolds(m, job) && !addressHolds(m, job) && !credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job))
     && signedOutFor(m.id, job, signedOut) === undefined);
   return gateHold(job, usable, gate);
 }
@@ -292,7 +301,7 @@ interface MachineStateWithCredentialHold extends MachineState {
 
 function eligible(s: MachineStateWithCredentialHold, job: Job): boolean {
   const pin = pinOf(job);
-  return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && !drainedHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job, s.credentialHeld) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && signedOutFor(s.machine.id, job, s.signedOut) === undefined && (pin === undefined || pin === s.machine.id);
 }

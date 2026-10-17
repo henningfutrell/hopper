@@ -7,6 +7,7 @@
 // may merge it is yolo mode, a setting of the user's (src/domain/yolo-mode.ts). Dropped on load the same way;
 // tenant migration 30 removes it.
 import { z } from 'zod';
+import { isConnectedAccountKey } from '../domain/connected-accounts.ts';
 
 const projectSchema = z.object({
   owner: z.string().min(1),
@@ -48,11 +49,14 @@ function withoutGone(raw: unknown): unknown {
  * A connected account's source (issue #214): who it acts as is the account the user connected, so
  * nothing names an identity or a credential, and it takes the issues assigned to that account. Which
  * repositories it lists is no option: they are the user's **job repositories**, chosen in Sources and
- * read at each sync (issue #321).
+ * read at each sync (issue #321). `account`: which of the user's connected accounts (issue #1448): the first (`github`) unless
+ * set; the hopper adds one source of its own for each further account, never written to the plugins config.
  */
 const { repos: _repos, ...accountShared } = sharedKeys;
 const accountKeys = {
   enabled: z.boolean().default(true),
+  account: z.string().refine(isConnectedAccountKey, 'a connected account key: github, github-2, …').default('github')
+    .meta({ description: 'which of your connected GitHub accounts: github, the first; github-2, … a further one (Sources)' }),
   ...accountShared,
 };
 
@@ -64,10 +68,10 @@ const sameIssues = (a: GitHubAccountOptions, b: GitHubAccountOptions): boolean =
   a.enabled && b.enabled && a.label === b.label && a.hopperName === b.hopperName;
 
 /**
- * Two connected-account sources take the same work (issue #1264) when they take the same issues: both read the one account
- * the user connected, over the user's job repositories.
+ * Two connected-account sources take the same work (issue #1264) when they take the same issues: both read the same
+ * connected account (issue #1448), over its job repositories.
  */
-export const sameAccountWork = (a: GitHubAccountOptions, b: GitHubAccountOptions): boolean => sameIssues(a, b);
+export const sameAccountWork = (a: GitHubAccountOptions, b: GitHubAccountOptions): boolean => a.account === b.account && sameIssues(a, b);
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
 export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;

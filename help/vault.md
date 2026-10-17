@@ -21,12 +21,11 @@ Open the vault at **Settings → Vault**. Every user can read the page. An admin
 
 A job gets a vault secret, a shared secret or a minted credential only when **all** of these are true:
 
-1. The job runs on a **sandbox box** that joined as an instance of a **template**. A job on a computer, an ssh target or this host gets nothing from the vault, and it has no `$HOPPER_SECRET`.
+1. The ask comes from a **sandbox box** that the hopper started for one step of the job, from a **template**. The job itself runs on its own machine: there it gets nothing from the vault, and it has no `$HOPPER_SECRET`.
 2. A person **approved** the template, and the secret or operation profile is in its approved scope now.
 3. A person gave the job's item a **vault grant**.
 4. The job is at work: it runs, or it waits and still holds its pane. An ended, failed or parked job gets nothing.
-5. For a box the hopper started with only some secrets or one operation profile: the ask is inside that launch.
-6. For a minted credential or a shared secret: **Access** allows it.
+5. For a minted credential or a shared secret: **Access** allows it.
 
 Templates and approvals are explained in [Sandboxes](sandboxes.md).
 

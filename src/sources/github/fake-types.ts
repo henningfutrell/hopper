@@ -2,7 +2,7 @@
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { FakeBaseMerge } from './fake-conflicts.ts';
 import type { FakeMentionInput } from './fake-cross-references.ts';
-import type { GitHubApi, GitHubComment, GitHubIssue, HeadChecks, OpenPullRequest, ClosingPullRequest } from './api.ts';
+import type { GitHubApi, GitHubComment, GitHubIssue, HeadChecks, OpenPullRequest, ClosingPullRequest, WorkflowRun } from './api.ts';
 
 export type Method = keyof GitHubApi;
 
@@ -47,6 +47,8 @@ export interface FakeGitHub extends GitHubApi {
   setHeadChecks(url: string, answer: HeadChecks): void;
   /** The log of GitHub Actions job `jobId` of `repo` (issue #993): its text, or the error GitHub answers for it. */
   setJobLog(repo: string, jobId: number, log: string | Error): void;
+  /** GitHub Actions workflow run `runId` of `repo` as GitHub has it (issue #1508); never set: GitHub has none (404). */
+  setWorkflowRun(repo: string, runId: number, run: Omit<WorkflowRun, 'url'>): void;
   /** The GitHub Actions jobs run again (issue #1230), `owner/name#job`, oldest first. */
   jobReruns: string[];
   /** What GitHub answers a rerun of any Actions job (issue #1230): an error, or undefined to run it. */

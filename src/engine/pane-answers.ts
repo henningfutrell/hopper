@@ -11,6 +11,9 @@
 // A job on a wait for its own background command (issue #1037) that has not gone on is watched too (`ownCommandRuns`): its
 // pane shows no background work for the grace, it is nudged once (`job.own_command_nudged`); the grace after that, still
 // not gone on, its wait is flagged stuck (`job.own_command_stuck`) and it waits on a person.
+// A job on a wait only its pane can end (issue #1508, `paneCarriesWait`: its own command, or a background poll for an outside
+// event the hopper watches nothing of) whose pane is lost — its machine or herdr restarted — is woken by the hopper, told so
+// (`job.wait_ended { by: hopper }`): its resume opens a new pane. Asked on every tick, so after a start and a seat's restart too.
 // Then the runner reattaches it: the executor watches the new turn until the next outcome.
 // The job already runs physically, so it never waits for a lane: with none idle it opens one
 // more, marked past the cap (`pastCap`), over the lane cap until it ends: the decider drains that lane first (issue #1181).
@@ -18,6 +21,9 @@ import type { PaneAnswer } from '../domain/ports.ts';
 import type { Job, JobWait } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
+import { paneCarriesWait } from '../domain/watched-items.ts';
+import { waitOnLabel } from '../domain/wait-on.ts';
+import { recordEndWait } from './wait.ts';
 
 /** Stored as the answer when the typed text cannot be read back from the pane. */
 export const ANSWERED_IN_PANE = '(answered in the pane)';
@@ -30,6 +36,10 @@ export const WAIT_ENDED_REASON = 'the wait ended in the pane';
 /** What a job waiting on its own command is told once when its pane shows no background work and it did not go on (issue #1037). */
 export const ownCommandNudge = (w: Pick<JobWait, 'until'>): string =>
   `[hopper] You wait on your own background command (until: ${w.until ?? 'it ends'}), but your screen shows no background work and you did not go on. Check the command: read its output, or start it again. Then go on with the job.`;
+
+/** What a job whose wait its lost pane carried is told when the hopper ends that wait (issue #1508). */
+export const paneLostNote = (w: Pick<JobWait, 'for' | 'on'> | undefined): string =>
+  `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'what you waited on'}): your pane was lost, so the background command that was to end the wait stopped. Check what you waited for. If you still wait, start the poll again, then end your turn with HOPPER_WAITING.`;
 
 export interface PaneAnswers {
   /** Probe every waiting job once; overlapping calls are skipped. */
@@ -119,6 +129,20 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
     });
   }
 
+  /** A wait its lost pane carried (issue #1508): the hopper ends it. True when it did. */
+  async function wakeLost(job: Job): Promise<boolean> {
+    const lost = c.executors.get(job.spec.executor)?.paneLost;
+    if (!lost || !paneCarriesWait(job) || (await lost(job).catch(() => null)) !== true || c.stopping()) return false;
+    const ended = store.tx(() => {
+      const now = store.jobs.get(job.id);
+      if (now?.status !== 'waiting_on' || now.wait?.since !== job.wait?.since) return false;
+      recordEndWait(c, job.id, 'its pane was lost', 'hopper', paneLostNote);
+      return true;
+    });
+    if (ended) c.trigger('job.wait_ended');
+    return ended;
+  }
+
   return {
     async sweep() {
       if (busy || c.stopping()) return;
@@ -130,7 +154,7 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
           const seen = await probe(job).catch(() => null);
           if (c.stopping()) continue;
           if (!seen) {
-            if (job.status === 'waiting_on') await watchOwnCommand(job);
+            if (job.status === 'waiting_on' && !(await wakeLost(job))) await watchOwnCommand(job);
             continue;
           }
           const claim = job.status === 'waiting_on' ? adoptWait(job.id, seen) : adopt(job.id, job.questionId!, seen);

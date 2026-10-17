@@ -2,7 +2,7 @@
 // grant — theirs and the ones below —, the line each listed grant and exchanged token shows, and the scopes a person
 // ticks (issue #909): a box per scope of the registry, a preset's wildcards, and a box grant when a box action is ticked.
 import { describe, expect, it } from 'vitest';
-import { apiTokenLine, boxPermissions, deviceAskLine, deviceCodeOfHash, grantLine, mintableRoles, presetOfScopes, scopeTicked, toggleScope } from '../../ui/src/model/api-tokens.ts';
+import { apiTokenLine, boxPermissions, deviceAskLine, deviceCodeOfHash, grantLine, mintableRoles, presetOfScopes, scopeTicked, toggleScope, typedLimits } from '../../ui/src/model/api-tokens.ts';
 import type { ScopeRegistry } from '../../ui/src/model/wire.ts';
 
 const permission = (scope: string, box = false, parent?: string) => ({ scope, description: scope, routes: [], role: 'viewer' as const, box, ...(parent ? { parent } : {}) });
@@ -37,6 +37,9 @@ describe('API tokens model', () => {
   it('a grant\'s line says its role, box flag, when it was made and used, from where, and its end', () => {
     const g = { id: '0123456789abcdef', label: 'Grok Bot', holder: 'grok-bot', role: 'operator' as const, box: true, scopes: ['*:read'], createdAt: '2026-10-10T10:00:00Z', endsAt: '2027-01-08T10:00:00Z', idleEndsAt: '2026-11-09T10:00:00Z' };
     expect(grantLine(g)).toMatch(/^operator · box · made .+ · not used yet · ends .+$/);
+    expect(grantLine({ ...g, jkt: 'k'.repeat(43) })).toMatch(/^operator · box · bound to its agent's key · made /);
+    // Issue #892: a limited grant says what it acts on.
+    expect(grantLine({ ...g, limits: { repos: ['acme/app', 'acme/api'], sources: ['github'] } })).toMatch(/^operator · box · only acme\/app, acme\/api · only the job sources github · made /);
     expect(grantLine({ ...g, box: false, lastUsedAt: '2026-10-11T10:00:00Z', lastUsedFrom: '10.0.0.2', endsAt: null })).toMatch(/^operator · made .+ · last used .+ from 10\.0\.0\.2 · no fixed end$/);
   });
 
@@ -79,7 +82,15 @@ describe('API tokens model', () => {
     const line = deviceAskLine(v, 'operator', registry);
     expect(line).toMatch(/^operator \(your role\) · box · preset agent-intake · lives 90 days at most · asked from 203\.0\.113\.5 · request ends /);
     expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], days: null } }, 'admin')).toMatch(/^viewer · scopes \*:read · no fixed end · /);
+    expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], jkt: 'k'.repeat(43) } }, 'admin')).toMatch(/^viewer · bound to the asking agent's key · scopes /);
+    expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], limits: { repos: ['acme/app'] } } }, 'admin')).toMatch(/^viewer · scopes \*:read · only acme\/app · /);
     expect(deviceCodeOfHash('#settings/api-tokens/BCDF-GHJK')).toBe('BCDF-GHJK');
     expect(deviceCodeOfHash('#settings/api-tokens')).toBe('');
+  });
+
+  it('the limits a person types: repositories and job sources, by commas or spaces (issue #892)', () => {
+    expect(typedLimits('acme/app, acme/api  acme/x', '')).toEqual({ repos: ['acme/app', 'acme/api', 'acme/x'] });
+    expect(typedLimits('', 'github,manual')).toEqual({ sources: ['github', 'manual'] });
+    expect(typedLimits(' ', ' , ')).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 // Issue, comment-read and label calls of the connected account's adapter, each with the account's token. REST shapes mapped
 // onto the GitHubApi port's types.
 
-import { CHANGE_READ_PAGE, type GitHubComment, type GitHubIssue, type IssueChange, type IssueEvent, type SubIssue } from '../api.ts';
+import { CHANGE_READ_PAGE, type GitHubComment, type GitHubIssue, type IssueChange, type IssueEvent, type SubIssue, type WorkflowRun } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 import type { PostedComment } from '../api.ts';
@@ -49,6 +49,13 @@ export async function jobLog(req: Request, token: string, repo: string, jobId: n
   const r = await req('GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs', { ...splitRepo(repo), job_id: jobId, headers: auth(token) });
   const data: unknown = r.data;
   return typeof data === 'string' ? data : data instanceof ArrayBuffer ? new TextDecoder().decode(data) : String(data ?? '');
+}
+
+/** GitHub Actions workflow run `runId` (issue #1508): its link, status and conclusion. */
+export async function workflowRun(req: Request, token: string, repo: string, runId: number): Promise<WorkflowRun> {
+  const r = await req('GET /repos/{owner}/{repo}/actions/runs/{run_id}', { ...splitRepo(repo), run_id: runId, headers: auth(token) });
+  const d = r.data as { html_url?: string; status?: string | null; conclusion?: string | null };
+  return { url: d.html_url ?? `https://github.com/${repo}/actions/runs/${runId}`, status: d.status ?? 'unknown', ...(d.conclusion ? { conclusion: d.conclusion } : {}) };
 }
 
 /** Run GitHub Actions job `jobId` again (issue #1230): GitHub answers 201 and queues it with the run's other jobs it needs. */

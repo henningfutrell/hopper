@@ -20,7 +20,7 @@ import { WaitsOnLink } from '@/components/waits-on';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
 import { gateHoldText, heldAtGate } from '@/model/blast-radius';
-import { actingIdentity, actingText } from '@/model/acting-identity';
+import { accountFor, actingIdentity, actingText } from '@/model/acting-identity';
 import { directJobOf } from '@/model/promotions';
 import type { ConnectedAccountStatus, DomainEvent, Job, JobBom } from '@/model/wire';
 import { useHopper } from '@/store';
@@ -62,15 +62,15 @@ function useJobEvents(id: string, read: readonly DomainEvent[]): DomainEvent[] {
 
 const NONE: DomainEvent[] = [];
 
-/** The user's connected GitHub account, read once (issue #1380); undefined until read, or when the read fails. */
-function useGitHubAccount(): ConnectedAccountStatus | undefined {
-  const [account, setAccount] = useState<ConnectedAccountStatus>();
+/** The user's connected GitHub accounts, read once (issues #1380, #1448); empty until read, or when the read fails. */
+function useGitHubAccounts(): ConnectedAccountStatus[] {
+  const [accounts, setAccounts] = useState<ConnectedAccountStatus[]>([]);
   useEffect(() => {
     let gone = false;
-    get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((r) => { if (!gone) setAccount(r.accounts.find((a) => a.provider === 'github')); }, () => {});
+    get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((r) => { if (!gone) setAccounts(r.accounts.filter((a) => a.provider === 'github')); }, () => {});
     return () => { gone = true; };
   }, []);
-  return account;
+  return accounts;
 }
 
 /** A tend or rework job's own events, newest first, from its parts list. */
@@ -85,7 +85,7 @@ export function JobView() {
   const read = useJob(id);
   const bom = useJobBom(id);
   const events = useJobEvents(id, bom?.events ?? NONE);
-  const acting = actingIdentity(events, useGitHubAccount());
+  const acting = actingIdentity(events, accountFor(useGitHubAccounts(), read.state === 'found' ? read.job.source?.repo : undefined));
   const machines = useHopper((s) => s.machines);
   const jobs = useHopper((s) => s.jobs);
   const locked = useHopper((s) => s.locked);

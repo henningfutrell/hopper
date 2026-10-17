@@ -14,6 +14,7 @@ export type { Mark, OutOfBandChange, OutOfBandMark, OutOfBandView, SignalSource 
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 import type { SandboxApprovals, SandboxRequestView } from './sandbox-approvals.ts';
 import type { RememberedWriteView } from './remembered-writes.ts';
+import type { ConnectedAccountKey } from './connected-accounts.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -41,7 +42,7 @@ export type SystemSecretName =
   | `remote-access.${'ngrok-authtoken' | 'ngrok-api-key' | 'cloudflare-api-token' | 'cloudflare-tunnel-token'}`
   | 'artifact-content-key'
   | 'github-webhook-secret'
-  | `connected-account.${'github'}.${'access-token' | 'refresh-token'}`
+  | `connected-account.${ConnectedAccountKey}.${'access-token' | 'refresh-token'}`
   | `webhook.${string}.signing-secret`
   | `sign-in.${string}.${string}`;
 const SYSTEM_PREFIX = 'system/';

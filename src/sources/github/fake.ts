@@ -225,7 +225,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     },
     ...acts.api,
     jobLog: jobLogs.jobLog,
-    rerunJob: jobLogs.rerunJob,
+    rerunJob: jobLogs.rerunJob, workflowRun: jobLogs.workflowRun,
     headChecks: heads.headChecks,
   };
 
@@ -279,7 +279,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setHeadChecks: heads.setHeadChecks, setJobLog: jobLogs.setJobLog, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
+    setHeadChecks: heads.setHeadChecks, setJobLog: jobLogs.setJobLog, setWorkflowRun: jobLogs.setWorkflowRun, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods, ...fakeChangedLines((m, a) => enter(m, a), (url) => diffs.get(url)),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {

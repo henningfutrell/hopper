@@ -8,6 +8,9 @@
         "github"
       ]
     },
+    "key": {
+      "type": "string"
+    },
     "account": {
       "type": "string"
     },

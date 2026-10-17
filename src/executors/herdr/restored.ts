@@ -2,6 +2,8 @@
 // a new terminal and resumes Claude in it by itself, in a shell without the tab's environment (HOPPER_*, git's way to GitHub
 // through the hopper), outside the job's scope and sandbox. The hopper sees the terminal change and starts Claude again in a
 // new pane (executor.ts `restartRestored`). Apart from monitor.ts and executor.ts for their line budgets.
+// A pane lost while its job waited (issue #1508: the machine or herdr restarted, and herdr did not restore it): the answer
+// goes to Claude resumed in a new pane, set up as at the start, as for a restored pane (`resumeLostPane`).
 import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { AgentInfo } from './client.ts';
 import { heldOf, lastLineOf, type HeldPane } from './panes.ts';
@@ -35,4 +37,25 @@ export async function restartInNewPane(d: RestartDeps, ctx: ExecutionContext, s:
   await d.exitAndClose(heldOf(s, ctx.job.id));
   if (!session) return { kind: 'failed', error: 'herdr restored the job\'s pane after a restart, without the job\'s environment, and no agent session is recorded to resume in a new pane' };
   return d.startAndSend(ctx, { ...p, cwd: s.cwd, makeWorkTree: false }, { resume: session }, () => [text, lastLineOf(text)]);
+}
+
+/** What a job is told first in the new pane it resumes in, its pane lost while it waited (issue #1508). One line. */
+export const LOST_NOTE = '[hopper] The job\'s pane was lost while it waited (its machine or herdr restarted). The hopper resumed this session in a new pane, set up as at the start. A background command you started in the old pane stopped with it.';
+
+/** What the resume of a lost pane needs of the executor: the reap of what is left of the job, and a new pane's start and first send. */
+export interface LostDeps {
+  reap(): Promise<unknown>;
+  startAndSend(ctx: ExecutionContext, p: ClaudeJobPayload, o: { resume: string; first: () => Promise<unknown> }, text: () => [string, string]): Promise<ExecutionOutcome>;
+}
+
+/**
+ * The pane `s` of a job that waited is gone (issue #1508): what is left of the job on its machine is stopped, then a new pane
+ * opens as at the start, Claude resumes the same session, and `text` goes to it. With no agent session recorded, the job
+ * fails, `pane lost`: a fresh one would lose what the job did.
+ */
+export function resumeLostPane(d: LostDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string): Promise<ExecutionOutcome> {
+  const session = s.agentSession ?? ctx.job.agentSession;
+  if (!session) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
+  ctx.progress(`the job's pane was lost while it waited: Claude resumes agent session ${session} in a new pane`);
+  return d.startAndSend(ctx, { ...p, cwd: s.cwd, makeWorkTree: false }, { resume: session, first: d.reap }, () => [text, lastLineOf(text)]);
 }

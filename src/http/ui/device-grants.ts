@@ -23,8 +23,11 @@ export function userCodeOf(typed: string): string | undefined {
   return `${letters.slice(0, 4)}-${letters.slice(4)}`;
 }
 
-/** What the agent's poll finds: still waiting, denied, or approved with what the person approved it with. */
-export type DevicePoll<A> = { state: 'waiting'; interval: number; expiresAt: string } | { state: 'denied' } | { state: 'approved'; ask: DeviceGrantAsk; approval: A };
+/**
+ * What the agent's poll finds: still waiting, denied, or approved with what the person approved it with; `wrong-key`: the
+ * request is bound to a key (issue #892, "Sender binding") and the poll proves another, or none — the request stands.
+ */
+export type DevicePoll<A> = { state: 'waiting'; interval: number; expiresAt: string } | { state: 'denied' } | { state: 'approved'; ask: DeviceGrantAsk; approval: A } | { state: 'wrong-key' };
 
 export interface DeviceGrants<A> {
   /** A new request; refused while too many wait. */
@@ -35,8 +38,11 @@ export interface DeviceGrants<A> {
   approve(userCode: string, approval: A): boolean;
   /** The waiting request denied; false: there is none such. */
   deny(userCode: string): boolean;
-  /** The agent's poll: an approval or a denial is answered once, and the request ends. Undefined: unknown, or it ended. */
-  take(deviceCode: string): DevicePoll<A> | undefined;
+  /**
+   * The agent's poll: an approval or a denial is answered once, and the request ends. Undefined: unknown, or it ended.
+   * `jkt`: the key of the poll's DPoP proof; a request bound to a key (its ask's `jkt`) answers only a poll that proves it.
+   */
+  take(deviceCode: string, jkt?: string): DevicePoll<A> | undefined;
 }
 
 interface Request<A> { userCode: string; ask: DeviceGrantAsk; from: string; createdAt: number; endsAt: number; answer?: { denied: true } | { approval: A } }
@@ -95,11 +101,12 @@ export function createDeviceGrants<A>(o: { clock: Clock }): DeviceGrants<A> {
       found[1].answer = { denied: true };
       return true;
     },
-    take(deviceCode) {
+    take(deviceCode, jkt) {
       sweep();
       const hash = hashOf(deviceCode);
       const r = requests.get(hash);
       if (!r) return undefined;
+      if (r.ask.jkt !== undefined && r.ask.jkt !== jkt) return { state: 'wrong-key' };
       if (!r.answer) return { state: 'waiting', interval: DEVICE_GRANT.intervalS, expiresAt: new Date(r.endsAt).toISOString() };
       requests.delete(hash);
       return 'denied' in r.answer ? { state: 'denied' } : { state: 'approved', ask: r.ask, approval: r.answer.approval };

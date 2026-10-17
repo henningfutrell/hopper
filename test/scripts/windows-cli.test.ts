@@ -41,7 +41,21 @@ describe.each([['hopper.ps1', ps1], ['hopper.cmd', cmd]])('%s', (_name, script) 
       expect(call).not.toMatch(/ -e (sh|bash)\b/);
     }
     // hopper.ps1's keep-alive loop finds the container and runs the CLI too, to report the Windows link.
-    expect(code.match(/wsl\.exe [^\n]* -e podman /g)?.length).toBe(script === ps1 ? 4 : 2);
+    expect(code.match(/wsl\.exe [^\n]* -e (@podman|%HOPPER_RUNTIME% podman) /g)?.length).toBe(script === ps1 ? 4 : 2);
+  });
+
+  it('tries podman as wsl.exe starts it, then with the systemd user session\'s runtime dir, and runs the CLI with the one that saw it (issue #1512)', () => {
+    // wsl.exe -e reads no shell profile: podman can get another XDG_RUNTIME_DIR than in a WSL terminal, and see no container.
+    expect(code).toMatch(/wsl\.exe (@wsl|%HOPPER_WSL%) -e id -u/);
+    expect(code).toMatch(/"\/run\/user\/\$uid"|XDG_RUNTIME_DIR=\/run\/user\/%HOPPER_UID%/);
+    if (script === ps1) {
+      expect(code).toContain("$runtimes = @('')");
+      expect(code).toContain("@('env', \"XDG_RUNTIME_DIR=$runtime\", 'podman')");
+      expect(code).toContain('$podman = $hopper.podman');
+    } else {
+      expect(code.indexOf('call :find')).toBeLessThan(code.indexOf('set "HOPPER_RUNTIME=env XDG_RUNTIME_DIR=/run/user/%HOPPER_UID%"'));
+      expect(code).toContain('wsl.exe %HOPPER_WSL% -e %HOPPER_RUNTIME% podman exec -i');
+    }
   });
 
   it('runs the CLI in the container with every argument, and ends with its exit code', () => {
@@ -49,8 +63,9 @@ describe.each([['hopper.ps1', ps1], ['hopper.cmd', cmd]])('%s', (_name, script) 
     expect(code).toMatch(/exit (\$LASTEXITCODE|\/b %ERRORLEVEL%)/);
   });
 
-  it('says what to do when no hopper container runs', () => {
+  it('says what to do when no hopper container runs, and points to hopper doctor', () => {
     expect(script).toContain('podman compose up -d');
+    expect(script).toContain('Run hopper doctor to check more.');
   });
 
   it('keeps no token and reads no credential on Windows', () => {
@@ -112,7 +127,8 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
     expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $u');
     expect(loop).toContain("@('--status', [string][int]$_.Exception.Response.StatusCode)");
     expect(loop).toContain("& wsl.exe @wsl -e wslinfo --networking-mode");
-    expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --link $url @result');
+    expect(loop).toContain('-e @podman exec $container.Trim() hopper windows-link report --link $url @result');
+    expect(loop).toContain('"XDG_RUNTIME_DIR=$runtime"');
     expect(loop).not.toMatch(/TOKEN|Authorization|password/i);
   });
 
@@ -210,6 +226,12 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
     expect(doctor).toContain('sudo loginctl enable-linger');
     expect(doctor).toContain("@('systemctl', '--user', 'is-enabled', 'podman-restart.service')");
     expect(doctor).toContain('systemctl --user enable podman-restart.service');
+  });
+
+  it('checks that a hopper container runs, found as hopper <command> finds it, with what podman said (issue #1512)', () => {
+    expect(doctor).toContain('$hopper = Find-Hopper');
+    expect(doctor).toContain('Podman said: $($hopper.said)');
+    expect(doctor).toContain("run podman compose up -d in the hopper's folder");
   });
 
   it('prints ok or the fix for each check, and exits 1 when one fails', () => {

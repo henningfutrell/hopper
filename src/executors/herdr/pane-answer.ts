@@ -1,6 +1,7 @@
 // The owner answered a job on a question in its pane, not the UI (design.md "Questions" → "Answered in the pane"):
 // what the pane shows of it, read for the herdr-claude executor's `answeredInPane`.
 // A job waiting on its own background command (issue #1037): whether its pane still shows that command run.
+// A job on its own wait (issue #1508): whether its pane is lost.
 // The job's terminal (issue #1128): its pane's screen for a person, and their input to it.
 import type { Clock, Executor, PaneAnswer } from '../../domain/ports.ts';
 import type { PaneSession } from '../../domain/terminal.ts';
@@ -8,6 +9,7 @@ import type { HerdrClient } from './client.ts';
 import { RECENT_LINES } from './monitor.ts';
 import { lastLineOf, paneStateOf } from './panes.ts';
 import { backgroundWork, readTurn, typedAfterQuestion } from './screen.ts';
+import { restoredByHerdr } from './restored.ts';
 import type { PaneState, TurnAnchor } from './start.ts';
 
 /**
@@ -71,6 +73,25 @@ export function ownCommandProbes(herdrOn: (s: PaneState) => HerdrClient): Requir
     nudgeInPane: (job, text) => {
       const s = paneStateOf(job);
       return s ? Promise.resolve().then(() => herdrOn(s).prompt(s.agentName, text)).then(() => true, () => false) : Promise.resolve(false);
+    },
+  };
+}
+
+/**
+ * A job on its own wait (issue #1508): whether its pane is lost — no pane state, its agent or pane gone, or restored by herdr
+ * in another terminal (issue #1465) —; null when herdr does not answer.
+ */
+export function paneLostProbe(herdrOn: (s: PaneState) => HerdrClient): Required<Pick<Executor, 'paneLost'>> {
+  return {
+    paneLost: async (job) => {
+      const s = paneStateOf(job);
+      if (!s) return true;
+      try {
+        const agent = await herdrOn(s).getAgent(s.agentName);
+        return !agent || agent.paneId !== s.paneId || restoredByHerdr(agent, s.terminal);
+      } catch {
+        return null;
+      }
     },
   };
 }

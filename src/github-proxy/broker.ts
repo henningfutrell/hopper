@@ -48,14 +48,18 @@ export interface ProxyUser {
   pullRequest?(repo: string, number: number): KnownPullRequest;
 }
 
-/** A user's GitHub connection: the repositories their jobs work on, and its calls; or why it has none. */
+/**
+ * A user's GitHub connection: the repositories their jobs work on — every connected account's job repositories (issue
+ * #1448) —, and its calls; or why it has none. `api` and `login` name a repository: the connected account whose job
+ * repositories hold it acts; for any other, or none, the user's first account.
+ */
 export interface ProxyConnection {
   jobRepositories(): string[];
-  api(): ProxyApi | { problem: string };
+  api(repo?: string): ProxyApi | { problem: string };
   /** Its user's Contribution (issue #429), read at each request. */
   contribution(): boolean;
-  /** Its user's GitHub login; undefined: not connected. */
-  login(): string | undefined;
+  /** The GitHub login of the account that acts for `repo`; undefined: not connected. */
+  login(repo?: string): string | undefined;
 }
 
 export interface ProxyAnswer { status: number; body: Record<string, unknown> }
@@ -120,9 +124,10 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const requestId = newId();
       const machine = user.machineOf(job);
       const connection = o.connection(user.id);
-      const login = connection?.login();
-      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380).
-      const acting = login ? { as: login } : {};
+      // `as`: the GitHub identity that acts for the job, its own user's (issue #1380): the account of its repository (issue
+      // #1448), or, once the request is read, of the job repository it names.
+      let login = connection?.login(repoOf(job));
+      let acting: { as?: string } = login ? { as: login } : {};
       // Who asked and from where stay in the hopper: the job's timeline.
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
         user.record({ type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, ...data } });
@@ -155,7 +160,12 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const issue = job.source?.number;
       const jobRepo = repoOf(job);
       const contribution = connection.contribution();
-      const api = connection.api();
+      // The account that acts (issue #1448): the one of the repository the request names, when it is a job repository; else
+      // the one of the job's own repository — its fork, a repo query elsewhere.
+      const actingRepo = connection.jobRepositories().some((r) => same(r, req.repo)) ? req.repo : jobRepo;
+      login = connection.login(actingRepo);
+      acting = login ? { as: login } : {};
+      const api = connection.api(actingRepo);
       // What the contribution flow decides on, read from GitHub only when it can matter (issue #429).
       const facts: Pick<ProxyAsker, 'fork' | 'canPush'> = {};
       const maybeFork = contribution && jobRepo !== undefined && login !== undefined && same(req.repo.split('/')[0]!, login)

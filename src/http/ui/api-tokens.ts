@@ -12,12 +12,13 @@ import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
-  API_TOKEN_MINUTES, ACCESS_UNAVAILABLE, DEVICE_CODE_PREFIX, DEVICE_GRANT, GRANT_DEFAULT_DAYS, GRANT_IDLE_DAYS, GRANT_MAX_DAYS, REFRESH_TOKEN_PREFIX, UI_ROLES, roleAllows,
+  API_TOKEN_MINUTES, ACCESS_UNAVAILABLE, DEVICE_CODE_PREFIX, DEVICE_GRANT, GRANT_DEFAULT_DAYS, JKT, GRANT_IDLE_DAYS, GRANT_MAX_DAYS, REFRESH_TOKEN_PREFIX, UI_ROLES, roleAllows,
   type AccessAnswer, type ApiGrantMinted, type DeviceGrantAsk, type DeviceGrantStarted, type DeviceGrantView, type ApiGrantView, type ApiTokenMinted, type ApiTokenSettings, type ApiTokenView, type Identity, type UiRole,
 } from '../../domain/types.ts';
 import { scopeAllows, scopeAllowsSome, scopeOfAction, scopeOfRoute, scopeProblem } from '../../domain/token-scopes.ts';
 import { presetOf, scopesOf, type ScopeRegistry } from '../../domain/scope-registry.ts';
 import { DELEGATE_PRESET, DENY_ENTRY_MAX, DENY_MAX, denyProblem } from '../../domain/delegates.ts';
+import { GRANT_LIMITS_MAX, limitsProblem, normalLimits, type GrantLimits } from '../../domain/grant-limits.ts';
 import type { Access } from '../../authz/service.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -26,6 +27,8 @@ import { createApiDoor, userIdOf, type Tenants } from '../tenants.ts';
 import type { SignIn } from '../../auth/index.ts';
 import type { ApiGrants, GrantWanted } from './api-grants.ts';
 import { createDeviceGrants } from './device-grants.ts';
+import type { DpopProofs, ProofRequest } from './dpop.ts';
+import { dpopSchemeIn } from './guard.ts';
 import { apiTokenIdOf, type UiSession, type UiSessions } from './sessions.ts';
 import { SIGN_IN_RATE, signInLimit, type CallerOf } from './sign-in.ts';
 import { NOT_A_BOX_TOKEN } from './box-actions.ts';
@@ -48,6 +51,13 @@ const grantFields = {
   days: z.number().int().min(1).max(GRANT_MAX_DAYS).nullable().optional(),
   // A delegate approver's approver policy (issue #1138): what it may never approve.
   deny: z.array(z.string().max(DENY_ENTRY_MAX)).max(DENY_MAX).optional(),
+  // The key the grant is bound to (issue #892, "Sender binding"): its JWK SHA-256 thumbprint.
+  jkt: z.string().regex(JKT, 'a key\'s JWK SHA-256 thumbprint (RFC 7638): 43 base64url characters').optional(),
+  // What its tokens act on (issue #892, "Grant limits"): repositories (owner/name) and job sources, beside the scopes.
+  limits: z.strictObject({
+    repos: z.array(z.string().trim().max(200)).max(GRANT_LIMITS_MAX).optional(),
+    sources: z.array(z.string().trim().max(64)).max(GRANT_LIMITS_MAX).optional(),
+  }).optional(),
 };
 export const apiTokenBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('mint'), ...grantFields }),
@@ -71,13 +81,13 @@ const SCOPES = 'A grant\'s token may use only the routes its `scopes` cover (iss
 
 export const API_TOKEN_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/api-tokens', tag: 'API tokens', summary: 'List grants and API tokens', description: 'The request\'s user\'s live grants (issue #881: id, label, holder, role, scopes, box, created, fixed end or none, idle end, last used and from where) and the live API tokens an exchange made (issue #718); never a token. `scopes`: every scope a route needs. `settings`: the API-token lifetime and its bounds.', returns: '`{ grants: ApiGrantView[], tokens: ApiTokenView[], scopes: string[], settings: ApiTokenSettings }`' },
-  { method: 'post', path: '/ui/api/api-tokens', tag: 'API tokens', summary: 'Mint or revoke a grant', description: `\`mint\` (issue #881): a new grant for the session's user, for an agent: a \`label\`, a \`holder\` (who keeps it, e.g. \`grok-bot\`), \`scopes\`, a \`role\` no higher than the session's (default: the session's), \`days\` it lives at most (1–${GRANT_MAX_DAYS}, default ${GRANT_DEFAULT_DAYS}; \`null\`: no fixed end, an admin's only, answered with a \`warning\`), and API tokens that live ${LIFETIME}. It dies ${GRANT_IDLE_DAYS} days after its last refresh too. \`preset: "${DELEGATE_PRESET}"\` (issue #1138) mints a **delegate approver**: it approves, declines or denies only what waits for a person — a vault grant ask, a template, a sandbox request — with its preset's scopes alone (400 with \`scopes\`), and \`deny\` is its approver policy: entries (at most ${DENY_MAX}) it may never approve, each matched in any case against every name an approval touches (the template, its secrets and assets, the machine), e.g. \`prod\`; 400 for \`deny\` on any other grant. Its approvals record \`by\` as \`<label> (delegate of <person>)\`. \`box: true\` (issue #795) makes its tokens box tokens, the only kind that may do a box action — refused (403) when Access does not allow \`api_token#can_run_on_box\`. Answers the grant (\`view\`), its first API token (\`token\`, \`expiresAt\`) and its refresh token (\`refresh\`): once, never again; not cached. The agent trades the refresh token at \`POST /ui/auth/token/refresh\`. ${SCOPES} ${USE} An API token may not mint one (403). \`approve-device\` (issue #892): \`code\`, a device grant request's user code (\`GET /api/api-tokens/device/:code\` shows what it asks): the grant it asks for is checked as this mint checks it, as the session's user (400 and 403 as for a mint), and minted when its agent polls next; an API token may not approve one (403). \`deny-device\`: \`code\`; the agent is told. Both answer \`{ userCode, state }\`; 404 when no request waits with the code. \`revoke\`: end one of the user's grants, or an exchanged token, by its id (404 when there is none); \`revoke-all\`: every grant and API token of the user. Both answer what is left. 503 when OpenFGA cannot be asked.`, role: 'viewer', body: apiTokenBody, returns: 'mint: `ApiGrantMinted`; approve-device, deny-device: `{ userCode, state }`; revoke: `{ grants: ApiGrantView[], tokens: ApiTokenView[] }`', errors: [400, 403, 404, 503] },
+  { method: 'post', path: '/ui/api/api-tokens', tag: 'API tokens', summary: 'Mint or revoke a grant', description: `\`mint\` (issue #881): a new grant for the session's user, for an agent: a \`label\`, a \`holder\` (who keeps it, e.g. \`grok-bot\`), \`scopes\`, a \`role\` no higher than the session's (default: the session's), \`days\` it lives at most (1–${GRANT_MAX_DAYS}, default ${GRANT_DEFAULT_DAYS}; \`null\`: no fixed end, an admin's only, answered with a \`warning\`), and API tokens that live ${LIFETIME}. It dies ${GRANT_IDLE_DAYS} days after its last refresh too. \`preset: "${DELEGATE_PRESET}"\` (issue #1138) mints a **delegate approver**: it approves, declines or denies only what waits for a person — a vault grant ask, a template, a sandbox request — with its preset's scopes alone (400 with \`scopes\`), and \`deny\` is its approver policy: entries (at most ${DENY_MAX}) it may never approve, each matched in any case against every name an approval touches (the template, its secrets and assets, the machine), e.g. \`prod\`; 400 for \`deny\` on any other grant. Its approvals record \`by\` as \`<label> (delegate of <person>)\`. \`jkt\` (issue #892, sender binding): the JWK SHA-256 thumbprint of the agent's key; the grant is bound to it, so each refresh and each use need a DPoP proof of that key. \`limits\` (issue #892, grant limits): \`{ repos?, sources? }\`, at most ${GRANT_LIMITS_MAX} of each: repositories (\`owner/name\`) and job sources its tokens act on; each mutation of them must act only on the jobs, questions, review items, pull requests and items of these, else 403, and a route that names no repository or job source is refused; reads are not limited; 400 for a malformed one. \`box: true\` (issue #795) makes its tokens box tokens, the only kind that may do a box action — refused (403) when Access does not allow \`api_token#can_run_on_box\`. Answers the grant (\`view\`), its first API token (\`token\`, \`expiresAt\`) and its refresh token (\`refresh\`): once, never again; not cached. The agent trades the refresh token at \`POST /ui/auth/token/refresh\`. ${SCOPES} ${USE} An API token may not mint one (403). \`approve-device\` (issue #892): \`code\`, a device grant request's user code (\`GET /api/api-tokens/device/:code\` shows what it asks): the grant it asks for is checked as this mint checks it, as the session's user (400 and 403 as for a mint), and minted when its agent polls next; an API token may not approve one (403). \`deny-device\`: \`code\`; the agent is told. Both answer \`{ userCode, state }\`; 404 when no request waits with the code. \`revoke\`: end one of the user's grants, or an exchanged token, by its id (404 when there is none); \`revoke-all\`: every grant and API token of the user. Both answer what is left. 503 when OpenFGA cannot be asked.`, role: 'viewer', body: apiTokenBody, returns: 'mint: `ApiGrantMinted`; approve-device, deny-device: `{ userCode, state }`; revoke: `{ grants: ApiGrantView[], tokens: ApiTokenView[] }`', errors: [400, 403, 404, 503] },
   { method: 'get', path: '/api/api-tokens/device/:code', tag: 'API tokens', summary: 'See a device grant request', description: 'Issue #892: the device grant request that waits with this user code (as the agent shows it; case, spaces and dashes do not count): the grant it asks for (`ask`), who asked (`from`, as the sign-in limit counts callers), and when it ends. Never its device code. Any signed-in person may see it; the one who approves it is the grant\'s minter. 404 when none waits with the code.', returns: '`DeviceGrantView`', errors: [401, 404] },
   { method: 'get', path: '/api/scopes', tag: 'API tokens', summary: 'The scope registry: every scope a grant may hold, and the presets', description: 'Issue #909: `sections`, one per area of work (Jobs, Intake, Questions and reviews, Pull requests, Infra changes, Vault and credentials, Machines, …), in order, each with its `permissions`: a `scope`, its plain `description`, the `routes` it covers, the least UI `role` they need, and `box` when one is a box action (only a box grant may use it). Built from the routes, so a new route\'s scope is listed with no edit; an area no section names is under `other`. `presets`: named scope sets (`id`, `label`, `description`, `scopes`, `box`) a person picks with one click, or names at the mint (`preset`).', returns: '`ScopeRegistry`' },
   { method: 'post', path: '/ui/api/api-tokens/settings', tag: 'API tokens', summary: 'Set the API-token lifetime', description: `Only the instance admin (issue #881): \`tokenMinutes\`, ${API_TOKEN_MINUTES.min}–${API_TOKEN_MINUTES.max} (default ${API_TOKEN_MINUTES.default}). Applies to the API tokens issued after it; those there are keep their own ends. A grant that asked for more gets the setting. A change is \`api_tokens.settings_changed\`.`, role: 'admin', body: apiTokenSettingsBody, returns: '`ApiTokenSettings`', errors: [400] },
-  { method: 'post', path: '/ui/auth/token/refresh', tag: 'API tokens', summary: 'Trade a refresh token for an API token', description: `For the agent a grant was minted for (issue #881): \`{ refresh }\` answers a new API token (\`token\`, \`expiresAt\`) and a new refresh token (\`refresh\`), which replaces the one sent: keep it, the old one is spent. A refresh retried within 30 seconds gets the same pair. A spent refresh token sent again after that ends its whole grant at once (it may be stolen): \`api_grant.reuse_detected\`. 401 when the refresh token is unknown, spent, or its grant ended or was revoked; 429 past ${SIGN_IN_RATE} refreshes a minute from one caller. Not cached.`, body: tokenRefreshBody, returns: '`ApiTokenRefreshed`', errors: [400, 401, 429] },
-  { method: 'post', path: '/ui/auth/device-grant', tag: 'API tokens', summary: 'Ask for a grant by device approval', description: `For an agent with no credential (issue #892, on the model of RFC 8628): the grant it asks for, named as a mint names it (\`label\`, \`holder\`, \`role\`, \`scopes\`, \`preset\`, \`box\`, \`days\`, \`minutes\`, \`deny\`). Answers a \`deviceCode\` (\`${DEVICE_CODE_PREFIX}…\`: keep it, show it to nobody) and a \`userCode\` (\`BCDF-GHJK\`: show it to the person, with \`verificationPath\` — Settings → API tokens — or \`verificationPathComplete\`, which holds the code, at the hopper's URL). A person signed in enters the code, sees what is asked, and approves it (\`POST /ui/api/api-tokens\` \`approve-device\`: the grant is checked as their own mint, so its role is at most theirs) or denies it. Poll \`POST /ui/auth/device-grant/poll\` every \`interval\` seconds until \`expiresAt\` (${DEVICE_GRANT.minutes} minutes). Kept in memory only: after a restart, ask again. 429 while ${DEVICE_GRANT.most} requests wait, or past ${SIGN_IN_RATE} requests and polls a minute from one caller. Not cached.`, body: deviceGrantBody, returns: '`DeviceGrantStarted`', errors: [400, 429] },
-  { method: 'post', path: '/ui/auth/device-grant/poll', tag: 'API tokens', summary: 'Follow a device grant request', description: 'Issue #892: `{ deviceCode }` answers `{ state: waiting, interval, expiresAt }` until a person answers the request; then once, and the request ends: approved, `{ state: granted }` with the grant (`view`), its first API token and its refresh token, as a mint answers them; denied, 403. Access is asked for the grant at this poll, as at a mint (403 refused, 503 out of reach). 401 when the device code is unknown, or its request ended or was answered before. Not cached.', body: deviceGrantPollBody, returns: '`{ state: waiting, interval, expiresAt }` or `{ state: granted }` and `ApiGrantMinted`', errors: [400, 401, 403, 429, 503] },
+  { method: 'post', path: '/ui/auth/token/refresh', tag: 'API tokens', summary: 'Trade a refresh token for an API token', description: `For the agent a grant was minted for (issue #881): \`{ refresh }\` answers a new API token (\`token\`, \`expiresAt\`) and a new refresh token (\`refresh\`), which replaces the one sent: keep it, the old one is spent. A refresh retried within 30 seconds gets the same pair. A spent refresh token sent again after that ends its whole grant at once (it may be stolen): \`api_grant.reuse_detected\`. A **bound grant** (issue #892, sender binding) refreshes only with a DPoP proof of its key in the \`DPoP\` header (\`htm\` POST, \`htu\` this URL, a fresh \`iat\`, a new \`jti\`): else 401, and the grant stands. An unbound grant's refresh with a proof binds it to the proof's key. A bound grant's answer has \`tokenType: "DPoP"\`: send its API token as \`Authorization: DPoP <token>\`, each request with a proof whose \`ath\` is the token's SHA-256 (base64url). 401 when the refresh token is unknown, spent, or its grant ended or was revoked; 429 past ${SIGN_IN_RATE} refreshes a minute from one caller. Not cached.`, body: tokenRefreshBody, returns: '`ApiTokenRefreshed`', errors: [400, 401, 429] },
+  { method: 'post', path: '/ui/auth/device-grant', tag: 'API tokens', summary: 'Ask for a grant by device approval', description: `For an agent with no credential (issue #892, on the model of RFC 8628): the grant it asks for, named as a mint names it (\`label\`, \`holder\`, \`role\`, \`scopes\`, \`preset\`, \`box\`, \`days\`, \`minutes\`, \`deny\`, \`limits\`). Answers a \`deviceCode\` (\`${DEVICE_CODE_PREFIX}…\`: keep it, show it to nobody) and a \`userCode\` (\`BCDF-GHJK\`: show it to the person, with \`verificationPath\` — Settings → API tokens — or \`verificationPathComplete\`, which holds the code, at the hopper's URL). A person signed in enters the code, sees what is asked, and approves it (\`POST /ui/api/api-tokens\` \`approve-device\`: the grant is checked as their own mint, so its role is at most theirs) or denies it. A DPoP proof on the ask (issue #892, sender binding) binds the grant to its key: the poll, each refresh and each use then need a proof of that key; \`jkt\` in the body must then be the proof's thumbprint (400). Poll \`POST /ui/auth/device-grant/poll\` every \`interval\` seconds until \`expiresAt\` (${DEVICE_GRANT.minutes} minutes). Kept in memory only: after a restart, ask again. 429 while ${DEVICE_GRANT.most} requests wait, or past ${SIGN_IN_RATE} requests and polls a minute from one caller. Not cached.`, body: deviceGrantBody, returns: '`DeviceGrantStarted`', errors: [400, 429] },
+  { method: 'post', path: '/ui/auth/device-grant/poll', tag: 'API tokens', summary: 'Follow a device grant request', description: 'Issue #892: `{ deviceCode }` answers `{ state: waiting, interval, expiresAt }` until a person answers the request; then once, and the request ends: approved, `{ state: granted }` with the grant (`view`), its first API token and its refresh token, as a mint answers them; denied, 403. Access is asked for the grant at this poll, as at a mint (403 refused, 503 out of reach). 401 when the device code is unknown, or its request ended or was answered before. A request bound to a key (its ask carried a DPoP proof) answers only a poll with a proof of that key: else 401, and the request stands. Not cached.', body: deviceGrantPollBody, returns: '`{ state: waiting, interval, expiresAt }` or `{ state: granted }` and `ApiGrantMinted`', errors: [400, 401, 403, 429, 503] },
   { method: 'post', path: '/ui/auth/api-token', tag: 'API tokens', summary: 'Exchange a sign-in for an API token', description: `For an agent with no UI session (issue #718): \`Authorization: Bearer <a gateway realm's JWT, or a GitHub token>\`, checked as the API door checks it, mints an API token for the user the sign-in is linked to (a GitHub account: the user whose connected account it is), with a \`label\`, a \`role\` no higher than the one the sign-in config grants (default: that one), living ${LIFETIME}. ${USE} 401 when the sign-in is refused or names no hopper user (the door signs nobody new in), or is itself an API token; never a box token and never a grant: \`box\` is refused (400); 403 when no role is granted or Access refuses; 503 when OpenFGA cannot be asked; 429 past ${SIGN_IN_RATE} exchanges a minute from one caller (behind the tunnel: the caller its edge names). Not cached.`, body: apiTokenExchangeBody, returns: '`ApiTokenMinted`', errors: [400, 401, 403, 429, 502, 503] },
 ];
 
@@ -120,6 +130,20 @@ export function grantScopeRefusal(grants: Pick<ApiGrants, 'live'>, s: Pick<UiSes
 }
 
 /**
+ * Why a bound grant's API token is refused on this request (issue #892, "Sender binding"), or undefined: it carries a
+ * DPoP proof of the grant's key for this request and this token, as `Authorization: DPoP` — or it is no bound grant's.
+ */
+export async function senderRefusal(grants: Pick<ApiGrants, 'live'>, proofs: DpopProofs, s: Pick<UiSession, 'grantId' | 'token'>, req: ProofRequest): Promise<string | undefined> {
+  const jkt = s.grantId === undefined ? undefined : grants.live(s.grantId)?.jkt;
+  if (jkt === undefined) return undefined;
+  if (!dpopSchemeIn(req.headers)) return 'its grant is bound to a key: send it as Authorization: DPoP <token>, with a DPoP proof';
+  const p = await proofs.check(req, s.token);
+  if (!p.ok) return p.error;
+  if (p.jkt === undefined) return 'its grant is bound to a key: send a DPoP proof of it';
+  return p.jkt === jkt ? undefined : 'the DPoP proof is signed with another key than the one its grant is bound to';
+}
+
+/**
  * Why a grant's API token may not do what the body asks of the route (issue #909), or undefined: it may, or it is no
  * grant's. `action`: what the body's action field names; absent or not a string: the route's own scope is needed.
  */
@@ -138,6 +162,8 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
   access: Pick<Access, 'decideApiToken' | 'decideBoxAction'>; tenants: Tenants; signIn: Pick<SignIn, 'checkToken'>; caller: CallerOf;
   /** The scope registry (issue #909): every scope a route needs, what a grant's scopes are checked against, and the presets. */
   registry: ScopeRegistry;
+  /** DPoP proofs (issue #892): a bound grant's refresh, and a device grant request's ask and poll, carry one. */
+  proofs: DpopProofs;
   clock: Clock;
 }): void {
   const apiDoor = createApiDoor(o);
@@ -186,11 +212,29 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
     if (problems.length) throw new HttpError(400, problems.join('; '));
     if (want.days === null && !roleAllows(s.role, 'admin')) throw new HttpError(403, 'only an admin mints a grant with no fixed end: name `days`');
     const box = want.box ?? preset?.box ?? false;
+    const limits = checkedLimits(want.limits);
     return {
       userId: s.userId, identity: s.identity, role, label: want.label, ...(want.holder === undefined ? {} : { holder: want.holder }), scopes, box,
       days: want.days === undefined ? GRANT_DEFAULT_DAYS : want.days, ...(want.minutes === undefined ? {} : { minutes: checkedMinutes(want.minutes) }),
-      ...(delegate ? { delegate: { deny: [...new Set(deny)] } } : {}),
+      ...(delegate ? { delegate: { deny: [...new Set(deny)] } } : {}), ...(want.jkt === undefined ? {} : { jkt: want.jkt }),
+      ...(limits ? { limits } : {}),
     };
+  }
+
+  /** A grant's limits (issue #892) in their one form, or none; malformed ones are 400. */
+  function checkedLimits(l: GrantLimits | undefined): GrantLimits | undefined {
+    if (l === undefined) return undefined;
+    const problem = limitsProblem(l);
+    if (problem) throw new HttpError(400, problem);
+    return normalLimits(l);
+  }
+
+  /** The key of the request's DPoP proof (issue #892), or none; a proof that is no proof of this request is 401. */
+  async function proofKey(req: FastifyRequest, reply: FastifyReply): Promise<string | undefined> {
+    const p = await o.proofs.check(req);
+    if (p.ok) return p.jkt;
+    reply.header('www-authenticate', 'DPoP error="invalid_dpop_proof"');
+    throw new HttpError(401, p.error);
   }
 
   /** A new grant; Access must allow its role (and its box flag), or it is ended again. `how`: the log line's word for the mint. */
@@ -284,17 +328,28 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
     await device.register(rateLimit, signInLimit(o.caller));
     device.post('/ui/auth/device-grant', async (req, reply): Promise<DeviceGrantStarted> => {
       reply.header('cache-control', 'no-store');
-      const ask = parseWith(deviceGrantBody, req.body ?? {});
+      const body = parseWith(deviceGrantBody, req.body ?? {});
+      // A proof on the ask binds the grant to its key (issue #892): the poll, each refresh and each use then need that key.
+      const jkt = await proofKey(req, reply);
+      if (jkt !== undefined && body.jkt !== undefined && body.jkt !== jkt) throw new HttpError(400, 'jkt is not the thumbprint of the key the DPoP proof is signed with');
+      const { limits: asked, ...rest } = body;
+      const limits = checkedLimits(asked);
+      const ask = { ...rest, ...(limits ? { limits } : {}), ...(jkt === undefined ? {} : { jkt }) };
       const from = o.caller(req);
       const r = devices.start(ask, from);
       if (!r.ok) throw new HttpError(429, r.error);
-      console.warn(`hopper: device grant request ${r.value.userCode} (${ask.label}${ask.holder ? `, held by ${ask.holder}` : ''}) from ${from}`);
+      console.warn(`hopper: device grant request ${r.value.userCode} (${ask.label}${ask.holder ? `, held by ${ask.holder}` : ''})${ask.jkt ? ', bound to a key' : ''} from ${from}`);
       return r.value;
     });
     device.post('/ui/auth/device-grant/poll', async (req, reply) => {
       reply.header('cache-control', 'no-store');
-      const p = devices.take(parseWith(deviceGrantPollBody, req.body ?? {}).deviceCode);
+      const { deviceCode } = parseWith(deviceGrantPollBody, req.body ?? {});
+      const p = devices.take(deviceCode, await proofKey(req, reply));
       if (!p) throw new HttpError(401, 'the device code is unknown, or its request ended: ask again');
+      if (p.state === 'wrong-key') {
+        reply.header('www-authenticate', 'DPoP error="invalid_dpop_proof"');
+        throw new HttpError(401, 'this device grant request is bound to a key: send a DPoP proof of the key that asked');
+      }
       if (p.state === 'waiting') return p;
       if (p.state === 'denied') throw new HttpError(403, 'a person denied this device grant request');
       return { state: 'granted', ...await granted(p.approval, o.caller(req), ' by device approval') };
@@ -304,7 +359,8 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
     await refresh.register(rateLimit, signInLimit(o.caller));
     refresh.post('/ui/auth/token/refresh', async (req, reply) => {
       reply.header('cache-control', 'no-store');
-      const r = o.grants.refresh(parseWith(tokenRefreshBody, req.body ?? {}).refresh, o.caller(req));
+      const { refresh: token } = parseWith(tokenRefreshBody, req.body ?? {});
+      const r = o.grants.refresh(token, o.caller(req), await proofKey(req, reply));
       if (!r.ok) {
         console.warn(`hopper: token refresh refused: ${r.error}`);
         throw new HttpError(401, r.error);

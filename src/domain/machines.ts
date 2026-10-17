@@ -1,7 +1,7 @@
 // Attached machines and attaching one from the UI (design.md "Attached machines", "Machines from
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
-import type { MachineSnapshot } from './types.ts';
+import type { ActionVia, MachineSnapshot } from './types.ts';
 // A Windows host (issue #731) is reached over ssh as an ssh target is, but runs only steps: src/domain/windows-steps.ts.
 export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
 /**
@@ -36,6 +36,22 @@ export interface MachineInfraCredentials { infraCredentials?: string[] }
  * on it; the jobs on it run to their end. A lane pod leaves when it is told to stop.
  */
 export interface MachineLeaving { leaving?: true }
+
+/** Who drained a machine, the way, and when (issue #1511): kept in the user's settings, per machine id. */
+export interface MachineDrain { person: string; via: ActionVia; at: string }
+
+/** The drained machines (issue #1511), keyed by machine id. */
+export type MachineDrains = Readonly<Record<string, MachineDrain>>;
+
+/**
+ * A machine a person drained (issue #1511, `POST /ui/api/machines/drain`, `hopper machine drain`), until a person
+ * undrains it: no new job is placed on it; the jobs on it run to their end. Kept across restarts. Any machine.
+ */
+export interface MachineDrained { drained?: MachineDrain }
+
+/** The machines with the drained ones marked (issue #1511). A drain of a machine not listed marks nothing. */
+export const withDrains = <M extends { id: string }>(machines: readonly M[], drains: MachineDrains): (M & MachineDrained)[] =>
+  machines.map((m) => { const d = drains[m.id]; return d ? { ...m, drained: d } : m; });
 
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {

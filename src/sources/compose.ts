@@ -4,7 +4,7 @@
 // the account is not connected or its sign-in expired (issue #358) — then it asks for a sign-in again; nothing falls back
 // to another credential —, or while no job repository is chosen.
 import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
-import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, type ChangeRule, type ConnectedAccountProvider } from '../domain/types.ts';
+import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, furtherAccount, mergesOnReady, providerOfKey, type ChangeRule, type ConnectedAccountKey } from '../domain/types.ts';
 import type { DirectPullRequests } from '../domain/direct-jobs.ts';
 import { tendStartedOn } from './github/follow.ts';
 import { followDirectPullRequest } from './github/direct-follow.ts';
@@ -84,10 +84,11 @@ const listingOf = (o: GitHubSourceDeps) => ({
  * can reach. Paused, and saying why, while none is connected, its token expired (sign in again), or no
  * repository is chosen; a report then waits for a connection (transient).
  */
-export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedAccountProvider; accounts: ConnectedAccountTokens },
+export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccountKey; accounts: ConnectedAccountTokens },
   options: GitHubAccountOptions): JobSource {
-  const { provider, accounts } = o;
-  const kind = `${provider}-account`;
+  // `provider`: the account's key (issue #1448), what every ask of the connected accounts names; its kind is its provider's.
+  const { key: provider, accounts } = o;
+  const kind = `${providerOfKey(provider)}-account`;
   // The token at each call: a disconnect stops the next call, not only the next sync.
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
@@ -120,10 +121,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   // `expired`: the sign-in ended (issue #441), so the UI asks to connect again on every screen. Not while its
   // tokens cannot be opened (issue #514): that asks for the key, never a new grant.
   // Why nothing goes through the account: its sign-in ended (issue #518: never "not connected" then), or none is.
-  const why = () => accounts.ended(provider) ?? notConnected(provider);
+  const why = () => accounts.ended(provider) ?? notConnected(providerOfKey(provider));
   const unconnected = () => ({
     repos: accounts.jobRepositories(provider), label: options.label,
-    account: { service: provider, detail: { via: CONNECTED_VIA }, problem: why() },
+    account: { service: providerOfKey(provider), detail: { via: CONNECTED_VIA }, problem: why() },
     ...(accounts.expired(provider) ? { expired: true } : {}),
   });
   return {
@@ -132,7 +133,8 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     // The issue thread goes through the account's own api (issue #435): a disconnect stops its next call.
     thread: gitHubThread(api),
     paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
-    describe: () => current()?.describe() ?? unconnected(),
+    // A further account's source (issue #1448) names its account, so Sources shows it in that account's panel.
+    describe: () => ({ ...(current()?.describe() ?? unconnected()), ...(furtherAccount(provider) ? { accountKey: provider } : {}) }),
     afterAnswerTimings: () => current()?.afterAnswerTimings?.() ?? [],
     pass: reads.pass,
     passCalls: reads.calls,
@@ -195,6 +197,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     endedPullRequests(pulls) {
       const s = current();
       return s?.endedPullRequests ? s.endedPullRequests(pulls) : Promise.reject(new SourceError(why(), false));
+    },
+    endedWatched(refs) {
+      const s = current();
+      return s?.endedWatched ? s.endedWatched(refs) : Promise.reject(new SourceError(why(), false));
     },
     censusPullRequests(facts) {
       const s = current();

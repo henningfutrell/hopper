@@ -1027,7 +1027,7 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #65
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move re-queues with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
 
 | field | type | required |
 |---|---|---|
@@ -1043,13 +1043,14 @@ Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job
 
 ## `job.continued`
 
-Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record. Or a person chose Push it on its work not pushed (issue #1010) — a failed, finished or cancelled job —, told to push the work its work tree kept and open the pull request: `keptWork`.
+Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record. Or a person chose Push it on its work not pushed (issue #1010) — a failed, finished or cancelled job —, told to push the work its work tree kept and open the pull request: `keptWork`. Or the failure sweep did so by itself for a finished job (issue #1472, Push it by itself, the failures setting `auto.push`): `keptWork` and `auto`.
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | no |
 | `recordId` | string | no |
 | `keptWork` | boolean | no |
+| `auto` | boolean | no |
 
 ```json
 {
@@ -1151,6 +1152,29 @@ Version 1 (`docs/schemas/job.waited_pull_request_ended.v1.json`). A pull request
 {
   "pullRequest": "https://github.com/octo/tools/pull/8",
   "state": "closed"
+}
+```
+
+## `job.waited_items_ended`
+
+Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, or the run's conclusion).
+
+| field | type | required |
+|---|---|---|
+| `items` | object[] | yes |
+
+```json
+{
+  "items": [
+    {
+      "url": "https://github.com/octo/identity/issues/199",
+      "state": "closed"
+    },
+    {
+      "url": "https://github.com/octo/platform/actions/runs/37998997248",
+      "state": "failure"
+    }
+  ]
 }
 ```
 
@@ -1300,6 +1324,7 @@ Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the
 | field | type | required |
 |---|---|---|
 | `provider` | `github` | yes |
+| `key` | string | no |
 | `account` | string | yes |
 | `reason` | string | yes |
 
@@ -1318,6 +1343,7 @@ Version 1 (`docs/schemas/connected_account.renewed.v1.json`). The renewer kept a
 | field | type | required |
 |---|---|---|
 | `provider` | `github` | yes |
+| `key` | string | no |
 | `account` | string | yes |
 | `expiresAt` | string | no |
 
@@ -1336,6 +1362,7 @@ Version 1 (`docs/schemas/connected_account.renewal_failed.v1.json`). A renewal o
 | field | type | required |
 |---|---|---|
 | `provider` | `github` | yes |
+| `key` | string | no |
 | `account` | string | yes |
 | `code` | string | yes |
 
@@ -2943,6 +2970,42 @@ Version 1 (`docs/schemas/machine.leftover_removed.v1.json`). A person removes a 
   "path": "/home/me/work/.hopper-scratch/repos/acme/app.git",
   "unpushed": false,
   "bytes": 1200000000,
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
+## `machine.drained`
+
+Version 1 (`docs/schemas/machine.drained.v1.json`). A person drained `machineId` (issue #1511): from now on no new job is placed on it, and the jobs on it run to their end. A job resuming there returns to its pane. Kept across restarts until a person undrains it. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "machineId": "desk",
+  "person": "Pat",
+  "via": "cli"
+}
+```
+
+## `machine.undrained`
+
+Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machineId` (issue #1511): new jobs are placed on it again. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "machineId": "desk",
   "person": "Pat",
   "via": "ui"
 }

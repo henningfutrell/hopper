@@ -5,6 +5,7 @@
 // shows each waiting one with its repository's yolo mode.
 // Change kinds (issue #1076, design.md "Change kinds"): the change-kind rules are saved with yolo mode, whole
 // (`changeKinds`, `null` for the built-in rule): globs, content expressions — each must compile — and each kind's merge gate.
+import { everyJobRepository } from '../../domain/job-repositories.ts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CHANGE_KINDS, DEFAULT_YOLO_MODE, MERGE_GATES, patchYoloMode, pullRequestList, yoloChoices, type PullRequestsView, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
@@ -38,7 +39,7 @@ export const yoloModeBody = z.strictObject({
 const settingsOf = (store: UserStore): YoloModeSettings => store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE;
 
 export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
-  return { ...settingsOf(t.store), choices: yoloChoices(t.store.settings.getJobRepositories('github')) };
+  return { ...settingsOf(t.store), choices: yoloChoices(everyJobRepository(t.store)) };
 }
 
 /**
@@ -49,7 +50,7 @@ export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
 export function pullRequestsView(t: Pick<TenantParts, 'store' | 'registry'>): PullRequestsView {
   const { store } = t;
   const now = Date.now();
-  const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'), now, (id) => store.jobs.get(id));
+  const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), everyJobRepository(store), now, (id) => store.jobs.get(id));
   const landing = landingCards(store.workItems.list({ landing: true }), now);
   const untracked = t.registry.statuses().flatMap((s) => ((s.detail?.untrackedPullRequests ?? []) as UntrackedPullRequest[]).map((u) => ({ ...u, source: s.name })));
   return { ...view, ...(landing.length > 0 ? { landing } : {}), ...(untracked.length > 0 ? { untracked } : {}) };

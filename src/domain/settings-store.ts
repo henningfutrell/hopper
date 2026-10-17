@@ -10,9 +10,10 @@ import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
+import type { MachineDrains } from './machines.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
 } from './types.ts';
 
@@ -27,9 +28,9 @@ export interface UserSettingsRepository {
   /** The hopper's link key for this user's machines that dial in (issue #308): a secret, never answered by any route but its public half. */
   getLinkKey(): { privateKey: string; publicKey: string } | undefined;
   setLinkKey(key: { privateKey: string; publicKey: string }): void;
-  /** The repositories a connected account's jobs may use (issue #321); empty: none chosen. */
-  getJobRepositories(provider: ConnectedAccountProvider): string[];
-  setJobRepositories(provider: ConnectedAccountProvider, repositories: readonly string[]): void;
+  /** The repositories a connected account's jobs may use (issue #321), by the account's key (issue #1448); empty: none chosen. */
+  getJobRepositories(key: ConnectedAccountKey): string[];
+  setJobRepositories(key: ConnectedAccountKey, repositories: readonly string[]): void;
   /** The usage graph's range and step the user chose (issue #385); absent: never chosen. */
   getUsageGraphView(): UsageGraphView | undefined;
   setUsageGraphView(view: UsageGraphView): void;
@@ -54,6 +55,9 @@ export interface UserSettingsRepository {
   /** Each machine's dismissed lane recommendation (issue #688); a machine absent: none dismissed. */
   getLaneDismissals(): LaneDismissals;
   setLaneDismissals(dismissals: LaneDismissals): void;
+  /** The drained machines (issue #1511); a machine absent: not drained. */
+  getMachineDrains(): MachineDrains;
+  setMachineDrains(drains: MachineDrains): void;
   /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
   getPriorityLanes(): PriorityLaneSettings | undefined;
   setPriorityLanes(settings: PriorityLaneSettings): void;

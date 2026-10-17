@@ -1,7 +1,9 @@
-// A user's connected accounts (issue #214): one row per provider in their user schema — who and when; its tokens are
+// A user's connected accounts (issue #214): one row per account in their user schema, by its key (issue #1448: the first
+// account's is its provider, `github`; a further one's `github-2`, …) — who and when; its tokens are
 // system secrets in the user's vault since issue #658 (src/connected-accounts/at-rest.ts). A renewal locks the row in its
 // transaction (issue #441), under an advisory lock per account that only one connection — one process — holds at a time.
 import type { ConnectedAccountRepository, StoredAccount } from '../domain/ports.ts';
+import { isConnectedAccountKey, type ConnectedAccountKey } from '../domain/types.ts';
 import { parse, type StoreContext } from './context.ts';
 
 const LOCK_KEY = "hashtext('hopper connected account ' || current_schema() || ' ' || ?)";
@@ -13,9 +15,9 @@ export function createConnectedAccountRepository(c: StoreContext): ConnectedAcco
     const r = c.db.get('SELECT body FROM connected_accounts WHERE provider = ?', provider);
     return r ? parse<Body>(r.body) : undefined;
   };
-  const write = (b: Body): void => {
+  const write = (b: Body, key: ConnectedAccountKey): void => {
     c.db.run(`INSERT INTO connected_accounts (provider, body) VALUES (?, ?)
-      ON CONFLICT (provider) DO UPDATE SET body = excluded.body`, b.provider, JSON.stringify(b));
+      ON CONFLICT (provider) DO UPDATE SET body = excluded.body`, key, JSON.stringify(b));
   };
   return {
     get(provider) {
@@ -24,11 +26,12 @@ export function createConnectedAccountRepository(c: StoreContext): ConnectedAcco
       const { accessToken: _a, refreshToken: _r, ...row } = b;
       return row;
     },
-    put(account) {
+    put(account, key = account.provider) {
       // Tokens are never kept here: a row from before issue #658 loses its old ones once the new ones are in the vault.
       const { accessToken: _a, refreshToken: _r, ...row } = account as Body;
-      write(row);
+      write(row, key);
     },
+    keys: () => c.db.all('SELECT provider FROM connected_accounts ORDER BY provider').map((r) => String(r.provider)).filter(isConnectedAccountKey),
     lockRow: (provider) => c.db.get('SELECT provider FROM connected_accounts WHERE provider = ? FOR UPDATE', provider) !== undefined,
     legacyTokens(provider) {
       const b = body(provider);
@@ -38,7 +41,7 @@ export function createConnectedAccountRepository(c: StoreContext): ConnectedAcco
       const b = body(provider);
       if (!b) return;
       const { accessToken: _a, refreshToken: _r, ...row } = b;
-      write(row);
+      write(row, provider);
     },
     lock: (provider) => c.db.get(`SELECT pg_try_advisory_lock(${LOCK_KEY}) AS held`, provider)!.held === true,
     unlock(provider) {

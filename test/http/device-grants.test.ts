@@ -67,6 +67,17 @@ describe('device grant requests (issue #892)', () => {
     expect(requests.take(approved.value.deviceCode)).toBeUndefined();
   });
 
+  it('a request bound to a key (issue #892, sender binding) answers only a poll that proves it; the request stands', () => {
+    const jkt = 'k'.repeat(43);
+    const r = requests.start({ ...ask, jkt }, 'caller-1');
+    if (!r.ok) throw new Error(r.error);
+    requests.approve(r.value.userCode, 'ada');
+    expect(requests.take(r.value.deviceCode)).toEqual({ state: 'wrong-key' });
+    expect(requests.take(r.value.deviceCode, 'x'.repeat(43))).toEqual({ state: 'wrong-key' });
+    expect(requests.take(r.value.deviceCode, jkt)).toMatchObject({ state: 'approved', approval: 'ada' });
+    expect(requests.take(r.value.deviceCode, jkt)).toBeUndefined();
+  });
+
   it('an unknown device code is no request', () => {
     expect(requests.take(`hopper_dc_${'0'.repeat(64)}`)).toBeUndefined();
   });

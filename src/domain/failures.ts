@@ -44,7 +44,7 @@ export interface JobLiveness { outputAt?: string; pushed?: boolean; pullRequest?
  * What continued a failed job: a person's Continue on its hand-off (issue #551), the assessor's (issue #630) on its
  * record, or a person's Push it on its work not pushed (issue #1010).
  */
-export type ContinuedBy = { handoffId: string } | { recordId: string } | { keptWork: true };
+export type ContinuedBy = { handoffId: string } | { recordId: string } | { keptWork: true; auto?: true };
 
 /** Where a problem applies: a machine, an executor on it, or (neither) every machine. */
 export interface ProblemScope { machineId?: string; executor?: string }
@@ -159,7 +159,7 @@ export interface FailureSettings {
   groupThreshold: number;
   groupWindowMin: number;
   /** Whether each decision acts by itself; off, it waits for a person. */
-  auto: { retry: boolean; hold: boolean; redirect: boolean; continue: boolean };
+  auto: { retry: boolean; hold: boolean; redirect: boolean; continue: boolean; push: boolean };
   /** A timed-out job whose pane output changed within this many minutes before its timeout was at work (issue #630). */
   activeWindowMin: number;
   /** Failure records and resolved problems older than this are deleted. */
@@ -172,7 +172,7 @@ export interface FailureSettings {
 
 export const DEFAULT_FAILURE_SETTINGS: FailureSettings = {
   maxAttempts: 3, backoffSec: 60, backoffFactor: 2, backoffMaxSec: 1800, groupThreshold: 3, groupWindowMin: 60,
-  auto: { retry: true, hold: true, redirect: true, continue: true }, activeWindowMin: 10, retentionDays: 90,
+  auto: { retry: true, hold: true, redirect: true, continue: true, push: true }, activeWindowMin: 10, retentionDays: 90,
   handoffRetentionDays: 30, handoffNotify: true,
 };
 

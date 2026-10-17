@@ -49,6 +49,7 @@ import { createRealmsAdmin, realmRoutes } from './realms.ts';
 import { createLocalAccountsAdmin, localAccountRoutes } from './local-accounts.ts';
 import { createPasskeys } from '../auth/passkeys.ts';
 import { createApiGrants } from './ui/api-grants.ts';
+import { createDpopProofs } from './ui/dpop.ts';
 import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
@@ -192,10 +193,12 @@ export function createServer(o: ServerOptions): FastifyInstance {
   });
   const g = grants.reconcile(o.signIn.roleOf);
   if (g.dropped + g.changed > 0) console.warn(`hopper: the sign-in config applied to grants: ${g.dropped} ended, ${g.changed} lowered`);
+  // DPoP proofs (issue #892, "Sender binding"): one cache of the jti seen, for the token routes and every use of a bound grant's token.
+  const proofs = createDpopProofs({ clock: o.clock });
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
   // Through a tunnel only the API, and a limit per caller (issues #795, #968): the tunnel's edge, held here too.
   installTunnelEdge(app, { tunnel: o.remoteAccess.watch, domain: () => { const u = o.remoteAccess.url(); return u ? new URL(u).hostname : undefined; } });
-  installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
+  installTenancy(app, { tenants: o.tenants, sessions, grants, proofs, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);
@@ -272,7 +275,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, proofs, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
     updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;

@@ -345,6 +345,23 @@ hopper's GitHub App is not needed for it.
 - **When it ends.** Nothing renews a token. When GitHub refuses it (it expired, or you deleted it), the
   source pauses and Sources asks to connect again. You stay signed in.
 
+## A second GitHub account
+
+A person can work from more than one GitHub account, for example a work account beside a personal one (issue
+#1448). Connect the first account as above. Then add each other account with a personal access token of that account.
+
+1. Make a token of the other account at https://github.com/settings/tokens, with the same access as above.
+2. In Sources → GitHub account, under **Add another GitHub account**, paste the token and click **Add with a token**.
+3. In the new panel, **GitHub account 2**, choose its job repositories.
+
+- **One account per repository.** A repository is a job repository of one account only. A job of that repository
+  acts as that account, for its GitHub requests and its git, and the job page names it in **GitHub as**.
+- **Intake.** Each account has its own job source, `github-account-2` and so on. The hopper adds it. It is not in the
+  plugins config.
+- **Checks.** GitHub must take the token, and the source email match applies. An account connected already is refused.
+- **When it ends.** Only that account pauses. Its panel asks for a new token. The other accounts go on.
+- **Remove this account** forgets the account, its token and its job repositories. Delete the token at GitHub yourself.
+
 ## LDAP realm
 
 People sign in on the same username and password form with their directory account. The hopper

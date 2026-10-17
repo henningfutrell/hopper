@@ -73,6 +73,7 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (used >= m.maxLanes) return undefined;
   if (!m.online) return 'machine offline';
   if (m.leaving) return `leaving: ${NO_NEW_JOB}`;
+  if (m.drained) return `drained: ${NO_NEW_JOB}`;
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
   if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
   if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;

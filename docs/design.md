@@ -39,7 +39,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
-| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659) | http, decider |
+| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -59,7 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -7596,6 +7596,18 @@ secrets sat in a file on the host, beside the stack they open. The update script
   deletes it. Compose itself still interpolates a `.env` a person makes by hand: the hopper cannot forbid it; the update
   removes it.
 
+## hopper.io: threat model, account isolation and privacy (issue #468, 2026-10-17 — a design, not built)
+
+Child of the cloud-hosting tracking issue #469. Written before any hopper.io code: `docs/hopper-io-security.md`. It
+names the assets and the trust boundaries, five threats (hopper.io compromised, a stolen **hopper.io link key**, a
+malicious install, a **hopper.io account** taken over, one account reading another's data), and eight rules every
+hopper.io change cites: R1 hopper.io runs nothing on an instance; R2 a remote action only by the admin's opt-in per
+instance, under the instance's roles, as one `POST /ui/api/*`, recorded; R3 every record and query scoped to one
+account, with tests; R4 no credential on the **hopper.io link**, a per-instance key that either side rotates or revokes;
+R5 only what the dashboard shows, a retention period, erase on delete, a privacy note; R6 link events on both sides;
+R7 rate and size caps; R8 self-hosting with no link stays complete. The open owner decisions of #469 change none of
+them; the document says where one widens a threat.
+
 ## Self-update (issue #44, 2026-10-04)
 
 The hopper knows when a newer version exists, says what changed, and applies it without losing a
@@ -12009,6 +12021,32 @@ the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squ
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
 the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused; issue #1470: the same work kept again, Push it refused).
 
+### Push it by itself (issue #1472 part 2, 2026-10-17)
+
+A job that ended done with work not pushed waited for a person's Push it, sometimes for days. The issue asks that the
+hopper push the work from any state with no click. This part does it for the case that is the hopper's alone to decide.
+
+- **What** (`autoPush`, `src/failures/kept-work.ts`; run by the failure sweep after its work check). Each entry of
+  **work not pushed** whose job is `finished`, has no open hand-off, and whose Push it is taken now (its session resumes,
+  it is the newest job of its item, its source takes the item back, it was not kept again) goes on as Push it does: its
+  own agent session and kept work tree, told `pushBrief` with "The hopper asks you" in place of "A person asks you".
+  `job.continued` records `keptWork` and `auto`.
+- **Once for each job.** A job that has a `job.continued` with `keptWork` already (a person's Push it, or this) is not
+  pushed by itself again: its work waits for a person, and the kept-again rule (issue #1470) still applies to Push it.
+  So a push the hopper refuses, or a job that cannot push, costs one turn, not a loop.
+- **Not a failed or a cancelled job.** A failed job's failure goes to the assessor, which runs it again, continues it, or
+  hands it off; a hand-off's Push it is a person's. A cancelled job a person stopped. Both stay as they were.
+- **The setting.** `auto.push` in the failures settings, default on (`POST /ui/api/failures/settings`, Failures → settings,
+  "Push work a finished job did not push"). Off, the work waits for a person as before. A settings record saved before the
+  field existed reads it on, field by field (`failureSettingsOf`).
+
+Left of issue #1472 part 2: a job whose session cannot resume (its work needs a new job in the kept work tree), and a push
+to a repository other than the job's own (refused, issue #1470).
+
+**Verification:** `test/integration/auto-push.test.ts` (a finished job pushed by itself once, with `auto`; not again when
+its work is kept again; `auto.push` off; a failed job not pushed by itself), `test/integration/kept-work.test.ts` (a
+person's Push it, with `auto.push` off).
+
 ### Actions answer at once (issue #1194, 2026-10-14)
 
 A person's action on a local hopper must feel instant. Approve took 5 to 20 s: the route awaited a GitHub read of the
@@ -13603,10 +13641,10 @@ its scopes and its minter's live rights, until the grant ends, it is revoked, or
 (then the grant ends). The agent keeps it in its own secret store and must replace it at each refresh. Reuse detection
 needs the legitimate holder to refresh after a thief: a thief who refreshes first and keeps refreshing holds the grant
 until the holder's next refresh ends it. The scope names a route's area and act, not an object: `questions:answer` answers
-any question of the user. Sender binding (DPoP, RFC 9449) and per-grant repository or source limits are not built.
+any question of the user. A grant bound to its agent's key ("Sender binding" below) closes the theft of a token alone;
+a limited grant ("Grant limits" below) acts only on the repositories and job sources it names.
 
-**Not built** (follow-ups, issue #892): sender binding (DPoP); per-grant repository or source restrictions. A grant minted
-by device approval is built: "Grants by device approval" below.
+The follow-ups of issue #892 are built: "Grants by device approval", "Sender binding" and "Grant limits" below.
 
 Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
 ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
@@ -13618,8 +13656,8 @@ in scope and out, the retry, the events; no box flag; revoke and revoke all; the
 ### Grants by device approval (issue #892, 2026-10-16)
 
 The first part of issue #892, a follow-up of #881: an agent gets a grant with no token pasted into it. On the model of the
-OAuth 2.0 device authorization grant (RFC 8628). Sender binding and per-grant repository or source limits are the issue's
-other parts, not built here.
+OAuth 2.0 device authorization grant (RFC 8628). Sender binding is the second part ("Sender binding" below); per-grant
+repository and job source limits the third ("Grant limits" below).
 
 - **The ask.** `POST /ui/auth/device-grant`, with no credential: the grant the agent wants, in a mint's fields (`label`,
   `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`, `deny`). It answers a **device code** (`hopper_dc_` and
@@ -13657,6 +13695,99 @@ holds the device code when the request is approved takes the grant; it is shown 
 Tests: `test/http/device-grants.test.ts` (the codes, waiting, approve once, deny, the end, the cap),
 `test/integration/device-grants.test.ts` (the flow over HTTP and its refresh; deny; the mint's checks at the approval;
 no approval by an API token; the CLI), `test/http/tunnel.test.ts`, `test/ui/api-tokens.test.ts`.
+
+### Sender binding (issue #892, part 2, 2026-10-17)
+
+The second part of issue #892: a stolen refresh token, API token or device code alone is not enough. A grant may be
+**bound** to a key its agent holds, on the model of DPoP (RFC 9449): then each request that uses the grant carries a
+**DPoP proof**, a short JWT the agent signs with that key for that one request, in the `DPoP` header. The hopper keeps
+only the key's JWK SHA-256 thumbprint (RFC 7638, `jkt`) in the grant's body; the private key never leaves the agent.
+
+- **Binding.** A grant is bound at its birth or at its first refresh with a proof; once bound it stays bound.
+  - A device grant request with a proof on the ask (`POST /ui/auth/device-grant`) binds its grant to the proof's key.
+    The person sees "bound to the asking agent's key" before they approve. The poll then needs a proof of that key: a
+    device code alone, or with another key's proof, takes nothing (401) and the request stands.
+  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt`): the thumbprint the agent shows. A
+    `jkt` on an ask with a proof must be the proof's (400).
+  - An unbound grant's refresh with a proof binds it to the proof's key. The refresh token a person copied to the agent
+    is then worth nothing to anyone without the key, from the agent's first refresh on.
+- **A refresh** of a bound grant needs a proof of its key (`htm` `POST`, `htu` the refresh URL), else 401 with
+  `WWW-Authenticate: DPoP error="invalid_dpop_proof"`. This is checked before reuse detection: a spent refresh token sent
+  without the key does not end the grant, so a thief cannot end it either. The answer has `tokenType: 'DPoP'`.
+- **Each use of a bound grant's API token**, read or mutation, is `Authorization: DPoP <token>` (a `Bearer` one is
+  refused, RFC 9449 §7.1) with a proof of the grant's key whose `ath` is the token's SHA-256. Checked in the tenancy hook
+  (`src/http/tenants.ts`), before the scopes and Access; the grant's API tokens made before its binding need the proof too.
+- **The proof** (`src/http/ui/dpop.ts`). jose checks the signature with the key in the proof's own header
+  (`EmbeddedJWK`: a public key only), `typ` `dpop+jwt`, and an asymmetric algorithm (`DPOP.algorithms`: ES256, ES384,
+  EdDSA, Ed25519, RS256, PS256; never `none` or HMAC). The hopper checks the rest of RFC 9449 §4.3: `htm` is the method;
+  `htu` names this request's Host and path (a query does not count; `http` or `https`, since behind a proxy or the tunnel
+  the hopper sees `http`); `iat` is at most `DPOP.maxAgeS` (60) seconds off the hopper's clock; `jti` was not seen with
+  that key while a proof with it is fresh (kept in memory, `DPOP.jtiMost` (10 000) at once; beyond, 401 until one is
+  forgotten); `ath` for an API token. A proof that fails is refused even on a route or grant that needs none: it is no
+  proof of the request.
+- **Not built: the server nonce** (`DPoP-Nonce`, RFC 9449 §8). The 60-second `iat` window and the `jti` cache stand for
+  it; a nonce would add a round trip to each refresh and a state the agent must keep.
+- **Why jose and not a library of its own.** No maintained Node library checks a DPoP proof as a resource server; jose
+  (already the hopper's, by the same author as openid-client) does the JWS part, and the claim checks are a few lines.
+- **Migration.** None: `jkt` is a field of the grant's JSON body (`api_grants.body`). The build before reads it as no field:
+  there a bound grant's tokens work as bearer tokens again, until the grant ends.
+- **Events.** None new: the mint and the refresh are `api_grant.minted` and `api_grant.refreshed`, as before. A refused
+  proof is a log line.
+
+**Residual risk, stated.** Binding is optional: an agent that sends no proof keeps a bearer grant, as before. A refresh
+token taken before the agent's first refresh can be bound to the thief's key instead; the agent's next refresh then fails,
+and the person revokes the grant. To close that gap, bind at the birth (a device grant request with a proof, or `jkt` at
+the mint). The key is the agent's to keep safe: whoever holds the key and a token acts as the grant. The `jti` cache is
+in memory: a proof seen before a restart can be sent again after it, within its 60 seconds, to the same URL.
+
+Tests: `test/http/dpop.test.ts` (the proof: the key, htm, htu, iat, jti, ath, no proof, a private key, `none`, HMAC, two
+headers, the cap), `test/integration/sender-binding.test.ts` (a device grant bound by its ask's proof; a mint with
+`jkt`; binding at the first refresh; an unbound grant as before; a mutation; the CLI), `test/http/device-grants.test.ts`,
+`test/ui/api-tokens.test.ts`.
+
+### Grant limits (issue #892, part 3, 2026-10-17)
+
+The third part of issue #892: beside its scopes, a grant may name what its tokens act on. The scopes say which routes; the
+**limits** say on what: the repositories (`owner/name`) and the job sources (their names) of the work it touches.
+
+- **The mint.** `limits: { repos?, sources? }` on `POST /ui/api/api-tokens` `mint` and on a device grant request (`POST
+  /ui/auth/device-grant`), at most `GRANT_LIMITS_MAX` (50) of each; `hopper token mint --repo <owner/name>... --source
+  <name>...`; in Settings → API tokens, two fields under the role. Kept in one form (`normalLimits`): repositories lower
+  case (GitHub's names do not care for case), each list sorted and once; two empty lists are no limits. A repository that
+  is not `owner/name`, or a source name that is not letters, digits, `. _ : -`, is 400. The person who approves a device
+  grant request sees its limits ("only acme/app") before they approve; the grant list shows them too.
+- **The targets.** A limited grant's mutation names its **limit targets**: the repository and job source of what it acts
+  on, found once the body is read (`src/http/ui/grant-limits.ts`, a table by route):
+  - `/ui/api/jobs/:id/…` and `/ui/api/failures/:id/retry`: the job's source and its repository (`job.source`).
+  - `/ui/api/questions/:id/…`: the question's job's; `/ui/api/<review section>/:id/…`: the review item's job's.
+  - `/ui/api/pull-requests/merge|close|tend`: the job its `jobId` names; `diff`: its `repo`.
+  - `/ui/api/sources/:name/intake`: each item named, of that source, with the repository of its key when the key is a
+    GitHub issue or pull request URL (`repoOfItemKey`).
+  - `/ui/api/direct-jobs`: the source `direct` and its `repo`; `/ui/api/repo-checks/queue`: its `repo`.
+- **The check** (`limitRefusal`, `src/domain/grant-limits.ts`, pure). Each target must be in every list the grant names:
+  with `repos`, its repository is one of them; with `sources`, its source is. A target with no repository (a job of no
+  repository) while the grant names repositories is refused; so is one with no source while it names sources. An act
+  that names no target — a route not on the table, such as a setting, or an id that names nothing — is refused too: deny
+  by default, as for scopes. Refused is 403 naming the limits and what the act acts on, and a log line. It runs in the
+  tenancy hook's `preHandler` (`src/http/tenants.ts`), after the role, the scopes, the box flag and Access, and after the
+  action scope (issue #909).
+- **Reads are not limited.** A limited grant's `GET /api/…` reads as its scopes allow, all of its user's work: the lists
+  (the queue, the sources, Needs you) would each need a filter of their own, and the limit is on what an agent changes.
+- **Migration.** None: `limits` is a field of the grant's JSON body (`api_grants.body`). The build before reads it as no
+  field: there a limited grant acts on anything its scopes allow, until the grant ends.
+- **Events.** None new, and no change to `api_grant.minted`: older builds read the events strictly. The grant list and
+  `GET /api/api-tokens` show the limits.
+
+**Residual risk, stated.** The limits hold what an agent changes, not what it reads: a limited grant with `*:read` still
+reads every job of its user. A route a later change adds is refused to a limited grant until the table names its targets.
+A route on the table finds its job by id at the check: an act whose handler then acts on another object than the one its
+path or body names would pass with the named one's targets; the table names only routes whose handler acts on what they
+name.
+
+Tests: `test/domain/grant-limits.test.ts` (the one form, the checks of the mint, the targets, item keys),
+`test/integration/grant-limits.test.ts` (a grant limited to a repository on a job of it and of another; a route that
+names no target; a job source limit on jobs and on intake; a device grant request's limits; the mint's checks; the CLI),
+`test/ui/api-tokens.test.ts`.
 
 ### The scope registry and presets (issue #909, 2026-10-12)
 
@@ -21750,7 +21881,8 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
   it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
   event would end the wait before that answer, and the answer would then find no wait to end. Checks keep `pr wait`
-  (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person. Issue #1210
+  (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person; since issue #1508 also by
+  the items an outside wait names ("Watched items"), and by the loss of the pane a poll ran in. Issue #1210
   carries the waits on hopper state a job polls for.
 - **A pull request no follow holds (issue #1433).** Only a followed pull request records `job.pull_request_merged` or
   `job.pull_request_closed`. One whose follow ended (a tend took it, a newer job of its item), a stray a person closed, or
@@ -21778,6 +21910,47 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   `test/domain/job-graph.test.ts` (the node's `waitOn` and words), `test/ui/jobs-view.test.ts` (the node's words and its
   details' link), `test/ui/board.test.ts` (`waitOnLinkOf`), `test/integration/skill-wait-wakes-job.test.ts` (an approval
   still ends the wait with the skill's answer).
+
+## Watched items (issue #1508, 2026-10-16)
+
+Jobs stayed `waiting_on` after what they waited for had happened: an issue of another repository closed ("until
+identity#199 closes"), two issues closed, a workflow run completed after its deployment was rejected. Each was a wait on an
+outside event, or on an item the work-item ledger does not hold, so no event came. Jobs that waited on a background poll in
+their own pane waited for ever once a host restart killed the pane, and one failed with `pane lost` when it was woken.
+
+- **What a wait watches** (`watchedOf`, `src/domain/watched-items.ts`). A wait on an item, and a wait on an outside event (or
+  one with nothing recorded) whose `for:`, `until:` or `what` text names items: `owner/name#N`, `name#N` (a repository of
+  the job's owner), `issue N` or `item N` (the job's own repository), a link to an issue or a pull request; a workflow run
+  as `<repo> run N`, `workflow run N` (the job's own repository) or a link to `actions/runs/N`, its id five digits or more.
+  The job's own issue is left out: its close ends the job (issue #1460).
+- **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
+  Each item is read by its number, the pull request first and then the issue, and a run through Actions
+  (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
+  request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began,
+  `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
+  only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
+- **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
+  memory, the items each job was last woken for. After a restart such a job is woken once more.
+- **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
+  run ends. A run that waits for its approval is not ended.
+- **A wait its pane carries** (`paneCarriesWait`): on its own command, on an outside event that names nothing watched (the
+  background poll of the wait line), or a legacy wait. On every tick (`src/engine/pane-answers.ts` `wakeLost`) such a job is
+  asked `paneLost` (herdr-claude: no pane state, its agent or pane gone, or restored by herdr in another terminal). Lost:
+  the hopper ends the wait, `job.wait_ended { by: hopper, note: "its pane was lost" }`, told to check what it waited for and
+  start the poll again. So a job is woken after a daemon start and after a seat's restart alike. Before, a wait on its own
+  command whose pane was gone was nudged, then flagged stuck: now it is woken. A wait the hopper watches (a pull request, an
+  item, a job, a question, a grant, watched items) is left to that watch.
+- **Resumed in a new pane.** A job resumed whose pane is gone (`resume`, herdr-claude) no longer fails `pane lost`: as for a
+  pane herdr restored (issue #1465), what is left of the job is reaped, a new pane opens as at the start, Claude resumes the
+  agent session, told `LOST_NOTE` and then its answer (`resumeLostPane`, `src/executors/herdr/restored.ts`). With no agent
+  session recorded it still fails `pane lost`.
+- **Cancel with a reason** is issue #1460's: `hopper job cancel <id> --reason <text>`, `POST /ui/api/jobs/:id/cancel`.
+- **Persisted state.** No schema change: the watch is read from each wait's text, so waits recorded before this build are
+  watched too.
+- **Verification.** `test/domain/watched-items.test.ts` (what a wait watches, the wake, a wait its pane carries),
+  `test/integration/watched-items.test.ts` (an issue closed before the wait, two issues, a workflow run; no second wake),
+  `test/integration/job-wait.test.ts` (a lost pane wakes a wait on its own command and on a poll, and the job resumes in a
+  new pane), `test/herdr/executor-herdr-lost.test.ts` (the resume and the probe).
 
 ## Lane pods (issue #1284, 2026-10-15)
 
@@ -23353,3 +23526,119 @@ failed jobs in the store; the build before read them 2795 times against a bound 
 (`getMany` and `newestOfItems`: one statement, the bodies only of the rows that changed, the newest job as
 `getBySourceKey`), `test/integration/stale-failures.test.ts` and `test/integration/handoffs.test.ts` (the hand-offs end
 as before).
+
+## Draining a machine (issue #1511, 2026-10-16)
+
+**The gap.** A machine that must stay idle for maintenance (a rebuild of a seat) had no command for it. The only way was to
+set its lanes to 0 in the plugins config and set them back after: an edit of the machine's own config for a state that is
+not config, easy to forget, and with no sign on Machines of why the machine took no job. A **leaving** client target
+(issue #1284) stops new placement, but only a client that says it leaves, and only until it dials in again.
+
+**The change** (`src/domain/machines.ts` `MachineDrained`, `withDrains`; `src/decider/assign.ts` `drainedHolds`,
+`src/decider/lanes.ts`; `src/engine/machine-drains.ts`; `src/store/machine-drain-settings.ts`;
+`src/http/ui/machine-drains.ts`; `src/cli-operator-machine.ts`; Machines, `ui/src/views/machine-drain.tsx`):
+- **Drained** (glossary) is a person's hold on one machine, any kind: no new job is placed on it; the jobs on it run to their
+  end, and a job resuming there (an answer back to its pane) returns there. Not **leaving**, which a client target says of
+  itself, and not a lane's `draining`, which is one lane closing once its job ends: a drained machine's lanes are not closed.
+- **Kept in the user's settings** (`machineDrains`, by machine id: who, the way, when), so a restart keeps it. It is no plugins
+  config: an edit of the machine, its rename or its removal leaves it as it is, and an undrain of a machine gone from the
+  config still clears it. The engine marks each machine it lists (`drainedMachines` over the machine source), so the decider,
+  `GET /api/machines` and the lane recommendations read the same mark.
+- **The decider holds** a new job there as it does on a leaving machine: a job with no pin goes to another machine, even with
+  less room; with none left, it is held, never failed (`<m> is drained: no new job is claimed there`); a job pinned there is
+  held (`pinned machine <m> is drained: …`); the machine's idle reason is `drained: …`.
+- **Drain and undrain** are an admin's: `POST /ui/api/machines/drain {machineId, drained}`, the Machines card's Drain (it asks
+  first) and Undrain, and `hopper machine drain|undrain <machine>`. Each change records `machine.drained` or
+  `machine.undrained` with who and the way, and asks for a Decision; one that changes nothing records nothing. The answer
+  says the jobs still on the machine (its lanes with a job), so a script can wait for 0. A drain of a machine no source lists
+  and the config does not name is a 404. Not a box action: it starts, stops and changes no work.
+- **Shown.** The card has a *drained* badge and says who drained it, when, and how many jobs are still on it;
+  `hopper machine list` prints each machine, online or not, and drained or not.
+
+**Not changed.** Leaving, a lane's draining, lane tuning and the plugins config. A drain stops no running job: to stop one,
+cancel or park it.
+
+Tests: `test/decider/drained.test.ts` (placement, holds, the idle reason), `test/integration/machine-drain.test.ts` (the route,
+the events, a restart, the CLI), `test/ui/machine-drain.test.ts` (the card).
+
+## More than one GitHub account (issue #1448, part 1, 2026-10-16)
+
+Follow-up of issue #1380, which named it as later work: a user attaches a second GitHub source, for example a work account
+beside a personal one, each with its own repositories; Intake lists the issues of the repositories picked in each; a job
+acts with the token of the source of its repository, and the job page names it; the source email match applies to each.
+Before, a user had one **connected account** per provider: one row, one pair of tokens, one list of job repositories.
+
+**The model.** Each connected account has a **connected account key** (`src/domain/connected-accounts.ts`): the first
+account at a provider is keyed by its provider (`github`), each further one by its provider and a number from 2
+(`github-2`, `github-3`, …). Every place an account keeps something is the key's: its row in `connected_accounts` (the
+column `provider` holds the key), its tokens in the user's vault (`system/connected-account.<key>.access-token`), where the
+app is installed or what its token reaches (`app_installations`), and its job repositories (`jobRepositories:<key>`). The
+first account's key is its provider, so what was kept before stays as it was: **no migration**. The build before reads only
+the `github` row and ignores the rest.
+
+**The account set** (`src/connected-accounts/account-set.ts`). One connected-accounts service per account (`service.ts`,
+unchanged in what it does), the further ones over their key's view of the store and the vault (`keyed.ts`). So renewal, the
+source email match, the token's repositories, a held grant and an account's end are each account's own; one that ends marks
+only itself (`connected_account.expired` names its `key`). The set answers the ports by key: `status()` lists every account,
+each with its `key`, the first first. `keyFor(repo)` is the account whose job repositories hold the repository, any case;
+any other repository is the first account's.
+
+- **Adding one.** `POST /ui/api/connected-accounts` `{ action: 'add-token', provider, token }` (admin of the user): GitHub must
+  take the token, the source email match applies as for any token (the session's email), and its login must not be one
+  connected already (any key). It is kept under the next free key, the smallest number from 2. A refusal keeps nothing, and
+  the key stays free. With no first account, the token connects the first. Every other action takes an optional `key`
+  (absent: the first); a key not connected answers 404.
+- **One account per repository.** `choose` refuses (409) a repository chosen for another account already, naming which.
+- **Removing one.** `disconnect` of a further account forgets its row, its tokens, where it reaches and its job repositories
+  (a key used again starts with none). The token is the person's: nothing is deleted at GitHub.
+
+**Intake.** A further account gets a job source of its own: the first account's configured `github-account` instance,
+copied, with the new option `account` set to the key and named for it (`github-account-2`; `src/users/further-sources.ts`).
+The plugin host adds these after the configured instances at each reload (`PluginHostOptions.derivedJobSources`); they are
+never part of the plugins config, so the Plugins page neither lists nor writes them, and removing the account removes its
+source. Adding or removing an account reloads the plugins at once. Its jobs are keyed by its own instance name, so every act
+of the source on them (labels, follow, merge, the outbox) goes through that account. Its status names the account
+(`detail.accountKey`), and the Sources page shows it in that account's panel. Two `github-account` instances take the same
+work only over the same `account` (issue #1264). The intake trust reads the trusted actor default (the connected login, by
+its GitHub id) from the account the source reads.
+
+**Jobs.** A job's GitHub proxy and its git act with **the account of the repository** they name, when it is a job repository;
+for any other repository (a repo query elsewhere, its fork), with the account of the job's own repository
+(`ProxyConnection.api(repo)`, `GitUser.git(repo)`). Each event and answer names the login that acted (`as`, issue #1380),
+so the job page's **GitHub as** names it; before the job acted, the page names the account of the job's repository
+(`accountFor`, `ui/src/model/acting-identity.ts`). The shrink guard's read of a push, the infra plans' read of a branch head
+and a person's read of a pull request's diff take the repository's account too. The user's job repositories, for the Pull
+requests list and the yolo mode choices, are every account's (`everyJobRepository`, `src/domain/job-repositories.ts`).
+
+**The UI** (`ui/src/views/connected-account.tsx`, `further-account.tsx`, `connected-account-parts.tsx`). Under the
+connected first account, **Add another GitHub account** takes a personal access token of the other account. Each further
+account has a panel of its own, **GitHub account 2**: its health, the repositories its token reaches with its job
+repositories, its source's sync, a new token when it ended, and **Remove this account**. Never a device code or a sign-in.
+The header's **GitHub: reconnect needed** shows for any account that ended, the first's first.
+
+**Decisions:**
+- **A further account is added with a personal access token only.** The device flow through the hopper's app signs in as
+  whichever GitHub account the browser holds, and a sign-in with GitHub is the first account's. A token names its account
+  without doubt, and needs no app.
+- **One service per account, over a keyed view,** not a service keyed through. Renewal, email match, held grants and
+  installations stay as they were, tested as they were, and the first account's keys are its old ones.
+- **The account of the repository acts,** not the account of the job's source alone: a job may write to another of its user's
+  job repositories (issue #1275), and that repository's account is the one chosen for it.
+- **A further account's source is derived, not configured.** Writing it into the plugins config would leave a source behind
+  when the account goes, and a config edit could break the link between the two.
+- **A repository is one account's.** Two accounts for one repository would make "the account of the repository" a guess.
+- **The same GitHub login twice is refused.** A second key for the same account adds nothing but a second token to keep.
+
+**Left for later parts of issue #1448:** sources from other forges (GitLab first: OAuth or a personal access token, kept in
+the user's vault, with repositories picked per source, and Intake, jobs and git through it); and the user's own GitHub acts
+that name no job repository still go through the first account: Report a bug, the trusted actor picker, Promote to GitHub,
+the GitHub watches, the component watchers, the work-item ledger's fallback read, repository checks (`no checks`) and landing
+batches, which list and act on the first account's job repositories only.
+
+**Verification:** `test/connected-accounts/more-accounts.test.ts` (added under its own key, kept after a restart; its own
+job repositories, one account per repository; the account of a repository; a login connected already and a refused token keep
+nothing; the email match; an end marks only that account, told with its key; removal; with no first account the first),
+`test/users/further-sources.test.ts`, `test/github-proxy/proxy.test.ts` and `test/github-proxy/git-accounts.test.ts` (the
+account of the repository acts, and the events name it), `test/integration/more-accounts.test.ts` (the daemon: a second
+account by token, its own source, each issue taken and claimed with its account's token; 409, 404; removal removes its
+source), `test/ui/more-accounts-view.test.ts`, `test/ui/sources.test.ts` and `test/ui/acting-identity.test.ts`.

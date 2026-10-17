@@ -1,6 +1,6 @@
 // One example `data` payload per event type, shaped like the real emitters produce them.
 // Used by docs/events.md and by the schema tests.
-import type { EventType } from '../domain/types.ts'; import { LANDING_BATCH_EXAMPLES } from './landing-batch-examples.ts'; import { MACHINE_DISK_EVENT_EXAMPLES } from './machine-disk-schemas.ts'; import { TERMINAL_EVENT_EXAMPLES } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_EXAMPLES } from './change-kind-schemas.ts'; import { KEPT_WORK_EVENT_EXAMPLES } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_EXAMPLES } from './give-back-schemas.ts';
+import type { EventType } from '../domain/types.ts'; import { LANDING_BATCH_EXAMPLES } from './landing-batch-examples.ts'; import { MACHINE_DISK_EVENT_EXAMPLES } from './machine-disk-schemas.ts'; import { MACHINE_DRAIN_EVENT_EXAMPLES } from './machine-drain-schemas.ts'; import { TERMINAL_EVENT_EXAMPLES } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_EXAMPLES } from './change-kind-schemas.ts'; import { KEPT_WORK_EVENT_EXAMPLES } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_EXAMPLES } from './give-back-schemas.ts';
 
 const advice = { action: 'proceed_full', reason: 'ok', details: { intent: 'x', gatesAsked: true }, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
 const start = { jobId: 'j1', laneId: 'm/lane-1', machineId: 'm', effectivePriority: 50, reason: 'idle lane' };
@@ -22,7 +22,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.unparked': { to: 'queued', elsewhere: true },
   'job.checkpointed': { machineId: 'laptop', bytes: 48213, session: true, commits: 2 },
   'job.continued': { handoffId: 'h1' },
-  'job.waiting': { for: 'write access to the repository', until: 'a background poll of the push', on: { kind: 'outside', what: 'write access to the repository' } }, 'job.own_command_nudged': { delivered: true }, 'job.own_command_stuck': {}, 'job.wait_polled': { on: { kind: 'pull_request', repo: 'octo/tools', number: 8, about: 'merge' } }, 'job.waited_pull_request_ended': { pullRequest: 'https://github.com/octo/tools/pull/8', state: 'closed' },
+  'job.waiting': { for: 'write access to the repository', until: 'a background poll of the push', on: { kind: 'outside', what: 'write access to the repository' } }, 'job.own_command_nudged': { delivered: true }, 'job.own_command_stuck': {}, 'job.wait_polled': { on: { kind: 'pull_request', repo: 'octo/tools', number: 8, about: 'merge' } }, 'job.waited_pull_request_ended': { pullRequest: 'https://github.com/octo/tools/pull/8', state: 'closed' }, 'job.waited_items_ended': { items: [{ url: 'https://github.com/octo/identity/issues/199', state: 'closed' }, { url: 'https://github.com/octo/platform/actions/runs/37998997248', state: 'failure' }] },
   'job.wait_ended': { by: 'person', note: 'Write access is granted.' },
   'job.note_added': { noteId: 'note-1', text: 'The instance is up on port 8443.', person: 'ada', via: 'ui' },
   'job.note_delivered': { noteIds: ['note-1'], delivery: 'turn' },
@@ -300,5 +300,5 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'step.finished': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', exit: 0, seconds: 94, outputsBytes: 1048576 },
   'step.refused': { reason: 'the hopper has no Windows host build. It has: build-host.', host: 'build' },
   'vault.step_delivered': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
-  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again' }, ...LANDING_BATCH_EXAMPLES, ...MACHINE_DISK_EVENT_EXAMPLES, ...TERMINAL_EVENT_EXAMPLES, ...CHANGE_KIND_EVENT_EXAMPLES, ...KEPT_WORK_EVENT_EXAMPLES, ...GIVE_BACK_EVENT_EXAMPLES,
+  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again' }, ...LANDING_BATCH_EXAMPLES, ...MACHINE_DISK_EVENT_EXAMPLES, ...MACHINE_DRAIN_EVENT_EXAMPLES, ...TERMINAL_EVENT_EXAMPLES, ...CHANGE_KIND_EVENT_EXAMPLES, ...KEPT_WORK_EVENT_EXAMPLES, ...GIVE_BACK_EVENT_EXAMPLES,
 };

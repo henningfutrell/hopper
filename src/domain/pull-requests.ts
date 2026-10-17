@@ -9,6 +9,7 @@
 import type { ActingPerson } from './failures.ts';
 import { handedToFollowOns } from './proposal-paths.ts';
 import type { Job } from './types.ts';
+import type { WatchedEnd, WatchedRef } from './watched-items.ts';
 import type { CrossReference } from './cross-references.ts';
 import type { CensusFacts } from './untracked-pull-requests.ts';
 import { actionsJobOf } from './check-logs.ts';
@@ -117,6 +118,12 @@ export interface FollowsPullRequests {
    * read is left out, and asked again at the next sync. Absent: no wait is ended so.
    */
   endedPullRequests?(pulls: { repo: string; number: number }[]): Promise<EndedPullRequest[]>;
+  /**
+   * The items jobs' waits name (issue #1508, `watchedItems`): of `refs`, the ones ended now — an issue closed, a pull request
+   * merged or closed, a workflow run completed. Asked at each sync while a job of the source waits on one. One the source
+   * cannot read is left out, and asked again at the next sync. Absent: no wait is ended so.
+   */
+  endedWatched?(refs: WatchedRef[]): Promise<WatchedEnd[]>;
 }
 
 /** A pull request a job waits on, seen ended (issue #1433): merged, or closed without a merge. */

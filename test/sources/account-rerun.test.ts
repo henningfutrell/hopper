@@ -26,7 +26,7 @@ const failedJob = (id: string, url: string, number: number): Job => ({
 function source(login: string | undefined) {
   const gh = createFakeGitHub();
   const s = createAccountSource({
-    name: 'github-account', provider: 'github', accounts: accounts(login), api: gh,
+    name: 'github-account', key: 'github', accounts: accounts(login), api: gh,
     clock: { now: () => new Date('2026-10-07T12:00:00Z') }, knownKeys: () => new Set(), rerunnable: () => new Set(), trust: testTrust(),
   }, githubAccountOptions.parse({}));
   return { gh, s };

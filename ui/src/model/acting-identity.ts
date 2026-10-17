@@ -1,6 +1,7 @@
 // The GitHub identity that acts for a job (issue #1380), pure: the hopper acts for a job with its own user's GitHub
 // connection, and each GitHub request and push of the job names the login that acted (`as`). Before the job acted, its
-// user's connected GitHub account is the one that will act.
+// user's connected GitHub account is the one that will act: the account whose job repositories hold the job's repository
+// (issue #1448), else the first.
 import type { ConnectedAccountStatus, DomainEvent } from './wire.ts';
 
 export type ActingIdentity = { kind: 'acted' | 'connected'; login: string } | { kind: 'none' };
@@ -14,6 +15,13 @@ export function actingIdentity(events: readonly DomainEvent[], account: Connecte
     if (typeof as === 'string') return { kind: 'acted', login: as };
   }
   return account?.state === 'connected' ? { kind: 'connected', login: account.account } : { kind: 'none' };
+}
+
+/** The account that acts for a job of `repo` (issue #1448): the one whose job repositories hold it (any case), else the first. */
+export function accountFor(accounts: readonly ConnectedAccountStatus[], repo: string | undefined): ConnectedAccountStatus | undefined {
+  const r = repo?.toLowerCase();
+  const chosen = r === undefined ? undefined : accounts.find((a) => a.state === 'connected' && a.jobRepositories.some((x) => x.toLowerCase() === r));
+  return chosen ?? accounts.find((a) => a.key === a.provider) ?? accounts[0];
 }
 
 export function actingText(a: ActingIdentity): string {
