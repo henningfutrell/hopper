@@ -11,6 +11,7 @@ These pages tell you how the hopper works and how to use it, for the version you
 - [The Jobs view](jobs.md)
 - [Lanes](lanes.md)
 - [Questions and deciders](questions.md)
+- [Research reports and proposals](research-and-proposals.md)
 - [Pull requests](pull-requests.md)
 - [Infra: plans and out-of-band changes](infra.md)
 - [Resources: what the stack uses](resources.md)

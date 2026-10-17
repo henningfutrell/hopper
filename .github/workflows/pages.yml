@@ -2,8 +2,8 @@
 # UI's own stylesheet and story (site/vite.config.ts), with scripts/get.sh beside it as install.sh, so
 # `curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash` installs, and compose.yaml, the
 # container install, which pulls the published image (issues #119, #125), and plugin-store.git, the default
-# plugin store (issue #445). Published from `stable` (issue #423): the site, its install script, its
-# compose.yaml and the default plugin store are the stable version's.
+# plugin store (issue #445), and the help pages, help/*.md rendered into help/ (issue #790). Published from `stable` (issue #423): the site, its install script, its
+# compose.yaml, the default plugin store and the help pages are the stable version's.
 name: pages
 
 on:
@@ -11,6 +11,7 @@ on:
     branches: [stable]
     paths:
       - site/**
+      - help/**
       - plugin-store.yaml
       - examples/plugins/**
       - scripts/build-plugin-store.sh

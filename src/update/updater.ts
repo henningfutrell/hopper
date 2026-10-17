@@ -241,7 +241,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     const { installed, target } = checked;
     if (checked.state !== 'available' || !installed || !target) return { ok: false, error: 'no update available' };
     // An image is replaced by pulling or rebuilding it (issue #409): its files are not the hopper's to swap.
-    if (installed.kind === 'image') return { ok: false, error: 'this hopper runs from a container image: pull or rebuild the image to update it (docs/deploy.md "Upgrade")' };
+    if (installed.kind === 'image') return { ok: false, error: 'this hopper runs from a container image: pull or rebuild the image to update it (docs/deploy.md "Update")' };
     applying = { phase: 'building', detail: `building ${target.ref} ${short(target.commit)} beside the running install`, target: target.commit, startedAt: now() };
     applyError = undefined;
     append('update.started', { from: installed.commit, to: target.commit, ref: target.ref });

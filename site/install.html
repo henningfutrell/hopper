@@ -26,6 +26,7 @@
     <ul class="flex items-center gap-1 text-sm font-medium text-muted-foreground sm:gap-2">
       <li><a href="./" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Home</a></li>
       <li><a href="guide.html" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Guide</a></li>
+      <li><a href="help/" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Help</a></li>
       <li><a href="https://github.com/henningfutrell/hopper/blob/stable/README.md" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
       <li><a href="https://github.com/henningfutrell/hopper" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">GitHub</a></li>
     </ul>
@@ -50,7 +51,7 @@ The other way, <a href="#host">installing it on the machine itself</a>, is below
 <li><a href="#podman">Run it with Podman</a></li>
 <li><a href="#first-job">Give it its first job</a></li>
 </ol>
-<p class="note">Then: <a href="#sign-in">sign-in for a team</a> · <a href="#upgrade">upgrade</a> · <a href="#remove">uninstall</a> · <a href="#windows">on Windows</a> · <a href="#host">install on the machine itself</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
+<p class="note">Then: <a href="#sign-in">sign-in for a team</a> · <a href="#update">update</a> · <a href="#remove">uninstall</a> · <a href="#windows">on Windows</a> · <a href="#host">install on the machine itself</a> · <a href="#trouble">when something goes wrong</a> · <a href="#more">more</a></p>
 
 <h2 id="podman">Run it with Podman (recommended)</h2>
 <p>hopper and its database, in containers from the published image
@@ -86,7 +87,7 @@ this machine only. From another computer, connect with <code>ssh -L 4790:127.0.0
 first, then open <code>http://localhost:4790/</code> there.</p>
 <figure class="shot"><img src="../docs/screenshots/sign-in.webp" alt="The hopper's sign-in page: a Sign in with GitHub button beside what the hopper does in three steps." width="1440" height="900" loading="lazy" decoding="async"><figcaption>What a signed-out browser sees.</figcaption></figure></li>
 <li><p><strong>Sign in to Claude Code.</strong> Once is enough: it is kept when the hopper restarts or
-upgrades. GitHub needs nothing more: signing in with GitHub in the step before connected it, and the hopper
+updates. GitHub needs nothing more: signing in with GitHub in the step before connected it, and the hopper
 reads your issues through that connection.</p>
 <p>Claude Code, inside the hopper's container:</p>
 <div class="cmd"><pre>podman compose exec hopper claude</pre><button type="button" data-copy="podman compose exec hopper claude">Copy</button></div>
@@ -97,7 +98,7 @@ reads your issues through that connection.</p>
 linger is on for your user. The install turns linger on. When it says it cannot, run this once:</p>
 <div class="cmd"><pre>sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>
 </ol>
-<p>Then <a href="#first-job">give it its first job</a>. Upgrade, stop and remove: <a href="#upgrade">Upgrade</a>,
+<p>Then <a href="#first-job">give it its first job</a>. Update, stop and remove: <a href="#update">Update</a>,
 <a href="#remove">Uninstall</a>. Settings, a reverse proxy and secrets:
 <a href="https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md#in-containers-with-podman-recommended">docs/deploy.md</a>.</p>
 
@@ -378,7 +379,7 @@ copy, and how to check it works:
 <a href="https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md#sign-in-set-up-at-launch">docs/deploy.md, Sign-in set up at launch</a>.</p>
 <p>However they sign in, each person then connects their own GitHub inside the hopper, from the UI.</p>
 
-<h2 id="upgrade">Upgrade</h2>
+<h2 id="update">Update</h2>
 <p><strong>With Podman:</strong> you update it; the hopper never updates a container itself. In the hopper's folder,
 run this one command. It asks for the master key (paste it from your password manager; nothing is shown), unless
 <code>HOPPER_MASTER_KEY</code> is given at launch. It uses the compose tool that started the stack, so it never starts a
