@@ -241,6 +241,12 @@ export interface JobMachineLink {
    * and its pane is alive, or it fails at `failsAt` (the link grace). `since`: when the link was found down.
    */
   linkLost?: { machine: string; since: string; failsAt: string };
+  /**
+   * How many times the lost-machine move took the job off a machine that stayed away (issue #1569). Its proxy token
+   * is bound to it: the agent left on that machine holds the token of the move before, which the hopper refuses.
+   * Absent: never moved away.
+   */
+  movedAway?: number;
 }
 
 /** The sandbox playground's shapes (issue #1410): no machine, but shown on Machines. */

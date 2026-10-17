@@ -47,7 +47,8 @@ export function recordLostMove(c: EngineContext, job: Job, laneId: LaneId | unde
   const how = lostResume(c, job, lost, machineOf(c, laneId));
   if (typeof how !== 'string') return false;
   recordPark(c, job, 'running', laneId, why);
-  c.store.jobs.update(job.id, { pendingAnswer: lostResumeText(why) });
+  // Moved away: a new proxy token for its next run, so the agent left on the lost machine is refused from now on.
+  c.store.jobs.update(job.id, { pendingAnswer: lostResumeText(why), ...(how === 'elsewhere' ? { movedAway: (job.movedAway ?? 0) + 1 } : {}) });
   const next = recordUnpark(c, job.id, false, how === 'elsewhere');
   // Not back to the machine it left while its agent there may run: the `job-move` saga lifts the mark (`liftLost`).
   if (next.parked?.elsewhere) c.store.jobs.update(job.id, { parked: { ...next.parked, elsewhere: { ...next.parked.elsewhere, lost: true } } });
