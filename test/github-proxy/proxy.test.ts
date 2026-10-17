@@ -3,6 +3,7 @@
 // test/integration/github-proxy.test.ts.
 import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
+import { FILED_BY_JOB } from '../../src/domain/intake-origin.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
 import {
   checkRequest, createGitHubProxy, createProxyLimiter, filedNote, holdsProxyToken, parseProxyToken, PROXY_LIMITS, proxyRequest, proxyToken,
@@ -127,11 +128,17 @@ describe('issue lineage: an issue a job files is a child of the job\'s issue (is
       .toEqual({ ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' });
   });
 
-  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done', () => {
+  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done and is routed (issue #1510)', () => {
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: false })).toBe(
       '\n\n---\nFollow-up of octo/tools#7.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
     expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true })).toBe(
-      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.');
+    // Every child keeps the mark that a job filed it, its lineage line before it (issue #1510): it is never of a trusted
+    // origin, so a person approves a routed child.
+    for (const parent of [undefined, { repo: 'octo/tools', number: 7, required: false }, { repo: 'octo/tools', number: 7, required: true }]) {
+      expect(FILED_BY_JOB.test(`The text.${filedNote('job-1', 'r1', parent)}`)).toBe(true);
+    }
+    expect(FILED_BY_JOB.test('The text.\n\n---\nA line.\nAnother line.\nFiled through hopper for job `j`')).toBe(false);
     expect(filedNote('job-1', 'r1')).toBe('\n\n---\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
   });
 });

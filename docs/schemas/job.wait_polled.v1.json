@@ -147,6 +147,13 @@
             },
             "what": {
               "type": "string"
+            },
+            "why": {
+              "type": "string",
+              "enum": [
+                "not_managed",
+                "gated"
+              ]
             }
           },
           "required": [

@@ -17,10 +17,17 @@
 // Feature: a plan names the read credential it was made with (part 5)
 //   Scenario: a plan that names no read credential is kept
 //   Scenario: a plan's read credential must be one the vault minted for its job
+//
+// Feature: Argo CD syncs through the plan gate (issue #959)
+//   Scenario: a sync of an Argo CD app is minted a token for hopper-sync in the argocd namespace of its cluster
+//   Scenario: an Argo CD app takes sync only, and names its cluster
+//   Scenario: a plan for an Argo CD app is a GitOps plan
+//   Scenario: a sync of an Argo CD app with no plan, or with a plan of another app, is refused
 import { describe, expect, it } from 'vitest';
 import { applyRefusal, approveRefusal, approverOf, headRefusal, planInputProblem, readProfileOf, readRefusal, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
 import type { OperationProfile } from '../../src/domain/access.ts';
 import type { PlanSummary } from '../../src/domain/infra-plan-summary.ts';
+import { mintTarget } from '../../src/domain/minting.ts';
 
 const COMMIT = 'a'.repeat(40);
 const ROLE = { kind: 'aws-role', name: '123456789012/deploy' } as const;
@@ -141,5 +148,36 @@ describe('a plan\'s read credential (part 5)', () => {
     expect(readRefusal('read/aws-role/123456789012/other', minted))
       .toBe('read names read/aws-role/123456789012/other, but the vault minted this job no such read credential (it minted read/aws-role/123456789012/deploy, read/cluster/uat): a plan names the read credential it was made with');
     expect(readRefusal('read/cluster/uat', [])).toMatch(/minted this job no such read credential \(it minted none\)/);
+  });
+});
+
+describe('Argo CD syncs through the plan gate (issue #959)', () => {
+  const WEB = { kind: 'argocd-app', name: 'lab/web' } as const;
+  const sync: OperationProfile = { operation: 'sync', asset: WEB };
+
+  it('mints a sync of an Argo CD app a token for hopper-sync in the argocd namespace of its cluster', () => {
+    expect(mintTarget('kube', sync)).toEqual({ kind: 'kube', mintsFor: { kind: 'cluster', name: 'lab' }, namespace: 'argocd', serviceAccount: 'hopper-sync', expirationSeconds: 600 });
+  });
+
+  it('takes sync only on an Argo CD app, and needs its cluster', () => {
+    for (const operation of ['read', 'write', 'apply'] as const) {
+      expect(mintTarget('kube', { operation, asset: WEB })).toMatch(/^an argocd-app takes sync only/);
+    }
+    expect(mintTarget('kube', { operation: 'sync', asset: { kind: 'argocd-app', name: 'web' } })).toMatch(/argocd-app\/<cluster>\/<app>/);
+    expect(mintTarget('aws', sync)).toMatch(/^an aws credential is minted for an aws-role/);
+  });
+
+  it('keeps a plan for an Argo CD app only when it is a GitOps plan', () => {
+    const input: PlanInput = { tool: 'gitops', asset: WEB, target: 'argocd app web', repo: 'octo/deploy', ref: 'issue-2', commit: COMMIT, text: '===== apps/Deployment web/web ======' };
+    expect(planInputProblem(input)).toBeUndefined();
+    for (const tool of ['terraform', 'helm'] as const) expect(planInputProblem({ ...input, tool })).toMatch(/^a plan for an argocd-app is a gitops plan/);
+  });
+
+  it('refuses a sync with no plan, and with a plan of another app; lets a current approved plan of the app through', () => {
+    const now = at('2026-10-12T10:10:00Z');
+    expect(applyRefusal(sync, undefined, undefined, undefined, now)).toMatch(/^no apply without a plan: sync on argocd-app lab\/web changes infrastructure/);
+    const gitops: InfraPlan = { ...plan, tool: 'gitops', asset: { kind: 'argocd-app', name: 'lab/shop' } };
+    expect(applyRefusal(sync, plan.id, gitops, approval, now)).toMatch(/is a plan for argocd-app lab\/shop, not argocd-app lab\/web/);
+    expect(applyRefusal(sync, plan.id, { ...gitops, asset: WEB }, approval, now)).toBeUndefined();
   });
 });

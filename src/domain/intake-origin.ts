@@ -85,8 +85,11 @@ export interface IntakeActorsView {
 /** One who did an act on GitHub, or a trusted actor: a login, and its GitHub user id when known. */
 export interface ActorRef { login: string; id?: number }
 
-/** The hopper's note under an issue a job filed through it (src/github-proxy/policy.ts `filedNote`). */
-export const FILED_BY_JOB = /\n---\nFiled through hopper for job `[^`]+`/;
+/**
+ * The hopper's note under an issue a job filed through it (src/github-proxy/policy.ts `filedNote`): after its rule, the
+ * lineage line of a child (issue #729), when it has one, then the mark (issue #1510: a child's mark was missed).
+ */
+export const FILED_BY_JOB = /\n---\n(?:[^\n]*\n)?Filed through hopper for job `[^`]+`/;
 
 export const FILED_BY_JOB_REASON = 'a job filed it';
 

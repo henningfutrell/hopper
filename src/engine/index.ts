@@ -6,6 +6,7 @@ import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
+import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
@@ -118,8 +119,9 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks);
+    const { claims, preempts } = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks);
     for (const claim of claims) runner.start(claim);
+    for (const jobId of preempts) preemptRunning(c, runner, jobId);
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {

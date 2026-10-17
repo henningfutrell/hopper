@@ -12,6 +12,12 @@ import type { WorkItem } from './work-items.ts';
 /** What about a pull request a job waits on. */
 export type PullRequestWait = 'checks' | 'merge' | 'review';
 
+/**
+ * Why a person must act on an outside event (issue #1510): the repository is not one the hopper works on, or the step is
+ * gated (an infrastructure apply, a gitops apply, a production approval). Absent: the job did not say, and the wait is flagged.
+ */
+export type OutsideWhy = 'not_managed' | 'gated';
+
 /** What a job's own wait waits on. `repo` absent: the job's own repository. */
 export type WaitOn =
   | { kind: 'pull_request'; repo?: string; number: number; about: PullRequestWait }
@@ -21,7 +27,7 @@ export type WaitOn =
   | { kind: 'approval'; of: 'sandbox' | 'template' }
   | { kind: 'grant' }
   | { kind: 'own_command' }
-  | { kind: 'outside'; what: string };
+  | { kind: 'outside'; what: string; why?: OutsideWhy };
 
 export type WaitOnKind = WaitOn['kind'];
 
@@ -49,11 +55,22 @@ function approvalIn(text: string): WaitOn | undefined {
   return undefined;
 }
 
+const OUTSIDE_WHY: [RegExp, OutsideWhy][] = [[/^not\s+managed\b\s*[:\-–—]?\s*/i, 'not_managed'], [/^gated\b\s*[:\-–—]?\s*/i, 'gated']];
+
+/** An outside event, with why a person acts when its text starts with it: `not managed: <what>`, `gated: <what>`. */
+function outsideOf(text: string): WaitOn {
+  for (const [re, why] of OUTSIDE_WHY) {
+    const m = re.exec(text);
+    if (m) return { kind: 'outside', what: text.slice(m[0].length) || text, why };
+  }
+  return { kind: 'outside', what: text };
+}
+
 /** An `on:` line, as the job rules say to write it; undefined when it reads as none of them. */
 function onLine(on: string): WaitOn | undefined {
   const s = on.trim();
   const outside = /^outside\b:?\s*(.*)$/i.exec(s);
-  if (outside) return { kind: 'outside', what: outside[1] || s };
+  if (outside) return outsideOf(outside[1] || s);
   if (/^own\s+command\b/i.test(s)) return { kind: 'own_command' };
   const job = /^job\s+(\S+)$/i.exec(s);
   if (job) return { kind: 'job', jobId: job[1]! };
@@ -77,6 +94,8 @@ export function waitOnOf(w: WaitAsked): WaitOn {
   return approvalIn(text) ?? (/\bgrant\b/i.test(text) ? { kind: 'grant' } : undefined) ?? pullRequestIn(text) ?? { kind: 'outside', what: w.for };
 }
 
+const OUTSIDE_WHY_WORDS: Record<OutsideWhy, string> = { not_managed: 'not managed', gated: 'gated' };
+
 const PR_ABOUT: Record<PullRequestWait, string> = { merge: 'to merge', checks: 'checks to end', review: 'review' };
 
 /** The dependency in a few words, as the UI shows it. */
@@ -89,7 +108,7 @@ export function waitOnLabel(on: WaitOn): string {
     case 'approval': return `${on.of} approval`;
     case 'grant': return 'a vault grant';
     case 'own_command': return 'its own command';
-    case 'outside': return `outside: ${on.what}`;
+    case 'outside': return `outside (${on.why ? OUTSIDE_WHY_WORDS[on.why] : 'reason not given'}): ${on.what}`;
   }
 }
 

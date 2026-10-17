@@ -3305,6 +3305,50 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 }
 ```
 
+## `preemption.settings_changed`
+
+Version 1 (`docs/schemas/preemption.settings_changed.v1.json`). An admin changed the preemption settings (issue #1525): whether a job of higher priority takes the lane of a running job of lower priority (`enabled`), and how many minutes a job runs before it may be preempted (`minRunMinutes`). `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "enabled": true,
+    "minRunMinutes": 10
+  },
+  "to": {
+    "enabled": true,
+    "minRunMinutes": 20
+  },
+  "by": "admin"
+}
+```
+
+## `job.preempted`
+
+Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this running job (issue #1525): job `by`, of priority `byPriority`, waits for a lane, every lane it may use is busy, and this job has the lower priority `priority`. It is parked next (`job.parked`), its lane frees, and it is queued again (`job.unparked`) to resume where it stopped. `reason`: the Decision's.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `byPriority` | number | yes |
+| `priority` | number | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "by": "j-high",
+  "byPriority": 75,
+  "priority": 50,
+  "reason": "preempts j-low (priority 50, running 42 min) on laptop/lane-2: job j-high of priority 75 waits and every lane it may use is busy"
+}
+```
+
 ## `github_rate_limiter.settings_changed`
 
 Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983), how often intake lists the job repositories, in minutes (`intakeSyncMinutes`, issue #985), and how often the in-motion cycle reads the pull requests in motion, in minutes (`prCycleMinutes`, issue #985); each absent from a change made before it. `from` and `to`. An instance event: in every user's log.
@@ -3403,6 +3447,42 @@ Version 1 (`docs/schemas/source_email_match.changed.v1.json`). The hopper's admi
 ```json
 {
   "on": false,
+  "by": "admin"
+}
+```
+
+## `cloud_link.linked`
+
+Version 1 (`docs/schemas/cloud_link.linked.v1.json`). The hopper's admin linked this install to an account at hopper.io (issue #467): the link record is written in the instance's settings, and nothing else changes. `installId`, this install's id at hopper.io; `account`, the hopper.io account; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "account": "octo-cat",
+  "by": "admin"
+}
+```
+
+## `cloud_link.unlinked`
+
+Version 1 (`docs/schemas/cloud_link.unlinked.v1.json`). The hopper's admin unlinked this install from hopper.io (issue #467): the link record is removed, and nothing else changes. `installId` and `account`, the link that ended; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "account": "octo-cat",
   "by": "admin"
 }
 ```
@@ -5303,7 +5383,7 @@ Version 1 (`docs/schemas/repo_checks.dismissed.v1.json`). A person dismissed (`d
 
 ## `job.child_issue_filed`
 
-Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job's own issue `parent` (each `repo` and `number`; the child's `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue's text names its parent, and nothing waits on it. `requestId` names the request, as in `github_proxy.done`.
+Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job's own issue `parent` (each `repo` and `number`; the child's `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue's text names its parent, and nothing waits on it. `routed` (issue #1510): the hopper labelled the required child with the job sources' label and assigned it to the job's user, so Intake lists it as a request card. `requestId` names the request, as in `github_proxy.done`.
 
 | field | type | required |
 |---|---|---|
@@ -5313,6 +5393,7 @@ Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an
 | `required` | boolean | yes |
 | `subIssue` | boolean | no |
 | `subIssueError` | string | no |
+| `routed` | boolean | no |
 
 ```json
 {

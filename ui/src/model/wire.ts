@@ -18,7 +18,7 @@ import type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, RadiusSource, Reach, UnconfirmedAs, TemplateRadius, TemplateProfileRadius,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
-  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
+  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, PreemptionSettings, JobPreempted, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
   ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
   ApiGrantMinted, ApiGrantView, GrantLimits, DeviceGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, ChecksProblem, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
@@ -48,7 +48,7 @@ export type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, RadiusSource, Reach, UnconfirmedAs, TemplateRadius, TemplateProfileRadius,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
-  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
+  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, PreemptionSettings, JobPreempted, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
   ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
   ApiGrantMinted, ApiGrantView, GrantLimits, DeviceGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, ChecksProblem, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
@@ -133,6 +133,7 @@ export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';
 export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/job-notes.ts';
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';
+export type { CloudLinkView } from '../../../src/domain/cloud-link.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
 export type { WaitOn } from '../../../src/domain/types.ts';

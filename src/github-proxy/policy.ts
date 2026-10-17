@@ -148,15 +148,25 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
 export interface IssueParent { repo: string; number: number; required: boolean }
 
 /**
+ * The label a routed child gets (issue #1510): the job sources' default label, as the Add PR checks job's
+ * (src/repo-checks/service.ts), so a source of that repository lists it.
+ */
+export const ROUTE_LABEL = 'hopper';
+
+/**
  * What every issue filed through the hopper carries at its end: its parent, the job's issue (issue #729: GitHub links
- * the mention back on the parent), that the hopper filed it for a job, which one, and that it waits for a person. Ids
+ * the mention back on the parent), that the hopper filed it for a job, which one, and that it waits for a person: to triage
+ * a follow-up, or, for a required child the hopper routed (issue #1510), to approve its request card. Ids
  * only — GitHub text names no person and no machine (repo law); the hopper's event log has who asked and from where,
  * under the request id.
  */
 export function filedNote(jobId: string, requestId: string, parent?: IssueParent): string {
   const ref = parent && `${parent.repo}#${parent.number}`;
   const lineage = !parent ? '' : parent.required ? `Required child of ${ref}: that issue is not done while this one is open.\n` : `Follow-up of ${ref}.\n`;
-  return `\n\n---\n${lineage}Filed through hopper for job \`${jobId}\` (request \`${requestId}\`). It is not a job: it waits for a person to triage it.`;
+  const waits = parent?.required
+    ? 'Routed by the hopper: Intake lists it as a request card, and a person approves it before a job takes it.'
+    : 'It is not a job: it waits for a person to triage it.';
+  return `\n\n---\n${lineage}Filed through hopper for job \`${jobId}\` (request \`${requestId}\`). ${waits}`;
 }
 
 /**

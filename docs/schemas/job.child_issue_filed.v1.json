@@ -53,6 +53,10 @@
     },
     "subIssueError": {
       "type": "string"
+    },
+    "routed": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

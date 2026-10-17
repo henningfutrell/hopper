@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
@@ -75,6 +75,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run through the locked-down `claude` print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -162,6 +163,13 @@ same Decision. Algorithm, in order:
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
    `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
    `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
+7b. **Preempt** (issue #1525, "Preemption"; only with `inputs.preemption`). For each job left waiting in step 7, in
+   order: the running job of the lowest priority, then started last, then the lowest id, whose own priority is
+   strictly below the waiting job's, that has run at least the minimum run time since it started or resumed, whose
+   executor parks, that has an agent session, whose lane is busy and not drained by step 8, and on a machine where the
+   waiting job fits once that lane is free. One per waiting job; never one already named by a preemption in flight.
+   `Decision.preempt`, with a reason: `preempts r (priority 50, running 42 min) on m/lane-2: job h of priority 75
+   waits and every lane it may use is busy`.
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
    min(cap + overCap, occupied + assigned)`, `overCap` the lane a critical job took over the cap in
    this Decision (0 or 1); from the next Decision on it is past the cap, so it drains when its job ends. `open` = number of this machine's starts with
@@ -175,7 +183,7 @@ same Decision. Algorithm, in order:
    verbatim.
 
 **A no-op decision is not recorded.** The engine discards a Decision with no lane change,
-no start, no hold whose reason differs from the job's current `holdReason`, and no wait on a job
+no start, no preemption, no hold whose reason differs from the job's current `holdReason`, and no wait on a job
 not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
 `decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
@@ -201,8 +209,8 @@ stays pure — every time it compares is `inputs.at`.
   that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
   pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
   it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
-- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). The hopper never
-  preempts. A job at or above it that fits on no machine may take a lane past its caps — the
+- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). It preempts
+  nothing ("Preemption" does, issue #1525). A job at or above it that fits on no machine may take a lane past its caps — the
   machine's lane cap, its executor's, or the reserved lanes — on an eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
   limit, and not past its cap already — at most one lane over it per machine. The start reason says
   `critical priority: one lane over the cap N` (or, inside the machine's cap, `… past the executor's
@@ -229,7 +237,7 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
 - **The overflow clears.** The start reason says `specialty: elbows in over the lane cap N` (or, inside the machine's
   cap, `… past the executor's lane cap or the reserved lanes`); step 8 counts the lane in `target`. From the next
   Decision on, the machine is past its cap: step 8 drains the specialty job's lane before any other busy lane, so it
-  closes when that job ends and the machine is back at its cap. Nothing is preempted.
+  closes when that job ends and the machine is back at its cap. It preempts nothing ("Preemption").
 - **Shown.** The lanes panel marks the lane `elbow-in · over the cap` and names each machine with more lanes in use
   than its lanes (`7/6 lanes in use · 1 over the cap`); the Lanes count reads the same way.
 - The designation is read at intake: a label added to an item whose job is already queued takes effect on its next job.
@@ -12437,6 +12445,59 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 
+## Preemption (issue #1525, 2026-10-16)
+
+When a job of higher priority waits and no lane it may use is free, the hopper parks a running job of lower priority and
+gives its lane to the waiting job. The job parked resumes later from where it stopped, not from the start.
+
+- **Who preempts whom** (the decider, step 7b, `src/decider/preempt.ts`; pure). Only a job that step 7 left waiting for a
+  lane (a wait, never a hold) preempts. Its own priority (`job.priority`, the live priority, never the resume or router
+  boost) must be strictly higher than the running job's: equal priority never preempts. The running job must be
+  `running` (not `claimed`), its executor must park (`parkingExecutors`), it must have an **agent session** (else its pick
+  up needs a person's confirmation, issue #530), and it must have run at least the **minimum run time** since its start or
+  resume (`startedAt`). Its lane must be busy and not drained in this Decision, and the waiting job must fit on that
+  machine once the lane is free: step 7's own fit (`fitsLane`), with the lane taken out of the machine's, its executor's,
+  the unpinned and the priority-lane counts. Of these: the lowest priority, then the one started last (it loses the least
+  work), then the lowest id. Each waiting job preempts one job at most, in step 6's order; each running job is preempted
+  once.
+- **In flight.** The Decision marks the job `preempted: { at, by, byPriority, priority, machineId }` and emits
+  `job.preempted` in the transaction that applies it (`src/engine/decision-step.ts`). The decider counts a running job
+  with that mark as in flight: it is not preempted again, and its `by` job preempts no other. A mark older than
+  `PREEMPT_IN_FLIGHT_MS` (2 min) — a park that never came, a restart in between — is void, so nothing waits on it for good.
+  A job the runner does not hold any more loses the mark at once (`preemptRunning`).
+- **The park** (`src/engine/preemption.ts`). After the commit the runner parks the job on the Park button's path
+  (`runner.park`: abort reason `park`, `recordPark` frees the lane in one transaction, `releaseParked` ends its pane and
+  agent and takes its **checkpoint**). Its work tree, branch, agent session and checkpoint are kept. A job that ended done
+  in that moment is recorded as done. The freed lane wakes the engine (`job.parked`); the waiting job takes it in the next
+  Decision.
+- **Back in the queue.** Once parked, the job is picked up at once (`requeuePreempted` → `recordUnpark`, `job.unparked
+  { to: queued }`): `queued`, pinned to its machine (`resumeOn`), `PARKED_RESUME` pending, so its claim resumes its agent
+  session in its kept work tree (`claude --resume`). While `preempted` it waits at its own priority with **no resume
+  boost** (a boost would take the lane back from the job that preempted it), and step 6 orders it ahead of the other jobs
+  of the same effective priority. Its next start clears the mark, and its minimum run time counts from that start.
+- **No thrash.** Only a strictly higher priority preempts, the minimum run time stops a resumed job from being preempted
+  again at once, and the preempted job never outranks its preempter.
+- **Settings** (`preemption`, a user setting; `GET /api/preemption`, `POST /ui/api/preemption`, least role `admin`,
+  `preemption.settings_changed`; Settings → Preemption): `enabled` (default on) and `minRunMinutes` (default 10, 0 to a
+  day). Read on each Decision (`preemptionInput`), so a change applies without a restart. Off, `DecisionInputs.preemption`
+  is absent and nothing is preempted; Decisions stored before this change have none either.
+- **Shown.** The job graph and the job's parts list say `Queued: preempted by #12 Fix the roof` (or `Parked: …`) and what
+  comes next ("It resumes from where it stopped when a lane is free", `preemptedByOf`, `src/domain/job-words.ts`). The
+  Dashboard's Waiting and Parked rows show which job took the lane, both priorities, and that it resumes
+  (`ui/src/model/preemption.ts`). The job's timeline has `job.preempted`, `job.parked` and `job.unparked`.
+- **Persisted state.** No schema change: `preempted` is in the job's JSON, `preempt` and `preemption` in the Decision's,
+  the setting a key of its own. A build before this one ignores the mark; a job it shows as queued resumes as a parked
+  job picked up does.
+- **Not built.** Resume on another machine: the preempted job waits for a lane on its own machine (its pin), as a parked
+  job picked up does. "Resume elsewhere" from its checkpoint stays a person's act (issue #921). The companion issue on
+  durable work items is not needed for this: the park keeps the work tree and the agent session, and takes a checkpoint.
+
+Verification: `test/decider/preemption.test.ts` (who preempts whom, ties, equal priority, the minimum run time, off,
+executors that cannot park, no agent session, in flight, the order of a preempted job), `test/integration/preemption.test.ts`
+(the real daemon over the fake herdr: a high job parks the low one and starts, the low one resumes its own session; equal
+priority, the minimum run time and off preempt nothing; the settings), `test/domain/preempted-words.test.ts`,
+`test/ui/preemption.test.ts`.
+
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
@@ -12556,8 +12617,8 @@ waiting one), with `job.reprioritized`, so a label change moves it everywhere at
   high-priority job ends it is an idle lane like any other. So marking every lane a priority lane never starves the
   default jobs. Before #788 `keep-free` held the free priority lanes empty whenever any job waited, and a low job never
   took one: an idle machine with all its lanes marked ran only high-priority jobs.
-- Nothing is preempted: a running job is never stopped or parked for a high-priority one (owner decision D2 left open;
-  the hopper never preempts, "Usage pacing"). A job on a non-priority lane opens the lowest number not a priority lane.
+- A priority lane preempts nothing. Since issue #1525 a job of higher priority that waits for a lane may preempt a
+  running job of lower priority ("Preemption"): the owner decision D2 left open here. A job on a non-priority lane opens the lowest number not a priority lane.
 
 **Lane reliability** (`src/reliability/`, pure). Runs are read from the event log over the window (`EventLog.between`:
 `job.claimed`, `job.started`, and the end on that lane — `job.finished`, `job.failed`, `question.asked`;
@@ -12776,6 +12837,41 @@ job is told it whatever its job rules. It says:
 - **No question about the path itself**: only a real decision, as the decisions line says.
 
 **Verification.** `test/job-rules/delivery-path.test.ts`.
+
+## Routed children (issue #1510, 2026-10-17)
+
+Jobs whose change belonged in another repository ended in a `kind: outside` wait for a person: "a person adds the hopper
+label to <repo>#N", "or pushes the patch". The child issue sat unlabelled, so no source listed it until a person went to
+GitHub; and once its job ran and the issue closed, the parent went on waiting on free text.
+
+- **A required child is routed.** When a job files a required child (`hopper-gh issue create --repo OWNER/NAME --required`,
+  "Issue lineage") the hopper files it with the job sources' label (`ROUTE_LABEL`, `hopper`, as the Add PR checks job's)
+  and assigns it to the job's user's connected account (`FiledWith`, `src/github-proxy/api.ts`; the broker,
+  `src/github-proxy/broker.ts`). The proxy files issues only on the user's job repositories, so a routed child is always
+  in a repository the hopper works on. A follow-up is not routed: it waits for a person to triage it, as before.
+- **Trusted origin is unchanged.** The child's text keeps the note `Filed through hopper for job …` (`FILED_BY_JOB`), so it
+  is a request card (`a job filed it`) and auto-approval never takes it (issue #1268). Routing saves the trip to GitHub; the
+  approval stays a person's act in Intake. The note says so: `Routed by the hopper: Intake lists it as a request card, and
+  a person approves it before a job takes it.`
+- **The parent waits on the item.** The answer carries `routed: true` and `waitOn: "issue OWNER/NAME#N"`; the delivery
+  line tells the job to end with `HOPPER_WAITING` and that `on:` line, so the wait is a typed `item` wait that wakes when
+  the child closes ("What a wait waits on"; a child no source tracks is read at each sync, issue #1508).
+  `job.child_issue_filed` records `routed: true`.
+- **An outside wait says why a person acts** (`OutsideWhy`, `src/domain/wait-on.ts`): `on: outside: not managed: <what>`
+  (the repository is not one the hopper works on) or `on: outside: gated: <what>` (an infrastructure apply, a gitops
+  apply, a production approval), recorded as `why` (`not_managed`, `gated`) on `wait.on`, additive. The label says it:
+  `outside (gated): …`. An outside wait with neither is **flagged**: `outside (reason not given): …`. Items an outside
+  wait's text names are watched (issue #1508).
+- **What a job is told.** `DELIVERY_LINE`: the hopper labels and assigns a required child, the job waits on it, it never
+  asks a person to add the hopper label, and it waits on a person only with `not managed` or `gated`. `WAIT_LINE` lists both
+  forms.
+
+**Not done here.** A job with no issue of its own (a direct job) cannot file a required child, so its child is a follow-up
+and is not routed. An approval of a routed child stays a person's: a job-filed card is never auto-approved, and a change
+there is a change to the trusted-origin rule.
+
+**Verification.** `test/integration/routed-children.test.ts`, `test/github-proxy/proxy.test.ts` ("issue lineage"),
+`test/domain/wait-on.test.ts`, `test/ui/board.test.ts`, `test/job-rules/delivery-path.test.ts`.
 
 ## Repository job rules (issue #1472 part 4, 2026-10-16)
 
@@ -18175,6 +18271,53 @@ unknown plan, a refused flag and each other write refused, the real binary not r
 image puts the wrapper first on PATH; a read-only image and one with no terraform do not), `test/domain/infra-plans.test.ts`
 (the read check), `test/integration/infra-plans.test.ts` (the real daemon: a plan naming a read the job was not minted is
 a 400, and kept once the job was minted it).
+
+## Infra plans: Argo CD syncs through the plan gate (issue #959, 2026-10-17)
+
+Follow-up of issue #870. Before this, the apply gate held a terraform or helm apply, but an Argo CD auto-sync did not ask
+the hopper: it applied what git said, and showed only as drift on Infra. The vault minted nothing for an `argocd-app`.
+
+The issue gave two paths. **Taken: turn off auto-sync for a gated app, and sync it with a plan-bound `sync`
+credential.** The other path — keep auto-sync and gate the merge to the branch Argo CD watches — needs the hopper to
+write a status or a rule to GitHub ("GitHub text is neutral": the hopper writes only labels), and a merge on GitHub by a
+person would still skip it.
+
+- **A gated app** is an Argo CD Application with no automated sync (`spec.syncPolicy.automated` absent), labelled
+  `io.hopper.plan-gate=true` (`ARGO_PLAN_GATE_LABEL`), whose sync only the service account `hopper-sync` in the
+  namespace `argocd` may start (`docs/deploy.md` "Argo CD syncs through the plan gate"). The hopper changes no cluster:
+  the operator sets this up.
+- **A sync is minted only through the apply gate** (`mintTarget`, `src/domain/minting.ts`). `$HOPPER_SECRET kube sync
+  argocd-app/<cluster>/<app> --plan <id>` mints a token of `hopper-sync` in `argocd` (`ARGOCD_NAMESPACE`) of that
+  cluster, from the cluster's minting credential, after Access and the gate, as any other change: the plan is kept, of
+  that app, not stale, not failed, approved, and made at the commit its branch is at now. Any other ask mints nothing and
+  the cluster is not asked. `vault.minted` names the plan and the principal
+  `system:serviceaccount:argocd:hopper-sync`, so the sync is an apply on Infra and a plan-bound write for the out-of-band
+  rule.
+- **An `argocd-app` takes sync only**, and names its cluster (`<cluster>/<app>`); `read`, `write` and `apply` are refused:
+  read or change what it deploys through its cluster or namespace. Reads of an Argo CD app stay as they were (no read
+  token for checks or need steps).
+- **A plan for an `argocd-app` is a `gitops` plan** (`planInputProblem`): the `argocd app diff` its sync applies. A
+  terraform or helm plan of one is a 400.
+- **A gated app that syncs by itself is drift.** The collector's `--argo` (`argoSignals`, `src/domain/out-of-band-collect.ts`)
+  reports each Application with the label and an automated sync policy: `what` `AutoSyncOnGatedApp`, key
+  `argocd:<namespace>/<name>:auto-sync`. It is kept, sent to the notifiers and shown on Infra like any out-of-band change.
+
+**Why a credential, not a sync by the hopper.** The vault is already the boundary for every change ("Infra plans: no apply
+without a plan"); a sync is one more operation behind it, with no new route and no Argo CD credential in the hopper.
+
+**Residual risk, stated.** As for any plan-bound credential, the `hopper-sync` token can, for its 10 minutes, sync what
+its Role allows, at any revision: the gate binds the credential to the plan, not the sync to the plan's commit. A Role
+limited to the gated app (`resourceNames`) keeps it to that app. A person or tool that Argo CD's own RBAC lets sync, or
+someone who turns automated sync on again, skips the hopper: the collector reports the second as drift, and the first as
+an out-of-band write when the Kubernetes audit log names a principal that is no controller identity. A sync from Argo CD's
+UI or CLI writes as `argocd-server`: keep it out of the controller identities, so it is reported.
+
+Tests: `test/domain/infra-plans.test.ts` (the sync target, sync only, the cluster named, a gitops plan, the gate with no
+plan and with another app's plan), `test/domain/out-of-band-collect.test.ts` (a gated app with automated sync reported, a
+gated one without and an ungated one not), `test/integration/infra-plans-argocd.test.ts` (the real daemon, a joined box, the
+Kubernetes API and GitHub faked: a sync with no plan, an unapproved plan, another app's plan and a moved head mints
+nothing and the cluster is not asked — the negative test of the issue's "Done when"; a terraform plan of the app is a
+400; a current approved GitOps plan mints a `hopper-sync` token in `argocd`, the audit naming the plan).
 
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
@@ -23642,3 +23785,72 @@ nothing; the email match; an end marks only that account, told with its key; rem
 account of the repository acts, and the events name it), `test/integration/more-accounts.test.ts` (the daemon: a second
 account by token, its own source, each issue taken and claimed with its account's token; 409, 404; removal removes its
 source), `test/ui/more-accounts-view.test.ts`, `test/ui/sources.test.ts` and `test/ui/acting-identity.test.ts`.
+
+## Run skills (issue #472, 2026-10-17)
+
+**The problem.** The AI-native **File an issue** flow (issue #470, the button is issue #471) drafts an issue with the
+user's own AI CLI on one of their machines. The text that run reads — its instructions, the template, the constraints,
+the output contract and what to do when a login waits — must be part of the hopper, versioned with it, and leave nothing
+on the machine.
+
+**The change.**
+- A **run skill** is the plain files of a directory in `src/run-skills/`. The first is `file-issue/` (`instructions.md`,
+  `template.md`). Its id is the first 16 hex of a SHA-256 over its files' names and SHA-256s, the client release's
+  `releaseOf` (`src/client/release.ts`): the same files are always the same id. A run answers the skill's name and id
+  with its draft, so the draft's record can name the skill that made it.
+- Before a run, the skill is checked whole: files that are not the ones its id names refuse the run (`checkRunSkill`).
+- **Delivery is the prompt on stdin** (issue #470 D4, option a): no file of the skill is written on the machine, and
+  none is read from the user's own config or skill places. A run goes through `claudePrint` (`src/plugins/claude-print.ts`),
+  locked down as the claude-cli level is: `--no-session-persistence`, `--setting-sources ''`, `--strict-mcp-config`,
+  `--tools ''`, the schema-bound answer `{ title, body, labels?, notes }`. On a machine it runs through `ON_MACHINE`, in a
+  fresh private dir there, removed after with claude's project dir for it.
+- **One list of constraints** (`src/run-skills/constraints.ts`, issue #475): no secret, no personal or machine detail
+  (the promotion scan, `src/promotions/scan.ts`), no `@` mention, no label the hopper acts on (`hopper`, `hopper:*`,
+  `hopper@*`), a title of at most 120 characters, a body of at most 8000. Each constraint's text goes into the prompt;
+  its check runs on the draft (`draftIssue` answers the findings), and is the check to run again on the text the user
+  edited before it is filed. A test fails when the prompt lacks a constraint's text.
+- **Authentication pending** (issue #470 D17: a shared section, not its own skill). `src/domain/auth-pending.ts` holds
+  the job rules' login line (`HOPPER_AUTH_PENDING`, issue #476) and the section every run skill carries. A print-mode run
+  has no tools and cannot run a login: its CLI prints the code, the hopper reads it from the run's output
+  (`src/logins/run-output.ts`) and reports it to the logins, and the section tells the model never to ask for, answer,
+  guess or repeat a code.
+- **The real path.** `ON_MACHINE` named claude's project dir from the `mktemp` path, and the client's level run from
+  `mkdtemp`'s; claude names it from the cwd it sees, its real path. Behind a TMPDIR through a link the two differ, and the
+  project dir stayed. Both now take the real path (`pwd -P`, `realpathSync`).
+
+**Not done here.** The UI flow and the GitHub write (issue #471) call `draftIssue` and record the skill id with the draft;
+the machine choice per provider (issue #474); the run dir's removal when a run times out or is cancelled (the kill
+reaches the local process, not the shell on the machine), and a run reported failed when its dir could not be removed.
+
+**Verification:** `test/run-skills/run-skills.test.ts` (the id, the tampered skill refused, every constraint's text in
+the prompt and its check, the user text as data between markers, the shared login line in the job rules),
+`test/run-skills/draft.test.ts` (against a fake `claude`: the skill on stdin, locked down, the draft with its findings and
+the skill id; a tampered skill refused before claude runs; a device code to the logins, never into the answer; no file
+left in the run dir or the project dir after success, an error and an expired login, and the user's config dirs unchanged).
+
+## The cloud link (issue #467, part 1, 2026-10-17)
+
+Issue #467: an existing self-hosted install — a container or a host install, with one user or several — can be linked to
+an account at hopper.io without moving its data, rebuilding it or changing how it runs. Linking is an add-on that can be
+undone: it arrives as a normal update, applies while the hopper runs, and an install that never links behaves as before.
+
+**The link record** (`src/domain/cloud-link.ts`, `src/store/cloud-link-settings.ts`): the instance's settings key
+`cloudLink`, absent while the install is not linked: `{ installId, account, state, linkedAt, by }`. `installId` is
+random (16 bytes, hex), made at the link, so a link after an unlink is a new install at hopper.io. `account` is the
+hopper.io account name (letters, digits and single hyphens inside, at most 39 characters, kept lowercase). `state` is
+`pending`: hopper.io has not confirmed the link. The record is the only thing a link writes: no table, user, identity,
+job, machine or setting is moved, copied or changed (`test/http/cloud-link-fixture.test.ts` compares every row of every
+schema of a fixture install before and after). An unlink deletes the row, and nothing else.
+
+**Link and unlink** (`src/http/cloud-link.ts`, `src/http/ui/cloud-link.ts`): `GET /api/cloud-link` (an instance read),
+`POST /ui/api/cloud-link` `{ account }` and `POST /ui/api/cloud-link/unlink` `{}` (the instance admin; no box action).
+A second link while linked is 409: unlink first. An unlink when not linked changes nothing. Each applies at once, with no
+restart, and touches no job or lane (`test/integration/cloud-link.test.ts` links and unlinks during a running job). A
+link is `cloud_link.linked`, an unlink `cloud_link.unlinked`, instance events with the install id, the account and who.
+UI: Settings → hopper.io.
+
+**No outbound traffic.** Part 1 makes no connection to hopper.io at all, linked or not. The connection — an outbound
+link agent (no inbound port, so a container install needs no change), the link keys it proves the install with, and
+hopper.io's confirmation that moves `state` from `pending` — is the next part, with hopper.io's own protocol. Its link
+keys are secrets the hopper owns, so they will be system secrets ("The vault's system scope"), named by the link record.
+Open (the tracking issue's decisions): whether the first-run flow offers the link, and a minimum version or channel.

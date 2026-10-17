@@ -80,7 +80,8 @@ export const waitOn = z.discriminatedUnion('kind', [
   strict({ kind: z.literal('approval'), of: z.enum(['sandbox', 'template']) }),
   strict({ kind: z.literal('grant') }),
   strict({ kind: z.literal('own_command') }),
-  strict({ kind: z.literal('outside'), what: z.string() }),
+  // Additive (issue #1510): why a person acts; absent, the job did not say.
+  strict({ kind: z.literal('outside'), what: z.string(), why: z.enum(['not_managed', 'gated']).optional() }),
 ]);
 /** A lane plan as decision.made v1 and v2 carried it. */
 export const legacyLanePlan = strict({
@@ -118,6 +119,8 @@ export const issueLineageEvents = {
   'job.child_issue_filed': strict({
     requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }), required: z.boolean(),
     subIssue: z.boolean().optional(), subIssueError: z.string().optional(),
+    // Additive (issue #1510): the hopper labelled the required child and assigned it to the job's user.
+    routed: z.literal(true).optional(),
   }),
 };
 
@@ -146,6 +149,8 @@ export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
   'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, credential: z.enum(['set', 'removed']).optional(), by: z.string() }),
   'allowed_hosts.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'cloud_link.linked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
+  'cloud_link.unlinked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
   'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
 };
 

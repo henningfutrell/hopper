@@ -32,7 +32,7 @@ export const PLAN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 /** What a job says about a plan when it records one. */
 export interface PlanInput {
   tool: PlanTool;
-  /** The asset the apply mints a credential for: an `aws-role`, a `cluster`, a `namespace`. */
+  /** The asset the apply mints a credential for: an `aws-role`, a `cluster`, a `namespace`, an `argocd-app` (a gitops plan's sync). */
   asset: Asset;
   /** The workspace or app the plan changes, in the tool's words (`uat-network`, `argocd app web`). */
   target: string;
@@ -108,6 +108,8 @@ export function planInputProblem(p: PlanInput): string | undefined {
   if (!(PLAN_TOOLS as readonly string[]).includes(p.tool)) return `tool must be one of ${PLAN_TOOLS.join(', ')}`;
   const asset = profileProblem({ operation: 'apply', asset: p.asset });
   if (asset) return asset;
+  // Argo CD applies what git says (issue #959): the plan of its sync is the GitOps diff.
+  if (p.asset.kind === 'argocd-app' && p.tool !== 'gitops') return `a plan for an argocd-app is a gitops plan (argocd app diff), not ${p.tool}`;
   if (!p.target.trim() || p.target.length > 200 || /[\n\r]/.test(p.target)) return 'target must be one line of 1 to 200 characters: the workspace or app the plan changes';
   if (!REPO.test(p.repo)) return 'repo must be owner/name';
   if (!REF.test(p.ref)) return 'ref must be the branch the plan was made from';

@@ -23,6 +23,14 @@ describe('the delivery line', () => {
     ]) expect(DELIVERY_LINE).toContain(words);
   });
 
+  it('says the hopper routes a required child, so the job waits on it as an item, and asks a person only when not managed or gated (issue #1510)', () => {
+    for (const words of [
+      'The hopper labels a required child and assigns it', 'Intake lists it as a request card',
+      'HOPPER_WAITING with on: issue OWNER/NAME#N', 'Do not ask a person to add the hopper label',
+      'on: outside: not managed: <what>', 'on: outside: gated: <what>',
+    ]) expect(DELIVERY_LINE).toContain(words);
+  });
+
   it('tells a job with no issue to file the child without --required', () => {
     expect(DELIVERY_LINE).toContain('A job with no issue of its own files it with no --required');
   });
