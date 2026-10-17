@@ -101,6 +101,8 @@ describe.skipIf(!WORKS)('a job\'s runtime leaves nothing, on real Podman (issue 
     const said = reap(s);
     expect(said.removed?.volumes ?? [], said.said).toContain('marker-vol');
     expect(said.removed?.containers ?? [], said.said).toHaveLength(1);
+    // What the job's parts list shows of it (issue #975): its name and image; never started, so no times.
+    expect(said.removed?.details, said.said).toEqual([{ id: said.removed!.containers[0], name: 'marker-box', image: 'localhost/hopper-empty:1371' }]);
     const containers = join(s.scratch, 'containers');
     expect(existsSync(join(containers, 'storage'))).toBe(false);
     expect(existsSync(join(s.host, `hopper-runtime-${JOB}`))).toBe(false);

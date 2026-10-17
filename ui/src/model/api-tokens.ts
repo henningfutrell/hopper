@@ -2,7 +2,7 @@
 // person may mint one with, and the scopes a person ticks (issue #909): every scope of the registry is a box, a preset
 // ticks its boxes, and a wildcard a preset holds (`*:read`, `*`) stays one until a box it ticks is cleared. The tokens
 // themselves are shown once, right after the mint; the list never holds them.
-import type { ApiGrantView, ApiTokenView, ScopePermission, ScopeRegistry, UiRole } from './wire.ts';
+import type { ApiGrantView, ApiTokenView, DeviceGrantView, ScopePermission, ScopeRegistry, UiRole } from './wire.ts';
 
 const ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 
@@ -63,3 +63,19 @@ export const boxPermissions = (patterns: readonly string[], registry: ScopeRegis
 /** The preset the patterns are, as a set, or undefined. */
 export const presetOfScopes = (patterns: readonly string[], registry: ScopeRegistry): string | undefined =>
   registry.presets.find((p) => p.scopes.length === patterns.length && p.scopes.every((s) => patterns.includes(s)))?.id;
+
+/** The user code a link to Settings → API tokens holds (issue #892): `#settings/api-tokens/BCDF-GHJK` → `BCDF-GHJK`; '' when none. */
+export const deviceCodeOfHash = (hash: string): string => decodeURIComponent(hash.replace(/^#/, '').split('/')[2] ?? '');
+
+/**
+ * What a device grant request asks for (issue #892), in one line: its role (`as`, the person's, when it names none), box,
+ * preset, scopes, how long it lives, who asked and when the request ends. Box: named, or its preset's.
+ */
+export function deviceAskLine(v: DeviceGrantView, as: UiRole | undefined, registry?: ScopeRegistry): string {
+  const box = v.ask.box ?? registry?.presets.find((p) => p.id === v.ask.preset)?.box ?? false;
+  return [
+    v.ask.role ?? `${as ?? 'your role'} (your role)`, ...(box ? ['box'] : []), ...(v.ask.preset ? [`preset ${v.ask.preset}`] : []),
+    ...(v.ask.scopes?.length ? [`scopes ${v.ask.scopes.join(' ')}`] : []),
+    v.ask.days === null ? 'no fixed end' : `lives ${v.ask.days ?? 90} days at most`, `asked from ${v.from}`, `request ends ${when(v.expiresAt)}`,
+  ].join(' · ');
+}

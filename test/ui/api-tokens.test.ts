@@ -2,7 +2,7 @@
 // grant — theirs and the ones below —, the line each listed grant and exchanged token shows, and the scopes a person
 // ticks (issue #909): a box per scope of the registry, a preset's wildcards, and a box grant when a box action is ticked.
 import { describe, expect, it } from 'vitest';
-import { apiTokenLine, boxPermissions, grantLine, mintableRoles, presetOfScopes, scopeTicked, toggleScope } from '../../ui/src/model/api-tokens.ts';
+import { apiTokenLine, boxPermissions, deviceAskLine, deviceCodeOfHash, grantLine, mintableRoles, presetOfScopes, scopeTicked, toggleScope } from '../../ui/src/model/api-tokens.ts';
 import type { ScopeRegistry } from '../../ui/src/model/wire.ts';
 
 const permission = (scope: string, box = false, parent?: string) => ({ scope, description: scope, routes: [], role: 'viewer' as const, box, ...(parent ? { parent } : {}) });
@@ -72,5 +72,14 @@ describe('API tokens model', () => {
     expect(boxPermissions(['*:read', 'sources:intake'], registry).map((p) => p.scope)).toEqual(['sources:intake']);
     expect(presetOfScopes(['sources:intake', '*:read'], registry)).toBe('agent-intake');
     expect(presetOfScopes(['*:read', 'jobs:cancel'], registry)).toBeUndefined();
+  });
+
+  it('a device grant request\'s line says what it asks for and who asked; a link holds its user code (issue #892)', () => {
+    const v = { userCode: 'BCDF-GHJK', ask: { label: 'Grok Bot', preset: 'agent-intake' }, from: '203.0.113.5', createdAt: '2026-10-16T10:00:00Z', expiresAt: '2026-10-16T10:10:00Z' };
+    const line = deviceAskLine(v, 'operator', registry);
+    expect(line).toMatch(/^operator \(your role\) · box · preset agent-intake · lives 90 days at most · asked from 203\.0\.113\.5 · request ends /);
+    expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], days: null } }, 'admin')).toMatch(/^viewer · scopes \*:read · no fixed end · /);
+    expect(deviceCodeOfHash('#settings/api-tokens/BCDF-GHJK')).toBe('BCDF-GHJK');
+    expect(deviceCodeOfHash('#settings/api-tokens')).toBe('');
   });
 });

@@ -4,7 +4,7 @@
 // note; one on a person's branch stays as it is.
 import { describe, expect, it } from 'vitest';
 import type { CensusFacts } from '../../src/domain/untracked-pull-requests.ts';
-import { retargetNote } from '../../src/sources/github/pr-notes.ts';
+import { retargetNote, secondPullRequestNote } from '../../src/sources/github/pr-notes.ts';
 import { REPO, setup } from './fixtures/github-support.ts';
 
 const AT = '2026-10-02T11:00:00.000Z';
@@ -56,6 +56,53 @@ describe('the census of open pull requests (issue #1176)', () => {
     const other = `https://github.com/${REPO}/pull/99`;
     await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
     expect(untracked(s)).toEqual([expect.objectContaining({ url: pr.url, base: 'main', reason: 'second_pull_request', followed: other, retargeted: { from: 'dev', to: 'main' } })]);
+  });
+
+  it('a second pull request on a job\'s branch with merge conflicts (issue #1208): closed with a note that names the followed one', async () => {
+    const s = await census('main');
+    const other = s.gh.openPullRequest(REPO, 3, { createdAt: AT, base: 'main', headRef: 'issue-3' });
+    const pr = s.gh.openPartPullRequest(REPO, 3, { createdAt: AT, base: 'main', headRef: 'issue-3-part', conflicting: true });
+    await s.source.censusPullRequests!(facts({ tracked: [other.url], items: [3], followed: { 3: other.url } }));
+    expect(s.gh.calls.filter((c) => c.method === 'closeWithoutMerge').map((c) => c.args)).toEqual([[REPO, Number(pr.url.split('/').pop())]]);
+    expect(s.gh.pullRequestComments(pr.url)).toEqual([secondPullRequestNote(Number(other.url.split('/').pop()))]);
+    expect(s.gh.pullRequestComments(other.url)).toEqual([]);
+    expect(s.source.describe()).not.toHaveProperty('untrackedPullRequests');
+  });
+
+  it('a second pull request with no merge conflicts, or on a person\'s branch: left open and listed', async () => {
+    const s = await census('main');
+    const other = `https://github.com/${REPO}/pull/99`;
+    const clean = s.gh.openPartPullRequest(REPO, 3, { createdAt: AT, base: 'main', headRef: 'issue-3-part' });
+    const person = s.gh.openPartPullRequest(REPO, 3, { createdAt: AT, base: 'main', headRef: 'my-fix', conflicting: true });
+    await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
+    expect(s.gh.calls.some((c) => c.method === 'closeWithoutMerge')).toBe(false);
+    expect(untracked(s)).toEqual([
+      expect.objectContaining({ url: clean.url, reason: 'second_pull_request', followed: other }),
+      expect.objectContaining({ url: person.url, reason: 'second_pull_request', followed: other }),
+    ]);
+  });
+
+  it('a second pull request moved in this round: not closed until the next census reads its merge conflicts on the new base', async () => {
+    const s = await census('main');
+    const other = `https://github.com/${REPO}/pull/99`;
+    const pr = s.gh.openPartPullRequest(REPO, 3, { createdAt: AT, base: 'dev', headRef: 'issue-3-part', conflicting: true });
+    await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
+    expect(s.gh.calls.some((c) => c.method === 'closeWithoutMerge')).toBe(false);
+    expect(untracked(s)).toEqual([expect.objectContaining({ url: pr.url, reason: 'second_pull_request', retargeted: { from: 'dev', to: 'main' } })]);
+    await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
+    expect(s.gh.calls.filter((c) => c.method === 'closeWithoutMerge')).toHaveLength(1);
+  });
+
+  it('a close GitHub refuses: listed, and tried again at the next round', async () => {
+    const s = await census('main');
+    const other = `https://github.com/${REPO}/pull/99`;
+    const pr = s.gh.openPartPullRequest(REPO, 3, { createdAt: AT, base: 'main', headRef: 'issue-3-part', conflicting: true });
+    s.gh.failNext('closeWithoutMerge', new Error('boom'));
+    await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
+    expect(untracked(s)).toEqual([expect.objectContaining({ url: pr.url, reason: 'second_pull_request' })]);
+    expect(s.gh.pullRequestComments(pr.url)).toEqual([]);
+    await s.source.censusPullRequests!(facts({ items: [3], followed: { 3: other } }));
+    expect(s.source.describe()).not.toHaveProperty('untrackedPullRequests');
   });
 
   it('a person\'s branch on a base from before: left as it is, listed with the wrong base', async () => {

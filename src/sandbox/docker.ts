@@ -56,8 +56,8 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
     kind: 'docker',
     // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
     ...(via === socketCall ? copyInCall(socket, API, 'docker') : {}),
-    // The images on the machine (issue #1120): only over the socket here, never through a machine's relay.
-    ...(via === socketCall ? imageCalls('docker', (method, path) => call(method, path)) : {}),
+    // The images on the machine (issue #1120), over the socket here or through a machine's relay (issue #1202).
+    ...imageCalls('docker', (method, path) => call(method, path)),
 
     async problem() {
       let a: Answer;

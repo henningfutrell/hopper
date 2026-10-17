@@ -4,7 +4,10 @@
 // the account is not connected or its sign-in expired (issue #358) — then it asks for a sign-in again; nothing falls back
 // to another credential —, or while no job repository is chosen.
 import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
-import { CONNECTED_VIA, type ChangeRule, type ConnectedAccountProvider } from '../domain/types.ts';
+import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, type ChangeRule, type ConnectedAccountProvider } from '../domain/types.ts';
+import type { DirectPullRequests } from '../domain/direct-jobs.ts';
+import { tendStartedOn } from './github/follow.ts';
+import { followDirectPullRequest } from './github/direct-follow.ts';
 import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
@@ -236,5 +239,31 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     flushOutbox: (acts) => current()?.flushOutbox?.(acts) ?? Promise.resolve({ due: 0, wrote: [] }),
     pullRequestAct: (job, act, acting) => current()?.pullRequestAct?.(job, act, acting),
     giveBackAct: (job, act, acting, more) => current()?.giveBackAct?.(job, act, acting, more),
+  };
+}
+
+/**
+ * How the `direct` source follows a direct job's pull request (issue #1068): the follow over the user's own GitHub
+ * connection — the one a job's GitHub proxy acts with (issue #1380) —, with their yolo mode, landing branches and change
+ * rules. While no account is connected, or its sign-in ended, a follow throws and is asked again on a later sync, and
+ * nothing is merged.
+ */
+export function createDirectPullRequests(o: {
+  accounts: ConnectedAccountTokens; clock: Clock; api?: GitHubApi;
+  yoloMode: (repo: string) => boolean; landingBranch: (repo: string) => string | undefined; changeRule: (repo: string) => ChangeRule;
+}): DirectPullRequests {
+  const provider = 'github';
+  const token = async (): Promise<string> => {
+    try { return await o.accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
+  };
+  const api = o.api ?? checksFallback(createAccountGitHubApi({ ...o.accounts.endpoints(provider), token, renew: (refused) => o.accounts.renew(provider, refused) }), ACCOUNT_CONNECTION, () => o.clock.now().getTime());
+  const context = { api, ensuredLabels: new Set<string>(), clock: o.clock, yoloMode: o.yoloMode, landingBranch: o.landingBranch, changeRule: o.changeRule };
+  const connected = (): boolean => o.accounts.account(provider) !== undefined;
+  return {
+    follow: (job, act) => followDirectPullRequest(context, job, act),
+    // Unconnected, nothing is merged, and nothing is said on the pull request.
+    mergesOnReady: (repo, kind) => connected() && mergesOnReady(o.changeRule(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode(repo), kind),
+    tendStarted: async (job, pullRequest, step) => { if (connected()) await tendStartedOn(api)(job, pullRequest, step); },
+    checkLogs: createCheckLogs(api).read,
   };
 }

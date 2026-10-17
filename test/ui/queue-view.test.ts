@@ -2,7 +2,8 @@
 // Issue #201: the Queue view rendered in happy-dom inside the whole app against a fake of the daemon's
 // HTTP surface. The Queue nav entry carries a badge while jobs wait on the pre-sort, and the Queue view
 // names the queue sorter and links to where it is set up (#settings/routing). Issue #737: its job cards are collapsed by
-// default — the issue, state, lane, pull request and the repository's yolo mode —, open one by one, or all at once.
+// default — the issue, state, lane, pull request and the repository's yolo mode —, open one by one, or all at once. Issue
+// #874: a held job's card says why it is held, collapsed too.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -45,10 +46,10 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(waiting: ReturnType<typeof job>[]) {
+async function boot(waiting: ReturnType<typeof job>[], hash = '#queue') {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#queue';
+  window.location.hash = hash;
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.stubGlobal('fetch', fakeDaemon(waiting));
@@ -131,5 +132,29 @@ describe('Collapsed job cards (issue #737)', () => {
     expect(toggleAll().textContent).toContain('Collapse all');
     await act(async () => toggleAll().click());
     expect(['a1', 'n1'].map((id) => card(id).getAttribute('data-expanded'))).toEqual(['false', 'false']);
+  });
+});
+
+describe('A held job says why (issue #874)', () => {
+  const card = (id: string) => document.querySelector(`[data-job-id="${id}"]`)!;
+
+  it('a held card shows its hold reason while it is collapsed; a queued card shows none', async () => {
+    await boot([job('h1', false, { status: 'held', holdReason: 'awaiting acceptance' }), job('a1', true)]);
+    const reason = await vi.waitFor(() => { const r = card('h1')?.querySelector('[data-slot="card-hold-reason"]'); expect(r).toBeTruthy(); return r!; });
+    expect(card('h1').getAttribute('data-expanded')).toBe('false');
+    expect(reason.textContent).toBe('awaiting acceptance');
+    expect(card('a1').querySelector('[data-slot="card-hold-reason"]')).toBeNull();
+  });
+
+  it('the job view of a held job says why it is held', async () => {
+    await boot([job('h1', true, { status: 'held', holdReason: 'no machine runs executor test' })], '#job/h1');
+    const reason = await vi.waitFor(() => { const r = document.querySelector('[data-slot="job-hold-reason"]'); expect(r).toBeTruthy(); return r!; });
+    expect(reason.textContent).toBe('no machine runs executor test');
+  });
+
+  it('the job view of a job that is not held shows no hold reason', async () => {
+    await boot([job('a1', true)], '#job/a1');
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="job-view"]')?.textContent).toContain('goal a1'));
+    expect(document.querySelector('[data-slot="job-hold-reason"]')).toBeNull();
   });
 });

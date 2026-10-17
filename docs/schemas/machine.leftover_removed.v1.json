@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    },
+    "unpushed": {
+      "type": "boolean"
+    },
+    "bytes": {
+      "type": "number"
+    },
+    "gone": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "machineId",
+    "path",
+    "unpushed"
+  ],
+  "additionalProperties": false
+}

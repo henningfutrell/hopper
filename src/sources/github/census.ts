@@ -3,16 +3,18 @@
 // (`openPullRequestsIn`) and keeps the untracked ones (`untrackedPullRequests`), each with its reason, for Sources and the
 // Pull requests list. One on a base from before the landing branch, of an item the ledger holds, on a branch named for
 // its issue (a job's), is moved to the landing branch, said on it with the follow's note. A repository GitHub does not
-// answer for keeps what was last read of it; a move GitHub refuses is logged and tried at the next round.
+// answer for keeps what was last read of it; a move GitHub refuses is logged and tried at the next round. A second pull request
+// of an item (its job follows another one) on a job's branch with merge conflicts is closed, said on it (issue #1208): the
+// hopper tends only the followed one, and a tend of the second would take the follow off it.
 import { takenIntoIntake, untrackedPullRequests, type CensusFacts, type UntrackedPullRequest } from '../../domain/untracked-pull-requests.ts';
 import type { IntakeWriteBehind } from '../../domain/intake.ts';
 import type { GitHubApi } from './api.ts';
 import { namesIssue } from './completion.ts';
-import { retargetNote } from './pr-notes.ts';
+import { retargetNote, secondPullRequestNote } from './pr-notes.ts';
 
 const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 
-export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'retarget' | 'postComment'>, landing: (repo: string) => string | undefined) {
+export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'retarget' | 'postComment' | 'closeWithoutMerge'>, landing: (repo: string) => string | undefined) {
   let byRepo = new Map<string, UntrackedPullRequest[]>();
   let errors: Record<string, string> = {};
 
@@ -30,6 +32,22 @@ export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'r
     return { ...u, base: to, reason: u.followed ? 'second_pull_request' : 'not_by_a_job', retargeted: { from: u.base, to } };
   }
 
+  /**
+   * Close a second pull request on a job's branch with merge conflicts (issue #1208); true: closed. Not one just moved: its
+   * merge conflicts were read against the base from before.
+   */
+  async function closedAsSecond(u: UntrackedPullRequest, pr: { headRef: string; conflicting: boolean }): Promise<boolean> {
+    if (u.reason !== 'second_pull_request' || !u.followed || u.retargeted || !pr.conflicting || !u.issue || !namesIssue(pr.headRef, u.issue.number)) return false;
+    try {
+      await api.closeWithoutMerge(u.repo, numberOf(u.url));
+    } catch (e) {
+      console.warn(`hopper: closing the second pull request ${u.url} failed, tried again at the next round: ${(e as Error).message}`);
+      return false;
+    }
+    await api.postComment(u.repo, numberOf(u.url), secondPullRequestNote(numberOf(u.followed))).catch(() => undefined);
+    return true;
+  }
+
   return {
     /** Read the open pull requests of `repos` and keep the untracked ones. A throw keeps what was read before. */
     async read(repos: string[], facts: Omit<CensusFacts, 'landing'>): Promise<void> {
@@ -45,9 +63,14 @@ export function pullRequestCensus(api: Pick<GitHubApi, 'openPullRequestsIn' | 'r
           if (before) next.set(repo, before);
           continue;
         }
-        const heads = new Map(prs.map((p) => [p.url, p.headRef]));
+        const byUrl = new Map(prs.map((p) => [p.url, p]));
         const found = untrackedPullRequests(repo, prs, { ...facts, landing });
-        next.set(repo, await Promise.all(found.map((u) => retargeted(u, heads.get(u.url) ?? ''))));
+        const kept = await Promise.all(found.map(async (u) => {
+          const pr = byUrl.get(u.url);
+          const moved = await retargeted(u, pr?.headRef ?? '');
+          return pr && await closedAsSecond(moved, pr) ? [] : [moved];
+        }));
+        next.set(repo, kept.flat());
       }
       byRepo = next;
       errors = nextErrors;

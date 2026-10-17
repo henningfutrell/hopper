@@ -13,6 +13,7 @@
 // Each card says its change kind and why (issue #1076), and its merge waits on the kind's gate: `yolo off` for a kind
 // merged only with yolo mode on, `person merges` for a kind only a person merges; a kind merged with no person is not held.
 import type { Job } from './types.ts';
+import { DIRECT_SOURCE } from './direct-jobs.ts';
 import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
@@ -48,8 +49,10 @@ export interface HeldBehind { pullRequest: number; why: QueueHead['why']; since?
 export interface PullRequestCard {
   jobId: string;
   repo: string;
-  /** The issue it closes, or ships part of (`part`). */
-  issue: { number: number; url: string };
+  /** The issue it closes, or ships part of (`part`); absent for a direct job's (issue #1068), which has none. */
+  issue?: { number: number; url: string };
+  /** The direct job whose pull request it is (issue #1068): its view in the hopper. */
+  directJob?: { url: string };
   /** Absent: the job's report could name none; it is followed only to its merge. */
   pullRequest?: { number: number; url: string };
   part: boolean;
@@ -131,13 +134,16 @@ function tendJobOf(job: Job, newest: (key: string) => Job | undefined): Job | un
   return followedOf(job).follow === 'tended' && t && n?.id === t.nextJobId && n.status !== 'finished' ? n : undefined;
 }
 
+/** A direct job's (issue #1068): no issue behind it, its pull request followed all the same. */
+const directOf = (job: Job): boolean => job.source?.kind === DIRECT_SOURCE;
+
 /**
  * A finished or failed job (issue #786) that waits on its pull request (PR waiting), or one closed without a merge: the newest of its item. Or one
  * whose pull request its item's tend job works on (issue #763).
  */
 export function waitsOnPullRequest(job: Job, newest: (key: string) => Job | undefined): boolean {
   const f = followedOf(job).follow;
-  if (!followsWhenEnded(job) || job.source?.repo === undefined || job.source.number === undefined) return false;
+  if (!followsWhenEnded(job) || job.source?.repo === undefined || (job.source.number === undefined && !directOf(job))) return false;
   return ((f === 'open' || f === 'closed') && newest(job.source.key)?.id === job.id) || tendJobOf(job, newest) !== undefined;
 }
 
@@ -168,7 +174,8 @@ function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob:
   const tendEnded = tendJob !== undefined && TEND_ENDS.includes(tendJob.status) && retryAt === undefined;
   const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, rule, now);
   return {
-    jobId: job.id, repo: job.source!.repo!, issue: { number: job.source!.number!, url: job.source!.url ?? job.source!.key },
+    jobId: job.id, repo: job.source!.repo!,
+    ...(job.source!.number !== undefined ? { issue: { number: job.source!.number, url: job.source!.url ?? job.source!.key } } : { directJob: { url: job.source!.url ?? job.source!.key } }),
     ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),
     part: f.part === true, state, checks: seen?.checks ?? 'unknown', mergeable: seen ? (seen.conflicting ? 'conflicts' : 'mergeable') : 'unknown',
     draft: seen?.draft ?? false, ...(seen?.base ? { base: seen.base } : {}), ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}),

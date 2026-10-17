@@ -16,7 +16,7 @@ interface Zone { id: string; name: string; account?: { id?: string } }
 export function ingressOf(domain: string, port: number): unknown[] {
   return [
     { hostname: domain, path: '^/api/events/stream', service: 'http_status:404' },
-    { hostname: domain, path: '^/(api/|ui/api/|ui/auth/api-token$|ui/auth/token/refresh$)', service: `http://hopper:${port}` },
+    { hostname: domain, path: '^/(api/|ui/api/|ui/auth/api-token$|ui/auth/token/refresh$|ui/auth/device-grant$|ui/auth/device-grant/poll$)', service: `http://hopper:${port}` },
     { service: 'http_status:404' },
   ];
 }

@@ -19,6 +19,7 @@
 import type { ChecksState, Job, OwnPullRequestChecks, UnfinishedPullRequest, WorkPullRequest, WorkState } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import { closingReferences } from '../../domain/cross-references.ts';
+import { RELEASE_BRANCHES } from '../../domain/landing-batches.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 /** The job's own pull request: opened at or after the job was created. */
@@ -135,7 +136,8 @@ async function artifactMissing(api: GitHubApi, job: Job, artifacts: JobArtifacts
  * - a pull request of its repo that closes or references the issue — opened by the job or before it, by any author —
  *   open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
  *   not the whole (`partlyDone`); one that only mentions it and closes or ships part of another issue is that issue's
- *   work, not this one's (`worksOnAnotherIssue`, issue #786);
+ *   work, not this one's (`worksOnAnotherIssue`, issue #786), and one from a release branch (a promotion) is no issue's
+ *   work (`fromReleaseBranch`, issue #876);
  * - an open pull request of its repo on a branch named for the issue (`namesIssue`), ready for review, unless it ships a
  *   part (issue #721);
  * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
@@ -171,7 +173,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
   for (const pr of await api.referencingPullRequests(repo, number)) {
     if (pr.repo.toLowerCase() !== repo.toLowerCase()) continue;
     if (isPartOf(pr, repo, number)) { parts.add(pr.url); continue; }
-    if (worksOnAnotherIssue(pr.body, repo, number)) continue;
+    if (worksOnAnotherIssue(pr, repo, number)) continue;
     if (pr.state === 'open' ? counts(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
     if (!found.has(pr.url)) found.set(pr.url, pr);
   }
@@ -218,7 +220,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
  */
 async function ownOpenPullRequests(api: GitHubApi, job: Job, repo: string, number: number): Promise<OpenPullRequest[]> {
   const referencing = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase()
-    && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr.body, repo, number)));
+    && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr, repo, number)));
   const closing = await api.openClosingPullRequests(repo, number);
   const all = [...closing, ...referencing.filter((pr) => !closing.some((c) => c.url === pr.url))];
   return all.filter((pr) => isOwnOrReworked(pr, job) || isUpdatedBy(pr, job));
@@ -269,9 +271,9 @@ export async function ownPullRequestChecks(api: GitHubApi, job: Job): Promise<Ow
   };
 }
 
-/** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n". */
+/** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n"; never one from a release branch (issue #876). */
 export const isPartOf = (pr: ReferencingPullRequest, repo: string, n: number): boolean =>
-  pr.repo.toLowerCase() === repo.toLowerCase() && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
+  pr.repo.toLowerCase() === repo.toLowerCase() && !fromReleaseBranch(pr) && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
 
 /**
  * A pull request body that closes issue `n` of `repo` with one of GitHub's closing keywords (issues #721, #430): close,
@@ -282,10 +284,20 @@ export const closesByKeyword = (body: string, repo: string, n: number): boolean 
   closingReferences(body, repo).some((r) => r.number === n && r.repo.toLowerCase() === repo.toLowerCase());
 
 /**
- * A pull request that only mentions issue `n` and closes or ships part of another issue of `repo` (issue #786): it is that
- * issue's work. Its mention of `n` ("depends on #n") never makes `n` done, and its merge never closes `n`.
+ * A pull request from a release branch (issue #876): a promotion, `dev` into `beta`, whose body lists the issues it
+ * carries. It is no issue's work, whatever its body says.
  */
-export function worksOnAnotherIssue(body: string, repo: string, n: number): boolean {
+export const fromReleaseBranch = (pr: { headRef?: string }): boolean =>
+  pr.headRef !== undefined && RELEASE_BRANCHES.includes(pr.headRef.toLowerCase());
+
+/**
+ * A pull request that only mentions issue `n` and is not its work (issues #786, #876): one from a release branch
+ * (`fromReleaseBranch`), or one that closes or ships part of another issue of `repo` — that issue's work. Its mention of
+ * `n` ("depends on #n") never makes `n` done, it is never followed for `n`, and its merge never closes `n`.
+ */
+export function worksOnAnotherIssue(pr: { body: string; headRef?: string }, repo: string, n: number): boolean {
+  if (fromReleaseBranch(pr)) return true;
+  const { body } = pr;
   if (closesByKeyword(body, repo, n)) return false;
   const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const target = `(?:#|${escaped}#|https://github\\.com/${escaped}/issues/)(\\d+)(?!\\d)`;
@@ -333,7 +345,7 @@ export async function workState(api: GitHubApi, job: Job): Promise<Omit<WorkStat
   const closer = await api.closingPullRequest(repo, number);
   if (closer) add({ ...closer, isDraft: false, conflicting: false }, 'merged');
   for (const pr of await api.openClosingPullRequests(repo, number)) add(pr, 'open');
-  for (const pr of await api.referencingPullRequests(repo, number)) if (pr.repo.toLowerCase() === repo.toLowerCase()) add(pr, pr.state);
+  for (const pr of await api.referencingPullRequests(repo, number)) if (pr.repo.toLowerCase() === repo.toLowerCase() && !fromReleaseBranch(pr)) add(pr, pr.state);
   for (const n of namedNumbers(issue)) {
     const pr = await pullRequestOrNone(api, repo, n);
     if (pr) add(pr, pr.state);

@@ -948,12 +948,13 @@ Version 1 (`docs/schemas/job.pull_request_act_failed.v1.json`). A person's Merge
 
 ## `job.containers_removed`
 
-Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.
+Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there. `details` (issue #975): what the reap said of each container before it removed it — its `name`, `image`, and when it started (`startedAt`) and stopped (`stoppedAt`), each absent when it never did —, which the job's parts list shows; absent from a client older than this.
 
 | field | type | required |
 |---|---|---|
 | `containers` | string[] | yes |
 | `volumes` | string[] | yes |
+| `details` | object[] | no |
 
 ```json
 {
@@ -962,6 +963,15 @@ Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue
   ],
   "volumes": [
     "hopper-test-db"
+  ],
+  "details": [
+    {
+      "id": "3f2a9c1b7d4e",
+      "name": "hopper-test-db",
+      "image": "docker.io/library/postgres:16",
+      "startedAt": "2026-10-08T00:02:00.000Z",
+      "stoppedAt": "2026-10-08T00:09:00.000Z"
+    }
   ]
 }
 ```
@@ -2893,6 +2903,51 @@ Version 1 (`docs/schemas/machine.disk_within_budget.v1.json`). A machine told ov
 }
 ```
 
+## `machine.leftover_kept`
+
+Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `path` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "machineId": "desk",
+  "path": "/home/me/work/.hopper-scratch/test-job",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
+## `machine.leftover_removed`
+
+Version 1 (`docs/schemas/machine.leftover_removed.v1.json`). A person removes a leftover on Machines (issue #1116): the dir at `path` on `machineId` is removed whatever it holds. `unpushed`: it held work not pushed, which is lost; `bytes`: its size when listed. `gone`: it was no longer there. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `path` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+| `unpushed` | boolean | yes |
+| `bytes` | number | no |
+| `gone` | boolean | no |
+
+```json
+{
+  "machineId": "desk",
+  "path": "/home/me/work/.hopper-scratch/repos/acme/app.git",
+  "unpushed": false,
+  "bytes": 1200000000,
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `minor_decision.picked`
 
 Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
@@ -4055,7 +4110,7 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 
 ## `vault.sandbox_approvals_set`
 
-Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person. `rememberWritesHours` (issue #1001): how long a person's write, sync or apply approval is remembered; 0, until an admin forgets it.
+Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person. `rememberWritesHours` (issue #1001): how long a person's write, sync or apply approval is remembered; 0, until an admin forgets it. Issue #1472: `standingReadGrant`, the standing read grant: a job on a box of a template that only reads what the read policy holds gets the vault grant with no person.
 
 | field | type | required |
 |---|---|---|
@@ -4063,6 +4118,7 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 | `skipSandboxApproval` | boolean | yes |
 | `autoApprove` | object | no |
 | `rememberWritesHours` | integer | no |
+| `standingReadGrant` | boolean | no |
 | `by` | string | yes |
 
 ```json
@@ -4215,7 +4271,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for; `standing read grant` (issue #1472) when the user's standing read grant gave it, with no person, to a job on a box of a template that only reads what the read policy holds.
 
 | field | type | required |
 |---|---|---|

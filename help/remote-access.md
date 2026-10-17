@@ -8,7 +8,7 @@ You pick the provider: **Cloudflare Tunnel** or **ngrok**. They are equal choice
 
 - The compose stack runs two services: `cloudflared` and `tunnel` (ngrok). They are required, but they run no tunnel while remote access is off. When it is on, only the service of the provider you picked runs its tunnel.
 - The tunnel's address, for example `https://hopper.example.com`, is the **remote access URL**.
-- Only the API goes through the tunnel: `/api/` (not the event stream), `/ui/api/`, `/ui/auth/api-token` and `/ui/auth/token/refresh`. The UI, its sign-in pages and the installer are not reached from the internet.
+- Only the API goes through the tunnel: `/api/` (not the event stream), `/ui/api/`, `/ui/auth/api-token`, `/ui/auth/token/refresh`, and `/ui/auth/device-grant` with its poll. The UI, its sign-in pages and the installer are not reached from the internet.
 - Each caller has a limit: 120 requests a minute, and 5 token exchanges or refreshes a minute.
 - A request through the tunnel is a public request. It reads or changes something only with an API token. See [API tokens and grants](api-tokens.md).
 

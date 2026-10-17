@@ -21,19 +21,22 @@ export function sandboxSettings(read: (key: string) => string | undefined, write
     getSandboxApprovals() {
       const text = read('sandboxApprovals');
       if (text === undefined) return undefined;
-      const a = JSON.parse(text) as { skipTemplateApproval?: unknown; skipSandboxApproval?: unknown; autoApprove?: Partial<Record<RadiusLevel, unknown>>; rememberWritesHours?: unknown };
+      const a = JSON.parse(text) as { skipTemplateApproval?: unknown; skipSandboxApproval?: unknown; autoApprove?: Partial<Record<RadiusLevel, unknown>>; rememberWritesHours?: unknown; standingReadGrant?: unknown };
       // Issue #1001: a value saved before the auto-approve policy has none; the default holds.
       const auto = a.autoApprove && typeof a.autoApprove === 'object'
         ? { autoApprove: Object.fromEntries(RADIUS_LEVELS.map((l) => [l, a.autoApprove![l] === undefined ? DEFAULT_AUTO_APPROVE[l] : a.autoApprove![l] === true])) as AutoApprove }
         : {};
       // Issue #1001: absent, the default time limit for remembered write approvals holds.
       const hours = typeof a.rememberWritesHours === 'number' ? { rememberWritesHours: a.rememberWritesHours } : {};
-      return { skipTemplateApproval: a.skipTemplateApproval === true, skipSandboxApproval: a.skipSandboxApproval === true, ...auto, ...hours };
+      // Issue #1472: absent, the standing read grant is off.
+      const standing = typeof a.standingReadGrant === 'boolean' ? { standingReadGrant: a.standingReadGrant } : {};
+      return { skipTemplateApproval: a.skipTemplateApproval === true, skipSandboxApproval: a.skipSandboxApproval === true, ...auto, ...hours, ...standing };
     },
     setSandboxApprovals(a) {
       write('sandboxApprovals', JSON.stringify({
         skipTemplateApproval: a.skipTemplateApproval, skipSandboxApproval: a.skipSandboxApproval, ...(a.autoApprove ? { autoApprove: { ...a.autoApprove } } : {}),
         ...(a.rememberWritesHours !== undefined ? { rememberWritesHours: a.rememberWritesHours } : {}),
+        ...(a.standingReadGrant !== undefined ? { standingReadGrant: a.standingReadGrant } : {}),
       }));
     },
     getRememberedWrites() {

@@ -77,7 +77,7 @@ const ruleOf = (ctx: FollowContext, repo: string): ChangeRule => ctx.changeRule?
 const merges = (ctx: FollowContext, repo: string, kind: ChangeKind | undefined): boolean =>
   mergesOnReady(ruleOf(ctx, repo), ctx.yoloMode?.(repo) ?? false, kind);
 
-const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
+export const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 const repoOfPull = (url: string): string => /([^/]+\/[^/]+)\/pull\/\d+/.exec(url)?.[1] ?? '';
 const pushedAtOf = (pr: { createdAt: string; headCommittedAt?: string }): string =>
   (pr.headCommittedAt && pr.headCommittedAt > pr.createdAt ? pr.headCommittedAt : pr.createdAt);
@@ -121,7 +121,7 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
   const closing = newest(await api.openClosingPullRequests(repo, number));
   if (closing) return { url: closing.url, part: false };
   const mention = newest((await api.referencingPullRequests(repo, number))
-    .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr.body, repo, number)));
+    .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number)));
   if (mention) return { url: mention.url, part: isPartOf(mention, repo, number) };
   const branch = newest((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
   return branch && { url: branch.url, part: false };
@@ -206,7 +206,7 @@ async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequ
   return stacked ? undefined : to;
 }
 
-async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
+export async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
   Promise<{ ended: 'merged' | 'closed'; superseded?: string; seen?: PullRequestSeen } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
   const repo = job.source!.repo!;
   if (act === 'close') {
@@ -363,7 +363,7 @@ export const closedAfterMergeComment = (url: string): string =>
  */
 async function closeAfterMerge(api: GitHubApi, repo: string, number: number, url: string): Promise<boolean> {
   const pr = (await api.referencingPullRequests(repo, number)).find((p) => p.url === url);
-  if (pr && (isPartOf(pr, repo, number) || worksOnAnotherIssue(pr.body, repo, number))) return false;
+  if (pr && (isPartOf(pr, repo, number) || worksOnAnotherIssue(pr, repo, number))) return false;
   // Closed first: a sync after a failed comment finds it closed as completed, the item done.
   await api.closeAsCompleted(repo, number);
   await api.postComment(repo, number, closedAfterMergeComment(url));

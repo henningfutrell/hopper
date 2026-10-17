@@ -5,7 +5,7 @@
 // (`security_and_analysis`). GitHub shows the branch protection and the security settings only to a repository admin:
 // a 403 or 404 there, or a missing field, is unread, never "off". Each GET goes through `read`: a conditional read
 // (issue #1250, conditional.ts).
-import { RELEASE_BRANCHES } from '../github-proxy/index.ts';
+import { RELEASE_BRANCHES } from '../domain/landing-batches.ts';
 import { branchSetup, type BranchProtectionRead, type RepoSetupFound } from '../domain/types.ts';
 import { splitRepo, statusOf } from '../sources/github/http/http.ts';
 

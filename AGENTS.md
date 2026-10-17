@@ -50,7 +50,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   sealed to that request; it records only the delivery or refusal. **The vault gives only to a job a person granted it**
   (issue #652, `docs/design.md` "Vault grants"): a box job's item with no **vault grant** is refused and becomes a grant
   ask; Grant and Revoke are a person's acts through the UI session, after Access (`vault_grant#can_grant`); a job asks,
-  never grants. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
+  never grants. One exception, the user's own setting: the **standing read grant** (issue #1472, off by default), an admin's
+  toggle with the sandbox approvals, grants a job on a box of a template whose needs the read policy holds entirely as reads,
+  with no vault secret, and records it as `vault.granted` by the setting; a template with a write, sync or apply, a read
+  outside the policy or a secret still waits for a person's grant, and turned off it grants no job that has not asked yet. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
   with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential
@@ -102,7 +105,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most
   (5–15 minutes), its role no higher than its minter's, refreshed from a **grant** a person minted from a UI session (issue
   #881, `docs/design.md` "Grants and refresh tokens": `POST /ui/auth/token/refresh` with a one-time refresh token, only
-  its hash kept; a spent one sent again ends the grant) or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
+  its hash kept; a spent one sent again ends the grant; or one an agent asked for at `POST /ui/auth/device-grant`, which a
+  person approved by its user code through the UI session, never an API token, and the agent takes once at its poll, issue
+  #892, `docs/design.md` "Grants by device approval") or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
   accepts, never by another API token; a grant's token uses only the routes its scopes name, deny by default; Access decides
   each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it. A
   **box action** (issue #795: starts a job, runs a command, approves or merges, updates, changes the work on a machine) also
@@ -146,7 +151,7 @@ a conflict GitHub cannot merge files one issue the same way as a fix issue, its 
 (`landing_batch.back_merge_issue_filed`). **Pull request housekeeping** (issue #1143, `docs/design.md` "Pull request housekeeping") is the hopper's
 care of a job's open pull request it follows, or a **stray** one (a job named it, no job follows it, no job of its item
 works on it; part 4), or an **untracked** one of an item the ledger holds, on a branch named for its issue (issue #1176,
-`docs/design.md` "Untracked pull requests"; only the move): it moves one based off the landing branch to it, closes one with nothing
+`docs/design.md` "Untracked pull requests"; only the move, and the close of a **second pull request** on a branch named for its issue with merge conflicts, issue #1208): it moves one based off the landing branch to it, closes one with nothing
 left to land, and posts on the pull request one fixed comment for each such act and for each tend job it starts,
 naming no person; the batch runner's move of a job's pull request from the tested branch, followed or not, posts the same
 comment. A job's own request through the GitHub proxy (issue #563) is

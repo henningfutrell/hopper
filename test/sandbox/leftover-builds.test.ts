@@ -10,12 +10,14 @@
 //   Scenario: the removal removes each leftover build, never forced, and says how many it removed
 //   Scenario: a runtime that lists no images removes nothing
 //   Scenario: the reconcile pass removes leftover builds at most once an hour
+//   Scenario: the reconcile pass removes leftover builds on a client target too, through its client (issue #1202)
 import { describe, expect, it } from 'vitest';
-import type { ListedImage, SandboxRecord } from '../../src/domain/sandboxes.ts';
+import type { ListedImage, RuntimeRelay, SandboxRecord } from '../../src/domain/sandboxes.ts';
 import type { SandboxRepository } from '../../src/domain/store.ts';
 import { LEFTOVER_BUILD_MS, LEFTOVER_PASS_MS, leftoverBuilds, removeLeftoverBuilds } from '../../src/sandbox/leftover-builds.ts';
 import { createSandboxes } from '../../src/sandbox/service.ts';
 import { TOOLS_IMAGE, TOOLS_STAGE_LABEL } from '../../src/sandbox/tools.ts';
+import type { ClientTargets } from '../../src/sandbox/runtime.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { memorySandboxRuns } from '../support/sandbox-runs.ts';
 
@@ -94,5 +96,45 @@ describe('leftover box builds (issue #1120)', () => {
     now = new Date(NOW.getTime() + LEFTOVER_PASS_MS);
     await sandboxes.burnLaunched();
     expect(again.removed).toEqual(['sha256:tbbbb']);
+  });
+
+  it('the reconcile pass removes leftover builds on a client target too, through its client (issue #1202)', async () => {
+    const id = (c: string): string => c.repeat(64);
+    let listed = [
+      { Id: id('a'), RepoTags: [`${TOOLS_IMAGE}:0123456789abcdef`], Created: OLD / 1000, Labels: {} },
+      { Id: id('b'), RepoTags: [`${TOOLS_IMAGE}:fedcba9876543210`], Created: OLD / 1000, Labels: {} },
+      { Id: id('c'), RepoTags: null, Created: NEW / 1000, Labels: { [TOOLS_STAGE_LABEL]: 'fetch' } },
+    ];
+    const removed: string[] = [];
+    const answer = (status: number, body: unknown) => ({ status, text: JSON.stringify(body) });
+    const relay: RuntimeRelay = {
+      which: async () => ({ kind: 'podman' }),
+      call: async (c) => {
+        const url = new URL(c.path, 'http://localhost');
+        const path = url.pathname.replace('/v5.0.0/libpod', '');
+        // A container of the person's own there uses one build: every container, not the hopper's labelled boxes.
+        if (c.method === 'GET' && path === '/containers/json') return answer(200, url.searchParams.has('filters') ? [] : [{ Id: 'c1', Names: ['theirs'], Image: `${TOOLS_IMAGE}:fedcba9876543210`, Labels: {}, State: 'exited' }]);
+        if (c.method === 'GET' && path === '/images/json') return answer(200, listed);
+        const m = /^\/images\/([^/]+)$/.exec(path);
+        if (c.method === 'DELETE' && m) {
+          removed.push(decodeURIComponent(m[1]!));
+          listed = listed.filter((i) => i.Id !== decodeURIComponent(m[1]!));
+          return answer(200, [{ Deleted: m[1] }]);
+        }
+        return answer(404, { message: 'no such thing' });
+      },
+    };
+    const clients: ClientTargets = Object.assign(
+      (userId: string, machine: string) => (userId === 'u1' && machine === 'studio' ? { relay } : undefined),
+      { dialledIn: () => ['studio'], allDialledIn: () => [{ userId: 'u1', machine: 'studio' }], known: () => true },
+    );
+    const lines: string[] = [];
+    const sandboxes = createSandboxes({
+      runtime: undefined, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host', clients,
+      clock: { now: () => NOW }, logger: { info: (l: string) => lines.push(l), warn() {} },
+    });
+    await sandboxes.burnLaunched();
+    expect(removed).toEqual([id('a')]);
+    expect(lines).toContain('hopper: removed 1 leftover box build on studio (images it built for box tools more than 7 days ago that no box uses)');
   });
 });
