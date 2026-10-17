@@ -29,6 +29,7 @@ const OFF: Record<string, string> = {
   vault: 'secrets kept in the HashiCorp Vault vault backend',
   tunnel: 'remote access: the ngrok tunnel set in Settings → Remote access does not start',
   cloudflared: 'remote access: the Cloudflare tunnel set in Settings → Remote access does not start',
+  egress: 'read-only boxes: a read-only box and the read-only check box do not start, as nothing limits their egress',
   solr: 'search: jobs cannot be searched until Solr runs; the index catches up by itself then',
 };
 

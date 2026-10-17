@@ -34,6 +34,8 @@ export interface Probe {
   backend?: true;
   /** What a person reads when it fails: why it can fail on a credential that is right (issue #869). */
   note?: string;
+  /** It probes the box, not an asset (issue #849): it runs once per check, for the first need of one of its kinds. */
+  once?: true;
 }
 
 /**

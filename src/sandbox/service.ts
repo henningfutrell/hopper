@@ -14,6 +14,7 @@ import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
 import { outcomeOf, type SandboxRun, type SandboxRunRepository } from '../domain/sandbox-runs.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
+import type { Egress } from './egress.ts';
 import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { burnLaunched, type Problems } from './burn-launched.ts';
@@ -61,6 +62,11 @@ export interface SandboxesOptions {
   instanceId: string;
   /** The network a box joins (`hopper_default` beside the compose hopper, `host` beside one on the host). */
   network: string;
+  /**
+   * A read-only box's egress beside the hopper (issue #849): a need box of a read-only template and the check box join its
+   * internal network and reach out through its proxy. Absent: they join `network`, with open egress.
+   */
+  egress?: Egress;
   /** The hopper runs in a Kubernetes pod (issue #1289): with no runtime, that is said, not a socket to give. */
   cluster?: boolean;
   /** A user's client target by name, for a box on it (the remote runtime); absent: boxes start only beside the hopper. */
@@ -101,7 +107,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const down = new Map<string, string>();
   let buildsAt = -Infinity;
   const noRuntime = o.cluster ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME;
-  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}) });
+  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}), ...(o.egress ? { egress: o.egress } : {}) });
 
   /**
    * Each client target to look on (issue #1349): every one dialled in now, and each one `also` names. One that cannot
@@ -253,7 +259,15 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       stepping.add(box.name);
       let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
       try {
-        r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, network: at.network }, io);
+        // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts.
+        const egress = box.template.readOnly ? at.egress : undefined;
+        const held = egress ? await egress.allow(box.reaches ?? []).then(() => undefined, (e: unknown) => (e instanceof Error ? e.message : String(e))) : undefined;
+        if (held) {
+          r = { exit: 125, problem: held };
+          return r;
+        }
+        const placed = egress ? { network: egress.network, env: { ...box.env, ...egress.env } } : { network: at.network };
+        r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, ...placed }, io);
         o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${r.problem ? `: ${r.problem}` : ''}`);
         return r;
       } finally {

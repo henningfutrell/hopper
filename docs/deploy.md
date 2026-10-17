@@ -1531,6 +1531,38 @@ or an approved template's image. A job names only a template and its command, ne
 Turn it off: `export HOPPER_PODMAN_SOCKET_HOST=/dev/null` and run `podman compose up -d`, or turn `podman.socket` off
 and run the update.
 
+### A read-only box's egress
+
+On by default in `compose.yaml` (issue #849). A need box of a read-only template, and the read-only check box, beside
+the hopper join the internal network `hopper_egress` (`internal: true`: no route out). The only way out is the compose
+service `egress`: tinyproxy, from the hopper's image, on that network and on `hopper_default`. It lets a box CONNECT only
+to:
+
+- `*.amazonaws.com` (STS, S3, SSM and the other AWS APIs the read session reads),
+- the API server of each cluster the vault minted a credential for a read-only box (its `server`), and an STS endpoint a
+  minting credential names that is not AWS's,
+- nothing else: any other host is refused (403). The box reaches the hopper past the proxy: the hopper is on
+  `hopper_egress` too.
+
+The box gets `HTTPS_PROXY` (and `NO_PROXY=hopper`); `aws`, `kubectl`, `helm` and `terraform` obey it. A process in the box
+that unsets it has no route at all. The hopper writes the allowlist into the `egress` volume (`/run/hopper-egress`) before
+each read-only box starts and waits until the proxy loaded it; the allowlist only grows while the hopper runs. A proxy
+that does not load it in 30 seconds fails the box, with that reason: a read-only box never starts with open egress.
+
+The variables, all three together: `HOPPER_SANDBOX_EGRESS_NETWORK` (`hopper_egress`), `HOPPER_SANDBOX_EGRESS_PROXY`
+(`http://egress:3128`) and `HOPPER_SANDBOX_EGRESS_DIR` (`/run/hopper-egress`). They apply to the runtime beside the hopper
+(Podman or Docker) only.
+
+**The check proves it.** The read-only check's egress probes (`egress.aws`, `egress.kube`) send one request to
+`https://example.com`, with no credential, past the proxy and through it; each must fail to connect. Where the egress is
+open — a hopper on the host with no egress variables, or a check that runs on one of your machines ("Sandboxes on
+another machine") — the probes reach it, the check fails, and the template takes no box. A probe of a write takes no
+mark ("The read-only check" in docs/design.md), so the fix is to run the check where the egress is limited: in the
+compose stack.
+
+Check it by hand: `podman logs hopper-egress-1` shows `egress: the allowlist <version> is loaded`, and each refused host
+as `Proxying refused on filtered domain`.
+
 ### Sandboxes on another machine
 
 A machine that joined with Add machine can run sandboxes too (issue #708). The hopper starts them in that machine's

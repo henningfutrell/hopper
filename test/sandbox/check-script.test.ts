@@ -45,9 +45,11 @@ describe('the read-only check script (issue #716)', () => {
     const writes = results.filter((r) => r.expect === 'denied');
     expect(writes.length).toBeGreaterThan(0);
     // Every write that reaches the account goes through. Only the terraform wrapper (issue #715) still refuses its own,
-    // and the provider mirror still has no provider it does not hold: neither asks the account.
+    // the provider mirror still has no provider it does not hold, and the egress (issue #849) still reaches no host off
+    // the allowlist: none of them asks the account.
     const ownRefusal = (r: { id: string; output: string }): boolean => r.output.includes('refused by the read-only wrapper') || (r.id === 'terraform.provider-download' && r.output.includes('not found in any of the search locations'));
-    expect(writes.filter((r) => r.passed).every((r) => r.id.startsWith('terraform.') && !r.id.endsWith('-direct') && ownRefusal(r))).toBe(true);
+    expect(writes.filter((r) => r.passed && !r.id.startsWith('egress.')).every((r) => r.id.startsWith('terraform.') && !r.id.endsWith('-direct') && ownRefusal(r))).toBe(true);
+    expect(writes.filter((r) => r.id.startsWith('egress.')).map((r) => [r.id, r.outcome])).toEqual([['egress.aws', 'denied'], ['egress.kube', 'denied']]);
     expect(results.find((r) => r.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'allowed', passed: false });
     expect(results.find((r) => r.id === 'terraform.destroy-direct')).toMatchObject({ outcome: 'allowed', passed: false });
     // The state push to the probe key went through: it fails, and the cleanup deletes that key, and only that key (issue #715).
@@ -68,7 +70,7 @@ describe('the read-only check script (issue #716)', () => {
     expect(results.map((r) => r.id)).toEqual([
       'terraform.plan', 'terraform.apply', 'terraform.apply-direct', 'terraform.destroy-direct', 'terraform.state-push-direct', 'terraform.destroy', 'terraform.import', 'terraform.state-rm',
       'terraform.state-mv', 'terraform.state-push', 'terraform.taint', 'terraform.force-unlock', 'terraform.workspace-new', 'terraform.workspace-delete',
-      'terraform.provider-download',
+      'terraform.provider-download', 'egress.aws',
     ]);
     expect(results.every((r) => r.passed)).toBe(true);
     // The wrapper refused apply on PATH; only the real binary, called past it, reached the account and was refused there.

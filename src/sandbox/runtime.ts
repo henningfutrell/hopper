@@ -7,6 +7,7 @@
 //   The box is on that machine's network.
 import { statSync } from 'node:fs';
 import type { ContainerRuntime, RuntimeKind, RuntimeRelay } from '../domain/sandboxes.ts';
+import type { Egress } from './egress.ts';
 import { createDockerRuntime } from './docker.ts';
 import { createKubernetesRuntime } from './kubernetes.ts';
 import { createPodmanRuntime } from './podman.ts';
@@ -88,12 +89,13 @@ export interface Placements {
   runtimeOf(userId: string, machine: string): ContainerRuntime | undefined;
   /**
    * Where a read-only check of the user's template runs (issue #708): beside the hopper when it is given a runtime, else
-   * on the first of the user's client targets dialled in now with a runtime there. Undefined: nowhere now.
+   * on the first of the user's client targets dialled in now with a runtime there. Undefined: nowhere now. `egress`: a
+   * read-only box there joins its internal network and reaches out through its proxy (issue #849); only beside the hopper.
    */
-  forCheck(userId: string): Promise<{ machine: string; runtime: ContainerRuntime; network: string } | undefined>;
+  forCheck(userId: string): Promise<{ machine: string; runtime: ContainerRuntime; network: string; egress?: Egress } | undefined>;
 }
 
-export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets }): Placements {
+export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets; egress?: Egress }): Placements {
   // Made at each look: a machine that joined again under the same name has a new link key.
   const remote = (userId: string, machine: string): ContainerRuntime | undefined => {
     const target = o.clients?.(userId, machine);
@@ -103,7 +105,7 @@ export function createPlacements(o: { local: ContainerRuntime | undefined; netwo
     local: o.local,
     runtimeOf: (userId, machine) => (machine === LOCAL ? o.local : remote(userId, machine)),
     async forCheck(userId) {
-      if (o.local) return { machine: LOCAL, runtime: o.local, network: o.network };
+      if (o.local) return { machine: LOCAL, runtime: o.local, network: o.network, ...(o.egress ? { egress: o.egress } : {}) };
       for (const machine of o.clients?.dialledIn(userId) ?? []) {
         const runtime = remote(userId, machine);
         if (runtime && (await runtime.problem()) === undefined) return { machine, runtime, network: REMOTE_NETWORK };

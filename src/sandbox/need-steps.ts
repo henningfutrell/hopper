@@ -236,7 +236,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       const env = needEnv({ command: s.command, outputs: s.outputs, ...(s.plan ? { plan: s.plan } : {}), credentials });
       const files = { ...(inputs ? { inputs: join(dir, 'inputs.tar') } : {}), ...(planFile ? { plan: planFile } : {}) };
       const r = await o.run({
-        name: s.box, template: s.template, env, timeoutMs: s.timeoutSeconds * 1000,
+        name: s.box, template: s.template, env, reaches: credentials.map((c) => c.reach), timeoutMs: s.timeoutSeconds * 1000,
         dir, ...(Object.keys(files).length > 0 ? { files } : {}),
       }, { log: masked.write, signal: AbortSignal.any([signal, stopped.signal]) }, { jobId: s.jobId, step: s.id, template: s.template.name });
       outputs = r.outputs;
