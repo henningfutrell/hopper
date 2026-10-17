@@ -110,6 +110,7 @@ main() {
     elif [ "$sealed" = 0 ] && [ "$(bash master-key.sh unseal 2>/dev/null || true)" != "$HOPPER_MASTER_KEY" ]; then
       fail 'the master key given is not the one sealed to this host, which hopper-compose.service starts the stack with: seal the right key (bash master-key.sh seal), then run the update again. Nothing changed'
     fi
+    repair_units
     if [ "$service_key" = 1 ]; then
       say 'hopper-compose.service owns the stack: the update stops and starts it through the service, with the master key given to this update (none is sealed here)'
     else
@@ -228,6 +229,21 @@ restart_stack() {
   "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
   clear_one_shot "$runtime"
   "${compose[@]}" up -d </dev/null >&2
+}
+
+# The units an older hopper-service.sh wrote with WorkingDirectory quoted, which systemd refuses, so the restart fails
+# (issue #1453): the quotes taken out, and the user manager loads them again.
+repair_units() {
+  local unit file changed=0
+  for unit in hopper-compose.service hopper-compose-check.service; do
+    file="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$unit"
+    [ -f "$file" ] && grep -q '^WorkingDirectory="' "$file" || continue
+    sed -i 's/^WorkingDirectory="\(.*\)"$/WorkingDirectory=\1/' "$file"
+    changed=1
+  done
+  [ "$changed" = 1 ] || return 0
+  systemctl --user daemon-reload </dev/null >&2 || fail 'systemctl --user daemon-reload failed after the WorkingDirectory of hopper-compose.service was repaired. Nothing else changed'
+  say 'repaired WorkingDirectory in the hopper-compose units (it was quoted, which systemd refuses)'
 }
 
 # hopper-compose.service restarted. With no key sealed here (issue #1372), the key given to this update goes into the user
