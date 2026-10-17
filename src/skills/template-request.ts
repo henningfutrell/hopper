@@ -18,11 +18,13 @@
 // Then a person's remembered write approvals: each write, sync or apply need one a person approved before for that asset
 // and access, and each read approved with no person (src/domain/remembered-writes.ts). A template keeps the purpose and
 // the plan of the job that asked for it first, for the card a person decides on.
+// Issue #1779: a template whose check failed as the vault minted nothing for a read need is a 409, not a wait: it cannot
+// pass until a person fixes the minting credential, so the job is told which needs mint, and asks for those.
 import { createHash } from 'node:crypto';
-import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
+import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type Asset, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { OPERATOR_CLI_NAME } from '../domain/failures.ts';
 import { mintKindFor } from '../domain/minting.ts';
-import { checkWait } from '../domain/read-only-check.ts';
+import { checkWait, currentCheck, unmintedNeeds, type Unminted } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import { AUTO_APPROVER, autoApproves, NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
@@ -150,6 +152,23 @@ function loads(needs: readonly OperationProfile[]): string {
   }).join('\n');
 }
 
+/** The part of an asset's name that names its account or cluster: `167028478405` of `167028478405/readonly`. */
+const scopeOf = (a: Asset): string => `${a.kind}/${a.name.split('/')[0]}`;
+
+/**
+ * Why a template cannot pass its read-only check (issue #1779): the needs the vault minted nothing for, with its reasons,
+ * and the read needs on the same accounts or clusters a check of another template passed with, which mint now.
+ */
+function cannotMint(u: Pick<TemplateRequestUser, 'templates'>, t: TemplateView, unminted: readonly Unminted[]): string {
+  const scopes = new Set(unminted.map((x) => scopeOf(x.asset)));
+  const failed = new Set(unminted.map((x) => `${x.asset.kind}/${x.asset.name}`));
+  const mint = new Set(u.templates().filter((x) => currentCheck(x)?.state === 'passed').flatMap((x) => (x.profiles ?? [])
+    .filter((p) => p.operation === 'read' && scopes.has(scopeOf(p.asset)) && !failed.has(`${p.asset.kind}/${p.asset.name}`)).map(keyOf)));
+  const why = unminted.map((x) => `read on ${x.asset.kind} ${x.asset.name}: ${x.reason}`).join('; ');
+  const instead = mint.size > 0 ? `These read needs on the same account or cluster passed a check: ${[...mint].join(' ')}. Ask for them in its place` : 'Ask for a read need the vault mints for in its place';
+  return `template ${t.name} cannot pass its read-only check: the vault minted no credential for ${why}. ${instead}. When a person sets the minting credential again, the hopper runs the check again by itself.`;
+}
+
 /** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */
 function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined): string[] {
   return [
@@ -262,6 +281,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     const why = outsidePolicy(needs, u.policy());
     return { status: 202, template: name, text: `waiting: template ${name} waits for a person on Access requests: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
   }
+  const unminted = unmintedNeeds(t);
+  if (unminted.length > 0) return { status: 409, reason: cannotMint(u, t, unminted) };
   const checking = checkWait(t);
   if (checking) return { status: 202, template: name, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };
   const who = `approved by ${approverOf(t)}`;

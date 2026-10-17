@@ -12,7 +12,7 @@ import type {
 import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, furtherAccount, providerOfKey, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { pullRequestSettings, storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
-import { createEngine, type Engine } from '../engine/index.ts'; import type { JobMoveData } from '../engine/lost-move.ts';
+import { createEngine, type Engine } from '../engine/index.ts'; import type { JobMoveData } from '../engine/lost-move.ts'; import type { JobRunData } from '../engine/job-run.ts';
 import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts';
@@ -56,7 +56,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts'; import { traceJobs } from '../telemetry/jobs.ts'; import { recordOutcomes } from '../telemetry/outcomes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import { stampKeyOf } from '../domain/trust-stamp.ts'; import { createClaudeDrafter } from '../issue-drafts/claude.ts'; import { hostname } from 'node:os'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -126,7 +126,8 @@ export interface UserRuntimeOptions {
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
   /** Begins a `job-move` saga for this user's job that moves off its lost machine (issue #1569). Absent: such a job fails. */
-  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
+  /** This user's `job-run` sagas (issue #1662): a claim's run is one, driven on any hopper. Absent: each run is driven where it was claimed. */
+  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; jobRuns?: { begin(userId: string, key: string, data: JobRunData): boolean; open(userId: string, jobIds: readonly string[]): Set<string> }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -224,7 +225,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
-  const { key: hopperLink, transport: clientTransport, named: clientNamed } = link;
+  // Trust stamps (issue #655): every job made from here on is stamped; a job that has not ended and has none is stamped now.
+  const { key: hopperLink, transport: clientTransport, named: clientNamed } = link; const backfilled = store.jobs.useStampKey(stampKeyOf(hopperLink.privateKey, user.id)); if (backfilled.length) logger.info(`hopper: ${backfilled.length} job(s) of ${user.id} had no trust stamp and were stamped by the rules`);
   // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];
@@ -370,7 +372,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // The sandboxes a waiting job's prompt names are asked for before it starts, and hold it until approved and ready (issue #1471).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins), sandboxesHeld: (waiting) => sandboxesHeld(sandboxRequests, () => vault.view().templates, waiting),
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
-    jevFirst: minorDecisions, ...(o.jobMoves ? { jobMoves: { begin: (key: string, data: JobMoveData) => o.jobMoves!.begin(user.id, key, data) } } : {}),
+    jevFirst: minorDecisions, ...(o.jobMoves ? { jobMoves: { begin: (key: string, data: JobMoveData) => o.jobMoves!.begin(user.id, key, data) } } : {}), ...(o.jobRuns ? { jobRuns: { begin: (key: string, data: JobRunData) => o.jobRuns!.begin(user.id, key, data), open: (ids: readonly string[]) => o.jobRuns!.open(user.id, ids) } } : {}),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
@@ -384,12 +386,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, clock, logger, sweepMs: config.tickMs, lease: lease('failures'),
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
-    resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
+    resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
     // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source; Own PR unfinished (issue #1265): the step that finishes it.
     workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs, unfinishedPullRequest: async (job) => sourceOf(job)?.unfinishedPullRequest?.(job),
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
-  sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
+  sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   // Each job one trace (issue #1486, design.md "Telemetry"): built from its events; a no-op while telemetry is off.
   const stopFailureLog = logFailures(store), jobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) });

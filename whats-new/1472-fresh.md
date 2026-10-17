@@ -1,0 +1,1 @@
+- Work that a job did not push can now be pushed also when the job's earlier session cannot go on: the job starts again in its kept work, with its task, and pushes it.

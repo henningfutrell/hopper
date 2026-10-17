@@ -1184,10 +1184,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
   to add. The AWS session is named `hopper-read-only-check` (or `<prefix>read-only-check`, or the fixed `SessionName`).
   Set `Region` in an AWS minting credential when the account's services are not in `us-east-1`.
-- **`helm list` needs read access to Secrets** (issue #869). helm keeps each release in a Secret, and the built-in
-  `view` role cannot read Secrets. On a view role the `helm.list` probe is Forbidden and fails: that is expected, and
-  the check report says so under it. To make it pass, give the minted role read (`get`, `list`) on `secrets` in the
-  namespaces it lists. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
+- **`helm list` reads Secrets** (issues #869, #1736). helm keeps each release in a Secret, and the built-in `view` role
+  (EKS `AmazonEKSViewPolicy`) cannot read Secrets. On a view role the `helm.list` probe is Forbidden on secrets: that is
+  right for a read credential, and the probe passes. The check report names it and says why. A refusal of anything else
+  still fails the probe. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
   each one must be refused.
 - **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
   ("Sandboxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
@@ -1281,6 +1281,11 @@ Other metrics show how work goes (docs/design.md "Telemetry: how work goes"): `h
 class, and the assessor's decision), `hopper_job_retries_total`, `hopper_question_escalations_total` by level,
 `hopper_handoffs_total`, `hopper_sandbox_requests_total` and `hopper_sandbox_spin_up_duration_seconds`, and
 `hopper_landing_batch_ended_total` by outcome.
+
+Each sync of a job source, and each batch of GitHub changes the outbox sends, is a trace of its own (docs/design.md
+"Telemetry: the outbox and the sync"): `hopper.source.sync` and `hopper.outbox.flush` in Tempo, with their GitHub calls,
+and a link to the request that asked for them. The metrics are `hopper_source_sync_duration_seconds` by source and
+outcome, `hopper_outbox_batch_size`, `hopper_outbox_calls_total` by result, and `hopper_outbox_rows_coalesced_total`.
 
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 
@@ -1757,6 +1762,47 @@ What to expect:
 Without the chart, give the same: a Secret with the key (`openssl rand -hex 32`), mounted into the hopper's pod with
 `HOPPER_LANE_POOL_KEY_FILE` naming its file, and a StatefulSet like `deploy/helm/hopper/templates/lanes.yaml`.
 
+### Lane pods of another release
+
+Lane pods can join a hopper that is not in their release (issue #1454, design.md "Lane pods of another release"): a
+compose hopper, or a hopper on another cluster. A **runner-only release** of the chart is the lane pods alone, with no
+hopper, Postgres, OpenFGA or Solr. Its pods join with a lane pool key that the hopper issues. The hopper does not start
+again. Each pod is a machine of the person who made the key. It holds no credential of the hopper's host and mounts no
+host path, so it is ready where a host machine that holds user credentials is not (issue #1248).
+
+1. In the hopper, open Machines → **Add machine** → **Pods on Kubernetes** and select **Make a key**. Set the URL that the
+   pods reach the hopper at. It must be a name the hopper answers to: a LAN name (`HOPPER_LAN_NAMES`, an allowed host),
+   or the public URL. A pod reaches a LAN name only from a LAN peer (`HOPPER_LAN_PEERS`): add the cluster's node or pod
+   network there. Or run `hopper pool-key` (the operator CLI) to print a key.
+2. Copy the two commands the page shows and run them where `kubectl` reaches the cluster, from a checkout of the hopper's
+   repository:
+
+   ```sh
+   kubectl create namespace hopper-runner && \
+     kubectl -n hopper-runner create secret generic runner-pool-key --from-literal=key='<key>'
+   helm install runner deploy/helm/hopper -n hopper-runner --set hopper.enabled=false --set lanes.replicas=1 \
+     --set lanes.hopperUrl='https://hopper.example.com' --set lanes.existingSecret=runner-pool-key
+   ```
+
+3. The pod `runner-hopper-lanes-0` shows on Machines, online. Set more pods with `--set lanes.replicas=3` on a
+   `helm upgrade runner deploy/helm/hopper -n hopper-runner --reuse-values`.
+
+| value | |
+|---|---|
+| `hopper.enabled` | `false`: a runner-only release. Default `true` |
+| `lanes.hopperUrl` | the URL the pods join and dial in at: `http://` or `https://`, a host and a port, no path. Needed with `hopper.enabled=false`. Empty: the release's own hopper |
+| `lanes.existingSecret` | a Secret with the lane pool key under `key`. Needed with `hopper.enabled=false`. With the hopper on, the hopper reads it too, and the chart makes no `hopper-lane-pool` |
+
+- The page shows the key once: the hopper keeps only its hash. **Make a new key** replaces it. **Revoke the key** (or
+  `hopper pool-key --revoke`) stops new joins. Pods that joined stay machines, until you remove them on Machines.
+- A pod joins again at each start with the key. After a new key, put it in the Secret, then restart the pods
+  (`kubectl -n hopper-runner rollout restart statefulset/runner-hopper-lanes`).
+- The agent's sign-in comes from the vault with each job, as for the chart's own lane pods (step 3 above).
+- **Manual check** (no CI runner has a compose hopper and a cluster together): start a compose hopper with its port
+  reachable from the cluster, do steps 1 to 3, and see the machine online and ready on Machines. Then label an issue
+  so the hopper takes it, and see a job start on `runner-hopper-lanes-0`. `kubectl -n hopper-runner get pod
+  runner-hopper-lanes-0 -o yaml` shows no `hostPath` volume.
+
 ## Vault backends (optional)
 
 The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,
@@ -2158,12 +2204,7 @@ that needs one of those goes there). It reads the repository only and uses no se
 passed on it; this is that check. To have GitHub hold every merge to it, make `pr / test` a required status
 check in the branch protection of `dev` (Settings → Branches): an owner's step, not the workflow's.
 
-**Agent boxes** (`docs/design.md` "Agent boxes"): `bash scripts/agent-boxes.sh` starts one container per
-agent CLI (claude, codex, cursor, omp, opencode), each an ssh target with its own herdr session, and
-attaches every one to the hopper, running its agent's executor. It finds the hopper itself: the compose
-container (the boxes join its network; nothing to copy, no database to reach) or, with
-`HOPPER_DATABASE_URL`, one installed here. Run it again any time: it puts every box back as it should be.
-`--sign-in` signs in the agents not signed in yet (opencode needs none); `ssh -t hopper-box-<agent>` opens
-a terminal there. `--check` proves the hopper in its container reaches every box: ssh as the hopper,
-the box's herdr session running, its agent CLI answering — one line per box, exit 1 on any failure.
-`--remove` takes them away again.
+**Box images of every agent** (issue #865, `docs/design.md` "Agent boxes"): the image workflow publishes
+`ghcr.io/henningfutrell/hopper:box-<agent>` for claude, codex, cursor, omp and opencode (`scripts/box/Dockerfile`,
+build argument `AGENT`). The sandbox playground and the lane pods (`lanes.agent`) run them. `scripts/agent-boxes.sh`
+went with issue #865: its ssh agent boxes were for testing only.

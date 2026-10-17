@@ -2,7 +2,7 @@
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS as SERVER_TOOLS } from '../../src/domain/sandboxes.ts';
-import { approvalText, BOX_TOOLS, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, profileAskOf, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, BOX_TOOLS, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, profileAskOf, kindChoices, mintsOf, mintsValueOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -95,6 +95,18 @@ describe('a minting credential on the page (issue #580)', () => {
     expect(mintsOf('aws-account/123456789012')).toEqual({ kind: 'aws-account', name: '123456789012' });
     expect(mintsOf('namespace/lab/web')).toMatch(/cluster\/NAME or aws-account\/ID/);
     expect(mintsOf('cluster/')).toMatch(/cluster\/NAME or aws-account\/ID/);
+  });
+
+  it('shows an AWS account\'s minting credential as one JSON value with both keys, and says why a value is not one (issue #1761)', () => {
+    const aws = { kind: 'aws-account', name: '123456789012' } as const;
+    expect(mintsValueOf(undefined, 'anything')).toEqual({});
+    expect(mintsValueOf(aws, '')).toEqual({ shape: expect.stringContaining('"AccessKeyId"') });
+    expect(mintsValueOf(aws, '')).toEqual({ shape: expect.stringContaining('"SecretAccessKey"') });
+    expect(mintsValueOf(aws, JSON.stringify({ AccessKeyId: 'AKIAEXAMPLE', SecretAccessKey: 'secret' })).problem).toBeUndefined();
+    expect(mintsValueOf(aws, 'AKIAEXAMPLE').problem).toMatch(/AccessKeyId and SecretAccessKey/);
+    expect(mintsValueOf(aws, 'AKIAEXAMPLE').problem).not.toContain('AKIAEXAMPLE');
+    expect(mintsValueOf(aws, JSON.stringify({ AccessKeyId: 'AKIAEXAMPLE' })).problem).toMatch(/AccessKeyId and SecretAccessKey/);
+    expect(mintsValueOf({ kind: 'cluster', name: 'lab' }, 'x')).toEqual({ shape: expect.stringContaining('"server"') });
   });
 });
 

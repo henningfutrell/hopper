@@ -1301,6 +1301,42 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
 }
 ```
 
+## `job.quarantined`
+
+Version 1 (`docs/schemas/job.quarantined.v1.json`). A person, or an agent over the API, quarantined the job (issue #655, `POST /ui/api/jobs/:id/quarantine`): its trust stamp is signed `quarantined`, so the decider holds it, and its proxy token opens no door of the hopper (the GitHub proxy, git, the vault, skills, steps, artifacts, its stream) — a running job keeps its pane, but reaches nothing through the hopper. `was`: its trust level before, the level a lift gives back; absent when its stamp did not verify. Who (`person`) and how (`via`).
+
+| field | type | required |
+|---|---|---|
+| `was` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "was": "trusted",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
+## `job.unquarantined`
+
+Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with a box token, lifted the job's quarantine (issue #655, `POST /ui/api/jobs/:id/unquarantine`): its stamp is signed at `level` again — the level it had before its quarantine, or the rules' level when none was kept. Who (`person`) and how (`via`).
+
+| field | type | required |
+|---|---|---|
+| `level` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "level": "trusted",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
 ## `terminal.opened`
 
 Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/screen`), or the machine's (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
@@ -1643,6 +1679,34 @@ Version 1 (`docs/schemas/intake.decline_changed.v1.json`). An admin changed the 
   "to": {
     "request": "close",
     "reopened": "close"
+  },
+  "by": "octocat"
+}
+```
+
+## `intake.strictness_changed`
+
+Version 1 (`docs/schemas/intake.strictness_changed.v1.json`). An admin changed the intake strictness in Settings → Intake (issue #655, brake 1): the trust level a job's stamp needs before the job starts, `default`, by job source (`sources`) and by repository (`repos`, `owner/name` lowercased). `open` needs `screened`, `standard` `approved`, `strict` `trusted`, `closed` `owner`. It applies at the next Decision. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "default": "standard",
+    "sources": {},
+    "repos": {}
+  },
+  "to": {
+    "default": "standard",
+    "sources": {},
+    "repos": {
+      "octocat/hello-world": "strict"
+    }
   },
   "by": "octocat"
 }
@@ -2123,12 +2187,12 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 
 ## `handoff.closed`
 
-Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone). A person's resolution names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source), `job_gone` (its job is gone) or `resumed` (its job is live again — a Continue, Push it or a resume took it back to the queue —, issue #1777). A person's resolution names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | yes |
-| `end` | `run_again` \| `continued` \| `done_by_hand` \| `wont_do` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` | yes |
+| `end` | `run_again` \| `continued` \| `done_by_hand` \| `wont_do` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` \| `resumed` | yes |
 | `nextJobId` | string | no |
 | `resolution` | `continue` \| `fixed` \| `done_by_hand` \| `wont_do` | no |
 | `person` | string | no |
@@ -3742,7 +3806,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `key` (issue #1607, `issue.create` and `issue.comment`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`, `pr.edit`, `pr.close`; issue #1734: a pull request the job opened, or its work item's) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `key` (issue #1607, `issue.create` and `issue.comment`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -3799,7 +3863,7 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 | `own` | boolean | no |
 | `forUser` | string | no |
 | `job` | string | no |
-| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.comments` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.diff` \| `pr.commits` \| `pr.checks` \| `pr.reviews` \| `pr.status` \| `pr.ready` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.comments` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.diff` \| `pr.commits` \| `pr.checks` \| `pr.reviews` \| `pr.status` \| `pr.ready` \| `pr.edit` \| `pr.close` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
 | `repo` | string | yes |
 | `refs` | string[] | no |
 | `error` | string | yes |
@@ -4129,7 +4193,7 @@ Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a te
 
 ## `template.check_requested`
 
-Version 1 (`docs/schemas/template.check_requested.v1.json`). A person asked for the read-only check of a template to run again (issue #716): its last check is dropped, and the next check pass runs one.
+Version 1 (`docs/schemas/template.check_requested.v1.json`). A person asked for the read-only check of a template to run again (issue #716), or (issue #1779) a minting credential was set for the account or cluster of a read need its failed check got no credential for (`by` `minting credential <name>`): its last check is dropped, and the next check pass runs one.
 
 | field | type | required |
 |---|---|---|
@@ -4263,12 +4327,14 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
 
 ## `vault.mint_tested`
 
-Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is; or (issue #854) a read token for the `cluster`, and asked the cluster who it is and which namespaces it lists. `arn` is the role the session assumed, with `sessionName`; `user` is who the cluster says the token is, with `sessionName` when it signed in through EKS; `reason` when nothing was minted or STS or the cluster refused. Never a key or a token.
+Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is; or (issue #854) a read token for the `cluster`, and asked the cluster who it is and which namespaces it lists. `arn` is the role the session assumed, with `sessionName`; `user` is who the cluster says the token is, with `sessionName` when it signed in through EKS; `roleArn` and `account` the role a session or an EKS token signed in as (issue #1766), and `credential` the minting credential the test used — for a cluster found in the AWS accounts, the AWS one it was found with; `reason` when nothing was minted or STS or the cluster refused. Never a key or a token.
 
 | field | type | required |
 |---|---|---|
 | `asset` | object \| string | yes |
 | `credential` | string | no |
+| `roleArn` | string | no |
+| `account` | string | no |
 | `sessionName` | string | no |
 | `arn` | string | no |
 | `user` | string | no |
@@ -6350,6 +6416,34 @@ Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the en
     ]
   },
   "by": "owner"
+}
+```
+
+## `infra.topology_reported`
+
+Version 1 (`docs/schemas/infra.topology_reported.v1.json`). A read-only check reported topology sources (issue #1781, design.md "The infrastructure topology"): for each source (`key`: `aws/<account>/<region>` or `kubernetes/<cluster>`), `ok` and the `nodes` and `links` it found, or the `error` that kept it from being read; a failed source keeps its last good snapshot. `reporter`: the API token's label, else who signed in. Never a node. On no job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `reporter` | string | yes |
+| `sources` | object[] | yes |
+
+```json
+{
+  "reporter": "topology collector",
+  "sources": [
+    {
+      "key": "aws/123456789012/eu-west-1",
+      "ok": true,
+      "nodes": 42,
+      "links": 61
+    },
+    {
+      "key": "kubernetes/arn:aws:eks:eu-west-1:123456789012:cluster/prod",
+      "ok": false,
+      "error": "the API server did not answer"
+    }
+  ]
 }
 ```
 

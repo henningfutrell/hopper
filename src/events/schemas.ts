@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { GITLAB_EVENT_SCHEMAS } from './gitlab-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { ISSUE_DRAFT_EVENT_SCHEMAS } from './issue-draft-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { GITLAB_EVENT_SCHEMAS } from './gitlab-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TRUST_EVENT_SCHEMAS } from './trust-schemas.ts'; import { ISSUE_DRAFT_EVENT_SCHEMAS } from './issue-draft-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitOn, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -356,7 +356,7 @@ export const EVENT_SCHEMAS = {
   'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), bound: strict({ namespace: z.string(), secret: z.string() }).optional() }),
   // A sandbox's token unbound (issue #1371): the Secret it was bound to deleted, so the token stops working. Never a token.
   'vault.binding_named': strict({ box: z.string(), job: z.string().optional(), credential: z.string(), namespace: z.string(), secret: z.string() }), 'vault.unbound': strict({ box: z.string(), job: z.string().optional(), credential: z.string(), namespace: z.string(), secret: z.string() }), 'vault.check_mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS).optional(), ...operationProfile.shape }), template: z.string(), check: z.string(), reason: z.string(), decision: z.string().optional() }),
-  'vault.mint_tested': strict({ asset: z.union([asset, z.string()]), credential: z.string().optional(), sessionName: z.string().optional(), arn: z.string().optional(), user: z.string().optional(), expiresAt: z.string().optional(), reason: z.string().optional(), by: z.string() }),
+  'vault.mint_tested': strict({ asset: z.union([asset, z.string()]), credential: z.string().optional(), roleArn: z.string().optional(), account: z.string().optional(), sessionName: z.string().optional(), arn: z.string().optional(), user: z.string().optional(), expiresAt: z.string().optional(), reason: z.string().optional(), by: z.string() }),
   // The dynamic vault (issue #583): a credential request asked, given or declined. Never a value.
   'vault.credential_asked': strict({ request: z.string(), skill: z.string(), template: z.string(), machine: z.string(), job: z.string(), why: z.string().optional() }),
   'vault.credential_given': strict({ request: z.string(), skill: z.string(), name: z.string(), kind: z.string(), template: z.string(), by: z.string(), approved: z.boolean(), jobs: z.array(z.string()) }),
@@ -385,7 +385,7 @@ export const EVENT_SCHEMAS = {
   ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...MACHINE_DRAIN_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, ...PREEMPTION_EVENT_SCHEMAS, // preemption (issue #1525: preemption-schemas.ts), the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  ...THREAD_ASK_EVENT_SCHEMAS, ...GITLAB_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, ...ISSUE_DRAFT_EVENT_SCHEMAS, // issues #997, #1128, #471: notes to a job, the job's terminal, File an issue
+  ...THREAD_ASK_EVENT_SCHEMAS, ...GITLAB_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, ...ISSUE_DRAFT_EVENT_SCHEMAS, ...TRUST_EVENT_SCHEMAS, // issues #997, #1128, #471, #655: notes to a job, the job's terminal, File an issue, quarantine
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...driftEvents, ...infraPlanEvents, ...apiGrantEvents, ...windowsStepEvents, ...sandboxRequestEvents, ...landingBatchEvents,
 } satisfies Record<EventType, z.ZodType>;
 

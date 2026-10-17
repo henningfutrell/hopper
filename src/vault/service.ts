@@ -13,7 +13,7 @@ import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
-import { mintsForProblem } from '../domain/minting.ts';
+import { mintingValueProblem, mintsForProblem } from '../domain/minting.ts';
 import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
 import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, unbindHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
@@ -27,7 +27,7 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-import { probeMarksFor, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts';
+import { probeMarksFor, recheckUnminted, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts';
 import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
@@ -127,8 +127,7 @@ export function createVaultService(o: {
   /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. Infra applies (issue #1722): off, only a read is minted; absent, on. */
   plans?: MintingOptions['plans']; applies?: MintingOptions['applies'];
 }): VaultService {
-  const { vault, events } = o.store;
-  const { sealer } = o.keys;
+  const { store: { vault, events }, keys: { sealer } } = o;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
   const backendOf = (name: string): ConfiguredBackend | undefined => (o.backends?.() ?? []).find((b) => b.name === name);
   const backendView = ({ name, plugin, problem, setup }: ConfiguredBackend): VaultBackendView => ({ name, plugin, ...(problem ? { problem } : {}), ...(setup ? { setup } : {}) });
@@ -165,8 +164,7 @@ export function createVaultService(o: {
 
   /** A secret's value now: opened by the key provider, or read in its vault backend; or why not. */
   async function valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> {
-    const { backend } = secret;
-    if (backend) return readBackend({ ...secret, backend });
+    if (secret.backend) return readBackend({ ...secret, backend: secret.backend });
     if (!sealer) return { refused: unavailable() };
     try {
       return { value: sealer.open(vault.sealed(secret.id) ?? '', vaultContext(secret.id)) };
@@ -229,11 +227,12 @@ export function createVaultService(o: {
       const at = o.clock.now().toISOString();
       return o.store.tx(() => {
         const was = vault.get(name);
+        const mintsNow = mints === undefined ? was?.mints : mints ?? undefined;
+        const shape = mintsNow && 'value' in s ? mintingValueProblem(mintsNow, s.value) : undefined;
+        if (shape) return fail('invalid', `${name} ${shape}`);
         const kept = keptOf(s, was?.id ?? o.idGen());
         if ('ok' in kept) return kept;
-        const scoped = said ? { scope: said } : {};
-        const where = kept.backend ? { backend: kept.backend } : {};
-        const mintsNow = mints === undefined ? was?.mints : mints ?? undefined;
+        const scoped = said ? { scope: said } : {}, where = kept.backend ? { backend: kept.backend } : {};
         const minting = mintsNow ? { mints: { kind: mintsNow.kind, name: mintsNow.name } } : {};
         if (was) {
           const { scope: _old, backend: _was, mints: _mints, ...rest } = was;
@@ -242,6 +241,7 @@ export function createVaultService(o: {
           vault.add({ id: kept.id, name, ...scoped, ...where, ...minting, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
         }
         events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...(kept.backend ? { backend: kept.backend.name } : {}), ...minting } });
+        if (mintsNow) recheckUnminted(o.store, mintsNow, name); // Issue #1779: a check that failed for want of it runs again.
         return { ok: true } as const;
       });
     },

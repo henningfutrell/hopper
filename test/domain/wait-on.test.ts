@@ -12,6 +12,8 @@ describe('what a wait waits on (issue #1245)', () => {
     ['PR #12 checks', { kind: 'pull_request', number: 12, about: 'checks' }],
     ['pull request 7 review', { kind: 'pull_request', number: 7, about: 'review' }],
     ['o/r#9 merge', { kind: 'pull_request', repo: 'o/r', number: 9, about: 'merge' }],
+    // Issue #1731: a pull request in another repository than the job's own.
+    ['pr Some-Org/infra.code#79 checks', { kind: 'pull_request', repo: 'Some-Org/infra.code', number: 79, about: 'checks' }],
     ['job 1a2b3c', { kind: 'job', jobId: '1a2b3c' }],
     ['issue #45', { kind: 'item', number: 45 }],
     ['question q-7', { kind: 'question', questionId: 'q-7' }],

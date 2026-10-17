@@ -15,7 +15,7 @@ import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './
 import { ownCommandProbes, paneLostProbe, paneSessionOn, readPaneAnswer, terminalProbes } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
-import { paneEnds } from './pane-ends.ts'; import { paneLeft } from './pane-left.ts';
+import { paneEnds } from './pane-ends.ts'; import { paneLeft } from './pane-left.ts'; import { paneOpen } from './pane-open.ts';
 import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
 import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
 
@@ -274,11 +274,13 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
     if (ctx.job.parked?.elsewhere) return relocate(ctx, answer, saved);
-    const session = ctx.job.agentSession;
-    if (!saved) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
+    // No pane state (issue #1472): Push it reopens the job worktree its kept work names, in a fresh session.
+    const where = saved ?? ctx.keptTree;
+    const session = saved ? ctx.job.agentSession : undefined;
+    if (!where) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
     const told = withNotes(ctx, answer);
-    const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: saved.cwd, makeWorkTree: false };
-    ctx.workTree(saved.jobWorktree ?? saved.cwd);
+    const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: where.cwd, makeWorkTree: false };
+    ctx.workTree(where.jobWorktree ?? where.cwd);
     return startAndSend(ctx, p, {
       first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), ...(session ? { resume: session } : {}),
       said: session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded',
@@ -313,6 +315,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       // Notes a person sent before it started (issue #997) go in its task.
       return startAndSend(ctx, p, {}, (s) => [taskText(ctx, p, s, ctx.notes?.take('start')), FOOTER_ANCHOR]);
     },
+
+    // The `job-run` saga's steps (issue #1662): the credentials, then the pane, then `reattach` sends the task and watches it.
+    ...paneOpen({ onLane, startIn, exitAndClose }),
 
     resume(ctx, answer) {
       const state = paneStateOf(ctx.job);

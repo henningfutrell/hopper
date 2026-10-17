@@ -5,7 +5,8 @@
 // label, not the box label: the reconcile pass leaves it, and this pass removes one no run holds (a hopper stopped
 // mid-check). Issue #797: before the box starts, the vault mints the read credential each read need takes, under Access
 // (`CheckTemplates.credential`); the box gets them in its environment, so its reads work and a write is refused by the
-// account or the cluster. A need it gets none for fails the check with the reason, and no box runs.
+// account or the cluster. A need it gets none for fails the check: issue #873, its probes are not run, each with the
+// reason, and the probes of the other needs still run.
 // Issue #715: a passed check runs again once a day (`CHECK_EVERY_MS`), since an account or a cluster can change under a
 // template. While it runs the template keeps the check that passed; a check that fails replaces it and blocks the template.
 // Issue #715, part 2: a terraform workspace's probes run with the AWS read session of the template's aws-role read need.
@@ -14,14 +15,17 @@
 // Issue #715, part 4: each ended check's report is an artifact of the job that asked for the template (check-report.ts).
 // Issue #1468: a check that failed only on a network error (a mint's ECONNRESET, a timeout) is transient: it runs again
 // after `CHECK_RETRY_MS`, with no person. Any other failure still waits for one.
+// Issue #1736: a check that failed only on probes the catalog passes now (helm list refused on secrets, on a view role)
+// runs again at the next pass, with no person (`judgedAgain`).
+// Issue #1779: a failed check keeps the read needs the vault minted nothing for (`unminted`), not on a network error.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
-import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
+import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck, Unminted } from '../domain/read-only-check.ts';
 import { currentCheck, markRuns, onlyNetworkErrors, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
-import { checkEnv, checkScript, readResults } from './check-script.ts';
+import { checkEnv, checkScript, judge, readResults } from './check-script.ts';
 import { boxImage } from './box-image.ts';
 import type { Egress } from './egress.ts';
 import { CHECK_LABEL, staleHome, sweepHomes, USER_LABEL } from './owned.ts';
@@ -87,6 +91,21 @@ export function dueForCheck(t: Template, now: Date): boolean {
   return c?.state !== 'failed';
 }
 
+/**
+ * Whether a failed check of the template's current version failed only on probes the catalog passes now, from what each
+ * did (issue #1736: one judged before a right credential's refusal passed a read). It runs again then, with no person.
+ * A check with a problem, a probe that did not run, or a failed probe the catalog no longer has, does not.
+ */
+export function judgedAgain(t: Template, probes: ProbeCatalog): boolean {
+  const c = currentCheck(t);
+  if (t.readOnly !== true || !imageApproved(t) || c?.state !== 'failed' || c.problem !== undefined || c.probes.length === 0) return false;
+  const runs = markRuns(probes.runsFor((t.profiles ?? []).filter((p) => p.operation === 'read')), t.probeMarks);
+  return c.probes.filter((p) => !p.passed).every((p) => {
+    const run = runs.find((r) => r.probe.id === p.id && r.asset === p.asset);
+    return run !== undefined && p.exit !== undefined && judge(run, p.exit, p.output).passed;
+  });
+}
+
 /** A minted credential as the check box takes it: the AWS CLI's variables, or a kubeconfig of the cluster with the token. */
 export function checkCredentialOf(profile: OperationProfile, minted: Minted, reach: MintReach): CheckCredential {
   if (minted.kind === 'aws' && reach.kind === 'aws') {
@@ -110,31 +129,53 @@ export function checkCredentialOf(profile: OperationProfile, minted: Minted, rea
   throw new Error(`a ${minted.kind} credential minted with a ${reach.kind} reach`);
 }
 
+/** A need's asset, as a key: a probe run on it has the same (`runKey`). */
+const assetKey = (a: { kind: string; name: string }): string => `${a.kind}\0${a.name}`;
+const runKey = (r: ProbeRun): string => `${r.kind}\0${r.asset}`;
+
+/** What the check box is given: the credential of each need that has one, and why each other need has none (issue #873). */
+interface Given {
+  credentials: CheckCredential[];
+  /** The reach of each credential minted, for the egress proxy (issue #849). */
+  reaches: MintReach[];
+  /** Why the check box gets no credential for a need, by its asset (`assetKey`). */
+  missing: Map<string, string>;
+  /** Whether each refusal was a network error only (issue #1468), so the check runs again with no person. */
+  transient: boolean;
+  /** The needs the vault refused to mint for, not on a network error (issue #1779). */
+  unminted: Unminted[];
+}
+
 /**
- * The read credential of each read need, minted for the check box `name`; the reasons when one is not given. A terraform
- * workspace is minted nothing of its own (issue #715): it takes the AWS read session of the template's one aws-role read
- * need (`workspaceRole`), which Access allowed and the deny policy keeps read-only, state backend included.
+ * The read credential of each read need, minted for the check box `name`; the reason for each need that gets none. A
+ * terraform workspace is minted nothing of its own (issue #715): it takes the AWS read session of the template's one
+ * aws-role read need (`workspaceRole`), which Access allowed and the deny policy keeps read-only, state backend included.
  */
-async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<{ credentials: CheckCredential[]; reaches: MintReach[] } | { problem: string; transient: boolean }> {
+async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<Given> {
   const credentials: CheckCredential[] = [];
   const reaches: MintReach[] = [];
-  const problems: string[] = [];
-  // Issue #1468: whether every refusal was a network error, so the check runs again with no person.
+  const missing = new Map<string, string>();
   const refusals: string[] = [];
+  const unminted: Unminted[] = [];
   let other = false;
-  const noCredential = (need: OperationProfile, why: string): void => { problems.push(`the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
+  const noCredential = (need: OperationProfile, why: string): void => { missing.set(assetKey(need.asset), `not run: the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
   for (const need of needs.filter((n) => n.asset.kind !== 'terraform-workspace')) {
     const r = await c.credentials.credential(userId, t.name, name, need);
-    if ('refused' in r) { noCredential(need, r.refused); refusals.push(r.refused); }
+    if ('refused' in r) {
+      noCredential(need, r.refused);
+      refusals.push(r.refused);
+      if (!onlyNetworkErrors([r.refused])) unminted.push({ asset: need.asset, reason: r.refused });
+    }
     else { credentials.push(checkCredentialOf(need, r.minted, r.reach)); reaches.push(r.reach); }
   }
   for (const workspace of needs.filter((n) => n.asset.kind === 'terraform-workspace')) {
     const role = workspaceRole(needs);
-    if (typeof role === 'string') { noCredential(workspace, role); other = true; }
-    const session = typeof role === 'string' ? undefined : credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name);
+    if (typeof role === 'string') { noCredential(workspace, role); other = true; continue; }
+    const session = credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name);
     if (session) credentials.push({ ...session, asset: workspace.asset });
+    else noCredential(workspace, `the aws-role ${role.asset.name} it is read with gets none`);
   }
-  return problems.length > 0 ? { problem: problems.join('; '), transient: !other && onlyNetworkErrors(refusals) } : { credentials, reaches };
+  return { credentials, reaches, missing, transient: !other && onlyNetworkErrors(refusals), unminted };
 }
 
 /**
@@ -145,11 +186,28 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   const needs = (t.profiles ?? []).filter((p) => p.operation === 'read');
   // A person's marks on its read probes (issue #916): an expected refusal, or a probe not run.
   const runs = markRuns(c.probes.runsFor(needs), t.probeMarks);
+  let unminted: Unminted[] = [];
   const ended = (state: 'passed' | 'failed', probes: ReadOnlyCheck['probes'], problem?: string, transient?: boolean): ReadOnlyCheck =>
-    ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}), ...(transient ? { transient: true as const } : {}) });
+    ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}), ...(transient ? { transient: true as const } : {}),
+      ...(state === 'failed' && unminted.length > 0 ? { unminted } : {}) });
   if (runs.length === 0) return ended('failed', [], 'no probe checks its needs: it cannot pass');
   const given = await credentialsFor(c, userId, t, name, needs);
-  if ('problem' in given) return ended('failed', [], given.problem, given.transient);
+  ({ unminted } = given);
+  // Issue #873: a probe of a need with no credential is not run, and says why; the probes of the other needs still run.
+  // The missing credential is its reason even when the probe lacks something else too (a state backend): it is the first fix.
+  const checked = runs.map((r) => (given.missing.has(runKey(r)) ? { ...r, notRun: given.missing.get(runKey(r))! } : r));
+  // A need with no credential that no probe covers fails the check too, with its reason.
+  const uncovered = [...given.missing].filter(([key]) => !checked.some((r) => runKey(r) === key)).map(([, why]) => why);
+  const problem = uncovered.length > 0 ? uncovered.join('; ') : undefined;
+  // Transient only when the probes that failed are those a network error left with no credential.
+  const transientOf = (probes: ReadOnlyCheck['probes']): boolean =>
+    given.missing.size > 0 && given.transient && probes.every((p, n) => p.passed || given.missing.get(runKey(checked[n]!)) === checked[n]!.notRun);
+  if (checked.every((r) => r.notRun !== undefined || r.mark === 'skip')) {
+    // No probe to run: no check box.
+    const probes = readResults(checked, '');
+    const passed = given.missing.size === 0 && probes.every((p) => p.passed);
+    return ended(passed ? 'passed' : 'failed', probes, problem, !passed && transientOf(probes));
+  }
   const labels = { [CHECK_LABEL]: c.instanceId, [USER_LABEL]: userId };
   const volume = `${name}-home`;
   let id = '';
@@ -161,13 +219,14 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     // Issue #849: behind the egress proxy, which holds the hosts of its credentials before the box starts.
     if (c.egress) await c.egress.allow(given.reaches);
     const env = { ...checkEnv(given.credentials), ...(c.egress ? c.egress.env : {}) };
-    id = await c.runtime.create({ name, image, network: c.egress?.network ?? c.network, volume, labels, user, env, limits: boxLimits(t.limits), script: checkScript(runs, given.credentials) });
+    id = await c.runtime.create({ name, image, network: c.egress?.network ?? c.network, volume, labels, user, env, limits: boxLimits(t.limits), script: checkScript(checked, given.credentials) });
     await c.runtime.start(id);
     const exit = await c.runtime.wait(id, CHECK_MS);
-    const probes = readResults(runs, await c.runtime.logs(id));
-    // Every probe passed and the script ended well, or it failed: a script cut short is no pass.
-    const passed = exit === 0 && probes.every((p) => p.passed);
-    return ended(passed ? 'passed' : 'failed', probes, exit !== 0 ? `the check box ended with ${exit}` : undefined);
+    const probes = readResults(checked, await c.runtime.logs(id));
+    // Every probe passed, each need had its credential and the script ended well, or it failed: a script cut short is no pass.
+    const passed = exit === 0 && given.missing.size === 0 && probes.every((p) => p.passed);
+    const problems = [...(exit !== 0 ? [`the check box ended with ${exit}`] : []), ...(problem ? [problem] : [])];
+    return ended(passed ? 'passed' : 'failed', probes, problems.length > 0 ? problems.join('; ') : undefined, !passed && exit === 0 && transientOf(probes));
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return ended('failed', [], `the check box did not run: ${why}`, onlyNetworkErrors([why]));
@@ -196,7 +255,7 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
     if (c.local) await sweep(c.local);
     const swept = new Set<string>();
     for (const { userId, template: t } of templates.templates()) {
-      if (!dueForCheck(t, c.clock.now())) continue;
+      if (!dueForCheck(t, c.clock.now()) && !judgedAgain(t, c.probes)) continue;
       const at = await c.place(userId);
       if (!at) continue;
       const key = `${userId}\0${at.machine}`;

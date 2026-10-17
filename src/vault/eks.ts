@@ -4,14 +4,16 @@
 // (`CredentialMinter.eksToken`). The token only says who the session is: the role's access entry or aws-auth mapping in
 // the cluster decides what it may do, and the hopper never changes the cluster. The cluster is named in the credential,
 // or found in a vault kubeconfig whose EKS exec sign-in (`aws eks get-token`) names it. Runs where the minting
-// credentials are opened: in the hopper, or in the vault's own container.
+// credentials are opened: in the hopper, or in the vault's own container. A cluster with no minting credential of its
+// own (issue #1766) is found in the AWS accounts the vault mints for (`mintDiscovered`), and signed in as `hopper-read`.
 import { parse } from 'yaml';
 import {
-  AWS_REGION_NAME, AWS_SESSION_SECONDS, EKS_CLUSTER_NAME, awsReadSession, awsSessionName, mintingCredentialOf, roleAccountOf,
+  AWS_REGION_NAME, AWS_SESSION_SECONDS, EKS_CLUSTER_NAME, awsReadSession, awsRegionOf, awsSessionName, mintingCredentialFor, mintingCredentialOf, roleAccountOf,
   type ClusterIdentity, type EksCluster, type EksMintingCredential, type Minted, type MintReach,
 } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { isSystemSecret, type VaultSecret } from '../domain/vault.ts';
+import type { ClusterDiscovery } from '../domain/cluster-discovery.ts';
 
 type Entry = Record<string, unknown>;
 const isEntry = (x: unknown): x is Entry => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -72,14 +74,62 @@ export function eksClusterOf(c: EksMintingCredential, kubeconfig: string | undef
 
 export interface EksMinted { minted: Minted; reach: MintReach; roleArn: string; sessionName: string; cluster?: ClusterIdentity }
 
+type EksOptions = { vault: Pick<VaultRepository, 'get' | 'list'>; minter: CredentialMinter; valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> };
+
+/** The token for `cluster` signed with `session` of `roleArn`, and where it is used; with `identify`, who the cluster says it is. */
+async function signedFor(o: EksOptions, session: Extract<Minted, { kind: 'aws' }>, cluster: EksCluster, roleArn: string, sessionName: string, identify?: boolean): Promise<EksMinted> {
+  const minted = await o.minter.eksToken(session, cluster);
+  const reach = { kind: 'kube' as const, server: cluster.server, ...(cluster.certificateAuthorityData ? { certificateAuthorityData: cluster.certificateAuthorityData } : {}) };
+  return { minted, reach, roleArn, sessionName, ...(identify ? { cluster: await o.minter.kubeIdentity(reach, minted.token) } : {}) };
+}
+
+/**
+ * Mints an EKS token for a cluster with no minting credential of its own (issue #1766): in each account of `d`, a read
+ * session of its role `d.role` from the account's minting credential, and `DescribeCluster` in the credential's region.
+ * The one account that has the cluster signs the token with that session; none, or several, mint nothing. An account
+ * STS or EKS refuses is passed over, and said when no account has the cluster. The answer names the AWS minting
+ * credential and the account it used.
+ */
+export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: string, identify?: boolean): Promise<(EksMinted & { credential: string; account: string }) | { refused: string }> {
+  const found: { credential: string; account: string; roleArn: string; sessionName: string; session: Extract<Minted, { kind: 'aws' }>; cluster: EksCluster }[] = [];
+  const looked: string[] = [];
+  for (const { name, account } of d.credentials) {
+    const secret = o.vault.get(name);
+    const read = secret ? await o.valueOf(secret) : { refused: 'the vault holds no secret of that name' };
+    if ('refused' in read) return { refused: `the AWS minting credential ${name}: ${read.refused}` };
+    const keys = mintingCredentialOf('aws', read.value);
+    if (typeof keys === 'string') return { refused: `the AWS minting credential ${name}: ${keys}` };
+    const roleArn = `arn:aws:iam::${account}:role/${d.role}`;
+    const sessionName = awsSessionName(keys, jobId);
+    const region = awsRegionOf(keys);
+    // An STS that is not AWS's has no EKS of AWS's beside it: the vault asks one only when the credential names it.
+    if (keys.Endpoint && !keys.EksEndpoint) {
+      looked.push(`${account}: ${name} names an STS endpoint and no EksEndpoint`);
+      continue;
+    }
+    try {
+      const session = await o.minter.awsSession(keys, { roleArn, sessionName, ...awsReadSession(roleArn), durationSeconds: AWS_SESSION_SECONDS });
+      const cluster = await o.minter.eksCluster(session, { cluster: d.cluster, region, ...(keys.EksEndpoint ? { endpoint: keys.EksEndpoint } : {}) });
+      looked.push(`${account} in ${region}: ${cluster ? 'found' : 'none'}`);
+      if (cluster) found.push({ credential: name, account, roleArn, sessionName, session, cluster });
+    } catch (e) {
+      // An account the read role cannot look in has no cluster for the vault to find: the others may.
+      looked.push(`${account} in ${region}: ${(e as Error).message}`);
+    }
+  }
+  if (!found.length) return { refused: `no minting credential mints for cluster ${d.cluster}, and the vault found it in none of the accounts it mints for (${looked.join('; ')})` };
+  if (found.length > 1) return { refused: `EKS has a cluster ${d.cluster} in ${found.length} accounts: ${found.map((f) => `${f.account} (${f.credential})`).join(', ')}. The vault does not pick one: a person adds a minting credential for cluster ${d.cluster} on Settings → Vault` };
+  const [f] = found as [typeof found[number]];
+  return { ...await signedFor(o, f.session, f.cluster, f.roleArn, f.sessionName, identify), credential: f.credential, account: f.account };
+}
+
 /**
  * Mints an EKS token from the minting credential `name` (its value `c`) for the job `jobId`: the kubeconfig and the AWS
  * minting credential are read in the vault, never given out. `identify` (a mint test): the cluster says who the token
  * is. A refusal says why; an outside service's error is thrown, for the caller to say.
  */
 export async function mintEks(
-  o: { vault: Pick<VaultRepository, 'get' | 'list'>; minter: CredentialMinter; valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> },
-  name: string, c: EksMintingCredential, jobId: string, identify?: boolean,
+  o: EksOptions, name: string, c: EksMintingCredential, jobId: string, identify?: boolean,
 ): Promise<EksMinted | { refused: string }> {
   const refuse = (why: string) => ({ refused: `the minting credential ${name}: ${why}` });
   let kubeconfig: string | undefined;
@@ -93,15 +143,13 @@ export async function mintEks(
   const cluster = eksClusterOf(c, kubeconfig);
   if (typeof cluster === 'string') return refuse(cluster);
   const account = roleAccountOf(c.roleArn);
-  const aws = o.vault.list().find((s) => s.mints?.kind === 'aws-account' && s.mints.name === account);
-  if (!aws) return refuse(`its EKS sign-in assumes ${c.roleArn}: no minting credential mints for aws-account ${account}: a person adds one on Settings → Vault`);
+  const aws = mintingCredentialFor(o.vault.list(), { kind: 'aws-account', name: account });
+  if (typeof aws === 'string') return refuse(`its EKS sign-in assumes ${c.roleArn}: ${aws}`);
   const read = await o.valueOf(aws);
   if ('refused' in read) return refuse(`the AWS minting credential ${aws.name}: ${read.refused}`);
   const keys = mintingCredentialOf('aws', read.value);
   if (typeof keys === 'string') return refuse(`the AWS minting credential ${aws.name}: ${keys}`);
   const sessionName = awsSessionName(keys, jobId);
   const session = await o.minter.awsSession(keys, { roleArn: c.roleArn, sessionName, ...awsReadSession(c.roleArn), durationSeconds: AWS_SESSION_SECONDS });
-  const minted = await o.minter.eksToken(session, cluster);
-  const reach = { kind: 'kube' as const, server: cluster.server, ...(cluster.certificateAuthorityData ? { certificateAuthorityData: cluster.certificateAuthorityData } : {}) };
-  return { minted, reach, roleArn: c.roleArn, sessionName, ...(identify ? { cluster: await o.minter.kubeIdentity(reach, minted.token) } : {}) };
+  return signedFor(o, session, cluster, c.roleArn, sessionName, identify);
 }

@@ -13,6 +13,7 @@ import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
 import { recordNote } from './notes.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
+import { recordLiftQuarantine, recordQuarantine } from './quarantine.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
 
@@ -75,6 +76,12 @@ export interface Commands {
   keepOriginalText(id: string, acting: ActingPerson): Job;
   /** Accept the new text (issue #662), the owner's act, allowed by Access first: the job runs it, and it is the item's snapshot. */
   acceptNewText(id: string, acting: ActingPerson): Job;
+  /**
+   * Quarantine (issue #655): a person sets a job that has not ended `quarantined` — held, and its proxy token opens no door
+   * of the hopper —, or lifts it to the level the job had before. job.quarantined, job.unquarantined.
+   */
+  quarantine(id: string, acting: ActingPerson): Job;
+  liftQuarantine(id: string, acting: ActingPerson): Job;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
@@ -179,6 +186,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
 
     keepOriginalText: (id, acting) => store.tx(() => keepOriginal(c, id, acting)),
     acceptNewText: (id, acting) => store.tx(() => acceptNewText(c, id, acting)),
+    quarantine: (id, acting) => store.tx(() => recordQuarantine(c, id, acting)),
+    liftQuarantine: (id, acting) => store.tx(() => recordLiftQuarantine(c, id, acting)),
 
     setFakeUsage(reading) {
       if (!c.fakeUsage) throw new EngineError('not_found', 'no fake usage source is configured');

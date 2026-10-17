@@ -30,18 +30,29 @@ export interface JobFilter {
 }
 
 export interface JobRepository {
-  create(spec: JobSpec, priority: number, source?: JobSourceRef): Job;
-  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined;
+  /**
+   * A new queued job. With the stamp key (`useStampKey`), it is stamped by the rules (issue #655); `parent`: a job made it,
+   * and it gets at most its parent's verified level, never `owner`, or no stamp when its parent's does not verify.
+   */
+  create(spec: JobSpec, priority: number, source?: JobSourceRef, parent?: Job): Job;
+  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined; list(filter?: JobFilter): Job[];
   /**
    * Many jobs in one read (issue #1411), so a pass over many jobs reads none one by one: `getMany` the jobs of `ids` that
    * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`.
    */
   getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>;
-  list(filter?: JobFilter): Job[];
-  /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
-  update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
-  /** Replace the spec of a job that has not started (issue #375). Bumps updatedAt. */
+  /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */ update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt' | 'stamp'>>): Job;
+  /** Replace the spec of a job that has not started (issue #375); stamped again at its verified level or lower (issue #655). Bumps updatedAt. */
   respecify(id: JobId, spec: JobSpec): Job;
+  /**
+   * Trust stamps (issue #655). `useStampKey`: the user's stamp key, given once at the start: from then each job made is
+   * stamped; it stamps, by the rules, each job that has not ended and has no stamp (the backfill), and answers their ids.
+   * `stampHold`: why the job's stamp holds it; undefined: it may start, or the store has no stamp key. `restamp`: the job
+   * stamped again by the rules, for an origin judged after it was made (issue #652, the backfill); a quarantine stays.
+   * Quarantine: `quarantine` stamps the job `quarantined`, its level before kept; `liftQuarantine` gives that level back
+   * (the rules' with none). `trustLevel`: its verified level. `opensDoors`: its proxy token opens the hopper's doors.
+   */
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean;
 }
 
 export interface LaneRepository {
@@ -507,7 +518,7 @@ export interface UserStore {
   /** The infra plans jobs record, and their approvals (issue #870). */
   infraPlans: import('./infra-plans.ts').InfraPlanRepository;
   /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */
-  outOfBand: import('./out-of-band.ts').OutOfBandRepository;
+  outOfBand: import('./out-of-band.ts').OutOfBandRepository; topology: import('./topology.ts').TopologyRepository; // the topology sources (issue #1781)
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
@@ -560,7 +571,7 @@ export interface InstanceStore {
   /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
   uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
-  joinCodes: JoinCodeRepository;
+  joinCodes: JoinCodeRepository; lanePoolKeys: import('./lane-pool-keys.ts').LanePoolKeyRepository; // the lane pool keys the hopper issued (issue #1454)
   /** The sandbox records (issue #708). */
   sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; needSteps: import('./need-steps.ts').NeedStepRepository; windowsSteps: import('./windows-steps.ts').WindowsStepRepository; sagas: import('./sagas.ts').SagaRepository; sweepLeases: import('./leases.ts').SweepLeaseRepository; outboundKeys: import('./outbound.ts').OutboundKeyRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sandbox steps: each need or box step from the job's ask to its result (issue #1568); the Windows steps, likewise, with each host's hold (issue #1611); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524); the sweep leases and the outbound dedupe keys: what makes two hosts on one database run each sweep and send each send once (issue #1627)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */

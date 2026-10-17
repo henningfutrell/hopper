@@ -125,4 +125,10 @@ describe('a job on its own wait', () => {
     const stuck = document.querySelector('[data-job-group="waitingOn"][data-job-id="w3"]')!;
     expect(stuck.querySelector('[data-slot="own-wait"]')!.textContent).toBe('stuck: its own command is gone');
   });
+
+  it('a wait whose agent session ended shows as stranded, with End the wait (issue #1779)', async () => {
+    await boot('admin', '#dashboard', [{ ...waitingJob, wait: { ...waitingJob.wait, on: { kind: 'grant' }, strandedAt: T } }]);
+    expect(row()!.querySelector('[data-slot="own-wait"]')!.textContent).toBe('stranded: its agent session ended');
+    expect(buttonIn(row()!, 'End the wait')).toBeDefined();
+  });
 });

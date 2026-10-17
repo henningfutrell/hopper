@@ -5,6 +5,7 @@ import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/p
 import { SPECIALTY_LABEL } from '../domain/elbow-in.ts';
 import { asksOf, isRerunnable, machineRanOn, PUSHABLE_ENDS, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
+import { settleLiveAgain } from '../failures/continued.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
@@ -208,6 +209,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // origin or a person approved it; the job takes that origin, and its hold goes.
         if (job.originPending && item.origin && job.source) {
           store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin } });
+          store.jobs.restamp(jobId); // its trust stamp from the origin now judged (issue #655)
           store.events.append({ type: 'job.origin_judged', jobId, data: { key: item.key, origin: item.origin } });
           changed = true;
         }
@@ -229,14 +231,15 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         }
         // The priority is the job's live one (issue #535): a started job's follows its item too, so it is tagged and
         // listed by it everywhere — its question, its login, its lane.
+        // A new priority ends its place in the user order (issue #1776): it then waits at that priority (issue #461).
         if (job.priority !== priority) {
-          store.jobs.update(jobId, { priority });
+          store.jobs.update(jobId, { priority, userRank: undefined });
           store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: priority, reason } });
           // Its forks carry its priority (issue #548): the ones still at work follow it.
           for (const forkId of job.forks ?? []) {
             const fork = store.jobs.get(forkId);
             if (!fork || TERMINAL_STATUSES.includes(fork.status) || fork.priority === priority) continue;
-            store.jobs.update(forkId, { priority });
+            store.jobs.update(forkId, { priority, userRank: undefined });
             store.events.append({ type: 'job.reprioritized', jobId: forkId, data: { from: fork.priority, to: priority, reason: `its parent job ${jobId}: ${reason}` } });
           }
           changed = true;
@@ -324,6 +327,9 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
           error: undefined, errorTail: undefined, liveness: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
           holdReason: undefined, waitReason: undefined, laneId: undefined, sourceState: { ...job.sourceState, sync },
         });
+        // Push it (issue #1777): its failure record waits on nothing now, so its problem's release runs nothing. A hand-off's
+        // Continue and the assessor's settle their own record.
+        if ('keptWork' in by) settleLiveAgain(store, jobId, nowIso(c));
         store.events.append({ type: 'job.continued', jobId, data: { ...by } });
         return { ok: true, job: next };
       });

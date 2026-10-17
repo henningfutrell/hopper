@@ -2,9 +2,10 @@
 // Jobs. Plans (infra-plans.tsx): each plan, its state and who it waits for, approve by risk, auto-approve, and the applies
 // minted against it, and the environment watchers (part 4). Infra applies (infra-applies.tsx, issue #1722): off, changes go through CI.
 // Applies and drift: one timeline of plans recorded and approved, applies, drift and out-of-band writes, newest first.
-// Out-of-band changes (out-of-band.tsx). Every panel always shows: loading, an error with Try again, or an empty list
+// Out-of-band changes (out-of-band.tsx). Topology (topology.tsx, issue #1781): the graph of the services in the AWS
+// accounts and Kubernetes clusters, linked to the out-of-band changes that name each node. Every panel always shows: loading, an error with Try again, or an empty list
 // that says how a job fills it.
-import { AlertTriangle, FileDiff, History, RefreshCw, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, FileDiff, History, Network, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,8 @@ import { useServerNow } from '@/store/selectors';
 import { AutoApprove, PlanList, Watchers } from './infra-plans';
 import { InfraApplies } from './infra-applies';
 import { OutOfBandChanges, type OutOfBandList } from './out-of-band';
+import { TopologyPanel } from './topology';
+import type { TopologyGraph } from '../../../src/domain/types.ts';
 
 type Load<T> = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: T };
 type Plans = { plans: PlanView[]; applies: PlanApply[]; settings: InfraPlanSettings; watchers: InfraWatchers };
@@ -56,6 +59,7 @@ export function Infra() {
   const now = useServerNow();
   const [plans, changePlans, reloadPlans] = useLoad<Plans>('/api/infra-plans');
   const [changes, changeChanges, reloadChanges] = useLoad<OutOfBandList>('/api/out-of-band');
+  const [topology, , reloadTopology] = useLoad<TopologyGraph>('/api/topology');
   const onPlan = (plan: PlanView) => changePlans((d) => ({ ...d, plans: d.plans.map((p) => (p.id === plan.id ? plan : p)) }));
   const onSettings = (settings: InfraPlanSettings) => changePlans((d) => ({ ...d, settings }));
   const onWatchers = (watchers: InfraWatchers) => changePlans((d) => ({ ...d, watchers }));
@@ -93,6 +97,9 @@ export function Infra() {
       {changes.kind === 'ok'
         ? <OutOfBandChanges view={changes.data} onView={changeChanges} />
         : <Panel title="Out-of-band changes" icon={ShieldAlert}><NotYet state={changes} what="out-of-band changes" retry={reloadChanges} /></Panel>}
+      {topology.kind === 'ok'
+        ? <TopologyPanel g={topology.data} changes={changes.kind === 'ok' ? changes.data.changes : []} />
+        : <Panel title="Topology" icon={Network}><NotYet state={topology} what="topology" retry={reloadTopology} /></Panel>}
     </div>
   );
 }

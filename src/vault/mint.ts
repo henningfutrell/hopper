@@ -12,7 +12,8 @@ import type { VaultSecret } from '../domain/vault.ts';
 import { awsRegionOf, awsSessionName, mintingCredentialOf } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
-import { mintEks } from './eks.ts';
+import { mintDiscovered, mintEks } from './eks.ts';
+import { mintSourceFor, type ClusterDiscovery, type MintSource } from '../domain/cluster-discovery.ts';
 import { mintPrincipal } from '../domain/out-of-band.ts';
 import type { UnbindFrom } from './bindings.ts';
 import { appliesRefusal } from '../domain/infra-plans.ts';
@@ -25,12 +26,15 @@ export interface MintAsk { mint: MintKind; operation: string; asset: string; pla
  * which holds the value, for the job `jobId` (an AWS session is named for it, `awsSessionName`). Called only after
  * Access allowed it, or for a person's mint test (issue #781): `identify` then asks STS who the minted session is, where
  * the credential's STS is known, or (issue #854) the cluster who the token is. `reach`: where the minted credential is
- * used (issue #797), never a secret. `roleArn` and `sessionName`: the role session an EKS token was signed with. Never
- * says the minting credential's value.
+ * used (issue #797), never a secret. `roleArn` and `sessionName`: the role session an EKS token was signed with. Or
+ * (issue #1766) a cluster to find in the AWS accounts: `credential` and `account` then say which minting credential and
+ * account it was found with. Never says the minting credential's value.
  */
-export type MintFrom = (name: string, target: MintTarget, jobId: string, identify?: boolean) => Promise<MintedFrom | { refused: string }>;
+export type MintFrom = (from: string | ClusterDiscovery, target: MintTarget, jobId: string, identify?: boolean) => Promise<MintedFrom | { refused: string }>;
 export interface MintedFrom {
   minted: Minted; reach: MintReach; roleArn?: string; sessionName?: string; identity?: CallerIdentity; cluster?: ClusterIdentity;
+  /** The AWS minting credential and account a discovered cluster's token was signed with (issue #1766). */
+  credential?: string; account?: string;
   /** The Secret the token is bound to (issue #1371), when the target asked for one (`bindTo`) and the credential could: a `token` one, not EKS. */
   bound?: { namespace: string; secret: string };
 }
@@ -55,6 +59,12 @@ export function assetOf(said: string): Asset | undefined {
   const kind = said.slice(0, i);
   return i > 0 && (ASSET_KINDS as readonly string[]).includes(kind) ? { kind: kind as AssetKind, name: said.slice(i + 1) } : undefined;
 }
+
+/** What `MintFrom` takes for a source: a minting credential's name, or the cluster to find. */
+export const fromOf = (s: MintSource<{ name: string }>): string | ClusterDiscovery => ('credential' in s ? s.credential.name : s.discover);
+
+/** The minting credential a mint used, for its record: the source's own, else the AWS one a discovery found it with. */
+export const usedOf = (s: MintSource<{ name: string }>, made: Pick<MintedFrom, 'credential'>): string => ('credential' in s ? s.credential.name : made.credential ?? '');
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
 
@@ -107,11 +117,11 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (planNo) return refuse(planNo, decision);
     const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
-    const { mintsFor } = target;
-    const credential: VaultSecret | undefined = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
-    if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision);
-    const made = await from(credential.name, target, job.id);
+    const source = mintSourceFor(vault.list(), target, profile.operation);
+    if (typeof source === 'string') return refuse(source, decision);
+    const made = await from(fromOf(source), target, job.id);
     if ('refused' in made) return refuse(made.refused, decision);
+    const used = usedOf(source, made);
     const out = made.minted;
     // Who the credential writes as (issue #871): an audit-log write by it, while it is valid, is the plan's apply.
     const principal = principalOf(target, made);
@@ -126,11 +136,11 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     minted.set(job.id, keys.add(key));
     const at = o.clock.now().toISOString();
     o.store.tx(() => {
-      const now = vault.get(credential.name);
-      if (now?.id === credential.id) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, vault.sealed(now.id) ?? null);
+      const now = vault.get(used);
+      if (now && ('discover' in source || now.id === source.credential.id)) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, vault.sealed(now.id) ?? null);
       events.append({
         type: 'vault.minted', jobId: job.id, machineId: machine.name,
-        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal, ...plan, ...(principal ? { principal } : {}) },
+        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: used, decision: decision.id, expiresAt: expiryOf(out), renewal, ...plan, ...(principal ? { principal } : {}) },
       });
     });
     const { kind: _kind, ...answer } = out;
@@ -173,8 +183,15 @@ export function unbindHere(o: Parameters<typeof mintHere>[0]): UnbindFrom {
  * `eks` credential (issue #854) reads the AWS minting credential of its role's account too.
  */
 export function mintHere(o: { vault: Pick<VaultRepository, 'get' | 'list'>; minter?: CredentialMinter; valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> }): MintFrom {
-  return async (name, target, jobId, identify) => {
+  return async (from, target, jobId, identify) => {
     const minter = o.minter;
+    if (typeof from !== 'string') {
+      if (!minter) return { refused: 'this vault has no minter' };
+      if (target.kind !== 'kube') return { refused: `the vault finds a cluster, not ${target.mintsFor.kind} ${target.mintsFor.name}` };
+      return await mintDiscovered({ vault: o.vault, minter, valueOf: o.valueOf }, from, jobId, identify)
+        .catch((e: unknown) => ({ refused: `minting for cluster ${from.cluster} failed: ${(e as Error).message}` }));
+    }
+    const name = from;
     const credential = o.vault.get(name);
     if (!credential?.mints) return { refused: `the vault holds no minting credential ${name}` };
     if (!minter) return { refused: 'this vault has no minter' };

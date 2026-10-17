@@ -14,6 +14,8 @@
 //   Scenario: with the vault in a container of its own (issue #586), the vault mints and asks STS
 //   Scenario: STS refuses AssumeRole: the test says why, and GetCallerIdentity is not asked
 //   Scenario: no minting credential for the account, or an asset that is not an aws-role or a cluster: refused, STS not asked
+//   Scenario: several minting credentials for the account (issue #1761): refused, every one named, STS not asked
+//   Scenario: an aws-account minting credential whose value is not its JSON (issue #1761): not saved, the shape said
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
@@ -149,6 +151,8 @@ describe('a mint test shows the role a minted AWS session assumes (issue #781)',
     const r = await hopper(a, ['vault', 'mint-test', `aws-role/${ACCOUNT}/diag`]);
     expect(r.code).toBe(2);
     expect(r.err).toMatch(/STS refused AssumeRole on arn:aws:iam::123456789012:role\/diag: User is not authorized/);
+    // Which secret the test used (issue #1761).
+    expect(r.err).toContain('AWS_LAB');
     expect(sts.seen.map((s) => s.action)).toEqual(['AssumeRole']);
     expect(testedEvents(a)).toEqual([expect.objectContaining({ data: expect.objectContaining({ credential: 'AWS_LAB', reason: expect.stringMatching(/STS refused/) }) })]);
     noKeyAnywhere(a, r.err);
@@ -164,5 +168,28 @@ describe('a mint test shows the role a minted AWS session assumes (issue #781)',
     expect(namespace.err).toMatch(/aws-role/);
     expect((await hopper(a, ['vault', 'mint-test'])).err).toMatch(/usage: hopper vault mint-test/);
     expect(sts.seen).toEqual([]);
+  });
+
+  it('refuses when several minting credentials mint for the account, and names them all; STS is not asked (issue #1761)', async () => {
+    const { a, sts } = await boot();
+    const session = await a.login();
+    const value = JSON.stringify({ AccessKeyId: 'AKIAOTHER', SecretAccessKey: 'other-secret-0123456789' });
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_NEW', mints: { kind: 'aws-account', name: ACCOUNT }, value }, { token: session })).status).toBe(200);
+    const r = await hopper(a, ['vault', 'mint-test', `aws-role/${ACCOUNT}/diag`]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(`2 minting credentials mint for aws-account ${ACCOUNT}: AWS_LAB, AWS_NEW`);
+    expect(sts.seen).toEqual([]);
+  });
+
+  it('keeps no aws-account minting credential whose value is not JSON with AccessKeyId and SecretAccessKey (issue #1761)', async () => {
+    const { a } = await boot();
+    const session = await a.login();
+    const set = (value: string) => a.ui('/ui/api/vault', { action: 'set', name: 'AWS_KEY_ID', mints: { kind: 'aws-account', name: ACCOUNT }, value }, { token: session });
+    const half = await set('AKIAHALFOFIT');
+    expect(half.status).toBe(400);
+    expect(JSON.stringify(half.body)).toContain('AccessKeyId and SecretAccessKey');
+    expect(JSON.stringify(half.body)).not.toContain('AKIAHALFOFIT');
+    expect((await set(JSON.stringify({ AccessKeyId: 'AKIAHALFOFIT' }))).status).toBe(400);
+    expect(a.user().store.vault.get('AWS_KEY_ID')).toBeUndefined();
   });
 });

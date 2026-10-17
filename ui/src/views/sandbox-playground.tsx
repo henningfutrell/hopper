@@ -59,9 +59,14 @@ export function SandboxPlaygroundPanel() {
           <label className="grid gap-1 text-xs">How many
             <Input type="number" min={1} step={1} className="h-8 w-20" value={draft.count} onChange={set('count')} />
           </label>
+          <label className="grid gap-1 text-xs">Agent
+            <select data-slot="playground-agent" className="h-8 rounded-md border bg-background px-2 text-sm" value={draft.agent || view.agents[0]} disabled={draft.template !== ''} onChange={set('agent')}>
+              {view.agents.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
           <label className="grid gap-1 text-xs">Template
             <select className="h-8 rounded-md border bg-background px-2 text-sm" value={draft.template} onChange={set('template')}>
-              <option value="">none (the claude box)</option>
+              <option value="">none (the agent's box)</option>
               {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
             </select>
           </label>

@@ -37,6 +37,8 @@ export interface PlaygroundSandbox {
 export interface PlaygroundView {
   /** Undefined: sandboxes can start; else why not. */
   problem?: string;
+  /** The agents with a published box image, which a create may name (issue #865). */
+  agents: string[];
   limits: PlaygroundLimits;
   /** How many run now, all users together, and the user's. */
   running: { all: number; yours: number };

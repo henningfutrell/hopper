@@ -63,7 +63,7 @@ describe('the queue gate', () => {
     expect((await a.events('types=queue.ordered')).at(-1)?.data).toEqual({ jobIds: [job.id] });
   });
 
-  it('the user order never puts a lower-priority job first (issue #461): the high one starts first', async () => {
+  it('the user order wins over priority (issue #1776): the low one placed first starts first, and stays first', async () => {
     const a = await boot();
     const token = await a.login();
     await setGate(a, token, { mode: 'review', autoAcceptPerHour: null });
@@ -75,12 +75,38 @@ describe('the queue gate', () => {
     const low = await a.pull({ op: 'echo' }, { priority: 10 });
     expect((await queue(a)).presort.jobIds).toEqual([high.id, low.id]);
 
-    expect((await a.ui('/ui/api/queue/order', { jobIds: [low.id, high.id] }, { token })).status).toBe(200);
-    expect((await queue(a)).waiting.map((j: Job) => j.id)).toEqual([high.id, low.id]);
+    const r = await a.ui<{ adjusted: unknown[] }>('/ui/api/queue/order', { jobIds: [low.id, high.id] }, { token });
+    expect([r.status, r.body.adjusted]).toEqual([200, []]);
+    // The running blocker's rank is gone: it never comes back to the queue with it.
+    expect((await a.job(blocker.id)).userRank).toBeUndefined();
+    expect((await queue(a)).waiting.map((j: Job) => j.id)).toEqual([low.id, high.id]);
+    await a.sync();
+    expect((await queue(a)).waiting.map((j: Job) => j.id)).toEqual([low.id, high.id]);
     expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
     for (const id of [low.id, high.id]) await a.waitForStatus(id, 'finished');
     const claims = (await a.events('types=job.claimed')).map((e) => e.jobId).filter((id) => id === low.id || id === high.id);
-    expect(claims[0]).toBe(high.id);
+    expect(claims[0]).toBe(low.id);
+  });
+
+  it('a job the user did not place, of higher priority, goes ahead of a placed one: the answer says so (issue #1776)', async () => {
+    const a = await boot();
+    const token = await a.login();
+    await setGate(a, token, { mode: 'review', autoAcceptPerHour: null });
+    const blocker = await a.pull({ op: 'sleep', ms: 30000 });
+    expect((await a.ui('/ui/api/queue/order', { jobIds: [blocker.id] }, { token })).status).toBe(200);
+    await a.waitForStatus(blocker.id, 'running');
+    const high = await a.pull({ op: 'echo' }, { priority: 90 });
+    const low = await a.pull({ op: 'echo' }, { priority: 10 });
+    expect((await a.ui('/ui/api/queue/order', { jobIds: [high.id, low.id] }, { token })).status).toBe(200);
+
+    // Only the low one named: the high one loses its rank, and its priority puts it first.
+    const r = await a.ui<{ adjusted: { jobId: string; why: string }[] }>('/ui/api/queue/order', { jobIds: [low.id] }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.adjusted).toEqual([{ jobId: low.id, why: `not placed by you and of higher priority than its 10, a job goes ahead of it: ${high.id} (priority 90)` }]);
+    const q = await queue(a);
+    expect(q.waiting.map((j: Job) => j.id)).toEqual([high.id, low.id]);
+    expect(q.effectivePriority).toEqual({ [high.id]: 90, [low.id]: 10 });
+    expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
   });
 
   it('an order naming a job that is not waiting, or one twice, is refused', async () => {

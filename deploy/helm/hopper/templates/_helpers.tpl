@@ -60,9 +60,24 @@ storageClassName: {{ . | quote }}
 {{- end -}}
 {{- end -}}
 
-{{/* The lane pool key's Secret (issue #1284): the hopper and the lane pods' join step read it. */}}
+{{/*
+The lane pool key's Secret (issue #1284): the hopper and the lane pods' join step read its `key`. lanes.existingSecret
+(issue #1454): one the chart did not make, as a runner-only release's, with the key the hopper issued.
+*/}}
 {{- define "hopper.lanePoolSecret" -}}
-{{- printf "%s-lane-pool" (include "hopper.fullname" .) -}}
+{{- .Values.lanes.existingSecret | default (printf "%s-lane-pool" (include "hopper.fullname" .)) -}}
+{{- end -}}
+
+{{/* The URL the lane pods join and dial in at: lanes.hopperUrl (issue #1454), else the release's own hopper's Service. */}}
+{{- define "hopper.lanesHopperUrl" -}}
+{{- if .Values.lanes.hopperUrl -}}
+{{- if not (regexMatch "^https?://[^/#?]+/?$" .Values.lanes.hopperUrl) }}{{ fail "lanes.hopperUrl is the hopper's URL alone, http:// or https://, a host and a port: no path" }}{{ end -}}
+{{- .Values.lanes.hopperUrl | trimSuffix "/" -}}
+{{- else if .Values.hopper.enabled -}}
+{{- printf "http://%s:%d" (include "hopper.fullname" .) (.Values.port | int) -}}
+{{- else -}}
+{{- fail "hopper.enabled=false (a runner-only release) needs lanes.hopperUrl: the URL of the hopper the lane pods join" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

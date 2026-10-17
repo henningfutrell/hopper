@@ -43,6 +43,10 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
                                                          (wait until its checks end, or with --for mergeable until
                                                          its merge conflicts change; then as pr status)
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
+  sh "$HOPPER_GH" pr edit N       --repo OWNER/NAME [--title TITLE] [--body TEXT | --body-file FILE]
+                                                         (change its title or body: a pull request this job opened,
+                                                         or its work item's)
+  sh "$HOPPER_GH" pr close N      --repo OWNER/NAME      (close it with no merge: the same pull requests only)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
   sh "$HOPPER_GH" check log JOB  --repo OWNER/NAME      (a failed check's full log; JOB: the last number of the check's link)
@@ -69,8 +73,10 @@ hopper), the same as its Pull requests list, and reads GitHub only for a pull re
 then answers that read again for a minute (from: cache). To wait on checks, run pr wait, once: do not ask again and
 again. On a pull request the hopper follows, it returns when the hopper sees the checks end (or the pull request merged
 or closed), with its status (exit 0); --timeout is the most it waits (an hour unless said; exit 4 when it ends first).
-On one the hopper does not follow, it answers at once as pr status, wait none (exit 3): ask pr status again later, once
-a minute at most. A job that ends its turn with HOPPER_WAITING while a pr wait is open is woken with the answer.
+On one the hopper does not follow (a pull request in another repository, for example), it answers at once as pr status:
+its checks ended, wait settled (exit 0); else wait none (exit 3) and waitOn: end your turn with HOPPER_WAITING and the
+line on: pr OWNER/NAME#N checks, and the hopper wakes you when they end. Never poll pr status for it in a loop.
+A job that ends its turn with HOPPER_WAITING while a pr wait is open is woken with the answer.
 To wait on its merge conflicts (a tend job of the hopper rebases it, or another merge makes conflicts), run pr wait
 --for mergeable, once: it returns when the hopper sees its mergeable other than it was, or it merged or closed. The same
 read asked again and again is a poll: the answer says so (poll). Never wait on the hopper in a loop with sleep.
@@ -100,7 +106,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'pr edit'|'pr close'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac

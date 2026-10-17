@@ -27,6 +27,8 @@ import { JOB_LEASE_RELAYED_COLUMN, JOB_LEASE_TABLE } from './job-leases.ts';
 import { EVENT_CURSOR_TABLE } from './event-cursors.ts';
 import { WAIT_CHECK_LEASE_TABLE } from './wait-check-leases.ts';
 import { PROMOTION_SEND_TABLE } from './promotions.ts';
+import { noQuestionOnOwnWait } from './migration-own-wait-question.ts';
+import { TOPOLOGY_TABLE } from './topology.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -122,4 +124,10 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 78: A person's cancel or park of a job that another hopper drives (issue #1662), on the job's lease. A nullable column
   // only: the build before runs on it, and names its columns when it inserts.
   JOB_LEASE_RELAYED_COLUMN,
+  // 79: No question on a job's own wait (issue #1780): each job on its own wait loses the `questionId` of a question it asked
+  // before. Rows only: the build before reads it only for a job waiting on its answer or parked.
+  noQuestionOnOwnWait,
+  // 80: The topology sources (issue #1781): each source's last good snapshot of the infrastructure topology and its last
+  // read. A table only: the build before runs on it, and never reads it.
+  TOPOLOGY_TABLE,
 ];

@@ -5,7 +5,7 @@
 // The shrink guard (issue #1096) of their jobs' pushes: the push's lines from the user's mirror, with their own connection,
 // judged at the percent of their settings, read at each push.
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
-import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts';
+import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts'; import { createTopology, type Topology } from '../infra-plans/topology.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CountPushLines } from '../git-mirror/push-lines.ts';
@@ -42,6 +42,9 @@ import {
 
 /** No AI connection (issue #471): File an issue says so, and drafts nothing. */
 const NO_DRAFTER: IssueDrafter = { provider: 'claude', available: async () => ({ ok: false, reason: 'no AI connection to draft with' }), draft: async () => ({ error: 'no AI connection to draft with' }) };
+
+/** How many of a job's newest proxy events say which pull requests it opened (issue #1734). */
+const OWNED_READ = 1000;
 
 /** A user's side of the GitHub proxy: their jobs as askers, and their GitHub connection, which acts for their jobs and their jobs' git. */
 export interface UserGitHubProxy {
@@ -87,8 +90,8 @@ export interface UserGitHubProxy {
    * because the gate reads each plan's branch head on GitHub with this user's connection.
    */
   infraPlans: InfraPlans;
-  /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. */
-  outOfBand: OutOfBandChanges;
+  /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. The infrastructure topology (issue #1781). */
+  outOfBand: OutOfBandChanges; topology: Topology;
 }
 
 export interface UserGitHubProxyOptions {
@@ -170,7 +173,12 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
   const user: ProxyUser = {
     id: o.user.id,
     // A job moved off a lost machine (issue #1569) holds the token of its newest move only: the agent left there is refused.
-    holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts, o.store.jobs.get(parts.jobId)?.movedAway ?? 0),
+    // Gate 2's first step (issue #655): a job quarantined, or whose trust stamp does not verify, opens no door with it.
+    holds: (parts) => {
+      if (parts.userId !== o.user.id) return false;
+      const job = o.store.jobs.get(parts.jobId);
+      return holdsProxyToken(o.linkPrivateKey, parts, job?.movedAway ?? 0) && (job === undefined || o.store.jobs.opensDoors(job));
+    },
     job: (id) => o.store.jobs.get(id),
     machineOf: (job) => o.store.lanes.list().find((l) => l.id === job.laneId)?.machineId,
     record: (event) => { o.store.events.append(event); },
@@ -184,6 +192,13 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       };
     },
     pullRequest,
+    // A pull request the job opened through the proxy, or its work item's — one an earlier job of the item opened (issue #1734).
+    ownsPullRequest: (job, repo, number) => {
+      const opened = o.store.events.recent(OWNED_READ, ['github_proxy.done'], job.id)
+        .some((e) => e.data.op === 'pr.create' && e.data.number === number && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase());
+      const itemPr = job.source ? o.store.workItems.get(job.source.key)?.pullRequest : undefined;
+      return opened || (itemPr !== undefined && isPullRequest(itemPr, repo, number));
+    },
     replay: (jobId, key) => replayOf(o.store.events, jobId, key),
   };
   /** Where a GitLab job's git goes (issue #1448 part 3): its user's GitLab, rewritten to the hopper's GitLab git route. */
@@ -233,7 +248,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
           return api(key).head(repo, ref);
         },
       }),
-      outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }),
+      outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }), topology: createTopology({ store: o.store, clock: o.clock }),
       watches: createGitHubWatches({
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),

@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { Job, Question } from '../../src/domain/types.ts';
+import { QUARANTINED_HOLD } from '../../src/domain/trust-stamp.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -58,6 +59,22 @@ describe('a held job says why, from the CLI (issue #874)', () => {
     await hopper(a, ['job', 'accept', held.id]);
     await a.waitForStatus(held.id, 'finished');
     expect(JSON.parse((await hopper(a, ['job', 'show', held.id])).out).holdReason).toBeUndefined();
+  });
+
+  it('job quarantine holds a job with its reason, and unquarantine lifts it (issue #655)', async () => {
+    const a = await boot();
+    await hopper(a, ['queue', 'gate', 'review']);
+    const held = await a.pull({ op: 'echo' });
+    await a.waitForStatus(held.id, 'held');
+    const q = await hopper(a, ['job', 'quarantine', held.id]);
+    expect(q.code).toBe(0);
+    expect(JSON.parse(q.out).stamp).toMatchObject({ level: 'quarantined', by: 'person' });
+    expect((await a.events('types=job.quarantined')).find((e) => e.jobId === held.id)?.data).toMatchObject({ via: 'cli' });
+    await waitFor(async () => (await a.job(held.id)).holdReason === QUARANTINED_HOLD, { what: 'the quarantine hold' });
+    expect((await hopper(a, ['job', 'quarantine', held.id])).code).toBe(2);
+    expect((await hopper(a, ['job', 'unquarantine', held.id])).code).toBe(0);
+    await waitFor(async () => (await a.job(held.id)).holdReason === 'awaiting acceptance', { what: 'the hold it had' });
+    expect(sessionsIn(a)).toBe(0);
   });
 
   it('job show of a job the hopper does not know is a refusal', async () => {

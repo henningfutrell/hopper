@@ -3,6 +3,7 @@ import { decide } from '../decider/index.ts';
 import { retiredPins } from '../decider/retired.ts';
 import { signedOutOf } from '../decider/signed-out.ts';
 import { preemptionInput, type CleanupDue, type Decision, type DecisionInputs, type ExpectedCost, type Job, type JobId, type Lane, type LaneId, type MachineSnapshot } from '../domain/types.ts';
+import { brakeOf, DEFAULT_INTAKE_STRICTNESS } from '../domain/intake-strictness.ts';
 import { credentialHeldIds } from '../domain/machine-credentials.ts';
 import { nowIso, policyOf, priorityTagOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
@@ -32,6 +33,8 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
     const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
+    const strictness = c.store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS;
+    const stampHeld = waiting.flatMap((j) => { const reason = c.store.jobs.stampHold(j, brakeOf(strictness, j.source)); return reason ? [{ jobId: j.id, reason }] : []; });
     return {
       at: nowIso(c),
       trigger,
@@ -52,6 +55,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
       ...(preemption ? { preemption } : {}),
+      ...(stampHeld.length ? { stampHeld } : {}),
       policy: policyOf(c),
     };
   } };

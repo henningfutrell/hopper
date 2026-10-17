@@ -1,7 +1,7 @@
 // A direct job's pull request (issue #1068, design.md "Direct jobs"): followed as a job of an issue's is (follow.ts), with
 // no issue to read, label or close.
 import { SourceError } from '../../domain/ports.ts';
-import type { FollowUp, Job, PullRequestAct, PullRequestSeen } from '../../domain/types.ts';
+import { pullRequestRepo, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import { numberOf, waiting, type FollowContext } from './follow.ts';
 
@@ -20,7 +20,7 @@ export async function followDirectPullRequest(ctx: FollowContext, job: Job, act?
   try {
     if (act && (s.follow !== 'open' || !url)) throw new SourceError('its pull request is not open', true);
     if (s.follow !== 'open' || !url || !job.source?.repo) return undefined;
-    const pr = act ? undefined : await ctx.api.pullRequest(job.source.repo, numberOf(url));
+    const pr = act ? undefined : await ctx.api.pullRequest(pullRequestRepo(url, job.source.repo), numberOf(url));
     // Merged or closed on GitHub by someone else: it ended, and nothing more is read.
     if (pr && pr.state !== 'open') return { outcome: pr.state, pullRequest: url, part: false, state: { ...s, follow: pr.state } };
     const w = await waiting(ctx, job, url, s.seen, act);

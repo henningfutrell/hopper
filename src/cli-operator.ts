@@ -18,7 +18,7 @@
 // say — trading the refresh token that file holds for an API token, and keeping the new refresh token in the file.
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, type FailuresView, type ReviewItemView, type User } from './domain/types.ts';
+import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, type FailuresView, type Job, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
 import { OPERATOR_CLI_NAME } from './domain/failures.ts';
 import { OperatorRefusal, perform, sender, usage, type Call } from './cli-operator-call.ts';
@@ -35,7 +35,7 @@ import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
-import { QUEUE_USAGE, queueCall } from './cli-operator-queue.ts';
+import { QUEUE_USAGE, ownWaitOf, queueCall } from './cli-operator-queue.ts';
 import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
@@ -45,14 +45,17 @@ import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link
 
 export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
-export const OPERATOR_USAGE = `  hopper job show <id>                               one job: its state, and why it is held or waits (holdReason, waitReason)
+export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
+                                                     or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
   hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
   hopper job cancel <id> [--reason <text>]           any job that has not ended ends cancelled, the reason kept on it
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
+  hopper job end-wait <id> [--note <text>]           end a job's own wait: it goes on, told the note; a stranded one resumes its session
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
+  hopper job quarantine|unquarantine <id>            quarantine a job: held, and it reaches nothing through the hopper; or lift it
 ${DISMISS_USAGE}
 ${DIRECT_USAGE}
 ${QUEUE_USAGE}
@@ -71,6 +74,7 @@ ${QUEUE_USAGE}
   hopper handoff wont-do <id> --note <why>           Won't do: no more work on it; the note says why
   hopper failure list                                the open failures
   hopper failure retry <id>                          run a failure's job again
+  hopper failure stuck [<cause>]                     the stuck work by cause (stranded: a wait whose agent session ended); with a cause, run its bulk action
   hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
 ${PR_USAGE}
 ${REPO_USAGE}
@@ -123,18 +127,22 @@ function jobCall(args: string[]): Call {
   const direct = directCall(args[0], args.slice(1));
   if (direct) return direct;
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
-  const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes;
-  // The whole job as the job view reads it; a held job's `holdReason` says why it is held.
-  if (verb === 'show' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}` };
+  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|end-wait <id>');
+  const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes, note = values.note;
+  // End a job's own wait (issue #1779: a stranded one too), as the job's End wait button.
+  if (verb === 'end-wait' && notes === undefined && values.reason === undefined) return { role: 'operator', path: `${at}/end-wait`, body: async () => (note === undefined ? {} : { note }) };
+  if (verb === 'end-wait' || note !== undefined) throw usage('job end-wait <id> [--note <text>]');
+  // The whole job as the job view reads it; a held job's `holdReason` says why it is held, and one on its own wait what it waits on (issue #1780).
+  if (verb === 'show' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}`, pick: (j) => ({ ...(j as Job), ...ownWaitOf(j as Job) }) };
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
   if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject|cancel <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
-  if (verb === 'rerun' || verb === 'keep-original' || verb === 'accept-new-text') return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
+  // Quarantine and its lift (issue #655) too.
+  if (['rerun', 'keep-original', 'accept-new-text', 'quarantine', 'unquarantine'].includes(verb ?? '')) return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
     // As the Queue view's Accept: the accepted waiting jobs in queue order, then this one.
     return { role: 'operator', path: '/ui/api/queue/order', body: async (get) => {
@@ -142,7 +150,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text <id>');
+  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|end-wait <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */
@@ -183,7 +191,10 @@ function failureCall(args: string[]): Call {
   const [verb, id, ...extra] = args;
   if (verb === 'list' && !id) return failuresList((v) => v.recent);
   if (verb === 'retry' && id && extra.length === 0) return { role: 'operator', path: `/ui/api/failures/${encodeURIComponent(id)}/retry`, body: async () => ({}) };
-  throw usage('failure list | retry <id>');
+  // Stuck work (issues #1010, #1779): the causes, or one cause's bulk action.
+  if (verb === 'stuck' && !id) return failuresList((v) => v.stuck);
+  if (verb === 'stuck' && extra.length === 0) return { role: 'operator', path: `/ui/api/failures/stuck/${encodeURIComponent(id!)}`, body: async () => ({}) };
+  throw usage('failure list | retry <id> | stuck [<cause>]');
 }
 
 function backfillCall(args: string[]): Call {

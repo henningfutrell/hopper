@@ -201,14 +201,24 @@ const homeTar = (o: { plan?: Buffer; inputs?: Buffer }): Buffer => filesTar([
  */
 export interface NeedBoxResult { exit: number; outputs?: Buffer; problem?: string; stopped?: 'timed-out' | 'cancelled' }
 
+/** How long each part of a need step took, in ms (issue #1737): its image, the box's start, its run. A part not reached is absent. */
+export interface NeedBoxPhases { image?: number; start?: number; run?: number }
+
+/** The parts' times for a log line (issue #1737): ` (image 12.3 s, start 1.0 s, run 4.2 s)`; empty when none was reached. */
+export const phaseTimes = (p: NeedBoxPhases): string => {
+  const parts = (['image', 'start', 'run'] as const).filter((k) => p[k] !== undefined).map((k) => `${k} ${(p[k]! / 1000).toFixed(1)} s`);
+  return parts.length ? ` (${parts.join(', ')})` : '';
+};
+
 /** How long past the step's time limit the runtime's own wait may take: the hopper's timer ends the step first. */
 const WAIT_GRACE_MS = 5000;
 
 /**
  * Runs one need box to its end: its output to `log` as it comes, at most every `pollMs`. `signal` stops it (the job's
  * request gone). Never rejects: a failure of its own is `problem`, exit 125. The box and its volume are removed after it.
+ * `phases` is given the time of each part once the step ends (issue #1737).
  */
-export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }): Promise<NeedBoxResult> {
+export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number; phases?(p: NeedBoxPhases): void }): Promise<NeedBoxResult> {
   const labels = { [NEED_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
   const volume = `${box.name}-home`;
   let id = '';
@@ -234,8 +244,11 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     env = { ...env, HOPPER_STEP_FILES: homeTar({ ...(files.plan ? { plan: files.plan } : {}), ...(inputs ? { inputs } : {}) }).toString('base64') };
   }
   const home = join(box.dir, 'need-home.tar'), ready = join(box.dir, 'need-ready.tar');
+  const phases: NeedBoxPhases = {};
+  let mark = performance.now();
+  const lap = (part: keyof NeedBoxPhases): void => { const t = performance.now(); phases[part] = Math.round(t - mark); mark = t; };
   try {
-    const { image, user } = await boxImage(runtime, box.template.image, box.template.tools ? [...box.template.tools] : undefined, box.template.readOnly);
+    const { image, user } = await boxImage(runtime, box.template.image, box.template.tools ? [...box.template.tools] : undefined, box.template.readOnly).finally(() => lap('image'));
     if (!(await runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
     id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env, limits: boxLimits(box.template.limits), script: NEED_BOX_SCRIPT });
@@ -249,6 +262,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
       writeFileSync(ready, filesTar([{ name: `${FILES_DIR}/.ready`, data: '', mode: 0o600 }]), { mode: 0o600 });
       await copyIn(id, HOME, ready);
     }
+    lap('start');
     let ended = false;
     // The hopper's own timer holds the time limit (issue #1371): a runtime's wait that hangs past it ends the step all the same.
     const exited = runtime.wait(id, box.timeoutMs + WAIT_GRACE_MS).finally(() => { ended = true; });
@@ -264,6 +278,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     })();
     const first = await Promise.race([exited.then((exit) => ({ exit }), (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })), stopped, timedOut]);
     clearTimeout(limit);
+    lap('run');
     if (first === 'stopped' || first === 'timed-out') {
       ended = true;
       await runtime.stop(id).catch(() => undefined);
@@ -290,6 +305,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     return { exit: 125, problem: `the need box did not run: ${e instanceof Error ? e.message : String(e)}` };
   } finally {
     clearTimeout(limit);
+    io.phases?.(phases);
     rmSync(home, { force: true });
     rmSync(ready, { force: true });
     if (id) await runtime.remove(id).catch(() => {});

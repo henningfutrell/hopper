@@ -8,9 +8,10 @@ import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_YOLO_MODE, following, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { HANDOFF_WAIT, prOpenStuck } from '../domain/work-items.ts';
 import { handoffCard, takenCard } from './card.ts';
-import { keptWorkViews } from './kept-work.ts';
+import { keptWorkViews, type Sessions } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
+import { live, liveWhy } from './continued.ts';
 import { profileOf } from './profile.ts';
 import { tldrSettings } from '../tldr/service.ts';
 import { withShownTldr } from '../tldr/text.ts';
@@ -135,6 +136,13 @@ export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Hand
     const closed = no(h.resolution ? `already resolved: ${RESOLUTION_TEXT[h.resolution.action]}` : 'already closed');
     return { ...h, ...learn, continueResumes, card, actions: { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed } };
   }
+  // Its job live again (issue #1777): no resolution, Done and Won't do included — they would end a job about to do the
+  // work. The hand-off closes by itself, `resumed`.
+  if (job && live(job)) {
+    const none = no(`${liveWhy(job.status)}, and this hand-off closes by itself`);
+    const actions = { continue: none, fixed: none, doneByHand: none, wontDo: none };
+    return { ...h, ...learn, continueResumes, card: { ...card, why: `Nothing to do: its job ${liveWhy(job.status).replace(/^it /, '')}.` }, actions };
+  }
   const pending = record?.pending;
   const runs: Allowed = pending ? { ok: false, why: pending === 'retry' ? 'it runs again by itself' : 'it is being run again', soon: true } : runsAgain(store, h.jobId, takesBack);
   const actions = { continue: runs, fixed: runs, doneByHand: OK, wontDo: OK };
@@ -161,7 +169,7 @@ function prOpenStale(store: Reads, now: Date): string[] {
   return store.workItems.list({ state: ['pr_open'] }).filter((i) => prOpenStuck(i, follows(i.jobId), now.getTime())).map((i) => i.jobId ?? i.key);
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, sessions: Sessions, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
@@ -171,8 +179,8 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
   const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
   const tldr = tldrSettings(store);
   const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r, takesBack) } });
-  const shownHandoffs = highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true);
-  const keptWork = keptWorkViews(store, resumable, takesBack, discarding);
+  const shownHandoffs = highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), sessions.resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true);
+  const keptWork = keptWorkViews(store, sessions, takesBack, discarding);
   const recent = store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView);
   return {
     now: now.toISOString(),

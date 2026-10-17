@@ -88,12 +88,19 @@ const AWS_PROVIDER: Recipe = {
   install: `mkdir -p ${AWS_PROVIDER_DIR} && mv "$f" ${AWS_PROVIDER_DIR}/terraform-provider-aws_6.68.0_linux_$a.zip`,
 };
 
+/**
+ * How a download tries again (issue #1737): a network error while the image builds (a host it could not resolve, a reset)
+ * is most often gone a few seconds later. --retry-all-errors: curl tries again on every error, the DNS one included; the
+ * URL is pinned, so an error that stays is only paid for a few times.
+ */
+const CURL = 'curl -fsSL --retry 4 --retry-delay 3 --retry-all-errors --connect-timeout 30';
+
 /** One RUN per tool: a layer each, so a tool fetched for one image is not fetched again for another. */
 const step = (name: string, r: Recipe): string => {
   const arches = Object.entries(r.arch).map(([arch, x]) => `${arch}) sum=${x.sum} a=${x.a} ;;`).join(' ');
   return `# ${name} ${r.version}
 RUN set -eu; case "$(dpkg --print-architecture)" in ${arches} *) echo "${name}: no release for this architecture" >&2; exit 1 ;; esac; \\
-    f=/tmp/${name}.download; curl -fsSL "${r.url}" -o "$f"; echo "$sum  $f" | sha256sum -c -; \\
+    f=/tmp/${name}.download; ${CURL} "${r.url}" -o "$f"; echo "$sum  $f" | sha256sum -c -; \\
     ${r.install}; rm -rf /tmp/*`;
 };
 
@@ -124,7 +131,7 @@ export function toolsImage(base: { image: string; id?: string | undefined }, too
   const containerfile = `# Made by the hopper (issue #716): ${base.image} with ${set.join(', ')}. Each download is pinned and checked by its SHA-256.
 FROM ${FETCH_BASE} AS fetch
 LABEL ${TOOLS_STAGE_LABEL}="fetch"
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/* && mkdir -p ${DIR}/bin
+RUN apt-get -o Acquire::Retries=4 update && apt-get -o Acquire::Retries=4 install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/* && mkdir -p ${DIR}/bin
 ${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${wrapped ? `\n${readOnlySteps()}` : ''}${gated ? `\n${applyWrapperStep()}` : ''}
 
 FROM ${base.image}

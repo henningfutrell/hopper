@@ -22,7 +22,7 @@ export function createFollowOns(c: EngineContext, parent: Job, p: ReviewItem): S
       jobId: parent.id, proposalId: p.id, pathId: s.id, title: s.title, text: paths.find((x) => x.id === s.id)?.text ?? s.title,
       ...(s.note ? { note: s.note } : {}), siblings: selected.filter((o) => o.id !== s.id).map((o) => `Path ${o.id}: ${o.title}`),
     };
-    const created = store.jobs.create(spec, parent.priority, source);
+    const created = store.jobs.create(spec, parent.priority, source, parent);
     store.events.append({ type: 'job.queued', jobId: created.id, data: { spec, priority: parent.priority, ...(source ? { source } : {}), followOn: { jobId: parent.id, proposalId: p.id, pathId: s.id } } });
     store.jobs.update(created.id, { accepted: true, followOn });
     return { ...s, jobId: created.id };

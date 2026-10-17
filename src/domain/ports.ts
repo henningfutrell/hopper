@@ -39,6 +39,8 @@ export interface ExecutionContext {
   saveState(state: Record<string, unknown>): void;
   /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
   workTree(path: string): void;
+  /** A job Push it continued (issue #1472): the job worktree its kept work names, where it reopens when it recorded no state. */
+  keptTree?: import('./kept-work.ts').KeptTree;
   /** Report the agent session the job's agent runs in, once its agent is up (`job.agentSession`, issue #501): a parked job resumes it. */
   agentSession?(id: string): void;
   /**
@@ -144,6 +146,19 @@ export interface Executor extends ExecutorTerminal {
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
   /**
+   * The job run's first steps apart (issue #1662, the `job-run` saga): where the job's credentials go on its machine
+   * (its scratch dir, and whether its work tree may be made), placed by the saga's `credentials` step before its pane
+   * opens. Undefined: the run cannot start (`open` says why). Present exactly when `open` is.
+   */
+  credentialsAt?(ctx: ExecutionContext): { scratch: string; makeWorkTree: boolean } | undefined;
+  /**
+   * Opens the job's pane and starts its agent there, its task saved unsent in its executor state, so that `reattach`
+   * sends the task and watches the run, on this hopper or on another after a stop. Undefined: opened. An outcome: the
+   * run ended before it ran. `again`: a try of it that a stop cut short may have opened a pane, which is closed first.
+   * Absent: `run` places the credentials, opens the pane and runs in one call.
+   */
+  open?(ctx: ExecutionContext, again?: boolean): Promise<ExecutionOutcome | undefined>;
+  /**
    * Continue a job that returned `question`, or a parked one re-queued (`ctx.job.parked`, issue #501): deliver
    * `answer` (from `ctx.job.executorState`) and run until the next outcome. Absent → the executor never asks questions.
    */
@@ -183,6 +198,12 @@ export interface Executor extends ExecutorTerminal {
    * cannot park. Rejects only when it could not reach the job's machine: the sweep stops what runs there later.
    */
   park?(job: Job): Promise<void>;
+  /**
+   * An executor that cannot park, but whose ended job reopens in the work tree its state names (issue #1472 part 2): a
+   * print-mode agent's. Push it continues the job (`ctx.job.continued`), and `resume` starts a fresh turn there, its task
+   * first, then the brief. Absent → only an executor that parks reopens an ended job.
+   */
+  reopensKept?: true;
   /**
    * The lost-machine move (issue #1569): end the agent a job left on a machine it moved off, its pane named by `left` (the
    * job's executor state there), so it does no more work beside the job's new run. Its work tree stays. Idempotent; when
@@ -351,9 +372,7 @@ export interface RoutingView {
   machines(): readonly string[];
 }
 
-export interface Clock {
-  now(): Date;
-}
+export interface Clock { now(): Date }
 
 // ---- Questions -----------------------------------------------------------------------
 
@@ -603,10 +622,8 @@ export class SourceError extends Error {
   readonly permanent: boolean;
   readonly status?: number;
   constructor(message: string, permanent: boolean, status?: number) {
-    super(message);
-    this.name = 'SourceError';
-    this.permanent = permanent;
-    if (status !== undefined) this.status = status;
+    super(message); this.name = 'SourceError';
+    this.permanent = permanent; if (status !== undefined) this.status = status;
   }
 }
 
@@ -869,5 +886,5 @@ export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
-export type * from './store.ts'; export type * from './local-accounts.ts'; export type * from './event-cursors.ts'; // local accounts (issue #1380), event cursors (issue #1572)
+export type * from './store.ts'; export type * from './local-accounts.ts'; export type * from './event-cursors.ts'; export type * from './lane-pool-keys.ts'; // local accounts (issue #1380), event cursors (issue #1572), lane pool keys the hopper issues (issue #1454)
 export { CONFIG_NAMES, INSTANCE_CONFIG, USER_CONFIG } from './store.ts';

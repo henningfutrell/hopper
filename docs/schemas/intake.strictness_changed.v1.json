@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": [
+            "open",
+            "standard",
+            "strict",
+            "closed"
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "open",
+              "standard",
+              "strict",
+              "closed"
+            ]
+          }
+        },
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "open",
+              "standard",
+              "strict",
+              "closed"
+            ]
+          }
+        }
+      },
+      "required": [
+        "default",
+        "sources",
+        "repos"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": [
+            "open",
+            "standard",
+            "strict",
+            "closed"
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "open",
+              "standard",
+              "strict",
+              "closed"
+            ]
+          }
+        },
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "open",
+              "standard",
+              "strict",
+              "closed"
+            ]
+          }
+        }
+      },
+      "required": [
+        "default",
+        "sources",
+        "repos"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

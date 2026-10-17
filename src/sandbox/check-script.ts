@@ -100,6 +100,17 @@ function outcomeOf(run: ProbeRun, exit: number, output: string): ProbeOutcome {
   return (run.probe.denial ?? DENIAL).test(output) ? 'denied' : 'error';
 }
 
+/**
+ * What a probe that ran did, and whether it passed: it did what it expected, or it is an unmarked read refused as a right
+ * credential refuses it (issue #1736).
+ */
+export function judge(run: ProbeRun, exit: number, output: string): { outcome: ProbeOutcome; passed: boolean } {
+  const outcome = outcomeOf(run, exit, output);
+  const expect = run.mark === 'expect-denied' ? 'denied' : run.probe.expect;
+  const rightRefusal = run.mark === undefined && expect === 'allowed' && outcome === 'denied' && run.probe.rightRefusal?.test(output) === true;
+  return { outcome, passed: outcome === expect || rightRefusal };
+}
+
 /** The result of each probe, from what the check box wrote: a probe it wrote no line for did not run. */
 export function readResults(runs: readonly ProbeRun[], logs: string): ProbeResult[] {
   const lines = new Map<number, { exit: number; output: string }>();
@@ -115,8 +126,8 @@ export function readResults(runs: readonly ProbeRun[], logs: string): ProbeResul
     if (run.mark === 'skip') return { ...base, outcome: 'skipped', passed: true, output: 'not run: the template marks it skip' };
     const got = lines.get(n);
     if (!got) return { ...base, outcome: 'error', passed: false, output: 'it did not run', ...note };
-    const outcome = outcomeOf(run, got.exit, got.output);
-    const passed = outcome === base.expect;
-    return { ...base, outcome, passed, exit: got.exit, output: got.output.trim().slice(-PROBE_OUTPUT_MAX), ...(passed ? {} : note) };
+    const { outcome, passed } = judge(run, got.exit, got.output);
+    // A note says why a read can be refused: on a probe that failed, or on a read that passed refused (issue #1736).
+    return { ...base, outcome, passed, exit: got.exit, output: got.output.trim().slice(-PROBE_OUTPUT_MAX), ...(passed && outcome === base.expect ? {} : note) };
   });
 }

@@ -29,7 +29,7 @@ import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
-import { prWaitOver, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
+import { prWaitOver, unfollowedWait, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
 import type { ProxyReplay } from './sub-issue-links.ts';
@@ -50,6 +50,8 @@ export interface ProxyUser {
   ledger?(url: string): LedgerView | undefined;
   /** What this user's records know of pull request `number` of `repo` (issue #1072). Absent: nothing; GitHub is read. */
   pullRequest?(repo: string, number: number): KnownPullRequest;
+  /** Whether `job` opened pull request `number` of `repo`, or it is the job's work item's (issue #1734). Absent: none. */
+  ownsPullRequest?(job: Job, repo: string, number: number): boolean;
   /** The first answer to the job's request with resend key `key` (issue #1607); undefined: none yet. Absent: none is kept. */
   replay?(jobId: string, key: string): ProxyReplay | undefined;
 }
@@ -198,8 +200,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
           return { status: 502, body: { error: (e as Error).message, requestId } };
         }
       }
+      const owns = req.op === 'pr.edit' || req.op === 'pr.close' ? { ownsPullRequest: user.ownsPullRequest?.(job, req.repo, req.number) === true } : {};
       const asker: ProxyAsker = {
-        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts,
+        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts, ...owns,
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
       };
       // No connection of the job's own user (issue #1380): refused with how to connect, before the repositories it would
@@ -250,6 +253,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       // user, so a source lists it as a request card, which a person approves (it is never of a trusted origin).
       const maskRequest = (r: ProxyRequest): ProxyRequest => {
         if (r.op === 'issue.create' || r.op === 'pr.create') return { ...r, title: maskGitHubTokens(r.title), body: maskGitHubTokens(r.body) };
+        if (r.op === 'pr.edit') return { ...r, ...(r.title !== undefined ? { title: maskGitHubTokens(r.title) } : {}), ...(r.body !== undefined ? { body: maskGitHubTokens(r.body) } : {}) };
         if (r.op === 'issue.comment') return { ...r, body: maskGitHubTokens(r.body) };
         return r;
       };
@@ -265,8 +269,8 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         const poll = pollOf();
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source, ...(poll ? { poll: poll.reads } : {}) });
         const seen = req.op === 'repo.view' ? { contribution } : {};
-        // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end.
-        const wait = waiting ? { wait: 'none' } : {};
+        // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end (issue #1731).
+        const wait = waiting && 'number' in req ? unfollowedWait(req.repo, req.number, result, waiting.for) : {};
         tellPolled(poll, result);
         return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait, ...(poll ? { poll: poll.note } : {}) } };
       };

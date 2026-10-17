@@ -127,6 +127,19 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(calls().at(-1)!.argv).toEqual([...resumed(session), 'French.']);
   });
 
+  // Issue #1472 part 2: Push it continues the ended job; with no pane to park, a fresh turn starts in its saved work tree.
+  it('a job continued to push its kept work starts a fresh turn in its saved work tree, its task first, never its old session', async () => {
+    expect(ex.reopensKept).toBe(true);
+    reply('Pushed the branch.\nHOPPER_DONE');
+    const t = ctxFor({ prompt: 'Write a greeting', cwd: join(dir, 'elsewhere') }, { state: { cwd: work, chatId: session } });
+    t.ctx.job.continued = { at: '', keptWork: true };
+    expect(await ex.resume!(t.ctx, 'Push the kept work.')).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'Pushed the branch.', chatId: session } });
+    const call = calls().at(-1)!;
+    expect(call.cwd).toBe(work);
+    expect(call.argv.slice(0, -1)).toEqual(first('m-1').filter((a, i, all) => a !== 'm-1' && all[i + 1] !== 'm-1'));
+    expect(call.argv.at(-1)).toMatch(/^Write a greeting\n\nPush the kept work\.\n\n\[hopper publishing rule\]/);
+  });
+
   // Issue #1295: a turn's agent runs as Claude does in a pane, in the job's sandbox, with podman a client of the job's
   // socket; that socket runs in the turn's scope only while the agent runs.
   it('runs the CLI in the job\'s sandbox, with the job\'s socket started for the turn and stopped when it ends', async () => {

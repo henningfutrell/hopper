@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import { failureSettingsOf } from '../domain/failures.ts';
 import { jobBom } from '../domain/job-bom.ts';
+import { jobIdStarting } from '../domain/job-id-start.ts';
 import { jobGraph, type JobGraphLink } from '../domain/job-graph.ts';
 import type { WorkItem } from '../domain/work-items.ts';
 import { awaitsBatch } from '../domain/work-item-landing.ts';
@@ -148,9 +149,15 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     return { notes: job.notes ?? [] };
   });
 
+  // By its id, or its short id (issue #1780): the start of its id, as the views show it.
   app.get('/api/jobs/:id', async (req) => {
     const { id } = parseWith(idParams, req.params);
-    const job = o.tenant(req).store.jobs.get(id);
+    const { store } = o.tenant(req);
+    const exact = store.jobs.get(id);
+    if (exact) return withPhase(exact);
+    const started = jobIdStarting(store.jobs.list().map((j) => j.id), id);
+    if (started.ambiguous) throw new HttpError(409, `${started.ambiguous} jobs have an id that starts with ${id}: give more of it`);
+    const job = started.id ? store.jobs.get(started.id) : undefined;
     if (!job) throw new HttpError(404, `job ${id} not found`);
     return withPhase(job);
   });

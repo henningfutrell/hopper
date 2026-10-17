@@ -40,7 +40,7 @@ You need:
 - At least one of:
   - An AWS account with a role that the hopper can assume, with read access only.
   - A Kubernetes cluster, with a credential that can read only. `helm list` reads Secrets: a `view` role cannot, so on
-    a `view` role the `helm list` probe fails. That is expected (see "Read the report").
+    a `view` role `helm list` is refused on secrets. The probe passes then (see "Read the report").
 - A **minting credential** in your vault for each: `hopper vault set <name> --mints aws-account/<account id> <
   credential.json`, or `--mints cluster/<name>`. The vault help page (`help/vault.md`, "Minted credentials") says what
   each holds.
@@ -90,8 +90,8 @@ File one report for each place.
 - **failed**: its read did not work, or a write went through. A write that went through is a real finding.
 - **skipped**: no probe of it ran. The step `tool.<name>` says what to name to cover it.
 
-A `helm list` that fails with `Forbidden` on a `view` role is expected. Mark the probe `expect-denied` (`hopper template
-save <template> --mark helm.list=expect-denied`) and run again, or report it as it is.
+A `helm list` refused with `Forbidden` on secrets on a `view` role passes: that is right for a read credential, and the
+check's summary names it. A `helm list` refused on anything else fails.
 
 The report is masked: your account id, role, cluster, namespace and workspace names show as `<account>`, `<role>`,
 `<cluster>`, `<namespace>` and `<workspace>`. Keys, tokens, email addresses, IP addresses, private host names and your

@@ -29,18 +29,18 @@ import { evidenceOf, machineOf } from './evidence.ts';
 import { createJevSteps, type JevCase } from './jev.ts';
 import { attemptOf, causeInputOf, recentOf, repeatedOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts'; import { createChecksRed, type ChecksRedOptions } from './checks-red.ts'; import { createUnfinished, type UnfinishedDeps } from './unfinished.ts';
-import { rerunRecordOf, retryable } from './rerun.ts';
+import { rerunRecordOf, retryable } from './rerun.ts'; import { settleLiveAgain } from './continued.ts';
 import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
 import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
-import { createBackfill } from './backfill.ts'; import { autoPush } from './kept-work.ts';
+import { createBackfill } from './backfill.ts'; import { autoPush, type Sessions } from './kept-work.ts';
 import type { FailureAction, Failures } from './failures.ts';
 import { signatureOf } from './signature.ts';
 import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts';
 
-/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. */
-export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'>, ChecksRedOptions, Pick<UnfinishedDeps, 'unfinishedPullRequest'> {
+/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. `reopens` (`Engine.reopens`): Push it takes the job. */
+export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'>, Pick<Sessions, 'reopens'>, ChecksRedOptions, Pick<UnfinishedDeps, 'unfinishedPullRequest'> {
   store: UserStore;
   clock: Clock;
   /** The machines now: a problem's check reads them. */
@@ -207,9 +207,13 @@ export function createFailures(o: FailuresOptions): Failures {
     }
   }
 
-  /** Make one due run again; a refusal that may pass (its end not reported yet, its source down) is tried again later. */
+  /**
+   * Make one due run again; a refusal that may pass (its end not reported yet, its source down) is tried again later. Its
+   * job live again (issue #1777: a Continue or a resume took it first), before the run or after a refusal: the record
+   * ends taken by it, and no hand-off opens.
+   */
   async function runPending(r: FailureRecord): Promise<void> {
-    if (await checksRed.waits(r, SOURCE_DOWN_MS) || await doneCheck.beforeRun(r, SOURCE_DOWN_MS) || stopped) return;
+    if (store.tx(() => settleLiveAgain(store, r.jobId, now().toISOString())) || stopped || await checksRed.waits(r, SOURCE_DOWN_MS) || await doneCheck.beforeRun(r, SOURCE_DOWN_MS) || stopped) return;
     const result = r.pending === 'continue' ? await (checksRed.continueOf(r) ?? unfinished.continueOf(r) ?? timeouts.continueOf(r)) : await o.rerun(r.jobId, 'assessor');
     if (stopped) return;
     store.tx(() => {
@@ -220,7 +224,7 @@ export function createFailures(o: FailuresOptions): Failures {
         store.failures.update(r.id, { pending: undefined, pendingAt: undefined, outcome: DONE[cur.pending], outcomeAt: at.toISOString(), nextJobId: result.job.id, note: undefined });
         return;
       }
-      const later = result.reason === 'source' ? SOURCE_DOWN_MS : /not reported|not running/.test(result.message) ? SOON_MS : undefined;
+      if (settleLiveAgain(store, r.jobId, at.toISOString())) return; const later = result.reason === 'source' ? SOURCE_DOWN_MS : /not reported|not running/.test(result.message) ? SOON_MS : undefined;
       if (later !== undefined) store.failures.update(r.id, { pendingAt: new Date(at.getTime() + later).toISOString(), note: result.message });
       else handoffs.afterRecord(store.failures.update(r.id, { pending: undefined, pendingAt: undefined, outcome: 'not_retried', outcomeAt: at.toISOString(), note: result.message }));
     });
@@ -277,7 +281,7 @@ export function createFailures(o: FailuresOptions): Failures {
           if (stopped) return;
           await runPending(r);
         }
-        if (!stopped) await checkWork(); if (!stopped && settings().auto.push) await autoPush({ store, resumable: o.resumable, takesBack: o.takesBack, continueJob: o.continueJob, live: () => !stopped, logger: o.logger });
+        if (!stopped) await checkWork(); if (!stopped && settings().auto.push) await autoPush({ store, resumable: o.resumable, reopens: o.reopens, takesBack: o.takesBack, continueJob: o.continueJob, live: () => !stopped, logger: o.logger });
         if (!stopped) await runChecks();
         if (!stopped) prune();
       } catch (e) {
@@ -331,7 +335,7 @@ export function createFailures(o: FailuresOptions): Failures {
     sweep,
     dismissStale: () => handoffs.dismissStale(),
     backfill,
-    view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack, o.discarding),
+    view: () => viewOf(store, settings(), now(), { resumable: o.resumable, reopens: o.reopens }, o.takesBack, o.discarding),
     blocks() {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.

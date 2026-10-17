@@ -46,7 +46,7 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
-  instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
+  instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'lanePoolKeys' | 'users'>;
   sessions: UiSessions;
   /** Grants (issue #881), and every scope a route needs. */
   grants: import('./api-grants.ts').ApiGrants; proofs: import('./dpop.ts').DpopProofs; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
@@ -166,7 +166,6 @@ const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: U
 };
 
 
-/** Add machine's join code: for a sandbox box of a template, the template (issue #558). */
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const { sessions, signIn } = o;
   /** The session's user's name (the user may be gone from a stale session's view: its id then). */
@@ -220,7 +219,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return tokenRefusal(req, reply, 'admin');
   } };
 
-  app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
+  app.post('/ui/api/queue/order', operator, async (req) => o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
   // The usage graph's range and step are the user's own choice, a viewer's too; the history retention deletes samples: admin.
   app.post('/ui/api/usage-history/view', allow('viewer'), async (req) => {
@@ -332,7 +331,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.offer;
   });
 
-  // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
+  // Add machine (issue #308): a join code for the line (src/http/ui/machine-join.ts). A sandbox never joins as a machine (issue #1349).
   registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock }); registerSandboxPlaygroundRoutes(app, { admin, tenant: o.tenant, playground: o.playground }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); registerHeaderBadgeRoutes(app, { viewer: allow('viewer'), tenant: o.tenant }); registerDiskBudgetRoutes(app, { admin, tenant: o.tenant }); registerLeftoverRoutes(app, { operator, tenant: o.tenant }); registerMachineDrainRoutes(app, { admin, tenant: o.tenant }); registerWindowsLinkRoutes(app, { admin, tenant: o.tenant, clock: o.clock }); // the sandbox playground (issue #1410), the memory alert (issue #868), the header badges (issue #1181), the disk budget (issue #1120), the leftovers (issue #1116), draining a machine (issue #1511), the Windows link report (issue #712)
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.

@@ -70,6 +70,12 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: ORIGIN_PENDING });
       continue;
     }
+    const stamp = inputs.stampHeld?.find((h) => h.jobId === job.id);
+    if (stamp) {
+      // Issue #655: no job starts without a trust stamp that verifies, at the dispatch minimum or above — resuming or not.
+      hold.push({ jobId: job.id, reason: stamp.reason });
+      continue;
+    }
     if (job.textChange) {
       // Before every other judgement: no approval or acceptance starts a job whose item's text nobody approved.
       hold.push({ jobId: job.id, reason: TEXT_CHANGED });

@@ -1,6 +1,6 @@
 // Machines: what each can run, its lanes (and those it keeps for jobs pinned to it, issue #372), and
 // the usage budgets that cap them. Logged in, Add machine shows
-// one line that joins a computer or a sandbox box (issue #308, machine-join.tsx); or add this
+// one line that joins a computer (issue #308, machine-join.tsx; a sandbox never joins, issue #1349); or add this
 // machine — no ssh target, its name and herdr session (issue #260); an ssh target that is this machine is
 // added so too, and in a container there is no adding it (issue #275) — or attach a machine over ssh (POST /ui/api/machines), edit (its name and how it is reached too, issue #205) or remove
 // any machine — each a machine-source instance, edited like every plugin instance (POST /ui/api/plugins,
@@ -282,7 +282,7 @@ export function Machines() {
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
-        : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
+        : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer.</Empty></Panel>}
       {authed && <SandboxPlaygroundPanel />}
       {machines.length > 0 && <DiskBudgetPanel />}
       {machines.length > 0 && <LaneTuningPanel />}

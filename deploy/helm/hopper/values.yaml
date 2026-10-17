@@ -2,6 +2,12 @@
 # with no values brings up the hopper, its Postgres, OpenFGA and Solr, as compose.yaml does. No container runtime socket,
 # no host path and no settings: sign-in, GitHub and every other setting are set in the UI, as in compose.
 
+# The hopper itself, with its Postgres, OpenFGA, Solr and every other part. false: a runner-only release (issue #1454,
+# docs/deploy.md "Lane pods of another release"): the lane pods alone, which join the hopper lanes.hopperUrl names (a
+# compose hopper, or one in another release) with the key it issued, in lanes.existingSecret. No restart of that hopper.
+hopper:
+  enabled: true
+
 # The hopper's image. The update channel is the tag: latest (the same image as stable), stable, beta, canary or dev.
 image:
   repository: ghcr.io/henningfutrell/hopper
@@ -240,7 +246,15 @@ networkPolicy:
 lanes:
   # How many: 0 runs none. Scaled down, a pod takes no new job and is retired once the jobs on it end.
   replicas: 0
-  # The agent CLI in the box image (ghcr.io/…:box-<agent>, of the hopper's update channel).
+  # The hopper the pods join, as the pods reach it: http(s)://host:port, no path (issue #1454). Empty: this release's own
+  # hopper. Needed with hopper.enabled=false. That hopper answers only to the names it knows: its LAN names, its public URL.
+  hopperUrl: ""
+  # A Secret you make with the lane pool key under `key` (issue #1454): the key the hopper issued (Add machine, Pod /
+  # Kubernetes, or `hopper pool-key`). The pods join as the machines of the person it was issued to. Empty: the chart
+  # makes <release>-lane-pool, a key only this release's own hopper reads. Needed with hopper.enabled=false.
+  existingSecret: ""
+  # The agent CLI in the box image (ghcr.io/…:box-<agent>, of the hopper's update channel): claude, codex, cursor, omp
+  # or opencode (issue #865).
   agent: claude
   # Another box image tag; empty: box-<agent> for latest and stable, box-<agent>-<channel> for the other channels.
   imageTag: ""

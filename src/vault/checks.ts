@@ -10,12 +10,17 @@
 // leaving the hopper or the vault's own container. The check runs no job, so the AWS session is named for the check
 // (`CHECK_MINT_ID`), and the minting credential's `lastUsed` (a job's) is left as it is. `vault.check_minted` and
 // `vault.check_mint_refused` record each, never a credential.
+//
+// Issue #1779: a check that failed as the vault minted nothing for a read need runs again when a minting credential for
+// that need's account or cluster is set (`recheckUnminted`): its fix needs no person to ask for the check too.
 import type { UserStore } from '../domain/ports.ts';
-import type { OperationProfile, VaultAccess } from '../domain/access.ts';
+import type { Asset, OperationProfile, VaultAccess } from '../domain/access.ts';
 import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
-import { currentCheck, failedProbes, probeMarksProblem, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
+import { mintSourceFor } from '../domain/cluster-discovery.ts';
+import { currentCheck, failedProbes, probeMarksProblem, unmintedNeeds, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
+import type { Template } from '../domain/vault.ts';
 import { PROBES } from '../sandbox/probes.ts';
-import type { MintFrom } from './mint.ts';
+import { fromOf, usedOf, type MintFrom } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
 
 /**
@@ -66,14 +71,35 @@ export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx'>
       if (!t) return { ok: false, code: 'not_found', error: `no template ${name}` };
       if (!t.readOnly) return { ok: false, code: 'invalid', error: `${name} takes no read-only check: only a template a job asked for with read needs only does` };
       if (currentCheck(t)?.state === 'running') return { ok: false, code: 'conflict', error: `the read-only check of ${name} runs now` };
-      store.tx(() => {
-        const { check: _was, ...rest } = t;
-        vault.saveTemplate(rest);
-        events.append({ type: 'template.check_requested', data: { template: name, by } });
-      });
+      store.tx(() => askCheck(store, t, by));
       return { ok: true };
     },
   };
+}
+
+/** The template's current check goes, so the next check pass runs one; `by` asked for it. */
+function askCheck(store: Pick<UserStore, 'vault' | 'events'>, t: Template, by: string): void {
+  const { check: _was, ...rest } = t;
+  store.vault.saveTemplate(rest);
+  store.events.append({ type: 'template.check_requested', data: { template: t.name, by } });
+}
+
+/** The account or cluster a credential for a read on the asset is minted from; undefined when the vault mints none for it. */
+function mintsForOf(asset: Asset): Asset | undefined {
+  const kind = mintKindFor(asset.kind);
+  const target = kind ? mintTarget(kind, { operation: 'read', asset }) : undefined;
+  return target && typeof target !== 'string' ? target.mintsFor : undefined;
+}
+
+/**
+ * A minting credential for `mints` was set (issue #1779): each template whose check failed as the vault minted nothing for
+ * a read need minted from it loses that check, so the next check pass runs one. Run in the set's transaction.
+ */
+export function recheckUnminted(store: Pick<UserStore, 'vault' | 'events'>, mints: Asset, credential: string): void {
+  for (const t of store.vault.templates()) {
+    const from = unmintedNeeds(t).map((u) => mintsForOf(u.asset));
+    if (from.some((m) => m?.kind === mints.kind && m.name === mints.name)) askCheck(store, t, `minting credential ${credential}`);
+  }
 }
 
 function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; access?: VaultAccess; bindings?: MintBindings }): (ask: CheckMintAsk, from: MintFrom) => Promise<CheckMintAnswer> {
@@ -95,16 +121,15 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; acc
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
     const decision = await o.access.decideCheckMint({ template, check, operation: profile.operation, asset: profile.asset });
     if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
-    const { mintsFor } = target;
-    const credential = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
-    if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
-    // Held and recorded before the minter makes the Secret (issue #1628), as a need step's.
-    if (target.kind === 'kube' && target.bindTo) o.bindings?.named(check, { credential: credential.name, namespace: target.namespace, secret: target.bindTo });
-    const made = await from(credential.name, target, CHECK_MINT_ID);
+    const source = mintSourceFor(vault.list(), target, profile.operation);
+    if (typeof source === 'string') return refuse(source, decision.id);
+    // Held and recorded before the minter makes the Secret (issue #1628), as a need step's. A discovered cluster's EKS token binds to nothing.
+    if (target.kind === 'kube' && target.bindTo && 'credential' in source) o.bindings?.named(check, { credential: source.credential.name, namespace: target.namespace, secret: target.bindTo });
+    const made = await from(fromOf(source), target, CHECK_MINT_ID);
     if ('refused' in made) return refuse(made.refused, decision.id);
     events.append({
       type: 'vault.check_minted',
-      data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: credential.name, decision: decision.id, expiresAt: expiryOf(made.minted), ...(made.bound ? { bound: made.bound } : {}) },
+      data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: usedOf(source, made), decision: decision.id, expiresAt: expiryOf(made.minted), ...(made.bound ? { bound: made.bound } : {}) },
     });
     return { minted: made.minted, reach: made.reach };
   };

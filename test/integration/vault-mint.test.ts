@@ -309,11 +309,12 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', Action: expect.arrayContaining(['ec2:Create*']) })]) });
 
     const bad = { ...value, SessionName: 'not a session name' };
-    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(bad) }, { token: session })).status).toBe(200);
-    const refused = await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token);
-    expect(refused.code).not.toBe(0);
-    expect(refused.stderr).toMatch(/SessionName/);
-    expect(sts.seen).toHaveLength(1);
+    // The vault keeps no minting credential it could not mint from (issue #1761): the save is refused, the old one kept.
+    const refused = await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(bad) }, { token: session });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toMatch(/SessionName/);
+    expect((await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token)).code).toBe(0);
+    expect(new URLSearchParams(sts.seen[1]!.body).get('RoleSessionName')).toBe('p2zapwin');
     mintingCredentialsNowhere(a, dir);
   });
 });

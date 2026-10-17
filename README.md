@@ -362,8 +362,8 @@ An issue labelled `hopper` and `on-box` now runs its script in the container.
 ### Cursor's agent
 
 The `cursor-agent` executor runs a job in Cursor's agent (the Cursor CLI, `cursor-agent`) instead of
-Claude Code: one print-mode run per turn, in the job's working directory, on this host or an ssh
-target. A question it asks is answered in the same Cursor chat. It needs no herdr, and nothing
+Claude Code: one print-mode run per turn, in the job's working directory, on this host, an ssh
+target or a computer that joined with its line. A question it asks is answered in the same Cursor chat. It needs no herdr, and nothing
 of it shows in a herdr pane.
 
 1. **On each machine that runs it**: install the Cursor CLI
@@ -390,17 +390,15 @@ To run Claude with no screen at all, switch the `claude` executor on under **Shi
 mode, one run per turn, on this host or an ssh target, as `cursor-agent` runs (steps above). A question it asks is
 answered in the same Claude session. It has no pane to watch and cannot pick up again after a daemon restart.
 
-### Agent boxes: claude, codex, cursor, omp and opencode
+### Other agents: codex, opencode and omp
 
-On a computer with docker, `bash scripts/agent-boxes.sh` (from a checkout) starts one container per agent
-CLI, each a machine of its own that runs its agent's jobs: claude in Claude Code, cursor in Cursor's agent,
-codex, opencode and omp each in its own CLI. It finds the hopper in its container by itself and attaches
-them all; running it again puts every box back as it should be.
+The `codex`, `opencode` and `omp` executors run a job in that agent's CLI, as `cursor-agent` runs Cursor's agent
+(steps above): one print-mode run per turn, on this host, an ssh target or a computer that joined with its line.
+Install the CLI on each machine that runs it and sign it in once there; opencode needs no sign-in.
 
-1. `bash scripts/agent-boxes.sh`
-2. `bash scripts/agent-boxes.sh --sign-in`: each agent not signed in yet opens its own sign-in here (a link
-   or a code to enter on any device). Once per box: its home keeps it. opencode needs none.
-3. Send jobs to a box with a routing rule in the Routing view: set its machine (`hopper-box-<agent>`).
+The hopper publishes a box image of each agent: `ghcr.io/henningfutrell/hopper:box-<agent>`, for `claude`, `codex`,
+`cursor`, `omp` and `opencode`. The sandbox playground starts a box of the agent you pick, and the Helm chart's lane
+pods run the agent `lanes.agent` names.
 
 ### Send jobs to one machine
 

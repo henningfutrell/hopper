@@ -262,6 +262,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
       return move('needs_you', { waitingOn: HANDOFF_WAIT, failedJobId: job.id });
     case 'handoff.closed':
       if (d.end === 'wont_do') return move('dropped', { waitingOn: undefined });
+      // Its job live again (issue #1777): it works on, as after `job.continued`.
+      if (d.end === 'resumed') return base.eventState === 'needs_you' ? move('working', { waitingOn: undefined, failedJobId: undefined }) : undefined;
       return base.eventState === 'needs_you' && ['cleared', 'superseded', 'item_closed', 'job_gone'].includes(String(d.end)) ? move('failed', { waitingOn: undefined }) : undefined;
     case 'job.finished': {
       if (typeof d.partlyDone === 'string') return move('pr_open', { pullRequest: d.partlyDone, pullRequestState: 'open', waitingOn: 'the merge of its part', failedJobId: undefined });

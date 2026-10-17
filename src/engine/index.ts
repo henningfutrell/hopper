@@ -1,8 +1,8 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
-import type { SourceHost } from '../domain/ports.ts';
+import type { SourceHost } from '../domain/ports.ts'; import type { SagaStepContext } from '../sagas/coordinator.ts';
 import { settledBy } from '../domain/wait-on.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
+import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
@@ -76,6 +76,12 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly parkingExecutors: string[];
   /** Whether a failed job's own agent session can resume (issue #551): its executor parks, and it recorded a session and its pane state. */
   resumable(job: Job): boolean;
+  /**
+   * Whether an ended job reopens in its kept work tree (issue #1472 part 2): its executor parks, or reopens with no park
+   * (`Executor.reopensKept`, a print-mode agent's), and it recorded its state. Its own agent session resumes when
+   * `resumable`, else a fresh session starts there.
+   */
+  reopens(job: Job): boolean;
   /** Of those, the ones that run the research and proposal loop (issue #548): only their jobs may shift phase from a question. */
   readonly reviewingExecutors: string[];
   /** Phase shifts from a question (issue #548): fork or switch into research or a proposal, and their settings. */
@@ -104,6 +110,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
    * `left`. Nothing when the job or its executor's `endLeft` is gone. Rejects while that machine cannot be reached.
    */
   endLeft(jobId: string, left: Job['executorState']): Promise<void>;
+  /** A step of the `job-run` saga (issue #1662, job-run.ts), done by this user's runner. Rejects when the run is left here. */
+  jobRunStep(name: string, s: SagaStepContext): Promise<Record<string, unknown>>;
   /** A person keeps or removes a leftover the sweep listed on a machine (issue #1116, `Sweep.decideLeftover`). */
   decideLeftover(machineId: string, path: string, decision: 'keep' | 'remove', by: ActingPerson): Promise<{ machineId: string; path: string; decision: 'keep' | 'remove' }>;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
@@ -137,7 +145,7 @@ export function createEngine(o: EngineOptions): Engine {
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), traceContext: o.traceContext ?? (() => ({})), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
     jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
-    ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
+    ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}), ...(o.waitReads ? { waitReads: o.waitReads } : {}), ...(o.jobRuns ? { jobRuns: o.jobRuns } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
     leases: createJobLeases({ store, clock: o.clock, ...(o.jobLeaseMs ? { leaseMs: o.jobLeaseMs } : {}) }),
@@ -188,6 +196,8 @@ export function createEngine(o: EngineOptions): Engine {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
     resumable: (job) => job.agentSession !== undefined && job.executorState !== undefined && o.executors.get(job.spec.executor)?.park !== undefined,
+    // With no state recorded (issue #1472), an executor that parks reopens in the job worktree its kept work names.
+    reopens: (job) => { const ex = o.executors.get(job.spec.executor); return job.executorState !== undefined ? ex?.park !== undefined || ex?.reopensKept === true : ex?.park !== undefined && keptTreeOf(keptWorkOf(store.events.recent(1, [...WORK_EVENTS], job.id))[0]) !== undefined; },
     get reviewingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.reviews === true); },
     phaseShifts,
     sourceHost: createSourceHost(c, commands),
@@ -205,6 +215,7 @@ export function createEngine(o: EngineOptions): Engine {
       if (job && executor?.endLeft) await executor.endLeft(job, left);
       if (!stopping) liftLost(c, jobId);
     },
+    jobRunStep: (name, s) => runner.step(name, s),
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
@@ -214,6 +225,7 @@ export function createEngine(o: EngineOptions): Engine {
     askFor: (kind, id) => askFor(c, kind, id),
     async start() {
       const recovered = await recover(c);
+      runner.restarted(recovered.onSaga);
       // Each cleanup a record says is due (issue #1570) — of a job recovery ended, or one whose end a stop cut off from
       // its cleanup — and each deferred one (issue #371), then the sweep of every machine (issue #410): what a hopper
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.

@@ -60,10 +60,11 @@ export const ARGOCD_NAMESPACE = 'argocd';
 /**
  * A minting credential's value for AWS: a key pair STS takes, an optional region and endpoint (an STS other than AWS's),
  * and (issue #781) the session name it assumes a role with: a fixed `SessionName`, or a `SessionNamePrefix` before the
- * job id. Neither: `hopper-<job id>` (`awsSessionName`).
+ * job id. Neither: `hopper-<job id>` (`awsSessionName`). `EksEndpoint` (issue #1766): the EKS a discovery asks, when
+ * it is not AWS's; a credential whose STS is not AWS's asks no EKS without it.
  */
 export interface AwsMintingCredential {
-  AccessKeyId: string; SecretAccessKey: string; SessionToken?: string; Region?: string; Endpoint?: string; SessionName?: string; SessionNamePrefix?: string;
+  AccessKeyId: string; SecretAccessKey: string; SessionToken?: string; Region?: string; Endpoint?: string; EksEndpoint?: string; SessionName?: string; SessionNamePrefix?: string;
 }
 
 /** The region the hopper asks STS in, and a check box's AWS CLI works in (issue #797): the credential's, else AWS's first. */
@@ -198,6 +199,11 @@ export interface CredentialMinter {
    * cluster's name signed in the `x-k8s-aws-id` header, as `k8s-aws-v1.` and the URL in base64url. No call is made.
    */
   eksToken(session: Extract<Minted, { kind: 'aws' }>, r: { cluster: string; region: string }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  /**
+   * The EKS cluster `cluster` as EKS in `region` describes it to `session` (issue #1766, `DescribeCluster`): its API
+   * server and CA. Undefined when the session's account has no cluster of that name. `endpoint`: an EKS other than AWS's.
+   */
+  eksCluster(session: Extract<Minted, { kind: 'aws' }>, r: { cluster: string; region: string; endpoint?: string }): Promise<EksCluster | undefined>;
   /** Who the cluster says `token` is (a SelfSubjectReview: `kubectl auth whoami`), and the namespaces it lists with it (issue #854). */
   kubeIdentity(reach: Extract<MintReach, { kind: 'kube' }>, token: string): Promise<ClusterIdentity>;
   /** Who STS says the minted session is (`GetCallerIdentity`), asked at the credential's STS with the session's keys (issue #781). */
@@ -221,12 +227,13 @@ export interface ClusterIdentity { user: { username: string; groups: string[] };
 
 /**
  * What a mint test answers. AWS: the role, what was asked of STS, and who STS says the session is. A cluster (issue
- * #854): its API server, who it says the token is and its namespaces; for EKS sign-in, the role and the session name.
+ * #854): its API server, who it says the token is and its namespaces; for EKS sign-in, the role, its account and the
+ * session name. `credential` (issue #1766): the minting credential the test used, the AWS one for a discovered cluster.
  * Never a key or a token.
  */
 export type MintTestResult =
   | { kind: 'aws'; asset: Asset; credential: string; roleArn: string; sessionName: string; durationSeconds: number; policyArns: string[]; expiresAt: string; identity: CallerIdentity }
-  | ({ kind: 'kube'; asset: Asset; credential: string; server: string; expiresAt: string; roleArn?: string; sessionName?: string } & ClusterIdentity);
+  | ({ kind: 'kube'; asset: Asset; credential: string; server: string; expiresAt: string; roleArn?: string; account?: string; sessionName?: string } & ClusterIdentity);
 
 /** The minting credential's value read as `kind` wants it, or why it cannot be. Never says the value. */
 export function mintingCredentialOf(kind: 'aws', value: string): AwsMintingCredential | string;
@@ -238,10 +245,10 @@ export function mintingCredentialOf(kind: MintKind, value: string): AwsMintingCr
   if (kind === 'aws') {
     const AccessKeyId = str('AccessKeyId');
     const SecretAccessKey = str('SecretAccessKey');
-    if (!AccessKeyId || !SecretAccessKey) return 'an aws minting credential holds JSON with AccessKeyId and SecretAccessKey (and SessionToken, Region, Endpoint, SessionName or SessionNamePrefix when it has them)';
+    if (!AccessKeyId || !SecretAccessKey) return 'an aws minting credential holds JSON with AccessKeyId and SecretAccessKey (and SessionToken, Region, Endpoint, EksEndpoint, SessionName or SessionNamePrefix when it has them)';
     const problem = sessionNameProblem(str('SessionName'), str('SessionNamePrefix'));
     if (problem) return problem;
-    const extra = (['SessionToken', 'Region', 'Endpoint', 'SessionName', 'SessionNamePrefix'] as const).flatMap((k) => (str(k) ? [[k, str(k)!]] : []));
+    const extra = (['SessionToken', 'Region', 'Endpoint', 'EksEndpoint', 'SessionName', 'SessionNamePrefix'] as const).flatMap((k) => (str(k) ? [[k, str(k)!]] : []));
     return { AccessKeyId, SecretAccessKey, ...Object.fromEntries(extra) };
   }
   const ca = str('certificateAuthorityData') ? { certificateAuthorityData: str('certificateAuthorityData')! } : {};
@@ -266,6 +273,28 @@ function eksCredentialOf(str: (k: string) => string | undefined, ca: { certifica
   if (cluster && !EKS_CLUSTER_NAME.test(cluster)) return `an eks minting credential's cluster ${JSON.stringify(cluster)} is no EKS cluster name`;
   if (region && !AWS_REGION_NAME.test(region)) return `an eks minting credential's region ${JSON.stringify(region)} is no AWS region`;
   return { type: 'eks', roleArn, ...named, ...ca };
+}
+
+/**
+ * The one secret that mints for `mintsFor` (issue #1761), or why there is none: no secret mints for it, or several do.
+ * The vault never picks one of several: a mint from the wrong one fails, and says nothing of the others.
+ */
+export function mintingCredentialFor<S extends { name: string; mints?: Asset }>(secrets: readonly S[], mintsFor: Asset): S | string {
+  const all = secrets.filter((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
+  if (all.length === 1) return all[0]!;
+  const what = `${mintsFor.kind} ${mintsFor.name}`;
+  if (all.length === 0) return `no minting credential mints for ${what}: a person adds one on Settings → Vault`;
+  return `${all.length} minting credentials mint for ${what}: ${all.map((s) => s.name).join(', ')}. The vault does not pick one: a person keeps one on Settings → Vault and clears Mints for on the others`;
+}
+
+/**
+ * Why `value` is no minting credential for `mints`, as a save checks it (issue #1761): an AWS account's keys are one JSON
+ * value, never a secret each. A cluster's is not checked here: its EKS sign-in may name a kubeconfig the vault reads later.
+ */
+export function mintingValueProblem(mints: Asset, value: string): string | undefined {
+  if (mints.kind !== 'aws-account') return undefined;
+  const c = mintingCredentialOf('aws', value);
+  return typeof c === 'string' ? `mints for aws-account ${mints.name}: ${c}` : undefined;
 }
 
 /** A minting credential's asset said in a request: `{kind, name}` of a kind a credential mints for, or why not. */

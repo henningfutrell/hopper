@@ -78,6 +78,62 @@ describe('a job waiting on a pull request no job follows (issue #1433)', () => {
   });
 });
 
+// Issue #1744: a job of the github source waits on the checks of a pull request of its repository that is not its issue's
+// closing pull request, that no job follows and that has merge conflicts. The wait check reads its checks: once they all
+// ended, the job is woken and told whether they passed; while they run, it still waits.
+describe('a job waiting on the checks of a pull request no job follows (issue #1744)', () => {
+  /** A job of the github source on its own wait on the checks of pull request `number`, begun two minutes ago: due at once. */
+  function waitingOnChecks(app: TestApp, gh: FakeGitHub, number: number): Job {
+    const issue = gh.createIssue({ repo: REPO, body: 'Records a run.', labels: ['hopper'], assignees: ['owner'] });
+    const { store } = app.user();
+    return store.tx(() => {
+      const job = store.jobs.create({ executor: 'scripted', payload: {} }, 50, { source: 'github', kind: 'github-account', key: issue.url, url: issue.url, repo: REPO, number: issue.number });
+      const since = new Date(Date.now() - 2 * 60_000).toISOString();
+      return store.jobs.update(job.id, { status: 'waiting_on', wait: { for: `checks of #${number} to end`, until: `hopper reports #${number} checks completed`, on: { kind: 'pull_request', number, about: 'checks' }, since } });
+    });
+  }
+  /** A pull request of `REPO` that names no issue, with merge conflicts and its checks as `checks`. */
+  function recordPull(gh: FakeGitHub, checks: 'pending' | 'passing' | 'failing') {
+    const pr = gh.openUnlinkedPullRequest(REPO, { createdAt: new Date(Date.now() - 10 * 60_000).toISOString(), checks, conflicting: true, headRef: 'run-record', body: 'A run record.' });
+    return { url: pr.url, number: numberOf(pr.url) };
+  }
+
+  it('its checks passed: woken, told they passed, though it has merge conflicts', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const pr = recordPull(gh, 'passing');
+    const job = waitingOnChecks(app, gh, pr.number);
+    await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
+    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `the checks of ${pr.url} passed`, check: `pr_checks_ended:${REPO}#${pr.number}` }]);
+  });
+
+  it('its checks failed: woken, told they failed', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const pr = recordPull(gh, 'failing');
+    const job = waitingOnChecks(app, gh, pr.number);
+    await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
+    expect((await endedWaits(app, job.id))[0]).toMatchObject({ by: 'hopper', note: `the checks of ${pr.url} failed` });
+  });
+
+  it('its checks run: it still waits; once they passed, woken at its next check', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const pr = recordPull(gh, 'pending');
+    const job = waitingOnChecks(app, gh, pr.number);
+    const { store } = app.user();
+    await waitFor(() => store.jobs.get(job.id)?.wait?.check?.result !== undefined, { what: 'the first wait check' });
+    expect(store.jobs.get(job.id)).toMatchObject({ status: 'waiting_on', wait: { check: { result: `the checks of ${pr.url} run` } } });
+    expect(await endedWaits(app, job.id)).toEqual([]);
+
+    gh.setChecks(pr.url, 'passing');
+    // Its next check is a minute on: brought to now, as the time passed.
+    store.tx(() => { const w = store.jobs.get(job.id)!.wait!; store.jobs.update(job.id, { wait: { ...w, check: { ...w.check!, nextCheckAt: new Date().toISOString() } } }); });
+    await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
+    expect((await endedWaits(app, job.id))[0]).toMatchObject({ by: 'hopper', note: `the checks of ${pr.url} passed` });
+  });
+});
+
 // Issue #1721: a direct job has no source that lists it for the GitHub source, so the `direct` source reads its waits
 // itself, with the user's own GitHub connection (the node:http fake GitHub here, the connected account's real adapter).
 describe('a direct job waiting on a pull request (issue #1721)', () => {

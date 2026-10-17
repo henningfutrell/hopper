@@ -5,7 +5,8 @@
 //                          and the machine's key: the machine is added as a client target. The code is
 //                          what authorizes the write; it is spent by it, and that machine's join sent again
 //                          is answered as the first until the code expires (issue #1628). Or the lane pool key (issue #1284), never
-//                          spent: a lane pod joins as the first user's machine, under its own name.
+//                          spent: a lane pod joins as the first user's machine (the oldest user, issue #1767), under its own name; or a lane pool
+//                          key the hopper issued (issue #1454), the same, as its user's machine.
 //   POST /client/leave     a machine's say that it leaves (issue #1284), signed with its client token over its
 //                          user and machine key: it takes no new job; a lane pod with no job left is retired.
 //   GET  /client/connect   an HTTP/1.1 upgrade to `hopper-client/1`, signed with the client token: the
@@ -29,7 +30,7 @@ import { HELD_CREDIT_MS, REQUEST_HEADER, WINDOW_MS, createNonceCache, nonceOf, v
 import { askOf, sealAnswer, VAULT_CONTENT_TYPE, VAULT_PATH } from '../client/vault.ts';
 import type { Clock, InstanceStore, JoinCodePlace } from '../domain/ports.ts';
 import { useJoinCode } from '../machines/join-code.ts';
-import { isLanePoolKey, LANE_POOL_USER } from '../machines/lane-pool.ts';
+import { isLanePoolKey, issuedLanePoolUser, lanePoolUser } from '../machines/lane-pool.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, publicOriginOf, type Lan } from './reach.ts';
@@ -38,7 +39,7 @@ import { holdsTemplate } from '../vault/vault.ts';
 
 export interface ClientLinkOptions {
   tenants: Tenants;
-  instance: Pick<InstanceStore, 'joinCodes'>;
+  instance: Pick<InstanceStore, 'joinCodes' | 'lanePoolKeys' | 'users'>;
   clock: Clock;
   port: () => number;
   lan: Lan;
@@ -80,15 +81,21 @@ const header = (req: IncomingMessage, name: string): string => {
   return typeof v === 'string' ? v : '';
 };
 
+const NOBODY_YET = 'the lane pods are the machines of the first person to sign in, and nobody has signed in yet: sign in, and the pod joins at its next try';
+
 export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): void {
   app.post(JOIN_PATH, async (req) => {
     const b = parseWith(joinBody, req.body);
-    const pool = isLanePoolKey(o.poolKey?.(), b.code);
-    const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code, b.key);
+    const installed = isLanePoolKey(o.poolKey?.(), b.code);
+    const issued = installed ? undefined : issuedLanePoolUser(o.instance, b.code);
+    const pool = installed || issued !== undefined;
+    const first = installed ? lanePoolUser(o.instance.users) : undefined;
+    if (installed && first === undefined) throw new HttpError(409, NOBODY_YET);
+    const taken: ({ userId: string } & JoinCodePlace) | undefined = first !== undefined ? { userId: first } : issued !== undefined ? { userId: issued } : useJoinCode(o.instance, o.clock, b.code, b.key);
     if (taken === undefined) throw new HttpError(403, 'the join code is not valid: another machine used it, it expired, or it was never minted. Add machine shows a fresh line');
     const { userId, template, pod } = taken;
     const tenant = o.tenants.user(userId);
-    if (!tenant && pool) throw new HttpError(409, 'the lane pods are the machines of the first person to sign in, and nobody has signed in yet: sign in, and the pod joins at its next try');
+    if (!tenant && pool) throw new HttpError(409, NOBODY_YET);
     if (!tenant) throw new HttpError(404, `no user ${userId}`);
     // The template may have been removed since the code was minted (issue #604): no box joins as one that is not there.
     if (template && !holdsTemplate(tenant.vault, template)) throw new HttpError(409, `no template ${template}: it was removed after the join line was made. Add machine shows a fresh line`);

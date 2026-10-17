@@ -3,17 +3,20 @@
 import type { PlaygroundLimits, PlaygroundSandbox } from '../../../src/domain/types.ts';
 
 /** The form as typed: each field a string; empty takes the default. */
-export interface PlaygroundDraft { count: string; template: string; cpus: string; memoryMb: string; ttlMinutes: string }
+export interface PlaygroundDraft { count: string; agent: string; template: string; cpus: string; memoryMb: string; ttlMinutes: string }
 
-export const EMPTY_DRAFT: PlaygroundDraft = { count: '1', template: '', cpus: '', memoryMb: '', ttlMinutes: '' };
+export const EMPTY_DRAFT: PlaygroundDraft = { count: '1', agent: '', template: '', cpus: '', memoryMb: '', ttlMinutes: '' };
 
-export interface PlaygroundBody { count: number; template?: string; cpus?: number; memoryMb?: number; ttlMinutes?: number }
+export interface PlaygroundBody { count: number; agent?: string; template?: string; cpus?: number; memoryMb?: number; ttlMinutes?: number }
 
-/** What POST /ui/api/sandbox-playground is sent for the draft, or why not. The hopper checks the template's limits. */
+/**
+ * What POST /ui/api/sandbox-playground is sent for the draft, or why not. The hopper checks the template's limits. A
+ * template names its own image, so the agent is sent only with no template; none: the hopper's default agent.
+ */
 export function playgroundBody(d: PlaygroundDraft, l: PlaygroundLimits): PlaygroundBody | string {
   const count = Number(d.count.trim());
   if (!Number.isInteger(count) || count < 1) return 'How many: a whole number, 1 or more';
-  const body: PlaygroundBody = { count, ...(d.template ? { template: d.template } : {}) };
+  const body: PlaygroundBody = { count, ...(d.template ? { template: d.template } : d.agent ? { agent: d.agent } : {}) };
   const fields = [['cpus', 'CPUs', false], ['memoryMb', 'Memory (MiB)', true], ['ttlMinutes', 'Time limit (minutes)', true]] as const;
   for (const [k, label, whole] of fields) {
     const t = d[k].trim();

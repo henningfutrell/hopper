@@ -207,6 +207,26 @@ describe('a need step\'s box (issue #1007)', () => {
     expect(await runNeedBox(r, box({}), { log: () => {}, signal: new AbortController().signal })).toEqual({ exit: 125, problem: 'the need box did not run: no such image' });
   });
 
+  it('a tools image that does not build is said to be the hopper\'s image build, not the command (issue #1737)', async () => {
+    const r = runtime();
+    r.buildFails = 'podman could not build localhost/hopper-box-tools:0123456789abcdef: exit status 6';
+    const ran = await runNeedBox(r, { ...box({}), template: { image: 'ghcr.io/henningfutrell/hopper:box-claude', tools: ['kubectl'] } }, { log: () => {}, signal: new AbortController().signal });
+    expect(ran).toEqual({ exit: 125, problem: 'the need box did not run: the hopper could not build the box\'s tools image, so the command did not run (a failure of the hopper, not of the command; run the step again): podman could not build localhost/hopper-box-tools:0123456789abcdef: exit status 6' });
+  });
+
+  it('the step gives the time of each part: the image, the box start, and the run (issue #1737)', async () => {
+    const r = runtime();
+    const times: { image?: number; start?: number; run?: number }[] = [];
+    const ran = await runNeedBox(r, { ...box({ HOPPER_STEP_COMMAND: 'true', HOPPER_STEP_OUTPUTS: '' }), template: { image: 'ghcr.io/henningfutrell/hopper:box-claude', tools: ['kubectl'] } }, { log: () => {}, signal: new AbortController().signal, phases: (p) => times.push(p) });
+    expect(ran.exit).toBe(0);
+    expect(times).toEqual([{ image: expect.any(Number), start: expect.any(Number), run: expect.any(Number) }]);
+    // A build that fails ends the step after the image part.
+    r.buildFails = 'exit status 6';
+    r.images.clear();
+    await runNeedBox(r, { ...box({}), template: { image: 'ghcr.io/henningfutrell/hopper:box-claude', tools: ['kubectl'] } }, { log: () => {}, signal: new AbortController().signal, phases: (p) => times.push(p) });
+    expect(times[1]).toEqual({ image: expect.any(Number) });
+  });
+
   it('the job never reads the outputs, nor a tail that may begin their mark', () => {
     expect(shownSoFar('line\nHOPPER-STEP-OUT')).toBe('line');
     expect(shownSoFar('line\nHOPPER-STEP-OUTPUTS\nAAAA')).toBe('line');

@@ -9,6 +9,12 @@ import { toolsImage } from './tools.ts';
 export const BOX_IMAGE = 'ghcr.io/henningfutrell/hopper';
 
 /**
+ * The agents with a published box image (issue #865): each harness a print-mode or herdr executor drives, so the hopper
+ * stays harness-agnostic. scripts/box/Dockerfile installs each one, and .github/workflows/image.yml publishes each one.
+ */
+export const BOX_AGENTS = ['claude', 'codex', 'cursor', 'omp', 'opencode'] as const;
+
+/**
  * The tools image CI publishes for a box image (issue #1286, .github/workflows/image.yml `box-tools`): the box image with
  * every box tool added as tools.ts adds them, its tag the box image's with `-tools`, or `-tools-read-only` for a
  * read-only template's boxes. A runtime that builds nothing (Kubernetes) runs it. Throws for an image the hopper does
@@ -35,6 +41,9 @@ export async function boxImage(runtime: ContainerRuntime, base: string, tools: r
     return { image, user: (await runtime.pull(image)).user };
   }
   const built = toolsImage({ image: base, id: read.id }, tools, { readOnly });
-  await runtime.build(built.tag, built.containerfile);
+  // A build that fails is the hopper's failure, not the command's (issue #1737): the message says so to the job.
+  await runtime.build(built.tag, built.containerfile).catch((e: unknown) => {
+    throw new Error(`the hopper could not build the box's tools image, so the command did not run (a failure of the hopper, not of the command; run the step again): ${e instanceof Error ? e.message : String(e)}`);
+  });
   return { image: built.tag, user: (await runtime.pull(built.tag)).user };
 }

@@ -291,6 +291,15 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
       }
       return { number: pull.number, url: pull.html_url, draft: false };
     }
+    case 'pr.edit': {
+      const changed = { ...(r.title !== undefined ? { title: r.title } : {}), ...(r.body !== undefined ? { body: r.body } : {}) };
+      const d = (await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...at, pull_number: r.number, ...changed, headers })).data as RestPull;
+      return { number: d.number, url: d.html_url, title: d.title, state: d.state };
+    }
+    case 'pr.close': {
+      const d = (await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...at, pull_number: r.number, state: 'closed', headers })).data as RestPull;
+      return { number: d.number, url: d.html_url, state: d.state, merged: d.merged === true };
+    }
     case 'pr.create': {
       const base = r.base ?? ((await req('GET /repos/{owner}/{repo}', { ...at, headers })).data as { default_branch: string }).default_branch;
       const d = (await req('POST /repos/{owner}/{repo}/pulls', { ...at, head: r.head, base, title: r.title, body: r.body, headers })).data as RestPull;

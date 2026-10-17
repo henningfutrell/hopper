@@ -6,12 +6,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Playground } from '../../sandbox/playground.ts';
 import { PlaygroundRefused } from '../../sandbox/playground.ts';
+import { BOX_AGENTS } from '../../sandbox/box-image.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { userIdOf, type TenantParts } from '../tenants.ts';
-
-/** The agents whose published box image a playground sandbox runs. */
-export const BOX_AGENTS = ['claude'] as const;
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 

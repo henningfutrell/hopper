@@ -14,6 +14,7 @@ export interface GiveBackChecksContext {
   failures: Pick<Failures, 'retryable' | 'retry' | 'handoffResolvable' | 'resolveHandoff'>;
   store: Parameters<typeof pushable>[0]['store'];
   resumable(job: Job): boolean;
+  reopens(job: Job): boolean;
   takesBack: TakesBack;
   continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /** Tend again, the sync loop's own check. */
@@ -24,7 +25,7 @@ const checkedOf = (a: FailureAction<{ jobId: string }>, run: () => Promise<GiveB
 
 export function giveBackChecks(c: GiveBackChecksContext): GiveBackCheck {
   const f = c.failures;
-  const push = { store: c.store, resumable: c.resumable, takesBack: c.takesBack, continueJob: c.continueJob, resolveHandoff: f.resolveHandoff };
+  const push = { store: c.store, resumable: c.resumable, reopens: c.reopens, takesBack: c.takesBack, continueJob: c.continueJob, resolveHandoff: f.resolveHandoff };
   return (act, id, acting, input) => {
     switch (act) {
       case 'continue': case 'fixed':

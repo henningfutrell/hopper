@@ -16,7 +16,8 @@
         "finished",
         "superseded",
         "item_closed",
-        "job_gone"
+        "job_gone",
+        "resumed"
       ]
     },
     "nextJobId": {

@@ -8,8 +8,14 @@ import type { PlaygroundSandbox } from '../../src/domain/types.ts';
 describe('the sandbox playground form', () => {
   it('sends how many, the template, and only the sizes typed; the defaults fill the rest', () => {
     expect(playgroundBody(EMPTY_DRAFT, PLAYGROUND_LIMITS)).toEqual({ count: 1 });
-    expect(playgroundBody({ count: '50', template: 'kube', cpus: '0.5', memoryMb: '', ttlMinutes: '30' }, PLAYGROUND_LIMITS))
+    expect(playgroundBody({ count: '50', agent: '', template: 'kube', cpus: '0.5', memoryMb: '', ttlMinutes: '30' }, PLAYGROUND_LIMITS))
       .toEqual({ count: 50, template: 'kube', cpus: 0.5, ttlMinutes: 30 });
+  });
+
+  // Issue #865: every harness has a box image; a template names its own image, so it wins over the agent.
+  it('sends the agent picked when no template is picked', () => {
+    expect(playgroundBody({ ...EMPTY_DRAFT, agent: 'codex' }, PLAYGROUND_LIMITS)).toEqual({ count: 1, agent: 'codex' });
+    expect(playgroundBody({ ...EMPTY_DRAFT, agent: 'codex', template: 'kube' }, PLAYGROUND_LIMITS)).toEqual({ count: 1, template: 'kube' });
   });
 
   it('refuses a count below 1, a size not above 0, and a size over the hopper\'s max', () => {

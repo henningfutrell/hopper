@@ -71,7 +71,7 @@ import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
 import { pullRequestCensus } from './census.ts';
 import {
-  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
+  failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 import { pullRequestWaitOf } from '../domain/work-items.ts';
@@ -339,9 +339,10 @@ export function createAfterDone(c: AfterDoneContext) {
    */
   async function conflict(source: JobSource, job: Job, other: string): Promise<boolean | undefined> {
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
-    if (!source.conflictBetween || !s?.pullRequest || !s.seen?.base || !job.source?.repo) return undefined;
+    const repo = jobPullRequestRepo(job);
+    if (!source.conflictBetween || !s?.pullRequest || !s.seen?.base || !repo) return undefined;
     try {
-      return await source.conflictBetween(job.source.repo, s.seen.base, s.pullRequest, other);
+      return await source.conflictBetween(repo, s.seen.base, s.pullRequest, other);
     } catch (e) {
       console.warn(`hopper: ${source.name}: whether ${s.pullRequest} and ${other} conflict failed, asked again next sync: ${(e as Error).message}`);
       return undefined;
