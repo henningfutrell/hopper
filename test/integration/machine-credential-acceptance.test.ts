@@ -12,7 +12,7 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const CREDS = ['.kube', '.terraform.d'];
+const CREDS = ['.kube', '.terraform.d/credentials.tfrc.json'];
 
 beforeEach(() => { for (const c of CREDS) mkdirSync(join(homedir(), c), { recursive: true }); });
 

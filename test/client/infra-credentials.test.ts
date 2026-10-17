@@ -15,7 +15,7 @@ describe('infra credentials', () => {
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
   it('name cloud CLI config, kube config, git credentials, ssh keys and token variables', () => {
-    for (const n of ['.aws', '.azure', '.config/gcloud', '.kube', '.keycloak', '.terraform.d', '.git-credentials', '.config/gh/hosts.yml', '.netrc', '.ssh/id_ed25519', '.ssh/id_rsa', 'git credential helper', '$AWS_ACCESS_KEY_ID', '$GH_TOKEN', '$KUBECONFIG']) {
+    for (const n of ['.aws', '.azure', '.config/gcloud', '.kube', '.keycloak', '.terraform.d/credentials.tfrc.json', '.git-credentials', '.config/gh/hosts.yml', '.netrc', '.ssh/id_ed25519', '.ssh/id_rsa', 'git credential helper', '$AWS_ACCESS_KEY_ID', '$GH_TOKEN', '$KUBECONFIG']) {
       expect(INFRA_CREDENTIALS).toContain(n);
     }
   });
@@ -23,13 +23,26 @@ describe('infra credentials', () => {
   it('a home holds the ones that are there, folder or file, in the list\'s order; none: an empty list', () => {
     expect(infraCredentialsAt(home, {})).toEqual([]);
     mkdirSync(join(home, '.terraform.d'));
+    writeFileSync(join(home, '.terraform.d/credentials.tfrc.json'), '');
     writeFileSync(join(home, '.aws'), '');
     mkdirSync(join(home, '.kube'));
     mkdirSync(join(home, '.ssh'));
     writeFileSync(join(home, '.ssh/id_ed25519'), '');
     writeFileSync(join(home, '.ssh/id_ed25519.pub'), '');
     writeFileSync(join(home, '.ssh/authorized_keys'), '');
-    expect(infraCredentialsAt(home, {})).toEqual(['.aws', '.kube', '.terraform.d', '.ssh/id_ed25519']);
+    expect(infraCredentialsAt(home, {})).toEqual(['.aws', '.kube', '.terraform.d/credentials.tfrc.json', '.ssh/id_ed25519']);
+  });
+
+  it('a .terraform.d with only terraform\'s version-check files is no credential; its credentials file is (issue #1466)', () => {
+    mkdirSync(join(home, '.terraform.d/plugin-cache'), { recursive: true });
+    writeFileSync(join(home, '.terraform.d/checkpoint_signature'), '');
+    writeFileSync(join(home, '.terraform.d/checkpoint_cache'), '');
+    expect(infraCredentialsAt(home, {})).toEqual([]);
+    const ssh = (): string[] | undefined => readInfraCredentials(execFileSync('sh', ['-c', INFRA_CREDENTIALS_COMMAND], { env: { PATH: process.env.PATH, HOME: home }, encoding: 'utf8' }));
+    expect(ssh()).toEqual([]);
+    writeFileSync(join(home, '.terraform.d/credentials.tfrc.json'), '');
+    expect(infraCredentialsAt(home, {})).toEqual(['.terraform.d/credentials.tfrc.json']);
+    expect(ssh()).toEqual(['.terraform.d/credentials.tfrc.json']);
   });
 
   it('a git credential helper in its git config counts; another git setting does not', () => {
@@ -67,7 +80,8 @@ describe('infra credentials', () => {
   });
 
   it('a client\'s answer is believed only for names on the list; anything else is not read', () => {
-    expect(infraCredentialsOf(['.aws', '.terraform.d'])).toEqual(['.aws', '.terraform.d']);
+    expect(infraCredentialsOf(['.aws', '.terraform.d/credentials.tfrc.json'])).toEqual(['.aws', '.terraform.d/credentials.tfrc.json']);
+    expect(infraCredentialsOf(['.terraform.d'])).toEqual([]);
     expect(infraCredentialsOf([])).toEqual([]);
     expect(infraCredentialsOf(['.aws', '/etc/passwd', 3, '$GH_TOKEN'])).toEqual(['.aws', '$GH_TOKEN']);
     expect(infraCredentialsOf(undefined)).toBeUndefined();

@@ -108,8 +108,8 @@ describe('toolAccountsOf: infra credentials (issue #1128 part 7)', () => {
   it('each machine carries the infra credential folders its machine holds; a machine with none or not read carries none', () => {
     const accounts = toolAccountsOf({
       sources: [signedIn('claude-m1', 'm1', 'a@example.com'), signedIn('claude-m2', 'm2', 'a@example.com'), signedIn('claude-m3', 'm3', 'a@example.com')],
-      readings: [], labels, jobs: [], infraCredentials: new Map([['m1', ['.aws', '.terraform.d']], ['m2', []]]),
+      readings: [], labels, jobs: [], infraCredentials: new Map([['m1', ['.aws', '.terraform.d/credentials.tfrc.json']], ['m2', []]]),
     });
-    expect(accounts[0]!.machines.map((m) => [m.machineId, m.infraCredentials])).toEqual([['m1', ['.aws', '.terraform.d']], ['m2', undefined], ['m3', undefined]]);
+    expect(accounts[0]!.machines.map((m) => [m.machineId, m.infraCredentials])).toEqual([['m1', ['.aws', '.terraform.d/credentials.tfrc.json']], ['m2', undefined], ['m3', undefined]]);
   });
 });
