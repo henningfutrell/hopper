@@ -1,4 +1,4 @@
-// Event cursors (issue #1572, tenant migration 73): where each consumer of the event log stands — the last event it
+// Event cursors (issue #1572, tenant migration 75): where each consumer of the event log stands — the last event it
 // handled, by seq. A consumer follows the log from its cursor, so an event committed just before a stop, which no
 // listener saw, is handed to it at the next start.
 import type { EventCursorRepository, EventLog } from '../domain/ports.ts';
