@@ -1,6 +1,8 @@
 // The shrink guard (issue #1096, design.md "The shrink guard"): a job's push that brings its base branch into its branch
 // — a rebase or a merge of the base, as a tend job's conflict resolution makes — is refused when it empties a file, or
-// takes more than the guard's percent of a file's lines, that the branch's own change did not empty or shrink so. A
+// takes more than the guard's percent of a file's lines, that the branch's own change did not empty or shrink so; a file
+// the branch's own change shrank but kept may still not be emptied, nor lose more than the percent of what the branch kept
+// (issue #1218). The hopper's own base merge is judged the same way before it is pushed (git-mirror/mirrors.ts). A
 // resolution once emptied docs/design.md and docs/glossary.md, its checks passed, and yolo mode would have merged it.
 // Each file is compared with the base branch as the push brings it in, and with the branch's head before the push; a file
 // the base branch itself removed or shrank is the base branch's change, not the push's. The job is refused with the files
@@ -33,12 +35,21 @@ export function loses(from: number | undefined, to: number | undefined, percent:
   return after === 0 || (from - after) * 100 > from * percent;
 }
 
-/** The files the push would empty or shrink, and the branch's own change did not (issue #1096). */
+/** The files the push would empty or shrink, and the branch's own change did not (issues #1096, #1218). */
 export function shrunkFiles(files: readonly PushFileLines[], percent: number): ShrunkFile[] {
   const out: ShrunkFile[] = [];
+  const gone = (n: number | undefined) => n === undefined || n === 0;
   for (const f of files) {
-    // The branch's own change empties or shrinks it: what the pull request means to do.
-    if (loses(f.start, f.head, percent)) continue;
+    if (loses(f.start, f.head, percent)) {
+      // The branch's own change empties or removes it: what the pull request means to do.
+      if (gone(f.head)) continue;
+      // The branch's own change shrinks it (issue #1218): the push may not empty it, nor lose much more than the branch
+      // kept, where the base branch did not empty or shrink it too.
+      if ((gone(f.pushed) && !gone(f.base)) || (loses(f.head, f.pushed, percent) && !loses(f.start, f.base, percent))) {
+        out.push({ path: f.path, from: f.head!, to: f.pushed ?? 0, against: 'head' });
+      }
+      continue;
+    }
     if (loses(f.base, f.pushed, percent)) out.push({ path: f.path, from: f.base!, to: f.pushed ?? 0, against: 'base' });
     // The branch's own lines lost, where the base branch did not shrink the file either.
     else if (loses(f.head, f.pushed, percent) && !loses(f.start, f.base, percent)) out.push({ path: f.path, from: f.head!, to: f.pushed ?? 0, against: 'head' });

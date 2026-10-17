@@ -37,7 +37,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
-| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5) | everything but `domain/` |
+| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
@@ -49,7 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
@@ -2175,7 +2175,8 @@ where both sides only added lines at the same
 place — no line of the merge base is in the conflict (`git merge-file --diff3`, `keepBothAdditions`): both additions are
 kept, the base branch's first. That is a `WHATS-NEW.md` line, or two design sections added at the end of
 `docs/design.md`. Any other conflict — a code file, a line one side changed or removed, a file not on all three sides —
-is a real one: nothing is pushed, and the tend job runs as before. Clean, the hopper makes the merge commit (parents: the
+is a real one: nothing is pushed, and the tend job runs as before. So is a merge git fails to make, and a resolution the
+shrink guard refuses (issue #1218, "The shrink guard"). Clean, the hopper makes the merge commit (parents: the
 head, then the base; author `hopper`, no person) and pushes it to the pull request's branch with
 `--force-with-lease=refs/heads/<branch>:<head as fetched>`: a branch that moved since the fetch, or a fork's branch that
 is not in the repository, is never written, and the refusal is logged. Pushed, `job.pull_request_base_merged` records the
@@ -8051,7 +8052,8 @@ table, about one a second — and the call blocks the event loop: a stall, and a
 job the store hands out may be a kept one: never change it in place (the store's own writes make a new one).
 A get, by id or by source key, is read the same way: it sends the version it keeps and is answered the body only when
 the row is at another one. Each get is still one store call, so code that looks at many jobs reads them in one list
-(`fresh` in `src/sources/after-done.ts`), not one get each.
+(`fresh` in `src/sources/after-done.ts`), or in one `getMany` (by id) or `newestOfItems` (the newest job of each item, by
+source key) (issue #1411), not one get each.
 **A filter parses no body** (issue #1154, `src/store/job-filter-columns.ts`). The fields a job list filters on
 (`follow`, `pull_request`, `assessed`, `dismissed`) and a failure list filters on (`problem_id`, `outcome`) are generated
 columns: Postgres computes them from the body at each write of the row, whoever writes it, so the build before keeps
@@ -20398,8 +20400,11 @@ or takes more than the guard's percent of its lines,
 - against the base branch as brought in, or
 - against the branch's head before the push, when the base branch did not shrink it,
 
-and the branch's own change (start → head) did not empty or shrink it so. So a pull request that removes or shrinks a
-file keeps doing so through a rebase, a file the base branch removed stays removed, and small edits pass. A binary file
+and the branch's own change (start → head) did not empty or shrink it so. A file the branch's own change shrank, but did
+not empty or remove, is still refused (issue #1218) when the push empties or removes it and the base branch kept it, or
+when the push takes more than the percent of the lines the branch kept and the base branch did not shrink it too. So a
+pull request that removes or shrinks a file keeps doing so through a rebase, a file the base branch removed stays
+removed, and small edits pass. A binary file
 has no lines and is not judged. `git diff --numstat` against the empty tree counts the lines, with one batch fetch of the
 blobs it needs.
 
@@ -20420,6 +20425,17 @@ push, so a change applies to the next one.
 
 **Git cannot say** (no credential, the base branch gone, git failing): the push goes on, as before the guard, and the
 mirror logs why. The guard is a net for a resolution gone wrong, not a gate a broken mirror may close on every push.
+
+**The hopper's own base merge** (issue #1218). Two merges of `main` into a pull request's branch emptied
+`docs/design.md` (19,416 lines on `main`, then 0), and yolo mode merged them into `main`. Neither was a job's: the
+hopper's base merge ("The base merge", issue #967) made and pushed them from its mirror, and the git proxy, where the
+guard is, sees only a job's push. The cause: `git merge-file` exits with the number of conflicts, and above 127 when it
+fails, with no merge printed. The base merge read any exit above 0 as conflicts, so a failure became an empty
+resolution. Now an exit above 127, or a merge with no conflict marker, resolves nothing, and the conflict goes to a tend
+job. And before the push, each file the base merge resolved is judged by the rule above, at the merge base, the pull
+request's head, the base branch and the resolution, at the default percent: a resolution the guard refuses is not
+pushed, the mirror logs the files, and the conflict goes to a tend job. Not taken: the user's own percent. The mirror
+holds no settings, and a resolution that keeps both sides' added lines never loses half of a file.
 
 
 ## Job worktrees in the workspace (issue #1103, 2026-10-14)
@@ -21389,7 +21405,8 @@ other accounts, not hold it there.
   - The reasons name each one (`m: claude signed out (usage source s): no new job of executor e`); a machine whose every
     executor is kept off says so as its idle reason, and its idle lanes close as at any machine with no job to run.
 - **What is not moved.** A job resuming returns to its pane there (`pendingAnswer`): a sign-in from the hopper answers its
-  not-signed-in question ("Tool sign-in"). A job that holds a lane there now is not stopped: it may be at work, signed in
+  not-signed-in question ("Tool sign-in"), or, with another machine signed in, the signed-out move takes it there (issue
+  #1211, "The signed-out move"). A job that holds a lane there now is not stopped: it may be at work, signed in
   before the read. A read that failed is not a sign-out (`unknown`): a machine not dialled in is offline anyway.
 - **Freshness.** The read is the source's (`intervalSeconds`, 10 minutes by default). A job placed in that gap meets Claude's
   login and asks its not-signed-in question; the sign-in answers it.
@@ -21409,7 +21426,7 @@ Accounts, and a CLI for the terminals.
   a sign-out, as for failover.
 - **No warning before the expiry.** `claude auth status` gives no expiry, and Claude renews its own access token with its refresh
   token, so an expiry of the access token is no sign-out to come. The hopper has no time to warn at; the sign-out is the signal.
-  When a tool gives one, its usage source can carry it on `Account` and the row can name it.
+  When a tool gives one, its usage source carries it on `Account` and the row names it (issue #1211, "The signed-out move").
 - **The question links to Accounts.** A not-signed-in question's card says "Sign Claude in on <machine> from Accounts", a link
   to `#accounts`, and what the sign-in does: at Claude's prompt it answers the question; at Claude's login screen
   (`LOGIN_SCREEN_MARK`) a person answers after it. The UI imports nothing of `src/` at runtime, so `ui/src/model/questions.ts`
@@ -21424,6 +21441,56 @@ Accounts, and a CLI for the terminals.
 
 Tests: `test/ui/needs-you.test.ts`, `test/ui/needs-you-view.test.ts`, `test/ui/accounts-view.test.ts`,
 `test/ui/question-machine.test.ts`, `test/integration/machine-terminal.test.ts` (`hopper terminal`).
+
+## The signed-out move (issue #1211, 2026-10-16)
+
+Follow-up of issue #1128. Failover ("Failover to signed-in machines") kept new jobs off a signed-out machine, but a job that
+already waited there on its **not-signed-in question** stayed, until a person signed the tool in on that machine. Now it goes
+on at a signed-in machine, with no person.
+
+- **When.** On each engine tick (`src/engine/signed-out-move.ts`, one pass at a time, beside auto-park), a job on a question
+  (`waiting_answer`) whose open question starts with `NOT_SIGNED_IN` moves when (`signedOutMove`, `src/decider/signed-out.ts`,
+  pure):
+  - the machine that raised the question has a **signed-out tool** that keeps the job's executor off it;
+  - the job names no machine of its own (`spec.machineId`: a person's or a routing rule's pin stays);
+  - another machine is online, runs the job's executor, has no signed-out tool for it, and a usage source reads its tool
+    signed in as an identity (`signedInOf`): a machine with no usage source, or a read that failed, is not a target.
+  It is not required that a lane is free there now: the job waits in the queue for one, as any job does.
+- **How.** The hopper takes a checkpoint of the job ("Checkpoints and resume elsewhere"), then, in one transaction, parks it
+  (`recordPark`) and answers its question as `signed-out-move` (`SIGNED_OUT_MOVE_BY`, a trail attempt of role `fixed`, its
+  reason naming the tool, the machine it left and the machines signed in). Parked, the job keeps the answer
+  (`signedOutMoveAnswer`). Then the executor ends its pane and agent (`Executor.park`), and the hopper takes one more
+  checkpoint, so the session is whole (the one before stands if it fails). Then:
+  - **From its checkpoint**, when it holds the agent session: picked up to resume elsewhere (`recordUnpark`, elsewhere). The
+    claim is that of "Checkpoints and resume elsewhere": a new job worktree, the checkpoint restored, the same session, told
+    `elsewhereBrief` and the answer. Text the old pane held unsent behind Claude's screen (`turn.unsent`) goes after the
+    answer, so nothing the hopper meant to send is lost.
+  - **As a new start**, when Claude never got the job's task: no agent session recorded, or a checkpoint with no session, no
+    commit and an empty patch (Claude writes its session file at its first message). Queued, not pinned, with no answer
+    pending: the claim runs the job as at its first start. `job.unparked { to: queued, elsewhere: true }` says so.
+  - A checkpoint that cannot be taken (its machine not reached, its executor takes none), or one that holds work but no
+    session, does not move the job: it stays on its question for a sign-in or a person, and the move tries it again after
+    10 minutes (`MOVE_RETRY_MS`).
+- **The decider.** A job resuming elsewhere has no pane to return to, so a signed-out tool keeps it off a machine as it keeps a
+  new job off (`signedOutFor`). Before, any job with an answer pending was let through, and the moved job could go back to
+  the machine it left.
+- **What is not moved.** A question of Claude's login screen (it starts with `NOT_SIGNED_IN` too) moves the same way: the
+  machine reads signed out, and the screen ends with the pane. A pinned job, and a job whose machine reads signed in again
+  before the pass (the sign-in answers its question instead).
+
+### Warning before a tool's sign-in ends (part 2)
+
+`claude auth status` gives no expiry ("Signed-out tools in Needs you"), so no Claude sign-in carries one. When a tool gives
+one, its usage source sets `Account.expiresAt` (ISO); the tool accounts carry it on each signed-in machine
+(`ToolAccountMachine.expiresAt`, `GET /api/tool-accounts`). Needs you's Accounts row then names a machine whose sign-in ends
+within a day (`EXPIRY_WARNING_MS`), or has ended, with "sign it in again from Accounts" (`signedOutLines`,
+`ui/src/model/tool-accounts.ts`, read against the server's minute).
+
+Tests: `test/decider/signed-out.test.ts` (`signedOutMove`, `signedInOf`, a job resuming elsewhere kept off),
+`test/integration/signed-out-move.test.ts` (a job held on a signed-out machine starts again on the signed-in one, its
+question answered by the move; it stays with no machine signed in; it stays with a checkpoint that holds work and no session),
+`test/herdr/startup-screens.test.ts` (the unsent text after the answer elsewhere), `test/http/tool-accounts.test.ts`,
+`test/ui/accounts-view.test.ts`.
 
 ## A merged part moves its item on (issue #1231, 2026-10-15)
 
@@ -23211,3 +23278,78 @@ The calls to its service each job source's sync passes made. Code: `src/store/so
 **Verification:** `test/integration/duplicate-sources.test.ts` (the 409 on add and on enable, `duplicateOf` on a
 duplicate configured already), `test/ui/sources-duplicates.test.ts` (the banner and Remove; the poll interval, the
 next poll and the calls on a card), `test/sources/sync-backoff.test.ts` (the doubling, its cap, a 304 as no change, what resets it, the call log).
+
+## When the hopper's app asks for a permission (issue #1378, 2026-10-16)
+
+Issue #1351 asked that the hopper says which GitHub App permission is missing, and when it requests it. The first half is
+"A refusal says what the app lacks". This is the second half.
+
+**What GitHub allows.** A GitHub App cannot ask one installation for a permission. Only the app's owner changes the app's
+permissions, in the app's settings on GitHub. GitHub then asks the owner of every installation to accept the new
+permissions (an email, and a *Review request* on the installation's settings page); until an owner accepts, that
+installation keeps the permissions it had. The hopper's app ships with no private key (issue #1377), so the hopper cannot
+read an installation as the app either. What it can read with the person's own token: `GET /apps/{slug}`, the permissions
+the app asks for, and `GET /user/installations`, what each installation grants.
+
+**The permission request.** The installations read (`installations`, `src/connected-accounts/identity.ts`, issue #1250)
+also reads `GET /apps/{slug}`, conditional like the others, and gives each installation its **permission request**
+(`AppInstallation.permissionRequest`, `permissionRequest`): the permissions the app asks for that the installation does
+not grant at that level or higher. Per repository owner (one installation per owner), Sources shows the state of it:
+
+| state | what Sources says |
+|---|---|
+| not asked | the app is not installed on the owner: the link to add the app to another account or organization (issue #352) |
+| asked | `permissionRequest` holds one or more permissions: "Waiting for an owner of `<owner>` to accept the new permissions the app asks for: …", with **Review the request**, the installation's settings page |
+| accepted | `permissionRequest` is empty: "It has every permission the app asks for." |
+
+No app slug, or GitHub does not answer `GET /apps/{slug}`: no permission request, and Sources says nothing of it. A read kept
+from before this change has none either, until the next read.
+
+**Persisted state.** `app_installations` is derived data (issue #1250): the new field is optional, the build before reads
+the row as before, and no migration is needed.
+
+**Decisions:**
+- **The hopper does not start a request.** GitHub has no API for it, and the app's settings are its owner's, not the
+  hopper's. When the hopper needs a new permission, its maintainer adds it to the app; each owner then sees the request here.
+- **"Not asked" is per owner, not per permission.** GitHub asks every installation at once, so an installed owner is
+  either asked or accepted. A permission that a refusal names and that the app does not ask for is the app owner's to add;
+  the refusal's words (issue #1351) say what it lacks.
+- **A failed read of the app is no failed read.** The installations still show; only the permission request is not known.
+
+**Verification:** `test/connected-accounts/permission-request.test.ts` (the difference, by level),
+`test/integration/connected-accounts.test.ts` (an owner that accepted and one that waits, through the fake GitHub's
+`GET /apps/{slug}`), `test/ui/sources-view.test.ts` (accepted, asked with its link, and not known).
+
+## A busy hopper reads jobs a fixed number of times a pass (issue #1411, 2026-10-16)
+
+**The problem.** The heap check of issue #1383 (`test/reliability/heap-growth.test.ts`) showed event loop stalls of 3 to
+9 s from about 150 jobs in the store, each almost all `SELECT jobs` (537 to 933 calls in one stall). The callers, counted
+by stack for a run: the hand-offs' `dismissStale` (`src/failures/handoffs.ts`) ran a pass over every failed job after
+each event that may end one (`ENDS_STALE`: each `job.queued` among them), and each pass read each failed job again and the
+newest job of its item, in a transaction of its own; the failure sweep's `supersede` and `settle` read one job and its
+item's newest for each record and open hand-off; and the engine's tick read the job of each busy lane, and each held or
+waiting job of a Decision, one by one (`src/engine/decision-step.ts`).
+
+**The change.**
+- The job repository reads many jobs in one statement: `getMany(ids)` and `newestOfItems(keys)` (the newest job of each
+  item, Postgres's `DISTINCT ON`), with the bodies read as a list reads them ("Jobs are read by row version").
+- `dismissStale`, `supersede` and `settle` read their jobs and the newest of each item once at the start of a pass, check
+  each with those (`src/failures/pass-reads.ts`), and open a transaction, with its own reads, only for one they act on.
+- The failure sweep's order of due runs again (`highestFirst`) reads the records' jobs once: its sort read a job for each
+  comparison.
+- The events that come together ask for one `dismissStale` pass: each such event moves the pass behind it, so the pass
+  still runs after that event's `onQueued` (a run again closes its hand-off as `run_again`, not `superseded`).
+- The engine reads the jobs of the busy lanes, and the held and waiting jobs of a Decision, with one `getMany` each.
+
+**Measured** (`test/integration/busy-store-calls.test.ts`, 10 jobs run to their end): 2795 reads of `jobs` with 60 failed
+jobs in the store before; about 740 after, the same with 0 or 120 failed jobs. The rest are a constant number for each
+event of a job (its intake, its report, its classification) and for each tick.
+
+**Not done here.** The `work_items` read in `staleEnd` stays one for each failed job with no newer job, but now once a pass,
+not once for each event.
+
+**Verification:** `test/integration/busy-store-calls.test.ts` (the reads of `jobs` while 10 jobs end do not grow with the
+failed jobs in the store; the build before read them 2795 times against a bound of 1180), `test/store/jobs-read.test.ts`
+(`getMany` and `newestOfItems`: one statement, the bodies only of the rows that changed, the newest job as
+`getBySourceKey`), `test/integration/stale-failures.test.ts` and `test/integration/handoffs.test.ts` (the hand-offs end
+as before).

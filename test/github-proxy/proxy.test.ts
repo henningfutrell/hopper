@@ -150,6 +150,20 @@ describe('the rate limits', () => {
     now += 60 * 60 * 1000;
     expect(limiter.take('issue.create', 'j1', 'm')).toBeUndefined();
   });
+
+  it('drops the counts of every job whose window passed, not only of the key asked again (issue #1402)', () => {
+    let now = Date.parse('2026-05-01T12:00:00Z');
+    const seen = new Map<string, { windowMs: number; times: number[] }>();
+    const limiter = createProxyLimiter({ now: () => new Date(now) }, PROXY_LIMITS, seen);
+    limiter.take('issue.view', 'ended-job', 'm');
+    limiter.take('report.bug', 'ended-job', 'm');
+    now += 60 * 60 * 1000;
+    limiter.take('issue.view', 'j2', 'm2');
+    expect([...seen.keys()].filter((k) => k.includes('ended-job'))).toEqual(['job\0ended-job\0report.bug']);
+    now += 24 * 60 * 60 * 1000;
+    limiter.take('issue.view', 'j3', 'm3');
+    expect([...seen.keys()]).toEqual(['job\0j3\0issue.view', 'machine\0m3\0issue.view']);
+  });
 });
 
 describe('the broker when the hopper cannot act', () => {

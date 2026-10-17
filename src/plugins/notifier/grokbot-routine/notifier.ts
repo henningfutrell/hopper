@@ -28,6 +28,8 @@ export interface GrokBotNotifierOptions {
   heartbeatMs?: number;
   /** The user's outbound sends (issue #1014). Default: a guard of the notifier's own, and no send log. */
   outbound?: Outbound;
+  /** The questions sent and not ended since. Default: a set of its own. */
+  sent?: Set<string>;
 }
 
 /** What a post is, for the outbound guard: its kind, its job, and the key of the event it is about (none: never a duplicate). */
@@ -36,6 +38,8 @@ interface About { kind: string; jobId?: string | undefined; key?: string }
 const MAX_ATTEMPTS = 3;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const retriable = (status: number) => status === 429 || status >= 500;
+/** The events that end a question: it is never sent again, so `sent` lets it go (issue #1402). */
+const QUESTION_ENDS = new Set(['question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed']);
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function wanted(e: DomainEvent): boolean {
@@ -59,8 +63,8 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
   const outbound = o.outbound ?? createOutbound({ guard: createOutboundGuard({ clock, logger }), clock });
   let feed: NotifierEvents | undefined;
   const inFlight = new Set<Promise<unknown>>();
-  /** Questions sent (or being sent) by this process: an offer skips them. */
-  const sent = new Set<string>();
+  /** Questions sent (or being sent) by this process and not ended since: an offer skips them. */
+  const sent = o.sent ?? new Set<string>();
   let unsubscribe: (() => void) | undefined;
   let timer: NodeJS.Timeout | undefined;
   let configured = false;
@@ -137,6 +141,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
   }
 
   function onEvent(e: DomainEvent): void {
+    if (QUESTION_ENDS.has(e.type)) sent.delete(String(e.data.questionId));
     if (!wanted(e)) return;
     // Listeners must not re-enter synchronously (ports.ts): defer the work.
     track(new Promise<void>((r) => setImmediate(r)).then(() => {

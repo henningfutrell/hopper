@@ -24,7 +24,7 @@ import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsFor
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
-import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
+import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { GRANTED, orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
 import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
@@ -260,8 +260,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         const page = pageOf(on.map((a, i) => ({
           id: i + 1, account: { login: a }, html_url: `${base}/settings/installations/${i + 1}`,
           repository_selection: forge?.chosenRepos?.[a] ? 'selected' : 'all',
-          // What the installation grants, as GitHub answers it: the shipped app's permissions.
-          permissions: { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' },
+          // What the installation grants, as GitHub answers it: the shipped app's permissions, unless the test says otherwise.
+          permissions: forge?.installationPermissions?.[a] ?? GRANTED,
         })), r.query);
         return tagged({ total_count: on.length, installations: page }); // with an ETag (issue #1250)
       }

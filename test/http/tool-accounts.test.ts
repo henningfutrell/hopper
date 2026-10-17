@@ -37,6 +37,15 @@ describe('toolAccountsOf', () => {
     expect(accounts[0]!.machines[0]!.readAt).toBe('2026-10-14T10:00:00.000Z');
   });
 
+  it('a signed-in machine carries when the tool says its sign-in ends; one that gives no time carries none (issue #1211)', () => {
+    const ends = '2026-10-15T09:00:00.000Z';
+    const [account] = toolAccountsOf({
+      sources: [signedIn('claude-m1', 'm1', 'a@example.com', { account: { service: 'claude', identity: 'a@example.com', detail: { machine: 'm1' }, expiresAt: ends } }), signedIn('claude-m2', 'm2', 'a@example.com')],
+      readings: [], labels, jobs: [],
+    });
+    expect(account!.machines.map((m) => [m.machineId, m.expiresAt])).toEqual([['m1', ends], ['m2', undefined]]);
+  });
+
   it('machines signed in as nobody are one entry with no identity and their reason; a source with no account yet is left out', () => {
     const accounts = toolAccountsOf({
       sources: [signedIn('claude-m1', 'm1', 'a@example.com'), signedOut('claude-m2', 'm2'), signedOut('claude-m3', 'm3'), { name: 'claude-new', problem: 'not read yet' }],

@@ -7,6 +7,14 @@ import { applyPatch, parse, type StoreContext } from './context.ts';
 /** The most ids one statement names when it reads the bodies of the jobs that changed. */
 const BODIES_PER_READ = 500;
 
+const marks = (part: readonly string[]): string => part.map(() => '?').join(',');
+/** `ids` in parts of at most BODIES_PER_READ, so no statement names too many. */
+const chunks = (ids: readonly string[]): string[][] => {
+  const parts: string[][] = [];
+  for (let i = 0; i < ids.length; i += BODIES_PER_READ) parts.push(ids.slice(i, i + BODIES_PER_READ));
+  return parts;
+};
+
 /**
  * Jobs are read by row version (issue #1154). A list reads each row's id and version only, and the body only of a row
  * this store has not read at that version. The version is Postgres's `xmin`: every write of the row changes it,
@@ -38,9 +46,8 @@ export function createJobRepository(c: StoreContext): JobRepository {
   const bodies = (rows: Row[]): Job[] => {
     const stale = rows.map((r) => String(r.id)).filter((id, i) => kept.get(id)?.v !== String(rows[i]!.v));
     for (const id of stale) kept.delete(id);
-    for (let i = 0; i < stale.length; i += BODIES_PER_READ) {
-      const ids = stale.slice(i, i + BODIES_PER_READ);
-      for (const r of c.db.all(`SELECT id, xmin::text AS v, body FROM jobs WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids)) keep(r);
+    for (const ids of chunks(stale)) {
+      for (const r of c.db.all(`SELECT id, xmin::text AS v, body FROM jobs WHERE id IN (${marks(ids)})`, ...ids)) keep(r);
     }
     // A job deleted between the two reads is left out.
     return rows.flatMap((r) => kept.get(String(r.id))?.job ?? []);
@@ -70,6 +77,16 @@ export function createJobRepository(c: StoreContext): JobRepository {
     getBySourceKey(key) {
       const r = c.db.get('SELECT id, xmin::text AS v FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC LIMIT 1', key);
       return r ? bodies([r])[0] : undefined;
+    },
+    getMany(ids) {
+      const rows = chunks([...new Set(ids)]).flatMap((part) => c.db.all(`SELECT id, xmin::text AS v FROM jobs WHERE id IN (${marks(part)})`, ...part));
+      return new Map(bodies(rows).map((j) => [j.id, j]));
+    },
+    newestOfItems(keys) {
+      // Postgres's DISTINCT ON keeps the first row of each key in the order given: the newest, as getBySourceKey.
+      const rows = chunks([...new Set(keys)]).flatMap((part) => c.db.all(
+        `SELECT DISTINCT ON (source_key) id, xmin::text AS v FROM jobs WHERE source_key IN (${marks(part)}) ORDER BY source_key, created_at DESC, seq DESC`, ...part));
+      return new Map(bodies(rows).flatMap((j) => (j.source ? [[j.source.key, j] as const] : [])));
     },
     list(filter?: JobFilter) {
       const conds = [

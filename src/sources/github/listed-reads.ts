@@ -18,7 +18,7 @@ import { WRITES } from './pass-reads.ts';
 const KEPT = new Set<string>(['getIssue', 'listComments']);
 const WRITE = new Set<string>(WRITES);
 
-interface Kept { repo: string; at: Set<string>; answer: unknown }
+export interface Kept { repo: string; number: number; at: Set<string>; answer: unknown }
 type Method = (...args: unknown[]) => Promise<unknown>;
 
 export interface ListedReads {
@@ -46,9 +46,8 @@ function afterWrite(name: string, args: unknown[]): ((i: ListedItem) => ListedIt
   return undefined;
 }
 
-export function listedReads(api: GitHubApi, listings: GitHubListingRepository): ListedReads {
+export function listedReads(api: GitHubApi, listings: GitHubListingRepository, kept = new Map<string, Kept>()): ListedReads {
   const scope = new AsyncLocalStorage<true>();
-  const kept = new Map<string, Kept>();
 
   const read = (name: string, fn: Method): Method => async (...args) => {
     const [repo, number] = [String(args[0]), Number(args[1])];
@@ -64,7 +63,7 @@ export function listedReads(api: GitHubApi, listings: GitHubListingRepository): 
       if (issue.subIssues || issue.state === 'closed') { kept.delete(key); return answer; }
     }
     const at = new Set([item.updatedAt, ...(name === 'getIssue' ? [(answer as GitHubIssue).updatedAt] : [])]);
-    kept.set(key, { repo, at, answer: structuredClone(answer) });
+    kept.set(key, { repo, number, at, answer: structuredClone(answer) });
     return answer;
   };
 
@@ -90,5 +89,7 @@ export function listedReads(api: GitHubApi, listings: GitHubListingRepository): 
       return KEPT.has(prop) ? read(prop, fn) : WRITE.has(prop) ? write(prop, fn) : fn;
     },
   });
-  return { api: out, cached: (run) => scope.run(true, run) };
+  // What the listing no longer holds is read from GitHub anyway: after each discover or check it goes (issue #1402).
+  const prune = () => { for (const [key, k] of kept) if (!listings.item(k.repo, k.number)) kept.delete(key); };
+  return { api: out, cached: (run) => scope.run(true, run).finally(prune) };
 }

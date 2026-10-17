@@ -2,7 +2,7 @@
 // The job goes to a machine on another account, or is held with the reason; a job resuming in its pane is not kept off.
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
-import { signedOutOf } from '../../src/decider/signed-out.ts';
+import { signedInOf, signedOutMove, signedOutOf, type SignedInTool } from '../../src/decider/signed-out.ts';
 import type { SignedOutTool } from '../../src/domain/types.ts';
 import { inputs, job, machine } from './support.ts';
 
@@ -47,6 +47,47 @@ describe('signed-out machines', () => {
   it('a job resuming returns to its pane there', () => {
     const d = decide(inputs({ machines: [machine({ id: 'seat' })], signedOut: [OUT], waiting: [job('a', { machineId: 'seat', pendingAnswer: 'yes' })] }), 'd1');
     expect(d.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'seat' })]);
+  });
+
+  it('a job resuming elsewhere (issue #1211) has no pane there: it is kept off as a new job is', () => {
+    const machines = [machine({ id: 'seat' }), machine({ id: 'host' })];
+    const moved = job('a', { pendingAnswer: 'moved', parked: { at: '2026-10-02T11:00:00.000Z', from: 'waiting_answer', elsewhere: { at: '2026-10-02T11:00:00.000Z', checkpointAt: '2026-10-02T11:00:00.000Z', from: 'seat' } } });
+    const d = decide(inputs({ machines, signedOut: [OUT], waiting: [moved] }), 'd1');
+    expect(d.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'host' })]);
+  });
+});
+
+describe('signedOutMove (issue #1211)', () => {
+  const IN: SignedInTool = { machineId: 'host', source: 'claude-host', service: 'claude', executors: ['test'] };
+  const machines = [machine({ id: 'seat' }), machine({ id: 'host' }), machine({ id: 'spare' })];
+  const held = job('a', { status: 'waiting_answer' });
+
+  it('moves a job held on the signed-out machine to the machines that read signed in', () => {
+    expect(signedOutMove(held, 'seat', machines, [OUT], [IN])).toEqual({ tool: OUT, to: ['host'] });
+  });
+
+  it('stays when no other machine reads signed in, the other is offline, or it runs another executor', () => {
+    expect(signedOutMove(held, 'seat', machines, [OUT], [])).toBeUndefined();
+    expect(signedOutMove(held, 'seat', [machine({ id: 'seat' }), machine({ id: 'host', online: false })], [OUT], [IN])).toBeUndefined();
+    expect(signedOutMove(held, 'seat', [machine({ id: 'seat' }), machine({ id: 'host', executors: ['command'] })], [OUT], [IN])).toBeUndefined();
+    expect(signedOutMove(held, 'seat', machines, [OUT, { ...OUT, machineId: 'host' }], [IN])).toBeUndefined();
+  });
+
+  it('stays when its machine is not signed out for its executor, or the job names its machine', () => {
+    expect(signedOutMove(held, 'seat', machines, [], [IN])).toBeUndefined();
+    expect(signedOutMove(job('a', { executor: 'command' }), 'seat', machines.map((m) => ({ ...m, executors: ['command'] })), [OUT], [{ ...IN, executors: undefined }])).toBeUndefined();
+    expect(signedOutMove(job('a', { machineId: 'seat' }), 'seat', machines, [OUT], [IN])).toBeUndefined();
+  });
+});
+
+describe('signedInOf', () => {
+  it('takes each usage source whose account on a machine reads signed in as an identity', () => {
+    expect(signedInOf([
+      { name: 'claude-seat', state: { account: { service: 'claude', detail: { machine: 'seat' }, signedOut: true } } },
+      { name: 'claude-host', state: { executors: ['test'], account: { service: 'claude', identity: 'a@example.com', detail: { machine: 'host' } } } },
+      { name: 'claude-box', state: { account: { service: 'claude', detail: { machine: 'box' }, problem: 'not dialled in' } } },
+      { name: 'claude-any', state: { account: { service: 'claude', identity: 'a@example.com', detail: {} } } },
+    ])).toEqual([{ machineId: 'host', source: 'claude-host', service: 'claude', executors: ['test'] }]);
   });
 });
 

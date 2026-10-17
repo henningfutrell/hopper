@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:f
 import { dirname, join } from 'node:path';
 import type { BaseMerge } from '../domain/pull-requests.ts';
 import type { ChangedLines } from '../domain/change-kinds.ts';
+import { DEFAULT_SHRINK_GUARD, shrunkFiles, type PushFileLines } from '../domain/shrink-guard.ts';
 import { parseDiff } from './diff-lines.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
@@ -126,6 +127,9 @@ export function keepBothAdditions(merged: string): string | undefined {
   }
   return at === 'none' ? out.join('\n') : undefined;
 }
+
+/** A text's lines as `git diff --numstat` counts them: a last line with no newline counts too. */
+export const lineCount = (text: string): number => text.split('\n').length - (text.endsWith('\n') || text === '' ? 1 : 0);
 
 export const runGit: GitRun = (args, env) => new Promise((resolve) => {
   execFile('git', args, { env: { ...process.env, ...env }, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (e, stdout, stderr) => {
@@ -262,6 +266,13 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
       const conflicted = tree.code === 0 ? [] : [...new Set(rest.slice(0, rest.indexOf('')))];
       const resolved = await resolve(run, head, baseOid, conflicted);
       if ('files' in resolved) return { outcome: 'conflicts', files: resolved.files };
+      // The shrink guard (issue #1218): a resolution that empties or shrinks a file is not pushed; a tend job resolves it.
+      const shrunk = await shrunkResolutions(run, head, baseOid, resolved.blobs);
+      if (shrunk === undefined) return problem('could not count the lines of the resolved files');
+      if (shrunk.length > 0) {
+        o.log(`hopper: git mirror of ${repo}: base merge of #${pr.number}: the shrink guard: the resolution empties or shrinks ${shrunk.join(', ')}`);
+        return { outcome: 'conflicts', files: shrunk };
+      }
       const finalTree = await withBlobs(run, at.path, treeOid!, resolved.blobs);
       if (!finalTree) return problem('could not write the merged tree');
       const commit = await run(['commit-tree', finalTree, '-p', head, '-p', baseOid, '-m', `Merge branch '${pr.base}' into ${pr.headRef}`], AUTHOR);
@@ -309,7 +320,33 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
   };
 
   type Run = (args: string[], env?: Record<string, string>) => ReturnType<GitRun>;
-  interface Blob { path: string; mode: string; oid: string }
+  interface Blob { path: string; mode: string; oid: string; lines: number }
+
+  /**
+   * The resolved files the shrink guard refuses (issue #1218): each counted in lines at the merge base, the pull request's
+   * head and the base branch, as `git diff --numstat` against the empty tree counts them, and in the resolution; undefined:
+   * git cannot say.
+   */
+  async function shrunkResolutions(run: Run, head: string, base: string, blobs: Blob[]): Promise<string[] | undefined> {
+    if (blobs.length === 0) return [];
+    const [mb, empty] = [await run(['merge-base', head, base]), await run(['hash-object', '-t', 'tree', '/dev/null'])];
+    if (mb.code !== 0 || empty.code !== 0) return undefined;
+    const paths = blobs.map((b) => b.path);
+    const at = async (oid: string): Promise<Map<string, number> | undefined> => {
+      const n = await run(['diff', '--numstat', '-z', '--no-renames', empty.stdout.trim(), oid, '--', ...paths], { GIT_LITERAL_PATHSPECS: '1' });
+      if (n.code !== 0) return undefined;
+      const counts = new Map<string, number>();
+      for (const entry of n.stdout.split('\0')) {
+        const m = /^(\d+)\t\d+\t(.+)$/s.exec(entry);
+        if (m) counts.set(m[2]!, Number(m[1]));
+      }
+      return counts;
+    };
+    const [start, ours, theirs] = [await at(mb.stdout.trim()), await at(head), await at(base)];
+    if (!start || !ours || !theirs) return undefined;
+    const files: PushFileLines[] = blobs.map((b) => ({ path: b.path, start: start.get(b.path), head: ours.get(b.path), base: theirs.get(b.path), pushed: b.lines }));
+    return shrunkFiles(files, DEFAULT_SHRINK_GUARD.percent).map((f) => f.path);
+  }
 
   /**
    * Each conflicted file resolved by keeping both sides' additions (issue #967), as a blob written to the mirror; or the
@@ -344,11 +381,13 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
     const mode = (await run(['ls-tree', head, '--', path])).stdout.split(/\s/)[0];
     if (mode !== '100644') return undefined;
     const merged = await run(['merge-file', '-p', '--diff3', `--marker-size=${MARKER}`, '--object-id', `${head}:${path}`, `${mergeBase}:${path}`, `${base}:${path}`]);
-    if (merged.code <= 0) return undefined;
+    // Its exit code is the number of conflicts, at most 127; above it git failed, and printed no merge (issue #1218: an
+    // error once read as conflicts resolved docs/design.md to an empty file).
+    if (merged.code <= 0 || merged.code > 127 || !merged.stdout.includes(`${'<'.repeat(MARKER)} `)) return undefined;
     const text = keepBothAdditions(merged.stdout);
     if (text === undefined) return undefined;
     const oid = await hashBlob(run, text);
-    return oid ? { path, mode, oid } : undefined;
+    return oid ? { path, mode, oid, lines: lineCount(text) } : undefined;
   }
 
   /** Write `text` as a blob in the mirror; undefined: git failed. */
