@@ -174,6 +174,9 @@ export function openRequests(source: string, intake: IntakeContext, requests: Ma
     seen.add(id);
     if (!intake.requestOpened(key, r.hash)) intake.record('source.request_opened', { source, key, hash: r.hash, author: r.author, why: r.why });
   }
+  // Only the texts still offered stay (issue #1402): one offered again is looked up in the ledger, not recorded twice.
+  const offered = new Set([...requests].map(([key, r]) => `${key} ${r.hash}`));
+  for (const id of seen) if (!offered.has(id)) seen.delete(id);
 }
 
 /** A GitHub issue URL's `owner/name`, lowercased; undefined for any other key. */
