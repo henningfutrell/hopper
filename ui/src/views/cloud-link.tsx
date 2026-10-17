@@ -1,6 +1,7 @@
 // The cloud link (issue #467), in Settings, the hopper's admin's: link this install to an account at hopper.io, or unlink
 // it, while the hopper runs. A link writes one record on this install and moves no data; an unlink removes the record.
 // While linked, the admin gets a one-time registration code (issue #465) to enter at hopper.io, shown here once.
+// "What hopper.io would get" shows the hopper.io state snapshot this hopper makes now, as it is (issue #466).
 import { Cloud } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -8,7 +9,7 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import type { CloudLinkView, RegistrationCodeMinted } from '@/model/wire';
+import type { CloudLinkView, HopperIoState, RegistrationCodeMinted } from '@/model/wire';
 import { useHopper } from '@/store';
 
 export function CloudLink() {
@@ -43,6 +44,8 @@ export function CloudLink() {
     setBusy(false);
   };
   const link = view?.link;
+  const [snapshot, setSnapshot] = useState<HopperIoState | null>(null);
+  const readSnapshot = () => { void get<HopperIoState>('/api/cloud-link/state').then((v) => { if (v && 'schema' in v) setSnapshot(v); }, refused); };
   return (
     <Panel title="hopper.io" icon={Cloud} className="max-w-3xl">
       <div data-slot="cloud-link" className="space-y-3 text-sm">
@@ -83,6 +86,20 @@ export function CloudLink() {
             <Button size="sm" type="submit" disabled={busy || account.trim() === ''}>Link</Button>
           </form>
         )}
+        <details data-slot="cloud-link-snapshot" className="rounded-md border p-3" onToggle={(e) => { if (e.currentTarget.open) readSnapshot(); }}>
+          <summary className="cursor-pointer">What hopper.io would get</summary>
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              This is all the state this hopper gives hopper.io, as it is now: versions, counts and the state of each machine. It holds no names, paths, addresses, people, jobs or questions. hopper.io shows it to your account only. Here each machine is named by its place in the list; the connection to hopper.io uses keys of its own. Nothing is sent yet.
+            </p>
+            {snapshot ? (
+              <>
+                <pre data-slot="cloud-link-snapshot-json" className="max-h-80 overflow-auto rounded bg-muted p-2 font-mono text-xs">{JSON.stringify(snapshot, null, 2)}</pre>
+                <Button size="sm" variant="outline" onClick={readSnapshot}>Read again</Button>
+              </>
+            ) : <p className="text-muted-foreground">Loading…</p>}
+          </div>
+        </details>
       </div>
     </Panel>
   );
