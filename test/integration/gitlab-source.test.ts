@@ -60,7 +60,8 @@ describe('a GitLab source', () => {
     const job = await waitFor(async () => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.find((j) => j.source?.key === key), { what: 'the GitLab issue\'s job' });
     expect(job.source).toMatchObject({ kind: 'gitlab-account', repo: 'ada/tools', number: 1, url: key, origin: 'trusted' });
     expect(job.spec.payload.prompt).toContain(`git push to ${gitlab.url} go through the hopper`);
-    await waitFor(() => gitlab.issues.find((i) => i.iid === 1)!.labels.includes('hopper:claimed') || undefined, { what: 'the claimed label at GitLab' });
+    // The job can fail before a poll sees the claim on the issue, so wait for the claim's request, not the label.
+    await waitFor(() => gitlab.requests.some((r) => r.method === 'PUT' && JSON.stringify(r.body) === JSON.stringify({ add_labels: 'hopper:claimed' })) || undefined, { what: 'the claimed label at GitLab' });
     const listed = await waitFor(async () => { const i = (await gitlabSource(app))?.detail.intake as IntakeOutcome[] | undefined; return i?.length === 2 ? i : undefined; }, { what: 'Intake to list the GitLab issues' });
     expect(listed.find((x) => x.key === key)).toMatchObject({ jobId: job.id });
     expect(listed.find((x) => x.title === 'From bob')).toMatchObject({ reason: REQUEST_REASON, group: 'request', action: 'approve', request: { why: ['bob wrote it, and is not a trusted actor'] } });
