@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
-| `src/gitlab/` | a user's GitLab account (issue #1448 part 2, "A GitLab source"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal (`account.ts`), and the `gitlab-account` job source over it (`source.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -24362,3 +24362,82 @@ confirmation; the edited text checked again — a secret, an `@` mention —; a 
 confirm step, the issue filed as the person with no label and no assignee, the event on the job's timeline; a viewer refused;
 no provider), `test/ui/file-issue.test.ts` (hidden from a viewer; off with the reason; what is sent; cancel mid-draft; a
 timeout; filed only after Confirm; a blocked value keeps Confirm off).
+
+## Jobs through GitLab (issue #1448, part 3, 2026-10-17)
+
+Part 3 of issue #1448: a GitLab issue becomes a job, and the job acts through the user's **GitLab account**. Part 2 listed
+GitLab issues only.
+
+**Which issue becomes a job** (`src/gitlab/source.ts`, `src/gitlab/origin.ts`). An open issue labelled `hopper` in a picked
+project, assigned to the account, with no end label (`hopper:done`, `hopper:failed`, `hopper:rejected`) and not on the
+backburner, of a **trusted origin**. As on GitHub (issue #652), the origin is judged by who wrote the issue, who added the
+label last (`GET …/issues/:iid/resource_label_events`) and who assigned it to the account last (GitLab's system note
+`assigned to @…`); on GitLab also by each edit of its title or description (the system notes `changed title`, `changed the
+description`), since GitLab keeps no snapshot the hopper reads. Each act is a GitLab user by id. **Access decides** each one:
+OpenFGA's `intake#can_start_jobs` for a subject of the new type `gitlab_account` (`gitlab_account:<the GitLab's URL>/<user
+id>`), the user's GitLab account told as the trusted actor at each check. So only the account itself starts jobs, and no
+OpenFGA trusts nobody, as on GitHub. A model edited before this change lacks `intake#trusted_actor accepts gitlab_account`:
+its gap (`gitlabIntakeGaps`) is apart from GitHub's, so GitHub's intake still decides, and no GitLab issue is a job. An act
+GitLab does not say who did is no trusted act. Any other issue is listed with why: `not of a trusted origin: <who> <did
+what>, and is not a trusted actor`. There are no request cards from GitLab in this part.
+
+**The item.** Its key and URL are the issue's URL; `repo` is the project path, `number` its `iid`, `origin: trusted`. The
+prompt is the issue's text in the untrusted block, then the hopper's context: the forge, the project and the issue, its
+labels and priority (the options `priorityLabels`, `defaultPriority`), a GitLab line (the issue is on GitLab, `hopper-gh` is
+GitHub's only, git goes through the hopper, no GitLab login and no GitLab API from the job), the checks line, and what done
+means: a merge request from a branch of the job's own work into the project's default branch, with "Closes #N" in its
+description, opened as the job pushes with git's push options (`-o merge_request.create -o merge_request.target=… -o
+merge_request.title=… -o merge_request.description=Closes #N`). A person reviews and merges it on GitLab. The plugin
+options `executor` and `model` name the job's executor, as GitHub's do.
+
+**The labels.** The hopper writes only labels to a GitLab issue (`PUT /projects/:id/issues/:iid`, `add_labels` and
+`remove_labels`, so a second write changes nothing): `hopper:claimed` when the job is claimed; then `hopper:done`,
+`hopper:failed` or `hopper:rejected` in place of the claim; a cancel takes the claim off. A Continue the hopper fixes itself
+(`fixing`) writes nothing. No comment, no close. An issue GitLab does not find is a permanent error.
+
+**Its work tree.** The job payload's `repo` is a GitLab job's project too, with `repoUrl`, its clone URL
+(`<GitLab URL>/<project>.git`, from the issue's URL, `gitlabCloneUrl`): the job's checkout in the work tree's workspace is
+cloned from there (`makeJobWorktreeCommand`'s `url`). Everywhere a job's own GitHub repository is read — the GitHub proxy
+and git through the hopper for GitHub — a GitLab job has none (`isGitLabItem`): its project is never taken for a GitHub
+repository of the same name.
+
+**Git through the hopper for GitLab** (`src/gitlab/git-broker.ts`, `GET`/`POST /job/gitlab-git/<project>.git/…`). A GitLab
+job's variables (`jobGitConfig`'s `gitlab`) rewrite its GitLab's https URL to the hopper's route, with the same credential
+helper as GitHub's: the job's proxy token from its token file, never a variable. The job holds no GitLab token. The broker
+checks the proxy token, the job at work, and that it is a GitLab job; a fetch goes to GitLab whatever the project (GitLab
+answers what the account reads); a push only to the job's own project, its ref updates read before anything reaches GitLab
+(`checkPush`: never the default branch, a release branch, a batch run's branch, a tag or a delete). git's push options go to
+GitLab as git sent them: that is how the push opens the merge request. It sends the account's token as Basic auth
+(`oauth2:<token>`). Each push is an event on the job's timeline: `gitlab_proxy.done`, `.refused` or `.failed`, op `git.push`,
+`project`, `refs`, and `as`, the GitLab username that acted. GitLab answering 401 ends the GitLab account only (issue #1380,
+"a source expiring marks only the source"), and the job is told to have a person connect it again.
+
+**The job page** names the account that acts: **GitLab as**, the username its newest push named, else the user's GitLab
+account (`ui/src/model/acting-identity.ts`, `gitlabActingIdentity`).
+
+**The token** needs the scopes `api` (the labels), `read_user` (the source email match) and `write_repository` (a job's git).
+
+**Decisions:**
+- **Push options, not the merge request API.** git's push options open a merge request on the push the job makes anyway, so
+  the hopper needs no GitLab API route for a job, and no new `hopper-gh` verbs. A route for a job's GitLab reads and writes is
+  a later part, when a job needs one.
+- **Access decides GitLab's trusted actors with a type of its own.** A GitLab username is not a GitHub login: asked as
+  `github_login`, a GitLab user named as a trusted GitHub login would start jobs. A user id at a GitLab cannot be mistaken.
+- **Edits count against the origin.** GitHub's edits are held by the item's snapshot (issue #662); GitLab's are read from its
+  own system notes, so another person's edit keeps the issue out.
+- **No request cards from GitLab yet.** A card needs a person's approval path for GitLab's text; the issue says why instead.
+- **No migration.** The model change is additive; an unchanged system-written model is rewritten with it, as for every gap.
+  The new plugin options have defaults. No stored state changes shape.
+
+**Left for later parts of issue #1448:** the job's merge request followed — its state, its checks, a merge in yolo mode, and
+done judged by it (`notComplete`); a cancel when the issue closes or loses its label (`check`); request cards for GitLab issues
+of another origin; a GitLab API route for a job; OAuth for GitLab; more than one GitLab account; and, from part 1, the user's
+own GitHub acts that name no job repository.
+
+**Verification:** `test/gitlab/source.test.ts` (an issue taken with its prompt; another origin, end labels, the backburner, no
+Access; the labels written), `test/gitlab/origin.test.ts`, `test/gitlab/git-broker.test.ts` (fetch, push with push options,
+the refusals, the 401), `test/integration/gitlab-source.test.ts` (the daemon takes the issue as a job and writes its labels),
+`test/integration/gitlab-git.test.ts` (a real git clone and push with push options through the daemon to a fake GitLab whose
+git is git's own `git-http-backend`; a push to `main` refused), `test/github-proxy/git.test.ts` (the job's GitLab git
+config), `test/herdr/executor-job-worktree.test.ts` (the project cloned from its GitLab), `test/authz/model.test.ts`,
+`test/ui/acting-identity.test.ts` and `test/ui/gitlab-view.test.ts`.

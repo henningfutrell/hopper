@@ -211,7 +211,12 @@ export interface VaultAccess extends TemplateApprovals {
 /** What intake asks of access (issue #652): whether a GitHub login may start a user's jobs, the user's trusted actors told. */
 export interface IntakeAccess {
   decideIntakeActor(userId: string, login: string, actors: readonly string[]): Promise<AccessAnswer>;
+  /** Whether a GitLab user (by the GitLab's URL and user id) may start a user's jobs (issue #1448), the user's trusted GitLab actors told. */
+  decideGitLabIntakeActor(userId: string, actor: GitLabActorRef, actors: readonly GitLabActorRef[]): Promise<AccessAnswer>;
 }
+
+/** A GitLab user as Access names it (issue #1448): the GitLab's URL and the user's id there. */
+export interface GitLabActorRef { baseUrl: string; userId: number }
 
 /** Access's answer to one check. `unavailable`: OpenFGA could not be asked (not set up, not reached), so it is a deny by outage, not a refusal (issue #696). */
 export interface AccessAnswer { allowed: boolean; reason: string; unavailable?: true }

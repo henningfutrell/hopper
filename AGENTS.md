@@ -44,8 +44,12 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   and pushes on GitHub with the job's own user's connection (the account of the repository, issue #1448) — a push only to a branch of the job's own repository or of another of its user's job repositories (issue #1275), or, with
   the user's **Contribution** on (issue #429, `docs/design.md` "The contribution flow"), of the user's fork of it, never its
   default or a release branch, and never a push that brings in its base branch (its pull request's, else the landing branch) and empties or shrinks a file the branch's own change
-  did not, or empties a file it only shrank (the shrink guard, issues #1096, #1218; the hopper's own base merge is judged so too, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. **A job holds no
-  GitHub token** (issue #652): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
+  did not, or empties a file it only shrank (the shrink guard, issues #1096, #1218; the hopper's own base merge is judged so too, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. A running
+  GitLab job's git (issue #1448, `docs/design.md` "Jobs through GitLab"): `GET`/`POST /job/gitlab-git/<project>.git/…`, the same
+  with the job's proxy token, fetches and pushes on GitLab with the token of its own user's GitLab account — a push only to a
+  branch of the job's own project, never its default or a release branch, its push options (the merge request) as git sent them —;
+  it changes no job, question, webhook or setting, only records a push. **A job holds no
+  GitHub or GitLab token** (issues #652, #1448): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
   sealed to that request; it records only the delivery or refusal. **The vault gives only to a job a person granted it**
   (issue #652, `docs/design.md` "Vault grants"): a box job's item with no **vault grant** is refused and becomes a grant
@@ -125,14 +129,17 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Jobs come only from a trusted origin** (issue #652, `docs/design.md` "Trusted origin and request cards"): an issue
   becomes a job only when the user's trusted actors — Access decides (OpenFGA `intake#can_start_jobs`) — wrote, labelled
   and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
-  its job runs the approved text. Approve is a person's act through the UI session, never a job's. One exception, the
+  its job runs the approved text. A GitLab issue (issue #1448, `docs/design.md` "Jobs through GitLab") becomes a job only when
+  the user's GitLab account — Access decides (`intake#can_start_jobs`, a `gitlab_account` by its GitLab and user id) — wrote,
+  labelled and assigned it, and nobody else edited its title or description; any other is listed with why, never taken. Approve is a person's act through the UI session, never a job's. One exception, the
   user's own setting: **auto-approval** (issue #1268, `docs/design.md` "Auto-approval", on by default) approves a card a
   trusted actor reopened, wrote or labelled `hopper:high`, or a listed app wrote, and records it as an approval; a card a
   job filed, that someone else edited, or that a person took into Intake still waits. The origin gates the job,
   not its merge: yolo mode merges a job's ready pull request whatever its origin (issue #805). No OpenFGA trusts nobody.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
-  one (the merge of a job's pull request does), and posts no comments. Ten exceptions, each the user's own act or setting: with
+  one (the merge of a job's pull request does), and posts no comments. On GitLab (issue #1448) it writes only its labels to an
+  issue, with no exception, and a GitLab job's merge request text is under the publishing rule. Ten exceptions, each the user's own act or setting: with
   yolo mode on for a repository (issue #637), the hopper merges a done job's ready pull request that it follows — not a draft, no
   merge conflicts, its checks passed — or it has none, and none started within two minutes of its last push (issue #677; issue #652 had none wait) —, a merge commit, and that merge closes the issue as a person's would; Merge now and Close PR on a Pull requests card or `hopper pr merge|close`
   (issue #677) merge, on the same path whatever yolo mode and the checks say, or close without a merge, a job's open pull request, as a person's act; after either merge — yolo mode or Merge now — of a pull request that did not close its issue and is no part ("Part of #N"), the hopper closes the issue as completed and posts one comment that links the pull request (issue #677), so the merge finishes the issue as the user's setting or act asked; Run again
