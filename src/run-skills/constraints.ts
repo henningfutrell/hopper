@@ -18,15 +18,10 @@ export interface DraftText { repo: string; title: string; body: string; labels?:
  */
 export interface DraftScope { repos: readonly string[]; known?: readonly string[]; secrets?: readonly string[] }
 
-/** `draft`: the model's draft, before the user reads it. `file`: the text the user edited and files. */
-export type DraftStage = 'draft' | 'file';
-
 export interface DraftConstraint {
   id: string;
   /** The line the skill's prompt carries. */
   text: string;
-  /** The stages it is checked at; all when undefined. */
-  stages?: readonly DraftStage[];
   /** What the draft breaks; undefined: nothing. */
   check(d: DraftText, scope: DraftScope): string | undefined;
 }
@@ -89,10 +84,9 @@ export const DRAFT_CONSTRAINTS: readonly DraftConstraint[] = [
     check: (d, s) => (knownOf(s).some((k) => knownPattern(k).test(all(d))) ? 'it names the user, one of their accounts, machines or host names' : undefined),
   },
   {
-    // The model's mentions are removed; one the user adds by hand when they edit the draft is theirs to file.
+    // The model's mentions are removed; one the user adds when they edit the draft is refused at filing (issue #471).
     id: 'no-mention',
     text: 'Never name or quote a person, and never mention one with @.',
-    stages: ['draft'],
     check: (d) => (new RegExp(MENTION.source).test(all(d)) ? 'it mentions a person with @' : undefined),
   },
   {
@@ -123,9 +117,9 @@ export const DRAFT_CONSTRAINTS: readonly DraftConstraint[] = [
   },
 ];
 
-/** What the draft breaks at `stage`, one finding per constraint. Run it on the model's draft and again on the text the user files. */
-export function checkDraft(d: DraftText, scope: DraftScope, stage: DraftStage = 'draft'): DraftFinding[] {
-  return DRAFT_CONSTRAINTS.filter((c) => !c.stages || c.stages.includes(stage)).flatMap((c) => {
+/** What the draft breaks, one finding per constraint. Run it on the model's draft and again on the text the user files. */
+export function checkDraft(d: DraftText, scope: DraftScope): DraftFinding[] {
+  return DRAFT_CONSTRAINTS.flatMap((c) => {
     const what = c.check(d, scope);
     return what ? [{ constraint: c.id, what }] : [];
   });

@@ -24348,8 +24348,8 @@ prompt lacks a constraint's line.
 - **The constraints:** `repo-allowed` (the target is one of `repos`, at the draft and at filing; a draft on another
   repository is refused before the model runs); `no-secret` (the promotion scan's secret patterns — GitHub tokens, API
   keys, private key blocks, 32-byte keys — and the held secrets); `no-personal-data` (email addresses, phone numbers, IPv4
-  and IPv6 addresses, private host names, home directories); `no-known-name`; `no-mention` (an `@` mention, at the draft
-  only: the model's are removed, and one the user adds by hand when they edit is theirs to file); `no-hopper-label` and
+  and IPv6 addresses, private host names, home directories); `no-known-name`; `no-mention` (an `@` mention: the model's
+  are removed, and one the user adds when they edit is refused at filing, as File an issue refuses it); `no-hopper-label` and
   `label-allowed` (a label only from `SUGGESTED_LABELS`: `bug`, `enhancement`, `documentation`, `question`; never
   `hopper`, `hopper:*` or `hopper@*`); `title-size` (1 to 120 characters) and `body-size` (at most 8000). The model's
   answer has no assignee (its JSON Schema allows none).
@@ -24357,7 +24357,7 @@ prompt lacks a constraint's line.
   held secrets, then the secret and personal patterns, known names, `@` mentions — and drops each label it may not
   suggest; it answers each change as a **draft mask** (`{ constraint, count }`), never the value, for the review step and
   the record. The repository and the sizes are not masked: the draft is refused with the reason, never cut. `checkDraft`
-  at `file` runs on the user's text before it is filed, so a value the user puts back is refused there.
+  runs again on the user's text before it is filed, so a value the user puts back is refused there.
 - **What the run reads** (issue #470 D6: no repository checkout): the user's text and the context they attach, nothing
   else; the run has no tools. `checkRequest` refuses a text over 10,000 characters or a context over 20,000 before the
   model runs. `maskContext` masks the context the same way (its `@` mentions kept) before it is sent, and answers its
@@ -24373,13 +24373,17 @@ check at filing still blocks. Held secrets are found by substring, not by hash o
 runs on text the hopper already holds, and a timing difference tells nobody outside anything. The labels are a fixed
 list, so the prompt's line and the check cannot differ.
 
-**Not done here.** The draft and filing routes (issue #471) give the scope — the user's job repositories, their names and the
-secrets the hopper holds for them — and runs `checkDraft` at `file` on the text it files. A check of what jobs write to
-GitHub beyond `PUBLISHING_RULE` would be a separate issue.
+**File an issue** (issue #471, `src/issue-drafts/service.ts`) gives the scope: the user's job repositories and the
+hopper's host name. Its drafter passes the scope to `draftIssue` and answers the findings made before the mask; the
+service runs `checkDraft` again at its confirm step and at filing.
+
+**Not done here.** The scope's other names (machine names, connected GitHub logins, display name, email) and the held
+secrets' values: File an issue gives none of them yet. A check of what jobs write to GitHub beyond `PUBLISHING_RULE`
+would be a separate issue.
 
 **Verification:** `test/run-skills/constraints.test.ts` (each detector with near misses: version strings, times, code
 paths, public host names, digests, a word that holds a known name; known names and held secrets, never shown; the
-repository at both stages; the labels and the mentions; a value edited back in refused at filing; the sizes refused, not
+repository; the labels and the mentions; a value edited back in refused at filing; the sizes refused, not
 cut; the request limits; the context masks), `test/run-skills/draft.test.ts` (against a fake `claude`: the draft masked
 with its masks by constraint; an over-size draft refused by its findings; another repository and an over-size request
 refused before claude runs; the context masked on stdin; an instruction in the context that adds `hopper:high` dropped).

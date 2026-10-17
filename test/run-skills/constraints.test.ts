@@ -4,7 +4,7 @@
 // labels are masked, and a size limit refuses, never cuts.
 import { describe, expect, it } from 'vitest';
 import {
-  checkDraft, checkRequest, CONTEXT_MAX, maskDraft, maskContext, SUGGESTED_LABELS, TEXT_MAX, type DraftScope, type DraftStage,
+  checkDraft, checkRequest, CONTEXT_MAX, maskDraft, maskContext, SUGGESTED_LABELS, TEXT_MAX, type DraftScope,
 } from '../../src/run-skills/constraints.ts';
 
 const scope: DraftScope = {
@@ -12,8 +12,8 @@ const scope: DraftScope = {
   known: ['quartz-box', 'Dana Example', 'dana-gh', 'x'],
   secrets: ['s3cr3t-value-that-is-held', 'short'],
 };
-const found = (body: string, stage: DraftStage = 'draft', title = 'Export fails') =>
-  checkDraft({ repo: 'acme/widgets', title, body }, scope, stage).map((f) => f.constraint);
+const found = (body: string, title = 'Export fails') =>
+  checkDraft({ repo: 'acme/widgets', title, body }, scope).map((f) => f.constraint);
 
 describe('the detectors: each category, and its near misses', () => {
   const cases: [string, string, string][] = [
@@ -67,10 +67,8 @@ describe('known values: the user\'s names and the secrets the hopper holds', () 
 });
 
 describe('the repository, the labels and the mentions', () => {
-  it('a repository outside the scope is refused, at the draft and at filing', () => {
-    for (const stage of ['draft', 'file'] as const) {
-      expect(checkDraft({ repo: 'other/repo', title: 't', body: 'b' }, scope, stage).map((f) => f.constraint)).toContain('repo-allowed');
-    }
+  it('a repository outside the scope is refused', () => {
+    expect(checkDraft({ repo: 'other/repo', title: 't', body: 'b' }, scope).map((f) => f.constraint)).toContain('repo-allowed');
     expect(checkDraft({ repo: 'ACME/Widgets', title: 't', body: 'b' }, scope).map((f) => f.constraint)).not.toContain('repo-allowed');
   });
 
@@ -78,31 +76,31 @@ describe('the repository, the labels and the mentions', () => {
     const r = maskDraft({ repo: 'acme/widgets', title: 't', body: 'b', labels: ['hopper', 'hopper:high', 'bug', 'wontfix'] }, scope);
     expect(r.draft.labels).toEqual(['bug']);
     expect(r.masks).toEqual(expect.arrayContaining([{ constraint: 'no-hopper-label', count: 2 }, { constraint: 'label-allowed', count: 1 }]));
-    expect(checkDraft({ repo: 'acme/widgets', title: 't', body: 'b', labels: ['wontfix'] }, scope, 'file').map((f) => f.constraint)).toContain('label-allowed');
+    expect(checkDraft({ repo: 'acme/widgets', title: 't', body: 'b', labels: ['wontfix'] }, scope).map((f) => f.constraint)).toContain('label-allowed');
     expect(SUGGESTED_LABELS.some((l) => l.startsWith('hopper'))).toBe(false);
   });
 
-  it('the model\'s mentions are removed; one the user adds by hand is theirs to file', () => {
+  it('the model\'s mentions are removed; one the user adds when they edit is found again', () => {
     const r = maskDraft({ repo: 'acme/widgets', title: 't', body: 'As @octocat said' }, scope);
     expect(r.draft.body).toBe('As [mention, removed] said');
-    expect(found('As @octocat said', 'draft')).toContain('no-mention');
-    expect(found('As @octocat said', 'file')).not.toContain('no-mention');
+    expect(checkDraft(r.draft, scope)).toEqual([]);
+    expect(found('As @octocat said')).toContain('no-mention');
   });
 });
 
 describe('the text the user files is checked again', () => {
   it('a blocked value the user edits back in is refused at filing', () => {
     const r = maskDraft({ repo: 'acme/widgets', title: 't', body: 'mail someone@example.com from quartz-box' }, scope);
-    expect(checkDraft(r.draft, scope, 'file')).toEqual([]);
+    expect(checkDraft(r.draft, scope)).toEqual([]);
     const edited = { ...r.draft, body: r.draft.body.replace('[email, masked]', 'someone@example.com').replace('[name, masked]', 'quartz-box') };
-    expect(checkDraft(edited, scope, 'file').map((f) => f.constraint).sort()).toEqual(['no-known-name', 'no-personal-data']);
+    expect(checkDraft(edited, scope).map((f) => f.constraint).sort()).toEqual(['no-known-name', 'no-personal-data']);
   });
 
   it('a title or body over its limit is refused, never cut', () => {
     const r = maskDraft({ repo: 'acme/widgets', title: 't'.repeat(121), body: 'b'.repeat(8001) }, scope);
     expect(r.draft.title).toHaveLength(121);
     expect(r.draft.body).toHaveLength(8001);
-    expect(checkDraft(r.draft, scope, 'file').map((f) => f.constraint).sort()).toEqual(['body-size', 'title-size']);
+    expect(checkDraft(r.draft, scope).map((f) => f.constraint).sort()).toEqual(['body-size', 'title-size']);
   });
 });
 

@@ -19,7 +19,7 @@ export interface IssueDraftResult {
   masks: DraftMask[];
   /** What was masked in the context before it was sent, the same way. */
   contextMasks: DraftMask[];
-  /** What the draft still breaks: the user sees it, and the text is checked again (`checkDraft` at `file`) before it is filed. */
+  /** What the draft still breaks: the user sees it, and the text is checked again (`checkDraft`) before it is filed. */
   findings: DraftFinding[];
   /** The run skill the run used, to record with the draft. */
   skill: { name: string; id: string };

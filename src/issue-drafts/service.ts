@@ -13,7 +13,7 @@ import type { Job, NewEvent } from '../domain/types.ts';
 import { maskReportText, TAIL_LINES } from '../bug-reports/context.ts';
 import { PromotionGitHubError, type PromotionGitHub } from '../promotions/github.ts';
 import { cleanText } from '../promotions/scan.ts';
-import { checkDraft } from '../run-skills/constraints.ts';
+import { checkDraft, type DraftFinding, type DraftScope } from '../run-skills/constraints.ts';
 import { fileIssuePrompt, type FileIssueInput, type IssueDraft } from '../run-skills/file-issue.ts';
 import { checkRunSkill, loadRunSkill, type RunSkill } from '../run-skills/index.ts';
 
@@ -31,8 +31,11 @@ export class IssueDraftRefused extends Error {
 export interface IssueDrafter {
   provider: string;
   available(): Promise<{ ok: true } | { ok: false; reason: string }>;
-  /** One run of the run skill; never throws. `signal` ends it: the person cancelled, or the time is up. */
-  draft(skill: RunSkill, input: FileIssueInput, signal: AbortSignal): Promise<(IssueDraft & { model?: string }) | { error: string }>;
+  /**
+   * One run of the run skill, checked against `scope`; never throws. `signal` ends it: the person cancelled, or the time
+   * is up. `findings`: what the draft broke before the drafter masked it; else the service checks the draft it got.
+   */
+  draft(skill: RunSkill, input: FileIssueInput, scope: DraftScope, signal: AbortSignal): Promise<(IssueDraft & { model?: string; findings?: DraftFinding[] }) | { error: string }>;
 }
 
 export type IssueGitHub = Pick<PromotionGitHub, 'repo' | 'create'>;
@@ -107,8 +110,10 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
     const context = draftContext(r);
     return { repo, text: r.text, ...(context ? { context } : {}) };
   };
+  /** What the drafts are checked against (issue #475): the user's job repositories and the host name. */
+  const scope = (): DraftScope => ({ repos: o.repos(), ...(o.hostname ? { known: [o.hostname] } : {}) });
   /** The constraints on the text as it would be filed: the person's title and body, no labels. */
-  const findingsOf = (title: string, body: string) => checkDraft({ title, body, labels: [] });
+  const findingsOf = (repo: string, title: string, body: string) => checkDraft({ repo, title, body, labels: [] }, scope());
 
   return {
     async status() {
@@ -147,13 +152,13 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
       const broken = checkRunSkill(skill);
       if (broken) throw new IssueDraftRefused(500, broken);
       const timeout = AbortSignal.timeout(o.timeoutMs);
-      const reply = await o.drafter.draft(skill, inputOf(r, repo), AbortSignal.any([signal, timeout]));
+      const reply = await o.drafter.draft(skill, inputOf(r, repo), scope(), AbortSignal.any([signal, timeout]));
       if (signal.aborted) throw cancelled();
       if (timeout.aborted) throw new IssueDraftRefused(504, `${o.drafter.provider} gave no draft in ${Math.round(o.timeoutMs / 1000)} s. Your text is kept: try again`);
       if ('error' in reply) throw new IssueDraftRefused(502, `${o.drafter.provider} could not draft the issue: ${reply.error}. Your text is kept: try again`);
       // The constraints on the draft as written; then a secret or personal data is masked before the person sees it.
       // Suggested labels are dropped: filing adds none (issue #470 D8).
-      const findings = checkDraft({ title: reply.title, body: reply.body, labels: reply.labels ?? [] });
+      const findings = reply.findings ?? checkDraft({ repo, title: reply.title, body: reply.body, labels: reply.labels ?? [] }, scope());
       const title = cleanText(reply.title.trim());
       const body = cleanText(reply.body.trim());
       o.record({ type: 'issue_draft.drafted', data: { repo, provider: o.drafter.provider, ...(reply.model ? { model: reply.model } : {}), skill: skillName, findings: findings.map((f) => f.constraint) } });
@@ -163,7 +168,7 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
     async check(r) {
       const repo = allowed(r.repo);
       const { visibility } = await facts(repo, connected(repo));
-      const findings = findingsOf(r.title, r.body);
+      const findings = findingsOf(repo, r.title, r.body);
       const refusal = filingRefusal(findings, { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
       return { repo, visibility, title: r.title, body: filedBody(r.body), labels: [], assignees: [], findings, ...(refusal ? { refusal } : {}) };
     },
@@ -174,7 +179,7 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
       const api = connected(repo);
       const { visibility } = await facts(repo, api);
       // The constraints again, on the text as the person edited it, not only on the draft.
-      const refusal = filingRefusal(findingsOf(r.title, r.body), { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
+      const refusal = filingRefusal(findingsOf(repo, r.title, r.body), { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
       if (refusal) throw new IssueDraftRefused(422, refusal);
       if (visibility === 'public' && !r.confirmPublic) throw new IssueDraftRefused(409, `${repo} ${PUBLIC_NOTE}`);
       // No label and no assignee: a filed issue never queues a job.

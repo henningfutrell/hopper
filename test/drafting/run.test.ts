@@ -159,7 +159,7 @@ describe('draftOn: what goes wrong, in plain words', () => {
   for (const [where, m, on] of [['this machine', HERE, 'this machine'], ['an ssh target', DESK, 'machine desk']] as const) {
     it(`a run stopped on ${where} is stopped there too, and leaves no run dir (issue #472)`, async () => {
       process.env.FAKE_AGENT_MODE = 'hang';
-      expect(await draftOn(host([m]), pick('codex', m.id, { timeoutMs: 1500 }), input, signal())).toEqual({ error: `codex on ${on}: timed out after 1500 ms` });
+      expect(await draftOn(host([m]), pick('codex', m.id, { timeoutMs: 1500 }), input, scope, signal())).toEqual({ error: `codex on ${on}: timed out after 1500 ms` });
       const call = lastCall('codex') as Call & { sandbox: { pid: number } };
       // Killed, it can stay a zombie a moment, until its new parent reaps it.
       await expect.poll(() => gone(call.sandbox.pid), { timeout: 2000 }).toBe(true);
