@@ -272,6 +272,7 @@ describe('a wait check, in words (issue #1694)', () => {
 
   it('a pull request\'s checks, a time the job named, and a time beside a condition (part 2)', () => {
     expect(waitCheckText(check({ condition: { kind: 'pr_checks_ended', repo: 'o/r', number: 8 } }), T).what).toBe('the hopper checks whether the checks of o/r#8 ended');
+    expect(waitCheckText(check({ condition: { kind: 'pr_review_ended', repo: 'o/r', number: 8 } }), T).what).toBe('the hopper checks whether o/r#8 got a review');
     expect(waitCheckText(check({ condition: { kind: 'time_passed', at: '2026-10-17T12:00:00.000Z' } }), T).what).toBe('the hopper wakes it at 2026-10-17 12:00 UTC');
     expect(waitCheckText(check({ condition: { kind: 'job_ended', jobId: 'j9' }, wakeAt: '2026-10-17T12:00:00.000Z' }), T).what).toBe('the hopper checks whether job j9 ended, and wakes it at 2026-10-17 12:00 UTC');
   });

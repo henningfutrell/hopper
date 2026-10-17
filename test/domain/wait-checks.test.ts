@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import {
-  afterCheck, checkAskOf, checksOutcome, commandOutcome, conditionKey, conditionOf, newCheck, type WaitedChecks, COMMAND_DEADLINE_MS, DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, OVERDUE_EVERY_MS,
+  afterCheck, checkAskOf, checksOutcome, commandOutcome, conditionKey, conditionOf, newCheck, reviewOutcome, type WaitedChecks, type WaitedReviews, COMMAND_DEADLINE_MS, DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, OVERDUE_EVERY_MS,
 } from '../../src/domain/wait-checks.ts';
 
 const SINCE = '2026-10-17T10:00:00.000Z';
@@ -17,7 +17,11 @@ const waiting = (wait: Partial<JobWait>): Job => ({
 describe('what a wait check tests (conditionOf)', () => {
   it('a pull request of the job\'s own repository: its end, read as an item', () => {
     expect(conditionOf(waiting({ on: { kind: 'pull_request', number: 8, about: 'merge' } }))).toEqual({ kind: 'items_ended', refs: [{ kind: 'issue', repo: 'octo/tools', number: 8 }] });
-    expect(conditionOf(waiting({ on: { kind: 'pull_request', repo: 'octo/web', number: 3, about: 'review' } }))).toEqual({ kind: 'items_ended', refs: [{ kind: 'issue', repo: 'octo/web', number: 3 }] });
+  });
+
+  it('a pull request\'s review: tested as its reviews, not only its end (part 3)', () => {
+    expect(conditionOf(waiting({ on: { kind: 'pull_request', repo: 'octo/web', number: 3, about: 'review' } }))).toEqual({ kind: 'pr_review_ended', repo: 'octo/web', number: 3 });
+    expect(conditionKey({ kind: 'pr_review_ended', repo: 'Octo/Web', number: 3 })).toBe('pr_review_ended:octo/web#3');
   });
 
   it('an item, and an outside event that names items and runs', () => {
@@ -171,5 +175,29 @@ describe('what a pull request\'s checks say (checksOutcome)', () => {
     expect(checksOutcome(pr({ state: 'not_found' }), at(0))).toMatchObject({ met: true });
     expect(checksOutcome(pr({}), at(60_000))).toEqual({ met: false, result: `no checks of ${URL} started yet` });
     expect(checksOutcome(pr({}), at(2 * 60_000))).toEqual({ met: true, note: `${URL} has no checks` });
+  });
+});
+
+describe('what a pull request\'s reviews say (reviewOutcome, part 3)', () => {
+  const URL = 'https://github.com/octo/tools/pull/8';
+  const pr = (o: Partial<WaitedReviews>): WaitedReviews => ({ url: URL, state: 'open', reviews: [], ...o });
+  const since = Date.parse(SINCE);
+  it('a review sent after the wait began: met, with what it says; the newest one counts', () => {
+    expect(reviewOutcome(pr({ reviews: [{ state: 'approved', submittedAt: '2026-10-17T10:05:00Z' }] }), since)).toEqual({ met: true, note: `${URL} was approved` });
+    expect(reviewOutcome(pr({ reviews: [{ state: 'commented', submittedAt: '2026-10-17T10:05:00Z' }, { state: 'changes_requested', submittedAt: '2026-10-17T10:06:00Z' }] }), since))
+      .toEqual({ met: true, note: `${URL} got a review that asks for changes` });
+    expect(reviewOutcome(pr({ reviews: [{ state: 'commented', submittedAt: '2026-10-17T10:05:00Z' }] }), since)).toEqual({ met: true, note: `${URL} got a review with comments` });
+  });
+
+  it('only reviews from before the wait, or none: not met; the reviews not read: not met', () => {
+    expect(reviewOutcome(pr({ reviews: [{ state: 'changes_requested', submittedAt: '2026-10-17T09:00:00Z' }] }), since)).toEqual({ met: false, result: `no review of ${URL} since the wait began` });
+    expect(reviewOutcome(pr({ reviews: [{ state: 'approved' }] }), since)).toEqual({ met: false, result: `no review of ${URL} since the wait began` });
+    expect(reviewOutcome(pr({ reviews: undefined }), since)).toEqual({ met: false, result: `the hopper cannot read the reviews of ${URL}` });
+  });
+
+  it('merged, closed or not found: met', () => {
+    expect(reviewOutcome(pr({ state: 'merged' }), since)).toEqual({ met: true, note: `${URL} was merged` });
+    expect(reviewOutcome(pr({ state: 'closed' }), since)).toEqual({ met: true, note: `${URL} was closed` });
+    expect(reviewOutcome(pr({ state: 'not_found' }), since)).toMatchObject({ met: true });
   });
 });

@@ -360,7 +360,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // A job whose last push the shrink guard refused (issue #1096) does not end done: tending failed, whatever its source says.
     verdict: (job) => guardedVerdict(store.events.recent(200, ['github_proxy.refused', 'github_proxy.done'], job.id), job, () => judge(sourceOf(job), job)),
     // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
-    overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [], waitReads: { endedWatched: async (job, refs) => sourceOf(job)?.endedWatched?.(refs), pullRequestChecks: async (job, repo, n) => sourceOf(job)?.waitedChecks?.(repo, n) }, // a wait check's reads (issue #1694)
+    overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [], waitReads: { endedWatched: async (job, refs) => sourceOf(job)?.endedWatched?.(refs), pullRequestChecks: async (job, repo, n) => sourceOf(job)?.waitedChecks?.(repo, n), pullRequestReviews: async (job, repo, n) => sourceOf(job)?.waitedReviews?.(repo, n) }, // a wait check's reads (issue #1694)
     // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL, and
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
