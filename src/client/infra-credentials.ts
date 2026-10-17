@@ -7,9 +7,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** The places under the job user's home, folder or file, that hold credentials. */
+/**
+ * The places under the job user's home, folder or file, that hold credentials. Terraform's is only its credentials file
+ * (issue #1466): any terraform run writes its version-check files (`checkpoint_*`) in `.terraform.d`, which hold none.
+ */
 export const INFRA_CREDENTIAL_PATHS = [
-  '.aws', '.azure', '.config/gcloud', '.kube', '.keycloak', '.terraform.d',
+  '.aws', '.azure', '.config/gcloud', '.kube', '.keycloak', '.terraform.d/credentials.tfrc.json',
   '.config/gh/hosts.yml', '.git-credentials', '.config/git/credentials', '.netrc',
   '.ssh/id_rsa', '.ssh/id_ecdsa', '.ssh/id_ecdsa_sk', '.ssh/id_ed25519', '.ssh/id_ed25519_sk', '.ssh/id_dsa',
 ] as const;
