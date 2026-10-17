@@ -38,6 +38,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { createSagas } from './sagas/index.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
 
@@ -292,6 +293,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     clients: sandboxClientsOf(runtimes),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
+  const sagas = createSagas({ repo: instance.sagas, instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
   const playground = createPlayground({ runtime: sandboxRuntime, noRuntime: inPod ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME, instanceId: instance.settings.instanceId(), network: hopperNetwork(config), limits: config.playground, clock, logger }); // the sandbox playground (issue #1410): many sandboxes at once, on the same runtime, none a machine
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
@@ -336,7 +338,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   await runtimes.start();
   runtimes.watch(intervalMs);
   // After the runtimes: a box is kept only when a machine names it, so the machines must be known first.
-  sandboxes.start(); void playground.start(); stack.recorder.start();
+  sandboxes.start(); sagas.start(); void playground.start(); stack.recorder.start();
   const stopQueueTelemetry = observeQueueOf(() => runtimes.all().map((rt) => rt.store)); // the queue's state, read only while telemetry is on (issue #1486)
 
   let stopped: Promise<void> | undefined;
@@ -361,7 +363,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       stopped ??= (async () => {
         updater.stop(); stack.recorder.stop(); stopQueueTelemetry();
         await access.stop();
-        const passes = Promise.all([sandboxes.stop(), playground.stop()]);
+        const passes = Promise.all([sandboxes.stop(), playground.stop(), sagas.stop()]);
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll(); allowedHosts.stop();
         await Promise.all([server.close(), passes, remoteAccess.stop()]);
