@@ -15,13 +15,16 @@ const culpritAt = { repo: z.string(), tip: z.string(), sha: z.string() };
 const canaryAt = { repo: z.string(), canary: z.string(), stable: z.string(), tip: z.string() };
 
 export const LANDING_BATCH_EVENT_SCHEMAS = {
+  'landing_batch.due': strict({
+    repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), branch: z.string(), merges: z.array(z.number().int()), closes: z.array(z.string()), why: z.string(),
+  }),
   'landing_batch.started': strict({
     repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), branch: z.string(),
     pullRequest: z.number().int(), url: z.string(), merges: z.array(z.number().int()), why: z.string().optional(),
   }),
   'landing_batch.pending': strict({ repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), merges: z.array(z.number().int()) }),
   'landing_batch.promoted': strict({ ...ended, merge: z.string().optional() }),
-  'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()), checkRuns: z.array(check).optional() }),
+  'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()), checkRuns: z.array(check).optional(), conflicts: z.boolean().optional() }),
   'landing_batch.retargeted': strict({ repo: z.string(), pullRequest: z.number().int(), url: z.string(), from: z.string(), to: z.string() }),
   'landing_batches.changed': strict({ from: settings, to: settings, by: z.string() }),
   'landing_batch.bisect_started': strict({ ...ended, points: z.array(point), checks: z.array(check), reason: z.string() }),

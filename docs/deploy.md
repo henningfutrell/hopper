@@ -1277,6 +1277,27 @@ Then open Grafana at http://127.0.0.1:3000 (`TELEMETRY_UI_PORT` moves it). Explo
 `http_server_request_duration_seconds` by `http_route` for the slowest actions, `hopper_job_span_duration_seconds` by kind,
 and `hopper_github_calls_total` by route.
 
+Other metrics show how work goes (docs/design.md "Telemetry: how work goes"): `hopper_job_assessed_total` (failures by
+class, and the assessor's decision), `hopper_job_retries_total`, `hopper_question_escalations_total` by level,
+`hopper_handoffs_total`, `hopper_sandbox_requests_total` and `hopper_sandbox_spin_up_duration_seconds`, and
+`hopper_landing_batch_ended_total` by outcome.
+
+On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
+
+```sh
+helm upgrade hopper deploy/helm/hopper --reuse-values --set telemetry.env.OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+```
+
+Keep a header with a credential in a Secret, and name it in `telemetry.envFromSecret`:
+
+```sh
+kubectl create secret generic hopper-otel --from-literal=OTEL_EXPORTER_OTLP_HEADERS='api-key=…'
+helm upgrade hopper deploy/helm/hopper --reuse-values --set telemetry.envFromSecret=hopper-otel
+```
+
+`--set telemetry.viewer.enabled=true` adds the same viewer in the release; the hopper then exports to it. Only the hopper
+reaches its OTLP port. Open Grafana with `kubectl port-forward svc/hopper-telemetry 3000`, then http://127.0.0.1:3000.
+
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.

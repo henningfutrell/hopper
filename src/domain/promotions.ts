@@ -41,11 +41,38 @@ export interface Promotion {
 /** A promotion as a direct job reads back: the artifacts changed since it was posted are stale. */
 export interface PromotionView extends Promotion { stale: string[] }
 
+/**
+ * A promotion's new issue or comment on its way (issue #1591): kept before GitHub is asked, its id the post key at the end
+ * of the text. Once GitHub's answer is read, or the post key is found on GitHub, it becomes the promotion; a stop leaves it,
+ * and the next promotion of the direct job, or the next start, looks for its post key.
+ */
+export interface PromotionSend {
+  id: string;
+  directJobId: string;
+  /** The direct job's job: the event's. */
+  jobId: string;
+  repo: string;
+  /** Where it goes: a new issue, or a comment on issue `number`. */
+  target: PromotionTarget;
+  artifacts: PromotedArtifact[];
+  promotedBy: string;
+  /** When it was kept, before GitHub was asked. */
+  at: string;
+}
+
 export interface PromotionRepository {
   add(p: Omit<Promotion, 'id'>): Promotion;
   update(p: Promotion): void;
   /** The direct job's live promotion: not revoked. */
   live(directJobId: string): Promotion | undefined;
+  /** Keep a send before GitHub is asked (issue #1591). */
+  sending(s: Omit<PromotionSend, 'id'>): PromotionSend;
+  /** The direct job's send on its way, if a stop or a lost answer left one. */
+  sendOf(directJobId: string): PromotionSend | undefined;
+  /** Every send on its way, oldest first: what the start looks for. */
+  sends(): PromotionSend[];
+  /** The send ends: as the promotion `p` (kept in the same transaction), or with nothing on GitHub. */
+  sent(id: string, p?: Omit<Promotion, 'id'>): Promotion | undefined;
 }
 
 /** A repository's visibility, as GitHub answers it. */

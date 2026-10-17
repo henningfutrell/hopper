@@ -292,3 +292,28 @@ describe('a step\'s credentials end with its sandbox (issue #1371)', () => {
     expect(events.filter((e) => e.type === 'step.refused').map((e) => e.data)).toEqual([{ reason: 'apply/aws-role/123456789012/deploy: Access denied it', box: minted[0] }]);
   });
 });
+
+// Issue #1722: with infra applies off, the hopper runs no step that applies: none with a plan, none that needs a change.
+// A step that only reads runs as before.
+describe('need and box steps with infra applies off (issue #1722)', () => {
+  const READ: OperationProfile = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
+  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE], approval: { by: 'Ada' }, pending: { image: false, profiles: [] } } as unknown as TemplateView;
+  const OFF = /^infra applies are off on this hopper: .* goes through CI/;
+
+  it('refuses a step with a plan, or one that needs a change, and records why; no box starts', () => {
+    const { s, events, begun, boxes } = needSteps({ templates: () => [TEMPLATE, READY], applies: () => false });
+    expect(s.start(JOB, { template: TEMPLATE, needs: [WRITE], command: 'terraform apply', outputs: [], plan: PLAN }, ask())).toEqual({ status: 409, no: expect.stringMatching(OFF) });
+    expect(s.start(JOB, { template: TEMPLATE, needs: [WRITE], command: 'terraform apply', outputs: [] }, ask())).toEqual({ status: 409, no: expect.stringMatching(OFF) });
+    expect(s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'terraform apply', outputs: [], secrets: [], plan: PLAN }, ask())).toEqual({ status: 409, no: expect.stringMatching(OFF) });
+    expect(events.filter((e) => e.type === 'step.refused').map((e) => e.data)).toHaveLength(3);
+    expect(begun).toEqual([]);
+    expect(boxes).toEqual([]);
+  });
+
+  it('runs a step that only reads', async () => {
+    const minted: OperationProfile[] = [];
+    const { s, go } = needSteps({ templates: () => [READY], applies: () => false, mint: async (a) => { minted.push(a.profile); return AWS; } });
+    expect((await go(s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'terraform plan', outputs: [], secrets: [] }, ask()))).result).toEqual({ exit: 0 });
+    expect(minted).toEqual([READ]);
+  });
+});

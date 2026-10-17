@@ -22,7 +22,7 @@ describe('infra credentials', () => {
 
   it('a home holds the ones that are there, folder or file, in the list\'s order; none: an empty list', () => {
     expect(infraCredentialsAt(home, {})).toEqual([]);
-    mkdirSync(join(home, '.terraform.d'));
+    mkdirSync(join(home, '.terraform.d/plugins'), { recursive: true });
     writeFileSync(join(home, '.aws'), '');
     mkdirSync(join(home, '.kube'));
     mkdirSync(join(home, '.ssh'));
@@ -64,6 +64,24 @@ describe('infra credentials', () => {
     writeFileSync(join(home, '.gitconfig'), '[credential]\n\thelper = store\n');
     const out = execFileSync('sh', ['-c', INFRA_CREDENTIALS_COMMAND], { env: { PATH: process.env.PATH, HOME: home }, encoding: 'utf8' });
     expect(readInfraCredentials(out)).toEqual(['git credential helper']);
+  });
+
+  it('a .terraform.d with only terraform\'s checkpoint files is no credential (issue #1502); anything more is', () => {
+    const ssh = () => readInfraCredentials(execFileSync('sh', ['-c', INFRA_CREDENTIALS_COMMAND], { env: { PATH: process.env.PATH, HOME: home }, encoding: 'utf8' }));
+    mkdirSync(join(home, '.terraform.d'));
+    expect(infraCredentialsAt(home, {})).toEqual([]);
+    expect(ssh()).toEqual([]);
+    writeFileSync(join(home, '.terraform.d/checkpoint_cache'), '');
+    writeFileSync(join(home, '.terraform.d/checkpoint_signature'), '');
+    expect(infraCredentialsAt(home, {})).toEqual([]);
+    expect(ssh()).toEqual([]);
+    writeFileSync(join(home, '.terraform.d/credentials.tfrc.json'), '');
+    expect(infraCredentialsAt(home, {})).toEqual(['.terraform.d']);
+    expect(ssh()).toEqual(['.terraform.d']);
+    rmSync(join(home, '.terraform.d'), { recursive: true });
+    writeFileSync(join(home, '.terraform.d'), '');
+    expect(infraCredentialsAt(home, {})).toEqual(['.terraform.d']);
+    expect(ssh()).toEqual(['.terraform.d']);
   });
 
   it('a client\'s answer is believed only for names on the list; anything else is not read', () => {

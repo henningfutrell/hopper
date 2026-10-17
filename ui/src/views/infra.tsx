@@ -1,6 +1,6 @@
 // Infra (issue #896, design.md "The Infra page"): plans and applies of infrastructure changes, a top-level view on par with
 // Jobs. Plans (infra-plans.tsx): each plan, its state and who it waits for, approve by risk, auto-approve, and the applies
-// minted against it, and the environment watchers (part 4).
+// minted against it, and the environment watchers (part 4). Infra applies (infra-applies.tsx, issue #1722): off, changes go through CI.
 // Applies and drift: one timeline of plans recorded and approved, applies, drift and out-of-band writes, newest first.
 // Out-of-band changes (out-of-band.tsx). Every panel always shows: loading, an error with Try again, or an empty list
 // that says how a job fills it.
@@ -14,6 +14,7 @@ import type { InfraPlanSettings, InfraWatchers, PlanApply, PlanView } from '@/mo
 import { setPolled } from '@/store/polled';
 import { useServerNow } from '@/store/selectors';
 import { AutoApprove, PlanList, Watchers } from './infra-plans';
+import { InfraApplies } from './infra-applies';
 import { OutOfBandChanges, type OutOfBandList } from './out-of-band';
 
 type Load<T> = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: T };
@@ -63,6 +64,7 @@ export function Infra() {
   return (
     <div className="max-w-3xl space-y-3">
       <p className="text-sm text-muted-foreground">No apply without a plan. A job records the plan of each infrastructure change; the vault mints a credential that changes infrastructure only for an approved plan, made at the commit its branch is at now, and less than an hour old. An operator approves a low-risk plan in uat only; an admin approves any other plan. A plan that adds an AWS resource without the MAP tag fails, and nobody approves it. Each plan, approval and apply is sent to the notifiers, with the watchers of its environments.</p>
+      <InfraApplies />
       <Panel title="Plans" icon={FileDiff} count={waiting || ''} bodyClassName="space-y-3">
         <NotYet state={plans} what="plans" retry={reloadPlans} />
         {plans.kind === 'ok' && <AutoApprove settings={plans.data.settings} onSettings={onSettings} />}

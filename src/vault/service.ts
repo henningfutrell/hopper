@@ -124,8 +124,8 @@ export function createVaultService(o: {
   backends?: () => ConfiguredBackend[];
   /** The shared secret a row name `shared/<name>` names (issue #718): a template may name one. Absent: none. */
   shared?: (row: string) => VaultSecret | undefined;
-  /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. */
-  plans?: MintingOptions['plans'];
+  /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. Infra applies (issue #1722): off, only a read is minted; absent, on. */
+  plans?: MintingOptions['plans']; applies?: MintingOptions['applies'];
 }): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
@@ -183,7 +183,7 @@ export function createVaultService(o: {
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,
-    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.plans ? { plans: o.plans } : {}),
+    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}),
   });
 
   const testMint = createMintTest({ store: o.store });
@@ -378,7 +378,7 @@ export function createVaultService(o: {
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
     mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom), unbindFrom, releaseMints: (box, from) => bindings.release(box, from), reconcileMints: (from) => bindings.reconcile(from),
-    ...templateChecks(o.store, { access: o.access, mintFrom, bindings }), ...needMinting(o.store, { access: o.access, mintFrom, bindings, ...(o.plans ? { plans: o.plans } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
+    ...templateChecks(o.store, { access: o.access, mintFrom, bindings }), ...needMinting(o.store, { access: o.access, mintFrom, bindings, ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }

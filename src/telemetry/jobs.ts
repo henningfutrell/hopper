@@ -1,19 +1,21 @@
 // A job is one trace (issue #1486, design.md "Telemetry"), built from its events as the event log appends them: a root
 // span `hopper.job` from the first event seen to its end, and a job span — a child span — for each part of its life: the queue wait, each run, each
-// question, each wait, each park, its pull request; each timed by the events' own times. A job's pull request is followed
+// question, each wait, each park, each sandbox request (from its ask to its box or its end), its pull request; each timed by the events' own times. A job's pull request is followed
 // after the job ended: its job span is a child of the ended root, in the same trace, for as long as the hopper remembers
 // the job (the last `max` ended). Every other event of the job is an
 // event on the root span, or on its question's span. The attributes are ids and numbers only, picked by name: no event
-// data, job text, prompt or error goes out. A job span's duration and a job's end are metrics too.
+// data, job text, prompt or error goes out. A job span's duration and a job's end are metrics too; the telemetry
+// summary keeps each job span's duration, telemetry on or off (`summary.ts`).
 //
 // The spans live in memory: a restart ends no trace and starts a new one at the next event of a job still open.
 import { context, trace, type Attributes, type Span } from '@opentelemetry/api';
 import type { DomainEvent, EventType, Job } from '../domain/types.ts';
 import { instrument, tracer } from './instruments.ts';
+import { telemetrySummary } from './summary.ts';
 
-export type JobSpan = 'queue' | 'run' | 'question' | 'wait' | 'park' | 'pull_request';
+export type JobSpan = 'queue' | 'run' | 'question' | 'wait' | 'park' | 'sandbox' | 'pull_request';
 
-/** What starts each job span, and what ends it. A question's is keyed by its question; the others, one per job. */
+/** What starts each job span, and what ends it. A question's is keyed by its question, a sandbox's by its request; the others, one per job. */
 const JOB_SPANS: Record<JobSpan, { start: EventType[]; end: EventType[] }> = {
   queue: { start: ['job.queued', 'job.requeued', 'job.rerun'], end: ['job.claimed', 'job.started', 'job.cancelled', 'job.rejected', 'job.parked'] },
   run: {
@@ -23,6 +25,7 @@ const JOB_SPANS: Record<JobSpan, { start: EventType[]; end: EventType[] }> = {
   question: { start: ['question.asked'], end: ['question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed'] },
   wait: { start: ['job.waiting'], end: ['job.wait_ended', 'job.cancelled', 'job.failed', 'job.finished'] },
   park: { start: ['job.parked'], end: ['job.unparked', 'job.cancelled', 'job.requeued'] },
+  sandbox: { start: ['vault.sandbox_requested'], end: ['vault.sandbox_started', 'vault.sandbox_failed', 'vault.sandbox_declined'] },
   pull_request: { start: ['job.pull_request_followed'], end: ['job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned'] },
 };
 
@@ -35,7 +38,7 @@ const SAFE_DATA: Record<string, string> = { target: 'hopper.question.target', ti
 
 const spanDuration = instrument((m) => m.createHistogram('hopper.job.span.duration', { unit: 's', description: 'How long each job span of a job lasted, by its kind.' }));
 const jobsEnded = instrument((m) => m.createCounter('hopper.job.ended', { description: 'Jobs that ended, by outcome and executor.' }));
-const jobEvents = instrument((m) => m.createCounter('hopper.job.events', { description: 'Job and question events, by type.' }));
+const jobEvents = instrument((m) => m.createCounter('hopper.job.events', { description: 'Job, question and sandbox request events, by type.' }));
 
 interface OpenSpan { kind: JobSpan; span: Span; from: number }
 interface OpenJob { root: Span; spans: Map<string, OpenSpan>; outcome?: string; executor?: string; ended?: true }
@@ -87,7 +90,9 @@ export function traceJobs(o: TraceJobsOptions): () => void {
     open.spans.delete(key);
     s.span.setAttribute('hopper.job.span.ended_by', by);
     s.span.end(at);
-    spanDuration().record(Math.max(0, at - s.from) / 1000, { 'hopper.job.span': s.kind });
+    const ms = Math.max(0, at - s.from);
+    spanDuration().record(ms / 1000, { 'hopper.job.span': s.kind });
+    telemetrySummary.jobSpan(s.kind, ms);
   };
 
   /** Ends the root; the job is remembered a while, for the spans that come after its end. */
@@ -128,8 +133,15 @@ export function traceJobs(o: TraceJobsOptions): () => void {
     open.spans.set(key, { kind, span, from: at });
   };
 
+  /** The key of a job span the event starts or ends: per question, per sandbox request, else per kind. */
+  const keyOf = (kind: JobSpan, e: DomainEvent): string | undefined => {
+    if (kind === 'question') return e.questionId ? `question:${e.questionId}` : undefined;
+    if (kind === 'sandbox') { const r = (e.data as { request?: unknown } | undefined)?.request; return typeof r === 'string' ? `sandbox:${r}` : undefined; }
+    return kind;
+  };
+
   const onEvent = (e: DomainEvent): void => {
-    if (!e.jobId || !(e.type.startsWith('job.') || e.type.startsWith('question.'))) return;
+    if (!e.jobId || !(e.type.startsWith('job.') || e.type.startsWith('question.') || e.type.startsWith('vault.sandbox_'))) return;
     jobEvents().add(1, { 'event.name': e.type });
     const at = Date.parse(e.at);
     const open = openJob(e.jobId, at);
@@ -141,19 +153,18 @@ export function traceJobs(o: TraceJobsOptions): () => void {
     }
     const pr = pullRequestNumber(e.data);
 
-    const questionKey = e.questionId ? `question:${e.questionId}` : undefined;
-    const question = questionKey ? open.spans.get(questionKey) : undefined;
-    const target = question?.span ?? (open.ended ? open.spans.get('pull_request')?.span : open.root);
+    const own = keyOf('question', e) ?? keyOf('sandbox', e);
+    const target = (own ? open.spans.get(own)?.span : undefined) ?? (open.ended ? open.spans.get('pull_request')?.span : open.root);
     target?.addEvent(e.type, safeData(e.data), at);
 
     // Ends before starts: one event may end a job span and start the next.
     for (const [kind, { end }] of Object.entries(JOB_SPANS) as [JobSpan, (typeof JOB_SPANS)[JobSpan]][]) {
-      if (!end.includes(e.type)) continue;
-      if (kind === 'question') { if (questionKey) endSpan(open, questionKey, at, e.type); } else endSpan(open, kind, at, e.type);
+      const key = end.includes(e.type) ? keyOf(kind, e) : undefined;
+      if (key) endSpan(open, key, at, e.type);
     }
     for (const [kind, { start }] of Object.entries(JOB_SPANS) as [JobSpan, (typeof JOB_SPANS)[JobSpan]][]) {
-      if (!start.includes(e.type)) continue;
-      if (kind === 'question') { if (questionKey) startSpan(open, kind, questionKey, at); } else startSpan(open, kind, kind, at);
+      const key = start.includes(e.type) ? keyOf(kind, e) : undefined;
+      if (key) startSpan(open, kind, key, at);
     }
     if (pr !== undefined) {
       open.spans.get('pull_request')?.span.setAttribute('hopper.pull_request.number', pr);

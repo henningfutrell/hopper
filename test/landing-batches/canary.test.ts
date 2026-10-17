@@ -28,7 +28,7 @@ function fake(w: World): LandingBatchGitHub {
       return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: [] } : { aheadBy: 0, tip: 'landing', commits: [] };
     },
     createBranch: no, deleteBranch: no, openPullRequest: no, pullRequest: no, checkRuns: no, merge: no, close: no, mergeInto: no,
-    openPullRequests: async () => [], retarget: no, comment: no, pullRequestOf: no, revert: no, checkLog: no,
+    openPullRequests: async () => [], retarget: no, findIssue: async () => undefined, comment: no, pullRequestOf: no, revert: no, checkLog: no,
     fileIssue: async (_repo, issue) => { w.issues.push(issue); return { number: 90, url: `https://github.test/${REPO}/issues/90` }; },
     bugReports: async (_repo, sha, since) => { w.calls.push(`reports ${sha} ${since}`); return w.reports; },
     fastForward: async (_repo, branch, sha) => { w.calls.push(`fast-forward ${branch} ${sha}`); },

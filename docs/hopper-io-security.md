@@ -3,7 +3,7 @@
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
 itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its cloud link key (issue #467 part 2), its registration code (issue #465 part 2), its
 unregistration (issue #465 part 3), the messages about them (issue #465 part 4) and the state snapshot the dashboard shows
-(issue #466 parts 1 and 2) are built
+(issue #466 parts 1 and 2) are built, and at hopper.io its GitHub sign-in and account deletion (issue #463 parts 2 and 3, `cloud/`)
 ("What is built" below).
 This document states the threats and the rules that every hopper.io change must obey. The open owner
 decisions of #469 (scope, what the link carries, transport, sign-in on instances, sharing, who operates hopper.io) do
@@ -238,6 +238,23 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   machines the link reports"), `schema: 2`. It obeys:
   - R5: only the kind of each executor goes out, from a closed list of the built-in executor plugins, else `other`. Never
     an executor's name from the plugins config, which can hold a host name, and never a third-party plugin's id.
+- **GitHub sign-in at hopper.io** (issue #463 part 2, `cloud/`, `docs/cloud-hosting-identity.md` "What is built"). It
+  obeys:
+  - T4: sign-in is GitHub only, through hopper.io's own GitHub App with no permissions, so GitHub's own controls protect
+    the account. The **hopper.io account** is keyed by GitHub's numeric user id, never the login.
+  - R3: the `account` table is keyed by the account; every `session` row carries its account. `sign_in` holds no
+    account: it is a sign-in under way, before GitHub named one, kept 10 minutes. The one route that reads an account
+    (`GET /api/account`) reads only the signed-in one; `test/cloud/sign-in.test.ts` signs in two accounts.
+  - R4: hopper.io keeps no GitHub token. The access token is dropped after `GET /user`. A hopper.io session is kept only
+    as its SHA-256, and no instance accepts it.
+  - R5: it keeps the login and the avatar URL for display and nothing else of GitHub's answer.
+  - R7: sign-ins are rate-limited per address (`SIGN_IN_LIMIT`).
+  - T4, R5: **account deletion** (issue #463 part 3) needs a fresh GitHub sign-in as the same account, not only a
+    hopper.io session, so a stolen session cannot delete the account. It deletes the account and all its sessions in
+    one statement, and then the person's grant of the hosted app at GitHub. It keeps nothing of the account: no
+    tombstone, no login, no id.
+  - Not yet: the tombstones of an account's registrations (with hopper.io's side of #465), the R6 records of sign-in and
+    deletion, and the privacy note (R5).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
   everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound
   actions, and its transport (one WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is

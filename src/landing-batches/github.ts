@@ -79,9 +79,9 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
       }
     }, failed(`the merge of ${head} into ${base} on ${repo}`)),
     openPullRequests: (repo, base) => withToken(async (token) => {
-      const pulls = await paginate<{ number: number; html_url: string; head: { ref: string } }>(req, 'GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', base, per_page: 100 }, `token ${token}`,
-        (data) => data as { number: number; html_url: string; head: { ref: string } }[]);
-      return pulls.map((p) => ({ number: p.number, url: p.html_url, head: p.head.ref }));
+      type Pull = { number: number; html_url: string; title: string; head: { ref: string } };
+      const pulls = await paginate<Pull>(req, 'GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', base, per_page: 100 }, `token ${token}`, (data) => data as Pull[]);
+      return pulls.map((p) => ({ number: p.number, url: p.html_url, head: p.head.ref, title: p.title }));
     }, failed(`the open pull requests on ${base} of ${repo}`)),
     retarget: (repo, number, base) => withToken(async (token) => {
       await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, base, headers: headers(token) });
@@ -107,6 +107,13 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
       const d = (await req('POST /repos/{owner}/{repo}/issues', { ...splitRepo(repo), ...issue, headers: headers(token) })).data as { number: number; html_url: string };
       return { number: d.number, url: d.html_url };
     }, failed(`a new issue on ${repo}`)),
+    findIssue: (repo, f) => withToken(async (token) => {
+      // The issues list, not the search: it shows an issue at once.
+      type Issue = { number: number; html_url: string; title: string; pull_request?: unknown };
+      const issues = await paginate<Issue>(req, 'GET /repos/{owner}/{repo}/issues', { ...splitRepo(repo), state: 'open', labels: f.label, since: f.since, per_page: 100 }, `token ${token}`, (data) => data as Issue[]);
+      const found = issues.find((i) => i.pull_request === undefined && i.title === f.title);
+      return found ? { number: found.number, url: found.html_url } : undefined;
+    }, failed(`the issues of ${repo}`)),
     bugReports: (repo, sha, since) => withToken(async (token) => {
       // A bug report's context names the hopper's version as `<branch> at <12 characters of the commit>` (src/bug-reports/context.ts).
       const q = `repo:${repo} is:issue label:${REPORT_LABEL} "${sha}" created:>=${since.slice(0, 19)}Z`;
