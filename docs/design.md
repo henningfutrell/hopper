@@ -14835,6 +14835,20 @@ role: the hopper never changes the cluster. The operation does not change the ro
 does not give that role is Forbidden there. The kubeconfig and the AWS minting credential are read where the minting
 credential is opened and never leave the vault; a system secret is never read as a kubeconfig.
 
+**Cluster discovery** (issue #1766, owner decision 2026-10-17: a cluster holds no secret, so no vault secret names it;
+`src/domain/cluster-discovery.ts`, `mintDiscovered` in `src/vault/eks.ts`). A `cluster/<name>` (or a namespace or an
+Argo CD app of it) with no minting credential of its own is found in the AWS accounts: for a `read` only, in every
+account an `aws-account` minting credential mints for (`mintSourceFor`). In each, the vault mints a read session of the
+account's **read role** `hopper-read` (`EKS_READ_ROLE`; EKS maps it to view access), as for an EKS sign-in, and asks EKS
+`DescribeCluster` with it in the credential's region (`CredentialMinter.eksCluster`, `@aws-sdk/client-eks`). The one
+account that has the cluster signs the EKS token with that session; the cluster's API server and CA are EKS's answer.
+None, or several, mint nothing, and the refusal says where the vault looked. An account STS or EKS refuses is passed
+over. The vault picks no credential of several: an account with several refuses the discovery (issue #1761). A
+credential whose STS is not AWS's (`Endpoint`) asks no EKS unless it names `EksEndpoint`. A cluster's own minting
+credential wins, as before; a write on a cluster needs one, naming the role its write is granted to. `vault.minted`,
+`vault.check_minted` and the mint test name the AWS minting credential the discovery used. A discovered cluster's
+token binds to no Secret (an EKS token cannot). The vault's container takes a discovery in its `mint` op (`discover`).
+
 **The AWS session name** (issue #781, `awsSessionName`). STS records it in the assumed role's ARN
 (`arn:aws:sts::<account>:assumed-role/<role>/<session name>`), and a role's trust policy can allow only some names
 (`sts:RoleSessionName`). By default it is `hopper-<job id>`, cut to STS's 64 characters. An AWS minting credential may
@@ -14859,8 +14873,9 @@ mints a read token from the cluster's minting credential, as for a job — a Tok
 namespace `hopper`, or an EKS token —, and asks the cluster who it is (a SelfSubjectReview, `kubectl auth whoami`) and
 which namespaces it lists (`kubectl get ns`), with the token, where the minting credential is opened
 (`CredentialMinter.kubeIdentity`). The answer is the API server, the cluster's `user` (`username`, `groups`) and its
-`namespaces`, and for EKS sign-in the role and the session name; never the token. The cluster's refusal is the answer
-(422), with its reason. An answer has `kind`: `aws` or `kube`.
+`namespaces`, and for EKS sign-in the role, its `account` and the session name; never the token. The cluster's refusal is the answer
+(422), with its reason. An answer has `kind`: `aws` or `kube`. A discovered cluster (issue #1766) is tested the same
+way: `credential` is the AWS minting credential it was found with, `roleArn` its account's `hopper-read`.
 
 **What is minted** for an operation profile (`mintTarget`, pure):
 
@@ -14870,6 +14885,7 @@ which namespaces it lists (`kubectl get ns`), with the token, where the minting 
 | `kube` | `namespace/<cluster>/<ns>` | a TokenRequest for the service account `hopper-<operation>` in `<ns>`, 600 s (TokenRequest's floor). From the minting credential for `cluster/<cluster>`. |
 | `kube` | `cluster/<name>` | the same, in the namespace `hopper`. |
 | `kube` | `cluster/<name>`, `namespace/<cluster>/<ns>` | with an `eks` minting credential (issue #854): an EKS token signed with a read session of its role, 14 minutes. |
+| `kube` | the same, for `read`, with no minting credential for the cluster | cluster discovery (issue #1766): an EKS token signed with a read session of `hopper-read` in the one account EKS has the cluster in. |
 
 What a service account or a role may do is the cluster's RBAC and the account's IAM: the hopper decides *whether* a
 job gets a credential for the profile, the outside system *what* it allows. `docs/deploy.md` "Minting short-lived

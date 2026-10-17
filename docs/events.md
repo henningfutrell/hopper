@@ -4299,12 +4299,14 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
 
 ## `vault.mint_tested`
 
-Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is; or (issue #854) a read token for the `cluster`, and asked the cluster who it is and which namespaces it lists. `arn` is the role the session assumed, with `sessionName`; `user` is who the cluster says the token is, with `sessionName` when it signed in through EKS; `reason` when nothing was minted or STS or the cluster refused. Never a key or a token.
+Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is; or (issue #854) a read token for the `cluster`, and asked the cluster who it is and which namespaces it lists. `arn` is the role the session assumed, with `sessionName`; `user` is who the cluster says the token is, with `sessionName` when it signed in through EKS; `roleArn` and `account` the role a session or an EKS token signed in as (issue #1766), and `credential` the minting credential the test used — for a cluster found in the AWS accounts, the AWS one it was found with; `reason` when nothing was minted or STS or the cluster refused. Never a key or a token.
 
 | field | type | required |
 |---|---|---|
 | `asset` | object \| string | yes |
 | `credential` | string | no |
+| `roleArn` | string | no |
+| `account` | string | no |
 | `sessionName` | string | no |
 | `arn` | string | no |
 | `user` | string | no |

@@ -8,9 +8,10 @@
 // own (issue #1371), held for the need box until its step ends (bindings.ts).
 import type { UserStore } from '../domain/ports.ts';
 import type { OperationProfile, VaultAccess } from '../domain/access.ts';
-import { expiryOf, mintingCredentialFor, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
+import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
+import { mintSourceFor } from '../domain/cluster-discovery.ts';
 import { AT_WORK } from './box.ts';
-import { principalOf, type MintFrom, type MintingOptions } from './mint.ts';
+import { fromOf, principalOf, usedOf, type MintFrom, type MintingOptions } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
 import { appliesRefusal } from '../domain/infra-plans.ts';
 
@@ -53,25 +54,25 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       // No change without a plan (issue #870): every operation but read changes infrastructure.
       const planNo = o.plans ? await o.plans.gate(profile, plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
       if (planNo) return refuse(planNo, decision.id);
-      const { mintsFor } = target;
-      const credential = mintingCredentialFor(vault.list(), mintsFor);
-      if (typeof credential === 'string') return refuse(credential, decision.id);
+      const source = mintSourceFor(vault.list(), target, profile.operation);
+      if (typeof source === 'string') return refuse(source, decision.id);
       // Held and recorded before the minter makes the Secret (issue #1628): the step's end releases it, whatever the
-      // outcome, and a hopper that stops meanwhile leaves it to the reconcile pass.
-      if (target.kind === 'kube' && target.bindTo) o.bindings?.named(step, { credential: credential.name, namespace: target.namespace, secret: target.bindTo }, job);
-      const made = await from(credential.name, target, job);
+      // outcome, and a hopper that stops meanwhile leaves it to the reconcile pass. A discovered cluster's EKS token binds to nothing.
+      if (target.kind === 'kube' && target.bindTo && 'credential' in source) o.bindings?.named(step, { credential: source.credential.name, namespace: target.namespace, secret: target.bindTo }, job);
+      const made = await from(fromOf(source), target, job);
       if ('refused' in made) return refuse(made.refused, decision.id);
       // The minting credential's own service took a while: the job must still be at work.
       if (!atWork()) return refuse('the job is not at work: the vault mints for a step only while its job runs', decision.id);
       const principal = principalOf(target, made);
       const at = new Date().toISOString();
       store.tx(() => {
-        const now = vault.get(credential.name);
-        if (now?.id === credential.id) vault.replace({ ...now, lastUsed: { at, machine: step, job } }, vault.sealed(now.id) ?? null);
+        const credential = usedOf(source, made);
+        const now = vault.get(credential);
+        if (now && ('discover' in source || now.id === source.credential.id)) vault.replace({ ...now, lastUsed: { at, machine: step, job } }, vault.sealed(now.id) ?? null);
         events.append({
           type: 'vault.minted', jobId: job, machineId: step,
           data: {
-            kind, operation: profile.operation, asset: profile.asset, template, machine: step, job, credential: credential.name, decision: decision.id,
+            kind, operation: profile.operation, asset: profile.asset, template, machine: step, job, credential, decision: decision.id,
             expiresAt: expiryOf(made.minted), renewal: false, ...(profile.operation !== 'read' && plan ? { plan } : {}), ...(principal ? { principal } : {}),
             ...(made.bound ? { bound: made.bound } : {}),
           },

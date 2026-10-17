@@ -15,11 +15,12 @@
 // that need's account or cluster is set (`recheckUnminted`): its fix needs no person to ask for the check too.
 import type { UserStore } from '../domain/ports.ts';
 import type { Asset, OperationProfile, VaultAccess } from '../domain/access.ts';
-import { CHECK_MINT_ID, expiryOf, mintingCredentialFor, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
+import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
+import { mintSourceFor } from '../domain/cluster-discovery.ts';
 import { currentCheck, failedProbes, probeMarksProblem, unmintedNeeds, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import type { Template } from '../domain/vault.ts';
 import { PROBES } from '../sandbox/probes.ts';
-import type { MintFrom } from './mint.ts';
+import { fromOf, usedOf, type MintFrom } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
 
 /**
@@ -120,16 +121,15 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; acc
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
     const decision = await o.access.decideCheckMint({ template, check, operation: profile.operation, asset: profile.asset });
     if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
-    const { mintsFor } = target;
-    const credential = mintingCredentialFor(vault.list(), mintsFor);
-    if (typeof credential === 'string') return refuse(credential, decision.id);
-    // Held and recorded before the minter makes the Secret (issue #1628), as a need step's.
-    if (target.kind === 'kube' && target.bindTo) o.bindings?.named(check, { credential: credential.name, namespace: target.namespace, secret: target.bindTo });
-    const made = await from(credential.name, target, CHECK_MINT_ID);
+    const source = mintSourceFor(vault.list(), target, profile.operation);
+    if (typeof source === 'string') return refuse(source, decision.id);
+    // Held and recorded before the minter makes the Secret (issue #1628), as a need step's. A discovered cluster's EKS token binds to nothing.
+    if (target.kind === 'kube' && target.bindTo && 'credential' in source) o.bindings?.named(check, { credential: source.credential.name, namespace: target.namespace, secret: target.bindTo });
+    const made = await from(fromOf(source), target, CHECK_MINT_ID);
     if ('refused' in made) return refuse(made.refused, decision.id);
     events.append({
       type: 'vault.check_minted',
-      data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: credential.name, decision: decision.id, expiresAt: expiryOf(made.minted), ...(made.bound ? { bound: made.bound } : {}) },
+      data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: usedOf(source, made), decision: decision.id, expiresAt: expiryOf(made.minted), ...(made.bound ? { bound: made.bound } : {}) },
     });
     return { minted: made.minted, reach: made.reach };
   };

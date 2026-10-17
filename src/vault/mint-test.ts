@@ -6,11 +6,13 @@
 // credential, as for a job — a TokenRequest token, or an EKS token —, and asks the cluster who it is and which
 // namespaces it lists (`kubectl auth whoami`, `kubectl get ns`). No job and no template take part, so Access is not
 // asked: the test is the person's own act. The minting credential and what is minted never leave the vault;
-// `vault.mint_tested` records each test, never a key or a token.
+// `vault.mint_tested` records each test, never a key or a token. A cluster with no minting credential of its own (issue
+// #1766) is found in the AWS accounts, as for a job; the answer names the account, the role and the minting credential.
 import type { UserStore } from '../domain/ports.ts';
 import type { Asset } from '../domain/access.ts';
-import { MINT_TEST_ID, expiryOf, mintTarget, mintingCredentialFor, type MintTarget, type MintTestResult } from '../domain/minting.ts';
-import { assetOf, type MintedFrom, type MintFrom } from './mint.ts';
+import { MINT_TEST_ID, expiryOf, mintTarget, roleAccountOf, type MintTarget, type MintTestResult } from '../domain/minting.ts';
+import { mintSourceFor } from '../domain/cluster-discovery.ts';
+import { assetOf, fromOf, usedOf, type MintedFrom, type MintFrom } from './mint.ts';
 
 /** A mint test's answer: what STS said, or why there is none — a bad ask, no minting credential, or STS refused. */
 export type MintTestAnswer = { tested: MintTestResult } | { refused: string; code: 'invalid' | 'not_found' | 'failed' };
@@ -28,15 +30,18 @@ export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events'> }
     if (asset.kind !== 'aws-role' && asset.kind !== 'cluster') return refuse('invalid', `${takes}, not ${asset.kind}/${asset.name}`);
     const target = mintTarget(asset.kind === 'cluster' ? 'kube' : 'aws', { operation: 'read', asset });
     if (typeof target === 'string') return refuse('invalid', target);
-    const credential = mintingCredentialFor(vault.list(), target.mintsFor);
-    if (typeof credential === 'string') return refuse(credential.startsWith('no ') ? 'not_found' : 'invalid', credential);
-    const made = await from(credential.name, target, MINT_TEST_ID, true);
-    // The answer names the secret the test used (issue #1761), as a tested answer does.
-    if ('refused' in made) return refuse('failed', `the mint test used ${credential.name}: ${made.refused}`, credential.name);
-    const tested = testedOf(made, asset, credential.name, target);
-    if (!tested) return refuse('failed', `the vault minted from ${credential.name} but said no identity`, credential.name);
+    const source = mintSourceFor(vault.list(), target, 'read');
+    if (typeof source === 'string') return refuse(source.startsWith('no ') ? 'not_found' : 'invalid', source);
+    const made = await from(fromOf(source), target, MINT_TEST_ID, true);
+    // The answer names the secret the test used (issue #1761), as a tested answer does; a discovery names its accounts.
+    const own = 'credential' in source ? source.credential.name : undefined;
+    if ('refused' in made) return refuse('failed', own ? `the mint test used ${own}: ${made.refused}` : made.refused, own);
+    const credential = usedOf(source, made);
+    const tested = testedOf(made, asset, credential, target);
+    if (!tested) return refuse('failed', `the vault minted from ${credential} but said no identity`, credential);
     const who = tested.kind === 'aws' ? { arn: tested.identity.arn } : { user: tested.user.username };
-    events.append({ type: 'vault.mint_tested', data: { asset, credential: credential.name, ...(tested.sessionName ? { sessionName: tested.sessionName } : {}), ...who, expiresAt: tested.expiresAt, by } });
+    const role = tested.roleArn ? { roleArn: tested.roleArn, account: roleAccountOf(tested.roleArn) } : {};
+    events.append({ type: 'vault.mint_tested', data: { asset, credential, ...role, ...(tested.sessionName ? { sessionName: tested.sessionName } : {}), ...who, expiresAt: tested.expiresAt, by } });
     return { tested };
   };
 }
@@ -52,6 +57,6 @@ function testedOf(made: MintedFrom, asset: Asset, credential: string, target: Mi
     };
   }
   if (!made.cluster || made.reach.kind !== 'kube') return undefined;
-  const via = made.roleArn && made.sessionName ? { roleArn: made.roleArn, sessionName: made.sessionName } : {};
+  const via = made.roleArn && made.sessionName ? { roleArn: made.roleArn, account: made.account ?? roleAccountOf(made.roleArn), sessionName: made.sessionName } : {};
   return { kind: 'kube', asset, credential, server: made.reach.server, expiresAt, ...via, ...made.cluster };
 }

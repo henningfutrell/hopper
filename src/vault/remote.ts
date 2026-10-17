@@ -8,9 +8,8 @@
 // container that cannot be reached, or that refuses the key, is said so: its status is the problem, a set or a removal
 // is unavailable, an ask refused — nothing else in the hopper waits on it.
 import type { UserStore } from '../domain/ports.ts';
-import type { Minted, NewEvent } from '../domain/types.ts';
-import type { CallerIdentity, MintReach } from '../domain/minting.ts';
-import type { MintFrom } from './mint.ts';
+import type { NewEvent } from '../domain/types.ts';
+import type { MintedFrom, MintFrom } from './mint.ts';
 import type { UnbindFrom } from './bindings.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
@@ -61,9 +60,11 @@ export function remoteVault(o: {
 
   // Every check and Access's decision run here, in the hopper (issue #580); only the mint itself crosses, to the vault
   // that holds the minting credential. One kept in a vault backend is minted here, which runs the backends.
-  const mintFrom: MintFrom = async (name, target, jobId, identify) => {
-    if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, jobId, identify);
-    const r = await call<{ minted: Minted; reach: MintReach; sessionName?: string; identity?: CallerIdentity } | { refused: string }>('mint', { credential: name, target, jobId, ...(identify ? { identify } : {}) });
+  const mintFrom: MintFrom = async (from, target, jobId, identify) => {
+    const names = typeof from === 'string' ? [from] : from.credentials.map((c) => c.name);
+    if (o.local.view().secrets.some((s) => names.includes(s.name) && s.backend)) return o.local.mintFrom(from, target, jobId, identify);
+    const source = typeof from === 'string' ? { credential: from } : { discover: from };
+    const r = await call<MintedFrom | { refused: string }>('mint', { ...source, target, jobId, ...(identify ? { identify } : {}) });
     return 'problem' in r ? { refused: r.problem } : r.result;
   };
 

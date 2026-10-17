@@ -36,6 +36,12 @@
     "credential": {
       "type": "string"
     },
+    "roleArn": {
+      "type": "string"
+    },
+    "account": {
+      "type": "string"
+    },
     "sessionName": {
       "type": "string"
     },

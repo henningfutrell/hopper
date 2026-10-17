@@ -2,12 +2,14 @@
 // AssumeRole (and, for a mint test, issue #781, GetCallerIdentity) through the AWS SDK (@aws-sdk/client-sts), the EKS
 // token (issue #854) presigned by the AWS SDK's own signer (@smithy/signature-v4), and the Kubernetes API — a
 // TokenRequest, and for a mint test a SelfSubjectReview and the namespace list —, each one call sent with node's own
-// https and the cluster's CA, since a Kubernetes client library would cost more than the calls. A sandbox's token
+// https and the cluster's CA, since a Kubernetes client library would cost more than the calls. A discovered cluster
+// (issue #1766) is described by EKS through the AWS SDK (@aws-sdk/client-eks). A sandbox's token
 // (issue #1371) is bound to a Secret the minter makes for it, and deleting that Secret ends the token at once. Called
 // only after Access allowed the mint. An error says what the outside service answered, never the minting credential.
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
+import { DescribeClusterCommand, EKSClient, ResourceNotFoundException } from '@aws-sdk/client-eks';
 import { HttpRequest } from '@smithy/core/protocols';
 import { Hash } from '@smithy/core/serde';
 import { SignatureV4 } from '@smithy/signature-v4';
@@ -166,6 +168,24 @@ export function createCredentialMinter(): CredentialMinter {
     },
 
     eksToken,
+
+    async eksCluster(session, r) {
+      const eks = new EKSClient({
+        region: r.region, ...(r.endpoint ? { endpoint: r.endpoint } : {}), maxAttempts: 1,
+        credentials: { accessKeyId: session.AccessKeyId, secretAccessKey: session.SecretAccessKey, sessionToken: session.SessionToken },
+      });
+      try {
+        const c = (await eks.send(new DescribeClusterCommand({ name: r.cluster }))).cluster;
+        if (!c?.endpoint) throw new Error(`EKS answered no API server for ${r.cluster}`);
+        const ca = c.certificateAuthority?.data;
+        return { cluster: r.cluster, region: r.region, server: c.endpoint, ...(ca ? { certificateAuthorityData: ca } : {}) };
+      } catch (e) {
+        if (e instanceof ResourceNotFoundException) return undefined;
+        throw new Error(`EKS refused DescribeCluster on ${r.cluster} in ${r.region}: ${(e as Error).message}`, { cause: e });
+      } finally {
+        eks.destroy();
+      }
+    },
 
     async kubeIdentity(reach, token) {
       const ca = pemOf(reach.certificateAuthorityData);
