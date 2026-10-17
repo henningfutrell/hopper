@@ -24,6 +24,7 @@ export const INFRA_PLAN_EVENT_SCHEMAS = {
   }),
   // `auto` and `level` (part 3, approval by risk): the hopper approved it itself; the plan's risk level, when it has a summary.
   'infra.plan_approved': strict({ plan: z.string(), tool: z.enum(PLAN_TOOLS), asset, target: z.string(), by: z.string(), auto: z.literal(true).optional(), level: z.enum(['low', 'high']).optional() }),
+  'infra.applies_changed': strict({ on: z.boolean(), by: z.string() }),
   'infra.settings_changed': strict({ from: strict({ autoApprove: z.boolean() }), to: strict({ autoApprove: z.boolean() }), by: z.string() }),
   // Part 4: an admin named who watches each environment; `from` and `to` are the whole lists.
   'infra.watchers_changed': strict({ from: z.record(z.string(), z.array(z.string())), to: z.record(z.string(), z.array(z.string())), by: z.string() }),

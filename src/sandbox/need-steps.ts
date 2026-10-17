@@ -28,6 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
+import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
 import type { NeedStep, NeedStepRepository } from '../domain/need-steps.ts';
 import { templateReady as ready } from '../domain/sandboxes-before-start.ts';
@@ -83,6 +84,8 @@ export interface NeedStepsOptions {
   newId?: () => string;
   now?: () => Date;
   keepMs?: number;
+  /** Whether infra applies are on (issue #1722, the instance's setting, read at each ask); off, no step that applies runs. Absent: on. */
+  applies?: () => boolean;
 }
 
 /** What the job sent with its ask: its key for the ask, and the inputs (a tar; empty: none). */
@@ -178,6 +181,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     if (!fields.command || fields.command.trim() === '') return refuse(job, 400, 'give the command to run (sh): --command TEXT or --script FILE');
     const request = stepRequestOf({ host: t.name, command: fields.command, ...(fields.timeout !== undefined ? { timeout: fields.timeout } : {}), outputs: fields.outputs });
     if ('problem' in request) return refuse(job, 400, request.problem);
+    if (o.applies?.() === false && (fields.plan !== undefined || needs.some((p) => p.operation !== 'read'))) return refuse(job, 409, APPLY_STEP_OFF);
     if (!o.run || !o.sagas) return refuse(job, 503, 'this hopper runs no sandbox step: it is given no container runtime (docs/deploy.md "Sandboxes the hopper starts")');
     const id = newId();
     const step = o.steps.add({

@@ -18516,6 +18516,43 @@ Kubernetes API and GitHub faked: a sync with no plan, an unapproved plan, anothe
 nothing and the cluster is not asked — the negative test of the issue's "Done when"; a terraform plan of the app is a
 400; a current approved GitOps plan mints a `hopper-sync` token in `argocd`, the audit naming the plan).
 
+## Infra applies off: changes through CI only (issue #1722, 2026-10-17)
+
+Some installs apply infrastructure only in the infrastructure repository's CI, behind a GitHub environment approval. Their
+sandboxes need fast read access to AWS and Kubernetes, and must never apply. Before this, the hopper always had a gated
+apply path: an approved, current plan let the vault mint a write, sync or apply credential (no read deny policy for AWS,
+a `hopper-<operation>` token for Kubernetes), and a need or box step with `--plan-id` ran the apply.
+
+**Infra applies** is an instance setting, on by default (`getInfraApplies`, instance settings key `infraApplies`). The
+hopper's admin turns it on or off on Infra (`POST /ui/api/infra-applies` `{ on }`, behind the instance guard); every
+signed-in person reads it (`GET /api/infra-applies`). A change is `infra.applies_changed` (`on`, `by`), an instance event.
+It is read at each ask, so a change applies at once.
+
+Off:
+
+- **The vault mints only reads** (`appliesRefusal`, `src/domain/infra-plans.ts`). A job's mint (`src/vault/mint.ts`) and a
+  need step's mint (`src/vault/need-mint.ts`) refuse every operation but `read`, on any asset — an `aws-role`, a `cluster`,
+  a `namespace`, an `argocd-app` sync —, plan or not. The refusal comes before Access and the apply gate, so no profile
+  waits at the first-time gate for a change that cannot be minted. It is `vault.mint_refused`, and it says that the change
+  goes through CI.
+- **No step applies** (`APPLY_STEP_OFF`, `src/sandbox/need-steps.ts`). A need or box step with a plan, or with a need but
+  read, is refused at its ask with a 409 and `step.refused`; no need box starts. A box step with no plan runs, minted its
+  template's reads only, as before.
+- **Read templates are unchanged.** Read sessions keep `ReadOnlyAccess` and the deny policy; read-only checks and mint
+  tests mint reads only, as before.
+- **Plans are still kept** and approved: a job can still record its plan for a person to read. Nothing can apply it while
+  the setting is off; a credential minted before keeps its expiry (at most 15 minutes).
+
+**Why an instance setting, not a user setting.** The policy is the operator's for the whole install: one user's toggle
+could not keep another user's jobs from applying. **Why on by default.** An install that applies through the hopper keeps
+working after the update; an install that wants CI only turns it off once.
+
+Tests: `test/domain/infra-plans.test.ts` (the refusal for write, sync and apply; a read and the setting on let through),
+`test/sandbox/need-steps.test.ts` (a step with a plan, one with a change need and a box step with a plan are refused and
+no box starts; a read box step runs), `test/integration/infra-applies.test.ts` (the real daemon and a joined box: on by
+default; off, a current approved plan mints nothing, STS is not asked and the refusal names CI; a read still mints; on
+again, the apply mints; a bad body is 400).
+
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
 The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in

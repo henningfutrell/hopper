@@ -303,6 +303,7 @@
         "infra.out_of_band_marked",
         "infra.controllers_changed",
         "infra.settings_changed",
+        "infra.applies_changed",
         "infra.watchers_changed",
         "approval.confirmation_asked",
         "api_grant.minted",

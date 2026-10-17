@@ -6297,6 +6297,22 @@ Version 1 (`docs/schemas/infra.settings_changed.v1.json`). An admin turned auto-
 }
 ```
 
+## `infra.applies_changed`
+
+Version 1 (`docs/schemas/infra.applies_changed.v1.json`). The hopper's admin turned infra applies on or off (issue #1722): off, the vault mints only read credentials, and no need or box step that applies runs; an infrastructure change goes through CI. `on`, the new setting; `by`, who. It applies to the next mint and the next step. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `on` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "on": false,
+  "by": "admin"
+}
+```
+
 ## `infra.watchers_changed`
 
 Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the environment watchers (issue #870 part 4): who is told of each plan, approval and apply, by the environments the plan names (`prod`, `uat`, `staging`, `dev`, `qa`), and of every plan (`*`). Names as the notifier's receiver knows them. `from` and `to` are the whole lists; `by`, who.
