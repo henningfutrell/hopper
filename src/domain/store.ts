@@ -51,8 +51,11 @@ export interface JobRepository {
    * stamped again by the rules, for an origin judged after it was made (issue #652, the backfill); a quarantine stays.
    * Quarantine: `quarantine` stamps the job `quarantined`, its level before kept; `liftQuarantine` gives that level back
    * (the rules' with none). `trustLevel`: its verified level. `opensDoors`: its proxy token opens the hopper's doors.
+   * Jev's trust check (part 4): `checkDue`, the job is due for it; `checkTrust`, the stamp after Jev's answer, the point
+   * active — undefined, and nothing written, when the check is no longer due; `approveTrust`, a person approves the trust
+   * of a job the check lowered, to `approved` — undefined when it may not.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined;
 }
 
 export interface LaneRepository {

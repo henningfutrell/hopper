@@ -80,6 +80,9 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     o.tenant(req).engine.quarantine(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'quarantine a job'))));
   app.post('/ui/api/jobs/:id/unquarantine', o.operator, async (req) =>
     o.tenant(req).engine.liftQuarantine(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'lift a quarantine'))));
+  // Issue #655 part 4: a person approves the trust of a job Jev's trust check lowered.
+  app.post('/ui/api/jobs/:id/approve-trust', o.operator, async (req) =>
+    o.tenant(req).engine.approveTrust(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'approve a job\'s trust'))));
   app.post('/ui/api/jobs/:id/dismiss', o.operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   // Many at once (issue #1123): each as one Dismiss, a refusal kept with why; or every failed job nothing waits on any more.
   app.post('/ui/api/jobs/dismiss', o.operator, async (req) => {
