@@ -23643,6 +23643,7 @@ nothing; the email match; an end marks only that account, told with its key; rem
 account of the repository acts, and the events name it), `test/integration/more-accounts.test.ts` (the daemon: a second
 account by token, its own source, each issue taken and claimed with its account's token; 409, 404; removal removes its
 source), `test/ui/more-accounts-view.test.ts`, `test/ui/sources.test.ts` and `test/ui/acting-identity.test.ts`.
+
 ## Run skills (issue #472, 2026-10-17)
 
 **The problem.** The AI-native **File an issue** flow (issue #470, the button is issue #471) drafts an issue with the
