@@ -3,6 +3,8 @@
 // else, so it works on any machine a job runs on. Its help is the whole manual, read only when a job needs it. A 503
 // with Retry-After (the client door while the hopper is out of reach, issue #752) is waited out: `hcurl`. `pr wait`
 // (issue #1072 part 2) reads the job stream (issue #613) when the hopper opens a watch: `stream_wait`, as `hopper-skill`.
+// An issue create or comment (issue #1607) carries a resend key of its own, and is sent again with it while no answer
+// comes back (the connection broke): the hopper answers the first one again, so nothing is filed twice.
 
 import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 import { HCURL_SH } from './retry-after.ts';
@@ -11,6 +13,9 @@ import { HCURL_SH } from './retry-after.ts';
 export const PROXY_SCRIPT_VARIABLE = 'HOPPER_GH';
 export const PROXY_TOKEN_VARIABLE = 'HOPPER_TOKEN_FILE';
 export const PROXY_URL_VARIABLE = 'HOPPER_URL';
+
+/** How often hopper-gh sends an issue create or comment in all while no answer comes back: the same resend key each time (issue #1607). */
+export const PROXY_RESEND_TRIES = 5;
 
 /** The route on the hopper's URL a job's requests go to. */
 export const PROXY_PATH = '/job/github';
@@ -49,6 +54,8 @@ Read GitHub only this way: never curl api.github.com, never gh api, never a brow
 hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
 github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.
 An issue filed this way gets no labels or assignees and says the hopper filed it; a person triages it.
+When no answer comes back to issue create or comment, hopper-gh sends it again by itself: the hopper answers the first
+one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
 required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open. Use
 --required only when this job's issue cannot be complete without it; a nice-to-have is a follow-up.
@@ -123,8 +130,19 @@ done
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 ${HCURL_SH}
 if [ "$op" != pr.wait ]; then
-  hcurl -sS --fail-with-body -H @- --data-urlencode "op=$op" "$@" "$HOPPER_URL${PROXY_PATH}"
-  code=$?
+  case $op in
+    issue.create|issue.comment) set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
+    *) tries=1 ;;
+  esac
+  # Sent again with the same key only when no answer came (curl's own error, not GitHub's or the hopper's: 22).
+  while :; do
+    hcurl -sS --fail-with-body -H @- --data-urlencode "op=$op" "$@" "$HOPPER_URL${PROXY_PATH}"
+    code=$?
+    [ "$code" -ne 0 ] && [ "$code" -ne 22 ] && [ "$tries" -gt 1 ] || break
+    tries=$((tries - 1))
+    echo "hopper-gh: no answer from the hopper; sending it again" >&2
+    sleep 2
+  done
   echo
   [ "$code" -eq 0 ] || exit 1
   exit 0

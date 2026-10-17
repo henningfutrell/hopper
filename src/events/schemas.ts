@@ -329,7 +329,7 @@ export const EVENT_SCHEMAS = {
   'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), superseded: z.string().optional(), stray: z.literal(true).optional(), ...actingIfPerson }),
   'job.pull_request_abandoned': strict({ pullRequest: z.string(), part: z.boolean() }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
-  'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }), 'job.checks_rerun': strict({ recordId: z.string(), pullRequest: z.string(), head: z.string(), checks: z.array(z.string()), refused: z.string().optional() }),
+  'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }), 'job.checks_rerun': strict({ recordId: z.string(), pullRequest: z.string(), head: z.string(), checks: z.array(z.string()), refused: z.string().optional() }), 'job.checks_rerun_asked': strict({ recordId: z.string(), pullRequest: z.string(), head: z.string(), checks: z.array(z.string()) }),
   'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string(), ...actingIfPerson }), 'job.pull_request_base_merged': strict({ pullRequest: z.string(), commit: z.string(), resolved: z.array(z.string()) }), 'job.pull_request_retargeted': strict({ pullRequest: z.string(), from: z.string(), to: z.string(), stray: z.literal(true).optional() }),
   'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }), ...WORK_ITEM_EVENT_SCHEMAS, ...CHANGE_KIND_EVENT_SCHEMAS, // issue #1076
   // Yolo mode (issue #579): the settings before and after, and who changed them.
@@ -367,8 +367,9 @@ export const EVENT_SCHEMAS = {
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
   // the job's stream, or `settled` or `none`. A poll (issue #1210): `poll`, how many times the job asked the same read in the window.
+  // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it.
   'github_proxy.done': z.union([
-    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional() }),
+    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional(), key: z.string().optional(), replayed: z.literal(true).optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),

@@ -37,7 +37,7 @@ import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from 
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
   createProxyApi, type ProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
-  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
+  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser, createSubIssueLinker, createSubIssueLinks, replayOf, type SubIssueLinks,
 } from '../github-proxy/index.ts';
 
 /** No AI connection (issue #471): File an issue says so, and drafts nothing. */
@@ -66,6 +66,8 @@ export interface UserGitHubProxy {
    * own connection — the account of the repository —, on one of their job repositories.
    */
   issueDrafts: IssueDrafts;
+  /** The required children's sub-issue links GitHub refused, tried again until made (issue #1607); its loop runs with the user's runtime. */
+  subIssueLinks: SubIssueLinks;
   /** Report a bug's kept reports sent later, and the filed ones' states read (issue #694); its loop runs with the user's runtime. */
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
@@ -182,6 +184,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       };
     },
     pullRequest,
+    replay: (jobId, key) => replayOf(o.store.events, jobId, key),
   };
   /** Where a GitLab job's git goes (issue #1448 part 3): its user's GitLab, rewritten to the hopper's GitLab git route. */
   const gitlabOf = (job: Job): { url: string; path: string } | undefined => {
@@ -273,6 +276,14 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       ledgerFallbackRead: createLedgerFallbackRead({
         ledger: o.store.workItems, events: o.store.events, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
+      }),
+      subIssueLinks: createSubIssueLinks({
+        events: o.store.events, log: (l) => o.logger.warn(l),
+        link: (repo) => {
+          const key = keyOf(repo);
+          return !o.accounts.account(key) ? { problem: notMineAt(key, notConnected) }
+            : createSubIssueLinker({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) });
+        },
       }),
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
       repoChecks: createRepoChecks({

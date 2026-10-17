@@ -2,7 +2,8 @@
 // request were red is the hopper's to finish, not a person's, while its retries last. Its Continue is pending on its record,
 // and each sweep takes one step, from the pull request as its source reads it now: checks still running, it waits; checks
 // that pass, or no such pull request, leave it to the done check, then to a Continue; red, the failed checks run again once
-// for each head commit — the flake guard, recorded as `job.checks_rerun` —, and red again, the job goes on in its own agent
+// for each head commit — the flake guard, recorded as `job.checks_rerun_asked` before it is asked (issue #1607: a stop
+// meanwhile makes no second one) and as `job.checks_rerun` after —, and red again, the job goes on in its own agent
 // session in its kept work tree (else a new job of its item), told the failed checks and their logs' excerpts.
 import type { JobSource, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import { OWN_PR_CHECKS_RED } from './causes.ts';
@@ -52,8 +53,11 @@ export function createChecksRed(d: ChecksRedDeps) {
   /** The Continue each record's last step made ready, made by `continueOf`. */
   const ready = new Map<string, () => Promise<RerunResult>>();
 
-  /** This record's run again of the checks of `head`, if one was made: when, and whether any check ran again. */
-  const rerunOf = (r: FailureRecord, pullRequest: string, head: string) => store.events.recent(50, ['job.checks_rerun'], r.jobId)
+  /**
+   * This record's run again of the checks of `head`, if one was asked: what it did (`job.checks_rerun`), or only that it
+   * was asked (`job.checks_rerun_asked`: the hopper stopped meanwhile, so whether any check ran again is not known).
+   */
+  const rerunOf = (r: FailureRecord, pullRequest: string, head: string) => store.events.recent(50, ['job.checks_rerun', 'job.checks_rerun_asked'], r.jobId)
     .find((e) => e.data.pullRequest === pullRequest && e.data.head === head);
 
   /** The Continue: its own agent session in its kept work tree when it can resume, else its item again; both told `checks`. */
@@ -84,6 +88,7 @@ export function createChecksRed(d: ChecksRedDeps) {
       const head = own.headOid ?? '';
       const made = rerunOf(r, own.pullRequest, head);
       if (!made && d.rerunChecks) {
+        store.events.append({ type: 'job.checks_rerun_asked', jobId: job.id, data: { recordId: r.id, pullRequest: own.pullRequest, head, checks: own.failed.map((c) => c.name) } });
         const result = await d.rerunChecks(job, own.failed);
         const rerun = result?.rerun ?? [];
         const refused = result ? result.refused : 'its source cannot run checks again';
@@ -95,7 +100,7 @@ export function createChecksRed(d: ChecksRedDeps) {
         return { kind: 'go', go: goOn(r, job, own.pullRequest, own.failed, false) };
       }
       // Red again after the run again (or never run again: the job may, once).
-      const ranAgain = made !== undefined && Array.isArray(made.data.checks) && made.data.checks.length > 0;
+      const ranAgain = made?.type === 'job.checks_rerun' && Array.isArray(made.data.checks) && made.data.checks.length > 0;
       return { kind: 'go', go: goOn(r, job, own.pullRequest, own.failed, ranAgain) };
     },
     /**

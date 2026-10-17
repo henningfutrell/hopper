@@ -122,6 +122,8 @@ export const issueLineageEvents = {
     // Additive (issue #1510): the hopper labelled the required child and assigned it to the job's user.
     routed: z.literal(true).optional(),
   }),
+  // A required child's sub-issue link made at a later try (issue #1607): GitHub refused it, or the hopper stopped, as it was filed.
+  'job.sub_issue_linked': strict({ requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }) }),
 };
 
 // Vault grants (issue #652, src/vault/grants.ts): a job on a box asked the vault with no grant, a person granted its item
