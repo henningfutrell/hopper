@@ -3,6 +3,7 @@
 import type {
   AccessAnswer, AccessDecisionRecord, ApiTokenAsk, ApiTokenBoxAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
 } from '../domain/types.ts';
+import type { GitLabActorRef } from '../domain/access.ts';
 
 /** Who asks to see an artifact (issue #624): a user of the hopper, or the holder of a public link. */
 export type ArtifactViewer = { kind: 'user'; userId: string } | { kind: 'link'; userId: string; shareId: string };
@@ -22,6 +23,12 @@ export interface Access extends TemplateApprovals {
    * trusted actors told at the check. Not recorded. Denied, marked `unavailable`, when OpenFGA cannot be asked.
    */
   decideIntakeActor(userId: string, login: string, actors: readonly string[]): Promise<AccessAnswer>;
+  /**
+   * Whether a GitLab user may start the user's jobs (issue #1448): OpenFGA's `intake#can_start_jobs` for `gitlab_account`, the
+   * user's GitLab account told as their trusted actor at the check. Not recorded. Denied, marked `unavailable`, when OpenFGA
+   * cannot be asked.
+   */
+  decideGitLabIntakeActor(userId: string, actor: GitLabActorRef, actors: readonly GitLabActorRef[]): Promise<AccessAnswer>;
   /**
    * Whether the user may grant the jobs of an item the vault (issue #652): OpenFGA's `vault_grant#can_grant`, the item's
    * owner told at the check. Not recorded: the grant's own event is. Denied, marked `unavailable`, when OpenFGA cannot be asked.

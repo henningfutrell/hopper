@@ -136,6 +136,7 @@ export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, Pr
 export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/job-notes.ts';
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';
 export type { CloudLinkView, RegistrationCodeMinted } from '../../../src/domain/cloud-link.ts';
+export type { HopperIoState } from '../../../src/domain/hopper-io-state.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
 export type { WaitOn } from '../../../src/domain/types.ts';

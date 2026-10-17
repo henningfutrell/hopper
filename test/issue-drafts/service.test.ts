@@ -6,6 +6,7 @@
 //   Scenario: no provider, no GitHub, no job repository: it says why, and cannot be used
 //   Scenario: the file-issue run skill's prompt is what is sent, exactly; a repository that is not a job repository is refused
 //   Scenario: a draft comes back cleaned, with the constraints it broke; its suggested labels are dropped
+//   Scenario: the drafter is given the draft scope; the host name is refused at filing (issue #475)
 //   Scenario: a cancel mid-draft, a timeout and a provider's error file nothing
 //   Scenario: filing needs the confirmation; an edit that brings in a secret or an @ mention is refused at filing
 //   Scenario: a public repository needs its own confirmation; a filed issue has no label and no assignee
@@ -13,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { FILED_NOTE } from '../../src/domain/issue-drafts.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import { createIssueDrafts, IssueDraftRefused, type IssueDrafter, type IssueGitHub } from '../../src/issue-drafts/index.ts';
+import type { DraftScope } from '../../src/run-skills/constraints.ts';
 import { fileIssuePrompt } from '../../src/run-skills/file-issue.ts';
 import { loadRunSkill } from '../../src/run-skills/index.ts';
 
@@ -23,7 +25,7 @@ const REPO = 'octo-org/hello';
 const TOKEN = `ghp_${'a'.repeat(36)}`;
 
 /** The service with a drafter double and a fake GitHub; `visibility` of every repository. */
-function setUp(o: { drafter?: Partial<IssueDrafter>; visibility?: 'public' | 'private'; repos?: string[]; github?: false; timeoutMs?: number } = {}) {
+function setUp(o: { drafter?: Partial<IssueDrafter>; visibility?: 'public' | 'private'; repos?: string[]; github?: false; timeoutMs?: number; hostname?: string } = {}) {
   const events: NewEvent[] = [];
   const created: { repo: string; title: string; body: string; labels: string[] }[] = [];
   const api: IssueGitHub = {
@@ -39,7 +41,7 @@ function setUp(o: { drafter?: Partial<IssueDrafter>; visibility?: 'public' | 'pr
   const drafts = createIssueDrafts({
     drafter, repos: () => o.repos ?? [REPO], timeoutMs: o.timeoutMs ?? 5000,
     github: () => (o.github === false ? { problem: 'your GitHub is not connected' } : { api }),
-    job: () => undefined, record: (e) => { events.push(e); },
+    job: () => undefined, record: (e) => { events.push(e); }, ...(o.hostname ? { hostname: o.hostname } : {}),
   });
   return { drafts, events, created };
 }
@@ -53,7 +55,7 @@ const refusal = async (p: Promise<unknown>): Promise<IssueDraftRefused> => {
 
 /** A drafter that answers only when its run is ended. */
 const waits: Partial<IssueDrafter> = {
-  draft: (_s, _i, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => resolve({ error: 'aborted' })); }),
+  draft: (_s, _i, _scope, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => resolve({ error: 'aborted' })); }),
 };
 
 describe('File an issue (issue #471)', () => {
@@ -93,12 +95,26 @@ describe('File an issue (issue #471)', () => {
     expect(events).toEqual([{ type: 'issue_draft.drafted', data: { repo: REPO, provider: 'claude', model: 'claude-sonnet-5-5', skill: SKILL_NAME, findings: ['no-secret', 'no-personal-data', 'no-hopper-label'] } }]);
   });
 
+  it('gives the drafter the draft scope, keeps the findings it made before its mask, and refuses the host name at filing (issue #475)', async () => {
+    const scopes: DraftScope[] = [];
+    const { drafts } = setUp({
+      hostname: 'quartz-box',
+      drafter: { draft: async (_s, _i, scope) => { scopes.push(scope); return { title: 't', body: '[name, masked]', notes: '', findings: [{ constraint: 'no-known-name', what: 'it names the user' }] }; } },
+    });
+    const d = await drafts.draft({ repo: REPO, text: 'A lockout.' }, new AbortController().signal);
+    expect(scopes).toEqual([{ repos: [REPO], known: ['quartz-box'] }]);
+    expect(d.findings.map((f) => f.constraint)).toEqual(['no-known-name']);
+    const named = { repo: REPO, title: 'Queue stalls', body: 'It stalls on quartz-box.' };
+    expect((await drafts.check(named)).findings.map((f) => f.constraint)).toEqual(['no-known-name']);
+    expect((await refusal(drafts.file({ ...named, confirmed: true }, 'ada'))).status).toBe(422);
+  });
+
   it('a cancel mid-draft ends the run and files nothing', async () => {
     let ended = false;
     let started!: () => void;
     const running$ = new Promise<void>((resolve) => { started = resolve; });
     const { drafts, events, created } = setUp({
-      drafter: { draft: (_s, _i, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => { ended = true; resolve({ error: 'aborted' }); }); started(); }) },
+      drafter: { draft: (_s, _i, _scope, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => { ended = true; resolve({ error: 'aborted' }); }); started(); }) },
     });
     const cancel = new AbortController();
     const running = drafts.draft({ repo: REPO, text: 'A lockout.' }, cancel.signal);

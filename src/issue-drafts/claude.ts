@@ -18,11 +18,11 @@ export function createClaudeDrafter(o: { cwd: string; userEnv?: Readonly<Record<
     available: async () => ((await createDetectionKit().which(bin))
       ? { ok: true }
       : { ok: false, reason: `Claude is not installed on the hopper's machine (no ${bin} on its PATH): install the claude CLI and sign it in from Accounts` }),
-    draft: async (skill, input, signal) => {
+    draft: async (skill, input, scope, signal) => {
       const r = await draftIssue({
         bin, model: ISSUE_DRAFT_MODEL, cwd: o.cwd, timeoutMs: o.timeoutMs ?? ISSUE_DRAFT_TIMEOUT_MS, ...(o.userEnv ? { userEnv: o.userEnv } : {}),
-      }, input, signal, skill);
-      return 'error' in r ? r : { ...r.draft, ...(r.model ? { model: r.model } : {}) };
+      }, input, scope, signal, skill);
+      return 'error' in r ? r : { ...r.draft, findings: r.findings, ...(r.model ? { model: r.model } : {}) };
     },
   };
 }

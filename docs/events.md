@@ -3722,6 +3722,88 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 }
 ```
 
+## `gitlab_proxy.done`
+
+Version 1 (`docs/schemas/gitlab_proxy.done.v1.json`). A GitLab job's git push went through the hopper to GitLab (issue #1448 part 3, design.md "Jobs through GitLab"), with the token of the GitLab account of the job's own user: `project`, the job's own GitLab project; `refs`, the refs it changed (git's push options, such as `merge_request.create`, went with it); `as`, the GitLab username that acted; `requestId` names the request; `machine`, the job's machine.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `op` | string | yes |
+| `project` | string | yes |
+| `refs` | string[] | yes |
+
+```json
+{
+  "requestId": "r4",
+  "machine": "desk",
+  "as": "ada",
+  "op": "git.push",
+  "project": "ada/tools",
+  "refs": [
+    "refs/heads/fix-parser"
+  ]
+}
+```
+
+## `gitlab_proxy.refused`
+
+Version 1 (`docs/schemas/gitlab_proxy.refused.v1.json`). The hopper refused a GitLab job's git push (issue #1448 part 3) and told the job `reason`: a push to another project than the job's own, to its default or a release branch, a tag or a delete, or no GitLab account to push with. Fields as `gitlab_proxy.done`; `refs` when the push was read.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `op` | string | yes |
+| `project` | string | yes |
+| `refs` | string[] | no |
+| `reason` | string | yes |
+
+```json
+{
+  "requestId": "r5",
+  "machine": "desk",
+  "as": "ada",
+  "op": "git.push",
+  "project": "ada/tools",
+  "refs": [
+    "refs/heads/main"
+  ],
+  "reason": "a job pushes only to a branch of its own work, never to main: push a new branch and open a merge request"
+}
+```
+
+## `gitlab_proxy.failed`
+
+Version 1 (`docs/schemas/gitlab_proxy.failed.v1.json`). GitLab failed or refused a GitLab job's git push the hopper made (issue #1448 part 3): `error` is what GitLab answered; a refused token ends the GitLab account. Fields as `gitlab_proxy.done`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `op` | string | yes |
+| `project` | string | yes |
+| `refs` | string[] | no |
+| `error` | string | yes |
+
+```json
+{
+  "requestId": "r6",
+  "machine": "desk",
+  "as": "ada",
+  "op": "git.push",
+  "project": "ada/tools",
+  "refs": [
+    "refs/heads/fix-parser"
+  ],
+  "error": "GitLab answered 500"
+}
+```
+
 ## `vault.secret_set`
 
 Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value. `backend`: the vault backend it is kept in (issue #585), when it is kept in one: the hopper holds no value for it. `rotated`: a system secret (issue #658) the hopper made or renewed itself — a webhook secret rotated, a GitHub token renewed. `mints`: the AWS account or cluster it is a minting credential for (issue #580).

@@ -73,17 +73,21 @@ export function checkPush(commands: readonly RefUpdate[], at: { defaultBranch?: 
  * The variables that send a job's git to the hopper (`git config` from the environment): every GitHub remote — https,
  * ssh and scp-like — is rewritten to `<hopperUrl>/job/git/`, and git's credential ask there is answered from the job's
  * token file (`HOPPER_TOKEN_FILE`), read when git asks: the token is never in a variable. Any other credential helper is
- * cleared for that URL first.
+ * cleared for that URL first. `gitlab` (issue #1448 part 3, a GitLab job's): its GitLab's https URL is rewritten to
+ * `<hopperUrl>/<gitlab.path>` the same way.
  */
-export function jobGitConfig(hopperUrl: string, webUrl: string): Record<string, string> {
-  const to = `${hopperUrl.replace(/\/+$/, '')}${GIT_PATH}`;
+export function jobGitConfig(hopperUrl: string, webUrl: string, gitlab?: { url: string; path: string }): Record<string, string> {
+  const hopper = hopperUrl.replace(/\/+$/, '');
+  const to = `${hopper}${GIT_PATH}`;
   const web = new URL(webUrl);
   const from = [`${web.origin}/`, `git@${web.hostname}:`, `ssh://git@${web.hostname}/`];
   const helper = '!f() { test "$1" = get || exit 0; echo username=hopper-job; printf \'password=%s\\n\' "$(cat "$HOPPER_TOKEN_FILE")"; }; f';
+  const via = (url: string): [string, string][] => [[`credential.${url}.helper`, ''], [`credential.${url}.helper`, helper]];
+  const toGitLab = gitlab ? `${hopper}${gitlab.path}` : undefined;
   const entries: [string, string][] = [
     ...from.map((f): [string, string] => [`url.${to}.insteadOf`, f]),
-    [`credential.${to}.helper`, ''],
-    [`credential.${to}.helper`, helper],
+    ...via(to),
+    ...(gitlab && toGitLab ? [[`url.${toGitLab}.insteadOf`, `${gitlab.url.replace(/\/+$/, '')}/`] as [string, string], ...via(toGitLab)] : []),
   ];
   return {
     GIT_CONFIG_COUNT: String(entries.length),

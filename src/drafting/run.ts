@@ -17,6 +17,7 @@ import { hideCodes } from '../logins/recognise.ts';
 import { watchRunOutput } from '../logins/run-output.ts';
 import { CLAUDE_TIMEOUT_MS, leftOf, leftReason, ON_MACHINE, reapRun, runMarkOf, scrubbedEnv, withoutRunMarks } from '../plugins/claude-print.ts';
 import { draftIssueWith, type DraftAnswer, type IssueDraftResult } from '../run-skills/draft.ts';
+import type { DraftScope } from '../run-skills/constraints.ts';
 import type { FileIssueInput } from '../run-skills/file-issue.ts';
 import { answeredError, CLAUDE_DEFAULT_MODEL, draftArgv, draftRefusal, failureOf, readDraft, type DraftCall, type DraftProvider } from './providers.ts';
 
@@ -142,9 +143,9 @@ async function runOn(host: DraftHost, m: MachineSnapshot, call: DraftCall, timeo
 
 /**
  * Draft an issue with the user's own AI CLI on the machine they picked: refused, in plain words, where it cannot run;
- * else the file-issue run skill's draft with its findings, or why there is none.
+ * else the file-issue run skill's draft, masked and checked against `scope`, with its findings, or why there is none.
  */
-export async function draftOn(host: DraftHost, choice: DraftChoice, input: FileIssueInput, signal: AbortSignal): Promise<IssueDraftResult | { error: string }> {
+export async function draftOn(host: DraftHost, choice: DraftChoice, input: FileIssueInput, scope: DraftScope, signal: AbortSignal): Promise<IssueDraftResult | { error: string }> {
   const m = await host.machine(choice.machine);
   const refused = draftRefusal(choice.provider, choice.machine, m, { addedUser: Object.keys(host.userEnv).length > 0 });
   if (refused) return { error: refused };
@@ -152,5 +153,5 @@ export async function draftOn(host: DraftHost, choice: DraftChoice, input: FileI
   return draftIssueWith((prompt, jsonSchema, s) => runOn(host, m!, {
     provider: choice.provider, prompt, jsonSchema,
     ...(choice.bin ? { bin: choice.bin } : {}), ...(choice.model ? { model: choice.model } : {}), ...(choice.effort ? { effort: choice.effort } : {}),
-  }, timeoutMs, s), input, signal);
+  }, timeoutMs, s), input, scope, signal);
 }

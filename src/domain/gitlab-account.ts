@@ -43,7 +43,7 @@ export type GitLabAccountStatus =
   /** Its token is sealed under a key the runtime does not give: not ended, give the key back. */
   | ({ state: 'unreadable'; error: string } & Omit<GitLabAccountRecord, 'ended'>);
 
-/** One GitLab issue as the GitLab source reads it. */
+/** One GitLab issue as the GitLab source reads it. `authorId`: its author's user id; absent when GitLab did not say. */
 export interface GitLabIssue {
   project: string;
   iid: number;
@@ -51,8 +51,38 @@ export interface GitLabIssue {
   description: string;
   url: string;
   author: string;
+  authorId?: number;
   assignees: string[];
   labels: string[];
+}
+
+/** The kind of the GitLab source, and of a job it made (issue #1448 part 3): `JobSourceRef.kind`. */
+export const GITLAB_SOURCE_KIND = 'gitlab-account';
+
+/** Whether a job's source item is a GitLab issue (issue #1448 part 3): its `repo` is then a GitLab project, never a GitHub repository. */
+export const isGitLabItem = (source: { kind: string } | undefined): boolean => source?.kind === GITLAB_SOURCE_KIND;
+
+/** Where a GitLab issue's URL puts its project: `<GitLab URL>/<project>/-/issues/<iid>`. */
+const ISSUE_PATH = '/-/issues/';
+
+/**
+ * The clone URL of the project of a GitLab issue (issue #1448 part 3), from the issue's URL: `<GitLab URL>/<project>.git`.
+ * Undefined: not the URL of a GitLab issue.
+ */
+export function gitlabCloneUrl(issueUrl: string): string | undefined {
+  const at = issueUrl.indexOf(ISSUE_PATH);
+  return at > 0 && /^\d+$/.test(issueUrl.slice(at + ISSUE_PATH.length)) ? `${issueUrl.slice(0, at)}.git` : undefined;
+}
+
+/**
+ * One act on a GitLab issue that its origin is judged by (issue #1448 part 3, design.md "Jobs through GitLab"): who wrote it,
+ * who added the label it is taken by, who assigned it to the account, and who edited its title or description after. `userId`
+ * absent: GitLab did not say who.
+ */
+export interface GitLabAct {
+  role: 'author' | 'labelled' | 'assigned' | 'edited';
+  account?: string;
+  userId?: number;
 }
 
 /**

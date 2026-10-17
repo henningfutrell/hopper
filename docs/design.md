@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
-| `src/gitlab/` | a user's GitLab account (issue #1448 part 2, "A GitLab source"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal (`account.ts`), and the `gitlab-account` job source over it (`source.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -77,8 +77,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
-| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its answer checked in the form asked for and against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
-| `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), and the machines it can run on (`providers.ts`, pure); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
+| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -23856,7 +23856,7 @@ on the machine.
   (the promotion scan, `src/promotions/scan.ts`), no `@` mention, no label the hopper acts on (`hopper`, `hopper:*`,
   `hopper@*`), a title of at most 120 characters, a body of at most 8000. Each constraint's text goes into the prompt;
   its check runs on the draft (`draftIssue` answers the findings), and is the check to run again on the text the user
-  edited before it is filed. A test fails when the prompt lacks a constraint's text.
+  edited before it is filed. A test fails when the prompt lacks a constraint's text. Issue #475 completes the model: "Draft constraints".
 - **Authentication pending** (issue #470 D17: a shared section, not its own skill). `src/domain/auth-pending.ts` holds
   the job rules' login line (`HOPPER_AUTH_PENDING`, issue #476) and the section every run skill carries. A print-mode run
   has no tools and cannot run a login: its CLI prints the code, the hopper reads it from the run's output
@@ -24098,6 +24098,38 @@ registers once, and a wrong code or another account does not; the removal makes 
 not JSON, of another type or another shape is refused, recorded with its reason only, and changes nothing; the unlink
 notice names the instance id and the account.
 
+## The machines the link reports (issue #465, part 5, 2026-10-17)
+
+**The problem.** Issue #465 item 4: each instance reports its machines over the link — name, online state, lanes, and the
+executors offered — and hopper.io shows them under their instance. The hopper.io state snapshot (issue #466, "The hopper.io
+state snapshot") already holds each machine's key, online state and lanes. It does not hold the executors.
+
+**The change.** `machines[].executors` in the snapshot, `schema: 2` (`src/domain/hopper-io-state.ts`): the kinds of executor
+the machine offers, each once, in name order. A kind is the executor plugin's id when it is a built-in executor
+(`HOPPER_IO_EXECUTORS`: `herdr-claude`, `claude`, `codex`, `cursor-agent`, `opencode`, `omp`, `command`, `kubernetes`,
+`test`), else `other`. The projection takes `executorPlugin(name)`, the plugin of each executor instance of the plugins
+config, from the link (issue #464); an unknown name is `other` too.
+
+**Decisions:**
+- **The kind, never the name.** A machine's executors are the instance names the plugins config gives them, free text that
+  can hold a host name (R5). The kind is a closed list. A third-party executor plugin's id is free text too, so it is
+  `other`.
+- **No machine name.** Part 1 of issue #466 sends no label (R5); the owner names a machine at hopper.io by its key. This part
+  keeps that.
+- **`schema: 2`.** A new field bumps the schema ("The hopper.io state snapshot"). Nothing sends version 1 yet, so nothing
+  reads it: no hopper.io code base exists.
+- **A test keeps the list whole.** `test/domain/hopper-io-state.test.ts` checks that `HOPPER_IO_EXECUTORS` holds every
+  built-in executor's id. A new built-in executor fails it until the list names it. The domain does not import
+  `src/plugins/` (the seam table).
+
+**Left for later parts of issue #465:** the agent that sends the snapshot and carries the messages (issue #464, which supplies
+`machineKey` and `executorPlugin`); the link state and last-seen time at hopper.io, and one registration per instance id
+(item 3), kept at hopper.io; the open questions (issue #469 decision 6).
+
+**Verification:** `test/domain/hopper-io-state.test.ts`: a machine's executors named after a host, a custom name and a
+third-party plugin go out only as their kinds (`claude`, `codex`, `herdr-claude`, `other`); none of the names is in the
+snapshot; the schema refuses an executor outside the list and version 1; 50 machines with two executors each fit in 8 KiB.
+
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
 **The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
@@ -24113,7 +24145,7 @@ in on. The hopper holds no model key for it.
     prompt on stdin (`-`).
   - `cursor-agent -p --mode ask --sandbox enabled --trust`: ask mode is read-only.
   - `opencode run --format json --pure`, with `OPENCODE_PERMISSION={"*":"deny"}`, no project config and no Claude Code
-    prompt or skills, set by `env` in the argv so it holds over ssh too.
+    prompt or skills, set in its run script (`OPENCODE_RUN`) so it holds over ssh too.
   - `omp -p --no-tools --no-session --no-skills --no-rules --no-extensions --no-lsp`.
   The argv and the reading of the print-mode CLIs are the print-mode executors' dialects (`print-agents.ts`): a dialect's
   `said` reads the answer without a session, which a draft keeps none of; `read`, a job's, still needs one. A CLI with
@@ -24133,16 +24165,41 @@ in on. The hopper holds no model key for it.
   command. An answer that is no draft: refused. A timeout or a cancel stops the run and says which. A device code the
   run prints goes to the logins (issue #476) and is hidden in the error.
 
-**Not done here.** The UI's machine and provider picker (issue #471) and a probe that says, before a run, whether the
-CLI is installed and signed in there; model lists for the CLIs other than claude (claude's is `claudeModels`); session
-records that opencode and Cursor's agent keep on the machine after a run (codex, omp and claude keep none); whether a draft
-counts toward usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
+- **Nothing of the run kept on the machine.** codex (`--ephemeral`), omp (`--no-session`) and claude keep no session.
+  opencode keeps one for every run: its run (`OPENCODE_RUN`) writes the output to a file in the run dir, deletes the
+  session it names (`sessionID`) with `opencode session delete --pure` in the same lockdown environment, whether the run
+  went well or not, and then prints the output. Cursor's agent keeps its project data under `CURSOR_DATA_DIR`, which holds
+  no login: its run (`CURSOR_RUN`) points it into the run dir, so it goes with the dir; and it keeps its chat in its config
+  dir (`$CURSOR_CONFIG_DIR`, else `$XDG_CONFIG_HOME/cursor`, else `~/.cursor`) under `chats/<md5 of the run dir's real
+  path>`, which the run removes after.
+- **The draft probe** (`src/drafting/probe.ts` `probeOn`): before a draft, whether the provider the user picked can draft
+  on the machine they picked, and the models it lists there, so a picker offers only what can run. The machine's
+  refusals first, as for a draft. Then, on this machine or an ssh target, each in a fresh dir through `ON_MACHINE`, and
+  never a model call:
+  - the CLI's own sign-in status: `claude auth status --json` (only its `loggedIn` is read: the output also names the
+    account, which never goes in a reason), `codex login status`, `cursor-agent status`. opencode needs no sign-in (it
+    has free models) and omp has no status call: the draft says it, when it runs;
+  - its model list: claude's stream-json initialize handshake (as `claudeModels`), `codex debug models` (the models it
+    shows, `visibility: list`), `cursor-agent models` (the lines after `Available models`, `<id> - <name>`),
+    `opencode models` (`provider/model` lines), `omp models --json` (each model's `selector`). A list that fails while the
+    CLI is there and signed in leaves the CLI's own default model: usable, no models.
+  Not installed and not signed in are said in the same words as a draft's failure. A client target has no probe call
+  (its client runs claude for a level or a usage read only): claude there is usable while the client is dialled in,
+  marked unchecked, and the draft says the rest.
+
+**Not done here.** The UI's machine and provider picker (issue #471), which calls the probe; the run dir on the machine
+when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft counts toward
+usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
 as their dialects call them: the machine's other users can see it in its process list while the turn runs.
 
 **Verification:** `test/drafting/run.test.ts`, against fake CLIs: each provider locked down, the prompt delivered, the
 run dir removed after, the draft checked; over ssh; the model and effort flags; an answer that is no draft, not signed in,
 not installed, an offline, unknown or container machine, a timeout and a cancel; a client target's claude through its
-client and another CLI refused there; a user added later with their own claude config dir, refused another CLI here.
+client and another CLI refused there; a user added later with their own claude config dir, refused another CLI here;
+opencode's session deleted after a run that went well and one that failed, Cursor's agent's chat removed and its project
+data in the run dir, here and over ssh. `test/drafting/probe.test.ts`, against a fake of each CLI's probe calls: each
+provider usable with the models it lists, and their labels; claude's account never in the answer; no models listed;
+over ssh; not signed in, not installed, a refused machine, a timeout; a client target unchecked, or not dialled in.
 
 ## A GitLab source (issue #1448, part 2, 2026-10-17)
 
@@ -24217,7 +24274,7 @@ against the schema before it sends it (R4, R7); that check is #464's.
 
 | Field | From | Why hopper.io keeps it |
 |-------|------|------------------------|
-| `schema` | the constant `1` | which shape hopper.io parses |
+| `schema` | the constant `2` (`machines[].executors` added, issue #465 part 5) | which shape hopper.io parses |
 | `sentAt` | passed in, the link's clock | when the instance said it |
 | `instance.version` | `UpdateStatus.installed.commit`, its first 8 hex characters; `unknown` when none | the instances list: version |
 | `instance.channel` | `UpdateStatus.channel`: `dev`, `beta` or `stable` | the instances list: update channel |
@@ -24229,14 +24286,15 @@ against the schema before it sends it (R4, R7); that check is #464's.
 | `machines[].key` | `machineKey(id)`: an opaque, stable key the link derives (for example an HMAC under the cloud link key); never the id | to tell machines apart between snapshots, and for the name the owner gives it at hopper.io |
 | `machines[].online` | `MachineSnapshot.online` | machines per instance |
 | `machines[].lanesInUse`, `.lanes` | its lanes not idle; `maxLanes` | machines per instance |
+| `machines[].executors` | the kinds of its executors (`MachineSnapshot.executors`): a built-in executor plugin's id, else `other`; each once, in name order. Never an executor's name ("The machines the link reports") | machines per instance: the executors offered (#465 item 4) |
 | `machines[].takesJobs`, `.notTaking` | why it takes no new job, in the decider's order (`idleReason`): `no-lanes`, `offline`, `leaving`, `drained`, `template-waiting`, `disk-low`, `work-tree`, `address`, `herdr` | machines per instance |
 
-What is never sent: the instance's name, a machine's id or label, any free text of a machine (`ssh`, `home`, `workTree`,
+What is never sent: the instance's name, a machine's id or label, an executor's name, any free text of a machine (`ssh`, `home`, `workTree`,
 `workTreeProblem`, `addressProblem`, `herdrProblem`, `hopperUrl`, `client.door`, who drained it), any user, and any job or
 question content. A machine's label is often its host name, which R5 forbids; the owner names instances and machines at
 hopper.io instead (#465). `test/domain/hopper-io-state.test.ts` sends a machine with a host name, a path, an address and a
 person's name in each free-text field, and checks that none of them comes out. One snapshot holds every user's machines
-of the instance, as one list (the tracking issue's decision 6a); per-user parts would be `schema: 2`. A snapshot of 50
+of the instance, as one list (the tracking issue's decision 6a); per-user parts would be `schema: 3`. A snapshot of 50
 machines is under 8 KiB.
 
 **Live updates, with no polling of the instances** (the design for #464 and the hopper.io side; not built):
@@ -24329,3 +24387,140 @@ confirmation; the edited text checked again — a secret, an `@` mention —; a 
 confirm step, the issue filed as the person with no label and no assignee, the event on the job's timeline; a viewer refused;
 no provider), `test/ui/file-issue.test.ts` (hidden from a viewer; off with the reason; what is sent; cancel mid-draft; a
 timeout; filed only after Confirm; a blocked value keeps Confirm off).
+
+## Draft constraints (issue #475, 2026-10-17)
+
+**The problem.** An issue drafted by the user's own AI (issue #470) goes to GitHub as text people read. What it may hold,
+and what the run may read, was a short list of rules (issue #472) with no repository check, no check of the user's own
+names or of the secrets the hopper holds, no limit on what is sent to the model, and no rule for what the check does
+with what it finds. The publishing rule (`src/job-rules/index.ts` `PUBLISHING_RULE`) is only an instruction to a model.
+
+**The change.** One list, `DRAFT_CONSTRAINTS` (`src/run-skills/constraints.ts`): each constraint's line goes into the
+file-issue prompt, and its check runs on the model's draft and again on the text the user files. A test fails when the
+prompt lacks a constraint's line.
+- **The draft scope** (`DraftScope`), given by the caller, never by the model: `repos`, the repositories a draft may
+  target (the user's job repositories, issue #470 D7); `known`, the user's own names (machine and host names, connected
+  GitHub logins, display name, email), found as words in any case; `secrets`, the values of secrets the hopper holds,
+  found by value. A known name shorter than 3 characters, or a secret shorter than 8, is no finding: it would match
+  ordinary text. A finding names its constraint and never shows a value.
+- **The constraints:** `repo-allowed` (the target is one of `repos`, at the draft and at filing; a draft on another
+  repository is refused before the model runs); `no-secret` (the promotion scan's secret patterns — GitHub tokens, API
+  keys, private key blocks, 32-byte keys — and the held secrets); `no-personal-data` (email addresses, phone numbers, IPv4
+  and IPv6 addresses, private host names, home directories); `no-known-name`; `no-mention` (an `@` mention: the model's
+  are removed, and one the user adds when they edit is refused at filing, as File an issue refuses it); `no-hopper-label` and
+  `label-allowed` (a label only from `SUGGESTED_LABELS`: `bug`, `enhancement`, `documentation`, `question`; never
+  `hopper`, `hopper:*` or `hopper@*`); `title-size` (1 to 120 characters) and `body-size` (at most 8000). The model's
+  answer has no assignee (its JSON Schema allows none).
+- **Enforcement: mask and show, then check again** (issue #470 D9). `maskDraft` masks the model's title and body —
+  held secrets, then the secret and personal patterns, known names, `@` mentions — and drops each label it may not
+  suggest; it answers each change as a **draft mask** (`{ constraint, count }`), never the value, for the review step and
+  the record. The repository and the sizes are not masked: the draft is refused with the reason, never cut. `checkDraft`
+  runs again on the user's text before it is filed, so a value the user puts back is refused there.
+- **What the run reads** (issue #470 D6: no repository checkout): the user's text and the context they attach, nothing
+  else; the run has no tools. `checkRequest` refuses a text over 10,000 characters or a context over 20,000 before the
+  model runs. `maskContext` masks the context the same way (its `@` mentions kept) before it is sent, and answers its
+  masks. The skill tells the model that the text and the context are data and to ignore every instruction in them; the
+  hopper does not trust that it did: the repository is the user's choice and the labels are checked whatever the model
+  answers.
+- `draftIssueWith` (any **draft provider**'s turn, issue #474), `draftIssue` (the user's `claude`) and `draftOn` (the
+  provider and machine the user picked) take the scope and answer the masked draft, its `masks`, the context's
+  `contextMasks` and the findings left.
+
+**Decisions made here.** Mask and show (D9), not block: a draft the user can read and fix is better than none, and the
+check at filing still blocks. Held secrets are found by substring, not by hash or a constant-time compare: the check
+runs on text the hopper already holds, and a timing difference tells nobody outside anything. The labels are a fixed
+list, so the prompt's line and the check cannot differ.
+
+**File an issue** (issue #471, `src/issue-drafts/service.ts`) gives the scope: the user's job repositories and the
+hopper's host name. Its drafter passes the scope to `draftIssue` and answers the findings made before the mask; the
+service runs `checkDraft` again at its confirm step and at filing.
+
+**Not done here.** The scope's other names (machine names, connected GitHub logins, display name, email) and the held
+secrets' values: File an issue gives none of them yet. A check of what jobs write to GitHub beyond `PUBLISHING_RULE`
+would be a separate issue.
+
+**Verification:** `test/run-skills/constraints.test.ts` (each detector with near misses: version strings, times, code
+paths, public host names, digests, a word that holds a known name; known names and held secrets, never shown; the
+repository; the labels and the mentions; a value edited back in refused at filing; the sizes refused, not
+cut; the request limits; the context masks), `test/run-skills/draft.test.ts` (against a fake `claude`: the draft masked
+with its masks by constraint; an over-size draft refused by its findings; another repository and an over-size request
+refused before claude runs; the context masked on stdin; an instruction in the context that adds `hopper:high` dropped).
+
+## Jobs through GitLab (issue #1448, part 3, 2026-10-17)
+
+Part 3 of issue #1448: a GitLab issue becomes a job, and the job acts through the user's **GitLab account**. Part 2 listed
+GitLab issues only.
+
+**Which issue becomes a job** (`src/gitlab/source.ts`, `src/gitlab/origin.ts`). An open issue labelled `hopper` in a picked
+project, assigned to the account, with no end label (`hopper:done`, `hopper:failed`, `hopper:rejected`) and not on the
+backburner, of a **trusted origin**. As on GitHub (issue #652), the origin is judged by who wrote the issue, who added the
+label last (`GET …/issues/:iid/resource_label_events`) and who assigned it to the account last (GitLab's system note
+`assigned to @…`); on GitLab also by each edit of its title or description (the system notes `changed title`, `changed the
+description`), since GitLab keeps no snapshot the hopper reads. Each act is a GitLab user by id. **Access decides** each one:
+OpenFGA's `intake#can_start_jobs` for a subject of the new type `gitlab_account` (`gitlab_account:<the GitLab's URL>/<user
+id>`), the user's GitLab account told as the trusted actor at each check. So only the account itself starts jobs, and no
+OpenFGA trusts nobody, as on GitHub. A model edited before this change lacks `intake#trusted_actor accepts gitlab_account`:
+its gap (`gitlabIntakeGaps`) is apart from GitHub's, so GitHub's intake still decides, and no GitLab issue is a job. An act
+GitLab does not say who did is no trusted act. Any other issue is listed with why: `not of a trusted origin: <who> <did
+what>, and is not a trusted actor`. There are no request cards from GitLab in this part.
+
+**The item.** Its key and URL are the issue's URL; `repo` is the project path, `number` its `iid`, `origin: trusted`. The
+prompt is the issue's text in the untrusted block, then the hopper's context: the forge, the project and the issue, its
+labels and priority (the options `priorityLabels`, `defaultPriority`), a GitLab line (the issue is on GitLab, `hopper-gh` is
+GitHub's only, git goes through the hopper, no GitLab login and no GitLab API from the job), the checks line, and what done
+means: a merge request from a branch of the job's own work into the project's default branch, with "Closes #N" in its
+description, opened as the job pushes with git's push options (`-o merge_request.create -o merge_request.target=… -o
+merge_request.title=… -o merge_request.description=Closes #N`). A person reviews and merges it on GitLab. The plugin
+options `executor` and `model` name the job's executor, as GitHub's do.
+
+**The labels.** The hopper writes only labels to a GitLab issue (`PUT /projects/:id/issues/:iid`, `add_labels` and
+`remove_labels`, so a second write changes nothing): `hopper:claimed` when the job is claimed; then `hopper:done`,
+`hopper:failed` or `hopper:rejected` in place of the claim; a cancel takes the claim off. A Continue the hopper fixes itself
+(`fixing`) writes nothing. No comment, no close. An issue GitLab does not find is a permanent error.
+
+**Its work tree.** The job payload's `repo` is a GitLab job's project too, with `repoUrl`, its clone URL
+(`<GitLab URL>/<project>.git`, from the issue's URL, `gitlabCloneUrl`): the job's checkout in the work tree's workspace is
+cloned from there (`makeJobWorktreeCommand`'s `url`). Everywhere a job's own GitHub repository is read — the GitHub proxy
+and git through the hopper for GitHub — a GitLab job has none (`isGitLabItem`): its project is never taken for a GitHub
+repository of the same name.
+
+**Git through the hopper for GitLab** (`src/gitlab/git-broker.ts`, `GET`/`POST /job/gitlab-git/<project>.git/…`). A GitLab
+job's variables (`jobGitConfig`'s `gitlab`) rewrite its GitLab's https URL to the hopper's route, with the same credential
+helper as GitHub's: the job's proxy token from its token file, never a variable. The job holds no GitLab token. The broker
+checks the proxy token, the job at work, and that it is a GitLab job; a fetch goes to GitLab whatever the project (GitLab
+answers what the account reads); a push only to the job's own project, its ref updates read before anything reaches GitLab
+(`checkPush`: never the default branch, a release branch, a batch run's branch, a tag or a delete). git's push options go to
+GitLab as git sent them: that is how the push opens the merge request. It sends the account's token as Basic auth
+(`oauth2:<token>`). Each push is an event on the job's timeline: `gitlab_proxy.done`, `.refused` or `.failed`, op `git.push`,
+`project`, `refs`, and `as`, the GitLab username that acted. GitLab answering 401 ends the GitLab account only (issue #1380,
+"a source expiring marks only the source"), and the job is told to have a person connect it again.
+
+**The job page** names the account that acts: **GitLab as**, the username its newest push named, else the user's GitLab
+account (`ui/src/model/acting-identity.ts`, `gitlabActingIdentity`).
+
+**The token** needs the scopes `api` (the labels), `read_user` (the source email match) and `write_repository` (a job's git).
+
+**Decisions:**
+- **Push options, not the merge request API.** git's push options open a merge request on the push the job makes anyway, so
+  the hopper needs no GitLab API route for a job, and no new `hopper-gh` verbs. A route for a job's GitLab reads and writes is
+  a later part, when a job needs one.
+- **Access decides GitLab's trusted actors with a type of its own.** A GitLab username is not a GitHub login: asked as
+  `github_login`, a GitLab user named as a trusted GitHub login would start jobs. A user id at a GitLab cannot be mistaken.
+- **Edits count against the origin.** GitHub's edits are held by the item's snapshot (issue #662); GitLab's are read from its
+  own system notes, so another person's edit keeps the issue out.
+- **No request cards from GitLab yet.** A card needs a person's approval path for GitLab's text; the issue says why instead.
+- **No migration.** The model change is additive; an unchanged system-written model is rewritten with it, as for every gap.
+  The new plugin options have defaults. No stored state changes shape.
+
+**Left for later parts of issue #1448:** the job's merge request followed — its state, its checks, a merge in yolo mode, and
+done judged by it (`notComplete`); a cancel when the issue closes or loses its label (`check`); request cards for GitLab issues
+of another origin; a GitLab API route for a job; OAuth for GitLab; more than one GitLab account; and, from part 1, the user's
+own GitHub acts that name no job repository.
+
+**Verification:** `test/gitlab/source.test.ts` (an issue taken with its prompt; another origin, end labels, the backburner, no
+Access; the labels written), `test/gitlab/origin.test.ts`, `test/gitlab/git-broker.test.ts` (fetch, push with push options,
+the refusals, the 401), `test/integration/gitlab-source.test.ts` (the daemon takes the issue as a job and writes its labels),
+`test/integration/gitlab-git.test.ts` (a real git clone and push with push options through the daemon to a fake GitLab whose
+git is git's own `git-http-backend`; a push to `main` refused), `test/github-proxy/git.test.ts` (the job's GitLab git
+config), `test/herdr/executor-job-worktree.test.ts` (the project cloned from its GitLab), `test/authz/model.test.ts`,
+`test/ui/acting-identity.test.ts` and `test/ui/gitlab-view.test.ts`.

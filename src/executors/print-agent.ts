@@ -134,7 +134,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
-    const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
+    const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, ...(p.repoUrl ? { url: p.repoUrl } : {}), worktrees: false })} ) >&2; ` : '';
     // The job's own container runtime and its sandbox (issue #1295), in the turn's scope.
     const isolated = isolatedTurn(ctx.job.id, scratch, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`);
     const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`)}; }`;
