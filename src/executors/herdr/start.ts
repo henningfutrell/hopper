@@ -180,6 +180,12 @@ export const mkScratchCommand = (cwd: string, jobId: string): string =>
  */
 export const jobTmpOf = (jobId: string): string => `/tmp/hopper-${jobId}`;
 
+/**
+ * What every job's tools get, whatever its payload says (issue #1502): terraform's version check off, so terraform run on
+ * the machine writes no `~/.terraform.d`, which the credential check reads as infra credentials.
+ */
+export const JOB_TOOL_ENV: Readonly<Record<string, string>> = { CHECKPOINT_DISABLE: '1' };
+
 /** Points the job's temp link at its scratch dir; fails when the link there is not that. */
 export const linkTmpCommand = (scratch: string, jobId: string): string => {
   const link = shellQuote(jobTmpOf(jobId));
@@ -216,7 +222,8 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
     // Unattended (issue #533), Claude never updates itself in a job's pane, so no update notice stands in its way.
-    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
+    // JOB_TOOL_ENV (issue #1502): terraform's version check off, so it writes nothing into the machine's home.
+    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...JOB_TOOL_ENV, ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),

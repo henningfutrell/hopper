@@ -2,7 +2,7 @@
 // default. Strict mode holds it until an admin uses it anyway; an admin's stop holds it whatever strict mode says. The
 // Machines answer carries `credentialHeld` from the decider's own rule, and an acknowledgement survives a restart. Real
 // database; this machine's job user holds the credentials, made in the test's throwaway HOME (test/support/isolate.ts).
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -14,7 +14,11 @@ let cleanup: (() => void) | undefined;
 
 const CREDS = ['.kube', '.terraform.d'];
 
-beforeEach(() => { for (const c of CREDS) mkdirSync(join(homedir(), c), { recursive: true }); });
+// A .terraform.d with only terraform's checkpoint files is no credential (issue #1502): this one holds its CLI credentials.
+beforeEach(() => {
+  for (const c of CREDS) mkdirSync(join(homedir(), c), { recursive: true });
+  writeFileSync(join(homedir(), '.terraform.d/credentials.tfrc.json'), '');
+});
 
 afterEach(async () => {
   await t?.stop();
