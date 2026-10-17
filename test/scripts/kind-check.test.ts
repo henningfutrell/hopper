@@ -86,9 +86,11 @@ function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}'
     `  *" logs deploy/hopper "*) echo 'hopper: listening'; head -n 1 "${join(dir, 'keys')}"; if [ "$(wc -l < "${join(dir, 'keys')}")" -gt 1 ]; then sed -i 1d "${join(dir, 'keys')}"; fi ;;`,
     // The CLI in the pod keeps what came on its stdin; the sign-in script too, and answers what it read.
     `  *" exec -i deploy/hopper -c hopper -- hopper local-account add "*) cat > "${join(dir, 'cli-stdin')}"; exit ${signIn.addStatus ?? 0} ;;`,
-    // The lane pool key the hopper issues, and the machines it shows (scripts/kind-check.ts runnerOnly, READ_MACHINES).
-    `  *" exec -i deploy/hopper -c hopper -- hopper pool-key"*) echo ${POOL_KEY} ;;`,
-    `  *" exec -i deploy/hopper -c hopper -- node -e "*"/api/machines"*) echo '${JSON.stringify(RUNNER_MACHINE)}' ;;`,
+    // The lane pool key the hopper issues, the machines it shows, and the runner's Secret (scripts/kind-check.ts
+    // runnerOnly, READ_MACHINES). Each reads its stdin to the end: a write to a closed pipe fails the script (EPIPE).
+    `  *" exec -i deploy/hopper -c hopper -- hopper pool-key"*) cat > /dev/null; echo ${POOL_KEY} ;;`,
+    `  *" exec -i deploy/hopper -c hopper -- node -e "*"/api/machines"*) cat > /dev/null; echo '${JSON.stringify(RUNNER_MACHINE)}' ;;`,
+    '  *" create -f -"*) cat > /dev/null ;;',
     `  *" exec -i deploy/hopper -c hopper -- node -e "*) cat > "${join(dir, 'signin-stdin')}"; cat "${join(dir, 'signin.json')}"; exit ${signIn.status ?? 0} ;;`,
     `  *" exec "*) cat "${join(dir, 'health.json')}" ;;`,
     `  *"get pods --all-namespaces -o json"*) cat "${join(dir, 'pods.json')}" ;;`,
