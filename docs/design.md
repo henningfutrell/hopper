@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
-| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -24728,6 +24728,50 @@ the refusals, the 401), `test/integration/gitlab-source.test.ts` (the daemon tak
 git is git's own `git-http-backend`; a push to `main` refused), `test/github-proxy/git.test.ts` (the job's GitLab git
 config), `test/herdr/executor-job-worktree.test.ts` (the project cloned from its GitLab), `test/authz/model.test.ts`,
 `test/ui/acting-identity.test.ts` and `test/ui/gitlab-view.test.ts`.
+
+## A GitLab job's merge request (issue #1642, part 1, 2026-10-17)
+
+Part 1 of issue #1642, the work issue #1448 left. A GitLab job's end is judged by its merge request, and its issue gives the
+job's signals, as on GitHub (`src/gitlab/completion.ts`).
+
+**Done** (`notComplete`). The hopper reads the issue (`GET /projects/:id/issues/:iid`) and the merge requests whose
+description closes it (`GET …/issues/:iid/closed_by`); an open one's head pipeline is read from the merge request itself
+(`GET /projects/:id/merge_requests/:iid`), since GitLab's list leaves it out. The job is done when:
+- a merge request that closes the issue is open, not a draft, with no merge conflicts (`has_conflicts`), and its head
+  pipeline not `failed` (no pipeline, or one still running, counts as not failed, as GitHub's checks do);
+- one was merged since the job began (its target need not be the default branch, so the issue can stay open); or
+- the issue is closed and a merge request that closes it is merged.
+
+Else the job is not complete, and the reason names each merge request by its number and what keeps it: `!4 (opened, draft)`,
+`!5 (opened, merge conflicts)`, `!6 (opened, pipeline failed)`, `!7 (closed)`. The done line in the job's prompt says the
+same. An error asking GitLab throws, so the caller asks again.
+
+**Signals** (`check`), for the source's jobs not ended, one issue read each:
+- the issue gone (GitLab answers 404 or 410): cancel, `issue gone`. Any other error skips the job and is said in the
+  source's detail (`checkErrors`); GitLab refusing the token ends the account and the check;
+- the issue closed: by the job's own merge request (one that closes it, opened since the job began, merged), the job runs on
+  to its own end, and a job on its own wait (`waiting_on`) ends finished; closed any other way: cancel, `issue closed`;
+- the label removed: cancel, `label removed`;
+- a waiting job (`queued`, `held`) whose issue is on the backburner: cancel, `backburner`;
+- assignment drift as on GitHub (issue #387): no longer assigned to the account while it waits, cancel `unassigned`; once
+  started, an `unassigned` signal; assigned again, `reassigned`.
+
+With no account connected, or no job of the source, nothing is read.
+
+**Decisions:**
+- **GitLab's `closed_by`, not a search of the project's merge requests.** It is GitLab's own answer to "which merge requests
+  close this issue", the job's done line opens its merge request with "Closes #N", and it is one read per issue.
+- **A pipeline that is not `failed` does not hold the job.** As GitHub's checks: a running pipeline or none is not a reason
+  to fail a job that did its work.
+- **No migration.** No stored state changes shape.
+
+**Left for later parts of issue #1642:** a merge in yolo mode when the pipeline passed (the hopper following the merge
+request, as it follows a pull request); request cards for GitLab issues of another origin; a GitLab route for a job's API
+reads and writes; OAuth for GitLab; more than one GitLab account; the user's own GitHub acts that name no job repository.
+
+**Verification:** `test/gitlab/completion.test.ts` (done by a ready, merged or closing merge request; not done by a draft,
+merge conflicts, a failed pipeline or none, with the reason; each signal; no reads with no account or no job), over the fake
+GitLab (`test/support/fake-gitlab.ts`: one issue, `closed_by`, one merge request with its pipeline).
 
 ## Sagas: work that survives a stop (issue #1524, part 1, 2026-10-17)
 
