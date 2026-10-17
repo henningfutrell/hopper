@@ -12,7 +12,7 @@
 // `vault.check_mint_refused` record each, never a credential.
 import type { UserStore } from '../domain/ports.ts';
 import type { OperationProfile, VaultAccess } from '../domain/access.ts';
-import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
+import { CHECK_MINT_ID, expiryOf, mintingCredentialFor, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
 import { currentCheck, failedProbes, probeMarksProblem, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import { PROBES } from '../sandbox/probes.ts';
 import type { MintFrom } from './mint.ts';
@@ -96,8 +96,8 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; acc
     const decision = await o.access.decideCheckMint({ template, check, operation: profile.operation, asset: profile.asset });
     if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
     const { mintsFor } = target;
-    const credential = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
-    if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
+    const credential = mintingCredentialFor(vault.list(), mintsFor);
+    if (typeof credential === 'string') return refuse(credential, decision.id);
     // Held and recorded before the minter makes the Secret (issue #1628), as a need step's.
     if (target.kind === 'kube' && target.bindTo) o.bindings?.named(check, { credential: credential.name, namespace: target.namespace, secret: target.bindTo });
     const made = await from(credential.name, target, CHECK_MINT_ID);

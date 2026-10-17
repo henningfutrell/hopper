@@ -8,7 +8,7 @@
 // own (issue #1371), held for the need box until its step ends (bindings.ts).
 import type { UserStore } from '../domain/ports.ts';
 import type { OperationProfile, VaultAccess } from '../domain/access.ts';
-import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
+import { expiryOf, mintingCredentialFor, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
 import { AT_WORK } from './box.ts';
 import { principalOf, type MintFrom, type MintingOptions } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
@@ -54,8 +54,8 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       const planNo = o.plans ? await o.plans.gate(profile, plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
       if (planNo) return refuse(planNo, decision.id);
       const { mintsFor } = target;
-      const credential = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
-      if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
+      const credential = mintingCredentialFor(vault.list(), mintsFor);
+      if (typeof credential === 'string') return refuse(credential, decision.id);
       // Held and recorded before the minter makes the Secret (issue #1628): the step's end releases it, whatever the
       // outcome, and a hopper that stops meanwhile leaves it to the reconcile pass.
       if (target.kind === 'kube' && target.bindTo) o.bindings?.named(step, { credential: credential.name, namespace: target.namespace, secret: target.bindTo }, job);

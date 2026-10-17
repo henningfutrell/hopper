@@ -14900,6 +14900,11 @@ like any vault secret (or kept in a vault backend, issue #585), and it never lea
 the page leaves it out of a template's secrets. Its value is JSON (`mintingCredentialOf`, `src/domain/minting.ts`):
 for AWS `AccessKeyId`, `SecretAccessKey` (optional `SessionToken`, `Region`, `Endpoint`), for Kubernetes `server`,
 `token`, optional `certificateAuthorityData` (a `token` credential; its value names no `type`), or EKS sign-in (below).
+An AWS account's keys are one secret (issue #1761): `set` refuses an `aws-account` minting credential whose value is not
+that JSON, and *Value* on Settings → Vault shows the shape it takes. One secret mints for an asset: when several do,
+every mint, check, need step and mint test for it is refused with all their names (`mintingCredentialFor`), and the
+vault never picks one; a person keeps one and clears *Mints for* on the others. A mint test that fails names the secret
+it used, as one that passes does (`credential`).
 
 **EKS sign-in** (issue #854, owner decision 2026-10-11: cluster access through EKS sign-in, no cluster change and no
 long-lived token; `src/vault/eks.ts`). A cluster's minting credential of `"type": "eks"` names `roleArn`, the IAM role
@@ -14923,7 +14928,7 @@ credential is opened and never leave the vault; a system secret is never read as
 (`sts:RoleSessionName`). By default it is `hopper-<job id>`, cut to STS's 64 characters. An AWS minting credential may
 name `SessionName`, a fixed name for every mint from it, or `SessionNamePrefix` (at most 32 characters), put before the
 job id in place of `hopper-`; not both. Each is of the characters STS takes (letters, digits and `+ = , . @ _ -`); one
-that is not refuses the mint and says why. It lives in the minting credential, not the template: the trust policy
+that is not refuses the save and the mint and says why. It lives in the minting credential, not the template: the trust policy
 allows the principal the credential is, and only the vault that opens the credential reads it. A fixed name makes
 the mints of every job look the same in CloudTrail; `vault.minted` still names the job.
 

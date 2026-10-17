@@ -268,6 +268,28 @@ function eksCredentialOf(str: (k: string) => string | undefined, ca: { certifica
   return { type: 'eks', roleArn, ...named, ...ca };
 }
 
+/**
+ * The one secret that mints for `mintsFor` (issue #1761), or why there is none: no secret mints for it, or several do.
+ * The vault never picks one of several: a mint from the wrong one fails, and says nothing of the others.
+ */
+export function mintingCredentialFor<S extends { name: string; mints?: Asset }>(secrets: readonly S[], mintsFor: Asset): S | string {
+  const all = secrets.filter((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
+  if (all.length === 1) return all[0]!;
+  const what = `${mintsFor.kind} ${mintsFor.name}`;
+  if (all.length === 0) return `no minting credential mints for ${what}: a person adds one on Settings → Vault`;
+  return `${all.length} minting credentials mint for ${what}: ${all.map((s) => s.name).join(', ')}. The vault does not pick one: a person keeps one on Settings → Vault and clears Mints for on the others`;
+}
+
+/**
+ * Why `value` is no minting credential for `mints`, as a save checks it (issue #1761): an AWS account's keys are one JSON
+ * value, never a secret each. A cluster's is not checked here: its EKS sign-in may name a kubeconfig the vault reads later.
+ */
+export function mintingValueProblem(mints: Asset, value: string): string | undefined {
+  if (mints.kind !== 'aws-account') return undefined;
+  const c = mintingCredentialOf('aws', value);
+  return typeof c === 'string' ? `mints for aws-account ${mints.name}: ${c}` : undefined;
+}
+
 /** A minting credential's asset said in a request: `{kind, name}` of a kind a credential mints for, or why not. */
 export function mintsForProblem(a: { kind: string; name: string }): string | undefined {
   if (!(MINTS_FOR_KINDS as readonly string[]).includes(a.kind)) return `a minting credential mints for ${MINTS_FOR_KINDS.join(' or ')}, not ${a.kind}`;

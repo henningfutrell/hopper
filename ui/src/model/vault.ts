@@ -44,6 +44,21 @@ export function mintsOf(said: string): Asset | string | undefined {
   return m ? { kind: m[1] as Asset['kind'], name: m[2]! } : 'write it as cluster/NAME or aws-account/ID';
 }
 
+/**
+ * The value a minting credential holds (issue #1761), shown under the form's value: an AWS account's keys are one JSON
+ * value, never a secret each. `problem`: why the typed value is not one, never the value.
+ */
+export function mintsValueOf(mints: Asset | undefined, value: string): { shape?: string; problem?: string } {
+  if (mints?.kind === 'cluster') return { shape: 'JSON: {"server": "https://…", "token": "…"}, or {"type": "eks", "roleArn": "arn:aws:iam::<account>:role/<name>", …}' };
+  if (mints?.kind !== 'aws-account') return {};
+  const shape = 'JSON, both keys in one secret: {"AccessKeyId": "AKIA…", "SecretAccessKey": "…"} (and Region, Endpoint or SessionToken when it has them)';
+  if (!value) return { shape };
+  let v: Record<string, unknown> = {};
+  try { v = JSON.parse(value) as Record<string, unknown>; } catch { /* below */ }
+  const has = (k: string): boolean => typeof v?.[k] === 'string' && v[k] !== '';
+  return has('AccessKeyId') && has('SecretAccessKey') ? { shape } : { shape, problem: 'an AWS account\'s minting credential is JSON with AccessKeyId and SecretAccessKey' };
+}
+
 /** What the card's title line says of the value: set in the hopper, or kept in a backend and read there. */
 export const keptText = (s: VaultSecret): string => (s.backend ? `kept in ${s.backend.name} · read at each use` : 'value set · write-only');
 

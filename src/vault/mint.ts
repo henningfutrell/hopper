@@ -9,7 +9,7 @@ import type { Clock, UserStore } from '../domain/ports.ts';
 import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type ClusterIdentity, type Minted, type MintKind, type MintReach, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
-import { awsRegionOf, awsSessionName, mintingCredentialOf } from '../domain/minting.ts';
+import { awsRegionOf, awsSessionName, mintingCredentialFor, mintingCredentialOf } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintEks } from './eks.ts';
@@ -108,8 +108,8 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
     const { mintsFor } = target;
-    const credential: VaultSecret | undefined = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
-    if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision);
+    const credential = mintingCredentialFor(vault.list(), mintsFor);
+    if (typeof credential === 'string') return refuse(credential, decision);
     const made = await from(credential.name, target, job.id);
     if ('refused' in made) return refuse(made.refused, decision);
     const out = made.minted;
