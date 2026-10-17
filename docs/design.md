@@ -5075,7 +5075,7 @@ scratch directory, which nothing swept. Requirement: a stop of the hopper loses 
 twice, never lets two steps run on one host, and leaves no scratch on the host. Built as the need steps were ("Need steps
 kept as sagas"):
 
-- **Kept.** Each step is a row of the instance's `windows_steps` table (instance migration 48,
+- **Kept.** Each step is a row of the instance's `windows_steps` table (instance migration 49,
   `src/store/windows-steps.ts`): its ask, its inputs (at most 32 MiB; were 1 GiB), its log (4 MiB, then cut, and it says
   so), its result and its outputs (at most 32 MiB; more is the step's problem). One step per job and `key`: an ask sent
   again after a broken connection is the same step. The row is swept an hour after the step ended, once its host is let go.
