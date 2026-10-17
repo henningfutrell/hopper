@@ -25523,7 +25523,7 @@ on its own command was nudged once, then flagged stuck (`stuckAt`) and nothing c
 after a restart, or another hopper on the same database, goes on from it:
 - **Its condition**, what the hopper tests with no model, from what the wait waits on (`conditionOf`): `items_ended`
   (the issues, pull requests and workflow runs it names — a pull request wait on its end, an item, an outside event's
-  **watched items**; read through the job's source, `JobSource.endedWatched`), `job_ended`, `question_settled` (both read
+  **watched items**; read through the job's source, `JobSource.endedWatched`; one that does not exist ends it at once, issue #1691), `job_ended`, `question_settled` (both read
   from the store), `command_exited` (a wait on its own command: the executor's `paneLost` and `ownCommandRuns`), or `none`
   (an approval, a grant, an outside event that names nothing: only its deadline counts).
 - **When.** The first check a minute after the wait began (`FIRST_CHECK_MS`); one not met is tried again later, the time

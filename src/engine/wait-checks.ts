@@ -10,7 +10,7 @@ import type { Clock, ExecutorRegistry, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import { afterCheck, checkEndedNote, commandOutcome, conditionKey, newCheck, refLabel, type CheckOutcome, type WaitCheck } from '../domain/wait-checks.ts';
 import { waitOnLabel } from '../domain/wait-on.ts';
-import { endedNote, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
+import { endedNote, NOT_FOUND, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
 import { recordEndWait } from './wait.ts';
 
 /** How long a hopper holds a wait check it tests. */
@@ -64,6 +64,8 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
       case 'items_ended': {
         const ended = await c.waitReads?.endedWatched(job, cond.refs).catch(() => undefined);
         if (!ended) return { met: false, result: 'the hopper cannot read the items now' };
+        const missing = ended.filter((e) => e.state === NOT_FOUND);
+        if (missing.length) return { met: true, note: endedNote(missing) };
         const keys = new Set(ended.map((e) => `${e.ref.repo.toLowerCase()}#${e.ref.kind === 'issue' ? e.ref.number : e.ref.runId}`));
         const open = cond.refs.filter((r) => !keys.has(`${r.repo.toLowerCase()}#${r.kind === 'issue' ? r.number : r.runId}`));
         return open.length === 0 ? { met: true, note: endedNote(ended) } : { met: false, result: `not ended yet: ${open.map(refLabel).join(', ')}` };
