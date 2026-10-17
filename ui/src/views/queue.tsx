@@ -6,7 +6,8 @@
 // queue until run again or dismissed (issue #355), the parked jobs, out of their lanes until picked up (issue #501), and the
 // jobs on their own wait, until what they wait for happens (issue #483). Each job card starts collapsed (issue #737), so the
 // jobs are easy to scan and compare: its issue, state, lane, pull request, its repository's yolo mode and why it is held
-// (issue #874; a gate hold with the machines' names). A click opens one
+// (issue #874; a gate hold with the machines' names), and in Your order its boost and a place you gave it above a
+// higher-priority job (issue #1776). A job moves to any place there, and Accept puts a job at the end or at the top. A click opens one
 // card for its detail; Expand all and Collapse all open or close every card. Its actions stay on the card either way.
 // The issues on the backburner are no jobs, so the Queue counts them and links to Intake (issues #808, #897): never gone.
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsRight, ChevronsUpDown, ChevronUp, Flame, Hourglass, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
@@ -21,10 +22,10 @@ import { get } from '@/lib/api';
 import { laneName } from '@/model/board';
 import { gateHoldText, heldAtGate } from '@/model/blast-radius';
 import { onTheBackburner } from '@/model/intake';
-import { COLLAPSED, accepting, cardOpen, moved, queueColumns, setAllCards, toggleCard } from '@/model/queue';
+import { COLLAPSED, accepting, cardOpen, moved, orderNotes, queueColumns, setAllCards, stillWhy, toggleCard, type OrderNotes } from '@/model/queue';
 import type { Job, PreSort, QueueGate, QueueGateMode, YoloModeView } from '@/model/wire';
 import { repoMerges } from '@/model/yolo-mode';
-import { act, useHopper } from '@/store';
+import { act, actFor, useHopper } from '@/store';
 import { LockedRows, ParkedRows, WaitingOnRows } from './dashboard/queue';
 import { TextChangeCard } from '@/components/text-change';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
@@ -69,8 +70,8 @@ function GatePanel({ gate, presort }: { gate: QueueGate; presort: PreSort | null
 }
 
 /** A job card (issue #737): collapsed, the essentials to compare; open, its detail too. Its actions show either way. */
-function Row({ job, position, open, onToggle, yolo, children, note }: {
-  job: Job; position: number; open: boolean; onToggle: () => void; yolo: YoloModeView | null; children?: React.ReactNode; note?: React.ReactNode;
+function Row({ job, position, open, onToggle, yolo, children, note, flags }: {
+  job: Job; position: number; open: boolean; onToggle: () => void; yolo: YoloModeView | null; children?: React.ReactNode; note?: React.ReactNode; flags?: OrderNotes;
 }) {
   const machines = useHopper((s) => s.machines);
   const repo = job.source?.repo;
@@ -88,6 +89,8 @@ function Row({ job, position, open, onToggle, yolo, children, note }: {
         <span data-slot="card-state"><StatusBadge status={job.status} /></span>
         <span data-slot="card-lane" title="its lane">{job.laneId ? laneName(job.laneId, machines) : 'no lane yet'}</span>
         {repo && yolo && <span data-slot="card-yolo"><YoloBadge on={repoMerges(yolo, repo)} /></span>}
+        {flags?.boost && <span data-slot="card-boost">{flags.boost}</span>}
+        {flags?.aboveHigher && <span data-slot="card-above-higher" className="text-warn/90">{flags.aboveHigher}</span>}
       </div>
       {open && (
         <div data-slot="card-detail" className="flex flex-wrap items-center gap-1.5 pl-7 text-xs text-muted-foreground">
@@ -108,11 +111,22 @@ function Row({ job, position, open, onToggle, yolo, children, note }: {
   );
 }
 
-/** A move in the user order; disabled when it moves nothing (an edge of the job's priority). */
-function MoveButton({ label, icon, order, next, post }: { label: string; icon: React.ReactNode; order: readonly string[]; next: string[]; post: (ids: string[], done: string) => unknown }) {
-  const still = next.every((id, i) => id === order[i]);
-  return <Button size="xs" variant="outline" aria-label={label} disabled={still} onClick={() => post(next, 'Queue ordered')}>{icon}</Button>;
+/** A move in the user order, to any place (issue #1776); disabled at an edge, saying so. */
+function MoveButton({ label, icon, order, id, by, post }: { label: string; icon: React.ReactNode; order: readonly string[]; id: string; by: -1 | 1 | 'top'; post: (ids: string[], done: string) => unknown }) {
+  const why = stillWhy(order, id, by);
+  // A disabled button takes no pointer: its reason is on the span around it.
+  return (
+    <span title={why ? `${label}: ${why}` : label} data-slot="move-why" data-why={why}>
+      <Button size="xs" variant="outline" aria-label={why ? `${label}: ${why}` : label} disabled={why !== undefined} onClick={() => post(moved(order, id, by), 'Queue ordered')}>{icon}</Button>
+    </span>
+  );
 }
+
+/** The order's answer (issue #1776): the jobs the queue order put lower than asked, and why. A refusal: the toast says it. */
+const adjustedWhy = (answer: unknown): string | undefined => {
+  const adjusted = (answer as { adjusted?: { jobId: string; why: string }[] } | null)?.adjusted ?? [];
+  return adjusted.length ? `Queue ordered, but ${adjusted.map((a) => `${a.jobId}: ${a.why}`).join('; ')}` : undefined;
+};
 
 export function Queue() {
   const board = useJobBoard();
@@ -123,7 +137,9 @@ export function Queue() {
   const operate = useCanOperate();
   const { presorted, userOrder } = queueColumns(board.waiting, presort);
   const order = userOrder.map((j) => j.id);
-  const post = (ids: string[], done: string) => act('/ui/api/queue/order', { jobIds: ids }, done);
+  const post = (ids: string[], done: string) => actFor('/ui/api/queue/order', { jobIds: ids }, done, adjustedWhy);
+  const priorities = useHopper((s) => s.effectivePriority);
+  const notes = orderNotes(userOrder, priorities);
   const [cards, setCards] = useState(COLLAPSED);
   const [yolo, setYolo] = useState<YoloModeView | null>(null);
   // The repositories' yolo mode, read once: without it the cards show no yolo mode.
@@ -154,6 +170,7 @@ export function Queue() {
               note={reject && <span className="text-warn" title={reject}>pre-sort rejects: {reject}</span>}>
               {operate && <>
                 <Button size="xs" variant="outline" onClick={() => post(accepting(order, job.id), 'Job accepted')}><ChevronsRight />Accept</Button>
+                <Button size="xs" variant="outline" onClick={() => post(accepting(order, job.id, 'top'), 'Job accepted at the top')}><ArrowUpToLine />Accept at the top</Button>
                 <RejectButton job={job} />
               </>}
             </Row>
@@ -161,12 +178,12 @@ export function Queue() {
         </Panel>
         <Panel title="Your order" icon={ListOrdered} count={userOrder.length || ''} list bodyClassName="divide-y p-0">
           {userOrder.length ? userOrder.map((job, i) => (
-            <Row key={job.id} job={job} position={i + 1} {...card(job.id)}
+            <Row key={job.id} job={job} position={i + 1} {...card(job.id)} flags={notes.get(job.id)}
               note={job.userRank === undefined && <span>by the sorter</span>}>
               {operate && <>
-                <MoveButton label="Move up" icon={<ArrowUp />} order={order} next={moved(userOrder, job.id, -1)} post={post} />
-                <MoveButton label="Move down" icon={<ArrowDown />} order={order} next={moved(userOrder, job.id, 1)} post={post} />
-                <MoveButton label="Move to the top" icon={<ArrowUpToLine />} order={order} next={moved(userOrder, job.id, 'top')} post={post} />
+                <MoveButton label="Move up" icon={<ArrowUp />} order={order} id={job.id} by={-1} post={post} />
+                <MoveButton label="Move down" icon={<ArrowDown />} order={order} id={job.id} by={1} post={post} />
+                <MoveButton label="Move to the top" icon={<ArrowUpToLine />} order={order} id={job.id} by="top" post={post} />
                 <RejectButton job={job} />
               </>}
             </Row>

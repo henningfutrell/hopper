@@ -4,10 +4,11 @@
 // before each Decision, at most `autoAcceptPerHour` jobs an hour; review leaves it to the user.
 import { effectivePriority } from '../decider/assign.ts';
 import { DEFAULT_QUEUE_GATE } from '../domain/types.ts';
-import type { GateActor, Job, PreSort, QueueGate } from '../domain/types.ts';
+import type { GateActor, Job, JobId, PreSort, QueueGate } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { cleanupDue } from './cleanup.ts';
 import { EngineError } from './errors.ts';
+import { queueOrder } from './queue-order.ts';
 
 const HOUR_MS = 3_600_000;
 /** The most recent acceptances read to count the last hour's: well past any useful throttle. */
@@ -71,13 +72,20 @@ export function autoAccept(c: EngineContext): void {
   if (unaccepted.length) applyPreSort(c, unaccepted, preSort(c, unaccepted), allowance(c, gate));
 }
 
+/** A job the user order named that the queue order puts at another place (issue #1776), and why. */
+export interface QueueAdjusted { jobId: JobId; why: string }
+
+export interface QueueOrdered { jobs: Job[]; adjusted: QueueAdjusted[] }
+
 export interface QueueGateCommands {
   setQueueGate(gate: QueueGate): QueueGate;
   /**
    * The user order: these waiting jobs, first to last. Each is accepted (by the user) if it was not;
-   * a waiting job ranked before and not listed loses its rank.
+   * any job ranked before and not listed loses its rank, whatever its status (issue #1776: a job that comes back
+   * to the queue never brings an old rank). `adjusted`: each listed job the queue order puts at another place than
+   * the list, with why — a job the user did not place, of higher effective priority, goes ahead of it.
    */
-  orderQueue(jobIds: readonly string[]): Job[];
+  orderQueue(jobIds: readonly string[]): QueueOrdered;
   /** Reject a waiting job, with the user's reason if given: it ends `rejected`, its source is told. */
   reject(id: string, reason?: string): Job;
   /** Apply the pre-sort now, whatever the gate: reject what it rejects, accept the rest. */
@@ -85,6 +93,30 @@ export interface QueueGateCommands {
 }
 
 export const USER_REJECTED = 'rejected by the user';
+
+/**
+ * The listed jobs the queue order puts lower than the list does (issue #1776): for each, the jobs the user did not
+ * place that go ahead of it because their effective priority is higher than its own.
+ */
+function adjustedOf(c: EngineContext, waiting: readonly Job[], jobIds: readonly JobId[]): QueueAdjusted[] {
+  const byId = new Map(waiting.map((j) => [j.id, j]));
+  const listed = new Set(jobIds);
+  const passers = new Map<JobId, JobId[]>();
+  let pending: JobId[] = [];
+  for (const id of queueOrder(c, waiting).jobIds) {
+    if (listed.has(id)) {
+      if (pending.length) passers.set(id, pending);
+      pending = [];
+    } else if (byId.get(id)?.accepted !== false) pending.push(id);
+  }
+  const priority = (id: JobId) => effectivePriority(byId.get(id)!, c.policy);
+  return jobIds.flatMap((id) => {
+    const ahead = passers.get(id);
+    if (!ahead) return [];
+    const names = ahead.map((x) => `${x} (priority ${priority(x)})`).join(', ');
+    return [{ jobId: id, why: `not placed by you and of higher priority than its ${priority(id)}, ${ahead.length === 1 ? 'a job goes' : `${ahead.length} jobs go`} ahead of it: ${names}` }];
+  });
+}
 
 export function createQueueGateCommands(c: EngineContext, cleanup: (jobId: string) => void): QueueGateCommands {
   const { store } = c;
@@ -108,7 +140,7 @@ export function createQueueGateCommands(c: EngineContext, cleanup: (jobId: strin
           return job;
         });
         const listed = new Set(jobIds);
-        for (const j of store.jobs.list({ status: ['queued', 'held'] })) {
+        for (const j of store.jobs.list()) {
           if (j.userRank !== undefined && !listed.has(j.id)) store.jobs.update(j.id, { userRank: undefined });
         }
         jobs.forEach((job, rank) => {
@@ -116,7 +148,8 @@ export function createQueueGateCommands(c: EngineContext, cleanup: (jobId: strin
           else store.jobs.update(job.id, { userRank: rank });
         });
         store.events.append({ type: 'queue.ordered', data: { jobIds: [...jobIds] } });
-        return jobIds.map((id) => store.jobs.get(id)!);
+        const waiting = store.jobs.list({ status: ['queued', 'held'] });
+        return { jobs: jobIds.map((id) => store.jobs.get(id)!), adjusted: adjustedOf(c, waiting, jobIds) };
       });
     },
 

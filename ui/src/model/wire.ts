@@ -86,6 +86,8 @@ export interface Queue {
   presort: PreSort;
   /** The high-priority threshold (issue #535): a job at or above it is tagged and listed first. */
   highPriority: number;
+  /** Each waiting job's effective priority (issue #1776): its priority with any boost. Absent from an older daemon. */
+  effectivePriority?: Record<string, number>;
 }
 
 /** GET /api/logins (issue #476): the server's time for the countdowns, the logins settings, the logins newest first. */

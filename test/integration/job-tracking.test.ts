@@ -35,7 +35,7 @@ describe('job tracking above lanes', () => {
     const low = await first.pull({ op: 'echo' }, { priority: 10 });
     const high = await first.pull({ op: 'echo' }, { priority: 90 });
     const unaccepted = await first.pull({ op: 'echo' });
-    expect((await first.ui('/ui/api/queue/order', { jobIds: [low.id, high.id] }, { token })).status).toBe(200);
+    expect((await first.ui('/ui/api/queue/order', { jobIds: [high.id, low.id] }, { token })).status).toBe(200);
     expect((await first.waitForStatus(unaccepted.id, 'held')).holdReason).toBe('awaiting acceptance');
     await first.stop();
 
@@ -45,7 +45,7 @@ describe('job tracking above lanes', () => {
     const jobs = (await second.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs;
     expect(jobs.map((j) => j.id).sort()).toEqual([blocker.id, low.id, high.id, unaccepted.id].sort());
 
-    // The interrupted job is back in the queue; the higher priority still runs first, the gate still holds.
+    // The interrupted job is back in the queue, with no rank: it joins the user order at its priority; the gate still holds.
     for (const j of [high, blocker, low]) await second.waitForStatus(j.id, 'finished', 12000);
     expect(await claimsOf(second, [blocker.id, low.id, high.id])).toEqual([blocker.id, high.id, blocker.id, low.id]);
     expect(await second.job(unaccepted.id)).toMatchObject({ status: 'held', accepted: false, holdReason: 'awaiting acceptance' });

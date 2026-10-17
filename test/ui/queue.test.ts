@@ -1,10 +1,11 @@
 // Issue #159: the Queue view's two columns — the pre-sort (jobs not yet accepted, in the pre-sort's
 // order, with what it would reject) and the user order (accepted waiting jobs, in queue order) — and
 // the orders a move posts. Issue #201: the count of jobs waiting on the pre-sort (the nav badge). Issue #737: which job
-// cards are open — collapsed by default, one opened or closed on its own, or all at once.
+// cards are open — collapsed by default, one opened or closed on its own, or all at once. Issue #1776: a move to any place,
+// Accept at the top, and what a job shows about its priority.
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { COLLAPSED, accepting, awaitingSort, cardOpen, moved, queueColumns, setAllCards, toggleCard } from '../../ui/src/model/queue.ts';
+import { COLLAPSED, accepting, awaitingSort, cardOpen, moved, orderNotes, queueColumns, setAllCards, stillWhy, toggleCard } from '../../ui/src/model/queue.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
   id, spec: { executor: 'test', payload: {} }, priority: 50, status: 'queued', approved: false,
@@ -25,23 +26,43 @@ describe('queueColumns', () => {
 });
 
 describe('the orders a move posts', () => {
-  it('accepting a pre-sorted job appends it to the user order', () => {
+  it('accepting a pre-sorted job appends it to the user order, or puts it at the top (issue #1776)', () => {
     expect(accepting(['a', 'b'], 'n')).toEqual(['a', 'b', 'n']);
+    expect(accepting(['a', 'b'], 'n', 'top')).toEqual(['n', 'a', 'b']);
   });
-  const abc = [job('a'), job('b'), job('c')];
-  it('moving a job up, down, to the top; at an edge nothing moves', () => {
+  const abc = ['a', 'b', 'c'];
+  it('moving a job up, down, to the top; at an edge nothing moves, and says why', () => {
     expect(moved(abc, 'b', -1)).toEqual(['b', 'a', 'c']);
     expect(moved(abc, 'b', 1)).toEqual(['a', 'c', 'b']);
     expect(moved(abc, 'c', 'top')).toEqual(['c', 'a', 'b']);
     expect(moved(abc, 'a', -1)).toEqual(['a', 'b', 'c']);
     expect(moved(abc, 'c', 1)).toEqual(['a', 'b', 'c']);
+    expect([stillWhy(abc, 'a', -1), stillWhy(abc, 'a', 'top'), stillWhy(abc, 'c', 1)]).toEqual(['already first', 'already first', 'already last']);
+    expect([stillWhy(abc, 'b', -1), stillWhy(abc, 'b', 1), stillWhy(abc, 'c', 'top')]).toEqual([undefined, undefined, undefined]);
   });
-  it('a job moves among jobs of its own priority only (issue #461): the top is the top of its priority', () => {
-    const mixed = [job('h', { priority: 75 }), job('a'), job('b'), job('l', { priority: 25 })];
-    expect(moved(mixed, 'a', -1)).toEqual(['h', 'a', 'b', 'l']);
-    expect(moved(mixed, 'b', 'top')).toEqual(['h', 'b', 'a', 'l']);
-    expect(moved(mixed, 'b', 1)).toEqual(['h', 'a', 'b', 'l']);
-    expect(moved(mixed, 'l', -1)).toEqual(['h', 'a', 'b', 'l']);
+  it('a job moves to any place, whatever the priorities (issue #1776): the top two swap, the top is the top of the order', () => {
+    const mixed = ['h75', 'a50', 'b50', 'l25'];
+    expect(moved(mixed, 'a50', -1)).toEqual(['a50', 'h75', 'b50', 'l25']);
+    expect(moved(mixed, 'h75', 1)).toEqual(['a50', 'h75', 'b50', 'l25']);
+    expect(moved(mixed, 'l25', 'top')).toEqual(['l25', 'h75', 'a50', 'b50']);
+    expect(stillWhy(mixed, 'l25', 'top')).toBeUndefined();
+  });
+});
+
+describe('what a job of the user order shows about its priority (issue #1776)', () => {
+  it('its boost, with why; a job you placed above a higher-priority job says so', () => {
+    const order = [
+      job('l', { priority: 25, userRank: 0 }), job('h', { priority: 75, userRank: 1 }),
+      job('p', { pendingAnswer: 'yes' }), job('r', { advice: { action: 'run_deterministic', reason: 'x' } } as Partial<Job>), job('s'),
+    ];
+    const notes = orderNotes(order, { l: 25, h: 75, p: 70, r: 60 });
+    expect(notes.get('l')).toEqual({ aboveHigher: 'placed by you above a higher-priority job' });
+    expect(notes.get('h')).toEqual({});
+    expect(notes.get('p')).toEqual({ boost: 'boosted +20: resuming after an answer' });
+    expect(notes.get('r')).toEqual({ boost: 'boosted +10: router advice run_deterministic' });
+    // A job /api/queue gave no effective priority for counts at its own; one the sorter placed is not tagged.
+    expect(notes.get('s')).toEqual({});
+    expect(orderNotes([job('x', { priority: 10 }), job('y', { priority: 90 })], {}).get('x')).toEqual({});
   });
 });
 

@@ -9251,15 +9251,22 @@ but `{ jobId, reason }` of the given jobs, or a throw, rejects nothing and is lo
 **The user order.** `POST /ui/api/queue/order { jobIds }` (operator): those waiting jobs, first to last,
 get `userRank` 0..n-1; an unaccepted one among them is accepted (`by: user`); a waiting job ranked
 before and not named loses its rank; `queue.ordered`. An unknown or not-waiting job → 409, one named
-twice → 400. The queue order (`queue-order.ts`) is the sorter's order with the user order applied inside
-each effective priority: the places the sorter gives one priority's jobs go to its ranked accepted jobs
-first, by rank, then to the rest in the sorter's order — the decider is unchanged (step 6 follows the queue
-order). Issue #461: the user order once came before the sorter's outright, so a ranked low-priority job
-started ahead of higher-priority ones; and since Accept posts the whole accepted queue as the user order,
-one Accept froze every job then waiting at its place, ahead of any job accepted or reprioritized later. A
-lane that frees now takes the highest-priority job that fits its machine, oldest first among equals (with
-the `priority` sorter); to run a job sooner, raise its priority. The Queue view moves a job among the jobs
-of its own priority only.
+twice → 400. Since issue #1776 any job ranked before and not named loses its rank whatever its status, so a job that
+comes back to the queue (from a lane, an answer, a park) never brings an old rank that collides with the new ones. The
+queue order (`queue-order.ts`) applies the user order over the sorter's: **the user order wins over priority** (issue
+#1776, option (a)). The ranked jobs keep the user's order, whatever their effective priority; a job with no rank (the
+sorter placed it: accepted later, back in the queue, or not named) goes ahead of the next ranked job only when its
+effective priority is higher, ties to the ranked job — the decider is unchanged (step 6 follows the queue order). A new
+priority from the item's labels (`job.reprioritized`) ends the job's rank, so it then waits at that priority. Issue #461's
+harm stays fixed: the user order once came before the sorter's outright, so one Accept, which posts the whole accepted
+queue, froze every job then waiting at its place, ahead of any job accepted or reprioritized later; now such a job joins
+at its priority. Issue #1776's harm is fixed too: the order kept moves inside each effective priority, so position 1 and
+2 of different priorities could not swap, Move to the top put a job at the top of its own priority only (low in the
+list), the UI banded by raw priority while the server banded by effective priority (a resume or router boost), and a
+move the server undid answered 200 with no word. The answer is `{ jobs, adjusted: [{ jobId, why }] }`: each named job
+the queue order puts lower than the list (a job with no rank of higher effective priority passed it), with why; the
+Queue view shows it as an error toast, never a silent "Queue ordered". `/api/queue` adds `effectivePriority` (each
+waiting job's, by id), so the view shows the same number the queue order uses.
 
 **Reject.** `POST /ui/api/jobs/:id/reject` (operator) on a waiting job (accepted or not; anything else
 → 409): status `rejected`, a terminal status — ended, kept, never run — with `error` the reason
@@ -9284,8 +9291,11 @@ the engine.
 
 **UI.** A Queue view: the gate (mode buttons, the hourly limit; admin), then two columns — **Pre-sorted**
 (unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
-a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
-waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Dashboard's
+a job to the end of the user order, Accept at the top puts it first (issue #1776), Accept pre-sort takes them all, Reject) and **Your order** (accepted
+waiting jobs in queue order; up, down, to the top — to any place in the whole order, issue #1776; at an edge the button
+is disabled and its tooltip says `already first` or `already last` —, Reject). A job there shows its boost (`boosted +20:
+resuming after an answer`, `boosted +10: router advice run_deterministic`) and, when you ranked it above a job of higher
+effective priority, `placed by you above a higher-priority job` (`orderNotes`, `ui/src/model/queue.ts`). Columns stack below `lg`. The Dashboard's
 Waiting panel links an unaccepted job to it. Since issue #201 the gate names the queue sorter that makes the pre-sort, with a **Set up the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is

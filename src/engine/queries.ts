@@ -35,6 +35,8 @@ export interface QueueView {
   presort: PreSort;
   /** The high-priority threshold (issue #535): a job at or above it is high priority, tagged and listed first. */
   highPriority: number;
+  /** Each waiting job's effective priority (issue #1776), the one the queue order uses: its priority with any boost. */
+  effectivePriority: Record<string, number>;
 }
 
 /** How far back `ended` reaches: the UI's cards count ended jobs over this window, and list the same jobs. */
@@ -74,7 +76,8 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
       // The decider's own order: the queue sorter's, then effective priority, then age.
       const queued = all.filter((j) => j.status === 'queued' || j.status === 'held');
       const ids = queueOrder(c, queued).jobIds;
-      const waiting = order(queued.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) })), ids).map((x) => x.job);
+      const candidates = queued.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) }));
+      const waiting = order(candidates, ids).map((x) => x.job);
       // High-priority jobs first in every list (issue #535), each list's own order within.
       const { highPriority } = prioritySettingsOf(c.store.settings.getPriorityLanes());
       const first = (jobs: Job[]): Job[] => highFirst(jobs, (j) => isHighPriority(j.priority, highPriority));
@@ -89,7 +92,7 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all, c.store.workItems), items: c.store.workItems.counts(), inFlight: c.store.workItems.inFlight(), ended, gate: gateOf(c), presort, highPriority };
+      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all, c.store.workItems), items: c.store.workItems.counts(), inFlight: c.store.workItems.inFlight(), ended, gate: gateOf(c), presort, highPriority, effectivePriority: Object.fromEntries(candidates.map((x) => [x.job.id, x.effectivePriority])) };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
