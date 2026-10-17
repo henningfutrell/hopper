@@ -273,7 +273,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   }
 
   function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
-    if (ctx.job.parked?.elsewhere) return relocate(ctx, answer);
+    if (ctx.job.parked?.elsewhere) return relocate(ctx, answer, saved);
     const session = ctx.job.agentSession;
     if (!saved) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
     const told = withNotes(ctx, answer);
@@ -285,12 +285,16 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     }, (s) => (session ? [told, lastLineOf(told)] : [taskText(ctx, p, s, told), FOOTER_ANCHOR]));
   }
 
-  /** A parked job picked up to resume elsewhere (issue #921): a new pane and job worktree there, its checkpoint restored, its session resumed. */
-  function relocate(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome> {
+  /**
+   * A parked job picked up to resume elsewhere (issue #921): a new pane and job worktree there, its checkpoint restored, its
+   * session resumed. Text the old pane held unsent behind a dialog (a not-signed-in Claude's, issue #1211) goes after the answer.
+   */
+  function relocate(ctx: ExecutionContext, answer: string, saved: PaneState | undefined): Promise<ExecutionOutcome> {
     const r = relocation(ctx);
     if ('kind' in r) return Promise.resolve(r);
     ctx.workTree(r.p.cwd);
-    const text = withNotes(ctx, answer);
+    const unsent = saved?.turn?.unsent ? saved.turn.text : undefined;
+    const text = withNotes(ctx, unsent ? `${answer}\n\n${unsent}` : answer);
     return startAndSend(ctx, r.p, { resume: r.session, restore: r.restore, said: r.said }, () => [text, lastLineOf(text)]);
   }
 

@@ -43,6 +43,8 @@ export interface Account {
   problem?: string;
   /** The tool read that it is signed in as nobody (issue #1128): a sign-in is needed, not a fix. */
   signedOut?: true;
+  /** When the tool says its sign-in ends (issue #1211), ISO; absent: the tool gives no time (`claude auth status` gives none). */
+  expiresAt?: string;
 }
 
 /**
@@ -162,6 +164,8 @@ export interface ToolAccountMachine {
   infraCredentials?: string[];
   /** Not signed in (issue #1269): who the machine's tool was last signed in as, `null` when none is known; absent when not read. */
   lastAccount?: LastAccount | null;
+  /** Signed in: when the tool says its sign-in there ends (issue #1211); absent when the tool gives no time. */
+  expiresAt?: string;
 }
 
 /** One tool account: a service and the identity its machines are signed in as. No identity: the machines signed in as nobody. */

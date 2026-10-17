@@ -59,6 +59,7 @@ export function toolAccountsOf(o: {
       machineId, label: o.labels.get(machineId) ?? machineId, source: s.name, login,
       ...(problem ? { problem } : {}), ...(s.accountReadAt ? { readAt: s.accountReadAt } : {}), ...(lastUsedAt ? { lastUsedAt } : {}), ...(s.signIn ? { signIn: true as const } : {}),
       ...(creds?.length ? { infraCredentials: [...creds] } : {}), ...(lastAccount !== undefined ? { lastAccount } : {}),
+      ...(login === 'signed-in' && a.expiresAt ? { expiresAt: a.expiresAt } : {}),
     };
     // Signed in as nobody, or not known: one entry per service, so a machine signed out is seen beside the accounts.
     const key = `${a.service}\u0000${login === 'signed-in' ? a.identity : `\u0000${login}`}`;

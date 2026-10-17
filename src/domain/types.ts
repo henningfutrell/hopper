@@ -491,7 +491,7 @@ export type { DeliveryStatus, WebhookDelivery, WebhooksEdit } from './webhooks.t
 // ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 
 export type * from './questions.ts';
-export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY } from './questions.ts';
+export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY, SIGNED_OUT_MOVE_BY, signedOutMoveAnswer } from './questions.ts';
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 

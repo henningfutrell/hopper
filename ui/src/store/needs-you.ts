@@ -20,7 +20,10 @@ export function useNeedsYou(): NeedsYouRow[] {
   const access = accessRequestsWaiting(useVault());
   const plans = plansWaiting(useInfraPlans(), useServerNow());
   const accounts = useToolAccounts();
-  const signedOut = useMemo(() => signedOutLines(accounts?.accounts ?? []), [accounts]);
+  const now = useServerNow();
+  // A sign-in about to end shows a day before (issue #1211): read against the minute, not each tick.
+  const minute = Math.floor(now / 60_000) * 60_000;
+  const signedOut = useMemo(() => signedOutLines(accounts?.accounts ?? [], minute), [accounts, minute]);
   const machines = useHopper((s) => s.machines);
   const notReady = useMemo(() => notReadyLines(machines), [machines]);
   const view = usePullRequestsView();
