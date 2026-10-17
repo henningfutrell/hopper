@@ -202,7 +202,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     async referencingPullRequests(repo, n) {
       enter('referencingPullRequests', [repo, n]);
       find(repo, n);
-      return pulls.filter((p) => p.issue === key(repo, n) && p.crossReferenced !== false).map(({ issue: _i, closes: _c, headRef: _h, base: _b, crossReferenced: _x, ...p }) => ({ ...p }));
+      return pulls.filter((p) => p.issue === key(repo, n) && p.crossReferenced !== false).map(({ issue: _i, closes: _c, crossReferenced: _x, ...p }) => ({ ...p }));
     },
     crossReferences: async (repo, n) => { enter('crossReferences', [repo, n]); find(repo, n); return xrefs.of(key(repo, n), pulls); },
     async pullRequest(repo, n) {

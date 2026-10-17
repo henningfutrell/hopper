@@ -36,6 +36,11 @@ export const DEFAULT_EVERY_MERGES = 5;
 export const DEFAULT_EVERY_MINUTES = 60;
 /** A batch run with no check after this many minutes is red: no full suite ran. */
 export const BATCH_NO_CHECKS_MINUTES = 30;
+/**
+ * Branches no job pushes to, whatever the repository's default branch is: the release branches, and the canary (issue #1073
+ * part 5). A pull request from one (a promotion) is no issue's work (issue #876).
+ */
+export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'canary', 'stable'];
 /** The prefix of a batch run's branch. No job pushes to it (src/github-proxy/git.ts `checkPush`). */
 export const BATCH_BRANCH_PREFIX = 'hopper-batch/';
 

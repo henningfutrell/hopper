@@ -121,7 +121,7 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
   const closing = newest(await api.openClosingPullRequests(repo, number));
   if (closing) return { url: closing.url, part: false };
   const mention = newest((await api.referencingPullRequests(repo, number))
-    .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr.body, repo, number)));
+    .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number)));
   if (mention) return { url: mention.url, part: isPartOf(mention, repo, number) };
   const branch = newest((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
   return branch && { url: branch.url, part: false };
@@ -363,7 +363,7 @@ export const closedAfterMergeComment = (url: string): string =>
  */
 async function closeAfterMerge(api: GitHubApi, repo: string, number: number, url: string): Promise<boolean> {
   const pr = (await api.referencingPullRequests(repo, number)).find((p) => p.url === url);
-  if (pr && (isPartOf(pr, repo, number) || worksOnAnotherIssue(pr.body, repo, number))) return false;
+  if (pr && (isPartOf(pr, repo, number) || worksOnAnotherIssue(pr, repo, number))) return false;
   // Closed first: a sync after a failed comment finds it closed as completed, the item done.
   await api.closeAsCompleted(repo, number);
   await api.postComment(repo, number, closedAfterMergeComment(url));

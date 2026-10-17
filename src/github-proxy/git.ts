@@ -3,7 +3,7 @@
 // push may change is read from the ref updates at the head of git's receive-pack request, before anything reaches
 // GitHub: a branch of the job's own work, never the default branch, a release branch, a tag or a delete. Pure: no I/O.
 
-import { BATCH_BRANCH_PREFIX } from '../domain/landing-batches.ts';
+import { BATCH_BRANCH_PREFIX, RELEASE_BRANCHES } from '../domain/landing-batches.ts';
 
 /** The route on the hopper's URL a job's git goes to: `<HOPPER_URL>/job/git/<owner>/<name>.git/…`. */
 export const GIT_PATH = '/job/git/';
@@ -13,9 +13,6 @@ export type GitService = 'git-upload-pack' | 'git-receive-pack';
 
 /** One ref update of a push: the ref, from `old` to `new` (40 zeros: none). */
 export interface RefUpdate { old: string; new: string; ref: string }
-
-/** Branches no job pushes to, whatever the repository's default branch is: the release branches, and the canary (issue #1073 part 5). */
-export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'canary', 'stable'];
 
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
