@@ -104,6 +104,8 @@ function apply(c: EngineContext, d: Decision): Applied {
     const job = store.jobs.get(s.jobId);
     if (!job) continue;
     store.jobs.update(s.jobId, { status: 'claimed', laneId, attempts: job.attempts + 1, holdReason: undefined, waitReason: undefined });
+    // This hopper drives it (issue #1662): a lease left on a waiting job is over.
+    c.leases.take(s.jobId, true);
     store.lanes.update(laneId, { state: 'busy', jobId: s.jobId, idleSince: undefined });
     store.events.append({
       type: 'job.claimed', jobId: s.jobId, laneId, machineId: s.machineId, decisionId: d.id,
@@ -187,7 +189,10 @@ export async function decisionStep(c: EngineContext, trigger: string, decisionId
   freeStrandedLanes(c);
   failRetiredPins(c, machines);
   autoAccept(c);
-  const decision = decide(inputs(), decisionId);
-  if (isNoOp(decision)) return none;
-  return c.store.tx(() => apply(c, decision));
+  return c.store.tx(() => {
+    // One hopper at a time claims this user's jobs (issue #1662): the inputs are read under the claim lock.
+    c.leases.lockClaims();
+    const decision = decide(inputs(), decisionId);
+    return isNoOp(decision) ? none : apply(c, decision);
+  });
 }

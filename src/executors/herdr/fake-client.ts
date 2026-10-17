@@ -11,16 +11,15 @@ import { listedPanes, newPane, type Pane } from './fake-panes.ts';
 import type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-options.ts';
 import { WINDOWS_SHELLS, enterGoesOn, paneScreen, startupScreen, startupScreens, wrap } from './fake-screens.ts';
 
-export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn };
-
-export { CTRL_END };
+export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn }; export { CTRL_END };
 
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
   const turns = [...(o.turns ?? [])];
   const width = o.width ?? 100;
   const panes = new Map<string, Pane>();
-  const failures = new Map<string, string>();
+  const failures = new Map<string, { code: string; times: number }>();
+  const lostAnswers = new Set<string>(), lateListeners = new Set<() => void>();
   /** setUnreachable: every call rejects. */
   let n = 0, unreachable = false, restarts = 0;
   let busyStarts = o.shellNotReadyStarts ?? 0;
@@ -41,10 +40,10 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
     fake.calls.push({ method, args });
     if (unreachable) throw new HerdrError('client', 'client is not dialled in');
-    const code = failures.get(method);
-    if (code) {
-      failures.delete(method);
-      throw new HerdrError(code, `${method} failed: ${code}`);
+    const failure = failures.get(method);
+    if (failure) {
+      if (--failure.times <= 0) failures.delete(method);
+      throw new HerdrError(failure.code, `${method} failed: ${failure.code}`);
     }
   };
   const livePane = (id: string): Pane => {
@@ -152,9 +151,11 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       p.lines.push('  ⎿  Denied: no response within 2 minutes');
       wake(p);
     },
-    failNext(method, code) { failures.set(method, code); },
+    failNext(method, code, times = 1) { failures.set(method, { code, times }); },
+    loseNextAnswer(method) { lostAnswers.add(method); },
     setUnreachable(on) { unreachable = on; },
     linkDown: () => unreachable,
+    onLinkLate(fn) { lateListeners.add(fn); return () => { lateListeners.delete(fn); }; }, lateLink() { for (const fn of [...lateListeners]) fn(); },
     screen: (id) => paneScreen(panes.get(id), signedIn),
     openPane({ title, lines }) {
       n++;
@@ -172,8 +173,14 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('createTab', args);
       n++;
       const id = `${args.workspaceId}:p${n}`;
-      panes.set(id, newPane(id, `${args.workspaceId}:t${n}`, ['$ ']));
+      panes.set(id, { ...newPane(id, `${args.workspaceId}:t${n}`, ['$ ']), label: args.label });
+      if (lostAnswers.delete('createTab')) throw new HerdrError('client', 'the link dropped before the answer came back');
       return { tabId: `${args.workspaceId}:t${n}`, paneId: id, terminalId: panes.get(id)!.terminal };
+    },
+    async findTab(args) {
+      record('findTab', args);
+      const p = [...panes.values()].find((x) => !x.closed && x.label === args.label && x.id.startsWith(`${args.workspaceId}:`));
+      return p ? { tabId: p.tabId ?? p.id, paneId: p.id, terminalId: p.terminal, ...(p.agent ? { agent: 'claude' } : {}) } : null;
     },
     async startAgent(args) {
       record('startAgent', args);

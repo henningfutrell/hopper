@@ -3,10 +3,14 @@
 // account. How each is called for one locked-down turn — no tools, no session kept, no user settings where the CLI can
 // leave them out — and how its answer is read. claude's argv is the client's (`levelArgv`), so a client target runs
 // exactly what this machine does; the other CLIs' argv and reading are the print-mode executors' (print-agents.ts),
-// with the lockdown flags in place of a job's. Which machines a provider can run on, and why not. Pure.
+// with the lockdown flags in place of a job's. What a CLI keeps of a run on its machine is removed after the run: opencode's
+// session, Cursor's agent's chat. Which machines a provider can run on, and why not. The probe's calls, which say before a
+// draft whether a provider is signed in there and which models it lists, and how they are read. Pure.
 import { levelArgv } from '../client/level.ts';
+import type { OptionChoice } from '../domain/plugins.ts';
 import type { MachineSnapshot } from '../domain/types.ts';
 import { DIALECTS } from '../executors/print-agents.ts';
+import { CLAUDE_MODELS_ARGS, claudeModelsOf, INITIALIZE } from '../plugins/claude-print.ts';
 
 export const DRAFT_PROVIDERS = ['claude', 'codex', 'cursor-agent', 'opencode', 'omp'] as const;
 export type DraftProvider = (typeof DRAFT_PROVIDERS)[number];
@@ -23,10 +27,26 @@ export interface DraftArgv { argv: string[]; stdin: string }
 export const CLAUDE_DEFAULT_MODEL = 'opus';
 
 /**
- * opencode's lockdown is in its environment: every tool's permission denied, no project config, no Claude Code
- * prompt or skills read. Set by `env` in the argv, so it holds on an ssh target too.
+ * opencode's run, `"$@"`: its lockdown is in its environment — every tool's permission denied, no project config, no
+ * Claude Code prompt or skills read —, set in the script, so it holds on an ssh target too. opencode keeps a session for
+ * every run: the script deletes the one its output names (`sessionID`), with the same environment, whether the run went
+ * well or not. Its output goes to a file in the run dir first, so the script can read the session from it.
+ * Run as `sh -c OPENCODE_RUN sh <bin> run <args…>`.
  */
-const OPENCODE_ENV = ['OPENCODE_PERMISSION={"*":"deny"}', 'OPENCODE_DISABLE_PROJECT_CONFIG=1', 'OPENCODE_DISABLE_CLAUDE_CODE=1'];
+export const OPENCODE_RUN = 'export OPENCODE_PERMISSION=\'{"*":"deny"}\' OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_CLAUDE_CODE=1; '
+  + '"$@" >.opencode-out; s=$?; cat .opencode-out; '
+  + 'id=$(sed -n \'s/.*"sessionID":"\\(ses_[A-Za-z0-9_-]*\\)".*/\\1/p\' .opencode-out | head -n 1); rm -f .opencode-out; '
+  + 'if [ -n "$id" ]; then "$1" session delete "$id" --pure >/dev/null 2>&1; fi; exit $s';
+
+/**
+ * Cursor's agent's run, `"$@"`: its project data in the run dir (`CURSOR_DATA_DIR`, which holds no login), so it goes
+ * with the dir; its chat, which it keeps in its config dir named for the md5 of the run dir's real path, removed after.
+ * Run as `sh -c CURSOR_RUN sh <bin> -p <args…>`.
+ */
+export const CURSOR_RUN = 'd=$(pwd -P); export CURSOR_DATA_DIR="$d/.cursor-data"; "$@"; s=$?; '
+  + 'c=${CURSOR_CONFIG_DIR:-${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/cursor}}; c=${c:-$HOME/.cursor}; '
+  + 'h=$(printf %s "$d" | { md5sum 2>/dev/null || md5; } | cut -c1-32); '
+  + 'case $h in *[!0-9a-f]*|"") ;; *) rm -rf "$c/chats/$h" ;; esac; exit $s';
 
 /** codex's reasoning efforts: `max` is its `xhigh`. */
 const codexEffort = (e: string): string => (e === 'max' ? 'xhigh' : e);
@@ -51,9 +71,9 @@ export function draftArgv(c: DraftCall): DraftArgv {
       };
     case 'cursor-agent':
       // Ask mode is read-only Q&A; the sandbox on; `--trust` so the fresh run dir asks nothing. No effort flag.
-      return { argv: turn(['--mode', 'ask', '--sandbox', 'enabled', '--trust'], asked), stdin: '' };
+      return { argv: ['sh', '-c', CURSOR_RUN, 'sh', ...turn(['--mode', 'ask', '--sandbox', 'enabled', '--trust'], asked)], stdin: '' };
     case 'opencode':
-      return { argv: ['env', ...OPENCODE_ENV, ...turn(['--pure', ...(c.effort ? ['--variant', c.effort] : [])], asked)], stdin: '' };
+      return { argv: ['sh', '-c', OPENCODE_RUN, 'sh', ...turn(['--pure', ...(c.effort ? ['--variant', c.effort] : [])], asked)], stdin: '' };
     case 'omp':
       return {
         argv: turn(['--no-tools', '--no-session', '--no-skills', '--no-rules', '--no-extensions', '--no-lsp', ...(c.effort ? [`--thinking=${c.effort}`] : [])], asked),
@@ -119,7 +139,7 @@ export function answeredError(provider: DraftProvider, on: string, error: string
 }
 
 function notSignedIn(provider: DraftProvider, on: string, said: string): string | undefined {
-  return NOT_SIGNED_IN.test(said) ? `${provider} is not signed in on ${on}. Sign it in there (${SIGN_IN[provider]}), then draft again.` : undefined;
+  return NOT_SIGNED_IN.test(said) ? notSignedInReason(provider, on) : undefined;
 }
 
 /**
@@ -137,3 +157,83 @@ export function draftRefusal(provider: DraftProvider, id: string, m: MachineSnap
   }
   return undefined;
 }
+
+/** One probe call: the argv to run (the CLI first) and what goes on its stdin. None of them is a model call. */
+export interface ProbeCall { argv: string[]; stdin: string }
+
+/**
+ * The call that says whether `provider` is signed in, or undefined: opencode needs no sign-in (it has free models) and
+ * omp has no status call; a draft says it, when it runs.
+ */
+export function statusCall(provider: DraftProvider, bin: string): ProbeCall | undefined {
+  switch (provider) {
+    case 'claude': return { argv: [bin, 'auth', 'status', '--json'], stdin: '' };
+    case 'codex': return { argv: [bin, 'login', 'status'], stdin: '' };
+    case 'cursor-agent': return { argv: [bin, 'status'], stdin: '' };
+    case 'opencode':
+    case 'omp':
+      return undefined;
+  }
+}
+
+/**
+ * Whether a status call's output says the CLI is not signed in. Of claude's, only `loggedIn` is read: its output also
+ * names the account. An output that says neither is taken as signed in: the draft says it, when it runs.
+ */
+export function signedOut(provider: DraftProvider, code: number, output: string): boolean {
+  if (provider === 'claude') {
+    try { return (JSON.parse(output) as { loggedIn?: unknown }).loggedIn === false; } catch { return false; }
+  }
+  return /not logged in/i.test(output) && (provider !== 'codex' || code !== 0);
+}
+
+/** The call that lists `provider`'s models on its machine. */
+export function modelsCall(provider: DraftProvider, bin: string): ProbeCall {
+  switch (provider) {
+    case 'claude': return { argv: [bin, ...CLAUDE_MODELS_ARGS], stdin: INITIALIZE };
+    case 'codex': return { argv: [bin, 'debug', 'models'], stdin: '' };
+    case 'cursor-agent': return { argv: [bin, 'models'], stdin: '' };
+    case 'opencode': return { argv: ['env', 'OPENCODE_DISABLE_PROJECT_CONFIG=1', bin, 'models', '--pure'], stdin: '' };
+    case 'omp': return { argv: [bin, 'models', '--json'], stdin: '' };
+  }
+}
+
+type Json = Record<string, unknown>;
+const text = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const choice = (value: string | undefined, label?: unknown, description?: unknown): OptionChoice[] => (value ? [{
+  value, ...(text(label) && label !== value ? { label: text(label)! } : {}), ...(text(description) ? { description: text(description)! } : {}),
+}] : []);
+
+function listed(stdout: string): Json[] {
+  try {
+    const models = (JSON.parse(stdout) as { models?: unknown }).models;
+    return Array.isArray(models) ? models.filter((m): m is Json => !!m && typeof m === 'object') : [];
+  } catch { return []; }
+}
+
+/**
+ * The models a models call listed, each its value for `--model`; empty when it lists none or cannot be read. codex: the
+ * ones it shows (`visibility: list`); Cursor's agent: the lines after `Available models`, `<id> - <name>`; opencode:
+ * `provider/model` lines; omp: each model's `selector`.
+ */
+export function modelsOf(provider: DraftProvider, stdout: string): OptionChoice[] {
+  switch (provider) {
+    case 'claude': return claudeModelsOf(stdout);
+    case 'codex': return listed(stdout).filter((m) => m.visibility === 'list').flatMap((m) => choice(text(m.slug), m.display_name, m.description));
+    case 'cursor-agent': {
+      const lines = stdout.split('\n');
+      const from = lines.findIndex((l) => l.trim() === 'Available models');
+      if (from < 0) return [];
+      return lines.slice(from + 1).flatMap((l) => {
+        const m = /^(\S+) - (.+?)(?:\s+\((?:current|default)(?:, (?:current|default))?\))?$/.exec(l.trim());
+        return m ? choice(m[1], m[2]) : [];
+      });
+    }
+    case 'opencode': return stdout.split('\n').map((l) => l.trim()).filter((l) => /^[\w.-]+\/\S+$/.test(l)).flatMap((l) => choice(l));
+    case 'omp': return listed(stdout).flatMap((m) => choice(text(m.selector), m.name));
+  }
+}
+
+/** Why a provider is not signed in on a machine, with its sign-in. */
+export const notSignedInReason = (provider: DraftProvider, on: string): string =>
+  `${provider} is not signed in on ${on}. Sign it in there (${SIGN_IN[provider]}), then draft again.`;

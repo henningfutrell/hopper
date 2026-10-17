@@ -23,9 +23,13 @@ LABEL org.opencontainers.image.title=hopper
 # shim; pip: typesafe-sdk below; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's
 # installer. No gh: GitHub is read through the signed-in user's connected account (issue #359), and jobs
 # run on attached machines.
+# tinyproxy (issue #849): the compose service `egress` runs the hopper's image with it, the allowlisting proxy of the
+# read-only boxes; the daemon never runs it. /run/hopper-egress: where the hopper and that service share the allowlist,
+# the node user's, so the volume mounted there is too.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip tinyproxy \
+ && rm -rf /var/lib/apt/lists/* \
+ && install -d -o node -g node /run/hopper-egress
 # typesafe-sdk: Jev through TypeSafe, for the decider calls and the gate router's Jev gates. Used only once a
 # TypeSafe API key is set on the Jev page; without it nothing calls TypeSafe.
 RUN pip3 install --no-cache-dir --break-system-packages typesafe-sdk==0.7.4 && python3 -c 'import typesafe_sdk'

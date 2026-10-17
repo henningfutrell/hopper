@@ -178,10 +178,14 @@ export interface FakeHerdrClient extends HerdrClient {
   killAgent(name: string): void;
   /** Claude goes on with the next scripted turn by itself, nothing sent: a background notification, or a person typing in its pane. */
   wake(name: string): void;
-  /** The next call of `method` rejects with a HerdrError of this code. */
-  failNext(method: keyof HerdrClient, code: string): void;
+  /** The next `times` calls of `method` (default 1) reject with a HerdrError of this code, before they do anything. */
+  failNext(method: keyof HerdrClient, code: string, times?: number): void;
+  /** The next call of `method` does what it does, then its answer is lost (issue #1569): it rejects as a link that dropped does. */
+  loseNextAnswer(method: keyof HerdrClient): void;
   /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
   setUnreachable(on: boolean): void;
+  /** A PING of the machine's link is not answered in time (issue #1569): each `onLinkLate` listener is told. */
+  lateLink(): void;
   screen(paneId: string): string;
   /** A pane no job holds (issue #1128, the machine's terminal): a person's own, its title and what it shows. Its pane id. */
   openPane(o: { title: string; lines: string[] }): string;

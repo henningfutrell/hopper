@@ -8,6 +8,8 @@ import type { Migration } from './migrations.ts';
 import { remoteAccessProvider } from './migration-remote-access.ts';
 import { SANDBOX_RUN_TABLE } from './sandbox-runs.ts';
 import { cloudLinkInstanceId } from './migration-cloud-link-id.ts';
+import { SAGA_TABLE } from './sagas.ts';
+import { NEED_STEP_TABLE } from './need-steps.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -43,4 +45,14 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 45: the cloud link's id is the instance id (issue #465), so a link again is the same instance at hopper.io. A record
   // from before takes it; the build before reads `installId` as before.
   cloudLinkInstanceId,
+  // 46: the sagas (issue #1524): one row per saga, its steps and data as JSON, its lease and abort as columns. A table
+  // only: the build before never reads it, and leaves a saga to a hopper that knows its kind.
+  SAGA_TABLE,
+  // 47: the need steps (issue #1568): one row per need step or box step, its ask, inputs, log, result and outputs. A
+  // table only: the build before never reads it, and keeps its steps in memory as before.
+  NEED_STEP_TABLE,
+  // 48: spent join codes (issue #1628): a join code, once spent, is kept with the machine key that spent it until it
+  // expires, so that machine's join sent again is answered as the first. A table only: the build before never reads it,
+  // and takes no spent code again.
+  'CREATE TABLE IF NOT EXISTS join_codes_spent (code_hash TEXT PRIMARY KEY, machine_key TEXT NOT NULL, expires_at TEXT NOT NULL, user_id TEXT NOT NULL, template TEXT, pod TEXT);',
 ];

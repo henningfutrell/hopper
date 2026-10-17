@@ -4,6 +4,7 @@
 // A job never enters `waiting_on` without one (`waitEntryProblem`, checked where a job is written). The event that settles
 // it wakes the job (`settledBy`, `waitsFor`; engine/wait.ts). The items an item or outside wait names are watched too
 // (issue #1508, watched-items.ts). Pure.
+import type { EventType } from './event-types.ts';
 import { namesOwnCommand } from './own-command.ts';
 import type { Job } from './types.ts';
 import { endedNote } from './watched-items.ts';
@@ -130,6 +131,13 @@ export type Settled = { note: string } & (
 const AT = /github\.com\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/;
 const JOB_ENDS: Record<string, string> = { 'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'was cancelled' };
 const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answered', 'question.closed': 'was closed', 'question.dismissed': 'was dismissed', 'question.expired': 'expired' };
+
+/** Every event type `settledBy` reads (issue #1571: the hopper reads them again for a wake a stop lost). */
+export const SETTLING_EVENT_TYPES: readonly EventType[] = [
+  'job.pull_request_merged', 'job.pull_request_closed', 'job.waited_pull_request_ended', 'work_item.issue_closed', 'job.waited_items_ended',
+  'vault.granted', 'vault.grant_denied', 'job.finished', 'job.failed', 'job.cancelled',
+  'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+];
 
 /**
  * The dependency `e` settles, if any: what wakes the jobs waiting on it, on that event, never a poll. An approval is not

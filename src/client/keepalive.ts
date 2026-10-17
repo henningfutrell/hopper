@@ -1,7 +1,8 @@
 // The link's keepalive (design.md "Link-lost hold", issue #752): both ends of a machine's link send an HTTP/2 PING on
 // it every few seconds. A PING not answered in time means the link is dead or half-open (the network went away and no
 // FIN came): the end that sent it drops the link at once, instead of finding out only when a call times out. The hopper
-// then holds a running job (the link is down); the client dials in again.
+// then holds a running job (the link is down); the client dials in again. A PING still not answered when the next one is
+// due is a **missed heartbeat** (issue #1569): `late` is told, once per PING, while the link may still carry a call.
 // Imports nothing of hopper: it is one of the client's files.
 import { performServerHandshake, type Http2Session, type ServerHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
@@ -13,11 +14,13 @@ export const PING_TIMING: PingTiming = { everyMs: 5000, timeoutMs: 10000 };
 
 /**
  * PINGs on `session` until it closes; `drop` is called once, when a PING is not answered in time or fails. `answered`
- * is called for each PING the other end answers (the client's isolation watch, isolation.ts).
+ * is called for each PING the other end answers (the client's isolation watch, isolation.ts). `late` is called once for a
+ * PING still not answered when the next one is due: a missed heartbeat (issue #1569).
  */
-export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming = PING_TIMING, answered?: () => void): void {
+export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming = PING_TIMING, answered?: () => void, late?: () => void): void {
   let waiting: NodeJS.Timeout | undefined;
   let dropped = false;
+  let saidLate = false;
   const stop = (): void => { clearInterval(every); clearTimeout(waiting); };
   const lost = (): void => {
     if (dropped) return;
@@ -26,7 +29,12 @@ export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming
     drop();
   };
   const every = setInterval(() => {
-    if (waiting || session.destroyed) return;
+    if (session.destroyed) return;
+    if (waiting) {
+      if (!saidLate) { saidLate = true; late?.(); }
+      return;
+    }
+    saidLate = false;
     waiting = setTimeout(lost, t.timeoutMs);
     waiting.unref();
     try {

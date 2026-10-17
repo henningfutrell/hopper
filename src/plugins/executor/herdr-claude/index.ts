@@ -29,10 +29,10 @@ export interface HerdrClaudeOptions {
 
 /**
  * The plugin. `seam` (tests, `UserSeams.herdr`) replaces the herdr CLI client; detection then
- * says available, since nothing is run. The session defaults to the supervised `hopper` for every
- * user; no user gets a session of its own (issue #261).
+ * says available, since nothing is run; `sessionSeams` (`UserSeams.herdrSessions`) one per named session of this machine.
+ * The session defaults to the supervised `hopper` for every user; no user gets a session of its own (issue #261).
  */
-export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executor', HerdrClaudeOptions> {
+export function herdrClaudePlugin(seam?: HerdrClient, sessionSeams?: Readonly<Record<string, HerdrClient>>): PluginDefinition<'executor', HerdrClaudeOptions> {
   return {
     id: 'herdr-claude',
     role: 'executor',
@@ -104,7 +104,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       const sessions = new Map<string, HerdrClient>();
       const local = (session: string): HerdrClient => {
         let client = sessions.get(session);
-        if (!client) sessions.set(session, (client = seam ?? createHerdrCliClient({ bin: o.bin, session, userEnv: ctx.userEnv })));
+        if (!client) sessions.set(session, (client = sessionSeams?.[session] ?? seam ?? createHerdrCliClient({ bin: o.bin, session, userEnv: ctx.userEnv })));
         return client;
       };
       // A user's processes on this machine start with their CLI config dirs (issue #158): the herdr CLI

@@ -3,7 +3,7 @@
 // fake claude, a real pty); the Logins page shows the URL and the account; one paste of the page's code, and the token it
 // printed is the user's vault secret CLAUDE_TOKEN, its scope naming the account, which a job pod and a lane pod then start
 // with. The token is in no answer, event or log line.
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,8 +34,7 @@ afterEach(async () => {
   rmSync(control, { recursive: true, force: true });
 });
 
-async function boot(): Promise<TestApp> {
-  const db = tempDbPath();
+async function boot(db = tempDbPath()): Promise<TestApp> {
   cleanups.push(db.cleanup);
   const a = await startTestApp({ dbPath: db.dbPath, seams: { setupToken: { file: CLAUDE, env: { FAKE_SETUP_DIR: control } } } });
   apps.push(a);
@@ -91,6 +90,25 @@ describe('the hopper\'s Claude sign-in for pods (issue #1287)', () => {
     expect((await a.ui<LoginView>(`/ui/api/logins/${second.id}/code`, { code: 'good-code' }, { token })).body.status).toBe('completed');
     vault = (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body;
     expect(vault.secrets.filter((s) => s.name === 'CLAUDE_TOKEN')).toEqual([expect.objectContaining({ scope: 'Claude account two@example.com' })]);
+  });
+
+  it('a stop between the token and the CLI\'s end loses no token: it is in the vault after the start (issue #1610)', async () => {
+    writeFileSync(join(control, 'linger'), '');
+    const db = tempDbPath();
+    const a = await boot(db);
+    const token = await a.login();
+    const started = (await a.ui<LoginView>(START, { account: 'pods@example.com' }, { token })).body;
+    // The code is given; the CLI prints the token and does not end.
+    void a.ui(`/ui/api/logins/${started.id}/code`, { code: 'good-code' }, { token }).catch(() => undefined);
+    const kept = async () => (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.secrets.find((s) => s.name === 'CLAUDE_TOKEN');
+    for (let i = 0; i < 100 && !(await kept()); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(await kept()).toMatchObject({ scope: 'Claude account pods@example.com' });
+    expect((await read(a, started.id, token)).status).toBe('pending');
+    await a.stop();
+    apps.splice(apps.indexOf(a), 1);
+
+    const b = await boot(db);
+    expect(await b.user().vault.podCredential({ name: 'CLAUDE_TOKEN', pod: 'hopper-job-1' })).toEqual({ name: 'CLAUDE_TOKEN', value: TOKEN });
   });
 
   it('the account must be an email; a new sign-in cancels the one before; only an admin starts one', async () => {

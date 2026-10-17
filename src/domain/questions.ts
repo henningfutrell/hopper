@@ -44,8 +44,16 @@ export interface QuestionAttempt extends AttemptPhaseFields {
   holds?: AnswerHold[];
   reason?: string;
   error?: string;
-  /** accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. */
-  outcome: 'accepted' | 'escalated';
+  /**
+   * A level's call (issue #1608): written as `started` before the model is asked, and its reply kept under the same key
+   * when it comes, so a call in flight leaves a record. Absent on a row with no model call.
+   */
+  callKey?: string;
+  /**
+   * accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. started: the
+   * level's call is in flight (issue #1608). interrupted: the daemon stopped during the call, and the level is asked again.
+   */
+  outcome: 'accepted' | 'escalated' | 'started' | 'interrupted';
 }
 
 /** Why a question came to a person (issue #679). */
@@ -180,6 +188,8 @@ export interface Question extends QuestionPhaseFields {
   seenAt?: string;
   /** Its TL;DR (issue #569), once a long question has one. */
   tldr?: Tldr;
+  /** The hash of the text the model failed to write a TL;DR for (issue #1608): not asked again for that text. */
+  tldrFailedOf?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -15,6 +15,7 @@
 // `POST /leftovers {roots}` lists what the layout before left in each work tree's .hopper-scratch, and `POST /leftover-remove {path}` removes one leftover a
 // person chose to remove (issue #1116, leftovers.ts); `{code, stdout, stderr}`;
 // `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
+// a create of a box or a herdr tab sent again is answered with the first answer for its name (issue #1628, once.ts);
 // `POST /claude {args, timeoutMs?, token?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else, with a lane pod's setup token when it carries one (issue #1287) — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
@@ -51,6 +52,7 @@ import { createResourceMeter, diskOfHome } from './resources.ts';
 import { infraCredentialsAt } from './infra-credentials.ts';
 import type { WindowsLink } from './windows-link.ts';
 import { workTreeCall } from './work-tree.ts';
+import { createKeyOf, createOnce, type Creates } from './once.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -157,7 +159,7 @@ type SignInRoute = ReturnType<typeof createSignInRoute>;
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
 
-async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, signIn: SignInRoute, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
+async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, signIn: SignInRoute, creates: Creates, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
   const body = await readBody(stream);
   let nonce = '';
   const answer = (status: number, payload: unknown): void => {
@@ -185,7 +187,12 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   if (path === '/sign-in') { const r = await signIn(body); return answer(r.status, r.payload); }
-  if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
+  // A create is keyed by the name it makes (issue #1628, once.ts): sent again, it is answered as the first.
+  const key = createKeyOf(path, body);
+  if (path === '/runtime') {
+    const r = await creates(key, () => runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body), (a) => a.status === 200 && ok((a.payload as { status?: unknown }).status));
+    return answer(r.status, r.payload);
+  }
   let parsed: { args?: unknown; timeoutMs?: unknown; token?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
@@ -197,8 +204,11 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs, '', env));
   }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
-  answer(200, await herdr(o, parsed.args, timeoutMs));
+  const args = parsed.args;
+  answer(200, await creates(key, () => herdr(o, args, timeoutMs), (a) => a.code === 0));
 }
+
+const ok = (status: unknown): boolean => typeof status === 'number' && status >= 200 && status < 300;
 
 /**
  * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
@@ -243,6 +253,7 @@ export function startClient(o: ClientOptions): Client {
   const running = readRelease(o.installDir).id;
   const releases: Releases = { running, installed: running };
   const nonces = createNonceCache();
+  const creates = createOnce();
   const signIn = createSignInRoute((argv) => startSignIn(o.claudeBin ?? 'claude', argv, { cwd: homedir() }));
   const log = o.log ?? (() => {});
   const backoff = o.backoffMs ?? BACKOFF_MS;
@@ -278,7 +289,7 @@ export function startClient(o: ClientOptions): Client {
       link = socket;
       const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping, watch.heard);
       session.on('stream', (stream, headers) => {
-        serve(o, nonces, releases, watch, signIn, stream, headers).catch((e: unknown) => {
+        serve(o, nonces, releases, watch, signIn, creates, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);
           if (!stream.destroyed) stream.close();
         });

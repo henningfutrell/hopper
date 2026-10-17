@@ -1,6 +1,6 @@
 // The UI session's actions on a review item (issues #537, #543): a person takes one of the decisions its section
 // declares — Continue with selected (Accept, with the paths selected, issue #651), Ask for more paths, Steer, Reject
-// all for a proposal; Accept, Dig deeper, Steer for a research report —
+// (the whole proposal, issue #1659; also several at once) for a proposal; Accept, Dig deeper, Steer for a research report —
 // (operator; who, by the session's sign-in), marks it seen; asks a job that has not started for the section's special
 // job (operator); Accept in a phase a question switched the job to names what it does next (issue #548); and the section's settings (admin): the reviewer levels, who may sign off, how often the levels may
 // send one back. A decision the section does not declare is no route: 404.
@@ -52,7 +52,10 @@ export const decisionNote = (kind: ReviewKind, effect: ReviewDecision['effect'])
   ? ' `paths` (issue #651): the paths to continue with, each `{ id, note? }` — at least one, all viable, each once —, or none on a proposal of zero paths; each continues as a follow-on job (`proposal.followed_on`), linked to the proposal and this job, and kept in `signOff.selected` with its job. 400: a selection that names no path, a path twice, a path the version lacks or one a reviewer level found not viable.'
   : effect === 'send_back' ? ' `paths` (issue #651): the selection made so far, kept on the proposal (`selection`) for the next version.' : '');
 
-const STATUS = { not_found: 404, not_open: 409, not_offered: 404, not_switched: 409, bad_selection: 400, no_paths: 409 } as const;
+const STATUS = { not_found: 404, not_open: 409, not_offered: 404, not_switched: 409, bad_selection: 400 } as const;
+/** A bulk decision (issue #1659): the items it takes, each once, and the notes for every one. */
+export const bulkBody = (d: ReviewDecision) => (d.notes === 'required' ? notesBody : optionalNotesBody)
+  .extend({ ids: z.array(z.string().trim().min(1).max(64)).min(1).max(100).refine((ids) => new Set(ids).size === ids.length, { message: 'name each item once' }) });
 
 export function registerReviewRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
   const id = (req: FastifyRequest) => parseWith(idParams, req.params).id;
@@ -74,6 +77,21 @@ export function registerReviewRoutes(app: FastifyInstance, o: { operator: Guard;
         const b = parseWith(body, req.body ?? {}) as { notes?: string; then?: (typeof SHIFT_THEN)[number]; paths?: { id: string; note?: string }[] };
         const picks = b.paths?.map((x) => ({ id: x.id, ...(x.note ? { note: x.note } : {}) }));
         return answer(req, o.tenant(req).reviews[kind].decide(id(req), d.id, who(req), b.notes || undefined, b.then, picks));
+      });
+    }
+    // Several at once (issue #1659): a decision that ends the item, each item decided on its own, its own result.
+    for (const d of decisions.filter((x) => x.effect === 'reject')) {
+      const body = bulkBody(d);
+      app.post(`/ui/api/${section}/${d.route}`, o.operator, async (req) => {
+        const b = parseWith(body, req.body ?? {}) as { ids: string[]; notes?: string };
+        const by = who(req);
+        const t = o.tenant(req);
+        return {
+          results: b.ids.map((itemId) => {
+            const r = t.reviews[kind].decide(itemId, d.id, by, b.notes || undefined);
+            return r.ok ? { id: itemId, ok: true, item: reviewItemView(t.store, r.item) } : { id: itemId, ok: false, status: STATUS[r.reason], error: r.message };
+          }),
+        };
       });
     }
     app.post(`/ui/api/${section}/:id/seen`, o.operator, async (req) => answer(req, o.tenant(req).reviews[kind].markSeen(id(req))));

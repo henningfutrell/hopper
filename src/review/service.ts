@@ -16,6 +16,7 @@ import {
   thenChoices, type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings, type ShiftThen,
 } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
+import { callLevel } from '../questions/level-call.ts';
 import { check } from '../questions/results.ts';
 import { riskRules } from '../questions/risk.ts';
 import { readRules } from '../questions/rules.ts';
@@ -119,20 +120,8 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     return p && p.status === 'open' && p.stage === stage && p.versions.length === version ? p : undefined;
   }
 
-  async function call(id: string, fn: (signal: AbortSignal) => Promise<ReviewReply | { error: string }>): Promise<ReviewReply | { error: string }> {
-    const ac = new AbortController();
-    inflight.set(id, ac);
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<{ error: string }>((resolve) => {
-      timer = setTimeout(() => { ac.abort('timeout'); resolve({ error: `timeout after ${o.stageTimeoutMs}ms` }); }, o.stageTimeoutMs);
-    });
-    try {
-      return await Promise.race([fn(ac.signal).catch((e: unknown) => ({ error: `threw: ${e instanceof Error ? e.message : String(e)}` })), timeout]);
-    } finally {
-      clearTimeout(timer);
-      if (inflight.get(id) === ac) inflight.delete(id);
-    }
-  }
+  /** One level's review: aborted by a person's decision, shutdown, or the stage timeout; a throw is an error. */
+  const call = (id: string, fn: (signal: AbortSignal) => Promise<ReviewReply | { error: string }>) => callLevel(inflight, id, o.stageTimeoutMs, fn);
 
   function requestFor(p: ReviewItem, number: number, of: number, level: string): ReviewRequest {
     const job = store.jobs.get(p.jobId);
@@ -156,16 +145,20 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     if (!entered) return undefined;
     const version = entered.versions.length;
     const startedAt = iso();
+    // The call, recorded before the model is asked (issue #1608): a restart sees it was in flight, and its review keeps its key.
+    const callKey = `${id}:${entered.reviews.length + 1}`;
+    store.tx(() => items.update(id, { call: { key: callKey, stage: level.name, version, startedAt } }));
     const req = requestFor(entered, number, of, level.name);
     const replied = level.review ? await call(id, (signal) => level.review!(req, signal)) : { error: `this escalation level cannot review ${type.noun}s` };
     if (stopped) return undefined;
     const reply = check(REVIEW_REPLY, 'review', replied);
     return store.tx((): string | undefined => {
+      if (items.get(id)?.call?.key === callKey) items.update(id, { call: undefined });
       const p = stillAt(id, level.name, version);
       if (!p) return undefined;
       const model = (reply.ok ? reply.value.model : undefined) ?? level.model;
       const machine = reply.ok ? reply.value.machine : undefined;
-      const base = { version, stage: level.name, role: 'level' as const, ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso() };
+      const base = { version, stage: level.name, role: 'level' as const, ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso(), callKey };
       const record = (r: ReviewEntry) => {
         items.addReview(id, r);
         emit(p, 'reviewed', { stage: r.stage, verdict: r.verdict, notes: r.notes, ...(r.error ? { error: r.error } : {}), ...(r.paths ? { paths: r.paths } : {}) });
@@ -226,14 +219,33 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     });
   }
 
-  async function run(id: string, reason: string): Promise<void> {
+  /**
+   * Inside a tx. Where an item a restart left open goes on (issue #1608): at its stored reviewer level, so no level below it
+   * reviews it again; past that level when its review of this version is kept already. -1: no reviewer has that name now,
+   * so it starts again from the first. A call the daemon stopped during is cleared, and its level asked again.
+   */
+  function resumeAt(id: string, reviewers: readonly EscalationLevel[]): { from: number; why?: string } {
+    const p = items.get(id);
+    if (!p) return { from: -1 };
+    if (p.call) items.update(id, { call: undefined });
+    const at = reviewers.findIndex((l) => l.name === p.stage);
+    if (at < 0) return { from: -1 };
+    const last = p.reviews.at(-1);
+    if (last?.role !== 'level' || last.stage !== p.stage || last.version !== p.versions.length) return { from: at };
+    return { from: at + 1, why: last.verdict === 'approve' ? `${last.stage} approved: ${last.notes}` : `${last.stage}: ${last.notes}` };
+  }
+
+  async function run(id: string, reason: string, resume = false): Promise<void> {
     if (stopped) return;
     const s = reviewSettings(store, kind);
-    if (s.reviewers.length > 0 && !passesPreCheck(id)) return;
     const levels = o.levels();
     const reviewers = s.reviewers.map((name) => levels.find((l) => l.name === name) ?? missingLevel(name));
-    let why: string | undefined = reason;
+    const resumed = resume ? store.tx(() => resumeAt(id, reviewers)) : { from: -1 };
+    // The pre-check makes no model call: an item that resumes at the first level (a new version) is checked again.
+    if (resumed.from <= 0 && s.reviewers.length > 0 && !passesPreCheck(id)) return;
+    let why: string | undefined = resumed.why ?? reason;
     for (const [i, level] of reviewers.entries()) {
+      if (i < resumed.from) continue;
       why = await review(id, level, i + 1, reviewers.length, why, s);
       if (why === undefined) return;
     }
@@ -278,8 +290,8 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     return recommended.map((x) => ({ id: x.id, title: x.title }));
   }
 
-  function start(id: string, reason: string) {
-    const p: Promise<void> = run(id, reason)
+  function start(id: string, reason: string, resume = false) {
+    const p: Promise<void> = run(id, reason, resume)
       .catch((err: unknown) => console.error(`${kind} ${id}: review failed`, err))
       .finally(() => running.delete(p));
     running.add(p);
@@ -299,7 +311,9 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
       return store.tx((): ReviewActionResult => {
         const p = items.get(id);
         if (!p) return { ok: false, reason: 'not_found', message: `${type.noun} ${id} not found` };
-        if (p.status !== 'open') return { ok: false, reason: 'not_open', message: `${type.noun} ${id} is ${p.status}: only an open ${type.noun} can be decided` };
+        // A reject (issue #1659) ends the whole item: in review at any stage, or sent back while its job writes the next version.
+        const decidable = p.status === 'open' || (offered.effect === 'reject' && p.status === 'revising');
+        if (!decidable) return { ok: false, reason: 'not_open', message: `${type.noun} ${id} is ${p.status}: only an open ${type.noun} can be decided` };
         // What the job does next is picked only at Accept, and only in a phase a question switched it to (issue #548).
         if (then !== undefined) {
           const switched = store.jobs.get(p.jobId)?.shift?.to === kind;
@@ -307,13 +321,12 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
             return { ok: false, reason: 'not_switched', message: switched ? `a ${type.noun} accepted in a switched phase may go on to ${thenChoices(kind).join(', ')}, not ${then}` : `${type.noun} ${id}: its job is not in a phase a question switched it to; there is nothing to pick` };
           }
         }
-        // A proposal's paths (issue #651): Accept continues with the paths selected, or none on zero paths; Reject all
-        // needs paths to reject; a decision that sends it back keeps a selection.
+        // A proposal's paths (issue #651): Accept continues with the paths selected, or none on zero paths; Reject takes
+        // none, on any proposal (issue #1659); a decision that sends it back keeps a selection.
         let selected: SelectedPath[] | undefined;
         if (picks !== undefined && kind !== 'proposal') return { ok: false, reason: 'bad_selection', message: `${type.noun}s have no paths to select` };
         if (kind === 'proposal') {
           const set = pathsOf(p.versions.at(-1)!);
-          if (offered.effect === 'reject' && viablePaths(set).length === 0) return { ok: false, reason: 'no_paths', message: `${type.noun} ${id} has no path to reject: accept it, steer it, or ask for paths` };
           const why = offered.effect === 'reject' ? undefined : selectionRefusal(set, picks, offered.effect === 'accept');
           if (why) return { ok: false, reason: 'bad_selection', message: why };
           if (offered.effect === 'accept') selected = (picks ?? []).map((x) => ({ id: x.id, title: set.paths.find((q) => q.id === x.id)!.title, ...(x.note ? { note: x.note } : {}) }));
@@ -345,7 +358,7 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     },
     recover() {
       this.sweep();
-      for (const p of items.list({ status: ['open'] })) if (p.stage !== HUMAN) start(p.id, 'restarted after a daemon restart');
+      for (const p of items.list({ status: ['open'] })) if (p.stage !== HUMAN) start(p.id, 'restarted after a daemon restart', true);
     },
     async stop() {
       stopped = true;

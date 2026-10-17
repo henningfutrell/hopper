@@ -3,13 +3,16 @@
 // token is a system secret in the user's vault (`gitlab-account.access-token`), sealed under the master key, never in the
 // record, a log line or an answer. GitLab must take the token, and the source email match applies, as for a GitHub token.
 // GitLab refusing the token later ends this account only (issue #1380, "a source expiring marks only the source"): its
-// record is marked, its source pauses, and a new token connects it again.
+// record is marked, its source pauses, and a new token connects it again. For a job (part 3, design.md "Jobs through GitLab"):
+// the account's API for the source's reads and labels, the token for git through the hopper, and who of its GitLab is a
+// trusted actor, as Access decides.
 import { GITLAB_COM, gitlabBaseUrl, isGitLabProject, type GitLabAccountRecord, type GitLabAccountStatus, type GitLabIssue } from '../domain/gitlab-account.ts';
 import type { UserSettingsRepository } from '../domain/settings-store.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { normalEmail } from '../connected-accounts/email-match.ts';
 import { NO_KEY } from '../connected-accounts/at-rest.ts';
 import { createGitLabApi, GitLabTokenRefused, type GitLabApi, type GitLabIdentity } from './api.ts';
+import type { AccessAnswer, GitLabActorRef } from '../domain/access.ts';
 
 const TOKEN = 'gitlab-account.access-token' as const;
 const BY = 'hopper';
@@ -28,6 +31,14 @@ export interface GitLabAccount {
   paused(): string | undefined;
   /** The open issues of a picked project with `label`. A refused token ends the account and throws. */
   issues(project: string, label: string): Promise<GitLabIssue[]>;
+  /** `fn` with the account's API, while it is connected. A refused token ends the account and throws. */
+  act<T>(fn: (api: GitLabApi) => Promise<T>): Promise<T>;
+  /** What git through the hopper uses (issue #1448 part 3): the GitLab, the account and its token now; or why there is none. */
+  git(): { baseUrl: string; account: string; token: string } | { problem: string };
+  /** GitLab refused the token git gave: the account ends, as when the API is refused. */
+  refused(error: string): void;
+  /** Whether each GitLab user (by id, at the account's GitLab) is a trusted actor of the user (issue #1448 part 3): Access decides. */
+  trusted(userIds: readonly number[]): Promise<Map<number, boolean>>;
 }
 
 export class NoGitLabAccount extends Error {}
@@ -42,6 +53,11 @@ export function createGitLabAccount(o: {
   api?(baseUrl: string, token: string): GitLabApi;
   /** After an account is attached, picked, ended or removed: its source follows. `presence`: an account came or went, so its source does. */
   onChange?(presence: boolean): void;
+  /**
+   * Whether a GitLab user may start the user's jobs (issue #1448 part 3): Access (OpenFGA `intake#can_start_jobs`), the account
+   * told as the trusted actor. Absent: no Access, so nobody is a trusted actor and no GitLab issue becomes a job.
+   */
+  startsJobs?(actor: GitLabActorRef, actors: readonly GitLabActorRef[]): Promise<AccessAnswer>;
   logger: { info(line: string): void; warn(line: string): void };
 }): GitLabAccount {
   const api = o.api ?? ((baseUrl, token) => createGitLabApi({ baseUrl, token }));
@@ -84,6 +100,18 @@ export function createGitLabAccount(o: {
     } catch (err) {
       if (err instanceof GitLabTokenRefused) return end(err.message);
       put({ ...(record() ?? r), reachError: (err as Error).message });
+    }
+  }
+
+  async function act<T>(fn: (a: GitLabApi) => Promise<T>): Promise<T> {
+    const r = record();
+    const t = r && !r.ended ? token() : undefined;
+    if (!r || !t) throw new NoGitLabAccount('no GitLab account is connected');
+    try {
+      return await fn(api(r.baseUrl, t));
+    } catch (err) {
+      if (err instanceof GitLabTokenRefused) end(err.message);
+      throw err;
     }
   }
 
@@ -163,16 +191,30 @@ export function createGitLabAccount(o: {
       if (s.projects.length === 0) return 'no GitLab project is picked: pick them in Sources → GitLab';
       return undefined;
     },
-    async issues(project, label) {
+    issues: (project, label) => act((a) => a.issues(project, label)),
+    act,
+    git() {
       const r = record();
-      const t = r && !r.ended ? token() : undefined;
-      if (!r || !t) throw new NoGitLabAccount('no GitLab account is connected');
+      if (!r) return { problem: 'no GitLab account is connected: Sources → Connect GitLab' };
+      if (r.ended) return { problem: `GitLab refused the token of ${r.account}: connect it again with a new token (Sources → GitLab)` };
       try {
-        return await api(r.baseUrl, t).issues(project, label);
+        const t = token();
+        return t ? { baseUrl: r.baseUrl, account: r.account, token: t } : { problem: 'the GitLab account has no token kept: connect it again (Sources → GitLab)' };
       } catch (err) {
-        if (err instanceof GitLabTokenRefused) end(err.message);
-        throw err;
+        return { problem: `the GitLab token cannot be opened: ${(err as Error).message}` };
       }
+    },
+    refused: (error) => end(error),
+    async trusted(userIds) {
+      const r = record();
+      const out = new Map<number, boolean>();
+      if (!r || !o.startsJobs) return out;
+      const self = { baseUrl: r.baseUrl, userId: r.userId };
+      for (const id of new Set(userIds)) {
+        const answer = await o.startsJobs({ baseUrl: r.baseUrl, userId: id }, [self]).catch(() => ({ allowed: false }));
+        out.set(id, answer.allowed);
+      }
+      return out;
     },
   };
 }

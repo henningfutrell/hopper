@@ -106,8 +106,14 @@ If the issue changes after you approved it, but before its job is made, the card
 ### Issues on GitLab
 
 Connect a GitLab account in Sources → GitLab with a personal access token, and pick its projects. Intake then lists the open
-issues labelled `hopper` in those projects. Jobs do not act through GitLab yet: each GitLab issue shows why it is not taken,
-and the hopper writes nothing to GitLab.
+issues labelled `hopper` in those projects.
+
+An issue becomes a job when your GitLab account wrote it, added the `hopper` label and assigned it to itself, and nobody
+else edited its title or description. Any other GitLab issue shows why it is not taken. The job fetches and pushes its
+project through the hopper with your GitLab account's token, and opens a merge request with "Closes #N" in its
+description. The hopper writes only its labels to the issue: `hopper:claimed` while a job works on it, then
+`hopper:done`, `hopper:failed` or `hopper:rejected`. Remove the end label to offer the issue again. A person reviews
+and merges the merge request on GitLab.
 
 ### Issues not assigned to you
 

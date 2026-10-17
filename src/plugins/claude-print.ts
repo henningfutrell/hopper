@@ -194,18 +194,18 @@ export async function detectClaude(sys: DetectionKit, bin: string) {
   return { status: 'available' as const, detail: version };
 }
 
-const INITIALIZE = `${JSON.stringify({ type: 'control_request', request_id: 'models', request: { subtype: 'initialize' } })}\n`;
+/** What `claudeModels` sends on stdin: the initialize control request, which lists the models. */
+export const INITIALIZE = `${JSON.stringify({ type: 'control_request', request_id: 'models', request: { subtype: 'initialize' } })}\n`;
+
+/** The arguments of `claudeModels`' call: the stream-json handshake, locked down as a level's run. */
+export const CLAUDE_MODELS_ARGS = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+  '--no-session-persistence', '--setting-sources', '', '--strict-mcp-config', '--tools', ''];
 
 interface ListedModel { value?: unknown; displayName?: unknown; description?: unknown }
 
-/**
- * The models `bin` offers, as its stream-json initialize handshake lists them: the reply to one
- * control request, no prompt, so no model call. Empty when it cannot run or lists none.
- */
-export async function claudeModels(sys: DetectionKit, bin: string): Promise<OptionChoice[]> {
-  const out = await sys.output(bin, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    '--no-session-persistence', '--setting-sources', '', '--strict-mcp-config', '--tools', ''], INITIALIZE);
-  for (const line of (out ?? '').split('\n')) {
+/** The models the reply to `INITIALIZE` lists; empty when `out` holds no reply. */
+export function claudeModelsOf(out: string): OptionChoice[] {
+  for (const line of out.split('\n')) {
     let msg: { type?: unknown; response?: { response?: { models?: unknown } } };
     try { msg = JSON.parse(line) as typeof msg; } catch { continue; }
     if (msg.type !== 'control_response') continue;
@@ -218,6 +218,14 @@ export async function claudeModels(sys: DetectionKit, bin: string): Promise<Opti
     }] : []));
   }
   return [];
+}
+
+/**
+ * The models `bin` offers, as its stream-json initialize handshake lists them: the reply to one
+ * control request, no prompt, so no model call. Empty when it cannot run or lists none.
+ */
+export async function claudeModels(sys: DetectionKit, bin: string): Promise<OptionChoice[]> {
+  return claudeModelsOf(await sys.output(bin, CLAUDE_MODELS_ARGS, INITIALIZE) ?? '');
 }
 
 /** `option`'s choices: the models of the `claude` on PATH; none when it lists none. */

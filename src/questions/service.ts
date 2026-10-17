@@ -17,6 +17,7 @@ import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { answerFixed, FIXED } from './fixed-answers.ts';
 import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
 import { callLevel } from './level-call.ts';
+import { resumeAt, startCall } from './calls.ts';
 import { levelRequest } from './request.ts';
 import { REPLY, check } from './results.ts';
 import { tldrData } from '../tldr/service.ts';
@@ -162,10 +163,10 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     return q && q.status === 'open' && q.tier === stage ? q : undefined;
   }
 
-  /** Inside a tx. A reply that lost the race (human answer, cancel, restart) is logged and ignored. */
-  function superseded(id: string, level: EscalationLevel, startedAt: string) {
+  /** Inside a tx. A reply that lost the race (human answer, cancel, restart) is logged under its call's key and ignored. */
+  function superseded(id: string, level: EscalationLevel, startedAt: string, callKey: string) {
     if (!store.questions.get(id)) return;
-    store.questions.addAttempt(id, {
+    store.questions.finishAttempt(id, callKey, {
       tier: level.name, role: 'level', ...(level.model ? { model: level.model } : {}), startedAt, finishedAt: iso(), outcome: 'escalated', reason: 'superseded',
     });
   }
@@ -193,6 +194,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     if (!entered) return undefined;
     const req = levelRequest(o, entered, number, of, level.name, () => !stopped);
     const startedAt = iso();
+    const callKey = store.tx(() => startCall(store, id, level, startedAt));
     const replied = await call(id, (signal) => level.answer(req, signal));
     if (stopped) return undefined;
     const reply = check(REPLY, 'reply', replied);
@@ -201,12 +203,12 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     if (stopped) return undefined;
     return store.tx((): Climb | undefined => {
       const q = stillAt(id, level.name);
-      if (!q) return void superseded(id, level, startedAt);
+      if (!q) return void superseded(id, level, startedAt, callKey);
       const model = (reply.ok ? reply.value.model : undefined) ?? level.model;
       const machine = reply.ok ? reply.value.machine : undefined;
       const base: QuestionAttempt = { tier: level.name, role: 'level', ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso(), outcome: 'escalated' };
       if (!reply.ok) {
-        store.questions.addAttempt(id, { ...base, error: reply.error, reason: 'error' });
+        store.questions.finishAttempt(id, callKey, { ...base, error: reply.error, reason: 'error' });
         return { why: `${level.name} failed: ${reply.error}`, reason: 'no_answer' };
       }
       const { answer, escalate, reason: why, suggest, confidence } = reply.value;
@@ -215,20 +217,20 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       // A fork leaves the question open for its result, with a person, who may still answer it first.
       const mode = suggest && o.onShift?.(q, suggest, level.name);
       if (mode) {
-        store.questions.addAttempt(id, { ...base, ...replyFields, outcome: 'accepted' });
+        store.questions.finishAttempt(id, callKey, { ...base, ...replyFields, outcome: 'accepted' });
         if (mode === 'fork') toHuman(store.questions.get(id)!, `${level.name} forked ${suggest.to === 'research' ? 'research' : 'a proposal'}: the question waits for its result`, { reason: 'fork' });
         return undefined;
       }
       if (suggest && !q.suggestion) store.questions.update(id, { suggestion: { ...suggest, by: level.name } });
       if (escalate || answer === undefined) {
-        store.questions.addAttempt(id, { ...base, ...replyFields });
+        store.questions.finishAttempt(id, callKey, { ...base, ...replyFields });
         return { why: `${level.name}: ${why}`, reason: escalate ? 'frontier_escalated' : 'no_answer' };
       }
       // The level answers. The risk check runs on the question and the answer to be typed; a risk goes to the owner, past
       // every level above: no model approves what the risk check or the guards hold. Then auto-answer (issue #632) may hold
       // it for a person, or, below the threshold, for the next level.
       const { riskRules, riskCheck, hold } = answerHold({ store, q, answer, level: level.name, top: number >= of, confidence, gated: o.gated, risk });
-      store.questions.addAttempt(id, { ...base, ...replyFields, riskRules, riskCheck, ...(hold ? { holds: hold.holds } : { outcome: 'accepted' as const }) });
+      store.questions.finishAttempt(id, callKey, { ...base, ...replyFields, riskRules, riskCheck, ...(hold ? { holds: hold.holds } : { outcome: 'accepted' as const }) });
       if (hold) return hold.to === 'next' ? { why: hold.why, reason: hold.reason } : void toHuman(q, hold.why, hold);
       const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: level.name });
       emit(updated, 'question.answered', { by: level.name, answer, auto: true, ...(confidence ? { confidence } : {}) });
@@ -240,12 +242,15 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   /** A fixed answer (issue #629) is announced and resumes the job. */
   const answeredBy = (by: string) => (q: Question) => { emit(q, 'question.answered', { by, answer: q.answer! }); o.onAnswered(q); };
 
-  async function run(id: string, reason: string): Promise<void> {
+  async function run(id: string, reason: string, resume = false): Promise<void> {
     if (stopped) return;
     if (answerFixed({ store, iso, human: HUMAN, toHuman, answered: answeredBy(FIXED) }, id)) return;
     const levels = [...o.levels()];
     let climb: Climb = { why: reason, reason: 'no_answer' };
+    let from = 0;
+    if (resume) ({ from, climb } = store.tx(() => resumeAt(store, iso(), id, levels, climb)));
     for (const [i, level] of levels.entries()) {
+      if (i < from) continue;
       const next = await ask(id, level, i + 1, levels.length, climb.why);
       if (next === undefined) return;
       climb = next;
@@ -257,8 +262,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     });
   }
 
-  function start(id: string, reason: string) {
-    const p: Promise<void> = run(id, reason)
+  function start(id: string, reason: string, resume = false) {
+    const p: Promise<void> = run(id, reason, resume)
       .catch((err: unknown) => console.error(`question ${id}: pipeline failed`, err))
       .finally(() => running.delete(p));
     running.add(p);
@@ -381,7 +386,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       // What a restart, or the build before, left open with nothing waiting on it (issue #529): cancelled, not asked again.
       for (const q of openOnEndedJobs(store)) this.cancel(q.id);
       for (const q of store.questions.list({ status: ['open'] })) {
-        if (q.tier !== HUMAN) start(q.id, 'restarted after a daemon restart');
+        if (q.tier !== HUMAN) start(q.id, 'restarted after a daemon restart', true);
         else if (q.expiresAt) armHuman(q.id);
         // Created at the human stage (no levels), the daemon stopped before it was announced.
         else store.tx(() => toHuman(q, 'no escalation levels configured', { reason: 'no_answer' }));

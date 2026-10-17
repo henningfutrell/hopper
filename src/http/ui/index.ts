@@ -351,7 +351,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => personOf(signedInOf(req)!) });
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, sourceEmailMatch: o.sourceEmailMatch, cloudLink: o.cloudLink, hopperIoState: { tenants: o.tenants, updater: o.updater, clock: o.clock }, displayName: o.displayName, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => personOf(signedInOf(req)!) });
 
   // design.md "Connected accounts": the user's own accounts, their session's user alone (issues #214, #1380, #1448).
   registerConnectedAccountsRoutes(app, { admin, tenant: o.tenant, email: (req) => sessionOf(req)?.identity.email });

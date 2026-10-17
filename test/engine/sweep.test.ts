@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import type { Survey } from '../../src/domain/ports.ts';
-import { planSweep } from '../../src/engine/sweep.ts';
+import { planSweep, STUCK_RETRY_MS } from '../../src/engine/sweep.ts';
 import { HOUR, job, none, rig } from './sweep-rig.ts';
 
 describe('what the sweep reaps (issue #410)', () => {
@@ -145,10 +145,27 @@ describe('a scratch dir the reap could not remove (issue #1452)', () => {
 
   it('is never said removed: it is told once while it stays', async () => {
     const r = rig({ found, lefts: ['done'] });
-    for (let i = 0; i < 3; i++) { await r.sweep.run(true); r.advance(10 * 60_000); }
+    for (let i = 0; i < 3; i++) { await r.sweep.run(true); r.advance(STUCK_RETRY_MS); }
     expect(r.reaps).toHaveLength(3);
     expect(r.logs).toEqual([expect.stringContaining('could not remove job done\'s scratch dir on m: /w/.worktrees/@scratch/done is still there')]);
     expect(r.logs.some((l) => /reaped job done/.test(l))).toBe(false);
+  });
+
+  it('is not reaped again on each pass (issue #1613): only once the retry wait passed', async () => {
+    const r = rig({ found, lefts: ['done'] });
+    for (let i = 0; i < 6; i++) { await r.sweep.run(true); r.advance(10 * 60_000); }
+    expect(r.reaps).toHaveLength(1);
+    r.advance(STUCK_RETRY_MS);
+    await r.sweep.run(true);
+    expect(r.reaps).toHaveLength(2);
+  });
+
+  it('what still runs of a job whose dir is stuck is stopped all the same', async () => {
+    const again = rig({ surveys: [found, { ...found, processes: ['done'] }], lefts: ['done'] });
+    await again.sweep.run(true);
+    again.advance(10 * 60_000);
+    await again.sweep.run(true);
+    expect(again.reaps).toHaveLength(2);
   });
 
   it('kept work it could not remove records no job.work_removed', async () => {

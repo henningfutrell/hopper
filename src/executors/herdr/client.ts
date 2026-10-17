@@ -30,6 +30,11 @@ export interface HerdrPane {
   agentStatus: AgentStatus;
 }
 
+/** A tab the hopper opened for a job, and its one pane. */
+export interface HerdrTab { tabId: string; paneId: string; terminalId?: string }
+/** A tab `findTab` found: `agent`, the agent herdr knows runs in its pane (`claude`), when one does. */
+export type FoundTab = HerdrTab & { agent?: string };
+
 /** `notReady`: Claude blocked at startup. `paneBusy`: the pane is not at its shell prompt yet (just spawned); retry. */
 export type StartAgentResult = { ok: true } | { ok: false; notReady: true } | { ok: false; paneBusy: true };
 
@@ -49,7 +54,9 @@ export interface HerdrClient extends MachineShell {
   /** Workspace id of the workspace with this label; created without focus when absent. */
   ensureWorkspace(label: string, cwd: string): Promise<string>;
   /** `env`: variables for the process launched in the tab (`herdr tab create --env K=V`). */
-  createTab(o: { workspaceId: string; cwd: string; label: string; env: Record<string, string> }): Promise<{ tabId: string; paneId: string; terminalId?: string }>;
+  createTab(o: { workspaceId: string; cwd: string; label: string; env: Record<string, string> }): Promise<HerdrTab>;
+  /** The tab of the workspace with this label and its pane (issue #1569: a create whose answer was lost made it); null when none has it. */
+  findTab(o: { workspaceId: string; label: string }): Promise<FoundTab | null>;
   /** Start Claude in the pane. `notReady`: blocked at startup (e.g. the folder-trust dialog). `paneBusy`: shell not up yet. */
   startAgent(o: { name: string; paneId: string; args: string[]; timeoutMs: number }): Promise<StartAgentResult>;
   /** null when no live agent has that name. */
@@ -72,4 +79,9 @@ export interface HerdrClient extends MachineShell {
   closePane(paneId: string): Promise<void>;
   /** True while the machine's link is down (issue #752): a client target not dialled in. Absent: the machine has no link. */
   linkDown?(): boolean;
+  /**
+   * Calls `fn` at each **missed heartbeat** of the machine's link (issue #1569): a PING not answered within its interval,
+   * before the PING timeout drops the link. Returns the call that stops it. Absent: the machine has no link.
+   */
+  onLinkLate?(fn: () => void): () => void;
 }

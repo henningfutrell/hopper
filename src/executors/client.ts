@@ -43,6 +43,25 @@ export interface ClientAnswer { code: number; stdout: string; stderr: string }
 export class ClientError extends Error {}
 
 const sessions = new WeakMap<Duplex, Promise<ClientHttp2Session>>();
+/** Who is told of each machine's missed heartbeats (issue #1569), by the machine's name: a link that dials in again keeps them. */
+const lateListeners = new Map<string, Set<() => void>>();
+
+/** Calls `fn` at each missed heartbeat of the machine's link (src/client/keepalive.ts); returns the call that stops it. */
+export function onClientLinkLate(t: ClientTransport, fn: () => void): () => void {
+  const set = lateListeners.get(t.machine) ?? new Set();
+  lateListeners.set(t.machine, set);
+  set.add(fn);
+  return () => {
+    set.delete(fn);
+    if (!set.size && lateListeners.get(t.machine) === set) lateListeners.delete(t.machine);
+  };
+}
+
+const saidLate = (machine: string): void => {
+  for (const fn of [...lateListeners.get(machine) ?? []]) {
+    try { fn(); } catch (e) { console.warn(`client ${machine}: a missed heartbeat's listener failed: ${(e as Error).message}`); }
+  }
+};
 
 /** The HTTP/2 session on the machine's link, opened once per link. */
 function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
@@ -54,7 +73,7 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
     const s = connect('http://hopper-client', { createConnection: () => link });
     s.once('connect', () => {
       // A dead or half-open link is dropped within seconds (issue #752): the machine is then not dialled in.
-      keepAlive(s, () => { console.warn(`client ${t.machine}: no answer to a PING; dropping its link`); link.destroy(); }, t.ping);
+      keepAlive(s, () => { console.warn(`client ${t.machine}: no answer to a PING; dropping its link`); link.destroy(); }, t.ping, undefined, () => saidLate(t.machine));
       resolve(s);
     });
     s.once('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));

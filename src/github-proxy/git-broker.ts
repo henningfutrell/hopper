@@ -21,6 +21,7 @@ import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts';
 import type { RepoFacts } from './api.ts';
 import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
 import { CONTRIBUTION_OFF } from './policy.ts';
@@ -101,8 +102,11 @@ const UNAUTHORIZED = text(401, 'refused: the token is not a job\'s of this hoppe
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
-const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
+/**
+ * A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). A GitLab job's
+ * (issue #1448 part 3) is a GitLab project, so it has no own repository on GitHub.
+ */
+const repoOf = (job: Job): string | undefined => { const s = sourceItemOf(job); return isGitLabItem(s) ? undefined : s?.repo; };
 
 const pkt = (s: string | Buffer): Buffer => {
   const b = typeof s === 'string' ? Buffer.from(s) : s;
@@ -113,7 +117,7 @@ const pkt = (s: string | Buffer): Buffer => {
  * git's own answer to a push it refused, as receive-pack writes one: `unpack ok`, then `ng <ref> <reason>` for every ref,
  * in side band 1 when the push asked for a side band. git shows each as `! [remote rejected] … (<reason>)`.
  */
-function refusedReport(body: Buffer, commands: readonly RefUpdate[], reason: string): GitAnswer {
+export function refusedReport(body: Buffer, commands: readonly RefUpdate[], reason: string): GitAnswer {
   const caps = body.toString('utf8', 4, Math.min(body.length, 4 + parseInt(body.toString('latin1', 0, 4), 16))).split('\0')[1] ?? '';
   const report = Buffer.concat([pkt('unpack ok\n'), ...commands.map((c) => pkt(`ng ${c.ref} ${reason}\n`)), Buffer.from('0000')]);
   const band = /\bside-band(-64k)?\b/.test(caps);

@@ -326,6 +326,8 @@ describe('POST /ui/api/plugins — remove a machine', () => {
     const lane = store.lanes.open('desk');
     store.jobs.update(running.id, { status: 'running', laneId: lane.id });
     store.lanes.update(lane.id, { state: 'busy', jobId: running.id });
+    // Driven by a hopper (issue #1662): with no lease, the next tick would take it over as a job whose hopper stopped.
+    store.jobLeases.take(running.id, { owner: 'another hopper', until: '2999-01-01T00:00:00.000Z' }, new Date().toISOString());
     const busy = await plugins(a, token, { action: 'remove', role: 'machine-source', name: 'desk', version: (await config(a)).version });
     expect(busy.status).toBe(409);
     expect(busy.body.error).toContain(running.id);

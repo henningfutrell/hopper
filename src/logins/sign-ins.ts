@@ -4,8 +4,8 @@
 // shows, which goes to the tool. The tool's end completes or fails the login. One sign-in per machine and tool: a new one cancels
 // the one before. What runs on the machine is held in this process only: after a restart its login fails, and is started again.
 // The hopper's Claude sign-in for pods (issue #1287, design.md "The hopper's Claude sign-in for pods") is one more: `claude
-// setup-token` in the hopper itself, its login on no machine and naming the account; its end keeps the token it printed
-// (`keep`, the vault) before the login completes.
+// setup-token` in the hopper itself, its login on no machine and naming the account; the token it printed is in the vault as
+// soon as it is read (issue #1610), and the login completes once the run ends.
 import type { Clock, UsageSource } from '../domain/ports.ts';
 import type { Login, ToolSignIn } from '../domain/types.ts';
 import { codeProblem, SIGN_IN_LIFE_MS } from '../client/sign-in.ts';
@@ -41,10 +41,10 @@ export function createSignIns(o: {
   /** A sign-in completed: the tool on `machineId` is signed in now (the not-signed-in questions there are answered). */
   onSignedIn?: (s: { machineId: string; tool: string; loginId: string }) => void;
   /**
-   * The hopper's Claude sign-in for pods (issue #1287): `start` runs `claude setup-token`; `keep` keeps the token it printed
-   * for `account` and answers why it could not. Absent: none starts.
+   * The hopper's Claude sign-in for pods (issue #1287): `start` runs `claude setup-token`, whose run keeps the token it prints
+   * for `account` as soon as it reads it, and ends ok only when the token is kept. Absent: none starts.
    */
-  setupToken?: { start(): Promise<SetupTokenRun>; keep(k: { token: string; account: string; by: string }): Promise<string | undefined> };
+  setupToken?: { start(k: { account: string; by: string }): Promise<SetupTokenRun> };
 }): SignIns {
   const { logins } = o;
   /** The sign-ins running now, by login id. */
@@ -92,7 +92,7 @@ export function createSignIns(o: {
       if (!setup) return { ok: false, reason: 'no_sign_in', message: 'this hopper cannot run claude setup-token' };
       let started: SetupTokenRun;
       try {
-        started = await setup.start();
+        started = await setup.start({ account, by });
       } catch (e) {
         return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
       }
@@ -100,9 +100,7 @@ export function createSignIns(o: {
         tool: SETUP_TOKEN_TOOL, url: started.url, cancel: () => started.cancel(),
         async paste(code) {
           const end = await started.paste(code);
-          if (!end.ok) return end;
-          const problem = await setup.keep({ token: end.token, account, by });
-          return problem ? { ok: false, reason: `the token was not kept: ${problem}` } : { ok: true };
+          return end.ok ? { ok: true } : end;
         },
       }, account);
     },

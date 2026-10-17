@@ -189,6 +189,12 @@ services:
       HOPPER_SANDBOX_MAX_CPUS: ${HOPPER_SANDBOX_MAX_CPUS:-4}
       HOPPER_SANDBOX_MAX_MEMORY_MB: ${HOPPER_SANDBOX_MAX_MEMORY_MB:-8192}
       HOPPER_SANDBOX_MAX_TTL_MINUTES: ${HOPPER_SANDBOX_MAX_TTL_MINUTES:-1440}
+      # A read-only box's egress (issue #849, docs/deploy.md "A read-only box's egress"): a read-only box and the read-only
+      # check box join the internal network `egress` below, with no way out, and reach out only through the `egress`
+      # service, to AWS and the clusters the vault mints for. The hopper writes the allowlist into the `egress` volume.
+      HOPPER_SANDBOX_EGRESS_NETWORK: hopper_egress
+      HOPPER_SANDBOX_EGRESS_PROXY: http://egress:3128
+      HOPPER_SANDBOX_EGRESS_DIR: /run/hopper-egress
       # OpenTelemetry (issue #1486, docs/deploy.md "Telemetry"): off unless an exporter or an OTLP endpoint is set. With the
       # `telemetry` profile below: OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:4318.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -206,6 +212,8 @@ services:
       - tunnel-key:/run/hopper-tunnel:ro
       # Its home: the claude sign-in.
       - home:/home/node
+      # The egress proxy's allowlist (issue #849): the hopper writes it, the `egress` service reads it.
+      - egress:/run/hopper-egress
       # Your rootless Podman socket (docs/deploy.md "Sandbox boxes the hopper starts"): HOPPER_PODMAN_SOCKET_HOST, its path
       # on this computer. The update writes it in when podman.socket is on (`systemctl --user enable --now podman.socket`),
       # as $XDG_RUNTIME_DIR/podman/podman.sock; unset, /dev/null: compose cannot mount a file that is not there, so no
@@ -231,8 +239,9 @@ services:
       # localhost from Windows").
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
     # `tunnel` (issues #795, #880): the network the hopper shares with the tunnel alone (below). `search` (issue #945): the
-    # one it shares with Solr alone.
-    networks: [default, tunnel, search]
+    # one it shares with Solr alone. `egress` (issue #849): the internal network of the read-only boxes, where they reach
+    # the hopper past the proxy.
+    networks: [default, tunnel, search, egress]
 
   # OpenFGA (issue #559): access asks it before every credential a job is given. Its tables are the `openfga` schema of
   # the hopper's Postgres; its config is the file postgres writes, read from its working directory. On no host port:
@@ -486,6 +495,43 @@ services:
         done
     networks: [tunnel]
 
+  # The egress proxy of the read-only boxes (issue #849, docs/deploy.md "A read-only box's egress"): tinyproxy, from the
+  # hopper's image, on the internal network `egress` and on the hopper's. It lets a box CONNECT only to the hosts of the
+  # allowlist the hopper writes into the `egress` volume — `filter` (a regular expression per host), `ports`, then
+  # `version` — and refuses every other host (403). It checks `version` each second; when it changes, it loads the
+  # allowlist and writes that version into `loaded`, which the hopper waits for before a read-only box starts. It holds no
+  # secret and reaches nothing of the hopper's.
+  egress:
+    image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
+    restart: unless-stopped
+    volumes:
+      - egress:/run/hopper-egress
+    # The image's own check asks the hopper's daemon, which does not run here.
+    healthcheck:
+      disable: true
+    entrypoint: [sh, -eu, -c]
+    command:
+      - |
+        d=/run/hopper-egress; c=/tmp/egress
+        mkdir -p $$c
+        pid=; last=
+        trap '[ -z "$$pid" ] || kill "$$pid" 2>/dev/null || true; exit 0' TERM INT
+        while :; do
+          v=$$(cat $$d/version 2>/dev/null || true)
+          if [ -n "$$v" ] && [ "$$v" != "$$last" ]; then
+            cp $$d/filter $$c/filter
+            { printf 'Port 3128\nListen 0.0.0.0\nTimeout 600\nMaxClients 200\nLogLevel Connect\nDisableViaHeader Yes\nFilterType ere\nFilterDefaultDeny Yes\nFilterURLs Off\nFilter "%s/filter"\n' $$c
+              grep -E '^[0-9]+$$' $$d/ports | sed 's/^/ConnectPort /'; } > $$c/conf
+            if [ -n "$$pid" ]; then kill -USR1 "$$pid"; sleep 1; else tinyproxy -d -c $$c/conf & pid=$$!; sleep 1; fi
+            last=$$v
+            printf '%s\n' "$$v" > $$d/.loaded.tmp && mv $$d/.loaded.tmp $$d/loaded
+            echo "egress: the allowlist $$v is loaded"
+          fi
+          if [ -n "$$pid" ] && ! kill -0 "$$pid" 2>/dev/null; then echo 'egress: tinyproxy ended' >&2; exit 1; fi
+          sleep 1 & wait $$! || true
+        done
+    networks: [default, egress]
+
   # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
   # asked for, and the hopper never needs it — without it the hopper starts and its own vault works:
   #   podman compose --profile vault up -d
@@ -563,6 +609,11 @@ networks:
   # Search's (issue #945): the hopper and Solr only.
   search:
     name: hopper_search
+  # The read-only boxes' (issue #849): internal, so it has no way out. The hopper and the egress proxy are on it too: a
+  # box on it reaches the hopper, and every other host only through the proxy.
+  egress:
+    name: hopper_egress
+    internal: true
 
 volumes:
   # The files Postgres makes at each start (the database password and URL, OpenFGA's and hopper-vault's preshared keys):
@@ -589,5 +640,7 @@ volumes:
   vault-keys:
   vault-token:
   kms:
+  # The egress proxy's allowlist (issue #849): written by the hopper at each read-only box's start, made again after a loss.
+  egress:
   # The telemetry viewer's data (issue #1486), profile `telemetry`: traces, metrics, logs and Grafana's own.
   telemetry:

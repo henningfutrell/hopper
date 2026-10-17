@@ -992,16 +992,31 @@ Version 1 (`docs/schemas/job.cleanup_deferred.v1.json`). The job ended, but its 
 
 ## `job.cleaned_up`
 
-Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. Recorded only for a deferred cleanup.
+Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. `dueAt` (issue #1570): a stop of the hopper came between the job's end and its cleanup, which the next start did from its record; `dueAt` is when the record was written, at the job's end. Recorded only for a deferred cleanup, or one done after a stop.
 
 | field | type | required |
 |---|---|---|
-| `deferredAt` | string | yes |
+| `deferredAt` | string | no |
+| `dueAt` | string | no |
 | `by` | `user` | no |
 
 ```json
 {
   "deferredAt": "2026-10-07T21:31:00.000Z"
+}
+```
+
+## `job.pod_removed`
+
+Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at startup and then every 10 minutes, deleted the job's pod and removed its machine: the job ended, no cleanup was still owed, and its pod was still there with this hopper's instance label (a delete that failed, or a hopper older than the cleanup record). `executor` is the executor that started it.
+
+| field | type | required |
+|---|---|---|
+| `executor` | string | yes |
+
+```json
+{
+  "executor": "kubernetes"
 }
 ```
 
@@ -3539,6 +3554,20 @@ Version 1 (`docs/schemas/cloud_link.unregistered.v1.json`). hopper.io removed th
 }
 ```
 
+## `cloud_link.message_refused`
+
+Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`). Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` | yes |
+
+```json
+{
+  "reason": "unknown-type"
+}
+```
+
 ## `display_name.changed`
 
 Version 1 (`docs/schemas/display_name.changed.v1.json`). The hopper's admin changed the instance's display name (issue #465): what they call this hopper, shown in Settings → Version beside its instance id. `from` and `to` are the names, empty when none; `by`, who. An instance event: in every user's log.
@@ -3635,7 +3664,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `key` (issue #1607, `issue.create` and `issue.comment`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -3705,6 +3734,88 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
   "op": "pr.create",
   "repo": "octo/tools",
   "error": "GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)"
+}
+```
+
+## `gitlab_proxy.done`
+
+Version 1 (`docs/schemas/gitlab_proxy.done.v1.json`). A GitLab job's git push went through the hopper to GitLab (issue #1448 part 3, design.md "Jobs through GitLab"), with the token of the GitLab account of the job's own user: `project`, the job's own GitLab project; `refs`, the refs it changed (git's push options, such as `merge_request.create`, went with it); `as`, the GitLab username that acted; `requestId` names the request; `machine`, the job's machine.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `op` | string | yes |
+| `project` | string | yes |
+| `refs` | string[] | yes |
+
+```json
+{
+  "requestId": "r4",
+  "machine": "desk",
+  "as": "ada",
+  "op": "git.push",
+  "project": "ada/tools",
+  "refs": [
+    "refs/heads/fix-parser"
+  ]
+}
+```
+
+## `gitlab_proxy.refused`
+
+Version 1 (`docs/schemas/gitlab_proxy.refused.v1.json`). The hopper refused a GitLab job's git push (issue #1448 part 3) and told the job `reason`: a push to another project than the job's own, to its default or a release branch, a tag or a delete, or no GitLab account to push with. Fields as `gitlab_proxy.done`; `refs` when the push was read.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `op` | string | yes |
+| `project` | string | yes |
+| `refs` | string[] | no |
+| `reason` | string | yes |
+
+```json
+{
+  "requestId": "r5",
+  "machine": "desk",
+  "as": "ada",
+  "op": "git.push",
+  "project": "ada/tools",
+  "refs": [
+    "refs/heads/main"
+  ],
+  "reason": "a job pushes only to a branch of its own work, never to main: push a new branch and open a merge request"
+}
+```
+
+## `gitlab_proxy.failed`
+
+Version 1 (`docs/schemas/gitlab_proxy.failed.v1.json`). GitLab failed or refused a GitLab job's git push the hopper made (issue #1448 part 3): `error` is what GitLab answered; a refused token ends the GitLab account. Fields as `gitlab_proxy.done`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `op` | string | yes |
+| `project` | string | yes |
+| `refs` | string[] | no |
+| `error` | string | yes |
+
+```json
+{
+  "requestId": "r6",
+  "machine": "desk",
+  "as": "ada",
+  "op": "git.push",
+  "project": "ada/tools",
+  "refs": [
+    "refs/heads/fix-parser"
+  ],
+  "error": "GitLab answered 500"
 }
 ```
 
@@ -4159,6 +4270,28 @@ Version 1 (`docs/schemas/vault.check_mint_refused.v1.json`). A read-only check b
   "check": "hopper-check-asked-0afb8cc6-mgk2x0",
   "reason": "no minting credential mints for cluster lab: a person adds one on Settings → Vault",
   "decision": "6c1d2e3f-0000-4000-8000-000000000005"
+}
+```
+
+## `vault.binding_named`
+
+Version 1 (`docs/schemas/vault.binding_named.v1.json`). The vault named the Secret a sandbox's Kubernetes token is to be bound to (issue #1628), before it asked the minting credential for the token: the minter makes that Secret. `box` is the need box or check box, `job` the job it served (none for a check box), `credential` the minting credential. A hopper that stopped before the mint's own event (`vault.minted`, `vault.check_minted`) still knows the Secret: the reconcile pass deletes it (`vault.unbound`) once no sandbox holds it. Never the token.
+
+| field | type | required |
+|---|---|---|
+| `box` | string | yes |
+| `job` | string | no |
+| `credential` | string | yes |
+| `namespace` | string | yes |
+| `secret` | string | yes |
+
+```json
+{
+  "box": "hopper-need-kube-1a2b3c4d",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "credential": "KUBE_LAB",
+  "namespace": "web",
+  "secret": "hopper-mint-0b1c2d3e-0000-4000-8000-000000000004"
 }
 ```
 
@@ -4645,6 +4778,28 @@ Version 1 (`docs/schemas/job.checks_rerun.v1.json`). A job ended done while the 
 | `head` | string | yes |
 | `checks` | string[] | yes |
 | `refused` | string | no |
+
+```json
+{
+  "recordId": "f-1",
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "head": "4e4e68e4",
+  "checks": [
+    "test (node 24)"
+  ]
+}
+```
+
+## `job.checks_rerun_asked`
+
+Version 1 (`docs/schemas/job.checks_rerun_asked.v1.json`). The hopper asks GitHub to run the failed checks of a job's own pull request again (issue #1607): recorded before it asks, so a stop while it asks makes no second run again of the same head commit. Fields as `job.checks_rerun`; `checks`, the checks it asks to run again. With no `job.checks_rerun` after it, the hopper stopped meanwhile: whether any check ran again is not known, so the job may run them again itself.
+
+| field | type | required |
+|---|---|---|
+| `recordId` | string | yes |
+| `pullRequest` | string | yes |
+| `head` | string | yes |
+| `checks` | string[] | yes |
 
 ```json
 {
@@ -5482,6 +5637,31 @@ Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an
 }
 ```
 
+## `job.sub_issue_linked`
+
+Version 1 (`docs/schemas/job.sub_issue_linked.v1.json`). The hopper linked a job's required child as a GitHub sub-issue of its parent at a later try (issue #1607): GitHub refused the link, or did not answer, as the child was filed (`job.child_issue_filed` with `subIssue: false`). The hopper keeps such a link and tries it again until it is made. `requestId` names the request that filed the child; `parent` and `child` as there.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `parent` | object | yes |
+| `child` | object | yes |
+
+```json
+{
+  "requestId": "r1",
+  "parent": {
+    "repo": "octo/tools",
+    "number": 7
+  },
+  "child": {
+    "repo": "octo/tools",
+    "number": 42,
+    "url": "https://github.com/octo/tools/issues/42"
+  }
+}
+```
+
 ## `contribution.changed`
 
 Version 1 (`docs/schemas/contribution.changed.v1.json`). An admin turned Contribution on or off (issue #429): whether a job of a repository its user cannot push to may work through a fork — the hopper forks it into the user's account, the job pushes there and opens its pull request on the repository from the fork. `from` and `to` (`on`), and `by`, who. It applies to the next request a job makes.
@@ -5829,6 +6009,52 @@ Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoke
   "kind": "issue",
   "number": 12,
   "by": "octocat"
+}
+```
+
+## `issue_draft.drafted`
+
+Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the run `skill` and its id (`file-issue@<id>`, issue #472), and `findings`: the ids of the draft constraints the draft as written broke (a secret or personal data is masked before the person sees it). Nothing is filed. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `provider` | string | yes |
+| `model` | string | no |
+| `skill` | string | yes |
+| `findings` | string[] | yes |
+
+```json
+{
+  "repo": "octo-org/ops",
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "skill": "file-issue@3f2a9c1e7b4d5a60",
+  "findings": []
+}
+```
+
+## `issue_draft.filed`
+
+Version 1 (`docs/schemas/issue_draft.filed.v1.json`). A person confirmed and filed an issue that File an issue drafted (issue #471), with their own GitHub connection, with no label and no assignee: `repo`, `number`, `url`, `by` who confirmed it, the `provider` and the run `skill` with its id that drafted it. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `by` | string | yes |
+| `provider` | string | yes |
+| `skill` | string | yes |
+
+```json
+{
+  "repo": "octo-org/ops",
+  "number": 13,
+  "url": "https://github.com/octo-org/ops/issues/13",
+  "by": "octocat",
+  "provider": "claude",
+  "skill": "file-issue@3f2a9c1e7b4d5a60"
 }
 ```
 

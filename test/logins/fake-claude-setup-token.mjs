@@ -6,6 +6,7 @@
 // $FAKE_SETUP_DIR controls and records it:
 //   code        the code it takes (default good-code)
 //   token       the token it prints (default below)
+//   linger      present: after the token it does not end (a stop comes between the token and its end)
 //   calls.jsonl one line per run: { argv, home, columns, tty, oauthToken } (oauthToken: CLAUDE_CODE_OAUTH_TOKEN was set)
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,7 +37,9 @@ else {
     if (code === read('code', 'good-code')) {
       const token = read('token', 'sk-ant-oat01-FakeSetupToken_0123456789abcdefABCDEF-xyz');
       process.stdout.write(`\r\n\x1b[32m✓\x1b[0m Long-lived authentication token created successfully!\r\n\r\nYour OAuth token (valid for 1 year):\r\n\r\n\x1b[33m${token}\x1b[0m\r\n\r\nStore this token securely. You won't be able to see it again.\r\n`);
-      process.exit(0);
+      if (dir && existsSync(join(dir, 'linger'))) setInterval(() => undefined, 60_000);
+      else process.exit(0);
+      return;
     }
     process.stdout.write('\r\nOAuth error: Request failed with status code 400\r\n');
     process.exit(1);

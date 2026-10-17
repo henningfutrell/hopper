@@ -26,7 +26,7 @@ import {
 import { assess, STALE_AFTER_MS } from './assess.ts';
 import { BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
-import { askJev, type JevCase } from './jev.ts';
+import { createJevSteps, type JevCase } from './jev.ts';
 import { attemptOf, causeInputOf, recentOf, repeatedOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts'; import { createChecksRed, type ChecksRedOptions } from './checks-red.ts'; import { createUnfinished, type UnfinishedDeps } from './unfinished.ts';
 import { rerunRecordOf, retryable } from './rerun.ts';
@@ -160,7 +160,7 @@ export function createFailures(o: FailuresOptions): Failures {
       finish = doneNow;
       if (!doneNow) handoffs.afterRecord(record);
       if ((!cause || cause.id === 'not-complete') && !doneNow && a.decision === 'person' && !a.superseded && !a.repeated && Date.parse(record.at) - Date.parse(job.finishedAt ?? job.updatedAt) <= STALE_AFTER_MS && attempt - 1 < s.maxAttempts) {
-        jevCase = { recordId: record.id, job, error, attempt, doneCheck: cause !== undefined, ...(ranMs !== undefined ? { ranMs } : {}), ...(machineId ? { machineId } : {}) };
+        jevSteps.keep(jevCase = { recordId: record.id, job, error, attempt, doneCheck: cause !== undefined, ...(ranMs !== undefined ? { ranMs } : {}), ...(machineId ? { machineId } : {}) });
       }
       store.jobs.update(job.id, {
         assessment: {
@@ -186,11 +186,12 @@ export function createFailures(o: FailuresOptions): Failures {
     });
     if (finish) o.finishShipped(jobId, { summary: DONE_NOTE });
     if (grouped) o.trigger('failure.grouped');
-    if (jevCase) void jevStep(jevCase);
+    if (jevCase) jevSteps.ask(jevCase);
     if (kick && !stopped) void sweep();
   }
 
-  const jevStep = (c: JevCase) => (o.minorDecisions ? askJev({ ...o.minorDecisions, live: () => !stopped, logger: o.logger, rerun: rerunRecord }, c) : Promise.resolve());
+  /** Jev's steps (issue #550): each kept on its record until Jev answered, so a restart asks it again (issue #1608). */
+  const jevSteps = createJevSteps({ store, minorDecisions: o.minorDecisions, live: () => !stopped, logger: o.logger, now, rerun: (recordId, by, note) => rerunRecord(recordId, by, note) });
   const rerunRecord = (recordId: string, by: RerunBy, note: string): Promise<FailureAction<Job>> => rerunRecordOf({ store, rerun: o.rerun, takesBack: o.takesBack, now }, recordId, by, note);
 
   /**
@@ -304,8 +305,9 @@ export function createFailures(o: FailuresOptions): Failures {
 
   return {
     start() {
-      // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog.
-      assessBacklog();
+      // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog; then
+      // Jev's steps a restart left unasked (issue #1608).
+      assessBacklog(); jevSteps.askLeft();
       // A store from the build before (issue #529): what nothing waits on any more clears before anything is handed off.
       handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {

@@ -135,11 +135,32 @@ describe('herdr-claude job across a daemon restart', () => {
     expect(herdr.keys).toContainEqual({ paneId, keys: ['enter'] });
   });
 
-  it('Claude gone from the pane → failed "interrupted by daemon restart" and the pane closed', async () => {
+  // Issue #1569: the machine answers and its work is gone: the job resumes its agent session in its kept work tree, there.
+  it('Claude gone from the pane → it resumes its agent session on its machine and finishes, never failed', async () => {
+    freshDb();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG, { output: ['● Painted the last planks.', '  HOPPER_DONE'] }] });
+    const { job, agentName } = await runThenStop(herdr);
+    expect(job.agentSession).toBeDefined();
+    herdr.killAgent(agentName);
+
+    const second = await boot(herdr);
+    await second.waitForStatus(job.id, 'finished');
+    const events = (await second.events()).filter((e) => e.jobId === job.id);
+    expect(events.some((e) => e.type === 'job.reattached' || e.type === 'job.failed')).toBe(false);
+    expect(events.find((e) => e.type === 'job.parked')!.data).toMatchObject({ from: 'running', auto: true, why: 'its pane was gone after a daemon restart' });
+    expect(herdr.agentStarts.at(-1)!.args.join(' ')).toContain(job.agentSession);
+    expect(herdr.prompts).toHaveLength(2);
+    expect(herdr.prompts[1]!.text).toContain('This job\'s run was cut off: its pane was gone after a daemon restart.');
+  });
+
+  it('Claude gone from the pane of a job with no agent session → failed "interrupted by daemon restart" and the pane closed', async () => {
     freshDb();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
     const { job, paneId, agentName } = await runThenStop(herdr);
     herdr.killAgent(agentName);
+    const store = openAdminStore(databaseUrlFor(dbPath));
+    store.jobs.update(job.id, { agentSession: undefined });
+    store.close();
 
     const second = await boot(herdr);
     const failed = await second.waitForStatus(job.id, 'failed');

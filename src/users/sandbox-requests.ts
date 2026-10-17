@@ -10,10 +10,18 @@ import type { Job } from '../domain/types.ts';
 import { namedTemplates, sandboxesHold } from '../domain/sandboxes-before-start.ts';
 import { createSandboxRequests, type SandboxRequests } from '../sandbox/requests.ts';
 import type { Sandboxes } from '../sandbox/service.ts';
+import type { NeedStepRepository } from '../domain/need-steps.ts';
 
-/** Runs a job's need step or box step (issues #1007, #1349) in a sandbox of its own, burned after it. */
+/**
+ * Runs a job's need step or box step (issues #1007, #1349) in a sandbox of its own, burned after it; each step kept in
+ * the instance's need steps and run by its `need-step` saga (issue #1568), and whether the sandbox runs ledger
+ * holds a run of it.
+ */
 export interface SandboxLauncher {
   needStep: Sandboxes['needStep'];
+  steps: NeedStepRepository;
+  ran(step: string): boolean;
+  sagas: { begin(step: string, userId: string): string; abort(saga: string, reason: string): boolean };
 }
 
 /** A job not ended: waiting to start (issue #1471), starting, or at work. */

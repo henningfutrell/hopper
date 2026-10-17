@@ -26,7 +26,11 @@ export interface JobCheckpoint {
 }
 
 /** A parked job picked up to resume elsewhere (issue #921): when, from which checkpoint, the machine it left. */
-export interface ParkedElsewhere { at: string; checkpointAt: string; from?: MachineId }
+/**
+ * `lost` (issue #1569): it moved off `from` because that machine was lost (the lost-machine move). It is not placed back
+ * on `from` until the agent it left there is ended; then the mark goes.
+ */
+export interface ParkedElsewhere { at: string; checkpointAt: string; from?: MachineId; lost?: true }
 
 /** At most this many commits are named on a checkpoint. */
 export const CHECKPOINT_COMMITS = 50;

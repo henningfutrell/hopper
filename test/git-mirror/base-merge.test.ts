@@ -8,6 +8,8 @@
 //     Then the hopper pushes a merge commit to the pull request's branch, both sections kept, the base branch's first
 //   Scenario: both sides changed the same line of a code file, or of a Markdown file
 //     Then nothing is pushed, and the conflicting files are named
+//   Scenario: the hopper's git is the container image's, git 2.39 (issue #1624)
+//     Then the hopper pushes the same merge commit, both sections kept
 //   Scenario: git fails to merge the Markdown file, or its resolution loses the file's lines (issue #1218)
 //     Then nothing is pushed, and the file is named
 //   Scenario: the branch moved since the fetch
@@ -21,7 +23,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
 import { createGitMirrors, runGit, type GitRun } from '../../src/git-mirror/mirrors.ts';
-import { git } from './support.ts';
+import { git, gitOfTheImage } from './support.ts';
 
 const DOC = '# Design\n\nintro\n\nfirst\n\nsecond\n\nthird\n';
 
@@ -86,6 +88,15 @@ describe('the base merge (issue #967)', () => {
     expect(show(o.bare, `${commit}:x.ts`)).toBe('export const x = 3;\n');
     expect(show(o.bare, `${commit}:one.ts`)).toBe('export {};\n');
     expect(git(o.root, '--git-dir', o.bare, 'log', '-1', '--format=%an <%ae>%n%s', commit)).toBe("hopper <hopper@noreply.invalid>\nMerge branch 'dev' into issue-1");
+  });
+
+  it("keeps both sides' added lines with the container image's git 2.39 too (issue #1624)", async () => {
+    const o = origin();
+    const { m, traffic } = mirrors(o.root, gitOfTheImage);
+    const said = await traffic.pass('github', () => m.baseMerge('acme/app', async () => ({ url: o.url }), { number: 1, base: 'dev', headRef: 'issue-1' }));
+    expect(said).toEqual({ outcome: 'pushed', commit: expect.stringMatching(/^[0-9a-f]{40}$/), resolved: ['docs/design.md'] });
+    const commit = (said as { commit: string }).commit;
+    expect(show(o.bare, `${commit}:docs/design.md`)).toBe(`${DOC.replace('intro', 'the intro')}\n## Two\n\nfrom dev\n\n## One\n\nfrom the pull request\n`);
   });
 
   it('pushes nothing and names the files when a code file or a changed Markdown line conflicts', async () => {

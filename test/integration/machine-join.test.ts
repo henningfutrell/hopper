@@ -11,6 +11,7 @@
 //     Then the Machines view lists the machine under its own name, a client target, online
 //     And the hopper's herdr calls run in the machine's herdr session
 //   Scenario: a join code joins one machine, once
+//   Scenario: a machine whose join answer was lost joins again with the same line (issue #1628)
 //   Scenario: a machine started again from its own files dials in as the same machine
 //   Scenario: something holding another machine key cannot dial in as the machine
 //   Scenario: a removed machine's next dial-in is refused
@@ -104,12 +105,24 @@ describe('adding a machine with one line', () => {
     expect(JSON.stringify(cfg)).not.toContain(readFileSync(join(dir, 'link-key.pem'), 'utf8').split('\n')[1]);
   });
 
-  it('a join code joins one machine, once: a second join with it is refused', async () => {
+  it('a join code joins one machine, once: a join of another machine with it is refused', async () => {
     const { a, session } = await boot();
     const line = `${a.url}#${await joinCode(a, session)}`;
     await joinHopper({ line, name: 'studio', dir: machineDir() });
     await expect(joinHopper({ line, name: 'laptop', dir: machineDir() })).rejects.toThrow(/join code is not valid/);
     expect((await machinesOf(a)).map((m) => m.id)).toEqual(['studio']);
+  });
+
+  it('a machine whose join answer was lost joins again with the same line: one machine (issue #1628)', async () => {
+    const { a, session } = await boot();
+    const line = `${a.url}#${await joinCode(a, session)}`;
+    const dir = machineDir();
+    const first = await joinHopper({ line, name: 'studio', dir });
+    // The answer is dropped: the machine sends the same join again, with the same key.
+    const again = await joinHopper({ line, name: 'studio', dir });
+    expect(again).toEqual(first);
+    expect((await machinesOf(a)).map((m) => m.id)).toEqual(['studio']);
+    await expect(joinHopper({ line, name: 'laptop', dir: machineDir() })).rejects.toThrow(/another machine used it/);
   });
 
   it('a native Windows client joins as any machine does (issue #1348)', async () => {

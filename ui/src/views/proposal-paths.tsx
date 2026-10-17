@@ -2,17 +2,17 @@
 // title and a recommended badge, its TL;DR as Markdown, its tradeoffs and other labelled fields as rows, what it creates
 // (issue #755) — that expands to its full Markdown. A person
 // checks one or more paths, adds a note to each, and continues with them; or asks for more paths (the selection goes
-// along and is kept), steers, or rejects all. Zero paths: the reason, and only Accept, Ask for more paths and Steer.
+// along and is kept), steers, or rejects the whole proposal (issue #1659: always enabled, its note asked for in the
+// dialog). Zero paths: the reason, and Accept, Ask for more paths, Steer and Reject.
 // A path a reviewer level added says so; one it found not viable says why and cannot be checked. After the
 // selection, each selected path links to its follow-on job with the job's live state, and the paths not selected are
 // greyed out and kept. Built for a phone too: everything wraps, nothing scrolls sideways.
-import { Check, ChevronRight, MessageSquare, Plus, Star, X, type LucideIcon } from 'lucide-react';
+import { Check, ChevronRight, MessageSquare, Plus, Star, type LucideIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Confirm } from '@/components/confirm';
 import { Markdown } from '@/components/markdown';
 import { StatusBadge } from '@/components/status';
 import { cn } from '@/lib/utils';
@@ -20,9 +20,10 @@ import type { PathPick, PathTradeoff, ProposalPath, ProposalPathSet, ReviewDecis
 import { actFor } from '@/store';
 import { refreshReviews } from '@/store/reviews';
 import { useJobIndex } from '@/store/selectors';
+import { RejectProposals } from './proposal-reject';
 
 const TRADEOFFS: readonly [PathTradeoff, string][] = [['security', 'Security'], ['effort', 'Effort'], ['risk', 'Risk'], ['friction', 'Friction']];
-const DECISION_ICON: Record<string, LucideIcon> = { accept: Check, more_paths: Plus, steer: MessageSquare, reject: X };
+const DECISION_ICON: Record<string, LucideIcon> = { accept: Check, more_paths: Plus, steer: MessageSquare };
 const THEN_LABEL: Record<ShiftThen, string> = { work: 'goes back to the work, with it as context', end: 'ends here', proposal: 'writes a proposal next, in the same session' };
 
 const pathsOfVersion = (v: ReviewVersion): ProposalPathSet => v.paths ?? { paths: [] };
@@ -155,7 +156,7 @@ export function PathsDecide({ p, type }: { p: ReviewItemView; type: ReviewSectio
     if (inFlight.current || (d.notes === 'required' && !text)) return;
     inFlight.current = true;
     setBusy(true);
-    const paths = d.effect === 'reject' || (d.effect === 'accept' && open.length === 0) ? [] : chosen();
+    const paths = d.effect === 'accept' && open.length === 0 ? [] : chosen();
     const body = { ...(text ? { notes: text } : {}), ...(paths.length > 0 ? { paths } : {}), ...(d.effect === 'accept' && p.then !== undefined ? { then } : {}) };
     const r = await actFor(`/ui/api/proposals/${encodeURIComponent(p.id)}/${d.route}`, body, `${d.label}: done`);
     if (r.ok) { setNotes(''); setPicks(new Map()); }
@@ -165,19 +166,17 @@ export function PathsDecide({ p, type }: { p: ReviewItemView; type: ReviewSectio
   };
   const toggle = (id: string) => setPicks((m) => { const n = new Map(m); if (n.has(id)) n.delete(id); else n.set(id, ''); return n; });
   const note = (id: string, text: string) => setPicks((m) => new Map(m).set(id, text));
-  // Zero paths: Accept agrees no change is needed; there is nothing to reject.
-  const shown = type.decisions.filter((d) => open.length > 0 || d.effect !== 'reject');
+  // Zero paths: Accept agrees no change is needed. Reject (issue #1659) rejects the whole proposal, with its own dialog.
   const button = (d: ReviewDecision) => {
+    if (d.effect === 'reject') return <RejectProposals key={d.id} ids={[p.id]} label={d.label} />;
     const Icon = DECISION_ICON[d.id] ?? Check;
     const label = d.effect === 'accept' && open.length === 0 ? 'Accept' : d.label;
     const needs = d.notes === 'required' && !notes.trim();
     const none = d.effect === 'accept' && open.length > 0 && picks.size === 0;
-    const b = (
-      <Button key={d.id} data-decision={d.id} variant={d.effect === 'accept' ? 'default' : d.effect === 'reject' ? 'ghost' : 'outline'} disabled={busy || needs || none}
-        title={needs ? 'Write a note first' : none ? 'Select at least one path' : undefined} onClick={d.effect === 'reject' ? undefined : () => void decide(d)}><Icon />{label}</Button>
+    return (
+      <Button key={d.id} data-decision={d.id} variant={d.effect === 'accept' ? 'default' : 'outline'} disabled={busy || needs || none}
+        title={needs ? 'Write a note first' : none ? 'Select at least one path' : undefined} onClick={() => void decide(d)}><Icon />{label}</Button>
     );
-    if (d.effect !== 'reject') return b;
-    return <Confirm key={d.id} title="Reject every path?" description="Its job ends, with the decision and your reason recorded." action="Reject all" onConfirm={() => void decide(d)}>{b}</Confirm>;
   };
   return (
     <div className="space-y-3">
@@ -196,8 +195,8 @@ export function PathsDecide({ p, type }: { p: ReviewItemView; type: ReviewSectio
           ))}
         </fieldset>
       )}
-      <Textarea rows={3} value={notes} disabled={busy} placeholder="A note: with the decision, what to steer toward, or why every path is rejected" onChange={(e) => setNotes(e.target.value)} />
-      <div className="flex flex-wrap gap-2">{shown.map(button)}</div>
+      <Textarea rows={3} value={notes} disabled={busy} placeholder="A note: with the decision, or what to steer toward" onChange={(e) => setNotes(e.target.value)} />
+      <div className="flex flex-wrap gap-2">{type.decisions.map(button)}</div>
     </div>
   );
 }

@@ -120,8 +120,11 @@ export interface QuestionRepository {
   list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
-  /** Append one attempt to the question's trail. */
-  addAttempt(id: string, attempt: QuestionAttempt): Question;
+  /**
+   * Append one attempt to the question's trail. `finishAttempt`: replace the attempt of `callKey` (issue #1608) with
+   * `attempt`, which keeps the key; none of that key: append it.
+   */
+  addAttempt(id: string, attempt: QuestionAttempt): Question; finishAttempt(id: string, callKey: string, attempt: QuestionAttempt): Question;
 }
 
 /** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */
@@ -305,8 +308,12 @@ export interface JoinCodePlace { template?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
-  /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
-  take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
+  /**
+   * The code's user (and what it names), when it exists and `expiresAt > now`: the code is spent by `machineKey`, and
+   * taken again by that key only, until it expires (issue #1628: a join whose answer was lost is sent again). Else
+   * undefined. Expired codes are deleted first.
+   */
+  take(codeHash: string, now: string, machineKey: string): ({ userId: string } & JoinCodePlace) | undefined;
 }
 
 /** The sandbox records (issue #708, instance migration 34): one per sandbox box an older build launched, by id; names are unique. */
@@ -481,7 +488,8 @@ export interface ConnectedAccountRepository {
 }
 
 export interface UserStore {
-  jobs: JobRepository;
+  /** The jobs; the job leases (issue #1662): the hopper that drives each claimed or running job. */
+  jobs: JobRepository; jobLeases: import('./job-leases.ts').JobLeaseRepository;
   lanes: LaneRepository;
   decisions: DecisionRepository;
   events: EventLog;
@@ -513,7 +521,7 @@ export interface UserStore {
   /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing; the GitHub outbox (issue #1238): the GitHub changes people's actions asked for, until sent; the repositories' checks as last read (issue #1250), with their answers' ETags. */
   githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository; githubOutbox: import('./github-outbox.ts').GitHubOutboxRepository; repoChecks: import('./repo-checks.ts').RepoChecksReadRepository; sourceCalls: import('./sources.ts').SourceCallLog; // the call log (issue #1264)
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
-  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
+  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; notifierDeliveries: import('./notifier-deliveries.ts').NotifierDeliveryRepository; // the send log (issue #1014); notifier deliveries (issue #1587)
   settings: UserSettingsRepository;
   /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
   connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
@@ -550,7 +558,7 @@ export interface InstanceStore {
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */
-  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
+  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; needSteps: import('./need-steps.ts').NeedStepRepository; sagas: import('./sagas.ts').SagaRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sandbox steps: each need or box step from the job's ask to its result (issue #1568); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */

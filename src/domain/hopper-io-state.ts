@@ -1,5 +1,5 @@
-// The hopper.io state snapshot (issue #466 part 1, design.md "The hopper.io state snapshot"): what an install may send
-// on its hopper.io link for the dashboard, and how it is made from the install's own state. The allow-list of
+// The hopper.io state snapshot (issue #466 part 1, design.md "The hopper.io state snapshot"): what an instance may send
+// on its cloud link for the dashboard, and how it is made from the instance's own state. The allow-list of
 // docs/hopper-io-security.md R5 is this schema: counts, closed enums and an opaque machine key, never free text. Pure:
 // `sentAt` and the machine key are passed in. Nothing here sends anything.
 import { z } from 'zod';
@@ -16,14 +16,23 @@ import { UPDATE_CHANNELS, type UpdateChannel } from './update.ts';
 export const HOPPER_IO_NOT_TAKING = ['no-lanes', 'offline', 'leaving', 'drained', 'template-waiting', 'disk-low', 'work-tree', 'address', 'herdr'] as const;
 export type HopperIoNotTaking = (typeof HOPPER_IO_NOT_TAKING)[number];
 
+/**
+ * The kinds of executor a machine offers (issue #465 item 4): the built-in executor plugins' ids, and `other` for any
+ * other plugin. A machine's executors are instance names the plugins config gives them, which can hold a host name, so
+ * only the plugin's kind goes out. A new built-in executor is listed here (the test checks the list).
+ */
+export const HOPPER_IO_EXECUTORS = ['herdr-claude', 'claude', 'codex', 'cursor-agent', 'opencode', 'omp', 'command', 'kubernetes', 'test', 'other'] as const;
+export type HopperIoExecutor = (typeof HOPPER_IO_EXECUTORS)[number];
+const KNOWN_EXECUTORS: ReadonlySet<string> = new Set(HOPPER_IO_EXECUTORS.filter((e) => e !== 'other'));
+
 const strict = z.strictObject;
 const count = z.number().int().min(0);
 
 /** The snapshot, version 1, closed at every level: a key outside it is refused. A new field bumps `schema`. */
 export const HOPPER_IO_STATE_SCHEMA = strict({
-  schema: z.literal(1),
+  schema: z.literal(2),
   sentAt: z.iso.datetime(),
-  install: strict({ version: z.string().regex(/^(?:[0-9a-f]{4,8}|unknown)$/), channel: z.enum(UPDATE_CHANNELS) }),
+  instance: strict({ version: z.string().regex(/^(?:[0-9a-f]{4,8}|unknown)$/), channel: z.enum(UPDATE_CHANNELS) }),
   queue: strict({ waiting: count, running: count, locked: count, gate: z.enum(QUEUE_GATE_MODES) }),
   attention: strict({ questionsAwaitingOwner: count, jobsLocked: count, machinesOffline: count }),
   machines: z.array(strict({
@@ -31,6 +40,7 @@ export const HOPPER_IO_STATE_SCHEMA = strict({
     online: z.boolean(),
     lanesInUse: count,
     lanes: count,
+    executors: z.array(z.enum(HOPPER_IO_EXECUTORS)).max(HOPPER_IO_EXECUTORS.length),
     takesJobs: z.boolean(),
     notTaking: z.enum(HOPPER_IO_NOT_TAKING).optional(),
   })).max(500),
@@ -39,9 +49,9 @@ export type HopperIoState = z.infer<typeof HOPPER_IO_STATE_SCHEMA>;
 export type HopperIoMachine = HopperIoState['machines'][number];
 
 /**
- * What the snapshot is made from: the install's machines and lanes (GET /api/machines), its queue (GET /api/queue), its
+ * What the snapshot is made from: the instance's machines and lanes (GET /api/machines), its queue (GET /api/queue), its
  * open questions and parked jobs (GET /api/questions), its installed version and channel (GET /api/update).
- * `machineKey`: an opaque, stable key for a machine id, never the id itself (the hopper.io link derives it, issue #464).
+ * `machineKey`: an opaque, stable key for a machine id, never the id itself (the cloud link derives it, issue #464).
  */
 export interface HopperIoStateInputs {
   sentAt: string;
@@ -54,6 +64,14 @@ export interface HopperIoStateInputs {
   /** The parked jobs: a parked job's question waits in Parked, not on the owner (issue #565). */
   parked: readonly { id: string; status: string; questionId?: string }[];
   machineKey: (machineId: string) => string;
+  /** The plugin id of a configured executor instance, by its name; undefined: no such instance. */
+  executorPlugin: (executor: string) => string | undefined;
+}
+
+/** The kinds of executor `names` are, each once, in name order; an unknown plugin or name is `other`. */
+function executorKinds(names: readonly string[], pluginOf: (executor: string) => string | undefined): HopperIoExecutor[] {
+  const kinds = new Set(names.map((n): HopperIoExecutor => { const p = pluginOf(n); return p !== undefined && KNOWN_EXECUTORS.has(p) ? p as HopperIoExecutor : 'other'; }));
+  return [...kinds].sort();
 }
 
 /** Why `m` takes no new job, in the decider's order; undefined: it takes jobs. */
@@ -79,15 +97,16 @@ export function projectHopperIoState(i: HopperIoStateInputs): HopperIoState {
       online: m.online,
       lanesInUse: i.lanes.filter((l) => l.machineId === m.id && l.state !== 'idle').length,
       lanes: m.maxLanes,
+      executors: executorKinds(m.executors, i.executorPlugin),
       takesJobs: why === undefined,
       ...(why ? { notTaking: why } : {}),
     };
   });
   const parkedOn = new Set(i.parked.filter((j) => j.status === 'parked' && j.questionId).map((j) => `${j.id} ${j.questionId}`));
   return {
-    schema: 1,
+    schema: 2,
     sentAt: i.sentAt,
-    install: { version: i.installed ? i.installed.commit.slice(0, 8) : 'unknown', channel: i.channel },
+    instance: { version: i.installed ? i.installed.commit.slice(0, 8) : 'unknown', channel: i.channel },
     queue: { waiting: i.queue.waiting.length, running: i.queue.running.length, locked: i.queue.locked.length, gate: i.queue.gate.mode },
     attention: {
       questionsAwaitingOwner: i.questions.filter((q) => q.status === 'open' && q.tier === 'human' && !parkedOn.has(`${q.jobId} ${q.id}`)).length,

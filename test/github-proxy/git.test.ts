@@ -83,6 +83,14 @@ describe('the git config a job runs with', () => {
       GIT_CONFIG_VALUE_4: '!f() { test "$1" = get || exit 0; echo username=hopper-job; printf \'password=%s\\n\' "$(cat "$HOPPER_TOKEN_FILE")"; }; f',
     });
   });
+
+  it('a GitLab job\'s (issue #1448 part 3): also its GitLab, to the hopper\'s GitLab git route, its credential ask answered the same way', () => {
+    const vars = jobGitConfig('http://hopper:4790/', 'https://github.com', { url: 'https://gitlab.example/', path: '/job/gitlab-git/' });
+    expect(vars.GIT_CONFIG_COUNT).toBe('8');
+    expect([vars.GIT_CONFIG_KEY_5, vars.GIT_CONFIG_VALUE_5]).toEqual(['url.http://hopper:4790/job/gitlab-git/.insteadOf', 'https://gitlab.example/']);
+    expect([vars.GIT_CONFIG_KEY_6, vars.GIT_CONFIG_VALUE_6]).toEqual(['credential.http://hopper:4790/job/gitlab-git/.helper', '']);
+    expect([vars.GIT_CONFIG_KEY_7, vars.GIT_CONFIG_VALUE_7]).toEqual(['credential.http://hopper:4790/job/gitlab-git/.helper', vars.GIT_CONFIG_VALUE_4]);
+  });
 });
 
 describe('what a job is told', () => {

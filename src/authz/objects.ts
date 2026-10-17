@@ -89,6 +89,16 @@ export function intakeActorCheck(userId: string, login: string, actors: readonly
     contextual: [...new Set(actors.map((a) => githubLoginObject(a)))].map((subject) => ({ subject, relation: 'trusted_actor', object })),
   };
 }
+/** A GitLab user (issue #1448): `gitlab_account:<the GitLab's URL>/<user id>`, the URL encoded; a rename keeps the id. */
+export const gitlabAccountObject = (a: { baseUrl: string; userId: number }): string => `gitlab_account:${encodeURIComponent(a.baseUrl)}/${a.userId}`;
+/** The check whether a GitLab user may start the user's jobs (issue #1448): the user's trusted GitLab actors told for this check only. */
+export function gitlabIntakeActorCheck(userId: string, actor: { baseUrl: string; userId: number }, actors: readonly { baseUrl: string; userId: number }[]): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = intakeObject(userId);
+  return {
+    tuple: { subject: gitlabAccountObject(actor), relation: 'can_start_jobs', object },
+    contextual: [...new Set(actors.map(gitlabAccountObject))].map((subject) => ({ subject, relation: 'trusted_actor', object })),
+  };
+}
 export const linkObject = (l: { userId: string; shareId: string }): string => `link:${l.userId}/${l.shareId}`;
 export function shareTuples(shares: readonly { ownerId: string; artifactId: string; shareId: string; userId?: string }[]): RelationshipTuple[] {
   return shares.map((s) => ({

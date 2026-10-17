@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
+import { createKeyedTab, nextPaneKey } from './pane-key.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
@@ -209,8 +210,8 @@ export const scratchCommand = (cwd: string, jobId: string, make: boolean): strin
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
   const tmp = jobTmpOf(ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
-  const { tabId, paneId, terminalId } = await d.herdr.createTab({
-    workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
+  const { tabId, paneId, terminalId } = await createKeyedTab(d, ctx, {
+    workspaceId, cwd, label: `${ctx.laneId} · ${nextPaneKey(ctx)}`,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
@@ -289,15 +290,16 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
  * the job with what it said. The command says first that it runs: a shell that lost or mangled it (issue
  * #518, a zsh whose start-up files were busy) gets the line cleared and the command typed again, and one
  * that never runs it times the start out, to be tried again in a new pane. A run again finds the worktree
- * the first one made and enters it.
+ * the first one made and enters it. `url`: the repository's clone URL when it is not GitHub's (a GitLab project, issue #1448
+ * part 3).
  */
-async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
+async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined, url?: string): Promise<ExecutionOutcome | StartTimedOut | null> {
   if (repo) ctx.progress(`fetching or cloning ${repo}'s checkout in the work tree's workspace`);
   // One fetch per repository per sync pass on each machine (issue #858): a later start in the pass takes what it got.
   const fetches = d.passFetches ?? jobStartFetches;
   const key = passFetchKey(ctx.machine.id, s.cwd, repo);
   const fetch = !fetches.fresh(key);
-  const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees, fetch });
+  const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), ...(url ? { url } : {}), worktrees: d.jobWorktrees, fetch });
   for (let typed = 1; ; typed++) {
     await d.herdr.runInPane(s.paneId, command);
     const running = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_RUNNING, shows(JOB_WORKTREE_RUNNING), JOB_WORKTREE_RUNNING_WAIT_MS);
@@ -394,7 +396,7 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   const unsandboxed = await enterSandbox(d, ctx, s);
   if (unsandboxed || ctx.signal.aborted) return unsandboxed;
   if (d.jobWorktrees || p.repo) {
-    const unentered = await enterJobWorktree(d, ctx, s, p.repo);
+    const unentered = await enterJobWorktree(d, ctx, s, p.repo, p.repoUrl);
     if (unentered || ctx.signal.aborted) return unentered;
     if (restore) {
       const unrestored = await restoreCheckpoint(d, ctx, s, restore);

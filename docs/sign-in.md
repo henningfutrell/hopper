@@ -364,12 +364,14 @@ A person can work from more than one GitHub account, for example a work account 
 
 ## A GitLab account
 
-A person can also attach a GitLab account, at https://gitlab.com or at a GitLab of their own (issue #1448, part 2). The
-hopper lists the issues labelled `hopper` in the projects picked for it in Intake. Jobs do not act through GitLab yet, so no
-GitLab issue becomes a job.
+A person can also attach a GitLab account, at https://gitlab.com or at a GitLab of their own (issue #1448, parts 2 and 3).
+The hopper lists the issues labelled `hopper` in the projects picked for it in Intake. An issue of a trusted origin, assigned
+to the account, becomes a job: it fetches and pushes through the hopper with the account's token, and opens a merge request
+(design.md "Jobs through GitLab").
 
 1. Make a personal access token at GitLab (on gitlab.com: https://gitlab.com/-/user_settings/personal_access_tokens), with
-   the scopes `read_api` and `read_user`.
+   the scopes `api` (the hopper's labels on an issue), `read_user` (the source email match) and `write_repository` (a
+   job's git fetch and push).
 2. In Sources → GitLab, give the GitLab URL (`https://gitlab.com` when it is not your own), paste the token and click
    **Connect GitLab**.
 3. Pick the projects whose issues Intake lists, and click **Save**.

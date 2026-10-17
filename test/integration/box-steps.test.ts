@@ -17,6 +17,8 @@
 //       outcome and when it was destroyed
 //     And the machines, their lanes and their lane caps are as before the steps (issue #1371): a sandbox takes no lane
 //   Scenario: a template this job has no approved sandbox of, or a --secret, is refused
+//   Scenario: the hopper keeps each step (issue #1568): the same ask sent again with its key is the same step, never a
+//     second sandbox; a step needs a key; a hopper-step that is stopped stops its step, and no sandbox is left
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,9 +27,10 @@ import type { SandboxesView } from '../../src/domain/machines.ts';
 import type { DomainEvent, VaultView } from '../../src/domain/types.ts';
 import { HOME } from '../../src/sandbox/flags.ts';
 import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
-import { STEP_NOT_RUN, STEP_SCRIPT } from '../../src/windows-steps/script.ts';
+import { STEP_HEADER, STEP_NOT_RUN, STEP_PATH, STEP_SCRIPT } from '../../src/windows-steps/script.ts';
 import { MINTED_AWS } from '../support/fake-mint-apis.ts';
 import { ACCOUNT, boot, runningJob, skill, stopAll, type Booted, type Run } from '../support/read-only-check.ts';
+import { waitFor } from '../support/wait.ts';
 
 afterEach(stopAll);
 
@@ -145,5 +148,34 @@ describe('box steps, each in a sandbox of its own (issues #1004, #1349)', () => 
     expect(secret.stderr).toContain('never a vault secret by name');
     expect(sandboxesRun(b)).toHaveLength(0);
   });
-});
 
+  it('the hopper keeps each step: the same key is the same step; a step needs a key; a hopper-step stopped stops its step (issue #1568)', async () => {
+    const { b, creds, jobId, template } = await approvedJob();
+    const token = readFileSync(join(creds, 'token'), 'utf8').trim();
+    const ask = (key?: string) => fetch(`${b.a.url}${STEP_PATH}?box=${template}&command=true${key ? `&key=${key}` : ''}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/x-tar' }, body: '' });
+    const first = await ask('same-key-0001'), again = await ask('same-key-0001');
+    expect([first.status, again.status]).toEqual([202, 202]);
+    expect(again.headers.get(STEP_HEADER.id)).toBe(first.headers.get(STEP_HEADER.id));
+    const id = first.headers.get(STEP_HEADER.id)!;
+    const result = await waitFor(async () => {
+      const r = await fetch(`${b.a.url}${STEP_PATH}/${id}`, { headers: { authorization: `Bearer ${token}` } });
+      return r.status === 200 ? r : undefined;
+    }, { timeoutMs: 20_000, what: 'the step\'s result' });
+    expect(result.headers.get(STEP_HEADER.exit)).toBe('0');
+    expect(sandboxesRun(b)).toHaveLength(1);
+    const keyless = await ask();
+    expect(keyless.status).toBe(400);
+    expect(await keyless.text()).toContain('no: send key');
+
+    // A hopper-step stopped mid-step: its step is stopped there too, and its sandbox burned (the runtime double ends
+    // its script only when the script ends, so it is a short one).
+    const p = spawn('sh', [join(creds, 'step'), 'box', template, '--command', 'sleep 5'], { env: { PATH: process.env.PATH, HOPPER_URL: b.a.url, HOPPER_TOKEN_FILE: join(creds, 'token'), TMPDIR: b.cloud.dir } });
+    const closed = new Promise<number | null>((resolve) => p.on('close', resolve));
+    await waitFor(async () => (await ofJob(b, jobId)).filter((e) => e.type === 'step.started').length === 2, { timeoutMs: 20_000, what: 'the second step started' });
+    p.kill('SIGTERM');
+    expect(await closed).toBe(130);
+    const finished = await waitFor(async () => (await ofJob(b, jobId)).filter((e) => e.type === 'step.finished')[1], { timeoutMs: 20_000, what: 'the second step ended' });
+    expect(finished.data).toMatchObject({ exit: 125, problem: expect.stringContaining('stopped the step') });
+    await waitFor(() => b.runtime.boxes.size === 0, { timeoutMs: 20_000, what: 'no box left' });
+  }, 60_000);
+});

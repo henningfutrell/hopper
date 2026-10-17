@@ -122,6 +122,8 @@ export const issueLineageEvents = {
     // Additive (issue #1510): the hopper labelled the required child and assigned it to the job's user.
     routed: z.literal(true).optional(),
   }),
+  // A required child's sub-issue link made at a later try (issue #1607): GitHub refused it, or the hopper stopped, as it was filed.
+  'job.sub_issue_linked': strict({ requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }) }),
 };
 
 // Vault grants (issue #652, src/vault/grants.ts): a job on a box asked the vault with no grant, a person granted its item
@@ -154,6 +156,7 @@ export const rateLimiterEvents = {
   'cloud_link.registration_code_minted': strict({ installId: z.string(), account: z.string(), expiresAt: z.string(), by: z.string() }),
   'cloud_link.registered': strict({ installId: z.string(), account: z.string() }),
   'cloud_link.unregistered': strict({ installId: z.string(), account: z.string() }),
+  'cloud_link.message_refused': strict({ reason: z.enum(['too-large', 'not-json', 'unknown-type', 'bad-shape']) }),
   'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
   'display_name.changed': strict({ from: z.string(), to: z.string(), by: z.string() }),
 };

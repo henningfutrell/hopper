@@ -137,13 +137,15 @@ export function createAfterDone(c: AfterDoneContext) {
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
     keepFollowed(c, jobId, r);
+    // Who merged it: the act's, else as its merge marker kept it, after a stop (issue #1588).
+    const who = acting ?? r.acting;
     if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
       data: {
         pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(r.superseded ? { superseded: r.superseded } : {}),
-        ...(acting ? { person: acting.person, via: acting.via } : {}),
+        ...(who ? { person: who.person, via: who.via } : {}),
       },
     });
   }
@@ -175,7 +177,8 @@ export function createAfterDone(c: AfterDoneContext) {
     if (!job || !(following(job) || rechecks(job))) return;
     if (all) await crossReference(source, job);
     job = store.jobs.get(jobId) ?? job;
-    const r = await source.follow!(job);
+    // The merge marker is kept before the hopper's merge call (issue #1588).
+    const r = await source.follow!(job, undefined, { keep: (state) => c.setSource(jobId, state) });
     if (r) return record(jobId, r);
     // Nothing changed: the ledger may not hold what it waits on yet (it was seen before the ledger read it).
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
@@ -183,7 +186,7 @@ export function createAfterDone(c: AfterDoneContext) {
   }
 
   /** A person's Merge now or Close PR (issue #677), answered at once; it runs on the job's report chain after (issue #1194). */
-  const prActs = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record, sendNow: c.sendNow });
+  const prActs = createPullRequestActs({ store, sourceOf: c.sourceOf, enqueue: c.enqueue, record, sendNow: c.sendNow, setSource: c.setSource });
 
   async function judgeAgain(source: JobSource, jobId: string): Promise<void> {
     const job = store.jobs.get(jobId);

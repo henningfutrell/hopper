@@ -127,9 +127,38 @@ describe('a need step\'s Kubernetes token is bound to its sandbox (issue #1371)'
     const r = await m.mintForNeedStep({ template: 'kube', step: 'hopper-need-kube-1', job: 'job-1', profile: READ });
     expect('minted' in r).toBe(true);
     expect(targets[0]).toMatchObject({ kind: 'kube', namespace: 'web', bindTo: 'hopper-mint-1' });
+    expect(events.all.find((e) => e.type === 'vault.binding_named')?.data).toEqual({ box: 'hopper-need-kube-1', job: 'job-1', credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-1' });
     expect(events.all.find((e) => e.type === 'vault.minted')?.data).toMatchObject({ credential: 'KUBE_LAB', bound: { namespace: 'web', secret: 'hopper-mint-1' } });
     await bindings.release('hopper-need-kube-1');
     expect(u.unbound).toEqual([{ credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-1' }]);
+  });
+
+  it('a hopper that stops while the minter makes the Secret leaves one Secret, which the reconcile pass unbinds (issue #1628)', async () => {
+    const { events, targets } = minting();
+    const credentials = [{ id: 's1', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' } }];
+    const store = {
+      vault: { list: () => credentials, get: () => credentials[0], replace: () => {}, sealed: () => undefined },
+      events, tx: <T>(f: () => T): T => f(), jobs: { get: () => ({ id: 'job-1', status: 'running' }) },
+    };
+    const before = mintBindings({ events, clock, unbindFrom: unbinder().from, logger: { warn: () => {} }, newName: () => 'hopper-mint-lost' });
+    // The minter makes the Secret, and the hopper stops before it answers.
+    const made: string[] = [];
+    const stopped: MintFrom = async (_credential, target) => {
+      targets.push(target);
+      if (target.kind === 'kube' && target.bindTo) made.push(target.bindTo);
+      return new Promise(() => {});
+    };
+    const access = { decideCheckMint: async () => ({ id: 'd1', at: NOW.toISOString(), allowed: true, reason: 'ok' }) };
+    void needMinting(store as never, { access: access as never, mintFrom: stopped, bindings: before }).mintForNeedStep({ template: 'kube', step: 'hopper-need-kube-1', job: 'job-1', profile: READ });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(made).toEqual(['hopper-mint-lost']);
+    expect(events.all.some((e) => e.type === 'vault.minted')).toBe(false);
+    // The hopper starts again: its reconcile pass deletes the Secret, once.
+    const u = unbinder();
+    const after = mintBindings({ events, clock, unbindFrom: u.from, logger: { warn: () => {} } });
+    await after.reconcile();
+    await after.reconcile();
+    expect(u.unbound).toEqual([{ credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-lost' }]);
   });
 
   it('an AWS session is bound to nothing: STS cannot end one session, so it lives its 15 minutes', async () => {

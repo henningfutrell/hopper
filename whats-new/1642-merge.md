@@ -1,0 +1,1 @@
+- With yolo mode on, the hopper now merges a GitLab job's merge request once its pipeline passed, and the Pull requests list shows GitLab merge requests.
