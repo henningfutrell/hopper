@@ -145,6 +145,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (e instanceof SourceError && e.permanent) {
         const f = flagsOf(store.jobs.get(jobId) ?? job);
         write(jobId, mark({ ...f, permanentErrors: [...(f.permanentErrors ?? []), { kind, message: e.message }] }));
+        slot.retrying.delete(jobId);
         return true;
       }
       slot.retrying.set(jobId, message(e));
@@ -241,6 +242,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       slot.loggedNotRerun.add(n.key);
       console.warn(`hopper: ${n.key} not run again: job ${n.job} ${n.status}, ${n.reason}`);
     }
+    // Only the keys still not run again stay logged (issue #1402): one that comes back is said again.
+    const still = new Set(notRerun.map((n) => n.key));
+    for (const key of slot.loggedNotRerun) if (!still.has(key)) slot.loggedNotRerun.delete(key);
     slot.notRerun = notRerun;
     return { seen: items.length, created };
   }
@@ -288,6 +292,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
+    // A job gone, or ended with nothing left to report, retries nothing (issue #1402).
+    for (const id of slot.retrying.keys()) { const j = store.jobs.get(id); if (!j || !needsWork(j)) slot.retrying.delete(id); }
     delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
