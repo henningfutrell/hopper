@@ -72,7 +72,10 @@ With rootless Podman, the hopper's port (4790) is served by a process that belon
   1. The systemd credential `hopper-master-key` (an encrypted credential, for example under the TPM).
   2. The key you give at launch: run `bash hopper-service.sh start-with-key`. It reads `HOPPER_MASTER_KEY`, or asks you for the key. The service does not keep the key: give it again at the next start.
   3. The key sealed to this host (`bash master-key.sh seal`). Sealing is optional.
+- It gives the key to the containers as a file in memory, not as a setting of the container. `podman inspect` does not show the key. After a restart of this computer the file is gone, and only the service starts the stack again.
+- The install puts in `master-key.sh` when it is not there. When you give the install the key (`HOPPER_MASTER_KEY`), it seals the key to this host. Then the stack starts again by itself after a restart of this computer.
 - When the hopper has data and the service gets no key, the service does not start. It does not make a new key, and it tells you how to give the key.
+- When the service does not start, it shows a desktop notice, when there is a desktop. It also runs `hopper-alert.sh` beside `hopper-service.sh`, when there is one, with what went wrong. Write a script there that sends that text to you, for example to a webhook.
 - It starts the stack at boot, when linger is on.
 - Every minute, a timer checks the port from this host. When the hopper's container runs and its port does not answer, the timer restarts the service.
 - The update stops and starts the stack through the service.

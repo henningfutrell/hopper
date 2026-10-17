@@ -30,7 +30,9 @@
 #      drift`), and says the result. It exits 1 when one of these fails;
 #   8. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
 #      before, to go back to. An image a container still uses is not removed. A master-key.sh and a hopper-service.sh
-#      beside compose.yaml are replaced with the new image's. With Podman and no service, it says the line that installs it.
+#      beside compose.yaml are replaced with the new image's; when the service owns the stack, master-key.sh is put in
+#      even when none is here, and with no key sealed it says the line that seals it (issue #1487). With Podman and no
+#      service, it says the line that installs it.
 #
 #   HOPPER_UPDATE_WAIT          seconds to wait for the hopper's health (default: 180)
 #   HOPPER_UPDATE_FIX_OVERRIDE  1: remove the compose.override.yaml entries compose.yaml gives itself, with no question
@@ -212,8 +214,13 @@ main() {
 
   check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}" "$service"
   prune "$runtime" "$image" "$previous"
-  [ "$sealed" = 0 ] || refresh_script "$runtime" "$image" master-key.sh master-key
+  # master-key.sh comes with the service too (issue #1487): without it no key can be sealed, and a restart of this host
+  # leaves the stack down until a person gives the key.
+  if [ "$sealed" = 1 ] || [ "$service" = 1 ] || [ -f master-key.sh ]; then refresh_script "$runtime" "$image" master-key.sh master-key; fi
   [ "$service" = 0 ] || refresh_script "$runtime" "$image" hopper-service.sh service
+  if [ "$service_key" = 1 ] && [ -f master-key.sh ]; then
+    say 'no master key is sealed here: after a restart of this host the stack does not start by itself. Seal it: bash master-key.sh seal (it asks for the key), then systemctl --user restart hopper-compose.service'
+  fi
   if [ "$runtime" = podman ] && [ "$service" = 0 ]; then
     say "the stack runs under this shell: its published port goes away when this shell's session ends. Put it under a user service of its own, once (docs/deploy.md \"The user service\"): $runtime run --rm $image hopper service script > hopper-service.sh && bash hopper-service.sh install"
   fi
