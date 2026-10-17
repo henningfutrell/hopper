@@ -7,11 +7,14 @@
 // `src/landing-batches/back-merge.ts`. Pure.
 import { BATCH_BRANCH_PREFIX } from './landing-batches.ts';
 
-/** The newest back-merge: open (its pull request into the landing branch), merged, or failed with why. */
+/**
+ * The newest back-merge: due (recorded with the batch run's failure, before any GitHub call, issue #1589), open (its pull
+ * request into the landing branch), merged, or failed with why.
+ */
 export interface BackMerge {
   /** The landing tip whose batch run had the merge conflicts. */
   tip: string;
-  state: 'open' | 'merged' | 'failed';
+  state: 'due' | 'open' | 'merged' | 'failed';
   /** The pull request of the batch run with the merge conflicts. */
   batch?: number;
   branch?: string;

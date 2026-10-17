@@ -81,6 +81,7 @@ function fake(w: World): LandingBatchGitHub {
       return w.backMerge === 'merged' ? { kind: 'merged', sha: 'backmerge0000000' } : { kind: w.backMerge };
     },
     openPullRequests: async () => [],
+    findIssue: async () => undefined,
     retarget: async () => {},
     comment: async () => {},
     pullRequestOf: async (_repo, sha) => [...w.pulls.entries()].find(([, p]) => p.merged && p.mergeSha === sha)?.[0],
@@ -133,8 +134,8 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass(); // the batch run #100 of P3
     w.checks.set(P3, fail(7));
     await r.pass(); // red: closed, and a bisect of three points starts
-    expect(types()).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.bisect_started']);
-    expect(events[2]!.data).toMatchObject({ tip: P3, points: [{ sha: P1, pullRequest: 11 }, { sha: P2, pullRequest: 12 }, { sha: P3, pullRequest: 13 }], checks: [{ name: 'test', id: 7 }] });
+    expect(types()).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.bisect_started']);
+    expect(events[3]!.data).toMatchObject({ tip: P3, points: [{ sha: P1, pullRequest: 11 }, { sha: P2, pullRequest: 12 }, { sha: P3, pullRequest: 13 }], checks: [{ name: 'test', id: 7 }] });
 
     await r.pass(); // a bisect run of the middle point
     expect(w.calls.slice(-2)).toEqual([`branch hopper-batch/bisect-${P2.slice(0, 12)} ${P2}`, `open #101 hopper-batch/bisect-${P2.slice(0, 12)} -> dev`]);
@@ -162,7 +163,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     expect(w.issues[0]!.body).toContain('expected 1 to be 2');
 
     await r.pass(); // the revert merged into main; a batch run of the new tip starts at once
-    expect(types().slice(-2)).toEqual(['landing_batch.reverted', 'landing_batch.started']);
+    expect(types().slice(-3)).toEqual(['landing_batch.reverted', 'landing_batch.due', 'landing_batch.started']);
     expect(events.at(-1)!.data).toMatchObject({ why: 'the culprit #12 was reverted', tip: w.tip });
     w.checks.set(w.tip, pass);
     await r.pass(); // green: the rest of the batch reaches dev
@@ -179,7 +180,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass();
     w.checks.set(P1, fail(7));
     await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.culprit']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.culprit']);
     await r.pass();
     expect(events.map((e) => e.type).slice(-2)).toEqual(['landing_batch.revert_failed', 'landing_batch.fix_filed']);
     expect(w.issues[0]!.title).toBe(`Fix the full test suite after ${P1.slice(0, 12)}`);
@@ -215,7 +216,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     w.pulls.get(100)!.mergeable = false;
     await r.pass();
     // A back-merge in its place (part 4).
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
   });
 
   it('merge conflicts: the tested branch is merged into the landing branch, and the batch runs again at once', async () => {
@@ -226,7 +227,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     w.pulls.get(100)!.mergeable = false;
     await r.pass(); // red: closed; dev merged into a branch at the tip, and a pull request of it into main
     const branch = `hopper-batch/back-merge-${P2.slice(0, 12)}`;
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
     expect(w.calls.slice(-3)).toEqual([`branch ${branch} ${P2}`, `merge dev into ${branch}: merged`, `open #101 ${branch} -> main`]);
     expect(events.at(-1)!.data).toMatchObject({ tip: P2, batch: 100, branch, merge: 'backmerge0000000', pullRequest: 101 });
     expect(w.pulls.get(101)!.body).toContain('#100');
@@ -234,7 +235,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass(); // merged into main; the next batch run starts at once
     expect(w.calls).toContain('merge #101 backmerge0000000');
     expect(w.calls).toContain(`delete ${branch}`);
-    expect(events.map((e) => e.type).slice(-2)).toEqual(['landing_batch.back_merged', 'landing_batch.started']);
+    expect(events.map((e) => e.type).slice(-3)).toEqual(['landing_batch.back_merged', 'landing_batch.due', 'landing_batch.started']);
     expect(events.at(-1)!.data).toMatchObject({ why: 'dev was merged into the landing branch', tip: w.tip });
     w.checks.set(w.tip, pass);
     await r.pass();
@@ -250,8 +251,8 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass();
     w.pulls.get(100)!.mergeable = false;
     await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed']);
-    expect(events[2]!.data).toMatchObject({ tip: P1, batch: 100, conflict: true });
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed']);
+    expect(events[3]!.data).toMatchObject({ tip: P1, batch: 100, conflict: true });
     expect(w.calls).toContain(`delete hopper-batch/back-merge-${P1.slice(0, 12)}`);
     expect(w.issues).toHaveLength(1);
     expect(w.issues[0]).toMatchObject({ title: 'Resolve the merge conflicts of dev with main', labels: ['hopper'], assignees: ['me'] });
@@ -264,7 +265,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass();
     w.pulls.get(101)!.mergeable = false;
     await r.pass();
-    expect(events.map((e) => e.type).slice(-3)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed']);
+    expect(events.map((e) => e.type).slice(-4)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed']);
     expect(w.issues).toHaveLength(1);
   });
 });

@@ -3,8 +3,11 @@
 // of it is opened into the landing branch; each pass then merges it once GitHub lets it (`backMergePass`). A real
 // conflict is recorded, and one issue is filed with the hopper label, assigned to the user, so Intake takes it. Each
 // step an event, with the user's own GitHub connection; the state and the text are `src/domain/landing-back-merge.ts`.
+// The back-merge is recorded due with the batch run's failure; a pass that stopped on its way starts it again, and finds
+// its pull request and its issue before it makes them (issue #1589, `once.ts`).
 import { backMergeBody, backMergeBranch, backMergeIssueText, backMergeTitle, type BackMerge } from '../domain/landing-back-merge.ts';
 import { JOB_LABEL } from '../repo-checks/service.ts';
+import { fileOnce, openOnce } from './once.ts';
 import type { RedPass } from './red.ts';
 
 const short = (sha: string): string => sha.slice(0, 12);
@@ -13,10 +16,11 @@ const short = (sha: string): string => sha.slice(0, 12);
 export async function startBackMerge(p: RedPass, f: { tip: string; batch: number }): Promise<void> {
   const b = { landing: p.landing, tested: p.tested, tip: f.tip, batch: f.batch };
   const branch = backMergeBranch(f.tip);
+  // A branch a stopped pass made is moved back to the tip, and the merge made again.
   await p.gh.createBranch(p.repo, branch, f.tip);
   const m = await p.gh.mergeInto(p.repo, branch, p.tested, backMergeTitle(b));
   if (m.kind === 'merged') {
-    const pr = await p.gh.openPullRequest(p.repo, { head: branch, base: p.landing, title: backMergeTitle(b), body: backMergeBody(b) });
+    const pr = await openOnce(p.gh, p.repo, { head: branch, base: p.landing, title: backMergeTitle(b), body: backMergeBody(b) });
     p.record({ type: 'landing_batch.back_merge_opened', data: { repo: p.repo, landing: p.landing, tested: p.tested, tip: f.tip, batch: f.batch, branch, merge: m.sha, pullRequest: pr.number, url: pr.url } });
     p.note({ why: `the merge of ${p.tested} into ${p.landing} (#${pr.number}) waits to merge` });
     return;
@@ -61,7 +65,7 @@ export async function backMergePass(p: RedPass, b: BackMerge): Promise<void> {
   if (login === undefined) { p.note({ problem: 'no GitHub account is connected: the issue for the merge conflicts waits' }); return; }
   try {
     const text = backMergeIssueText({ landing: p.landing, tested: p.tested, tip: b.tip, ...(b.batch !== undefined ? { batch: b.batch } : {}) });
-    const filed = await p.gh.fileIssue(p.repo, { ...text, labels: [JOB_LABEL], assignees: [login] });
+    const filed = await fileOnce(p.gh, p.repo, { ...text, labels: [JOB_LABEL], assignees: [login] }, b.at);
     p.record({ type: 'landing_batch.back_merge_issue_filed', data: { repo: p.repo, tip: b.tip, issue: filed.number, url: filed.url } });
   } catch (e) {
     p.note({ problem: `the issue for the merge conflicts at ${short(b.tip)} was not filed: ${(e as Error).message}` });

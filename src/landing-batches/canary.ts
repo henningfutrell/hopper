@@ -3,11 +3,13 @@
 // the candidate at work is read against the bug reports that name it: one or more hold it (`canary_held`) and file one
 // issue with the hopper label, assigned to the user, so Intake takes it (`canary_issue_filed`); the window passed with
 // none, `stable` moves to it as a fast-forward (`canary_promoted`). The rules and the text are
-// `src/domain/landing-canary.ts`; each step an event, with the user's own GitHub connection.
+// `src/domain/landing-canary.ts`; each step an event, with the user's own GitHub connection. A pass that stopped after
+// `stable` moved records the promotion at the next; the issue is found before it is filed again (issue #1589).
 import type { LandingBatchState } from '../domain/landing-batches.ts';
 import { CANARY_BRANCH, canaryIssueText, canaryNext, canaryVerdict, STABLE_BRANCH, type Canary } from '../domain/landing-canary.ts';
 import type { NewEvent } from '../domain/types.ts';
 import { JOB_LABEL } from '../repo-checks/service.ts';
+import { fileOnce } from './once.ts';
 import type { LandingBatchGitHub } from './runner.ts';
 
 export interface CanaryPass {
@@ -29,6 +31,12 @@ export async function canaryPass(p: CanaryPass): Promise<void> {
   if (next.kind === 'start') {
     p.record({ type: 'landing_batch.canary_started', data: { ...at, tip: cmp.tip, hours: p.hours } });
     p.note({ why: next.why });
+    return;
+  }
+  if (next.kind === 'idle' && c?.state === 'running' && cmp.aheadBy <= 0 && cmp.tip === c.tip) {
+    // `stable` has the candidate: a pass moved it and stopped before its record, or a maintainer did.
+    p.record({ type: 'landing_batch.canary_promoted', data: { ...at, tip: c.tip, why: `${STABLE_BRANCH} is at it already` } });
+    p.note({ why: `${STABLE_BRANCH} moved to ${c.tip.slice(0, 12)}` });
     return;
   }
   if (next.kind === 'idle') {
@@ -57,7 +65,7 @@ async function fileIssue(p: CanaryPass, c: Canary): Promise<void> {
   const login = p.login();
   if (login === undefined) { p.note({ problem: 'no GitHub account is connected: the issue for the held canary waits' }); return; }
   try {
-    const filed = await p.gh.fileIssue(p.repo, { ...canaryIssueText({ tip: c.tip, reports: c.reports, hours: p.hours }), labels: [JOB_LABEL], assignees: [login] });
+    const filed = await fileOnce(p.gh, p.repo, { ...canaryIssueText({ tip: c.tip, reports: c.reports, hours: p.hours }), labels: [JOB_LABEL], assignees: [login] }, c.at);
     p.record({ type: 'landing_batch.canary_issue_filed', data: { repo: p.repo, tip: c.tip, issue: filed.number, url: filed.url } });
   } catch (e) {
     p.note({ problem: `the issue for the held canary ${c.tip.slice(0, 12)} was not filed: ${(e as Error).message}` });
