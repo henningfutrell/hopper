@@ -304,7 +304,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     unfinishedPullRequest(job) {
       return unfinishedPullRequest(api, job);
     },
-    follow: (job, act) => followPullRequest(followContext(), job, act),
+    follow: (job, act, at) => followPullRequest(followContext(), job, act, at),
     housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs),
