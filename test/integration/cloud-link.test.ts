@@ -30,18 +30,18 @@ async function boot(dbPath?: string): Promise<TestApp> {
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 
 /**
- * Every host this process opens a socket or a fetch to while `run` runs, but this machine and the test database's host.
+ * Every host this process opens a socket or a fetch to while `run` runs but this machine.
  * `Socket.prototype.connect` is the one place every TCP and TLS connection of this process passes (net, tls, http,
- * https, undici, pg), so the daemon in this process cannot reach hopper.io past it. Child processes are not watched.
+ * https, undici), so the daemon's main thread cannot reach hopper.io past it. Child processes and worker threads are not
+ * watched: the database's worker (src/store/db.ts) connects only to the database HOPPER_DATABASE_URL names.
  */
-async function outsideHosts(run: () => Promise<void>): Promise<{ outside: string[]; all: Set<string> }> {
-  const database = new URL(process.env.HOPPER_TEST_POSTGRES_URL!).hostname;
+async function outsideHosts(run: () => Promise<void>): Promise<{ outside: string[]; ports: Set<string> }> {
   const outside: string[] = [];
-  const all = new Set<string>();
-  const note = (host: string | undefined): void => {
+  const ports = new Set<string>();
+  const note = (host: string | undefined, port?: unknown): void => {
     if (host === undefined) return;
-    all.add(host);
-    if (!LOCAL_HOSTS.has(host) && host !== database) outside.push(host);
+    if (port !== undefined) ports.add(String(port));
+    if (!LOCAL_HOSTS.has(host)) outside.push(host);
   };
   const connect = Socket.prototype.connect;
   const fetch = globalThis.fetch;
@@ -49,10 +49,10 @@ async function outsideHosts(run: () => Promise<void>): Promise<{ outside: string
     // connect(options), connect([options, cb]) as tls and http pass it, connect(port, host), connect(path)
     const first = Array.isArray(args[0]) ? args[0][0] : args[0];
     if (first && typeof first === 'object') {
-      const o = first as { host?: string; path?: string };
-      if (o.path === undefined) note(o.host ?? 'localhost');
+      const o = first as { host?: string; port?: unknown; path?: string };
+      if (o.path === undefined) note(o.host ?? 'localhost', o.port);
     } else if (typeof first === 'number' || (typeof first === 'string' && /^\d+$/.test(first))) {
-      note(typeof args[1] === 'string' ? args[1] : 'localhost');
+      note(typeof args[1] === 'string' ? args[1] : 'localhost', first);
     }
     return (connect as (...a: unknown[]) => Socket).apply(this, args);
   } as typeof connect;
@@ -66,7 +66,7 @@ async function outsideHosts(run: () => Promise<void>): Promise<{ outside: string
     Socket.prototype.connect = connect;
     globalThis.fetch = fetch;
   }
-  return { outside, all };
+  return { outside, ports };
 }
 
 const view = async (a: TestApp, token: string): Promise<CloudLinkView> => (await a.api('GET', '/api/cloud-link', undefined, { 'x-hopper-session': token })).body as CloudLinkView;
@@ -120,8 +120,10 @@ describe('the cloud link', () => {
   });
 
   it('an install that never links connects to nothing outside this machine, so not to hopper.io', async () => {
-    const { outside, all } = await outsideHosts(async () => {
+    let daemonPort = '';
+    const { outside, ports } = await outsideHosts(async () => {
       const a = await boot();
+      daemonPort = new URL(a.url).port;
       const token = await a.login();
       expect(await view(a, token)).toEqual({ link: null });
       const job = await a.pull({ op: 'sleep', ms: 300 });
@@ -130,8 +132,8 @@ describe('the cloud link', () => {
       await a.stop();
       t = undefined;
     });
-    // The watch saw the database's own connections, so it sees the daemon's.
-    expect(all).toContain(new URL(process.env.HOPPER_TEST_POSTGRES_URL!).hostname);
+    // The watch saw this process's own connections to the daemon, so it sees the daemon's.
+    expect(ports).toContain(daemonPort);
     expect(outside).toEqual([]);
   });
 });
