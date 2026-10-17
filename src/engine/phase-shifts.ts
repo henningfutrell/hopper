@@ -145,7 +145,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
       if (s.defaultMode === 'switch') switchJob(q, job, suggest.to, suggest.note, level, level);
       else {
         const f = forkJob(q, job, suggest.to, suggest.note, level);
-        if (f.parked) setImmediate(() => void releaseParked(c, store.jobs.get(job.id)!));
+        if (f.parked) setImmediate(() => { if (!c.stopping()) void releaseParked(c, store.jobs.get(job.id)!); }); // a stop and the store's close can come first (issue #828)
       }
       return s.defaultMode;
     },
