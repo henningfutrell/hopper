@@ -122,9 +122,12 @@ describe('remote access minted by the hopper (issue #968)', () => {
     expect((await rawRequest(a.url, { path: '/api/state', headers: { host: CF_HOST } })).status).toBe(401);
     expect((await rawRequest(a.url, { path: '/', headers: { host: CF_HOST } })).status).toBe(404);
 
-    // Each change is an event, no credential or token in any.
+    // Each change is an event, no credential or token in any: turned on, then the tunnel its mint saga made (issue #1609).
     const events = await a.events('types=remote_access.changed');
-    expect(events.map((e) => e.data)).toEqual([expect.objectContaining({ from: { enabled: false }, to: expect.objectContaining({ enabled: true, provider: 'cloudflare', provisioned: expect.objectContaining({ tunnelId: 'tun1' }) }), credential: 'set' })]);
+    expect(events.map((e) => e.data)).toEqual([
+      expect.objectContaining({ from: { enabled: false }, to: { enabled: true, provider: 'cloudflare' }, credential: 'set' }),
+      expect.objectContaining({ from: { enabled: true, provider: 'cloudflare' }, to: expect.objectContaining({ enabled: true, provider: 'cloudflare', provisioned: expect.objectContaining({ tunnelId: 'tun1' }) }) }),
+    ]);
     expect(JSON.stringify(await a.events())).not.toMatch(new RegExp(`${CF}|cf-tunnel-token`));
 
     // Off: the tunnel and its DNS record are removed; the service is told nothing; the domain is any other Host again.

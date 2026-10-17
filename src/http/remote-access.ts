@@ -7,7 +7,7 @@
 // read from a file in memory (HOPPER_TUNNEL_KEY, made at each start of the stack), and runs its agent only while its
 // provider is the one on. Its ask reports what the agent did, which the status shows with the tunnel watch's word.
 // A cluster install (issue #1289) has no compose stack: its status names none, and points at the chart's Ingress.
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
 import {
@@ -18,11 +18,13 @@ import {
 import type { SystemSecretName } from '../domain/vault.ts';
 import { cloudflareProvider } from '../remote-access/cloudflare.ts';
 import { ngrokProvider } from '../remote-access/ngrok.ts';
-import { ProviderError, type TunnelProvider } from '../remote-access/provider.ts';
+import { mintName, type TunnelProvider } from '../remote-access/provider.ts';
+import type { SagaDefinition } from '../sagas/coordinator.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { inCluster } from '../client/cluster.ts';
 import { HttpError } from './errors.ts';
+import { MINT_SAGA, mintSagas, settleMints, type MintSagas } from './remote-access-mint.ts';
 import { watchTunnel, type TunnelWatch } from './tunnel.ts';
 
 /** The admin's credential for each provider: what the hopper mints the tunnel with. */
@@ -77,6 +79,8 @@ export interface RemoteAccess {
    */
   agent(ask: { key: string | undefined; provider: RemoteAccessProvider; report: unknown }): { status: 200; body: string } | { status: 204 } | { status: 401 | 404; error: string };
   stop(): Promise<void>;
+  /** The mint's saga kinds, one per provider: the composition root gives them to the coordinator. */
+  sagas: SagaDefinition[];
 }
 
 const same = (a: string, b: string): boolean => {
@@ -96,6 +100,10 @@ export function createRemoteAccess(o: {
   tunnelApis: Partial<Record<RemoteAccessProvider, string>>;
   /** The providers' APIs; default the real ones (tests: loopback fakes). */
   providers?: Record<RemoteAccessProvider, TunnelProvider>;
+  /** The sagas the mint runs on (issue #1609). */
+  mints: MintSagas;
+  /** The instance's id: the fixed name of what a mint makes at the provider. */
+  instanceId: string;
   /** The hopper's port: where the tunnel forwards to (`http://hopper:<port>`). */
   port: () => number;
   /**
@@ -191,6 +199,7 @@ export function createRemoteAccess(o: {
   }
 
   async function apply(c: RemoteAccessChange, by: string): Promise<RemoteAccessView> {
+    if (!await settleMints(o.mints)) throw new HttpError(409, 'the hopper still removes what an earlier mint of the tunnel made: try again in a minute');
     const provider = c.provider ?? saved.provider;
     let domain = saved.domain;
     if (c.domain === null) domain = undefined;
@@ -240,20 +249,18 @@ export function createRemoteAccess(o: {
         save({ ...next, enabled: false }, by, credential);
         throw new HttpError(409, `remote access with ${PROVIDER_NAME[provider]} needs its ${CREDENTIAL_HELP[provider].name} first: make one at ${CREDENTIAL_HELP[provider].where} (${CREDENTIAL_HELP[provider].needs})`);
       }
-      try {
-        const m = await providers[provider].mint({ credential: key, ...(domain ? { domain } : {}), port: o.port() });
-        const kept = o.secrets.keep(TOKEN_SECRET[provider], m.token, by);
-        if (!kept.ok) {
-          await providers[provider].release({ credential: key, provisioned: m.provisioned });
-          throw new HttpError(503, kept.error);
-        }
-        next.provisioned = m.provisioned;
-        o.logger.info(`hopper: remote access: minted a tunnel at ${PROVIDER_NAME[provider]}: ${tunnelUrlOf(m.provisioned.domain)}`);
-      } catch (e) {
-        save({ ...next, enabled: false }, by, credential);
-        if (e instanceof ProviderError) throw new HttpError(502, `${PROVIDER_NAME[provider]} did not mint the tunnel: ${e.message}`);
-        throw e;
+      // Begun before the settings ask for it: a stop between the two leaves a saga whose record is refused, so it undoes itself.
+      const saga = o.mints.begin(MINT_SAGA[provider], randomUUID(), { ...(domain ? { domain } : {}), port: o.port(), name: mintName(o.instanceId), by });
+      save(next, by, credential);
+      const end = await o.mints.drive(saga.id);
+      if (end && end.state !== 'done' && (end.state !== 'running' || end.steps.some((t) => t.lastError))) {
+        const why = end.steps.find((t) => t.state === 'pending' && t.lastError)?.lastError ?? end.error ?? 'the mint did not go through';
+        o.mints.abort(saga.id, why);
+        await o.mints.drive(saga.id);
+        throw new HttpError(502, `${PROVIDER_NAME[provider]} did not mint the tunnel: ${why}`);
       }
+      watch.askNow();
+      return view();
     }
     save(next, by, credential);
     watch.askNow();
@@ -315,6 +322,29 @@ export function createRemoteAccess(o: {
       return { status: 200, body: ask.provider === 'ngrok' ? `url=${at}\nauthtoken=${token}\n${restart}` : `token=${token}\n${restart}` };
     },
     stop: () => watch.stop(),
+    sagas: mintSagas({
+      providers,
+      host: {
+        credential: (p) => open(CREDENTIAL_SECRET[p], 'remote access: mint the tunnel'),
+        keepToken(p, token, by) {
+          const kept = o.secrets.keep(TOKEN_SECRET[p], token, by);
+          if (!kept.ok) throw new Error(kept.error);
+        },
+        minted(p, provisioned, d) {
+          if (!saved.enabled || saved.provider !== p || saved.provisioned || saved.domain !== d.domain) throw new Error('the remote access settings no longer ask for this tunnel');
+          save({ ...saved, provisioned }, d.by);
+          o.logger.info(`hopper: remote access: minted a tunnel at ${PROVIDER_NAME[p]}: ${tunnelUrlOf(provisioned.domain)}`);
+          watch.askNow();
+        },
+        async unminted(p, found, reason, by) {
+          const left = found ? await providers[p].release({ credential: open(CREDENTIAL_SECRET[p], 'remote access: release the tunnel'), provisioned: found }) : [];
+          o.secrets.drop(TOKEN_SECRET[p], by);
+          const wants = saved.enabled && saved.provider === p && !saved.provisioned;
+          if (wants || left.length > 0) save({ ...saved, ...(wants ? { enabled: false } : {}), ...(left.length > 0 ? { leftover: left } : {}) }, by);
+          o.logger.warn(`hopper: remote access: the mint at ${PROVIDER_NAME[p]} is undone (${reason})${left.length > 0 ? `; it kept what the hopper could not remove: ${left.join('; ')}` : ''}`);
+        },
+      },
+    }),
   };
 }
 

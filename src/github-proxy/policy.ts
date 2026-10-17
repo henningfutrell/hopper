@@ -27,13 +27,15 @@ const text = (max: number) => z.string().min(1).max(max);
 const branch = z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/, 'a branch name: letters, digits, . _ / -');
 /** A pull request's head: a branch, or `<owner>:<branch>` for a branch of a fork (issue #429). */
 const head = z.string().regex(/^(?:[A-Za-z0-9-]{1,39}:)?[A-Za-z0-9._/-]{1,200}$/, 'a branch name, or owner:branch for a fork\'s');
+/** A resend key (issue #1607): hopper-gh makes one for each issue create and comment, the same each time it sends it. */
+const key = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'a resend key: 8 to 64 letters, digits, _ or -');
 /** A flag: from a form it comes as the text `true`. */
 const flag = z.union([z.literal('true'), z.literal(true)]).transform(() => true as const);
 
 /** One request, as the hopper takes it: the operation and only the fields it uses. GitHub's limits on titles and bodies. */
 export const proxyRequest = z.discriminatedUnion('op', [
-  z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000), required: flag.optional() }),
-  z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000) }),
+  z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000), required: flag.optional(), key: key.optional() }),
+  z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000), key: key.optional() }),
   z.strictObject({ op: z.literal('issue.view'), repo, number }),
   z.strictObject({ op: z.literal('issue.comments'), repo, number }),
   z.strictObject({ op: z.literal('issue.close'), repo, number }),

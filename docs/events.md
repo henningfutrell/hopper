@@ -3649,7 +3649,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `key` (issue #1607, `issue.create` and `issue.comment`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -4753,6 +4753,28 @@ Version 1 (`docs/schemas/job.checks_rerun.v1.json`). A job ended done while the 
 }
 ```
 
+## `job.checks_rerun_asked`
+
+Version 1 (`docs/schemas/job.checks_rerun_asked.v1.json`). The hopper asks GitHub to run the failed checks of a job's own pull request again (issue #1607): recorded before it asks, so a stop while it asks makes no second run again of the same head commit. Fields as `job.checks_rerun`; `checks`, the checks it asks to run again. With no `job.checks_rerun` after it, the hopper stopped meanwhile: whether any check ran again is not known, so the job may run them again itself.
+
+| field | type | required |
+|---|---|---|
+| `recordId` | string | yes |
+| `pullRequest` | string | yes |
+| `head` | string | yes |
+| `checks` | string[] | yes |
+
+```json
+{
+  "recordId": "f-1",
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "head": "4e4e68e4",
+  "checks": [
+    "test (node 24)"
+  ]
+}
+```
+
 ## `job.pull_request_tended`
 
 Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. A rebase is never capped (issue #786); at most three `fix_checks` tends in a row of one pull request, then it waits on a person. `person`, `via`: a person pressed Tend again (issue #1010) after the hopper gave up on it, in the UI or over the API.
@@ -5575,6 +5597,31 @@ Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an
   },
   "required": true,
   "subIssue": true
+}
+```
+
+## `job.sub_issue_linked`
+
+Version 1 (`docs/schemas/job.sub_issue_linked.v1.json`). The hopper linked a job's required child as a GitHub sub-issue of its parent at a later try (issue #1607): GitHub refused the link, or did not answer, as the child was filed (`job.child_issue_filed` with `subIssue: false`). The hopper keeps such a link and tries it again until it is made. `requestId` names the request that filed the child; `parent` and `child` as there.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `parent` | object | yes |
+| `child` | object | yes |
+
+```json
+{
+  "requestId": "r1",
+  "parent": {
+    "repo": "octo/tools",
+    "number": 7
+  },
+  "child": {
+    "repo": "octo/tools",
+    "number": 42,
+    "url": "https://github.com/octo/tools/issues/42"
+  }
 }
 ```
 

@@ -1,22 +1,48 @@
-// A tunnel provider (issue #968, design.md "Remote access"): what the hopper asks of Cloudflare or ngrok with the admin's
-// one credential. `mint` makes everything the tunnel runs with — its token, its host name, at Cloudflare its DNS record —
-// and undoes what it made when a later step fails; `release` revokes and removes what the hopper minted, and names what it
-// could not remove. Each is a handful of REST calls over fetch: no provider SDK (the calls are fewer than an SDK's setup).
+// A tunnel provider (issues #968, #1609, design.md "Remote access"): what the hopper asks of Cloudflare or ngrok with the
+// admin's one credential. Its mint is a list of steps — each one or two REST calls — that the remote access mint saga runs
+// in order, keeping what each made (an id, the host name) before the next call; a step tried again after a stop finds
+// what it made by the instance's fixed name, and makes nothing twice. `find` names what a mint cut short made, `release`
+// revokes and removes it, and names what it could not remove. Plain fetch: no provider SDK (the calls are fewer than an
+// SDK's setup).
 import type { Provisioned, RemoteAccessProvider } from '../domain/remote-access.ts';
 
-/** What a mint made: what to remove again, and the token the tunnel service runs the tunnel with. */
-export interface Minted { provisioned: Provisioned; token: string }
+/** What a mint made so far, kept in its saga's data before the next call: the host name and the ids. Never a secret. */
+export type Made = Partial<Record<'host' | 'accountId' | 'zoneId' | 'tunnelId' | 'dnsRecordId' | 'credentialId' | 'reservedDomainId', string>>;
+
+export interface MintContext {
+  credential: string;
+  /** The host name the admin asked for; absent: the provider picks one. */
+  domain?: string;
+  /** The hopper's port: the tunnel's target. */
+  port: number;
+  /** The instance's fixed name for what the mint makes (`hopper-<instance id>`): a step tried again finds what it made by it. */
+  name: string;
+  /** What the steps before made. */
+  made: Made;
+  /** Keeps the tunnel's token, sealed, as soon as the provider answers it. */
+  keepToken(token: string): void;
+}
+
+/** One step of a mint: what it made, merged into the mint's `Made`. */
+export interface MintStep { name: string; do(c: MintContext): Promise<Made> }
 
 export interface TunnelProvider {
   readonly provider: RemoteAccessProvider;
-  /** Mints the tunnel at `domain`, or at a host name the provider picks; `port` is the hopper's, the tunnel's target. */
-  mint(o: { credential: string; domain?: string; port: number }): Promise<Minted>;
+  /** The mint's steps, in order; the tunnel's token is kept by one of them. */
+  readonly mint: readonly MintStep[];
+  /** What a mint whose every step is done made. */
+  provisioned(made: Made): Provisioned;
+  /** What a mint cut short made: its ids, and what it made but did not keep yet, found by `name`. Undefined: nothing. */
+  find(o: { credential: string | undefined; name: string; made: Made }): Promise<Provisioned | undefined>;
   /** Revokes and removes what `provisioned` names; each thing it could not remove, in words. Never throws. */
   release(o: { credential: string | undefined; provisioned: Provisioned }): Promise<string[]>;
 }
 
 /** The provider refused, or did not answer: the words say which, and what to do. Never a secret. */
 export class ProviderError extends Error {}
+
+/** The name the hopper gives what it mints at a provider: the same at every try, and per instance. */
+export const mintName = (instanceId: string): string => `hopper-${instanceId}`;
 
 const TIMEOUT_MS = 15_000;
 
