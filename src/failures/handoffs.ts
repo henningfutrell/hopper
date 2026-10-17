@@ -12,13 +12,15 @@
 // #529): the sweep, and the start, close an open hand-off nothing waits on any more — a newer job of its item that no
 // `job.queued` closed it for (a store from the build before), its job finished or gone, its item closed at its source.
 // What its job's work shows at its source (issue #621, the work check) is kept on it for its card; work that shipped —
-// a pull request of the job's merged, its item closed as completed — closes it and finishes its job.
+// a pull request of the job's merged, its item closed as completed — closes it and finishes its job. Its item's pull request
+// merged as the whole item, or closed without a merge, ends it at once, from the ledger (issue #1461): no person dismisses it.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
   jobPriorityTag, type ActingPerson, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason,
   type ContinuedBy, type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job, type WorkState, workShipped,
 } from '../domain/types.ts';
 import type { DismissedBy } from '../domain/locked.ts';
+import { ENDS_STALE, itemEnded } from './stale.ts';
 import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
@@ -228,7 +230,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
     const newer = newerOf(store, job);
     if (newer) return { end: 'superseded', nextJobId: newer };
     const item = store.workItems.get(job.source.key);
-    return item && (item.issueState === 'closed' || item.state === 'done' || item.state === 'dropped') ? { end: 'item_closed' } : undefined;
+    return item && itemEnded(item) ? { end: 'item_closed' } : undefined;
   }
 
   const STALE_NOTE = { superseded: 'a newer job of its item exists', item_closed: 'its item is closed at its source' } as const;
@@ -333,7 +335,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
         else if (e.type === 'job.finished') later(onFinished);
       }
       // After the hand-off a run again closes (onQueued, scheduled first): what the new job, or the item's close, left stale.
-      if (e.type === 'job.queued' || e.type === 'work_item.issue_closed') setImmediate(() => { if (o.live()) dismissStale(); });
+      if (ENDS_STALE.has(e.type)) setImmediate(() => { if (o.live()) dismissStale(); });
     },
     resolvable,
     async resolve(id, input, by) {

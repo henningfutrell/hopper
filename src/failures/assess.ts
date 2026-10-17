@@ -8,7 +8,8 @@
 // timed-out job (issue #630) is decided by its liveness first (`timed-out.ts`): its own, never grouped with others'. A
 // failure it would hand to a person, of a job that reported a hopper bug about itself, is held on that report (issue #1147).
 // A job whose own pull request's checks are red (issue #1230) goes on to fix them while under the retry limit, never grouped;
-// so does one whose own pull request has merge conflicts or is a draft (issue #1265).
+// so does one whose own pull request has merge conflicts or is a draft (issue #1265). The same failure as the run before it,
+// on the same item, stops the item (issue #1461): a person, once, and nothing runs it again by itself.
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
 import { HOPPER_BUG_CAUSE } from './hopper-bug.ts';
 import { OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
@@ -48,6 +49,8 @@ export interface AssessInput {
   checksFixes?: number;
   /** A job whose own pull request has merge conflicts or is a draft (issue #1265): how many times its chain was sent back for it already. */
   unfinishedFixes?: number;
+  /** The failure of its item's run before it has the same signature (issue #1461, `chain.ts` `repeatedOf`). */
+  repeated?: boolean;
 }
 
 /** A failure assessed longer than this after it failed takes no automatic action (issue #517). */
@@ -69,6 +72,8 @@ export interface Assessment {
   problem?: ProblemPlan;
   /** The newer job of its item: nothing is left to do for this one. */
   superseded?: string;
+  /** The same failure as its item's run before (issue #1461): stopped for a person, and Jev does not run it again. */
+  repeated?: true;
 }
 
 /** The wait before retry `attempt` (1 = the first): the base, times the factor per earlier retry, at most the cap. */
@@ -128,7 +133,26 @@ export function assess(i: AssessInput): Assessment {
   if (i.newer !== undefined) return superseded(i, i.newer);
   if (i.failedAgoMs !== undefined && i.failedAgoMs > STALE_AFTER_MS) return stale(i, i.failedAgoMs);
   const a = judge(i);
-  return i.hopperBug && a.decision === 'person' && i.settings.auto.hold ? heldOnReport(i, i.hopperBug, a) : a;
+  if (i.hopperBug && a.decision === 'person' && i.settings.auto.hold) return heldOnReport(i, i.hopperBug, a);
+  return i.repeated && stopsOnRepeat(i.cause, a) ? stopped(i, a) : a;
+}
+
+/**
+ * The causes a repeat does not stop (issue #1461): they say nothing of the item's work. A daemon restart cuts any job off;
+ * a timeout has its own rule, from the job's liveness (`timed-out.ts`); a shared cause holds or redirects the job on its
+ * problem, which its check or a person resolves.
+ */
+const REPEAT_KEEPS: readonly string[] = ['daemon-restart', 'timed-out'];
+
+/** Whether a repeat stops this assessment: it would run the item again, or hand it to a person whom Jev may skip. */
+function stopsOnRepeat(cause: KnownCause | undefined, a: Assessment): boolean {
+  return a.cls !== 'shared' && !REPEAT_KEEPS.includes(cause?.id ?? '') && (a.decision === 'retry' || a.decision === 'continue' || a.decision === 'person');
+}
+
+/** The same failure as its item's run before (issue #1461): a run again did not help, so a person looks at it, once. */
+function stopped(i: AssessInput, a: Assessment): Assessment {
+  const reasons = [...a.reasons.filter((r) => !r.startsWith('automatic ')), `the same failure as the run before it (signature ${i.signature}): it stops here, for a person`];
+  return { cls: a.cls, decision: 'person', reasons, auto: true, repeated: true, summary: summaryOf(i, 'person', true, undefined, undefined, 'Stopped: the same failure twice in a row') };
 }
 
 /**
