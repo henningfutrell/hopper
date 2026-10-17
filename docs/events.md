@@ -1510,7 +1510,7 @@ Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a 
 
 ## `source.request_auto_approved`
 
-Version 1 (`docs/schemas/source.request_auto_approved.v1.json`). The hopper approved a request card a rule of the user's auto-approval matched (issue #1268), as a person's approval does: its text is the item's snapshot (`approved`), the next sync takes it, and its job runs that text. `rule`: `reopened` (a trusted actor or a listed app reopened the issue after its job was done), `author` (a trusted actor wrote it), `app` (a listed app or bot wrote it) or `high-label` (a trusted actor or a listed app added `hopper:high`); `actor`: who did that act. `actors`: who wrote, labelled and assigned it, as on `source.request_approved`. Never the text.
+Version 1 (`docs/schemas/source.request_auto_approved.v1.json`). The hopper approved a request card a rule of the user's auto-approval matched (issue #1268), as a person's approval does: its text is the item's snapshot (`approved`), the next sync takes it, and its job runs that text. `rule`: `reopened` (a trusted actor or a listed app reopened the issue after its job was done), `author` (a trusted actor wrote it), `app` (a listed app or bot wrote it) or `high-label` (a trusted actor or a listed app added `hopper:high`); `actor`: who did that act. A GitLab card (issue #1642) by `author` or `high-label` only. `actors`: who wrote, labelled and assigned it, as on `source.request_approved`. Never the text.
 
 | field | type | required |
 |---|---|---|
