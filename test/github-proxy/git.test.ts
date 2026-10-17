@@ -96,9 +96,10 @@ describe('the git config a job runs with', () => {
 
 describe('a job\'s git carries its trace (issue #1486 part 6)', () => {
   const PARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
-  /** What git reads as the extra header for `url`, with the job's variables: real git, no repository. */
+  /** What git reads as the extra header for `url`, with the job's variables: real git, no repository (run from `/`, so the
+   * config of the checkout the tests run in, such as CI's own extra header for GitHub, is not read). */
   const extraHeader = (vars: Record<string, string>, url: string): string =>
-    spawnSync('/usr/bin/git', ['config', '--get-urlmatch', 'http.extraheader', url], { env: { PATH: process.env.PATH, HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', ...vars }, encoding: 'utf8' }).stdout.trim();
+    spawnSync('/usr/bin/git', ['config', '--get-urlmatch', 'http.extraheader', url], { cwd: '/', env: { PATH: process.env.PATH, HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', ...vars }, encoding: 'utf8' }).stdout.trim();
 
   it('sends the job\'s trace parent as the traceparent header to the hopper, GitHub and GitLab routes alike, and to nothing else', () => {
     const vars = jobGitConfig('http://hopper:4790', 'https://github.com', { url: 'https://gitlab.example/', path: '/job/gitlab-git/' }, PARENT);
