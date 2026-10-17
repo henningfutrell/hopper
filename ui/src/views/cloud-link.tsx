@@ -1,6 +1,7 @@
 // The cloud link (issue #467), in Settings, the hopper's admin's: link this install to an account at hopper.io, or unlink
 // it, while the hopper runs. A link writes one record on this install and moves no data; an unlink removes the record.
-// While linked, the admin gets a one-time registration code (issue #465) to enter at hopper.io, shown here once.
+// While linked, the admin gets a one-time registration code (issue #465) to enter at hopper.io, shown here once, and sees
+// the public half of the hopper.io link key, which they can rotate (issue #467 part 2).
 // "What hopper.io would get" shows the hopper.io state snapshot this hopper makes now, as it is (issue #466).
 import { Cloud } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -60,6 +61,18 @@ export function CloudLink() {
               <dt className="text-muted-foreground">Instance id</dt><dd className="font-mono text-xs">{link.installId}</dd>
               <dt className="text-muted-foreground">Linked</dt><dd>{new Date(link.linkedAt).toLocaleString()} by {link.by}</dd>
             </dl>
+            <div data-slot="cloud-link-key" className="space-y-2 rounded-md border p-3">
+              <p className="text-xs text-muted-foreground">
+                The link key proves this hopper to hopper.io. Its private half stays on this hopper, in the vault. Only the public half below goes to hopper.io. Rotate it if you think someone else has it: the old key stops at once.
+              </p>
+              {link.linkKey ? (
+                <>
+                  <code data-slot="cloud-link-public-key" className="block break-all rounded bg-muted p-2 font-mono text-xs select-all">{link.linkKey.publicKey}</code>
+                  <p className="text-xs text-muted-foreground">Made {new Date(link.linkKey.createdAt).toLocaleString()}</p>
+                </>
+              ) : <p className="text-xs">This link has no key yet. Rotate to make one.</p>}
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void act('/ui/api/cloud-link/rotate-key', {}, 'Made a new link key')}>Rotate key</Button>
+            </div>
             <div className="space-y-2 rounded-md border p-3">
               <p className="text-xs text-muted-foreground">
                 To register this hopper, get a registration code and enter it at hopper.io, signed in as {link.account}. The code works once, for 10 minutes. A new code replaces the old one. To register again later, get a new code: this hopper keeps its instance id, so it stays one entry at hopper.io.
