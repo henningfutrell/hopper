@@ -26,8 +26,10 @@ function useLeft(at: string | undefined): string | null {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export function DeviceCode({ provider, userCode, verificationUri, expiresAt, waiting, note, machine, onCancel, cancelDisabled, actions, className, ...rest }: {
+export function DeviceCode({ provider, userCode, verificationUri, expiresAt, waiting, note, machine, profile, onCancel, cancelDisabled, actions, className, ...rest }: {
   provider: string; userCode: string; verificationUri: string; expiresAt?: string;
+  /** Under the provider's button: the login's browser profile (issue #1249). */
+  profile?: ReactNode;
   /** The machine that raised the prompt (issue #485); absent for the hopper's own sign-ins. */
   machine?: { id: string; name?: string };
   /** What the page is waiting for, under the code: a few words. */
@@ -54,6 +56,7 @@ export function DeviceCode({ provider, userCode, verificationUri, expiresAt, wai
         Open {provider}<ExternalLink />
       </a>
       <div className="-mt-2 text-[0.7rem] text-muted-foreground/80">or go to <span className="font-mono break-all text-muted-foreground">{verificationUri.replace(/^https?:\/\//, '')}</span></div>
+      {profile}
       <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground" aria-live="polite">
         <div className="flex items-center gap-2"><Loader2 className="size-3.5 shrink-0 animate-spin text-[#1ecad4] motion-reduce:animate-none" />{waiting}</div>
         {left && <div className="num text-[0.7rem] text-muted-foreground/80">The code expires in {left}</div>}

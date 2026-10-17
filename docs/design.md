@@ -11359,6 +11359,18 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
 - **The active list.** The Logins section counts `pending` logins (`GET /api/sections`); the Logins view's cards are
   the pending ones, the expired ones a job still waits to renew, and, for a short while, the failed, cancelled and
   expired ones. A resolved login — completed or dismissed — leaves the cards at once (issue #1110) for Earlier logins.
+- **Browser profile** (issue #1249, `ui/src/model/browser-profile.ts`, `ui/src/components/browser-profile.tsx`). Signing two
+  machines in one after the other in the browser's default profile let the first sign-in's cookies sign the second machine's
+  tool in as the wrong account. So each card that shows a page to open names a **browser profile**: `hopper-<machine id>-<account>`,
+  lower case letters, digits and dashes, each part at most 40 characters. The account is the one the login names (the Claude
+  sign-in for pods names it), else the machine's last account (issue #1269); with none known, `hopper-<machine id>`; with no
+  machine, `self`. The name comes from nothing else, so a sign-in again on the same machine and account opens the same profile,
+  with its cookies. A web page cannot pick the browser's profile, so the card gives the ways to open the page in it: a command,
+  copied, that starts Chrome or Edge with the profile's own data dir (`--user-data-dir`; PowerShell on Windows, the dir under
+  `%LOCALAPPDATA%\hopper\browser-profiles\`; a shell on macOS and Linux), made at its first use; and a Firefox container
+  link (`ext+container:name=<profile>&url=<page>`), which the add-on Open external links in a container opens in the container of
+  that name. The page's own Open button is unchanged: a new tab of the browser's current profile, `noopener`. Nothing of the
+  profile is kept by the hopper or sent to it; the command carries the page's URL, as the Open button does.
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
   read at each expiry, so a change applies without a restart): `renew` (the default since issue #1016: two codes of a
   job expired before a person saw them, and the job stalled) — at each expiry the hopper asks the job for a new code
