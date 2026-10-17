@@ -21,6 +21,7 @@
 // the hopper's wait; for a job on a wait for its own command, the engine is told (`polled`).
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
@@ -100,8 +101,11 @@ const BEARER = /^Bearer\s+(\S+)$/i;
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
-const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
+/**
+ * A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). A GitLab job's
+ * (issue #1448 part 3) is a GitLab project, so it has no own repository on GitHub.
+ */
+const repoOf = (job: Job): string | undefined => { const s = sourceItemOf(job); return isGitLabItem(s) ? undefined : s?.repo; };
 
 export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
   const newId = o.newId ?? (() => randomUUID());
