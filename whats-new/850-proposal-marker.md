@@ -1,0 +1,1 @@
+- A proposal or a report with a table or a line across the page now opens for review. Before, the hopper missed its end and took it as a note.
