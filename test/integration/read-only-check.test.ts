@@ -25,11 +25,13 @@
 //   Scenario: a template with a write need, and one a person saved, take no read-only check
 //   Scenario: a check box that ends badly, or does not start, fails the check with the reason
 //   Scenario: a check box no run holds (a hopper stopped mid-check) is removed, and its check runs again
-//   Scenario: a need the vault cannot mint a credential for fails the check, saying why, and runs no check box
-//   Scenario: a read Access does not allow fails the check, saying so, and mints nothing
+//   Scenario: a need the vault cannot mint a credential for fails the check: its probes are not run, saying why, and the
+//     other needs' probes still run (issue #873)
+//   Scenario: a read Access does not allow fails the check: its probes are not run, saying so, and it mints nothing
 //   Scenario: with the vault in a container of its own (issue #586), the check box gets its read credentials the same way
 //   Scenario (issue #715): a terraform workspace's probes run with the AWS read session of the template's aws-role read need
-//   Scenario (issue #715): a terraform workspace with no one aws-role read need beside it fails the check, saying so, and runs no check box
+//   Scenario (issue #715): a terraform workspace with no one aws-role read need beside it fails the check: its probes are
+//     not run, saying so, and the aws-role needs' probes still run (issue #873)
 //   Scenario (issue #916): helm list refused on a view role fails the check until a person marks it expect-denied; then
 //     the check passes, a write that goes through still fails it, and a write probe takes no mark
 import { chmodSync, renameSync, writeFileSync } from 'node:fs';
@@ -230,22 +232,30 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(runtime.volumes.has('hopper-check-left-home')).toBe(false);
     expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
   });
-  it('a need the vault cannot mint a credential for fails the check, saying why, and runs no check box', async () => {
+  it('a need the vault cannot mint a credential for fails the check: its probes are not run, saying why, and the other needs\' probes still run (issue #873)', async () => {
     const { a, token, runtime, kube } = await boot(['cluster/*']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/other']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab read/cluster/other']);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
-    expect(t.check).toMatchObject({ state: 'failed', probes: [] });
+    expect(t.check).toMatchObject({ state: 'failed' });
+    expect(t.check!.problem).toBeUndefined();
     // Issue #1468: a read the vault mints nothing for (an aws-account) is refused when it is asked for, so never reaches the check.
-    expect(t.check!.problem).toBe('the check box gets no credential for read on cluster other: no minting credential mints for cluster other: a person adds one on Settings → Vault');
+    const why = 'not run: the check box gets no credential for read on cluster other: no minting credential mints for cluster other: a person adds one on Settings → Vault';
+    const other = t.check!.probes.filter((p) => p.asset === 'other');
+    expect(other.length).toBeGreaterThan(0);
+    for (const p of other) expect(p).toMatchObject({ outcome: 'not-run', passed: false, output: why });
+    // The probes of cluster lab ran in the check box, with the token minted for it.
+    const lab = t.check!.probes.filter((p) => p.asset === 'lab');
+    expect(lab.length).toBeGreaterThan(0);
+    expect(lab.every((p) => p.passed), JSON.stringify(lab)).toBe(true);
     expect(t.check!.transient).toBeUndefined();
-    expect(runtime.ran.size).toBe(0);
-    expect(kube.seen).toHaveLength(0);
+    expect(runtime.ran.size).toBe(1);
+    expect(kube.seen.length).toBeGreaterThan(0);
     expect((await stepBox(a, token, t.name)).status).toBe(409);
   });
 
-  it('a read Access does not allow fails the check, saying so, and mints nothing', async () => {
+  it('a read Access does not allow fails the check: its probes are not run, saying so, and it mints nothing', async () => {
     const { a, token, runtime, kube } = await boot(['cluster/lab']);
     const creds = await runningJob(a);
     await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
@@ -256,8 +266,10 @@ describe('the read-only check before a requested template\'s first box (issue #7
 
     await a.app.sandboxes.check();
     const checked = await asked(a, token);
-    expect(checked.check).toMatchObject({ state: 'failed', probes: [] });
-    expect(checked.check!.problem).toBe(`the check box gets no credential for read on cluster lab: Access denied it: template ${t.name} is not approved to read on cluster lab`);
+    expect(checked.check).toMatchObject({ state: 'failed' });
+    expect(checked.check!.problem).toBeUndefined();
+    expect(checked.check!.probes.length).toBeGreaterThan(0);
+    for (const p of checked.check!.probes) expect(p).toMatchObject({ outcome: 'not-run', passed: false, output: `not run: the check box gets no credential for read on cluster lab: Access denied it: template ${t.name} is not approved to read on cluster lab` });
     expect(runtime.ran.size).toBe(0);
     expect(kube.seen).toHaveLength(0);
     expect((await a.events()).find((e) => e.type === 'vault.check_mint_refused')?.data).toMatchObject({ template: t.name, mint: { kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' } }, decision: expect.any(String) });
