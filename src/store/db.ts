@@ -4,7 +4,11 @@
 //
 // SQL is written with `?` placeholders, numbered ($1, $2, …) before it is sent.
 import { createSyncFn } from 'synckit';
+import { instrument } from '../telemetry/instruments.ts';
 import { slowStoreCalls, statementOf } from './slow-calls.ts';
+
+/** Each store call's time, by its statement's verb and table (issue #1486, design.md "Telemetry"): never its SQL or values. */
+const callDuration = instrument((m) => m.createHistogram('hopper.db.call.duration', { unit: 's', description: 'How long a store call blocked the process.' }));
 
 export type Param = string | number | null;
 export type Row = Record<string, unknown>;
@@ -56,7 +60,11 @@ export function openDb(url: string, o: { timeoutMs?: number } = {}): Db {
   // Each call blocks the event loop while it lasts: a slow one is kept, for the watchdog to name (issue #1154).
   const timed = <T>(sql: string, run: () => T): T => {
     const from = performance.now();
-    try { return run(); } finally { slowStoreCalls.record(from, performance.now(), statementOf(sql)); }
+    try { return run(); } finally {
+      const to = performance.now(), statement = statementOf(sql);
+      slowStoreCalls.record(from, to, statement);
+      callDuration().record((to - from) / 1000, { 'db.query.summary': statement });
+    }
   };
   const query = (sql: string, params: Param[]) => timed(sql, () => call('query', handle, numberPlaceholders(sql), params));
   return {

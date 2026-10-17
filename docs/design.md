@@ -87,6 +87,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events (`jobs.ts`); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection. Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -22599,3 +22600,68 @@ added twice) with a fake authenticator (`test/support/fake-authenticator.ts`, an
 `test/integration/passkeys.test.ts` (a realm-only hopper end to end; another origin refused; an account's own passkeys
 only; the account's removal removes them; a session of another realm adds none; the role now);
 `test/ui/passkeys-panel.test.ts` (Settings and the landing page).
+
+## Telemetry (issue #1486, part 1, 2026-10-16)
+
+Issue #1486 asks for OpenTelemetry traces, metrics and logs across the hopper, so the data shows what to improve: slow
+actions, stuck jobs, GitHub use, where failures come from. This part lays the base and the first signals.
+
+**The change.**
+- **The established SDK, from the usual launch environment.** `@opentelemetry/sdk-node` reads the `OTEL_*` variables:
+  the exporters, the OTLP endpoint, protocol and headers, the sampler, the service name and resource attributes. No
+  setting of the hopper's own, no file. `src/telemetry/sdk.ts` starts it once per process (`main()`), before the log mask
+  covers stdout and stderr.
+- **Off unless the launch names an exporter.** The SDK alone sends every signal to OTLP on localhost; a hopper with no
+  collector must not try. `telemetryWanted`: on only with an OTLP endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT` or a signal's
+  own) or an exporter named for a signal other than `none`, and never with `OTEL_SDK_DISABLED=true`. Off, the API stays its
+  no-op: each span, metric and log record costs next to nothing and goes nowhere.
+- **The resource names no machine.** `service.name` `hopper` and `service.version`, then `OTEL_SERVICE_NAME` and
+  `OTEL_RESOURCE_ATTRIBUTES`; the host and process detectors are left out, so no host name, user or command line goes out
+  unless the launch adds it.
+- **Every request is a span** (`http.ts`, the first hook of the server): named by its route's template
+  (`POST /ui/api/jobs/:id/approve`), never its URL, so no id, query or token in a path goes out, nor a header or a body.
+  A caller's `traceparent` is its parent: a machine's call joins the trace that asked for it. The span is the active
+  context in the handler (set again after the body is read), so its spans, GitHub calls and log lines are its children.
+  An error records only its kind (`error.type`): a message may carry what the request carried. The latency is the
+  semantic conventions' `http.server.request.duration` by method, route and status: a UI action's latency (approve,
+  discard) is its route's.
+- **A job is one trace** (`jobs.ts`), built from the user's event log as it appends: a root span `hopper.job`, and a
+  **job span** for each part of the job's life — `queue` (queued to claimed or started), `run` (started to its end, a
+  question or a wait), `question` (asked to answered, with each escalation an event on it), `wait`, `park`,
+  `pull_request` (followed to merged, closed or abandoned). Each is timed by the events' own times. The root ends at
+  the job's end; its pull request is followed after that, so that job span is a child of the ended root, in the same
+  trace, while the hopper remembers the job (the last 2000 ended). Every other job or question event is an event on the
+  root, or on its question's span. The attributes are picked by name — the job's id, executor, source, repository, issue
+  and pull request number, lane, machine, outcome, and a question's target —: no event data, prompt, title, answer or
+  error goes out. The spans live in memory: a restart starts a new trace at the next event of a job still open, and at
+  most 2000 jobs are open at once (past that, the oldest is ended, marked `hopper.trace.evicted`). Built from events and
+  not from the engine, a part of the hopper that appends an event is traced with no change of its own.
+- **Metrics.** `hopper.job.span.duration` (by kind), `hopper.job.ended` (by outcome and executor), `hopper.job.events`
+  (by type); `hopper.jobs` (live jobs by status) and `hopper.lanes` (lanes by state), read at each collection;
+  `hopper.github.calls` (by route, status and cache use: a 304 answered from the cache is a hit),
+  `hopper.github.call.duration` and `hopper.github.rate_limit.remaining` (by resource), from the shared rate limiter's
+  hook, where each GitHub call is also a client span; `hopper.db.call.duration` by the statement's verb and table
+  (`statementOf`, never its SQL or values); `process.memory.usage`, `nodejs.memory.heap.used`, `process.cpu.time`,
+  `nodejs.eventloop.delay.max` and `.p99`.
+- **Logs are bridged, not duplicated.** The hopper logs by writing lines to stdout and stderr, whoever writes them. Each
+  write also goes out as a log record (`INFO` from stdout, `WARN` from stderr), with the trace and span it was written in.
+  The bridge sits under the log mask (issue #685), so it gets the masked line. With `OTEL_LOGS_EXPORTER=console` it is not
+  bridged: the console exporter's own lines would be exported again, without end.
+- **A local viewer.** `compose.yaml` passes the `OTEL_*` variables through, and the optional profile `telemetry` runs
+  Grafana's all-in-one OpenTelemetry image (a collector, Tempo, Prometheus, Loki and Grafana) on loopback
+  (docs/deploy.md "Telemetry").
+
+**Why an instrument is made again.** The API's tracer follows a provider set later; its meter does not: a meter taken
+before the SDK starts stays a no-op for good. `instrument()` makes each instrument again when the meter provider changes,
+so a module may hold one at its top.
+
+**Left for the next parts** (the pull request lists them): the settings in the UI, Helm values, a built-in view of the
+slowest actions, job span durations and GitHub use; trace context carried to machines, lane pods and boxes; spans for
+sandbox create and teardown, work tree setup, tend, rebase, merge and deploy, the outbox and the sync; failure kinds,
+assessor decisions, retries and escalation levels as metrics.
+
+**Tests.** `test/telemetry/telemetry.test.ts`, with in-memory exporters and no timing asserted: when telemetry is on;
+a job's span tree, its parent links, attributes and metrics; a request's span named by its route, the handler's span and
+log record its children, its latency recorded; GitHub calls counted, a conditional hit as a hit, the calls left; the
+process's and the queue's gauges; and no secret — a prompt, a title, a question, an answer, an error, a session, a bearer
+token, a query, a body, a GitHub token, an id in a URL — in anything exported.

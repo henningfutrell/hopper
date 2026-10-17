@@ -39,6 +39,7 @@ import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCo
 import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
+import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
 
 export type { UserSeams } from './users/runtime.ts';
 
@@ -336,6 +337,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   runtimes.watch(intervalMs);
   // After the runtimes: a box is kept only when a machine names it, so the machines must be known first.
   sandboxes.start(); void playground.start(); stack.recorder.start();
+  const stopQueueTelemetry = observeQueueOf(() => runtimes.all().map((rt) => rt.store)); // the queue's state, read only while telemetry is on (issue #1486)
 
   let stopped: Promise<void> | undefined;
   const app: App = {
@@ -357,7 +359,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     addUser,
     stop() {
       stopped ??= (async () => {
-        updater.stop(); stack.recorder.stop();
+        updater.stop(); stack.recorder.stop(); stopQueueTelemetry();
         await access.stop();
         const passes = Promise.all([sandboxes.stop(), playground.stop()]);
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
@@ -374,6 +376,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 }
 
 async function main(): Promise<void> {
+  // OpenTelemetry (issue #1486, design.md "Telemetry"): before the mask covers the streams, so a log record is the masked line.
+  const telemetry = startProcessTelemetry({ env: process.env, version: VERSION, stdout: process.stdout, stderr: process.stderr });
   for (const s of [process.stdout, process.stderr]) logMask.cover(s); // every log line through the secret mask (issue #685)
   // The first boot of a job-hopper install's self-update (issue #112): hand over to the hopper units, or
   // run the previous install until no job holds a pane in the old herdr session.
@@ -388,7 +392,7 @@ async function main(): Promise<void> {
   logStartup(app);
   const shutdown = (signal: string): void => {
     console.log(`hopper: ${signal}, shutting down`);
-    app.stop().then(() => process.exit(0), (e) => {
+    app.stop().then(() => telemetry.shutdown()).then(() => process.exit(0), (e) => {
       console.error('shutdown failed', e);
       process.exit(1);
     });
