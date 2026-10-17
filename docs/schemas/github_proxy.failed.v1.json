@@ -38,6 +38,8 @@
             "pr.reviews",
             "pr.status",
             "pr.ready",
+            "pr.edit",
+            "pr.close",
             "repo.view",
             "repo.fork",
             "check.log"

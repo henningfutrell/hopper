@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-export { commentEditRoute, editIssue } from './fake-edits.ts';
+export { commentEditRoute, editIssue, pullEditRoute } from './fake-edits.ts';
 
 /** The fake GitHub's options for it (fields of `FakeForge`). */
 export interface ForksForge {

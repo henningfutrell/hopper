@@ -3,7 +3,8 @@
 //
 // The hopper acts for a job with the GitHub connection of the job's own user (issue #1380): a job may file and read
 // issues, comment, open a pull request from its pushed branch, mark one ready for review (issue #1275: on its own
-// repository or another job repository, where its change may belong), close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
+// repository or another job repository, where its change may belong), edit or close a pull request it opened or its work
+// item's (issue #1734), close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
 // check's log (issue #993), on its user's job repositories; it reads (`READS`) on any repository the connection sees
 // (issue #1015): the job repositories decide intake and where a job writes, not what it reads.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
@@ -17,7 +18,7 @@ import { z } from 'zod';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
-  'pr.reviews', 'pr.status', 'pr.ready', 'repo.view', 'repo.fork', 'check.log',
+  'pr.reviews', 'pr.status', 'pr.ready', 'pr.edit', 'pr.close', 'repo.view', 'repo.fork', 'check.log',
 ] as const;
 export type ProxyOp = (typeof PROXY_OPS)[number];
 
@@ -50,6 +51,10 @@ export const proxyRequest = z.discriminatedUnion('op', [
   // Where a pull request stands (issue #1072): answered from the hopper's records first, GitHub only for one it does not know.
   z.strictObject({ op: z.literal('pr.status'), repo, number }),
   z.strictObject({ op: z.literal('pr.ready'), repo, number }),
+  // A pull request's title or body changed, or the pull request closed with no merge (issue #1734): one the job owns only.
+  z.strictObject({ op: z.literal('pr.edit'), repo, number, title: text(256).optional(), body: text(60_000).optional() })
+    .refine((r) => r.title !== undefined || r.body !== undefined, 'pr edit needs --title or --body (or --body-file)'),
+  z.strictObject({ op: z.literal('pr.close'), repo, number }),
   z.strictObject({ op: z.literal('repo.view'), repo }),
   z.strictObject({ op: z.literal('repo.fork'), repo }),
   // A failed check's full log (issue #993): `number` is its GitHub Actions job, the last number of the check's link.
@@ -94,6 +99,8 @@ export interface ProxyAsker {
   fork?: string;
   /** Whether the user can push to the job's own repository, as GitHub says, when read (for `repo.fork`). */
   canPush?: boolean;
+  /** For `pr.edit` and `pr.close` (issue #1734): whether the job opened that pull request, or it is its work item's. */
+  ownsPullRequest?: boolean;
 }
 
 /** Why a job may not work through a fork now (issue #429). */
@@ -142,6 +149,9 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   }
   if (req.op === 'issue.close' && !(ownRepo && asker.issue === req.number)) {
     return { ok: false, reason: `a job closes only its own issue${asker.repo && asker.issue !== undefined ? ` (${asker.repo}#${asker.issue})` : ', and this job has none'}` };
+  }
+  if ((req.op === 'pr.edit' || req.op === 'pr.close') && !asker.ownsPullRequest) {
+    return { ok: false, reason: `a job edits or closes only a pull request it opened, or the pull request of its own work item: not ${req.repo}#${req.number}` };
   }
   return { ok: true };
 }

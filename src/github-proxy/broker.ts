@@ -50,6 +50,8 @@ export interface ProxyUser {
   ledger?(url: string): LedgerView | undefined;
   /** What this user's records know of pull request `number` of `repo` (issue #1072). Absent: nothing; GitHub is read. */
   pullRequest?(repo: string, number: number): KnownPullRequest;
+  /** Whether `job` opened pull request `number` of `repo`, or it is the job's work item's (issue #1734). Absent: none. */
+  ownsPullRequest?(job: Job, repo: string, number: number): boolean;
   /** The first answer to the job's request with resend key `key` (issue #1607); undefined: none yet. Absent: none is kept. */
   replay?(jobId: string, key: string): ProxyReplay | undefined;
 }
@@ -198,8 +200,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
           return { status: 502, body: { error: (e as Error).message, requestId } };
         }
       }
+      const owns = req.op === 'pr.edit' || req.op === 'pr.close' ? { ownsPullRequest: user.ownsPullRequest?.(job, req.repo, req.number) === true } : {};
       const asker: ProxyAsker = {
-        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts,
+        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts, ...owns,
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
       };
       // No connection of the job's own user (issue #1380): refused with how to connect, before the repositories it would
@@ -250,6 +253,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       // user, so a source lists it as a request card, which a person approves (it is never of a trusted origin).
       const maskRequest = (r: ProxyRequest): ProxyRequest => {
         if (r.op === 'issue.create' || r.op === 'pr.create') return { ...r, title: maskGitHubTokens(r.title), body: maskGitHubTokens(r.body) };
+        if (r.op === 'pr.edit') return { ...r, ...(r.title !== undefined ? { title: maskGitHubTokens(r.title) } : {}), ...(r.body !== undefined ? { body: maskGitHubTokens(r.body) } : {}) };
         if (r.op === 'issue.comment') return { ...r, body: maskGitHubTokens(r.body) };
         return r;
       };

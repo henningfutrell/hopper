@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { commentEditRoute, editIssue, forksRoute, type ForksForge } from './fake-forks.ts';
+import { commentEditRoute, editIssue, pullEditRoute, forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
 import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
@@ -46,7 +46,7 @@ export interface FakeIssue {
 }
 
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
-interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean }
+export interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean; state?: 'open' | 'closed' }
 
 /** `notModified`: answered 304, as it named the ETag of an answer that still holds (issue #1250). */
 export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string; notModified?: boolean }
@@ -184,7 +184,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({
-      number: p.number, node_id: `PR_${p.repo}_${p.number}`, title: p.title, body: p.body, state: 'open', draft: p.draft === true, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
+      number: p.number, node_id: `PR_${p.repo}_${p.number}`, title: p.title, body: p.body, state: p.state ?? 'open', draft: p.draft === true, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
       head: { ref: p.head, sha: `sha-${p.number}` }, base: { ref: p.base },
     });
     return (r, login) => {
@@ -299,7 +299,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
-      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
+      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? pullEditRoute(pulls, restPull, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       // A repository's issues by label, or by `creator` (issue #1591: a post key looked for), `state=all` too; `since` is not read.
       if (r.method === 'GET' && rest === 'issues') { const { state = 'open', labels, creator } = r.query; return { status: 200, body: issues.filter((i) => i.repo === repo && (state === 'all' || (i.state ?? 'open') === state) && (labels ?? '').split(',').every((l) => i.labels.includes(l) || (!labels && !!creator)) && (creator === undefined || i.author === creator)).map(restIssue) }; }
