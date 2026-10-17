@@ -7,7 +7,8 @@
 // as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997). Its
 // transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169). Its facts name the GitHub
-// identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account.
+// identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account. A held
+// job says why it is held (issue #874), a gate hold with the machines' names.
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { JobTitle, LinkLostFlag, Since } from '@/components/job';
@@ -18,6 +19,7 @@ import { StatusBadge } from '@/components/status';
 import { WaitsOnLink } from '@/components/waits-on';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
+import { gateHoldText, heldAtGate } from '@/model/blast-radius';
 import { actingIdentity, actingText } from '@/model/acting-identity';
 import { directJobOf } from '@/model/promotions';
 import type { ConnectedAccountStatus, DomainEvent, Job, JobBom } from '@/model/wire';
@@ -109,6 +111,9 @@ export function JobView() {
             <LinkLostFlag job={read.job} />
             <JobAct jobId={read.job.id} />
             <Fact label="job">{read.job.id}</Fact>
+            {read.job.status === 'held' && read.job.holdReason && (
+              <Fact label="held"><span data-slot="job-hold-reason" className="text-warn">{heldAtGate(read.job) ? gateHoldText(read.job.holdReason, machines) : read.job.holdReason}</span></Fact>
+            )}
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
             <Fact label="GitHub as"><span data-slot="job-acting-as" className={acting.kind === 'acted' ? 'font-mono' : 'text-muted-foreground'}>{actingText(acting)}</span></Fact>
             <Fact label="created">{read.job.createdAt}</Fact>
