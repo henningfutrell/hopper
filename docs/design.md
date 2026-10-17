@@ -10767,7 +10767,9 @@ replaces them; test with doubles, and state the gap to a real environment.
   version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself
   (issue #1468: but one that failed only on a network error — each mint refusal, or the check box's start, said
   `ECONNRESET`, `ETIMEDOUT`, a timeout and the like — is `transient`, says so, and runs again `CHECK_RETRY_MS`, 5 minutes,
-  after it ended, with no person): a
+  after it ended, with no person; issue #1736: one that failed only on probes the catalog passes now, from what each did —
+  `helm.list` refused on secrets, judged before a right refusal passed it — runs again at the next pass, `judgedAgain`,
+  so the jobs that wait on it go on): a
   person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
   check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
@@ -10790,10 +10792,14 @@ replaces them; test with doubles, and state the gap to a real environment.
     still asks the API's authorization. `helm install --dry-run=server` does not (issue #869): it renders the chart and
     creates nothing, so it ended 0 on a view role and the probe passed falsely. One object created fails the probe, even
     when the others are refused.
-  - `helm list` reads the Secrets helm keeps its releases in. The built-in `view` role cannot read Secrets, so on a view
-    role `helm list` is Forbidden and its probe fails: that is expected, and the probe passes only with read access to
-    Secrets. A probe can carry a `note` for such a case; a result that did not pass carries it, and the report shows it
-    under the output (issue #869). A person marks it `expect-denied` on such a template (issue #916, "Probe marks").
+  - `helm list` reads the Secrets helm keeps its releases in. The built-in `view` role (EKS `AmazonEKSViewPolicy`)
+    cannot read Secrets, so on a view role `helm list` is Forbidden on secrets: that is right for a read credential.
+    A probe can carry a **right refusal** (`Probe.rightRefusal`, issue #1736): the words of a refusal a right read
+    credential gives. An `allowed` probe with no mark that is refused in those words passes; `helm.list`'s are
+    `secrets is forbidden: … cannot list resource "secrets"` (`HELM_LIST_REFUSAL`), so a refusal of anything else, or an
+    error, still fails it. A probe can carry a `note` for such a case; a result that did not pass carries it, and so does
+    a read that passed refused, and the report shows it under the output (issue #869). The report's summary names each
+    read that passed refused. A person can still mark it `expect-denied` or `skip` (issue #916, "Probe marks").
   - `argocd-app`: read the Application; write a label patch with `--dry-run=server`.
   - `terraform-workspace`: read `terraform plan` of a one-resource stack (an SSM parameter); write `terraform apply` of it,
     once with `terraform` on `PATH` (a read-only wrapper there, when #715 adds one) and once with the real binary in

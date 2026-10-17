@@ -30,8 +30,8 @@
 //   Scenario: with the vault in a container of its own (issue #586), the check box gets its read credentials the same way
 //   Scenario (issue #715): a terraform workspace's probes run with the AWS read session of the template's aws-role read need
 //   Scenario (issue #715): a terraform workspace with no one aws-role read need beside it fails the check, saying so, and runs no check box
-//   Scenario (issue #916): helm list refused on a view role fails the check until a person marks it expect-denied; then
-//     the check passes, a write that goes through still fails it, and a write probe takes no mark
+//   Scenario (issues #916, #1736): helm list refused on secrets on a view role passes the check with no mark; a person can
+//     still mark it expect-denied, a write that goes through still fails the check, and a write probe takes no mark
 import { chmodSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -277,7 +277,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(env).not.toContain(KUBE_MINTING_TOKEN);
   });
 
-  it('helm list refused on a view role fails the check until a person marks it expect-denied (issue #916)', async () => {
+  it('helm list refused on secrets on a view role passes the check; a mark changes no write (issues #916, #1736)', async () => {
     const { a, token, runtime, cloud } = await boot(['cluster/lab']);
     // A view role: helm list reads the secrets helm keeps its releases in, and is refused.
     renameSync(join(cloud.dir, 'helm'), join(cloud.dir, 'helm.real'));
@@ -290,8 +290,9 @@ exec "$(dirname "$0")/helm.real" "$@"
     await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
-    expect(t.check).toMatchObject({ state: 'failed' });
-    expect(t.check!.probes.filter((p) => !p.passed).map((p) => p.id)).toEqual(['helm.list']);
+    expect(t.check).toMatchObject({ state: 'passed' });
+    expect(t.check!.probes.find((p) => p.id === 'helm.list')).toMatchObject({ expect: 'allowed', outcome: 'denied', passed: true });
+    expect((await a.events()).filter((e) => e.type === 'template.checked').at(-1)?.data).toMatchObject({ state: 'passed', failed: [] });
 
     // A write probe takes no mark, and nor does a probe the hopper does not have.
     const write = await vault(a, token, { action: 'save-template', name: t.name, image: t.image, secrets: [], probeMarks: { 'helm.install': 'skip' } });
@@ -299,7 +300,7 @@ exec "$(dirname "$0")/helm.real" "$@"
     expect(write.body.error).toBe('helm.install is a write probe: a write must be refused always, so it takes no mark');
     expect((await vault(a, token, { action: 'save-template', name: t.name, image: t.image, secrets: [], probeMarks: { 'helm.lst': 'skip' } })).status).toBe(400);
 
-    // A person marks helm list expect-denied: the save keeps its approval, and the check runs again and passes.
+    // A person can still mark helm list expect-denied: the save keeps its approval, and the check runs again and passes.
     expect((await vault(a, token, { action: 'save-template', name: t.name, image: t.image, secrets: [], probeMarks: { 'helm.list': 'expect-denied' } })).status).toBe(200);
     const marked = await asked(a, token);
     expect(marked).toMatchObject({ probeMarks: { 'helm.list': 'expect-denied' }, readOnly: true, approval: { by: 'the read policy' } });
