@@ -12,11 +12,17 @@ export const SESSION_HEADER = 'x-hopper-session';
 
 const one = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? undefined : v);
 
-/** The API token in `Authorization: Bearer …`, or undefined: none, or a bearer token that is not one (the API door's). */
+/**
+ * The API token in `Authorization: Bearer …`, or `Authorization: DPoP …` for a bound grant's (issue #892, RFC 9449 §7.1),
+ * or undefined: none, or a token that is not one (the API door's).
+ */
 export function apiTokenIn(headers: IncomingHttpHeaders): string | undefined {
-  const m = /^Bearer\s+(\S+)\s*$/i.exec(one(headers.authorization) ?? '');
+  const m = /^(?:Bearer|DPoP)\s+(\S+)\s*$/i.exec(one(headers.authorization) ?? '');
   return m?.[1]?.startsWith(API_TOKEN_PREFIX) ? m[1] : undefined;
 }
+
+/** Whether the API token comes as `Authorization: DPoP …` (issue #892): the scheme a bound grant's token must use. */
+export const dpopSchemeIn = (headers: IncomingHttpHeaders): boolean => /^DPoP\s/i.test(one(headers.authorization) ?? '');
 
 /** The request's session token: the UI session header, else an API token in `Authorization`. */
 export const sessionTokenIn = (headers: IncomingHttpHeaders): string | undefined => one(headers[SESSION_HEADER]) ?? apiTokenIn(headers);

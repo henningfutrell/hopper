@@ -37,6 +37,7 @@ describe('API tokens model', () => {
   it('a grant\'s line says its role, box flag, when it was made and used, from where, and its end', () => {
     const g = { id: '0123456789abcdef', label: 'Grok Bot', holder: 'grok-bot', role: 'operator' as const, box: true, scopes: ['*:read'], createdAt: '2026-10-10T10:00:00Z', endsAt: '2027-01-08T10:00:00Z', idleEndsAt: '2026-11-09T10:00:00Z' };
     expect(grantLine(g)).toMatch(/^operator · box · made .+ · not used yet · ends .+$/);
+    expect(grantLine({ ...g, jkt: 'k'.repeat(43) })).toMatch(/^operator · box · bound to its agent's key · made /);
     expect(grantLine({ ...g, box: false, lastUsedAt: '2026-10-11T10:00:00Z', lastUsedFrom: '10.0.0.2', endsAt: null })).toMatch(/^operator · made .+ · last used .+ from 10\.0\.0\.2 · no fixed end$/);
   });
 
@@ -79,6 +80,7 @@ describe('API tokens model', () => {
     const line = deviceAskLine(v, 'operator', registry);
     expect(line).toMatch(/^operator \(your role\) · box · preset agent-intake · lives 90 days at most · asked from 203\.0\.113\.5 · request ends /);
     expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], days: null } }, 'admin')).toMatch(/^viewer · scopes \*:read · no fixed end · /);
+    expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], jkt: 'k'.repeat(43) } }, 'admin')).toMatch(/^viewer · bound to the asking agent's key · scopes /);
     expect(deviceCodeOfHash('#settings/api-tokens/BCDF-GHJK')).toBe('BCDF-GHJK');
     expect(deviceCodeOfHash('#settings/api-tokens')).toBe('');
   });

@@ -149,6 +149,25 @@ hopper token approve BCDF-GHJK    # --role sets the most role it can get (admin 
 hopper token deny BCDF-GHJK
 ```
 
+## Tie a grant to the agent's key
+
+A refresh token is a password for the grant: whoever copies it can use the grant. You can tie a grant to a key that only the agent holds. Then a copied token alone does not work. This is DPoP (RFC 9449).
+
+1. The agent makes a key pair (for example ES256 or Ed25519) and keeps the private key.
+2. For each request that uses the grant, the agent signs a short proof with that key and sends it in the `DPoP` header. The proof names the method (`htm`), the full URL (`htu`), the time (`iat`, at most 60 seconds off the hopper's clock), a new random id (`jti`), and, with an API token, the token's SHA-256 in base64url (`ath`). DPoP libraries make it, for example `dpop` on npm.
+3. The grant is tied to the key in one of three ways:
+   - The agent sends a proof with its device grant request. The approval form then says **bound to the asking agent's key**.
+   - You mint with the key's thumbprint: `"jkt": "<thumbprint>"`, or `hopper token mint --jkt <thumbprint>`. The thumbprint is the key's JWK SHA-256 thumbprint (RFC 7638), 43 characters.
+   - The agent sends a proof with its first refresh.
+
+After that, the grant works only with a proof of that key:
+
+- A refresh without the proof gets `401`. The grant stays: a copied refresh token cannot end it.
+- An API token of the grant goes as `Authorization: DPoP <token>`, with a proof. `Bearer` gets `401`.
+- The refresh answer says `"tokenType": "DPoP"`.
+
+The list shows **bound to its agent's key** for such a grant. To use a new key, revoke the grant and make a new one.
+
 ## Exchange a sign-in for a token
 
 An agent with no UI session can exchange a sign-in for one API token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.

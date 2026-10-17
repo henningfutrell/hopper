@@ -16,9 +16,12 @@ export const mintableRoles = (role: UiRole | undefined): UiRole[] => (role ? ROL
 export const apiTokenLine = (t: ApiTokenView): string =>
   `${t.role}${t.box ? ' · box token' : ''} · ends ${when(t.expiresAt)}${t.lastUsedAt === t.startedAt ? ' · not used yet' : ` · last used ${when(t.lastUsedAt)}`}`;
 
-/** A grant's line (issue #881): its role, box flag, when it was made, when it was last used and from where, and when it ends. */
+/**
+ * A grant's line (issue #881): its role, box flag, whether it is bound to its agent's key (issue #892), when it was made,
+ * when it was last used and from where, and when it ends.
+ */
 export const grantLine = (g: ApiGrantView): string => [
-  g.role, ...(g.box ? ['box'] : []), `made ${when(g.createdAt)}`,
+  g.role, ...(g.box ? ['box'] : []), ...(g.jkt ? ['bound to its agent\'s key'] : []), `made ${when(g.createdAt)}`,
   g.lastUsedAt === undefined ? 'not used yet' : `last used ${when(g.lastUsedAt)}${g.lastUsedFrom ? ` from ${g.lastUsedFrom}` : ''}`,
   g.endsAt === null ? 'no fixed end' : `ends ${when(g.endsAt)}`,
 ].join(' · ');
@@ -74,7 +77,7 @@ export const deviceCodeOfHash = (hash: string): string => decodeURIComponent(has
 export function deviceAskLine(v: DeviceGrantView, as: UiRole | undefined, registry?: ScopeRegistry): string {
   const box = v.ask.box ?? registry?.presets.find((p) => p.id === v.ask.preset)?.box ?? false;
   return [
-    v.ask.role ?? `${as ?? 'your role'} (your role)`, ...(box ? ['box'] : []), ...(v.ask.preset ? [`preset ${v.ask.preset}`] : []),
+    v.ask.role ?? `${as ?? 'your role'} (your role)`, ...(box ? ['box'] : []), ...(v.ask.jkt ? ['bound to the asking agent\'s key'] : []), ...(v.ask.preset ? [`preset ${v.ask.preset}`] : []),
     ...(v.ask.scopes?.length ? [`scopes ${v.ask.scopes.join(' ')}`] : []),
     v.ask.days === null ? 'no fixed end' : `lives ${v.ask.days ?? 90} days at most`, `asked from ${v.from}`, `request ends ${when(v.expiresAt)}`,
   ].join(' · ');
