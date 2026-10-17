@@ -68,6 +68,11 @@ export interface EngineOptions {
    * variable and its value, `none`, or why the vault refuses it (the job fails). Absent: none on any machine.
    */
   agentSignIn?: (job: Job, machine: MachineSnapshot) => Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
+  /**
+   * The job's trace context (issue #1486, design.md "Telemetry: a job's trace on its machine"): the variables its processes
+   * run with to join its trace (`TRACEPARENT`). Empty while telemetry is off. Absent: none.
+   */
+  traceContext?: (jobId: string) => Readonly<Record<string, string>>;
   /** A box's template and its rating now (issue #605): the box's blast radius includes it. Absent: no machine is a box. */
   boxRadius?: (machineId: string) => { name: string; radius: TemplateRadius } | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */

@@ -1,0 +1,1 @@
+- Operators who send telemetry now see the work a job does on its machine, and its requests to the hopper, in the same trace as the job.
