@@ -10219,6 +10219,14 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   never approves a template again: one a person revoked waits for a person.
 - **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
   is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
+  Issue #1468: the 409 names the needs the template holds now (`--needs "<them>"`), so a job can ask for those, and
+  where a person changed it: through the operator CLI (`savedBy` is `operator CLI`) or in Settings → Vault.
+- **A read the check cannot mint for is refused at the ask** (issue #1468). A template of read needs only takes the
+  read-only check, and the vault mints the check's read credentials for an `aws-role`, a `cluster` or a `namespace` only
+  (a `terraform-workspace` takes the aws-role's). A read need on any other kind (`aws-account`, `argocd-app`) in such a
+  request failed the check at every run, after the template was saved and approved. Now the request (and its preview)
+  is a 400 that names the need to ask for in its place: `read/aws-role/<account>/<role>` for an `aws-account`. A request
+  with a write, sync or apply need takes no check, so its `aws-account` read is asked for as before.
 - **The answer.** 200 when the template is approved, its image the approved one, every profile approved in Access, and
   (a template of read needs only) its read-only check passed ("The read-only check"):
   its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
@@ -10590,7 +10598,10 @@ replaces them; test with doubles, and state the gap to a real environment.
   image, tool or profile is checked again.
 - **When it runs.** The check pass (`createCheckPass`, `src/sandbox/check.ts`) runs with the reconcile pass, every 10 s
   and at start, one check at a time. A template is due when it takes a check, its image (and tools) are approved, and its
-  version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself: a
+  version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself
+  (issue #1468: but one that failed only on a network error — each mint refusal, or the check box's start, said
+  `ECONNRESET`, `ETIMEDOUT`, a timeout and the like — is `transient`, says so, and runs again `CHECK_RETRY_MS`, 5 minutes,
+  after it ended, with no person): a
   person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
   check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
