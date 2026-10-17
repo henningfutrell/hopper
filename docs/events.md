@@ -4044,7 +4044,7 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 
 ## `vault.sandbox_requested`
 
-Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`, or `--template NAME`, issue #1471), or the hopper asked for one before the job started, as the job's prompt names the template (issue #1471): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
 
 | field | type | required |
 |---|---|---|

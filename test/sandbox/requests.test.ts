@@ -12,17 +12,17 @@ const T = { name: 'asked-1' } as TemplateView;
 
 function setup(o: { approvals?: SandboxApprovals } = {}) {
   const events: NewEvent[] = [];
-  const atWork = new Set(['job-1', 'job-2']);
+  const live = new Set(['job-1', 'job-2']);
   const requests = createSandboxRequests({
     record: (e) => events.push(e),
     approvals: () => o.approvals ?? NO_SKIPS,
     template: (name) => (name === T.name ? T : undefined),
-    atWork: (j) => atWork.has(j),
+    live: (j) => live.has(j),
     jobTitle: (j) => `title of ${j}`,
     clock: { now: () => new Date('2026-10-13T10:00:00Z') },
     newId: () => `r${events.length}`,
   });
-  return { requests, events, atWork, types: () => events.map((e) => e.type) };
+  return { requests, events, live, types: () => events.map((e) => e.type) };
 }
 
 describe('sandbox requests (issue #991)', () => {
@@ -55,10 +55,10 @@ describe('sandbox requests (issue #991)', () => {
     expect(s.requests.decline('nope', 'x', 'Ada')).toMatchObject({ ok: false, code: 'not_found' });
   });
 
-  it('a request of a job no longer at work is forgotten', () => {
+  it('a request of a job that ended is forgotten', () => {
     const s = setup();
     s.requests.ask('job-1', T.name);
-    s.atWork.delete('job-1');
+    s.live.delete('job-1');
     expect(s.requests.list()).toEqual([]);
   });
 });
@@ -67,7 +67,7 @@ describe('an approval starts nothing (issue #1349)', () => {
   it('20 runs approved at once each answer at once, with no box to start', () => {
     const s = setup();
     const jobs = Array.from({ length: 20 }, (_, i) => `job-b${i}`);
-    for (const j of jobs) s.atWork.add(j);
+    for (const j of jobs) s.live.add(j);
     const asked = jobs.map((j) => s.requests.ask(j, T.name));
     expect(asked.map((r) => s.requests.approve(r.id, 'Ada'))).toEqual(asked.map(() => ({ ok: true })));
     expect(s.requests.list().every((r) => r.state === 'approved')).toBe(true);
@@ -96,7 +96,7 @@ describe('runs approved with no separate run approval (issue #1001)', () => {
       record: (e) => events.push(e),
       approvals: () => approvals,
       template: (name) => templates.find((t) => t.name === name),
-      atWork: () => true,
+      live: () => true,
       clock: { now: () => new Date('2026-10-13T10:00:00Z') },
       newId: () => `r${events.length}`,
     });
@@ -140,7 +140,7 @@ describe('a remembered write approval and the purpose of a run (issue #1001)', (
       record: (e) => events.push(e),
       approvals: () => NO_SKIPS,
       template: (name) => (name === t.name ? t : undefined),
-      atWork: () => true,
+      live: () => true,
       jobTitle: (j) => `title of ${j}`,
       jobUrl: (j) => `https://github.com/acme/infra/issues/${j.slice(-1)}`,
       remembered: () => (o.remembered === false ? [] : [{ ...WRITE, by: 'Ada', at: '2026-10-13T09:00:00.000Z' }]),

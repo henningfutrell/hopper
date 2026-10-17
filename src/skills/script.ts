@@ -27,6 +27,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --credential TEXT  for a service the hopper has no skill for: the credential it takes (issue #583)
 #     --needs TEXT       for sandbox and sandbox-template: what the work needs, as <operation>/<kind>/<asset> ...
 #                        (issues #716, #991)
+#     --template NAME    for sandbox, in place of --needs: a template the user has, as a brief names it (issue #1471)
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
 #                        the hopper pushes it on the job stream (issue #613)
 #     --timeout SECONDS  how long --wait waits (the hopper's default: an hour)
@@ -34,7 +35,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 ${HCURL_SH}
 ${STREAM_WAIT_SH}
@@ -48,6 +49,7 @@ for a in "$@"; do
     --plan) opt=plan ;;
     --credential) opt=credential ;;
     --needs) opt=needs ;;
+    --template) opt=template ;;
     --timeout) opt=timeout ;;
     -*) usage ;;
     *) case $pos in

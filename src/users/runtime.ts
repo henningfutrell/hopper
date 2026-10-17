@@ -57,7 +57,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts'; import { traceJobs } from '../telemetry/jobs.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { sandboxesHeld, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -364,8 +364,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
     jobProxy: proxy.jobProxy, agentSignIn: (job, machine) => lanePodSignIn(machine.id, job.id), boxRadius: (machine) => vault.boxRadius(machine),
-    // Read at each Decision; reached only after `failures` exists. An applied lane recommendation edits the machine (issue #688).
-    problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins),
+    // Read at each Decision; reached only after `failures` (and `sandboxRequests`) exists. An applied lane recommendation edits the machine (issue #688).
+    // The sandboxes a waiting job's prompt names are asked for before it starts, and hold it until approved and ready (issue #1471).
+    problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins), sandboxesHeld: (waiting) => sandboxesHeld(sandboxRequests, () => vault.view().templates, waiting),
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
     jevFirst: minorDecisions,
   });

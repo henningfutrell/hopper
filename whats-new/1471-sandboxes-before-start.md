@@ -1,0 +1,1 @@
+- When a job's brief names a sandbox template, the hopper now asks you to approve its sandboxes before the job starts, all together, so the job no longer stops partway through to ask.
