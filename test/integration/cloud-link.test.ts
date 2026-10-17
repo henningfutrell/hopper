@@ -37,7 +37,7 @@ describe('the cloud link', () => {
 
     const linked = await a.ui<CloudLinkView>('/ui/api/cloud-link', { account: ' Octo-Cat ' }, { token });
     expect(linked.status).toBe(200);
-    expect(linked.body.link).toMatchObject({ account: 'octo-cat', state: 'pending', installId: expect.stringMatching(/^[0-9a-f]{32}$/) });
+    expect(linked.body.link).toMatchObject({ account: 'octo-cat', state: 'pending', installId: expect.stringMatching(/^[0-9a-f]{16}$/) });
     expect(await view(a, token)).toEqual(linked.body);
     expect((await a.job(job.id)).status).toBe('running');
 
