@@ -54,12 +54,13 @@ describe('the broker answers pr wait (issue #1072)', () => {
     const events: NewEvent[] = [];
     const asked: unknown[] = [];
     const opened: { jobId: string; repo: string; number: number; seconds?: number; for?: string; from?: string }[] = [];
+    let read = status({ checks: 'pending' });
     const user: ProxyUser = {
       id: 'u1', holds: (p) => holdsProxyToken(key, p), job: (id) => (id === job.id ? job : undefined), machineOf: () => 'm', record: (e) => { events.push(e); },
       pullRequest: () => known,
     };
     const api: ProxyApi = {
-      perform: async (r) => { asked.push(r); return { ...status({ checks: 'pending' }) }; },
+      perform: async (r) => { asked.push(r); return { ...read }; },
       repo: async () => { throw new Error('not read'); }, head: async () => { throw new Error('not read'); },
       pullRequestBase: async () => { throw new Error('not read'); },
     };
@@ -71,7 +72,7 @@ describe('the broker answers pr wait (issue #1072)', () => {
         return { id: 'w-1', deadline: '2026-10-14T10:10:00.000Z' };
       },
     });
-    return { proxy, events, asked, opened };
+    return { proxy, events, asked, opened, performs: (s: PullRequestStatus) => { read = s; } };
   }
 
   it('--for mergeable on a pull request with conflicts: a watch, though its checks ended (issue #1210)', async () => {
@@ -110,6 +111,19 @@ describe('the broker answers pr wait (issue #1072)', () => {
     expect(await t.proxy.handle(bearer, ask)).toMatchObject({ status: 200, body: { op: 'pr.status', source: 'github', checks: 'pending', wait: 'none' } });
     expect(t.opened).toEqual([]);
     expect(t.asked).toEqual([{ op: 'pr.status', repo: 'octo/tools', number: 8 }]);
+  });
+
+  it('one the hopper does not follow, its checks running: says how to wait on it with HOPPER_WAITING (issue #1731)', async () => {
+    const t = setup({});
+    const answer = await t.proxy.handle(bearer, ask);
+    expect(answer).toMatchObject({ status: 200, body: { wait: 'none', waitOn: 'pr octo/tools#8 checks' } });
+    expect((answer.body as { note: string }).note).toContain('HOPPER_WAITING');
+  });
+
+  it('one the hopper does not follow, its checks ended: `wait: settled` (issue #1731)', async () => {
+    const t = setup({});
+    t.performs(status({ checks: 'failing' }));
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ status: 200, body: { checks: 'failing', wait: 'settled' } });
   });
 });
 
