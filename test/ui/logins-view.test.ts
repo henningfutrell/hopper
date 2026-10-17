@@ -266,6 +266,8 @@ describe('a tool sign-in (issue #1128)', () => {
     expect(c.textContent).toContain('The sign-in stops in');
     expect(c.querySelector('[data-device-code]')).toBeNull();
     expect(c.querySelector('a[data-open-sign-in]')?.getAttribute('href')).toBe(SIGN_IN_URL);
+    // Its browser profile (issue #1249): the machine's, as no account is known there, with a Firefox container link to the page.
+    expect(c.querySelector('[data-profile="hopper-desk"] a')?.getAttribute('href')).toBe(`ext+container:name=hopper-desk&url=${encodeURIComponent(SIGN_IN_URL)}`);
     expect(c.textContent).not.toContain('Request a new code');
     const input = c.querySelector<HTMLInputElement>('[data-slot="sign-in-code"] input')!;
     await act(async () => {
