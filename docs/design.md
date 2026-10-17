@@ -22318,7 +22318,9 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   read each, `src/sources/github/follow.ts`; `src/sources/waited-pull-requests.ts`). Each one merged or closed without a
   merge records `job.waited_pull_request_ended { pullRequest, state }` on each job waiting on it, and the engine wakes them
   on that event, as above. So a parked job wakes within one sync after its pull request closes. A read that fails is
-  logged and asked again at the next sync. A job of no source (a direct job) is not read so: no sync lists it.
+  logged and asked again at the next sync. A direct job (issue #1721) is read so by the `direct` source: no GitHub source
+  lists it, so the direct source answers `endedPullRequests` and `endedWatched` with the user's own GitHub connection
+  (`createDirectPullRequests`, `src/sources/compose.ts`); with no account connected, none ended.
   Verified by `test/integration/waited-pull-request.test.ts` (closed or merged, the job wakes at the next sync),
   `test/sources/github-waited-pull-requests.test.ts` and `test/domain/wait-on.test.ts`.
 - **Legacy waits.** A `waiting_on` job from before, with no `wait.on` and not on its own command, is **stuck work** of cause

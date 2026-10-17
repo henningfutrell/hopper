@@ -6,7 +6,8 @@
 import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
 import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, furtherAccount, mergesOnReady, providerOfKey, type ChangeRule, type ConnectedAccountKey } from '../domain/types.ts';
 import type { DirectPullRequests } from '../domain/direct-jobs.ts';
-import { tendStartedOn } from './github/follow.ts';
+import { endedPullRequests, tendStartedOn } from './github/follow.ts';
+import { endedWatched } from './github/watched.ts';
 import { followDirectPullRequest } from './github/direct-follow.ts';
 import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
@@ -256,7 +257,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
  * How the `direct` source follows a direct job's pull request (issue #1068): the follow over the user's own GitHub
  * connection — the one a job's GitHub proxy acts with (issue #1380) —, with their yolo mode, landing branches and change
  * rules. While no account is connected, or its sign-in ended, a follow throws and is asked again on a later sync, and
- * nothing is merged.
+ * nothing is merged. The pull requests and items a direct job's wait names are read with it too (issue #1721).
  */
 export function createDirectPullRequests(o: {
   accounts: ConnectedAccountTokens; clock: Clock; api?: GitHubApi;
@@ -275,5 +276,8 @@ export function createDirectPullRequests(o: {
     mergesOnReady: (repo, kind) => connected() && mergesOnReady(o.changeRule(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode(repo), kind),
     tendStarted: async (job, pullRequest, step) => { if (connected()) await tendStartedOn(api)(job, pullRequest, step); },
     checkLogs: createCheckLogs(api).read,
+    // A direct job's waits (issue #1721): no other source lists it, so the direct source reads them. Unconnected, none ended.
+    endedPullRequests: async (pulls) => (connected() ? endedPullRequests(api, pulls) : []),
+    endedWatched: async (refs) => (connected() ? endedWatched(api, refs) : []),
   };
 }
