@@ -32,8 +32,10 @@ function setup(key?: null): { instance: InstanceStore; link: CloudLink; secrets:
   return { instance, link, secrets, events };
 }
 
+/** The private key the secret holds, a JWK. */
+const privateOf = (secret: string) => createPrivateKey({ key: JSON.parse(secret) as JsonWebKey, format: 'jwk' });
 /** The public half, as the record keeps it, of the private half the secret holds. */
-const publicOf = (secret: string): string => (createPublicKey(createPrivateKey({ key: Buffer.from(secret, 'base64'), format: 'der', type: 'pkcs8' })).export({ format: 'jwk' }) as { x: string }).x;
+const publicOf = (secret: string): string => (createPublicKey(privateOf(secret)).export({ format: 'jwk' }) as { x: string }).x;
 
 const keyOf = (v: CloudLinkView) => v.link?.linkKey;
 
@@ -44,7 +46,9 @@ describe('the hopper.io link key', () => {
     expect(keyOf(view)).toEqual({ secret: CLOUD_LINK_KEY, publicKey: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), createdAt: '2026-10-17T08:00:00.000Z' });
     expect(instance.settings.getCloudLink()?.linkKey).toEqual(keyOf(view));
     const secret = secrets.open(CLOUD_LINK_KEY)!;
-    expect(createPrivateKey({ key: Buffer.from(secret, 'base64'), format: 'der', type: 'pkcs8' }).asymmetricKeyType).toBe('x25519');
+    expect(privateOf(secret).asymmetricKeyType).toBe('x25519');
+    // The vault keeps a secret's last 4 characters: none of them is the private half's.
+    expect(secrets.meta(CLOUD_LINK_KEY)?.last4).toBe('KP"}');
     expect(publicOf(secret)).toBe(keyOf(view)!.publicKey);
     expect(JSON.stringify(view)).not.toContain(secret);
     expect(JSON.stringify(events)).not.toContain(secret);
