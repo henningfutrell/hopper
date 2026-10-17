@@ -3,6 +3,7 @@
 // grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
 // job still at work (issue #630) — continued.
 import type { KeptWorkView } from './kept-work.ts';
+import type { ChecksState } from './pull-requests.ts';
 import type { StuckCause } from './stuck.ts';
 import type { Tldr } from './tldr.ts';
 
@@ -273,6 +274,8 @@ export interface WorkPullRequest {
   state: 'open' | 'merged' | 'closed';
   draft: boolean;
   conflicting: boolean;
+  /** An open one's checks (issue #1522: red checks on the job's own pull request); absent: it has none, or not known. */
+  checks?: ChecksState;
 }
 
 /**

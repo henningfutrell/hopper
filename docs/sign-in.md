@@ -499,21 +499,41 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
   it makes no new user. A GitHub token reads only as the user whose connected GitHub account it is:
   once it is forgotten (Sources → **Stop working through GitHub**, offered to a user signed in another
   way) it no longer does.
-- **Reads only.** This door only reads. To change anything, exchange the same sign-in for an API token at
-  `POST /ui/auth/api-token`, or mint a grant in Settings → API tokens, and send `Authorization: Bearer hopper_at_…`
-  (help page "The operator CLI and the API", `/help/cli-and-api`).
+- **Reads only.** This door only reads. To change anything, use an API token ("API tokens", below).
 - The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
   this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an
   issuer or GitHub that could not be asked is 502.
 - A GitHub token revoked at GitHub may still read for up to a minute.
+
+### API tokens
+
+An API token (`Authorization: Bearer hopper_at_…`) reads `GET /api/*` and changes through `POST /ui/api/*`, as a UI
+session does. How to make, use and revoke one, step by step: help page "API tokens and grants" (`/help/api-tokens`).
+What sign-in decides about it:
+
+- **Mint.** A person mints a **grant** from a UI session: Settings → API tokens, `POST /ui/api/api-tokens`, or
+  `hopper token mint`. The grant gives a refresh token (`hopper_rt_…`) and an API token. The agent trades the refresh
+  token at `POST /ui/auth/token/refresh` for a new pair before the API token ends. An API token never mints a grant.
+- **Exchange.** An agent with no UI session sends a sign-in this door accepts (a connected account's GitHub token, or
+  a gateway's JWT) to `POST /ui/auth/api-token`, and gets one API token with no refresh token. It makes no new user,
+  and it never gives a box token (`"box": true` is 400).
+- **Role cap.** A token's role is never higher than its minter's. A grant follows its minter's sign-in: a lower role
+  lowers the grant, and no role ends it. An exchanged token's role is at most the one the role rules give that
+  sign-in. A token lives the admin's API-token lifetime at most (5–15 minutes).
+- **Scopes.** A grant's token uses only the routes its scopes name (deny by default, 403). A box action also needs a
+  box grant, which only a person mints.
+- **OpenFGA decides each use** (`api_token#can_view|can_operate|can_administer`). Without OpenFGA, no grant is minted
+  and no token is used: 503.
 
 ## UI roles and role rules
 
 | UI role | may |
 |---|---|
 | `viewer` | read everything the UI shows |
-| `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen |
+| `operator` | + cancel and approve jobs; answer, close, dismiss questions and mark them seen; decide proposals and research reports; approve request cards; Merge now and Close PR (`hopper pr merge\|close`); share, revise and remove artifacts and revoke a share; submit and promote direct jobs; approve a low-risk infra plan; Report a bug |
 | `admin` | + change their own user's configuration: plugins, machines, routing rules, webhooks, the rules, the queue gate; hand out device links; as [the instance admin](#the-instance-admin), also sign-in realms, users, updates, the plugin store, making others admin |
+
+Each route's least role is in the API reference (`/docs/`).
 
 A **super admin** is an admin who may also make others super admin or hand that over ([Super admins](#super-admins)).
 

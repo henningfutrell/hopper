@@ -17,7 +17,7 @@ RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------
 FROM node:26-bookworm-slim
-# What an upgrade prunes when this image is replaced (docs/deploy.md "Upgrade"); the published image carries it too.
+# What an update prunes when this image is replaced (docs/deploy.md "Update"); the published image carries it too.
 LABEL org.opencontainers.image.title=hopper
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
 # shim; pip: typesafe-sdk below; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's

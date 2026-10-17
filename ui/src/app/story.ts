@@ -10,7 +10,7 @@ export const HEADLINE = 'Your GitHub issues, worked on your machines.';
 export const LEAD = 'hopper takes the issues you choose, runs each one on a computer you trust, and keeps you in the loop.';
 
 export const STEPS: { icon: LucideIcon; title: string; text: string }[] = [
-  { icon: Tag, title: 'Label an issue', text: 'Give a GitHub issue the hopper label: it is a job now.' },
+  { icon: Tag, title: 'Label an issue', text: 'Write a GitHub issue, give it the hopper label and assign it to yourself: it is a job now. An issue from someone else waits for your approval.' },
   { icon: Cpu, title: 'It runs on your machine', text: 'A coding agent works on it, on a machine of yours, inside its usage budget.' },
   { icon: GitPullRequest, title: 'Review the pull request', text: 'The work comes back as a pull request. A question it cannot answer comes to you.' },
 ];

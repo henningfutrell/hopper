@@ -3,7 +3,8 @@
 // and proposals, phase shifts, the blast-radius gate, Jev's small decisions, Needs a person, parking,
 // priority, how Claude is kept from waiting on a key press, cleanup and failures, client self-update and the
 // usage limits. It is built with the other pages, wears their look, and the front page, the install page and
-// the README link it.
+// the README link it. Issue #790: a part a help page holds (help/, also on the site at help/) left the guide for it —
+// research and proposals, phase shifts, Jev, priority, usage limits, infra —, and the guide links those pages.
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,10 +15,12 @@ const ROOT = join(import.meta.dirname, '..', '..');
 const read = (...p: string[]): string => readFileSync(join(ROOT, ...p), 'utf8');
 
 /** One section per part the guide covers, by its anchor. */
-const SECTIONS = [
-  'research', 'proposals', 'where-they-show', 'phase-shifts', 'blast-radius', 'jev', 'needs-a-person',
-  'parking', 'priority', 'no-key-press', 'cleanup', 'failures', 'client-update', 'usage',
-];
+const SECTIONS = ['blast-radius', 'needs-a-person', 'parking', 'no-key-press', 'cleanup', 'failures', 'client-update'];
+/** The parts that left the guide for a help page (issue #790): the page that holds each now. */
+const MOVED: Record<string, string> = {
+  research: 'research-and-proposals', proposals: 'research-and-proposals', 'where-they-show': 'research-and-proposals',
+  'phase-shifts': 'research-and-proposals', jev: 'questions', priority: 'lanes', usage: 'lanes', infra: 'infra',
+};
 
 const out = mkdtempSync(join(tmpdir(), 'guide-'));
 let guide = '';
@@ -30,8 +33,6 @@ beforeAll(async () => {
   index = readFileSync(join(out, 'index.html'), 'utf8');
   install = readFileSync(join(out, 'install.html'), 'utf8');
 }, 120_000);
-
-const text = (html: string): string => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ');
 
 describe('the user guide', () => {
   it('is built beside the other pages, with their one stylesheet', () => {
@@ -47,9 +48,12 @@ describe('the user guide', () => {
     }
   });
 
-  it('names the labels a person puts on an issue', () => {
-    for (const label of ['hopper:research', 'hopper:proposal', 'hopper:high', 'hopper:low', 'hopper:backburner'])
-      expect(text(guide), label).toContain(label);
+  it('holds no part a help page holds: it links that page instead', () => {
+    for (const [id, page] of Object.entries(MOVED)) {
+      expect(guide, id).not.toMatch(new RegExp(`<h2 id="${id}"`));
+      expect(guide, id).toContain(`href="help/${page}.html`);
+      expect(read('help', `${page}.md`), page).toBeTruthy();
+    }
   });
 
   it('follows the reader\'s light or dark preference, and loads nothing from another site', () => {

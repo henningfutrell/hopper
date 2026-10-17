@@ -1,6 +1,6 @@
 // Known causes (issue #509): the built-in ones, matched by the error text, and the ones a person named for a
 // signature (`NamedCause`), which win. Shared causes first: a machine that cannot be reached is not a hiccup. Pure.
-import { OWN_PR_CHECKS_RED_TEXT, OWN_PR_UNFINISHED_TEXT, type CauseCheck, type FailureClass, type FailureDecision, type KnownCause, type MachineSnapshot, type NamedCause } from '../domain/types.ts';
+import { OWN_PR_CHECKS_RED_TEXT, OWN_PR_UNFINISHED_TEXT, workShipped, type CauseCheck, type FailureClass, type FailureDecision, type KnownCause, type MachineSnapshot, type NamedCause, type WorkState } from '../domain/types.ts';
 
 interface BuiltinCause extends KnownCause { pattern: RegExp }
 
@@ -106,6 +106,27 @@ export function matchCause(text: string, signature: string, named: readonly Name
   if (!hit) return undefined;
   const { pattern: _p, ...known } = hit;
   return known;
+}
+
+/** A built-in cause by its id, as `matchCause` answers it; undefined: none. */
+export function builtinCause(id: string): KnownCause | undefined {
+  const hit = BUILTIN_CAUSES.find((c) => c.id === id);
+  if (!hit) return undefined;
+  const { pattern: _p, ...known } = hit;
+  return known;
+}
+
+/**
+ * The cause the job's work shows, read before its failure text (issue #1522): its item open, nothing shipped, and a pull
+ * request it opened or pushed to open with merge conflicts or as a draft — Own PR unfinished —, else ready but for its red
+ * checks — Own PR checks red. Undefined: neither. The hopper finishes its own pull request; a wording drift of the
+ * done check's miss must not hand it to a person.
+ */
+export function ownPullRequestCause(work: Pick<WorkState, 'item' | 'pullRequests'>): typeof OWN_PR_UNFINISHED | typeof OWN_PR_CHECKS_RED | undefined {
+  if (work.item !== 'open' || workShipped(work)) return undefined;
+  const open = work.pullRequests.filter((pr) => pr.state === 'open');
+  if (open.some((pr) => pr.conflicting || pr.draft)) return OWN_PR_UNFINISHED;
+  return open.some((pr) => pr.checks === 'failing') ? OWN_PR_CHECKS_RED : undefined;
 }
 
 /** Every known cause, the named ones first, as the Failures view lists them. */

@@ -224,7 +224,7 @@ host install, no build, nothing to set before the first start. The hopper is the
 that name; `sha-<commit>` pins one build; Intel/AMD and ARM), built and pushed by `.github/workflows/image.yml`
 on every change to those three branches ("Update channels and promotion" below). The install page serves the
 compose file. The update channel is the image tag: to run another channel, run the update with that channel's image
-(`ghcr.io/henningfutrell/hopper:dev`, `:beta` or `:stable`); it writes the image into `compose.yaml` ("Upgrade" below).
+(`ghcr.io/henningfutrell/hopper:dev`, `:beta` or `:stable`); it writes the image into `compose.yaml` ("Update" below).
 
 Needs Podman 4.7 or later with a compose provider: `podman compose` runs `docker-compose` or
 `podman-compose`, whichever is installed (Debian/Ubuntu: `sudo apt install podman podman-compose`;
@@ -316,7 +316,7 @@ is only in the hopper's environment, given at launch.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container. While the event loop is held, that read times out; the **health port** still answers inside the container (`curl 127.0.0.1:4791/api/health`: 503 and `eventLoopHeldMs`, issue #1383, docs/design.md "Reading the held event loop"). It is not published. `HOPPER_HEALTH_PORT` moves it; a host install has none unless it is set. An admin reads the process's memory and event-loop delay at `GET /api/process`.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
   nothing starts them after a reboot by itself: the user service does, with linger on ("The user service" below).
-- **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
+- **Update: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
   and Settings → Version give the command below with the selected channel's tag.
@@ -551,7 +551,7 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   is on. Never a secret (a name with `KEY`, `TOKEN`, `SECRET` or `PASSWORD`), and never `HOPPER_IMAGE`: the update
   writes the image into `compose.yaml`. Run the install again to change them.
 - **Restarts and updates go through it.** Restart: `systemctl --user restart hopper-compose.service`, never `podman
-  compose up` by hand. The update ("Upgrade" below) restarts the stack through the service when it owns the stack, and
+  compose up` by hand. The update ("Update" below) restarts the stack through the service when it owns the stack, and
   then checks the port from the host too. It starts the stack with the key sealed here; with none sealed, with the key
   given to the update, as `start-with-key` does. It stops before it changes anything when the key given is not the one
   sealed here. It puts in the new image's `hopper-service.sh` and `master-key.sh`, also when no `master-key.sh` was
@@ -1000,6 +1000,16 @@ OpenFGA no login is a trusted actor, every issue is a request card, and Approve 
   hopper gets `HOPPER_OPENFGA_URL=http://openfga:8080` and `HOPPER_OPENFGA_KEY_FILE`. A stack from before picks
   it up with the new `compose.yaml` and `podman compose up -d`: the `postgres` service is recreated (a restart of
   the database) and writes the new files.
+- **On a host install** (issue #791) it is set up too: `scripts/install.sh` runs `scripts/host-openfga.ts`, which puts
+  the release binary of the version `compose.yaml` runs in `~/.local/lib/hopper/openfga` (its SHA-256 checked against
+  the release's `checksums.txt`), writes its config (`~/.config/hopper/openfga/config.yaml`, mode 600: the database
+  URL with `search_path=openfga`, the preshared key, every address on loopback — the API on `127.0.0.1:4793`, gRPC on
+  `127.0.0.1:4794`, metrics on `127.0.0.1:2112`) and its key (`~/.config/hopper/openfga/key`), makes the `openfga`
+  schema, and adds `HOPPER_OPENFGA_URL=http://127.0.0.1:4793` and `HOPPER_OPENFGA_KEY_FILE` to `daemon.env`.
+  `systemd/hopper-openfga.service` runs `openfga migrate`, then `openfga run`. A `daemon.env` that names another
+  OpenFGA is kept, and none is set up. Each run of the install follows the version `compose.yaml` names; a self-update
+  does not, so run the install line again after an update that moves it. `scripts/uninstall.sh` removes the unit and
+  the binary, and keeps the config, the key and the schema.
 - **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
   `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
   The key is read at each call: rotate it in OpenFGA and the runtime together.
@@ -1013,8 +1023,8 @@ OpenFGA no login is a trusted actor, every issue is a request card, and Approve 
   Intake trusts nobody, so no issue becomes a job until OpenFGA is back. Your other secrets, your GitHub connection
   and your session stay as they were.
   `GET /api/access/status` answers the state to any reader.
-- **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
-  copy services into it. Run the update ("In containers, with Podman" → Upgrade, issue #697): it puts in the
+- **Update from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
+  copy services into it. Run the update ("In containers, with Podman" → Update, issue #697): it puts in the
   `compose.yaml` the image ships with, which has OpenFGA, keeps your own settings as its defaults, and starts the whole
   stack. The banner goes within a minute of OpenFGA answering.
 
@@ -1697,6 +1707,17 @@ Open the UI at `http://localhost:4790/` and sign in with GitHub: the first perso
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
 
+**Updates.** This install updates itself (`docs/design.md` "Self-update"). It checks its update channel every minute.
+When a newer version is there, the UI shows a notice with What's new and **Update now**; Settings → Version has the
+same button, the channel and the **Auto-update** switch. With Auto-update on, the hopper applies an update as soon as a
+check finds it. An update builds the next install in `~/.local/lib/hopper.next` while jobs keep running, and checks that
+it loads. Then it waits while there is a **restart blocker**: a running job that cannot reattach after a restart. The
+UI shows which jobs it waits for. Then it moves the old install to `~/.local/lib/hopper.prev` (the previous `.prev`
+goes), puts the new one in its place, and exits 75: systemd starts it again (`SuccessExitStatus=75`,
+`RestartForceExitStatus=75`). `hopper-herdr` does not restart, so herdr panes and their jobs stay. A build that fails
+leaves the install as it was. To go back by hand, stop the service, move `~/.local/lib/hopper.prev` back to
+`~/.local/lib/hopper`, and start it: the next start records the update as failed.
+
 ## Sign-in set up at launch
 
 Who may use the UI is set by sign-in: the realms (an auth gateway in front, OIDC or SAML single
@@ -1950,7 +1971,7 @@ its `compose.yaml` from `stable` only.
 A hopper picks its channel in Settings → Version (dev, beta, stable); it takes effect without a restart.
 An install from `scripts/install.sh` or the curl install starts on the branch it was installed from
 (`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by its user pulling the tag of its channel
-(`HOPPER_IMAGE`, "In containers, with Podman", "Upgrade"): the channel picked in Settings → Version only
+(`HOPPER_IMAGE`, "In containers, with Podman", "Update"): the channel picked in Settings → Version only
 decides what the update check compares against.
 
 **From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`
