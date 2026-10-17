@@ -86,8 +86,11 @@ export function releaseLane(c: EngineContext, lane: Lane | undefined, at: string
 }
 
 /** The pending answer (if any) is cleared here, in the tx recording the resume's outcome (B2). */
-/** `cancelReason` set: the job was cancelled while running; the outcome is discarded. `machine`: the lane's machine as it ran, for a question's raising machine. */
-export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcome: ExecutionOutcome, cancelReason: string | undefined, machine?: MachineSnapshot): Recorded {
+/**
+ * `cancelled` set: the job was cancelled while running, for its reason and a person's note (issue #1460); the outcome is
+ * discarded. `machine`: the lane's machine as it ran, for a question's raising machine.
+ */
+export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcome: ExecutionOutcome, cancelled: { reason: string; note?: string } | undefined, machine?: MachineSnapshot): Recorded {
   const { store } = c;
   return store.tx(() => {
     const at = nowIso(c);
@@ -95,9 +98,9 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
     // A parked or continued job's resumed run (issues #501, #551) has reopened its session: its next claim types into the pane again.
     if (job.parked || job.continued) store.jobs.update(job.id, { parked: undefined, continued: undefined });
     let recorded: Recorded = TERMINAL;
-    if (cancelReason !== undefined) {
+    if (cancelled !== undefined) {
       store.jobs.update(job.id, { status: 'cancelled', finishedAt: at, pendingAnswer: undefined });
-      store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: cancelReason } });
+      store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: cancelled });
     } else if (outcome.kind === 'finished') {
       const part = outcome.partlyDone ? { partlyDone: outcome.partlyDone } : {};
       const maskedResult = typeof outcome.result === 'string' ? maskGitHubTokens(outcome.result) : outcome.result;

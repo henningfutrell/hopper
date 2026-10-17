@@ -18,7 +18,7 @@ import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
 import { connectedAccountsBody, historyRetentionBody, usageGraphViewBody, usageLimitsBody, deviceLinkBody, queueGateBody, queueOrderBody, machineDefaultsBody, machineHostKeyBody, machinesEditBody, pluginStoreBody, pluginsEditBody, realmsEditBody, routingEditBody, rulesBody, jobRulesBody, usersEditBody, } from './ui/index.ts';
 import { machineJoinBody } from './ui/machine-join.ts';
-import { answerBody, endWaitBody, intakeActionBody, rejectBody, requeueBody, reworkBody } from './ui/job-bodies.ts';
+import { answerBody, cancelBody, endWaitBody, intakeActionBody, rejectBody, requeueBody, reworkBody } from './ui/job-bodies.ts';
 import { notifierActionBody, webhookTestBody, webhooksEditBody } from './ui/webhooks-notifiers.ts';
 import { vaultEditBody } from './ui/vault.ts';
 import { masterKeyBody, updateBody } from './ui/instance.ts';
@@ -93,7 +93,7 @@ export const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/jobs', tag: 'Jobs', summary: 'List jobs', description: 'Jobs come only from job sources; no route creates one.', query: jobsQuery, returns: '`{ jobs: Job[] }`, newest first' },
   { method: 'get', path: '/api/jobs/last-events', tag: 'Jobs', summary: 'Each job\'s last event', description: 'The newest event of each job `/api/queue` holds that has one (issue #434): the Jobs view\'s cards.', returns: '`{ events: DomainEvent[] }`, one per job' },
   { method: 'get', path: '/api/jobs/:id', tag: 'Jobs', summary: 'One job', returns: '`Job`', errors: [404] },
-  { method: 'post', path: '/ui/api/jobs/:id/cancel', tag: 'Jobs', summary: 'Cancel a job', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/jobs/:id/cancel', tag: 'Jobs', summary: 'Cancel a job', description: 'Any job that has not ended — queued, held, running, on a question, on its own wait (`waiting_on`), parked, operator-led — ends `cancelled` (`job.cancelled`, `reason` `cancelled in UI`). A running job ends once its executor stopped. The optional `reason` (issue #1460) is the person\'s own words why: kept on `job.cancelled` as `note`, never written to the issue. Its source is told: on GitHub the claim labels come off. 409: the job ended already.', role: 'operator', body: cancelBody, returns: 'the `Job`', errors: [400, 404, 409] },
   { method: 'post', path: '/ui/api/jobs/:id/approve', tag: 'Jobs', summary: 'Approve a held job', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/jobs/:id/operator-led', tag: 'Jobs', summary: 'Claim a waiting job as operator-led', description: 'The job\'s work is done by hand — in an IDE or a terminal — not by an executor: it holds no lane and is never run. It is finished when its source finds the work complete (on GitHub, its closing pull request reached the completion), and cancelled as any job is.', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/jobs/:id/reject', tag: 'Jobs', summary: 'Reject a waiting job', description: 'The job ends `rejected`: kept, never run, with the optional `reason` as its error and in its timeline (none: `rejected by the user`). Its source is told; a GitHub issue is left as it is (no label, no comment, never closed) and is not taken again until it is assigned to the user again or run again.', role: 'operator', body: rejectBody, returns: 'the `Job`', errors: [404, 409] },

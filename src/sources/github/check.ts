@@ -8,7 +8,8 @@
 // work landing, not a cancel: the job runs on to its own end (a job merges before it installs and
 // verifies). A pull request opened earlier is somebody else's, and cancels as any close does. So is
 // an issue closed with no pull request as completed after the job was created — by a commit, or with
-// no code (issue #350) — once the job has started; a job still waiting to run is cancelled.
+// no code (issue #350) — once the job has started; a job still waiting to run is cancelled. A job on its own wait
+// (`waiting_on`) never runs on to its own end: its issue closed by its own work, it ends finished (issue #1460).
 // Nothing on the issue answers a question: questions are answered in the UI.
 // Assignment drift (issue #387), for a job taken for an assignee: unassigned while it waits → cancel
 // `unassigned`; once started (running, on a question, operator-led) → an `unassigned` signal, and the user
@@ -49,7 +50,10 @@ async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<
     throw err;
   }
   const waiting = job.status === 'queued' || job.status === 'held';
-  if (issue.state === 'closed') return await closedByOwnWork(api, job, issue, !waiting) ? undefined : { kind: 'cancel', jobId: job.id, reason: 'issue closed' };
+  if (issue.state === 'closed') {
+    if (!await closedByOwnWork(api, job, issue, !waiting)) return { kind: 'cancel', jobId: job.id, reason: 'issue closed' };
+    return job.status === 'waiting_on' ? { kind: 'finish', jobId: job.id, reason: 'issue closed as complete' } : undefined;
+  }
   if (!issue.labels.includes(config.label)) return { kind: 'cancel', jobId: job.id, reason: 'label removed' };
   if (waiting && issue.labels.includes(LABEL_BACKBURNER)) return { kind: 'cancel', jobId: job.id, reason: 'backburner' };
   return assignmentDrift(job, issue, waiting);

@@ -30,6 +30,8 @@ interface Running {
   controller: AbortController;
   /** Set by cancel(): the reason recorded on job.cancelled. */
   cancelReason?: string;
+  /** A person's own words why (issue #1460), kept on job.cancelled beside the reason. */
+  cancelNote?: string;
   /** Set by park() (issue #501): the job is parked once its executor has stepped aside, unless it finished meanwhile. */
   parking?: boolean;
   done: Promise<void>;
@@ -46,7 +48,7 @@ export interface Runner {
    */
   reattachWhenReachable(claim: Claim): void;
   /** Abort a claimed/running job as a cancel, recorded with `reason`. False when it is not running here. */
-  cancel(jobId: string, reason: string): boolean;
+  cancel(jobId: string, reason: string, note?: string): boolean;
   /** Abort a running job to park it (issue #501): its lane frees once its executor has stepped aside. False when it is not running here. */
   park(jobId: string): boolean;
   /** Abort everything for shutdown and wait up to `ms`. Nothing is written afterwards. */
@@ -271,7 +273,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
     if (c.stopping() && entry.cancelReason === undefined) return;
     progress.flush();
-    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason, machine);
+    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason === undefined ? undefined : { reason: entry.cancelReason, ...(entry.cancelNote ? { note: entry.cancelNote } : {}) }, machine);
     if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
     else if (recorded.kind === 'report') c.reviews[recorded.review].handle(recorded.itemId);
     // Its own wait (issue #483) keeps its pane: nothing to clean up.
@@ -290,10 +292,11 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     start: (claim) => launch(claim, 'run'),
     reattach: (claim) => launch(claim, 'reattach'),
     reattachWhenReachable: (claim) => launch(claim, 'reattach-when-reachable'),
-    cancel(jobId, reason) {
+    cancel(jobId, reason, note) {
       const entry = running.get(jobId);
       if (!entry) return false;
       entry.cancelReason = reason;
+      entry.cancelNote = note;
       entry.controller.abort(CANCEL);
       return true;
     },

@@ -96,6 +96,11 @@ export function createWorld(): World {
       patchJob(id, { status: 'cancelled' });
       emit('job.cancelled', id, { reason });
     },
+    finishWaiting(id, result) {
+      if (jobs.get(id)?.status !== 'waiting_on') return;
+      patchJob(id, { status: 'finished', result, wait: undefined });
+      emit('job.finished', id, { result });
+    },
     refresh(id, it) { calls.refresh.push([id, it.priority, it.priorityReason]); return true; },
     finishOperatorLed(id) {
       if (jobs.get(id)?.status !== 'operator_led') return false;

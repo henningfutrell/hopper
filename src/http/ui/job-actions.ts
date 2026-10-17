@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import { EngineError } from '../../engine/errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { dismissManyBody, endWaitBody, noteBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
+import { cancelBody, dismissManyBody, endWaitBody, noteBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
 import { signedInOf } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
@@ -30,7 +30,9 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     if (!s) throw new HttpError(401, 'sign in to send a note');
     return s;
   };
-  app.post('/ui/api/jobs/:id/cancel', o.operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
+  // The person's reason (issue #1460) is the cancel's note: its reason stays `cancelled in UI`, a cancel on purpose.
+  app.post('/ui/api/jobs/:id/cancel', o.operator, async (req) =>
+    o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI', parseWith(cancelBody, req.body ?? {}).reason || undefined));
   app.post('/ui/api/jobs/:id/approve', o.operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/operator-led', o.operator, async (req) => o.tenant(req).engine.claimByOperator(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/reject', o.operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id, parseWith(rejectBody, req.body ?? {}).reason));

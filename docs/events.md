@@ -194,11 +194,12 @@ Version 1 (`docs/schemas/job.failed.v1.json`). A job ended with an error. `prior
 
 ## `job.cancelled`
 
-Version 1 (`docs/schemas/job.cancelled.v1.json`). A job was cancelled.
+Version 1 (`docs/schemas/job.cancelled.v1.json`). A job was cancelled. `reason`: why, as the hopper or its source names it (`cancelled in UI` for a person's cancel). `note` (issue #1460): the person's own words why, when they gave some; never told to the source.
 
 | field | type | required |
 |---|---|---|
 | `reason` | string | yes |
+| `note` | string | no |
 
 ```json
 {
