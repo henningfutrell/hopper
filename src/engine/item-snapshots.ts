@@ -2,10 +2,13 @@
 // with; every later job of the item runs that text, and a live title or body that differs holds the job with a text
 // change until a person keeps the original, accepts the new text (owner only: the route asks Access), or cancels it. A
 // job that has not started is held the same way when its item changes while it waits. New comments alone hold nothing
-// (issue #747): a status note or a bot's update does not change what the item asks.
+// (issue #747): a status note or a bot's update does not change what the item asks. A started job runs the text it
+// started with; an edit of its item that a sync sees lowers its trust stamp to `untrusted` (issue #655 part 7), so gate 2
+// asks a person before it gives the job more, until a person approves its trust.
 import { newComments, sameAsk, textHash, type ItemSnapshot, type ItemText, type TextChange } from '../domain/item-snapshots.ts';
 import type { SourceItem, SourceRef, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type ActingPerson, type Job, type JobId } from '../domain/types.ts';
+import { EDIT_REASON } from '../domain/trust-stamp.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -15,7 +18,7 @@ export interface SnapshotGate { item: SourceItem; record?: ItemText; change?: Te
 const textOf = (s: ItemSnapshot): ItemText => ({ title: s.title, body: s.body, comments: s.comments });
 
 /** The text the job last saw of its item: the change it holds, the live text whose original a person kept, else the snapshot. */
-const seenBy = (job: Job | undefined, snapshot: ItemSnapshot): ItemText => job?.textChange?.to ?? job?.originalKept?.seen ?? textOf(snapshot);
+const seenBy = (job: Job | undefined, snapshot: ItemSnapshot): ItemText => job?.textChange?.to ?? job?.editSeen?.seen ?? job?.originalKept?.seen ?? textOf(snapshot);
 
 /**
  * The item's live text: comments not read this time (a job not ended) are the ones last seen, so only an edit of its
@@ -29,10 +32,10 @@ function liveText(item: SourceItem, seen: ItemText | undefined): ItemText | unde
 
 /**
  * Whether `live` asks what nothing deals with yet: not the snapshot's title and body, no change held for them, no original
- * kept for them. Its comments are not compared (issue #747).
+ * kept for them, no edit seen for them after the start. Its comments are not compared (issue #747).
  */
 const unhandled = (live: ItemText, snapshot: ItemSnapshot, job: Job | undefined): boolean =>
-  ![textOf(snapshot), job?.textChange?.to, job?.originalKept?.seen].some((t) => t && sameAsk(t, live));
+  ![textOf(snapshot), job?.textChange?.to, job?.originalKept?.seen, job?.editSeen?.seen].some((t) => t && sameAsk(t, live));
 
 function changeOf(snapshot: ItemSnapshot, live: ItemText, accepted: SourceItem, at: string, item: SourceItem): TextChange {
   return {
@@ -99,6 +102,25 @@ export function refreshText(c: EngineContext, job: Job, item: SourceItem, source
   if (!snapshot || !live) return false;
   if (!unhandled(live, snapshot, job)) return false;
   holdForChange(c, job.id, item.key, changeOf(snapshot, live, source.withText(item, live), nowIso(c), item));
+  return true;
+}
+
+/**
+ * A started job whose item was offered again (issue #655 part 7): its item's title or body changed since the snapshot, and
+ * no edit seen covers this text → its trust stamp drops to `untrusted` (`job.trust_lowered`, by the edit), and the text
+ * is seen. The job goes on with the text it started with. True when the job changed.
+ */
+export function refreshEdit(c: EngineContext, job: Job, item: SourceItem, source: SourceRef): boolean {
+  if (!source.withText || (job.attempts === 0 && (job.status === 'queued' || job.status === 'held'))) return false;
+  const snapshot = c.store.itemSnapshots.get(item.key);
+  const live = snapshot ? liveText(item, seenBy(job, snapshot)) : undefined;
+  if (!snapshot || !live || !unhandled(live, snapshot, job)) return false;
+  const from = c.store.jobs.trustLevel(job);
+  const lowered = c.store.jobs.edited(job.id);
+  c.store.jobs.update(job.id, { editSeen: { liveHash: textHash(live), at: nowIso(c), seen: live } });
+  if (lowered?.stamp && from) {
+    c.store.events.append({ type: 'job.trust_lowered', jobId: job.id, data: { from, to: lowered.stamp.level, reason: EDIT_REASON, by: 'edit' } });
+  }
   return true;
 }
 

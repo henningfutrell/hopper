@@ -1,0 +1,1 @@
+- When someone edits the issue of a job that already started, the hopper now trusts that job less. Until you approve its trust on its page, each sandbox it asks for and each vault access waits for you, even when your settings approve them by themselves.

@@ -15906,6 +15906,8 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
   spec's goal as the title, its body, and the comments its prompt carried, read back (`commentsInPrompt`: from the
   untrusted block, or from the end of the context block for a prompt from before it). A comment cut
   short in the prompt reads back short, so that item's next job holds once: safe, never a run of unapproved text.
+- **A started job's item edited** (issue #655 part 7): the job goes on with its text, and its trust stamp drops to
+  `untrusted` (`refreshEdit`, `Job.editSeen`); "Trust stamps" holds the rule.
 - **Not built.** A gate re-entry for the card once the intake gate (issue #655) ships; until then the card stands alone.
   A history of every snapshot (the events keep each hash). A snapshot for a source with no `withText` (the GitHub sources
   are the only ones with item text).
@@ -16940,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 6, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 7, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -16966,7 +16968,7 @@ its parent's level as it verifies then, and never `owner` (`childLevel`); a pare
 can lower a job to the second.
 
 **The stamp** (`Job.stamp`): `{ v: 1, level, reasons, by, at, mac }`. `by`: `intake` (the store made the job), `job` (a job
-made it), `respecify` (its spec changed), `backfill` (made before stamps). `mac` is HMAC-SHA256 under the user's **stamp
+made it), `respecify` (its spec changed), `backfill` (made before stamps), `person`, `jev`, `edit` (an edit of its item after the start, part 7). `mac` is HMAC-SHA256 under the user's **stamp
 key** over the other fields, the job's id and the SHA-256 of its spec as canonical JSON (keys sorted). The stamp key is
 HKDF of the hopper's link key for the user (issue #308), label `hopper-job-stamp/1`, as the proxy token's key is (issue
 #563): never stored, never sent. So a stamp of another job, a raised level or a changed prompt does not verify.
@@ -17125,10 +17127,42 @@ item again, after they looked at why the job was quarantined. A stamp that does 
 hopper) stops steps too, as it closes the doors; it revokes no grant, since no `job.quarantined` is recorded. Its sandbox
 requests are not dropped: approving one of a quarantined job runs nothing, as each step is refused at the door.
 
+**An edit after the start, and gate 2 below `approved`** (part 7, `editedStamp`, `autoApprovable`; `refreshEdit` in
+`src/engine/item-snapshots.ts`). The issue: "An edit (a new hash on a sync): a job that is queued is held [...]. A running
+job continues, but gate 2 drops it to `untrusted` for new requests until a person approves the new snapshot." A queued job
+is held already: its item snapshot holds it with a text change ("Item snapshots", issue #662), and Accept the new text makes a
+new spec, which Jev's check reads again (part 4). This part does the rest:
+
+- **A started job** — one that is not waiting with no attempt: running, waiting on a question or a wait, parked, or back in
+  the queue after a run — whose item's title or body a sync sees changed since the snapshot goes on with the text it
+  started with. Its stamp is signed `untrusted`, `by: edit`, with the reason id `edit:text`; Jev's check stays on it
+  (`job.trust_lowered { from, to: untrusted, reason: edit:text, by: edit }`). The live text is kept as the job's
+  `editSeen`, so the same text lowers it once; a later, other edit lowers it again. Comments are no edit (issue #747). A job
+  at `untrusted` or lower, quarantined, or whose stamp does not verify keeps its stamp; the text is still seen.
+- **Below `approved`, gate 2 gives the job nothing with no person** (`autoApprovable`: the stamp verifies at `approved` or
+  above). Whatever lowered it — an edit, Jev's check, a deny:
+  - its **sandbox request** waits for a person: skip sandbox approval, the auto-approve policy, a remembered write approval
+    and a person's approval of its template do not approve it (`src/sandbox/requests.ts`);
+  - a **box step** runs only from a request a person approved (`approvedBy` not one of the approvers that are no person);
+  - a **need step** is refused (403): `its trust stamp untrusted is below approved: a need step runs only for a job at approved
+    or above. Ask for a sandbox a person approves: sh "$HOPPER_SKILL" sandbox --needs "…" --why "…"`;
+  - the **standing read grant** grants it nothing, one it granted before too: a person grants the item.
+- **A person approves its trust** (part 4's Approve trust, `trustApprovable`, now for an edit too): `approved`, never more.
+  The job view shows `Its item was edited after it started` beside the level. A job lowered by an edit that waits again (a
+  question) says why: `trust stamp untrusted is below approved (its item was edited after it started): held — a person
+  approves its trust on the job, or cancels it`.
+
+What gate 2 keeps: the job's doors stay open below `approved` (part 2; only a quarantine closes them), so the job still
+pushes to its own branch, opens its pull request and reads through the GitHub proxy. A vault grant a person made stays, and a
+template's approval stays: a template is not a job's. Persisted state: `edit` is one more value of `by` and `edit:text` one
+more reason id, which the build before verifies (its MAC covers every field but `mac`); `editSeen` is one more field in the
+job's body, which it ignores, so it may lower the same edit once more.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
 `intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy, Jev's `sandbox-request` and its denies, its brake), the restamp on
-an edit seen at a sync, and the Intake and API views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies, its brake
+and a held request that times out as a deny), a tightened brake that re-checks running jobs, and the Intake and API views
+of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

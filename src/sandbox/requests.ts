@@ -9,7 +9,8 @@
 // Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
 // or when a person approved the template this job asked for, or waited on: that approval was given for this job's run;
 // or when a person's remembered write approvals cover every change the template makes (src/domain/remembered-writes.ts).
-// A request keeps the job's purpose, its plan and its link, for the person who decides.
+// A request keeps the job's purpose, its plan and its link, for the person who decides. Issue #655 part 7: a job whose
+// trust stamp is below `approved` gets no run with no person: its request waits, whatever the toggles and policies say.
 import { randomUUID } from 'node:crypto';
 import {
   AUTO_APPROVER, autoApproves, NO_PERSON, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
@@ -25,6 +26,8 @@ export interface SandboxRequestsOptions {
   template(name: string): TemplateView | undefined;
   /** Whether the job has not ended (issue #1471: a job waiting to start too): a request of a job that ended is forgotten. */
   live(jobId: string): boolean;
+  /** Whether a run of the job may be approved with no person (issue #655 part 7: its trust stamp is `approved` or above). Absent: yes. */
+  autoApprovable?(jobId: string): boolean;
   jobTitle?(jobId: string): string | undefined;
   /** The job's issue or pull request (issue #1001). */
   jobUrl?(jobId: string): string | undefined;
@@ -74,6 +77,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
    * approval of the template the job asked for or waited on.
    */
   const approverOf = (jobId: string, template: string): { by: string; radius?: string } | undefined => {
+    if (o.autoApprovable?.(jobId) === false) return undefined;
     if (o.approvals().skipSandboxApproval) return { by: SKIP_SANDBOX_APPROVER };
     const t = o.template(template);
     if (!t) return undefined;

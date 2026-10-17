@@ -8,6 +8,7 @@
 //   Scenario: a viewer reads the level and gets no button; an ended job offers none
 //   Scenario: a job Jev's trust check lowered says why; an operator approves its trust, after a confirm (part 4)
 //   Scenario: a job a person's deny lowered says why, and offers Approve trust (part 5)
+//   Scenario: a running job an edit of its item lowered says why, and offers Approve trust (part 7)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -30,13 +31,14 @@ const denied = {
   ...lowered, id: 'd1',
   stamp: { ...stamp('screened'), reasons: ['origin:approved', 'jev:unclear', 'deny:sandbox'], by: 'person' },
 } as unknown as Job;
+const edited = { ...running, id: 'x1', stamp: { ...stamp('untrusted'), reasons: ['origin:trusted', 'edit:text'], by: 'edit' } } as unknown as Job;
 
 let calls: { method: string; path: string; body?: unknown }[] = [];
 
 function fakeDaemon(role: 'operator' | 'viewer') {
   const routes: Record<string, () => unknown> = {
     '/api/health': () => ({ ok: true, version: '0', router: 'pass-through', fallback: false, executors: ['herdr-claude'], uptimeS: 1 }),
-    '/api/queue': () => ({ waiting: [lowered, denied], running: [running, quarantined], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
+    '/api/queue': () => ({ waiting: [lowered, denied], running: [running, quarantined, edited], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
     '/api/machines': () => ({ machines: [] }), '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
@@ -135,6 +137,13 @@ describe('trust on the job view (issue #655)', () => {
     await boot('d1');
     expect(trust().dataset.level).toBe('screened');
     expect(document.querySelector('[data-slot="job-trust-check"]')?.textContent).toBe('A person declined its sandbox request');
+    expect(button(/Approve trust/)).toBeDefined();
+  });
+
+  it('a running job an edit of its item lowered says why, and offers Approve trust', async () => {
+    await boot('x1');
+    expect(trust().dataset.level).toBe('untrusted');
+    expect(document.querySelector('[data-slot="job-trust-check"]')?.textContent).toBe('Its item was edited after it started');
     expect(button(/Approve trust/)).toBeDefined();
   });
 

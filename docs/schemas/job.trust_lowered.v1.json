@@ -31,7 +31,8 @@
       "type": "string",
       "enum": [
         "jev",
-        "person"
+        "person",
+        "edit"
       ]
     },
     "person": {

@@ -1,7 +1,7 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import {
-  checkDue, checkedStamp, deniedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy,
+  autoApprovable, checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy,
 } from '../domain/trust-stamp.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
@@ -202,6 +202,16 @@ export function createJobRepository(c: StoreContext): JobRepository {
       if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
       const stamp = deniedStamp(key, cur, c.clock.now().toISOString());
       return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
+    },
+    edited(id) {
+      const key = stampKey;
+      const cur = get(id);
+      if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
+      const stamp = editedStamp(key, cur, c.clock.now().toISOString());
+      return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
+    },
+    autoApprovable(job) {
+      return stampKey ? autoApprovable(stampKey, job) : true;
     },
     trustLevel(job) {
       return stampKey ? verifiedLevel(stampKey, job) : undefined;

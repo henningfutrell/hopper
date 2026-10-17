@@ -168,3 +168,23 @@ describe('a remembered write approval and the purpose of a run (issue #1001)', (
     expect(r).toMatchObject({ jobTitle: 'title of job-2', jobUrl: 'https://github.com/acme/infra/issues/2', purpose: 'Create the cluster role for X', plan: 'kubectl apply -f role.yaml' });
   });
 });
+
+describe('a job below approved (issue #655 part 7)', () => {
+  it('gets no run with no person: every automatic approver waits; a person approves it', () => {
+    const events: NewEvent[] = [];
+    const t = { name: 'asked-low', askedBy: 'job-1', approval: { by: 'Ada' }, radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => ({ skipTemplateApproval: true, skipSandboxApproval: true }),
+      template: (name) => (name === t.name ? t : undefined),
+      live: () => true,
+      autoApprovable: (j) => j !== 'job-1',
+      clock: { now: () => new Date('2026-10-17T10:00:00Z') },
+      newId: () => `r${events.length}`,
+    });
+    const r = requests.ask('job-1', t.name);
+    expect(r.state).toBe('waiting');
+    expect(requests.approve(r.id, 'Ada')).toEqual({ ok: true });
+    expect(requests.ask('job-2', t.name)).toMatchObject({ state: 'approved', approvedBy: 'skip sandbox approval' });
+  });
+});

@@ -59,6 +59,7 @@ export function userSandboxRequests(o: {
     approvals: () => store.settings.getSandboxApprovals() ?? NO_SKIPS,
     template: (name) => o.templates().find((t) => t.name === name),
     live: (id) => LIVE.includes(store.jobs.get(id)?.status ?? ''),
+    autoApprovable: (id) => { const j = store.jobs.get(id); return j !== undefined && store.jobs.autoApprovable(j); }, // issue #655 part 7
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     jobUrl: (id) => store.jobs.get(id)?.source?.url,
     // Issue #1001: a person's remembered write approvals, and the read policy for the reads beside them.
