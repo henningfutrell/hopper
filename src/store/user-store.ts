@@ -11,6 +11,7 @@ import { createDecisionRepository } from './decisions.ts';
 import { createConfigRecords } from './config.ts';
 import { createConnectedAccountRepository } from './connected-accounts.ts';
 import { createEventLog } from './events.ts';
+import { createEventCursorRepository } from './event-cursors.ts';
 import { createJobRepository } from './jobs.ts';
 import { createJobStreamRepository } from './job-stream.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -80,6 +81,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     lanes: createLaneRepository(ctx),
     decisions: createDecisionRepository(ctx),
     events,
+    eventCursors: createEventCursorRepository(ctx, events),
     webhooks: createWebhookRepository(ctx),
     vault: createVaultRepository(ctx),
     jobStream,

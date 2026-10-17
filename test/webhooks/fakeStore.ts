@@ -48,6 +48,8 @@ export function createFakeStore(): FakeStore {
         deliveries.set(d.id, d);
         return { ...d };
       },
+      hasDelivery: (subscriptionId: string, eventSeq: number) =>
+        [...deliveries.values()].some((d) => d.subscriptionId === subscriptionId && d.eventSeq === eventSeq),
       updateDelivery(id: string, patch: Partial<WebhookDelivery>): WebhookDelivery {
         const d = { ...deliveries.get(id)!, ...patch, updatedAt: iso() };
         deliveries.set(id, d);
@@ -59,6 +61,11 @@ export function createFakeStore(): FakeStore {
         ).map((d) => ({ ...d })),
       listDeliveries: () => [...deliveries.values()],
     },
+    // No cursor kept: the fake follows from now on.
+    eventCursors: {
+      follow: (_consumer: string, handle: (e: DomainEvent) => void) => ({ save: () => {}, stop: store.events.subscribe(handle) }),
+    },
+    tx: <T>(fn: () => T): T => fn(),
   } as unknown as UserStore;
 
   const fakeStore: FakeStore = {

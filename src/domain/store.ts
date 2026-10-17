@@ -104,7 +104,7 @@ export interface WebhookRepository {
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
   delete(id: string): boolean;
   /** status `pending`, attempts 0, nextAttemptAt = now. */
-  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery;
+  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery; hasDelivery(subscriptionId: string, eventSeq: number): boolean; // a delivery of the event with this seq: one handed again at a catch-up (issue #1572)
   updateDelivery(id: string, patch: Partial<Omit<WebhookDelivery, 'id' | 'subscriptionId' | 'eventSeq' | 'eventType' | 'createdAt'>>): WebhookDelivery;
   /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
   dueDeliveries(now: Date): WebhookDelivery[];
@@ -492,7 +492,7 @@ export interface UserStore {
   jobs: JobRepository; jobLeases: import('./job-leases.ts').JobLeaseRepository;
   lanes: LaneRepository;
   decisions: DecisionRepository;
-  events: EventLog;
+  events: EventLog; eventCursors: import('./event-cursors.ts').EventCursorRepository; // event cursors (issue #1572)
   webhooks: WebhookRepository;
   /** The vault (issue #558). */
   vault: VaultRepository;

@@ -7,6 +7,7 @@
 //   Scenario: a job changed while search was stopped is written to the index after the next start
 //   Scenario: a hand-off closed while the decider comparisons were stopped is compared once after the next start
 //   Scenario: a consumer started for the first time does not replay the events from before
+//   Scenario: an event handed again at a catch-up (a build before ran meanwhile, and kept no cursor) is sent no more
 import { afterEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { SearchDocument, SearchIndex } from '../../src/domain/search.ts';
@@ -15,6 +16,7 @@ import { createMinorDecisions } from '../../src/minor-decisions/index.ts';
 import { createOutbound, createOutboundGuard } from '../../src/outbound/index.ts';
 import { createUserSearch } from '../../src/search/index.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
+import { openDb } from '../../src/store/db.ts';
 import { createWebhookDispatcher } from '../../src/webhooks/index.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
@@ -27,7 +29,8 @@ afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c();
 
 /** One user's database; each `open()` is a new start of the hopper on it: a new connection, nothing kept in memory. */
 function database() {
-  const instance = openInstanceStore({ url: installFromBefore(testDatabaseUrl()), clock });
+  const url = installFromBefore(testDatabaseUrl());
+  const instance = openInstanceStore({ url, clock });
   cleanups.push(() => instance.close());
   const admin = instance.users.get('admin')!;
   return {
@@ -35,6 +38,13 @@ function database() {
       const store = instance.userStore(admin);
       cleanups.push(() => store.close());
       return store;
+    },
+    /** Raw SQL on the user's schema: what a build before, which keeps no cursor, leaves behind. */
+    sql(statement: string): void {
+      const u = new URL(url);
+      u.searchParams.set('schema', `${u.searchParams.get('schema')!}_u_admin`);
+      const raw = openDb(u.toString());
+      try { raw.run(statement); } finally { raw.close(); }
     },
   };
 }
@@ -82,7 +92,7 @@ function search(store: UserStore, index: SearchIndex) {
 
 function minorDecisions(store: UserStore) {
   const jev = { available: () => ({ available: false as const, why: 'off' }), pick: async () => ({ ok: false as const, why: 'off' }) };
-  const m = createMinorDecisions({ store, clock, jev, typesafeKey: () => ({ set: false }) as never, timeoutMs: 1000, logger: quiet });
+  const m = createMinorDecisions({ store, clock, jev: jev as never, typesafeKey: () => ({ set: false }) as never, timeoutMs: 1000, logger: quiet });
   cleanups.push(() => m.stop());
   return m;
 }
@@ -162,6 +172,23 @@ describe('event consumers catch up from their cursor (issue #1572)', () => {
     dispatcher(store).start();
     queue(store);
     await waitFor(() => rx.received.length === 1, { what: 'the webhook of the new event' });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(rx.received).toHaveLength(1);
+  });
+
+  it('sends an event handed again at a catch-up no more', async () => {
+    const db = database();
+    const rx = await receiver();
+    const first = db.open();
+    first.webhooks.add({ name: 'hook', url: rx.url, events: ['job.queued'], active: true });
+    const before = dispatcher(first);
+    before.start();
+    queue(first);
+    await waitFor(() => rx.received.length === 1, { what: 'the first webhook' });
+    await before.stop();
+    db.sql("UPDATE event_cursors SET seq = 0 WHERE consumer = 'webhooks'");
+
+    dispatcher(db.open()).start();
     await new Promise((r) => setTimeout(r, 200));
     expect(rx.received).toHaveLength(1);
   });

@@ -24,6 +24,7 @@ import { noSandboxMachines } from './migration-no-sandbox-machines.ts';
 import { noTemplateTimeLimit } from './migration-template-limits.ts';
 import { NOTIFIER_DELIVERY_TABLE } from './notifier-deliveries.ts';
 import { JOB_LEASE_TABLE } from './job-leases.ts';
+import { EVENT_CURSOR_TABLE } from './event-cursors.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -107,4 +108,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 74: Job leases (issue #1662): the hopper that drives each claimed or running job, until when. A table only: the build
   // before runs on it, and drives its jobs with no lease, as before.
   JOB_LEASE_TABLE,
+  // 75: Event cursors (issue #1572): the last event each consumer of the event log handled. A table only: the build before
+  // runs on it, and a later start of this build catches up from each cursor.
+  EVENT_CURSOR_TABLE,
 ];
