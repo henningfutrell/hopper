@@ -127,6 +127,8 @@ export interface FollowsPullRequests {
   endedWatched?(refs: WatchedRef[]): Promise<WatchedEnd[]>;
   /** A pull request a job's wait on its checks names (issue #1694): its state, checks and last push. A throw: it cannot read it now. Absent: not read. */
   waitedChecks?(repo: string, number: number): Promise<import('./wait-checks.ts').WaitedChecks>;
+  /** A pull request a job's wait on its review names (issue #1694 part 3): its state and reviews. A throw: it cannot read it now. Absent: not read. */
+  waitedReviews?(repo: string, number: number): Promise<import('./wait-checks.ts').WaitedReviews>;
 }
 
 /** A pull request a job waits on, seen ended (issue #1433): merged, or closed without a merge. */

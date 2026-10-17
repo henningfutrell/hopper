@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { SagaRepository } from '../domain/sagas.ts';
 import { createSagaCoordinator, type SagaCoordinator, type SagaDefinition } from './coordinator.ts';
 
-export { createHostLeases, type HostLeases } from './leases.ts';
+export { createHostLeases, LEASE_ASK_MS, type HostLeases } from './leases.ts';
 export { createSagaCoordinator, type SagaCoordinator, type SagaDefinition } from './coordinator.ts';
 
 /** This process's name as a lease owner: its instance, host, pid and a nonce, so no other start takes it for its own. */

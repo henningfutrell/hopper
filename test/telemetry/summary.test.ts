@@ -87,7 +87,7 @@ describe('the summary is fed with telemetry off (issue #1486)', () => {
       for (const l of listeners) l(e);
     };
     const job = { id: 'j1', spec: { executor: 'herdr-claude', payload: {} }, priority: 50, status: 'queued', approved: false, createdAt: '', updatedAt: '', attempts: 0 } as unknown as Job;
-    const stop = traceJobs({ subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l); }; }, job: () => job });
+    const { stop } = traceJobs({ subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l); }; }, job: () => job });
     emit('job.queued', '2026-10-16T10:00:00.000Z');
     emit('job.started', '2026-10-16T10:00:02.000Z');
     emit('job.finished', '2026-10-16T10:00:05.000Z');

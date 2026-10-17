@@ -27,7 +27,7 @@ import { checkJobs } from './check.ts';
 import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
-import { endedWatched, waitedChecks } from './watched.ts';
+import { endedWatched, waitedChecks, waitedReviews } from './watched.ts';
 import { endedPullRequests, followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
@@ -308,7 +308,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     follow: (job, act, at) => followPullRequest(followContext(), job, act, at),
     housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
-    readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs), waitedChecks: (repo, number) => waitedChecks(api, repo, number),
+    readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs), waitedChecks: (repo, number) => waitedChecks(api, repo, number), waitedReviews: (repo, number) => waitedReviews(api, repo, number),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),
     issueState: (job) => issueState(api, job),

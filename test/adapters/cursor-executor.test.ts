@@ -174,9 +174,9 @@ describe('cursor-agent executor', () => {
     });
   });
 
-  it('refuses a container target and a client target: Cursor runs only here or over ssh', async () => {
+  // A client target runs it through its client (issue #865, test/adapters/print-agent-client.test.ts).
+  it('refuses a container target: Cursor runs here, over ssh or on a client target', async () => {
     expect(await ex.run(ctxFor({ prompt: 'p' }, { ...HERE, id: 'box', docker: 'c' }).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent does not run on container target box: it has no agent' });
-    expect(await ex.run(ctxFor({ prompt: 'p' }, { ...HERE, id: 'studio', client: {} }).ctx)).toEqual({ kind: 'failed', error: 'cursor-agent does not run on client target studio: a client serves herdr only' });
   });
 
   it('cancel stops Cursor', async () => {

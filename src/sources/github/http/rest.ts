@@ -1,7 +1,7 @@
 // Issue, comment-read and label calls of the connected account's adapter, each with the account's token. REST shapes mapped
 // onto the GitHubApi port's types.
 
-import { CHANGE_READ_PAGE, type GitHubComment, type GitHubIssue, type IssueChange, type IssueEvent, type SubIssue, type WorkflowRun } from '../api.ts';
+import { CHANGE_READ_PAGE, type GitHubComment, type GitHubIssue, type IssueChange, type IssueEvent, type PullRequestReview, type SubIssue, type WorkflowRun } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 import type { PostedComment } from '../api.ts';
@@ -56,6 +56,13 @@ export async function workflowRun(req: Request, token: string, repo: string, run
   const r = await req('GET /repos/{owner}/{repo}/actions/runs/{run_id}', { ...splitRepo(repo), run_id: runId, headers: auth(token) });
   const d = r.data as { html_url?: string; status?: string | null; conclusion?: string | null };
   return { url: d.html_url ?? `https://github.com/${repo}/actions/runs/${runId}`, status: d.status ?? 'unknown', ...(d.conclusion ? { conclusion: d.conclusion } : {}) };
+}
+
+/** The reviews of pull request `number` (issue #1694 part 3), oldest first; a review not yet sent (pending) is none. */
+export async function pullRequestReviews(req: Request, token: string, repo: string, number: number): Promise<PullRequestReview[]> {
+  const read = await paginate(req, 'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews', { ...splitRepo(repo), pull_number: number, per_page: 100 },
+    `token ${token}`, (d) => d as { state: string; submitted_at?: string | null }[]);
+  return read.filter((r) => r.state !== 'PENDING').map((r) => ({ state: r.state.toLowerCase(), ...(r.submitted_at ? { submittedAt: r.submitted_at } : {}) }));
 }
 
 /** Run GitHub Actions job `jobId` again (issue #1230): GitHub answers 201 and queues it with the run's other jobs it needs. */

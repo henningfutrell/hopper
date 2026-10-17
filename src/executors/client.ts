@@ -5,7 +5,7 @@
 // sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
 // release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /level` an escalation
 // level's run (issue #482); `POST /reap` and `POST /survey`
-// its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708). One session per link: a client that dials in again is a new link.
+// its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708); `POST /turn` a print-mode agent's turn (issue #865). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { CHECKPOINT_TIMEOUT_MS } from '../client/checkpoint.ts';
 import { REAP_TIMEOUT_MS } from '../client/reap.ts';
@@ -200,13 +200,24 @@ export async function clientRuntimeCall(t: ClientTransport, call: RuntimeRelayCa
 /** The relay a remote runtime (src/sandbox/remote.ts) drives the client target's own runtime through. */
 export const runtimeRelay = (t: ClientTransport): RuntimeRelay => ({ which: () => clientRuntimeWhich(t), call: (c) => clientRuntimeCall(t, c) });
 
+/**
+ * A print-mode agent's turn on the client target (issue #865, src/client/turn.ts): the client runs the script the hopper
+ * built for it and answers what it printed, `timedOut` when it ran out `timeoutMs`. Aborting closes the call, and the
+ * client stops the turn; the promise then rejects.
+ */
+export async function clientTurn(t: ClientTransport, script: string, timeoutMs: number, signal: AbortSignal): Promise<ClientAnswer & { timedOut?: boolean }> {
+  const r = await clientCall<{ code?: unknown; stdout?: unknown; stderr?: unknown; timedOut?: unknown }>(t, '/turn', { script, timeoutMs }, timeoutMs, signal);
+  if (typeof r.code !== 'number' || typeof r.stdout !== 'string' || typeof r.stderr !== 'string') throw new ClientError(`client ${t.machine}: its turn answer has no exit code`);
+  return { code: r.code, stdout: r.stdout, stderr: r.stderr, ...(r.timedOut === true ? { timedOut: true } : {}) };
+}
+
 /** Loads a client release onto the client target — or, for one with a fixed file list, the bridge to it (issue #545); it restarts to run it. */
 export async function loadClientRelease(t: ClientTransport, release: ClientRelease | FixedListRelease): Promise<void> {
   await clientCall(t, '/load', { release }, 30000);
 }
 
 /** One signed call on the client target; resolves the client's signed answer, parsed. */
-async function clientCall<T>(t: ClientTransport, path: string, payload: unknown, timeoutMs: number): Promise<T> {
+async function clientCall<T>(t: ClientTransport, path: string, payload: unknown, timeoutMs: number, signal?: AbortSignal): Promise<T> {
   let token: string;
   try { token = checkToken(t.token()); } catch (e) { throw new ClientError(`client ${t.machine}: ${(e as Error).message}`); }
   const session = await sessionOn(t);
@@ -215,6 +226,12 @@ async function clientCall<T>(t: ClientTransport, path: string, payload: unknown,
   return new Promise((resolve, reject) => {
     const req = session.request({ ':method': 'POST', ':path': path, 'content-type': 'application/json', [REQUEST_HEADER]: auth });
     req.setTimeout(timeoutMs + 5000, () => req.close());
+    if (signal) {
+      const abort = (): void => { req.close(); reject(new ClientError(`client ${t.machine}: aborted`)); };
+      if (signal.aborted) abort();
+      signal.addEventListener('abort', abort, { once: true });
+      req.once('close', () => signal.removeEventListener('abort', abort));
+    }
     let status = 0;
     let sig: string | undefined;
     let text = '';

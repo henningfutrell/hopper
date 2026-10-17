@@ -32,8 +32,11 @@ export interface EngineOptions {
   tickMs: number;
   /** How often the engine looks for a machine whose sweep is due (issue #410). Default a minute. */
   sweepCheckMs?: number;
-  /** The sweep's lease (issue #1627): on two hosts on one database, only its holder sweeps the machines. Absent: this host alone. */
-  sweepLease?: import('../domain/leases.ts').SweepLease;
+  /**
+   * The lease of each pass over the user's jobs or machines, by its name (issues #1627, #1662, `PASS_LEASES`): on several
+   * hosts on one database, only its holder runs the pass. Absent: this host alone.
+   */
+  lease?: (name: string) => import('../domain/leases.ts').SweepLease;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
   /** Each review section's review (issues #537, #543). Their onDecided/onRevise must call the engine's; swept on each tick. */
@@ -68,6 +71,11 @@ export interface EngineOptions {
    * variable and its value, `none`, or why the vault refuses it (the job fails). Absent: none on any machine.
    */
   agentSignIn?: (job: Job, machine: MachineSnapshot) => Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
+  /**
+   * The job's trace context (issue #1486, design.md "Telemetry: a job's trace on its machine"): the variables its processes
+   * run with to join its trace (`TRACEPARENT`). Empty while telemetry is off. Absent: none.
+   */
+  traceContext?: (jobId: string) => Readonly<Record<string, string>>;
   /** A box's template and its rating now (issue #605): the box's blast radius includes it. Absent: no machine is a box. */
   boxRadius?: (machineId: string) => { name: string; radius: TemplateRadius } | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
@@ -96,7 +104,7 @@ export interface EngineOptions {
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'sweepLease' | 'jobMoves' | 'jobLeaseMs' | 'waitReads'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'lease' | 'jobMoves' | 'jobLeaseMs' | 'waitReads'>> {
   fakeUsage?: SettableUsageSource;
   jobMoves?: EngineOptions['jobMoves']; waitReads?: WaitReads;
   /** Ask for a Decision; coalesces with one already running. */
