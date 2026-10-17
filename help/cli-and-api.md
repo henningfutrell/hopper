@@ -47,6 +47,7 @@ A secret never goes on the command line. `hopper vault set` and `hopper typesafe
 |---|---|
 | `hopper job accept <id>` | Let a waiting job through the queue gate. |
 | `hopper job reject <id> [--reason <text>]` | Reject a waiting job. |
+| `hopper job cancel <id> [--reason <text>]` | Cancel any job that has not ended. The reason is kept on the job. |
 | `hopper job rerun <id>` | Run a failed, finished or rejected job again. |
 | `hopper job rework <id> --notes <text>` | Send a done job's pull request back for rework. |
 | `hopper job keep-original <id>` | A job held because its issue changed runs the original text. |

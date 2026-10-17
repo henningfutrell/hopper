@@ -128,7 +128,7 @@ function problemWith(c: EngineContext, item: SourceItem, spec: JobSpec): string 
   return problem ? `invalid payload for executor ${spec.executor}: ${problem}` : undefined;
 }
 
-export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'cancel'>): SourceHost {
+export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'cancel' | 'finishWaiting'>): SourceHost {
   const { store } = c;
 
   /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
@@ -182,6 +182,15 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         commands.cancel(jobId, reason);
       } catch (e) {
         // Already terminal or gone: the source's signal came late; nothing to do.
+        if (!(e instanceof EngineError)) throw e;
+      }
+    },
+
+    finishWaiting(jobId, result) {
+      try {
+        commands.finishWaiting(jobId, result);
+      } catch (e) {
+        // No longer on its own wait (it went on, or ended): the source's signal came late; its next check says again.
         if (!(e instanceof EngineError)) throw e;
       }
     },

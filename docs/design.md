@@ -2486,6 +2486,8 @@ A failure never goes to the issue as text. It is one stderr line in the daemon l
   completed (`state_reason`) at or after the job's `createdAt` — a commit's `Closes #N`, or a close
   with no code — gives a job that has started (not `queued`/`held`) no signal: a job may end its
   issue itself. A waiting job is cancelled; a close as not planned, or before the job, cancels.
+- **And a job on its own wait** (`waiting_on`, issue #1460): it never runs on to its own end, so either close of its own work
+  above gives it `finish` (reason `issue closed as complete`): it ends finished. Any other close cancels it, as above.
 - `hopper:backburner` on the issue of a waiting (`queued`/`held`) job → `cancel` (`backburner`);
   a running job is not touched.
 - **Error classes:** `GitHubApi` errors carry `permanent` (404/410/403/422) vs transient
@@ -15268,7 +15270,14 @@ person's question list as if it needed an answer), or ended failed though it was
   again with `waitEndedNote` pending, which pins it to `resumeOn` as an answer does; its claim types it into the pane (`[hopper] A
   person ended your wait: what you waited for (<for>) has happened. The person's note: <note> Check it, then go on with the
   job.`). `job.wait_ended { by: 'person', note? }`. A print-mode job resumes its session with it.
-- **Cancel** works as for any job: the pane closes through the normal reap.
+- **Cancel** works as for any job: the pane closes through the normal reap. A person gives a reason if they like (issue #1460):
+  `POST /ui/api/jobs/:id/cancel { reason? }` or `hopper job cancel <id> [--reason <text>]`, for any job that has not ended;
+  `job.cancelled { reason: 'cancelled in UI', note }` keeps it, and the source is told only the cancel (the claim labels go).
+- **Its item closes** (issue #1460). A job on its own wait never runs on to its own end, so the source's check ends it: its
+  issue closed by its own work — the merge of its own pull request, or closed as completed after it started, the done-check —
+  gives the `finish` signal, and it ends `finished` (`job.finished { result: 'issue closed as complete' }`, its wait dropped,
+  `hopper:done`); closed any other way cancels it (`issue closed`). Either way its claim labels come off, and its pane closes
+  through the normal reap. Before, both kinds of close gave it no signal, and it waited for ever.
 - **Live job.** A `waiting_on` job's processes still run on its machine (its background poll): it is in every "at work" list —
   credentials renewed, the GitHub proxy, skills, the vault, the job stream, artifacts, Access, the sweep and the rename guard
   keep it as live — and in `jobsOnMachine`.

@@ -4,6 +4,8 @@ import { MAX_REWORK_NOTES } from '../../domain/pull-requests.ts';
 import { MAX_NOTE_CHARS } from '../../domain/job-notes.ts';
 
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
+/** Cancel's optional reason (issue #1460): a person's own words why, kept on job.cancelled as its note, never written to the issue. */
+export const cancelBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() }).strict();
 /** Reject's optional reason (issue #387): kept on the job and in its timeline, never written to the issue. */
 export const rejectBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() });
 /** Rework's notes (issue #724): what the new job is told to change in the pull request sent back. Required. */
