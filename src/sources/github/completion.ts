@@ -16,7 +16,7 @@
 // the job's own for a part and a finish step. A job whose own pull request is there, ready but for its red checks, is said so
 // by number and failed checks (issue #1230, `redChecksLine`): the assessor's cause Own PR checks red, not Not complete.
 
-import type { Job, OwnPullRequestChecks, UnfinishedPullRequest, WorkPullRequest, WorkState } from '../../domain/types.ts';
+import type { ChecksState, Job, OwnPullRequestChecks, UnfinishedPullRequest, WorkPullRequest, WorkState } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import { closingReferences } from '../../domain/cross-references.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
@@ -212,17 +212,30 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
 }
 
 /**
+ * The job's open pull requests of its issue: opened by it, updated by it, or the one it reworks; closing the issue, shipping
+ * part of it, or only referencing it in its own repository with no closing keyword for another issue (issue #1522: a
+ * referencing one is the job's too, so its miss names it by number).
+ */
+async function ownOpenPullRequests(api: GitHubApi, job: Job, repo: string, number: number): Promise<OpenPullRequest[]> {
+  const referencing = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase()
+    && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr.body, repo, number)));
+  const closing = await api.openClosingPullRequests(repo, number);
+  const all = [...closing, ...referencing.filter((pr) => !closing.some((c) => c.url === pr.url))];
+  return all.filter((pr) => isOwnOrReworked(pr, job) || isUpdatedBy(pr, job));
+}
+
+/**
  * The job's own open pull request that one fixed step finishes (issue #626): one that closes the issue or ships part
  * of it, with merge conflicts (rebase it first), failing checks (fix them, issue #736) or a draft (mark it ready). The
- * one it reworks counts as its own (issue #724), and so does one it pushed to (issue #1265: a job of its item run again).
+ * one it reworks counts as its own (issue #724), and so does one it pushed to (issue #1265: a job of its item run again),
+ * and one that only references the issue (issue #1522).
  * The newest first; undefined: none.
  */
 export async function unfinishedPullRequest(api: GitHubApi, job: Job): Promise<UnfinishedPullRequest | undefined> {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
-  const parts = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && isPartOf(pr, repo, number));
-  const own = [...await api.openClosingPullRequests(repo, number), ...parts]
-    .filter((pr) => (isOwnOrReworked(pr, job) || isUpdatedBy(pr, job)) && (pr.conflicting || pr.checks === 'failing' || pr.isDraft))
+  const own = (await ownOpenPullRequests(api, job, repo, number))
+    .filter((pr) => pr.conflicting || pr.checks === 'failing' || pr.isDraft)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   return own && { pullRequest: own.url, step: own.conflicting ? 'rebase' : own.checks === 'failing' ? 'fix_checks' : 'mark_ready' };
 }
@@ -243,9 +256,8 @@ export const unfinishedLine = (u: UnfinishedPullRequest): string =>
 export async function ownPullRequestChecks(api: GitHubApi, job: Job): Promise<OwnPullRequestChecks | undefined> {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
-  const parts = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && isPartOf(pr, repo, number));
-  const own = [...await api.openClosingPullRequests(repo, number), ...parts]
-    .filter((pr) => (isOwnOrReworked(pr, job) || isUpdatedBy(pr, job)) && !pr.isDraft && !pr.conflicting)
+  const own = (await ownOpenPullRequests(api, job, repo, number))
+    .filter((pr) => !pr.isDraft && !pr.conflicting)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!own) return undefined;
   const read = own.checks === 'failing' ? await pullRequestOrNone(api, repo, numberOf(own.url)) : undefined;
@@ -311,9 +323,12 @@ export async function workState(api: GitHubApi, job: Job): Promise<Omit<WorkStat
     throw err;
   }
   const found = new Map<string, WorkPullRequest>();
-  const add = (pr: { url: string; createdAt: string; headCommittedAt?: string; isDraft: boolean; conflicting: boolean }, state: WorkPullRequest['state']): void => {
+  const add = (pr: { url: string; createdAt: string; headCommittedAt?: string; isDraft: boolean; conflicting: boolean; checks?: ChecksState }, state: WorkPullRequest['state']): void => {
     const by = isOwnPullRequest(pr, job) ? 'opened' : isUpdatedBy(pr, job) ? 'updated' : undefined;
-    if (by && !found.has(pr.url)) found.set(pr.url, { url: pr.url, number: numberOf(pr.url), by, state, draft: pr.isDraft, conflicting: state === 'open' && pr.conflicting });
+    const open = state === 'open';
+    if (by && !found.has(pr.url)) {
+      found.set(pr.url, { url: pr.url, number: numberOf(pr.url), by, state, draft: pr.isDraft, conflicting: open && pr.conflicting, ...(open && pr.checks ? { checks: pr.checks } : {}) });
+    }
   };
   const closer = await api.closingPullRequest(repo, number);
   if (closer) add({ ...closer, isDraft: false, conflicting: false }, 'merged');
