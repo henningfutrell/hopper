@@ -54,10 +54,11 @@ export async function get<T>(path: string, { signal, timeoutMs = READ_TIMEOUT_MS
   }
 }
 
-export async function post<T = unknown>(path: string, body: unknown = {}): Promise<T> {
+/** A mutation; `signal` cancels it (the request closes, and the daemon ends what it ran for it), failing with fetch's AbortError. */
+export async function post<T = unknown>(path: string, body: unknown = {}, { signal }: { signal?: AbortSignal } = {}): Promise<T> {
   refuseOtherHopper();
   const res = await fetch(path, {
-    method: 'POST',
+    method: 'POST', ...(signal ? { signal } : {}),
     headers: { 'content-type': 'application/json', 'x-hopper-session': readToken() ?? '' },
     body: JSON.stringify(body),
   });

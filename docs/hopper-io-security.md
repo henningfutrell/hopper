@@ -1,8 +1,8 @@
 # hopper.io — threat model, account isolation and privacy
 
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
-itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its registration code (issue #465 part 2) and its
-unregistration (issue #465 part 3) are built
+itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its registration code (issue #465 part 2), its
+unregistration (issue #465 part 3) and the messages about them (issue #465 part 4) are built
 ("What is built" below).
 This document states the threats and the rules that every hopper.io change must obey. The open owner
 decisions of #469 (scope, what the link carries, transport, sign-in on instances, sharing, who operates hopper.io) do
@@ -210,7 +210,17 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     the cloud link stays on or off as the instance's admin set it; nothing else on the instance changes.
   - R3: only a removal for the linked hopper.io account counts; one for another account changes nothing.
   - R6, on the instance side: `cloud_link.unregistered`.
-- Nothing else. The connection (and so who calls the registration), the cloud link key, the allow-list and everything at
+- **The cloud link's messages about registration** (issue #465 part 4, `docs/design.md` "The cloud link's messages"),
+  transport-free: what the agent hands on from hopper.io and answers. It obeys:
+  - R1: only `register` and `unregister` come in, and each changes the registration only, as parts 2 and 3.
+  - R7: each message is checked against a closed schema and a cap of 1024 bytes; anything else is refused, not cut.
+  - R6, on the instance side: `cloud_link.message_refused`, with the reason only.
+  - R5: what goes out is the outcome, and before an unlink the instance id and the account.
+- **The executors each machine offers, in the hopper.io state snapshot** (issue #465 part 5, `docs/design.md` "The
+  machines the link reports"), `schema: 2`. It obeys:
+  - R5: only the kind of each executor goes out, from a closed list of the built-in executor plugins, else `other`. Never
+    an executor's name from the plugins config, which can hold a host name, and never a third-party plugin's id.
+- Nothing else. The connection (and so who carries these messages), the cloud link key, the allow-list and everything at
   hopper.io wait for the issues in the table below.
 
 ## What each child issue must show

@@ -60,6 +60,16 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     expect(herdr.prompts[0]!.text).toContain('never clone the repository again and never add a remote of your own, such as an ssh one');
   });
 
+  // Issue #1448 part 3: a GitLab job's project is cloned from its GitLab, not from GitHub.
+  it('a job of a GitLab issue: its project\'s checkout is cloned from the GitLab the issue is on', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] }, { jobWorktrees: true });
+    const source = { source: 'gitlab-account', kind: 'gitlab-account', key: 'k', url: 'https://gitlab.example/acme/platform/app/-/issues/3', title: 't', author: 'a', repo: 'acme/platform/app', number: 3 };
+    const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }, { source }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_ID, { repo: 'acme/platform/app', url: 'https://gitlab.example/acme/platform/app.git' }));
+    expect(saved.at(-1)).toMatchObject({ jobWorktree: jobWorktreeOf(CWD, JOB_ID, 'acme/platform/app'), checkout: `${CWD}/workspace/app` });
+  });
+
   // Issue #431: a work tree that is another repository's top gives the job its own repository, cloned in the work tree's workspace.
   it('a job from a repository, its work tree another repository\'s top: a worktree of its own repository\'s checkout in the workspace, named in the prompt', async () => {
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], origins: { [CWD]: 'acme/site' } }, { jobWorktrees: true });

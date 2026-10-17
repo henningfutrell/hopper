@@ -1,64 +1,155 @@
-// The GitLab source (issue #1448 part 2, design.md "A GitLab source"): the open issues labelled hopper in the projects picked
-// for the user's GitLab account, read through its token, listed in Intake with why each is not taken; no job is taken from
-// GitLab yet, and nothing is written to GitLab. Over a fake GitLab on loopback.
+// The GitLab source (issue #1448, design.md "A GitLab source", "Jobs through GitLab"): the open issues labelled hopper in the
+// projects picked for the user's GitLab account, read through its token, listed in Intake. An issue assigned to the account,
+// of a trusted origin, with no end label, is a job's item (part 3); the hopper writes only its labels to GitLab. Over a fake
+// GitLab on loopback; Access is a stand-in that trusts the actors it is told, as OpenFGA's `intake#can_start_jobs` does.
 //
 // Feature: the GitLab source
-//   Scenario: Intake lists each labelled open issue of the picked projects; an issue assigned to another person is not assigned to you
+//   Scenario: an issue the account wrote, labelled and assigned to itself is a job's item: its prompt, its project, trusted
+//   Scenario: an issue another person wrote, labelled, assigned or edited is not of a trusted origin, with who did what
+//   Scenario: an issue assigned to another person is not assigned to you; one with an end label or on the backburner is not taken
+//   Scenario: with no Access, nobody is a trusted actor, so no issue is taken
+//   Scenario: a report writes the hopper's labels: claimed, then the end label; a missing issue is a permanent error
 //   Scenario: a project GitLab does not answer is named; the others are still listed; none answering is the source's error
 //   Scenario: paused with no account, and with no project picked
 //   Scenario: GitLab refusing the token ends only the account: the source stops reading, pauses, and lists nothing
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGitLabAccount } from '../../src/gitlab/account.ts';
-import { createGitLabSource, NOT_TAKEN_YET } from '../../src/gitlab/source.ts';
+import { createGitLabSource, NOT_TRUSTED } from '../../src/gitlab/source.ts';
 import type { GitLabAccountRecord } from '../../src/domain/gitlab-account.ts';
-import { createFakeGitLab } from '../support/fake-gitlab.ts';
+import type { GitLabActorRef } from '../../src/domain/access.ts';
+import { SourceError } from '../../src/domain/ports.ts';
+import type { Job } from '../../src/domain/types.ts';
+import { createFakeGitLab, type FakeGitLabIssue } from '../support/fake-gitlab.ts';
 import { memoryAccountStore, systemOf } from '../support/system-secrets.ts';
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c(); });
 
-async function setup() {
-  const gitlab = await createFakeGitLab({
-    issues: [
-      { project: 'ada/tools', iid: 1, title: 'Mine', author: 'ada', assignees: ['ada'], labels: ['hopper'] },
-      { project: 'ada/tools', iid: 2, title: 'Someone else\'s', author: 'bob', assignees: ['bob'], labels: ['hopper', 'bug'] },
-      { project: 'ada/tools', iid: 3, title: 'No label', author: 'ada', assignees: ['ada'], labels: [] },
-      { project: 'ada/tools', iid: 4, title: 'Closed', author: 'ada', assignees: ['ada'], labels: ['hopper'], state: 'closed' },
-      { project: 'acme/platform/api', iid: 9, title: 'Deep', author: 'ada', assignees: ['Ada'], labels: ['hopper'] },
-    ],
-  });
+/** Access as OpenFGA answers `intake#can_start_jobs`: the actor is one of the trusted actors told. */
+const access = async (actor: GitLabActorRef, actors: readonly GitLabActorRef[]) => ({ allowed: actors.some((a) => a.baseUrl === actor.baseUrl && a.userId === actor.userId), reason: '' });
+
+const ISSUES: FakeGitLabIssue[] = [
+  { project: 'ada/tools', iid: 1, title: 'Fix the parser', description: 'It drops the last line.', author: 'ada', assignees: ['ada'], labels: ['hopper', 'hopper:high'] },
+  { project: 'ada/tools', iid: 2, title: 'Someone else\'s', author: 'bob', assignees: ['bob'], labels: ['hopper', 'bug'] },
+  { project: 'ada/tools', iid: 3, title: 'No label', author: 'ada', assignees: ['ada'], labels: [] },
+  { project: 'ada/tools', iid: 4, title: 'Closed', author: 'ada', assignees: ['ada'], labels: ['hopper'], state: 'closed' },
+  { project: 'acme/platform/api', iid: 9, title: 'Deep', description: 'Rename it.', author: 'ada', assignees: ['Ada'], labels: ['hopper'] },
+];
+
+async function setup(o: { issues?: FakeGitLabIssue[]; access?: boolean } = {}) {
+  const gitlab = await createFakeGitLab({ issues: structuredClone(o.issues ?? ISSUES) });
   cleanups.push(() => gitlab.close());
   gitlab.perPage = 1; // every list is paged
   gitlab.tokens.set('glpat-ada', { id: 7, username: 'ada', email: 'ada@example.com', projects: ['ada/tools', 'acme/platform/api'] });
+  gitlab.ids.set('bob', 8);
+  gitlab.defaultBranches.set('acme/platform/api', 'trunk');
   let kept: GitLabAccountRecord | undefined;
   const account = createGitLabAccount({
     settings: { getGitLabAccount: () => (kept ? structuredClone(kept) : undefined), setGitLabAccount: (r) => { kept = r ?? undefined; } },
     secrets: systemOf(memoryAccountStore().store), clock: { now: () => new Date() }, logger: { info: () => undefined, warn: () => undefined },
+    ...(o.access === false ? {} : { startsJobs: access }),
   });
-  const source = createGitLabSource({ name: 'gitlab-account', account });
+  const source = createGitLabSource({ name: 'gitlab-account', account, executor: 'herdr-claude' });
   return { gitlab, account, source };
 }
 
+async function connected(o: Parameters<typeof setup>[0] = {}) {
+  const s = await setup(o);
+  await s.account.connect({ token: 'glpat-ada', baseUrl: s.gitlab.url });
+  s.account.choose(['ada/tools', 'acme/platform/api']);
+  return s;
+}
+
+const jobOf = (project: string, iid: number): Job => ({ id: 'j1', source: { source: 'gitlab-account', kind: 'gitlab-account', key: 'k', url: 'u', title: 't', author: 'ada', repo: project, number: iid, labels: [] } } as unknown as Job);
+
 describe('the GitLab source', () => {
-  it('lists each labelled open issue of the picked projects in Intake, and takes no job', async () => {
-    const s = await setup();
-    await s.account.connect({ token: 'glpat-ada', baseUrl: s.gitlab.url });
-    s.account.choose(['ada/tools', 'acme/platform/api']);
-    expect(await s.source.discover()).toEqual([]);
+  it('takes an issue the account wrote, labelled and assigned to itself, as a job\'s item', async () => {
+    const s = await connected();
+    const items = await s.source.discover();
+    expect(items.map((i) => i.key)).toEqual([`${s.gitlab.url}/ada/tools/-/issues/1`, `${s.gitlab.url}/acme/platform/api/-/issues/9`]);
+    const [fix, deep] = items;
+    expect(fix).toMatchObject({
+      url: `${s.gitlab.url}/ada/tools/-/issues/1`, title: 'Fix the parser', body: 'It drops the last line.', author: 'ada', assignee: 'ada',
+      repo: 'ada/tools', number: 1, labels: ['hopper', 'hopper:high'], priority: 75, priorityReason: 'label:hopper:high', executor: 'herdr-claude', origin: 'trusted',
+      env: { HOPPER_ISSUE_URL: `${s.gitlab.url}/ada/tools/-/issues/1`, HOPPER_REPO: 'ada/tools', HOPPER_ISSUE_NUMBER: '1', HOPPER_ISSUE_TITLE: 'Fix the parser' },
+    });
+    expect(fix!.prompt).toContain('<<<hopper-untrusted-issue-text');
+    expect(fix!.prompt).toContain('It drops the last line.');
+    expect(fix!.prompt).toContain(`forge: GitLab · project: ada/tools · issue: #1`);
+    expect(fix!.prompt).toContain(`git push to ${s.gitlab.url} go through the hopper`);
+    expect(fix!.prompt).toContain('git push -o merge_request.create -o merge_request.target=main -o merge_request.title="Fix the parser" -o "merge_request.description=Closes #1" origin HEAD:<your branch>');
+    expect(deep!.prompt).toContain('-o merge_request.target=trunk');
+    expect(deep).toMatchObject({ priority: 50, priorityReason: 'default' });
     expect(s.source.intake!()).toEqual([
-      { key: `${s.gitlab.url}/ada/tools/-/issues/1`, title: 'Mine', repo: 'ada/tools', reason: NOT_TAKEN_YET, group: 'other' },
+      { key: `${s.gitlab.url}/ada/tools/-/issues/1`, title: 'Fix the parser', repo: 'ada/tools' },
       { key: `${s.gitlab.url}/ada/tools/-/issues/2`, title: 'Someone else\'s', repo: 'ada/tools', reason: expect.stringContaining('not assigned to your GitLab account ada'), group: 'not-assigned' },
-      { key: `${s.gitlab.url}/acme/platform/api/-/issues/9`, title: 'Deep', repo: 'acme/platform/api', reason: NOT_TAKEN_YET, group: 'other' },
+      { key: `${s.gitlab.url}/acme/platform/api/-/issues/9`, title: 'Deep', repo: 'acme/platform/api' },
     ]);
     expect(s.source.describe()).toMatchObject({ login: 'ada', baseUrl: s.gitlab.url, projects: ['ada/tools', 'acme/platform/api'], label: 'hopper', issues: 3 });
-    expect(s.gitlab.requests.some((r) => r.path.includes('/projects/acme%2Fplatform%2Fapi/issues'))).toBe(true);
+    expect(s.gitlab.requests.every((r) => r.token === 'glpat-ada' && r.method === undefined)).toBe(true); // a discover writes nothing
     expect(await s.source.check([])).toEqual([]);
   });
 
+  it('does not take an issue another person wrote, labelled, assigned or edited, and says who did what', async () => {
+    const mine = { project: 'ada/tools', assignees: ['ada'], labels: ['hopper'], author: 'ada', description: 'x' };
+    const s = await connected({ issues: [
+      { ...mine, iid: 1, title: 'Written by bob', author: 'bob', labelledBy: 'ada', assignedBy: 'ada' },
+      { ...mine, iid: 2, title: 'Labelled by bob', labelledBy: 'bob' },
+      { ...mine, iid: 3, title: 'Assigned by bob', assignedBy: 'bob' },
+      { ...mine, iid: 4, title: 'Edited by bob', editedBy: ['bob'] },
+      { ...mine, iid: 5, title: 'Edited by ada', editedBy: ['ada'] },
+    ] });
+    expect((await s.source.discover()).map((i) => i.title)).toEqual(['Edited by ada']);
+    const why = Object.fromEntries(s.source.intake!().map((x) => [x.title, x.reason]));
+    expect(why).toEqual({
+      'Written by bob': `${NOT_TRUSTED}: bob wrote it, and is not a trusted actor`,
+      'Labelled by bob': `${NOT_TRUSTED}: bob added the label, and is not a trusted actor`,
+      'Assigned by bob': `${NOT_TRUSTED}: bob assigned it, and is not a trusted actor`,
+      'Edited by bob': `${NOT_TRUSTED}: bob edited its title or description, and is not a trusted actor`,
+      'Edited by ada': undefined,
+    });
+  });
+
+  it('does not take an issue with an end label or on the backburner', async () => {
+    const mine = { project: 'ada/tools', assignees: ['ada'], author: 'ada', description: 'x' };
+    const s = await connected({ issues: [
+      { ...mine, iid: 1, title: 'Done', labels: ['hopper', 'hopper:done'] },
+      { ...mine, iid: 2, title: 'Failed', labels: ['hopper', 'hopper:failed'] },
+      { ...mine, iid: 3, title: 'Later', labels: ['hopper', 'hopper:backburner'] },
+    ] });
+    expect(await s.source.discover()).toEqual([]);
+    expect(s.source.intake!().map((x) => [x.title, x.group, x.reason])).toEqual([
+      ['Done', 'other', 'labelled hopper:done: remove the label at GitLab to offer it again'],
+      ['Failed', 'other', 'labelled hopper:failed: remove the label at GitLab to offer it again'],
+      ['Later', 'backburner', 'on the backburner (hopper:backburner)'],
+    ]);
+  });
+
+  it('takes no issue with no Access: nobody is a trusted actor', async () => {
+    const s = await connected({ access: false });
+    expect(await s.source.discover()).toEqual([]);
+    expect(s.source.intake!().find((x) => x.title === 'Fix the parser')?.reason).toBe(`${NOT_TRUSTED}: ada wrote it, and is not a trusted actor; ada added the label, and is not a trusted actor; ada assigned it, and is not a trusted actor`);
+  });
+
+  it('writes the hopper\'s labels as a job is claimed and ends', async () => {
+    const s = await connected();
+    const issue = () => s.gitlab.issues.find((i) => i.iid === 1)!;
+    await s.source.report({ kind: 'claimed', job: jobOf('ada/tools', 1) });
+    expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:claimed']);
+    await s.source.report({ kind: 'claimed', job: jobOf('ada/tools', 1) }); // again: nothing more
+    expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:claimed']);
+    expect(await s.source.report({ kind: 'finished', job: jobOf('ada/tools', 1) })).toEqual({ reported: 'finished' });
+    expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:done']);
+    await s.source.report({ kind: 'failed', job: jobOf('acme/platform/api', 9) });
+    expect(s.gitlab.issues.find((i) => i.iid === 9)!.labels).toEqual(['hopper', 'hopper:failed']);
+    expect(s.gitlab.requests.filter((r) => r.method === 'PUT').at(-1)).toMatchObject({ path: '/api/v4/projects/acme%2Fplatform%2Fapi/issues/9', body: { add_labels: 'hopper:failed', remove_labels: 'hopper:claimed' } });
+    const missing = await s.source.report({ kind: 'claimed', job: jobOf('ada/tools', 77) }).catch((e: unknown) => e);
+    expect(missing).toBeInstanceOf(SourceError);
+    expect(missing).toMatchObject({ permanent: true });
+  });
+
   it('names a project GitLab does not answer and lists the others; none answering is the source\'s error', async () => {
-    const s = await setup();
-    await s.account.connect({ token: 'glpat-ada', baseUrl: s.gitlab.url });
-    s.account.choose(['ada/tools', 'acme/platform/api']);
+    const s = await connected();
     s.gitlab.failing.add('ada/tools');
     await s.source.discover();
     expect(s.source.intake!().map((x) => x.title)).toEqual(['Deep']);
@@ -75,9 +166,7 @@ describe('the GitLab source', () => {
   });
 
   it('pauses when GitLab refuses the token, and lists nothing', async () => {
-    const s = await setup();
-    await s.account.connect({ token: 'glpat-ada', baseUrl: s.gitlab.url });
-    s.account.choose(['ada/tools', 'acme/platform/api']);
+    const s = await connected();
     await s.source.discover();
     s.gitlab.refused.add('glpat-ada');
     const asked = s.gitlab.requests.length;
