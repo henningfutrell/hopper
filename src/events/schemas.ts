@@ -139,7 +139,7 @@ export const EVENT_SCHEMAS = {
   // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
   'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
-  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional(), keptWork: z.literal(true).optional() }),
+  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional(), keptWork: z.literal(true).optional(), auto: z.literal(true).optional() }),
   'job.reattached': strict({ reason: z.string() }),
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).

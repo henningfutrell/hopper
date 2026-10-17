@@ -17,7 +17,7 @@
 // failure of a job that reported a hopper bug about itself waits on that report's problem, never a person (issue #1147).
 // A job whose own pull request's checks are red goes on to fix them, its failed checks run again first (issue #1230). One
 // whose own pull request has merge conflicts or is a draft goes on to finish it (issue #1265). The same failure as its
-// item's run before stops the item for a person, with no Jev pick (issue #1461).
+// item's run before stops the item for a person, with no Jev pick (issue #1461). A finished job's kept work is pushed by itself, once (issue #1472, `autoPush`).
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type Discarding, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
@@ -33,7 +33,7 @@ import { rerunRecordOf, retryable } from './rerun.ts';
 import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
 import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
-import { createBackfill } from './backfill.ts';
+import { createBackfill } from './backfill.ts'; import { autoPush } from './kept-work.ts';
 import type { FailureAction, Failures } from './failures.ts';
 import { signatureOf } from './signature.ts';
 import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
@@ -266,7 +266,7 @@ export function createFailures(o: FailuresOptions): Failures {
           if (stopped) return;
           await runPending(r);
         }
-        if (!stopped) await checkWork();
+        if (!stopped) await checkWork(); if (!stopped && settings().auto.push) await autoPush({ store, resumable: o.resumable, takesBack: o.takesBack, continueJob: o.continueJob, live: () => !stopped, logger: o.logger });
         if (!stopped) await runChecks();
         if (!stopped) prune();
       } catch (e) {

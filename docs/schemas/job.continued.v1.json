@@ -11,6 +11,10 @@
     "keptWork": {
       "type": "boolean",
       "const": true
+    },
+    "auto": {
+      "type": "boolean",
+      "const": true
     }
   },
   "additionalProperties": false
