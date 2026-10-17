@@ -1,0 +1,1 @@
+- The hopper.io page in Settings now shows the key this hopper will use to prove itself to hopper.io. The admin can replace the key at any time. Unlinking removes it.

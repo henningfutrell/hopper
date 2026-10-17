@@ -1,7 +1,7 @@
 # hopper.io — threat model, account isolation and privacy
 
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
-itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its registration code (issue #465 part 2), its
+itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its cloud link key (issue #467 part 2), its registration code (issue #465 part 2), its
 unregistration (issue #465 part 3), the messages about them (issue #465 part 4) and the state snapshot the dashboard shows
 (issue #466 parts 1 and 2) are built
 ("What is built" below).
@@ -161,7 +161,8 @@ plugins, command-bearing options, the vault, remote access or the cloud link its
 - **The cloud link key** is one X25519 key per instance, minted on the instance, kept as a system secret in the
   instance's vault. Only its public half goes to hopper.io. It is not a machine's link key.
 - The instance's admin can rotate it (a new key, the old one revoked after the new one connects) and revoke it, through
-  the UI session or the operator CLI. The hopper.io account owner can revoke it at hopper.io. A revoked key connects no
+  the UI session or the operator CLI. Until the cloud link connects (issue #464), nothing connects with a key, so a
+  rotation replaces the key at once, and an unlink revokes it by dropping it. The hopper.io account owner can revoke it at hopper.io. A revoked key connects no
   more, on either side.
 - Registration takes a one-time code the instance's admin mints (10 minutes, kept hashed, taken once).
 
@@ -199,6 +200,15 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   - R4: it holds no credential. Its `installId` is random, made at the link, and opens nothing.
   - R5: a link moves no data (`test/http/cloud-link-fixture.test.ts` compares every row of every schema before and after).
   - R6, on the instance side: `cloud_link.linked` and `cloud_link.unlinked`, with who.
+- **The cloud link key** (issue #467 part 2, `docs/design.md` "The cloud link key"): minted at the link, one X25519 key,
+  its private half the system secret `cloud-link.key` in the instance's vault, sealed under the master key, its public
+  half in the link record. It obeys:
+  - R4: the private half is a system secret, never answered by a route, in an event or in the record; the instance admin
+    rotates it through the UI session (`POST /ui/api/cloud-link/rotate-key`); an unlink drops it. No operator CLI command
+    and no revocation from hopper.io's side yet: both come with the connection (issue #464).
+  - R1, R8: nothing uses it yet; it makes no connection.
+  - R5: a link writes only the record, the code and this one vault row (`test/http/cloud-link-fixture.test.ts`).
+  - R6, on the instance side: `vault.secret_set` (with `rotated`) and `vault.secret_removed`, with who and no value.
 - **The instance's half of registration** (issue #465 part 2, `docs/design.md` "Registering at hopper.io"). It obeys:
   - R4: the **registration code** is minted only by the instance admin, through the UI session, while the instance is
     linked; 10 minutes, kept only as its SHA-256, taken once, one at a time; never in a view or an event.
