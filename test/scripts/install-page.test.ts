@@ -195,7 +195,7 @@ describe('get.sh without a running systemd (WSL with systemd off)', () => {
 });
 
 describe('sign-in for a team (issue #234)', () => {
-  const team = page.slice(page.indexOf('id="sign-in"'), page.indexOf('id="upgrade"'));
+  const team = page.slice(page.indexOf('id="sign-in"'), page.indexOf('id="update"'));
 
   it('has its own section, linked from the top of the page', () => {
     expect(page).toContain('href="#sign-in"');

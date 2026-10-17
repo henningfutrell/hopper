@@ -126,14 +126,15 @@ describe('what the site served before, it still serves', () => {
   it('sends the install page\'s old addresses on the front page (/#windows and the like) to the install page', () => {
     const head = index.slice(0, index.indexOf('</head>'));
     for (const id of OLD_INSTALL_IDS) expect(head, id).toContain(`'${id}'`);
-    expect(head).toContain("location.replace('install.html'");
+    expect(head).toContain("location.replace('install.html#'");
+    expect(head, 'the old Upgrade section is Update').toContain("id === 'upgrade' ? 'update'");
     const ids = new Set([...index.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
     for (const id of OLD_INSTALL_IDS) expect(ids.has(id), id).toBe(false);
   });
 
   it('the install page keeps its sections and its one-line install', () => {
     expect(install).toContain(`data-copy="${INSTALL}"`);
-    for (const id of ['podman', 'first-job', 'windows', 'upgrade', 'remove', 'trouble']) expect(install).toContain(`id="${id}"`);
+    for (const id of ['podman', 'first-job', 'windows', 'update', 'remove', 'trouble']) expect(install).toContain(`id="${id}"`);
   });
 });
 
