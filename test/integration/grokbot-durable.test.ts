@@ -72,6 +72,7 @@ describe('Grok Bot routine notifier: durable delivery (issue #1587)', () => {
     expect(r.taken()).toEqual([expect.objectContaining({ kind: 'job.finished', jobId: job.id })]);
 
     // Delivered: a later start sends it no more.
+    await settle();
     await t.stop();
     t = await start();
     await settle();

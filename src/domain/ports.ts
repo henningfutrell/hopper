@@ -258,8 +258,11 @@ export interface NotifierEvents {
   tldr?(q: Question): string | undefined;
   /** Where the hopper is reached from outside now (issues #795, #880): the remote access URL while its tunnel is up. Absent or undefined: not reached. */
   reach?(): string | undefined;
-  /** A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan. */
-  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined;
+  /**
+   * A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan.
+   * `deliveries`: the user's notifier deliveries (issue #1587), where a notifier keeps each notification until it is delivered. Absent: kept in memory.
+   */
+  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined; deliveries?: import('./notifier-deliveries.ts').NotifierDeliveryRepository;
 }
 
 /**
