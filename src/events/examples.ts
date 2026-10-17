@@ -194,7 +194,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     kind: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'lab/web' }, template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
     credential: 'KUBE_LAB', decision: '6c1d2e3f-0000-4000-8000-000000000002', expiresAt: '2026-10-09T12:10:00.000Z', renewal: false,
     principal: 'system:serviceaccount:web:hopper-read', bound: { namespace: 'web', secret: 'hopper-mint-0b1c2d3e-0000-4000-8000-000000000004' } },
-  'vault.unbound': { box: 'hopper-need-kube-1a2b3c4d', job: 'f3b1c2d4-0000-4000-8000-000000000001', credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-0b1c2d3e-0000-4000-8000-000000000004' },
+  'vault.binding_named': { box: 'hopper-need-kube-1a2b3c4d', job: 'f3b1c2d4-0000-4000-8000-000000000001', credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-0b1c2d3e-0000-4000-8000-000000000004' }, 'vault.unbound': { box: 'hopper-need-kube-1a2b3c4d', job: 'f3b1c2d4-0000-4000-8000-000000000001', credential: 'KUBE_LAB', namespace: 'web', secret: 'hopper-mint-0b1c2d3e-0000-4000-8000-000000000004' },
   'vault.mint_refused': {
     mint: { kind: 'kube', operation: 'write', asset: { kind: 'namespace', name: 'lab/web' } }, machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
     reason: 'Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person\'s approval on Access requests (the first-time gate)',
