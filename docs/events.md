@@ -3523,6 +3523,22 @@ Version 1 (`docs/schemas/cloud_link.registered.v1.json`). The cloud link registe
 }
 ```
 
+## `cloud_link.unregistered`
+
+Version 1 (`docs/schemas/cloud_link.unregistered.v1.json`). hopper.io removed this instance (issue #465): its account owner unregistered it there, and hopper.io said so over the cloud link. The link's state is `pending` again and its `registeredAt` is gone; the link record stays, and nothing else on the instance changes. A new registration code registers it again, with the same id. `installId` and `account`, the link. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat"
+}
+```
+
 ## `display_name.changed`
 
 Version 1 (`docs/schemas/display_name.changed.v1.json`). The hopper's admin changed the instance's display name (issue #465): what they call this hopper, shown in Settings → Version beside its instance id. `from` and `to` are the names, empty when none; `by`, who. An instance event: in every user's log.
