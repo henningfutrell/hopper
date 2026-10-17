@@ -139,5 +139,5 @@ export type { CloudLinkView, RegistrationCodeMinted } from '../../../src/domain/
 export type { HopperIoState } from '../../../src/domain/hopper-io-state.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
-export type { WaitOn } from '../../../src/domain/types.ts';
+export type { WaitOn, WaitCheck } from '../../../src/domain/types.ts';
 export type { PullRequestDiff, PullRequestDiffFile } from '../../../src/domain/pull-request-diff.ts';
