@@ -47,12 +47,12 @@ describe('what hopper.io would get', () => {
     expect(r.status).toBe(200);
     expect(HOPPER_IO_STATE_SCHEMA.parse(r.body)).toEqual(r.body);
     expect(r.body).toMatchObject({
-      schema: 1,
+      schema: 2,
       queue: { waiting: 0, running: 1, locked: 0, gate: 'auto-accept' }, // the asking job waits on its answer, in no list counted
       attention: { questionsAwaitingOwner: 1, jobsLocked: 0, machinesOffline: 0 },
     });
     expect(r.body.machines).toEqual([
-      { key: 'machine-1', online: true, lanesInUse: 0, lanes: 1, takesJobs: true },
+      { key: 'machine-1', online: true, lanesInUse: 0, lanes: 1, executors: ['herdr-claude', 'other', 'test'], takesJobs: true }, // by plugin id; the harness's scripted seam is no configured instance
       expect.objectContaining({ key: 'machine-2', online: true, lanesInUse: 1 }),
     ]);
 

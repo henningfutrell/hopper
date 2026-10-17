@@ -7,7 +7,11 @@ import type { Clock } from '../domain/ports.ts';
 import type { UpdateStatus } from '../domain/update.ts';
 import type { TenantParts, Tenants } from './tenants.ts';
 
-type Tenant = { engine: Pick<TenantParts['engine'], 'getMachines' | 'getQueue'>; store: { questions: Pick<TenantParts['store']['questions'], 'list'> } };
+type Tenant = {
+  engine: Pick<TenantParts['engine'], 'getMachines' | 'getQueue'>;
+  store: { questions: Pick<TenantParts['store']['questions'], 'list'> };
+  plugins: Pick<TenantParts['plugins'], 'report'>;
+};
 
 export interface HopperIoStateSource {
   /**
@@ -34,11 +38,13 @@ export function createHopperIoStateSource(o: {
       for (const user of o.tenants.list()) {
         const t = o.tenants.user(user.id);
         if (!t) continue;
+        // Executor names are a user's own too: each machine goes in with its executors' plugin ids ('' for none).
+        const pluginOf = new Map(t.plugins.report().executors.instances.map((e) => [e.instance.name, e.instance.plugin]));
         // Machine ids are a user's own: two users' `local` are two machines, so each gets a place of its own here.
         for (const m of await t.engine.getMachines()) {
           const place = String(keys.size);
           keys.set(place, machineKey ? machineKey(user.id, m.id) : `machine-${keys.size + 1}`);
-          machines.push({ ...m, id: place });
+          machines.push({ ...m, id: place, executors: m.executors.map((e) => pluginOf.get(e) ?? '') });
           for (const l of m.lanes) lanes.push({ machineId: place, state: l.state });
         }
         const q = t.engine.getQueue();
@@ -61,6 +67,7 @@ export function createHopperIoStateSource(o: {
         questions,
         parked,
         machineKey: (place) => keys.get(place)!,
+        executorPlugin: (plugin) => plugin || undefined,
       }));
     },
   };
