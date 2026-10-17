@@ -104,6 +104,7 @@
         "intake.actors_changed",
         "intake.auto_approval_changed",
         "intake.decline_changed",
+        "intake.strictness_changed",
         "job.origin_judged",
         "source.request_opened",
         "source.backburner_lifted",

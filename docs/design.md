@@ -16881,7 +16881,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 and 2, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 3, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -16961,8 +16961,29 @@ quarantined, or has no stamp (no stamp key).
 What part 2 does not do: a deny at gate 2 that lowers the level, and a second that quarantines; revoking a quarantined
 job's sandboxes and vault grants; Jev's decisions. Those are later parts.
 
-**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, the
-brake per source and repository (intake strictness), Jev's `intake-trust` and `intake-kind` decisions that can only lower a
+**Intake strictness: brake 1** (part 3). The dispatch minimum is no longer fixed: an admin sets the **intake strictness**
+(`src/domain/intake-strictness.ts`), the level a job's stamp needs before the job starts, in Settings → Intake (`GET
+/api/intake-strictness`, `POST /ui/api/intake-strictness`, least role admin, `intake.strictness_changed` with `from`, `to`
+and who):
+
+| strictness | the stamp needs | so runs |
+|---|---|---|
+| `open` | `screened` | also an item only screened (no rule gives `screened` yet: Jev's `intake-trust`, a later part) |
+| `standard` (the default) | `approved` | a trusted origin, a request card a person approved, a direct job, a configured source's job |
+| `strict` | `trusted` | only a trusted origin: a person's approval is not enough |
+| `closed` | `owner` | only an item the user wrote and was assigned |
+
+It is set by default, per job source (its configured name) and per job repository (`owner/name`, lowercased). The most
+specific wins: the job's repository, else its source, else the default (`brakeOf`), so an admin can also loosen one
+repository below a strict default. The engine reads the setting at each Decision and gives the store's `stampHold` the
+brake of each waiting job; a change applies at the next Decision with no restart. A job held by the brake says which
+(`trust stamp approved is below trusted (intake strictness strict for octo/tools): held — an admin changes the intake
+strictness in Settings → Intake, or a person cancels it`); a job below `approved` keeps the hold text that sends a person
+to Intake. Tightening it holds a waiting job that no longer passes, a job resuming after a question too; a running job
+keeps going and keeps its doors (part 2: doors stay open below the minimum). Nothing is stored on the job: the stamp keeps
+the level, the brake is read where it is needed, so a loosened brake lets the job start at once.
+
+**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's `intake-trust` and `intake-kind` decisions that can only lower a
 level, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at
 the skill broker (the request's policy, Jev's `sandbox-request`, its brake, lowering trust on a deny, quarantine by two
 denies, stopping a quarantined job's sandboxes), the restamp on an edit seen at a sync, and the Intake and API views of the

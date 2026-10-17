@@ -53,6 +53,6 @@ describe('intake strictness (issue #655, brake 1)', () => {
     expect(held.stamp?.level).toBe('approved');
     expect(held.holdReason).toBe('trust stamp approved is below trusted (intake strictness strict for the source manual): held — an admin changes the intake strictness in Settings → Intake, or a person cancels it');
     await a.ui('/ui/api/intake-strictness', { default: 'standard', sources: { manual: 'standard' }, repos: {} }, { token });
-    await a.waitForStatus(j.id, 'done');
+    await a.waitForStatus(j.id, 'finished');
   });
 });

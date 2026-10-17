@@ -153,6 +153,9 @@ export interface UserSettingsRepository {
   /** The choice Decline offers first (issue #1710); undefined: never set. */
   getIntakeDecline(): IntakeDeclineDefaults | undefined;
   setIntakeDecline(settings: IntakeDeclineDefaults): void;
+  /** Intake strictness, brake 1 (issue #655 part 3); undefined: never set, so standard everywhere. */
+  getIntakeStrictness(): import('./intake-strictness.ts').IntakeStrictness | undefined;
+  setIntakeStrictness(settings: import('./intake-strictness.ts').IntakeStrictness): void;
   /** The job repositories whose "Add PR checks" recommendation the person dismissed (issue #677), `owner/repo` lowercased; none: []. */
   getRepoChecksDismissed(): string[];
   setRepoChecksDismissed(repos: string[]): void;

@@ -1684,6 +1684,34 @@ Version 1 (`docs/schemas/intake.decline_changed.v1.json`). An admin changed the 
 }
 ```
 
+## `intake.strictness_changed`
+
+Version 1 (`docs/schemas/intake.strictness_changed.v1.json`). An admin changed the intake strictness in Settings → Intake (issue #655, brake 1): the trust level a job's stamp needs before the job starts, `default`, by job source (`sources`) and by repository (`repos`, `owner/name` lowercased). `open` needs `screened`, `standard` `approved`, `strict` `trusted`, `closed` `owner`. It applies at the next Decision. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "default": "standard",
+    "sources": {},
+    "repos": {}
+  },
+  "to": {
+    "default": "standard",
+    "sources": {},
+    "repos": {
+      "octocat/hello-world": "strict"
+    }
+  },
+  "by": "octocat"
+}
+```
+
 ## `job.origin_judged`
 
 Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origins were judged (issue #652, the backfill: tenant migration 39) got its item's origin: its issue is of a trusted origin (`trusted`), or a person approved its request card (`approved`). Its hold for its origin ends. Until then the job does not start.
