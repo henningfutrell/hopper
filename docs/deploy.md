@@ -2204,12 +2204,7 @@ that needs one of those goes there). It reads the repository only and uses no se
 passed on it; this is that check. To have GitHub hold every merge to it, make `pr / test` a required status
 check in the branch protection of `dev` (Settings → Branches): an owner's step, not the workflow's.
 
-**Agent boxes** (`docs/design.md` "Agent boxes"): `bash scripts/agent-boxes.sh` starts one container per
-agent CLI (claude, codex, cursor, omp, opencode), each an ssh target with its own herdr session, and
-attaches every one to the hopper, running its agent's executor. It finds the hopper itself: the compose
-container (the boxes join its network; nothing to copy, no database to reach) or, with
-`HOPPER_DATABASE_URL`, one installed here. Run it again any time: it puts every box back as it should be.
-`--sign-in` signs in the agents not signed in yet (opencode needs none); `ssh -t hopper-box-<agent>` opens
-a terminal there. `--check` proves the hopper in its container reaches every box: ssh as the hopper,
-the box's herdr session running, its agent CLI answering — one line per box, exit 1 on any failure.
-`--remove` takes them away again.
+**Box images of every agent** (issue #865, `docs/design.md` "Agent boxes"): the image workflow publishes
+`ghcr.io/henningfutrell/hopper:box-<agent>` for claude, codex, cursor, omp and opencode (`scripts/box/Dockerfile`,
+build argument `AGENT`). The sandbox playground and the lane pods (`lanes.agent`) run them. `scripts/agent-boxes.sh`
+went with issue #865: its ssh agent boxes were for testing only.

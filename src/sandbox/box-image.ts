@@ -9,6 +9,12 @@ import { toolsImage } from './tools.ts';
 export const BOX_IMAGE = 'ghcr.io/henningfutrell/hopper';
 
 /**
+ * The agents with a published box image (issue #865): each harness a print-mode or herdr executor drives, so the hopper
+ * stays harness-agnostic. scripts/box/Dockerfile installs each one, and .github/workflows/image.yml publishes each one.
+ */
+export const BOX_AGENTS = ['claude', 'codex', 'cursor', 'omp', 'opencode'] as const;
+
+/**
  * The tools image CI publishes for a box image (issue #1286, .github/workflows/image.yml `box-tools`): the box image with
  * every box tool added as tools.ts adds them, its tag the box image's with `-tools`, or `-tools-read-only` for a
  * read-only template's boxes. A runtime that builds nothing (Kubernetes) runs it. Throws for an image the hopper does

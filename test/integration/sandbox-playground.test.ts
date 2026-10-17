@@ -7,6 +7,7 @@
 //   Scenario: playground sandboxes never appear in the machines list, and take no lane
 //   Scenario: destroy-all removes every container and home volume
 //   Scenario: a size over the hopper's max is refused with 400; no such template: 404
+//   Scenario: every harness has a box image: the view lists the agents, and a create runs the agent's image (issue #865)
 //   Scenario: a hopper restart removes every playground sandbox it left
 import { afterEach, describe, expect, it } from 'vitest';
 import { PLAYGROUND_LABEL } from '../../src/sandbox/playground.ts';
@@ -38,7 +39,7 @@ async function boot(runtime: FakeContainerRuntime, dbPath?: string): Promise<{ a
 }
 
 interface Sandbox { id: string; name: string; state: string; size: { cpus: number; memoryMb: number; ttlMinutes: number } }
-interface View { problem?: string; limits: { maxConcurrent: number }; running: { all: number; yours: number }; sandboxes: Sandbox[] }
+interface View { problem?: string; agents: string[]; limits: { maxConcurrent: number }; running: { all: number; yours: number }; sandboxes: Sandbox[] }
 const view = async (a: TestApp, session: string): Promise<View> => (await a.api('GET', '/api/sandbox-playground', undefined, { 'x-hopper-session': session })).body as View;
 const create = (a: TestApp, session: string, body: unknown) => a.ui<{ started: Sandbox[]; refused?: { count: number; limit: string; setting: string }; error?: string; limit?: string }>('/ui/api/sandbox-playground', body, { token: session });
 
@@ -91,6 +92,16 @@ describe('the sandbox playground over the API', () => {
     expect(big.body.error).toContain('HOPPER_SANDBOX_MAX_CPUS');
     expect((await create(a, session, { template: 'nope' })).status).toBe(404);
     expect(rt.boxes.size).toBe(0);
+  });
+
+  it('lists every harness\'s box, and starts the box image of the agent named; an agent with none: 400', async () => {
+    const rt = createFakeContainerRuntime();
+    const { a, session } = await boot(rt);
+    expect((await view(a, session)).agents).toEqual(['claude', 'codex', 'cursor', 'omp', 'opencode']);
+    expect((await create(a, session, { agent: 'codex' })).status).toBe(200);
+    await running(a, session, 1);
+    expect([...rt.boxes.values()].map((b) => b.spec.image)).toEqual(['ghcr.io/henningfutrell/hopper:box-codex']);
+    expect((await create(a, session, { agent: 'nope' })).status).toBe(400);
   });
 
   it('a hopper restart removes every playground sandbox it left', async () => {

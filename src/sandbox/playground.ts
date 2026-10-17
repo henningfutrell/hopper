@@ -17,7 +17,7 @@ import type { PlaygroundLimits, PlaygroundSandbox, PlaygroundSize, PlaygroundSta
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { checkWait } from '../domain/read-only-check.ts';
-import { boxImage, BOX_IMAGE } from './box-image.ts';
+import { BOX_AGENTS, boxImage, BOX_IMAGE } from './box-image.ts';
 import { PLAYGROUND_LABEL, staleHome, USER_LABEL } from './owned.ts';
 
 export { PLAYGROUND_LABEL };
@@ -228,6 +228,7 @@ export function createPlayground(o: {
       const live = [...entries.values()].filter((e) => counts(e.state));
       return {
         ...(problem !== undefined ? { problem } : {}),
+        agents: [...BOX_AGENTS],
         limits: structuredClone(o.limits),
         running: { all: live.length, yours: live.filter((e) => e.userId === userId).length },
         sandboxes: [...entries.values()].filter((e) => e.userId === userId).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name)).map(shown),
