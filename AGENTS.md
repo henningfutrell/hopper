@@ -108,7 +108,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   its hash kept; a spent one sent again ends the grant; or one an agent asked for at `POST /ui/auth/device-grant`, which a
   person approved by its user code through the UI session, never an API token, and the agent takes once at its poll, issue
   #892, `docs/design.md` "Grants by device approval"; a **bound grant**'s refresh and each use of its tokens, `Authorization: DPoP`,
-  need a DPoP proof of its agent's key, `docs/design.md` "Sender binding") or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
+  need a DPoP proof of its agent's key, `docs/design.md` "Sender binding"; a **limited grant**'s mutations act only on the
+  repositories and job sources it names, `docs/design.md` "Grant limits") or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
   accepts, never by another API token; a grant's token uses only the routes its scopes name, deny by default; Access decides
   each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it. A
   **box action** (issue #795: starts a job, runs a command, approves or merges, updates, changes the work on a machine) also

@@ -168,6 +168,23 @@ After that, the grant works only with a proof of that key:
 
 The list shows **bound to its agent's key** for such a grant. To use a new key, revoke the grant and make a new one.
 
+## Limit a grant to repositories or job sources
+
+The scopes say which actions a grant can do. Limits say on what. A grant with limits changes only the work of the repositories and job sources that you name.
+
+- In Settings → API tokens, fill in **Only these repositories** (`owner/name`, separated by commas), **Only these job sources**, or both.
+- In the API, add `"limits": { "repos": ["acme/app"], "sources": ["github"] }` to the mint or to a device grant request.
+- From the command line: `hopper token mint ... --repo acme/app --source github`. Repeat a flag for more.
+
+Each action of the grant must then act on a job, question, research report, proposal, pull request or item of these repositories and job sources:
+
+- An action on a job of another repository gets `403`.
+- With repositories named, an action on a job with no repository gets `403`.
+- An action that is not about one job or item, for example a change to a setting, gets `403`.
+- Reads are not limited. The scopes alone decide what the grant reads.
+
+The list shows the limits, for example **only acme/app**. An agent that asks by device code can name limits too. You see them before you approve.
+
 ## Exchange a sign-in for a token
 
 An agent with no UI session can exchange a sign-in for one API token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.

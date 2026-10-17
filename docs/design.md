@@ -13641,11 +13641,10 @@ its scopes and its minter's live rights, until the grant ends, it is revoked, or
 (then the grant ends). The agent keeps it in its own secret store and must replace it at each refresh. Reuse detection
 needs the legitimate holder to refresh after a thief: a thief who refreshes first and keeps refreshing holds the grant
 until the holder's next refresh ends it. The scope names a route's area and act, not an object: `questions:answer` answers
-any question of the user. A grant bound to its agent's key ("Sender binding" below) closes the theft of a token alone.
-Per-grant repository or source limits are not built.
+any question of the user. A grant bound to its agent's key ("Sender binding" below) closes the theft of a token alone;
+a limited grant ("Grant limits" below) acts only on the repositories and job sources it names.
 
-**Not built** (follow-up, issue #892): per-grant repository or source restrictions. A grant minted by device approval and
-sender binding are built: "Grants by device approval" and "Sender binding" below.
+The follow-ups of issue #892 are built: "Grants by device approval", "Sender binding" and "Grant limits" below.
 
 Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
 ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
@@ -13658,7 +13657,7 @@ in scope and out, the retry, the events; no box flag; revoke and revoke all; the
 
 The first part of issue #892, a follow-up of #881: an agent gets a grant with no token pasted into it. On the model of the
 OAuth 2.0 device authorization grant (RFC 8628). Sender binding is the second part ("Sender binding" below); per-grant
-repository or source limits are not built.
+repository and job source limits the third ("Grant limits" below).
 
 - **The ask.** `POST /ui/auth/device-grant`, with no credential: the grant the agent wants, in a mint's fields (`label`,
   `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`, `deny`). It answers a **device code** (`hopper_dc_` and
@@ -13744,6 +13743,50 @@ in memory: a proof seen before a restart can be sent again after it, within its 
 Tests: `test/http/dpop.test.ts` (the proof: the key, htm, htu, iat, jti, ath, no proof, a private key, `none`, HMAC, two
 headers, the cap), `test/integration/sender-binding.test.ts` (a device grant bound by its ask's proof; a mint with
 `jkt`; binding at the first refresh; an unbound grant as before; a mutation; the CLI), `test/http/device-grants.test.ts`,
+`test/ui/api-tokens.test.ts`.
+
+### Grant limits (issue #892, part 3, 2026-10-17)
+
+The third part of issue #892: beside its scopes, a grant may name what its tokens act on. The scopes say which routes; the
+**limits** say on what: the repositories (`owner/name`) and the job sources (their names) of the work it touches.
+
+- **The mint.** `limits: { repos?, sources? }` on `POST /ui/api/api-tokens` `mint` and on a device grant request (`POST
+  /ui/auth/device-grant`), at most `GRANT_LIMITS_MAX` (50) of each; `hopper token mint --repo <owner/name>... --source
+  <name>...`; in Settings → API tokens, two fields under the role. Kept in one form (`normalLimits`): repositories lower
+  case (GitHub's names do not care for case), each list sorted and once; two empty lists are no limits. A repository that
+  is not `owner/name`, or a source name that is not letters, digits, `. _ : -`, is 400. The person who approves a device
+  grant request sees its limits ("only acme/app") before they approve; the grant list shows them too.
+- **The targets.** A limited grant's mutation names its **limit targets**: the repository and job source of what it acts
+  on, found once the body is read (`src/http/ui/grant-limits.ts`, a table by route):
+  - `/ui/api/jobs/:id/…` and `/ui/api/failures/:id/retry`: the job's source and its repository (`job.source`).
+  - `/ui/api/questions/:id/…`: the question's job's; `/ui/api/<review section>/:id/…`: the review item's job's.
+  - `/ui/api/pull-requests/merge|close|tend`: the job its `jobId` names; `diff`: its `repo`.
+  - `/ui/api/sources/:name/intake`: each item named, of that source, with the repository of its key when the key is a
+    GitHub issue or pull request URL (`repoOfItemKey`).
+  - `/ui/api/direct-jobs`: the source `direct` and its `repo`; `/ui/api/repo-checks/queue`: its `repo`.
+- **The check** (`limitRefusal`, `src/domain/grant-limits.ts`, pure). Each target must be in every list the grant names:
+  with `repos`, its repository is one of them; with `sources`, its source is. A target with no repository (a job of no
+  repository) while the grant names repositories is refused; so is one with no source while it names sources. An act
+  that names no target — a route not on the table, such as a setting, or an id that names nothing — is refused too: deny
+  by default, as for scopes. Refused is 403 naming the limits and what the act acts on, and a log line. It runs in the
+  tenancy hook's `preHandler` (`src/http/tenants.ts`), after the role, the scopes, the box flag and Access, and after the
+  action scope (issue #909).
+- **Reads are not limited.** A limited grant's `GET /api/…` reads as its scopes allow, all of its user's work: the lists
+  (the queue, the sources, Needs you) would each need a filter of their own, and the limit is on what an agent changes.
+- **Migration.** None: `limits` is a field of the grant's JSON body (`api_grants.body`). The build before reads it as no
+  field: there a limited grant acts on anything its scopes allow, until the grant ends.
+- **Events.** None new, and no change to `api_grant.minted`: older builds read the events strictly. The grant list and
+  `GET /api/api-tokens` show the limits.
+
+**Residual risk, stated.** The limits hold what an agent changes, not what it reads: a limited grant with `*:read` still
+reads every job of its user. A route a later change adds is refused to a limited grant until the table names its targets.
+A route on the table finds its job by id at the check: an act whose handler then acts on another object than the one its
+path or body names would pass with the named one's targets; the table names only routes whose handler acts on what they
+name.
+
+Tests: `test/domain/grant-limits.test.ts` (the one form, the checks of the mint, the targets, item keys),
+`test/integration/grant-limits.test.ts` (a grant limited to a repository on a job of it and of another; a route that
+names no target; a job source limit on jobs and on intake; a device grant request's limits; the mint's checks; the CLI),
 `test/ui/api-tokens.test.ts`.
 
 ### The scope registry and presets (issue #909, 2026-10-12)
