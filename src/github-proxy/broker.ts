@@ -29,7 +29,7 @@ import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
-import { prWaitOver, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
+import { prWaitOver, unfollowedWait, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
 import type { ProxyReplay } from './sub-issue-links.ts';
@@ -265,8 +265,8 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         const poll = pollOf();
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source, ...(poll ? { poll: poll.reads } : {}) });
         const seen = req.op === 'repo.view' ? { contribution } : {};
-        // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end.
-        const wait = waiting ? { wait: 'none' } : {};
+        // `pr wait` on a pull request the hopper does not follow: nothing would tell it when the checks end (issue #1731).
+        const wait = waiting && 'number' in req ? unfollowedWait(req.repo, req.number, result, waiting.for) : {};
         tellPolled(poll, result);
         return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, ...prItem, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}), ...wait, ...(poll ? { poll: poll.note } : {}) } };
       };
