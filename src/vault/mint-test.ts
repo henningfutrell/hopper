@@ -12,12 +12,13 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Asset } from '../domain/access.ts';
 import { MINT_TEST_ID, expiryOf, mintTarget, roleAccountOf, type MintTarget, type MintTestResult } from '../domain/minting.ts';
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
+import { readClusters } from './clusters.ts';
 import { assetOf, fromOf, usedOf, type MintedFrom, type MintFrom } from './mint.ts';
 
 /** A mint test's answer: what STS said, or why there is none — a bad ask, no minting credential, or STS refused. */
 export type MintTestAnswer = { tested: MintTestResult } | { refused: string; code: 'invalid' | 'not_found' | 'failed' };
 
-export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events'> }): (said: string, by: string, from: MintFrom) => Promise<MintTestAnswer> {
+export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events' | 'config'> }): (said: string, by: string, from: MintFrom) => Promise<MintTestAnswer> {
   const { vault, events } = o.store;
   return async (said, by, from) => {
     const asset = assetOf(said);
@@ -30,7 +31,7 @@ export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events'> }
     if (asset.kind !== 'aws-role' && asset.kind !== 'cluster') return refuse('invalid', `${takes}, not ${asset.kind}/${asset.name}`);
     const target = mintTarget(asset.kind === 'cluster' ? 'kube' : 'aws', { operation: 'read', asset });
     if (typeof target === 'string') return refuse('invalid', target);
-    const source = mintSourceFor(vault.list(), target, 'read');
+    const source = mintSourceFor(vault.list(), target, 'read', readClusters(o.store.config));
     if (typeof source === 'string') return refuse(source.startsWith('no ') ? 'not_found' : 'invalid', source);
     const made = await from(fromOf(source), target, MINT_TEST_ID, true);
     // The answer names the secret the test used (issue #1761), as a tested answer does; a discovery names its accounts.

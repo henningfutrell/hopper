@@ -5,15 +5,16 @@
 // the cluster decides what it may do, and the hopper never changes the cluster. The cluster is named in the credential,
 // or found in a vault kubeconfig whose EKS exec sign-in (`aws eks get-token`) names it. Runs where the minting
 // credentials are opened: in the hopper, or in the vault's own container. A cluster with no minting credential of its
-// own (issue #1766) is found in the AWS accounts the vault mints for (`mintDiscovered`), and signed in as `hopper-read`.
+// own (issue #1766) is found in the AWS accounts the vault mints for (`mintDiscovered`), and signed in as `hopper-read`,
+// or for a write as the role its cluster override names.
 import { parse } from 'yaml';
 import {
   AWS_REGION_NAME, AWS_SESSION_SECONDS, EKS_CLUSTER_NAME, awsReadSession, awsRegionOf, awsSessionName, mintingCredentialFor, mintingCredentialOf, roleAccountOf,
-  type ClusterIdentity, type EksCluster, type EksMintingCredential, type Minted, type MintReach,
+  type AwsMintingCredential, type ClusterIdentity, type EksCluster, type EksMintingCredential, type Minted, type MintReach,
 } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { isSystemSecret, type VaultSecret } from '../domain/vault.ts';
-import type { ClusterDiscovery } from '../domain/cluster-discovery.ts';
+import { EKS_READ_ROLE, type ClusterDiscovery } from '../domain/cluster-discovery.ts';
 
 type Entry = Record<string, unknown>;
 const isEntry = (x: unknown): x is Entry => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -85,13 +86,14 @@ async function signedFor(o: EksOptions, session: Extract<Minted, { kind: 'aws' }
 
 /**
  * Mints an EKS token for a cluster with no minting credential of its own (issue #1766): in each account of `d`, a read
- * session of its role `d.role` from the account's minting credential, and `DescribeCluster` in the credential's region.
- * The one account that has the cluster signs the token with that session; none, or several, mint nothing. An account
- * STS or EKS refuses is passed over, and said when no account has the cluster. The answer names the AWS minting
- * credential and the account it used.
+ * session of `hopper-read` from the account's minting credential, and `DescribeCluster` in `d.region`, else the
+ * credential's region. The one account that has the cluster signs the token with that session, or, when `d.role` is
+ * another role (a write's, from the cluster's override), with a session of that role in the same account; none, or
+ * several, mint nothing. An account STS or EKS refuses is passed over, and said when no account has the cluster. The
+ * answer names the AWS minting credential and the account it used.
  */
 export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: string, identify?: boolean): Promise<(EksMinted & { credential: string; account: string }) | { refused: string }> {
-  const found: { credential: string; account: string; roleArn: string; sessionName: string; session: Extract<Minted, { kind: 'aws' }>; cluster: EksCluster }[] = [];
+  const found: { credential: string; account: string; keys: AwsMintingCredential; roleArn: string; sessionName: string; session: Extract<Minted, { kind: 'aws' }>; cluster: EksCluster }[] = [];
   const looked: string[] = [];
   for (const { name, account } of d.credentials) {
     const secret = o.vault.get(name);
@@ -99,9 +101,9 @@ export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: 
     if ('refused' in read) return { refused: `the AWS minting credential ${name}: ${read.refused}` };
     const keys = mintingCredentialOf('aws', read.value);
     if (typeof keys === 'string') return { refused: `the AWS minting credential ${name}: ${keys}` };
-    const roleArn = `arn:aws:iam::${account}:role/${d.role}`;
+    const roleArn = `arn:aws:iam::${account}:role/${EKS_READ_ROLE}`;
     const sessionName = awsSessionName(keys, jobId);
-    const region = awsRegionOf(keys);
+    const region = d.region ?? awsRegionOf(keys);
     // An STS that is not AWS's has no EKS of AWS's beside it: the vault asks one only when the credential names it.
     if (keys.Endpoint && !keys.EksEndpoint) {
       looked.push(`${account}: ${name} names an STS endpoint and no EksEndpoint`);
@@ -111,7 +113,7 @@ export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: 
       const session = await o.minter.awsSession(keys, { roleArn, sessionName, ...awsReadSession(roleArn), durationSeconds: AWS_SESSION_SECONDS });
       const cluster = await o.minter.eksCluster(session, { cluster: d.cluster, region, ...(keys.EksEndpoint ? { endpoint: keys.EksEndpoint } : {}) });
       looked.push(`${account} in ${region}: ${cluster ? 'found' : 'none'}`);
-      if (cluster) found.push({ credential: name, account, roleArn, sessionName, session, cluster });
+      if (cluster) found.push({ credential: name, account, keys, roleArn, sessionName, session, cluster });
     } catch (e) {
       // An account the read role cannot look in has no cluster for the vault to find: the others may.
       looked.push(`${account} in ${region}: ${(e as Error).message}`);
@@ -120,7 +122,11 @@ export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: 
   if (!found.length) return { refused: `no minting credential mints for cluster ${d.cluster}, and the vault found it in none of the accounts it mints for (${looked.join('; ')})` };
   if (found.length > 1) return { refused: `EKS has a cluster ${d.cluster} in ${found.length} accounts: ${found.map((f) => `${f.account} (${f.credential})`).join(', ')}. The vault does not pick one: a person adds a minting credential for cluster ${d.cluster} on Settings → Vault` };
   const [f] = found as [typeof found[number]];
-  return { ...await signedFor(o, f.session, f.cluster, f.roleArn, f.sessionName, identify), credential: f.credential, account: f.account };
+  if (d.role === EKS_READ_ROLE) return { ...await signedFor(o, f.session, f.cluster, f.roleArn, f.sessionName, identify), credential: f.credential, account: f.account };
+  // A write signs in as the role its write is granted to: EKS maps that role, and the cluster's access entry decides.
+  const roleArn = `arn:aws:iam::${f.account}:role/${d.role}`;
+  const session = await o.minter.awsSession(f.keys, { roleArn, sessionName: f.sessionName, ...awsReadSession(roleArn), durationSeconds: AWS_SESSION_SECONDS });
+  return { ...await signedFor(o, session, f.cluster, roleArn, f.sessionName, identify), credential: f.credential, account: f.account };
 }
 
 /**

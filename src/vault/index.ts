@@ -27,7 +27,7 @@ export { approvalWait } from '../domain/vault.ts';
 export async function openUserVault(o: {
   vaultUrl?: string; kms?: KmsSettings;
   env: Record<string, string | undefined>; user: string;
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings' | 'vaultGrants' | 'directJobs'>; access?: VaultAccess; clock: Clock;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings' | 'vaultGrants' | 'directJobs' | 'config'>; access?: VaultAccess; clock: Clock;
   /** Mints short-lived credentials (issue #580): here, or, with a vault container, in it, which holds the minting credential. */
   minter?: CredentialMinter; logger: { info(line: string): void; warn(line: string): void };
   targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
