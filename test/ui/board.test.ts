@@ -240,7 +240,11 @@ describe('waitOnLink (issue #1245)', () => {
     expect(waitOnLink(waiting({ kind: 'pull_request', number: 12, about: 'merge' }))).toEqual({ label: 'PR #12 to merge', href: 'https://github.com/o/r/pull/12' });
     expect(waitOnLink(waiting({ kind: 'item', repo: 'a/b', number: 3 }))).toEqual({ label: 'a/b#3', href: 'https://github.com/a/b/issues/3' });
     expect(waitOnLink(waiting({ kind: 'job', jobId: 'j9' }))).toEqual({ label: 'job j9', href: '#job/j9' });
-    expect(waitOnLink(waiting({ kind: 'outside', what: 'a release' }))).toEqual({ label: 'outside: a release' });
+    expect(waitOnLink(waiting({ kind: 'outside', what: 'a release' }))).toEqual({ label: 'outside (reason not given): a release' });
+  });
+  it('an outside event says why a person acts: not managed, or gated (issue #1510)', () => {
+    expect(waitOnLink(waiting({ kind: 'outside', what: 'a fix upstream', why: 'not_managed' }))).toEqual({ label: 'outside (not managed): a fix upstream' });
+    expect(waitOnLink(waiting({ kind: 'outside', what: 'the IaC apply', why: 'gated' }))).toEqual({ label: 'outside (gated): the IaC apply' });
   });
   it('a wait from before says nothing recorded; a job not on a wait has none', () => {
     expect(waitOnLink(waiting())).toEqual({ label: 'nothing recorded' });

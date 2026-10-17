@@ -24,7 +24,7 @@ import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
 import { prWaitOver, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
@@ -225,7 +225,9 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
       if (over) return refuse(429, over, req);
-      // An issue says the hopper filed it, for which job: never labelled or assigned, so a person triages it (issue #597: mask tokens).
+      // An issue says the hopper filed it, for which job (issue #597: mask tokens). A follow-up is never labelled or
+      // assigned, so a person triages it; a required child is routed (issue #1510): labelled and assigned to the job's
+      // user, so a source lists it as a request card, which a person approves (it is never of a trusted origin).
       const maskRequest = (r: ProxyRequest): ProxyRequest => {
         if (r.op === 'issue.create' || r.op === 'pr.create') return { ...r, title: maskGitHubTokens(r.title), body: maskGitHubTokens(r.body) };
         if (r.op === 'issue.comment') return { ...r, body: maskGitHubTokens(r.body) };
@@ -253,7 +255,8 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         if (kept && answersNow(req.op, kept, now(), ledgerOf(kept.result.url))) return answered(kept.result, 'cache', kept.at);
       }
       try {
-        const result = await api.perform(sent, parent?.required ? parent : undefined);
+        const routeTo = parent?.required && login ? { labels: [ROUTE_LABEL], assignees: [login] } : undefined;
+        const result = await api.perform(sent, parent?.required ? { subIssueOf: parent, ...routeTo } : undefined);
         if (read) {
           const at = now();
           cache.put(key, result, at);
@@ -265,9 +268,11 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
-          ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}),
+          ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}), ...(routeTo ? { routed: true } : {}),
         } });
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required } };
+        // A routed child: the job is told the `on:` line that wakes it when the child closes.
+        const routed = routeTo ? { routed: true, waitOn: `issue ${req.repo}#${String(result.number)}` } : {};
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required, ...routed } };
       } catch (e) {
         const status = e instanceof ProxyGitHubError ? e.status : undefined;
         const error = (e as Error).message;

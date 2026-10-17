@@ -45,12 +45,16 @@ export class ProxyGitHubError extends Error {
 /** Where a filed issue is linked as a sub-issue (issue #729: a job's required child, under the job's own issue). */
 export interface SubIssueOf { repo: string; number: number }
 
+/** What a filed issue is given beside its text: its sub-issue link, and, routed (issue #1510), its labels and assignees. */
+export interface FiledWith { subIssueOf?: SubIssueOf; labels?: string[]; assignees?: string[] }
+
 export interface ProxyApi {
   /**
-   * Does the request on GitHub. `body` is the text to send (an issue's, with the hopper's note added). `subIssueOf`: a
-   * filed issue is then linked as its sub-issue; a link GitHub refuses leaves the issue filed (`subIssue: false`, why).
+   * Does the request on GitHub. `body` is the text to send (an issue's, with the hopper's note added). `filed.subIssueOf`:
+   * a filed issue is then linked as its sub-issue; a link GitHub refuses leaves the issue filed (`subIssue: false`, why).
+   * `filed.labels`, `filed.assignees`: a routed child's (issue #1510), set as it is filed.
    */
-  perform(req: ProxyRequest, subIssueOf?: SubIssueOf): Promise<ProxyResult>;
+  perform(req: ProxyRequest, filed?: FiledWith): Promise<ProxyResult>;
   /** The repository as the user sees it (issue #652: its default branch, which a job's push never changes; issue #429: the rest). */
   repo(repo: string): Promise<RepoFacts>;
   /** The commit `ref` (a branch) of `repo` is at now (issue #870: the apply gate's check that the code did not move). */
@@ -232,7 +236,7 @@ async function pullStatus(req: Request, headers: Record<string, string>, repo: s
   };
 }
 
-async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
+async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, filed: FiledWith = {}): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
   switch (r.op) {
@@ -257,8 +261,9 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
     case 'repo.fork': return fork(req, headers, r.repo);
     case 'check.log': return checkLog(req, token, webOrigin, r.repo, r.number);
     case 'issue.create': {
-      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, headers })).data as RestIssue;
-      return { number: d.number, url: d.html_url, ...(subIssueOf ? await linkSubIssue(req, headers, subIssueOf, d.id) : {}) };
+      const routed = { ...(filed.labels ? { labels: filed.labels } : {}), ...(filed.assignees ? { assignees: filed.assignees } : {}) };
+      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, ...routed, headers })).data as RestIssue;
+      return { number: d.number, url: d.html_url, ...(filed.subIssueOf ? await linkSubIssue(req, headers, filed.subIssueOf, d.id) : {}) };
     }
     case 'issue.comment': {
       const d = (await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: r.number, body: r.body, headers })).data as { html_url: string };
@@ -345,7 +350,7 @@ export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & To
   const req = makeRequest(o.apiUrl, undefined, { kind: o.kind ?? 'job' });
   const withToken = tokenCaller(o);
   return {
-    perform: (r, subIssueOf) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), subIssueOf), (err) => errorOf(err, r)),
+    perform: (r, filed) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), filed), (err) => errorOf(err, r)),
     repo: (repo) => withToken(
       (token) => readRepo(req, { authorization: `token ${token}` }, repo),
       (err) => new ProxyGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} reading ${repo}: ${(err as Error).message}`, statusOf(err)),

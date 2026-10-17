@@ -270,6 +270,6 @@ describe('a job that waits on its own background command (issue #1037)', () => {
 
     await a.waitForStatus(job.id, 'finished', 8000);
     expect((await ofJob(a, job.id)).find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: 'its pane was lost' });
-    expect(herdr.prompts[1]!.text).toContain('outside: write access to the repository');
+    expect(herdr.prompts[1]!.text).toContain('outside (reason not given): write access to the repository');
   });
 });

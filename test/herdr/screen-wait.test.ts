@@ -2,7 +2,7 @@
 // HOPPER_WAITING and what it waits for. The screen reads it as the job's own wait: never a question, never a
 // status note.
 import { describe, expect, it } from 'vitest';
-import { PROTOCOL_LINES } from '../../src/job-rules/index.ts';
+import { PROTOCOL_LINES, WAIT_LINE } from '../../src/job-rules/index.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, readTurn } from '../../src/executors/herdr/screen.ts';
 import { outcomeOf } from '../../src/executors/print-agent.ts';
 
@@ -18,7 +18,9 @@ const screen = (...parts: string[][]): string => parts.flat().join('\n');
 
 describe('the wait marker', () => {
   it('the protocol tells a job how to wait, and never to open a question only to wait', () => {
-    const line = PROTOCOL_LINES.find((l) => l.includes('HOPPER_WAITING'));
+    // Issue #1510: the delivery line names HOPPER_WAITING too; the wait line is the one that tells how.
+    expect(PROTOCOL_LINES).toContain(WAIT_LINE);
+    const line = WAIT_LINE;
     expect(line).toContain('for:');
     expect(line).toContain('until:');
     expect(line).toContain('Never open a question only to wait');

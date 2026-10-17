@@ -42,6 +42,8 @@ These never count as trusted actors:
 
 An issue that a job filed is never of a trusted origin. A job cannot make work for itself.
 
+When a job needs a change in another repository the hopper works on, it files a **required child** there. The hopper adds the source label to that issue and assigns it to you, so it shows in **Intake** as a request card. You do not add the label on GitHub. Approve the card, and a job of that repository does the change. The job that filed it waits until the child closes, then goes on.
+
 Access decides each login. The hopper asks OpenFGA (`intake#can_start_jobs`) and tells it your list of trusted actors at each check.
 
 ### Request cards

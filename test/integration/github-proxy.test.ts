@@ -30,6 +30,7 @@
 //     Then the issue's text names octo/tools#7 as its parent, and the lineage is on the job's timeline (`job.child_issue_filed`)
 //     And with --required the hopper links it as a GitHub sub-issue of octo/tools#7: a required part of it
 //     And a link GitHub refuses leaves the issue filed: the job and the timeline say why
+//     And a required child is routed (issue #1510, test/integration/routed-children.test.ts)
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
 //   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
@@ -367,6 +368,7 @@ describe('issue lineage through the hopper (issue #729)', () => {
       jobId: job.id, data: expect.objectContaining({ parent: { repo: 'octo/tools', number: 7 }, child: expect.objectContaining({ number: 8 }), required: true, subIssue: true }),
     })]);
   });
+
 
   it('a sub-issue link GitHub refuses leaves the issue filed: the job and the timeline say why', async () => {
     const { t, env } = await parented();

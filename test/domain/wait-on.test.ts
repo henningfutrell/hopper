@@ -20,6 +20,9 @@ describe('what a wait waits on (issue #1245)', () => {
     ['vault grant', { kind: 'grant' }],
     ['own command', { kind: 'own_command' }],
     ['outside: the release of v2', { kind: 'outside', what: 'the release of v2' }],
+    ['outside: gated: the gitops apply of platform#12', { kind: 'outside', what: 'the gitops apply of platform#12', why: 'gated' }],
+    ['outside: not managed: a fix in else/where#4', { kind: 'outside', what: 'a fix in else/where#4', why: 'not_managed' }],
+    ['outside: Not managed - a fix upstream', { kind: 'outside', what: 'a fix upstream', why: 'not_managed' }],
   ])('on: "%s"', (on, want) => {
     expect(waitOnOf({ for: 'something', on })).toEqual(want);
   });
@@ -40,7 +43,12 @@ describe('what a wait waits on (issue #1245)', () => {
   it('is said in a few words', () => {
     expect(waitOnLabel({ kind: 'pull_request', number: 12, about: 'merge' })).toBe('PR #12 to merge');
     expect(waitOnLabel({ kind: 'pull_request', repo: 'o/r', number: 12, about: 'checks' })).toBe('o/r#12 checks to end');
-    expect(waitOnLabel({ kind: 'outside', what: 'a release' })).toBe('outside: a release');
+  });
+
+  it('an outside wait says why a person acts (issue #1510): the repository is not managed, or the step is gated; else it is flagged', () => {
+    expect(waitOnLabel({ kind: 'outside', what: 'a fix upstream', why: 'not_managed' })).toBe('outside (not managed): a fix upstream');
+    expect(waitOnLabel({ kind: 'outside', what: 'the IaC apply', why: 'gated' })).toBe('outside (gated): the IaC apply');
+    expect(waitOnLabel({ kind: 'outside', what: 'a release' })).toBe('outside (reason not given): a release');
   });
 });
 

@@ -33,6 +33,8 @@ export function ownWaitOf(job: Job): 'command' | 'stuck' | undefined {
 }
 
 const PR_ABOUT = { merge: 'to merge', checks: 'checks to end', review: 'review' } as const;
+/** Why a person acts on an outside event (issue #1510), as the daemon's `waitOnLabel` says it. */
+const OUTSIDE_WHY = { not_managed: 'not managed', gated: 'gated' } as const;
 
 /** What a job's own wait waits on, in a few words, as the daemon's `waitOnLabel` (issue #1245); and where it is, if it is a page. */
 export function waitOnLink(job: Job): { label: string; href?: string } | undefined {
@@ -54,7 +56,7 @@ export function waitOnLinkOf(on: WaitOn | undefined, ownRepo: string | undefined
     case 'approval': return { label: `${on.of} approval` };
     case 'grant': return { label: 'a vault grant' };
     case 'own_command': return { label: 'its own command' };
-    case 'outside': return { label: `outside: ${on.what}` };
+    case 'outside': return { label: `outside (${on.why ? OUTSIDE_WHY[on.why] : 'reason not given'}): ${on.what}` };
   }
 }
 
