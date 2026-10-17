@@ -23,8 +23,9 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper vault revoke <job>                          take a job's vault grant back
   hopper vault mint-test aws-role/<account>/<role>   mint a read session from the account's minting credential and show
                                                      the role and session name STS says it is (sts get-caller-identity)
-  hopper vault mint-test cluster/<name>              mint a read token from the cluster's minting credential and show who
-                                                     the cluster says it is and its namespaces (auth whoami, get ns)
+  hopper vault mint-test cluster/<name>              mint a read token from the cluster's minting credential (none: found
+                                                     in the AWS accounts, as hopper-read) and show the account, role and
+                                                     credential, who the cluster says it is and its namespaces
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>]
