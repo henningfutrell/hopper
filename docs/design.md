@@ -10176,9 +10176,6 @@ running daemon, under a session the CLI mints for the one call and drops after i
 - **Commands** (`src/cli-operator-vault.ts`):
   - `hopper vault` (the vault's view: secrets and templates, never a value), `vault set <name> [--scope <text>]` with
     the value on stdin only (never an argument: it would be in the shell history and the process list), `vault remove <name>`;
-    `vault set <name> --mints aws-account/<id>|cluster/<name>` marks a minting credential as Settings → Vault does
-    (issue #872; the same `mints` field and the vault's same checks), `--mints none` makes it a plain secret again, and a set
-    without `--mints` keeps what it was; a shared secret takes no `--mints`;
   - `hopper template list`, `template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
     [--cpus <d>:<max>] [--memory-mb <d>:<max>]` (issue #1349 removed `--ttl-minutes` and `--keep-home`), `template approve <name>`,
     `template approve-profile <name> <operation>/<kind>/<asset>`, `template revoke <name>`, `template remove <name>`;
