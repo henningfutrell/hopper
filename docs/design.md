@@ -11114,7 +11114,11 @@ backburner issues had no action; and "taken" showed for an issue whose job had a
 - **Not-taken groups.** Each outcome not taken carries `group` (`NotTakenGroup`, `src/domain/intake.ts`): `request`,
   `not-assigned`, `backburner`, `pr-waiting` (`hopper:pr-ready`), `partly-done`, `other`. `discoverIssues` sets it from
   the reason; `source.ts` sets `request` where it makes the request card. The UI groups by it (`ui/src/model/intake.ts`,
-  `IntakeGroups`), in that order, a count per group, and never in an inner scroll region: the page scrolls.
+  `IntakeGroups`), in that order, a count per group, and never in an inner scroll region: the page scrolls. Each row's
+  link to its issue says `owner/repo#number` with the title (issue #1463: `intakeRef`, from the outcome's `repo`); a source
+  whose waiting issues are of more than one repository filters them by repository (`reposOf`; the page's own state, the
+  counts then of that repository, Assign all of the issues shown); `not-assigned` says under its heading that intake takes
+  only a labelled issue assigned to the user.
 - **Not taken, a view.** `#not-taken`, after Queue: per source, the issues not taken, grouped, with every action Sources
   has. Its nav badge counts the request cards (`requestsWaiting`). Sources keeps the full intake, grouped the same way,
   taken last. A request card has no job, so the Queue (which lists jobs) does not show it.
