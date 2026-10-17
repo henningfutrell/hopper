@@ -29,3 +29,12 @@ export const HCURL_SH = `hcurl() {
   cat "$_hh.out"; rm -f "$_hh" "$_hh.out"
   return "$_hrc"
 }`;
+
+/**
+ * `trace_header`: the job's `traceparent` header line for `-H @-`, from its `TRACEPARENT` (issue #1486, design.md "Telemetry:
+ * a job's trace on its machine"), so the hopper's span for the request is a child of the job's run span. Only a value of
+ * lowercase hex and dashes, as a W3C trace parent is: the variable cannot add a header. Nothing without one.
+ */
+export const TRACE_HEADER_SH = `trace_header() {
+  case \${TRACEPARENT:-} in ''|*[!0-9a-f-]*) ;; *) printf 'traceparent: %s\\n' "$TRACEPARENT" ;; esac
+}`;

@@ -213,11 +213,12 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
       // `on`: the machine the job's work is on, when not the lane's (a job pod, issue #1283).
       // The agent's sign-in on a lane pod (issue #1287), from the user's vault: kept to mask it in the outcome.
+      // The job's trace context (issue #1486), asked at each start, resume and turn: what the job does joins its run's span.
       credentials: async (scratch, make = false, on = m) => {
         const placed = await placeCredentials(c, started, on, executor?.machineShell?.(on), scratch, make, (line) => progress.report(line));
         const signIn = await agentSignIn(c, started, on);
         for (const value of Object.values(signIn)) given.add(value);
-        return { ...placed, ...signIn };
+        return { ...c.traceContext(job.id), ...placed, ...signIn };
       },
       progress: (msg, tasks) => progress.report(msg, tasks),
       // Before a nudge (issue #627): the job's source, then what it waits on a person for.

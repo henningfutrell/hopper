@@ -7,7 +7,7 @@
 // comes back (the connection broke): the hopper answers the first one again, so nothing is filed twice.
 
 import { STREAM_WAIT_SH } from '../job-stream/script.ts';
-import { HCURL_SH } from './retry-after.ts';
+import { HCURL_SH, TRACE_HEADER_SH } from './retry-after.ts';
 
 /** The variables a job asks through: the script, its token file, and the hopper's URL as its machine reaches it. */
 export const PROXY_SCRIPT_VARIABLE = 'HOPPER_GH';
@@ -127,7 +127,8 @@ while [ "$i" -lt "$n" ]; do
     *) set -- "$@" --data-urlencode "number=$a" ;;
   esac
 done
-token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
+${TRACE_HEADER_SH}
+token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
 if [ "$op" != pr.wait ]; then
   case $op in
