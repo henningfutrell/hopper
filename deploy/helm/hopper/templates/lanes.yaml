@@ -65,7 +65,8 @@ spec:
       initContainers:
         # At each start: the image's home into the volume once, then the join, again until the hopper lets it in (no
         # one signed in yet). A pod that kept its volume joins with the key it has: the same machine. Only this
-        # container sees the lane pool key.
+        # container sees the lane pool key. `-RPn`, not `-a`: the volume's own directory is not the agent's, and setting
+        # its times or mode fails (EPERM).
         - name: join
           image: {{ $image }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -73,7 +74,7 @@ spec:
             - sh
             - -c
             - >-
-              cp -an /home/agent/. /var/lib/lane-home/ &&
+              cp -RPn /home/agent/. /var/lib/lane-home/ &&
               until HOPPER_CLIENT_DIR=/var/lib/lane-home/.config/hopper-client node /usr/local/lib/hopper-client/main.ts
               join "$HOPPER_URL#$(cat /run/lane-pool/key)" "$POD_NAME"; do sleep 10; done
           env:
