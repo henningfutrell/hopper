@@ -102,7 +102,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 | `src/cli-local-accounts.ts` | the operator CLI's `hopper local-account` (issue #1380): list, add, set the password of (on stdin) and remove a local account, against the daemon's database | engine, executors, http |
-| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673), `report` (`cli-operator-report.ts`, issue #694) and `auto-park` (`cli-operator-auto-park.ts`) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
+| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673), `report` (`cli-operator-report.ts`, issue #694) and `auto-park` (`cli-operator-auto-park.ts`) and `queue` with `queue list`, a held job with why it is held (`cli-operator-queue.ts`, issue #874) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
 | `src/cli-update.ts` | the operator CLI's `hopper update` (issues #697, #970): the carry of a container install's compose.yaml, the compose file this build ships with and the agent update skill — no database (`src/update/`); `hopper update drift` (`cli-update-drift.ts`, issue #1017) is an operator read of the running daemon, `GET /api/update/drift`, as `cli-operator.ts` makes it | engine, executors, store, http |
 
 ## The decider
@@ -10128,7 +10128,8 @@ part by issue #718 (owner decision): an **API token** is a session at that same 
 holds the database's credentials, the daemon's own trust, so acting from it widens nothing.
 
 - **Commands** (`src/cli-operator.ts`): `hopper job accept|reject|rerun <id>` (`reject --reason <text>`),
-  `hopper queue order <id>...`, `hopper queue gate <auto-accept|review> [--per-hour <n>|none]` (without
+  `hopper job show <id>` and `hopper queue list` (issue #874: reads, a viewer's; a held job with its `holdReason`, a job
+  waiting for a lane with its `waitReason`), `hopper queue order <id>...`, `hopper queue gate <auto-accept|review> [--per-hour <n>|none]` (without
   `--per-hour` the throttle stays), `hopper question list [--reason <reason>]` (issue #679: the open questions, each with why it came to a person), `hopper question answer <id> <text>`, `hopper question close|dismiss <id>`.
   `--user <id>` as on `config` (default the one user). Each prints the daemon's answer as JSON.
 - **Through the daemon, never around it.** Each command is the UI's own route on the running daemon, so its

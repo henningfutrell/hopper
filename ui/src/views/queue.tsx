@@ -5,7 +5,8 @@
 // where it is set up, Settings → Routing (issue #201). Below, the locked entries: failed jobs kept in the
 // queue until run again or dismissed (issue #355), the parked jobs, out of their lanes until picked up (issue #501), and the
 // jobs on their own wait, until what they wait for happens (issue #483). Each job card starts collapsed (issue #737), so the
-// jobs are easy to scan and compare: its issue, state, lane, pull request and its repository's yolo mode. A click opens one
+// jobs are easy to scan and compare: its issue, state, lane, pull request, its repository's yolo mode and why it is held
+// (issue #874; a gate hold with the machines' names). A click opens one
 // card for its detail; Expand all and Collapse all open or close every card. Its actions stay on the card either way.
 // The issues on the backburner are no jobs, so the Queue counts them and links to Intake (issues #808, #897): never gone.
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsRight, ChevronsUpDown, ChevronUp, Flame, Hourglass, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
@@ -18,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get } from '@/lib/api';
 import { laneName } from '@/model/board';
+import { gateHoldText, heldAtGate } from '@/model/blast-radius';
 import { onTheBackburner } from '@/model/intake';
 import { COLLAPSED, accepting, cardOpen, moved, queueColumns, setAllCards, toggleCard } from '@/model/queue';
 import type { Job, PreSort, QueueGate, QueueGateMode, YoloModeView } from '@/model/wire';
@@ -93,7 +95,11 @@ function Row({ job, position, open, onToggle, yolo, children, note }: {
           {job.advice && <span title={job.advice.reason}>advice <b className="font-medium text-foreground/80">{job.advice.action}</b></span>}
           <span>for <Since iso={job.createdAt} /></span>
           {note}
-          {job.holdReason && <span className="basis-full truncate text-warn/90" title={job.holdReason}>{job.holdReason}</span>}
+        </div>
+      )}
+      {job.holdReason && (
+        <div data-slot="card-hold-reason" className="pl-7 text-xs text-warn/90 [overflow-wrap:anywhere]" title={job.holdReason}>
+          {heldAtGate(job) ? gateHoldText(job.holdReason, machines) : job.holdReason}
         </div>
       )}
       {children && <div className="flex flex-wrap gap-1.5 pl-7">{children}</div>}
