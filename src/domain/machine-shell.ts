@@ -2,6 +2,7 @@
 // from it) for its size.
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
+import type { Leftover } from './leftovers.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -76,4 +77,15 @@ export interface MachineShell {
    * shell takes none.
    */
   checkpoint?(jobId: string, worktree: string, session: string): Promise<CheckpointCapture>;
+  /**
+   * The leftovers in the `.hopper-scratch` of each work tree in `roots` (issue #1116): each dir in it but its shared
+   * dependencies, and its repository mirrors while one of those holds it, with age, size and whether it holds work not
+   * pushed. Only reads. Absent: the shell lists none.
+   */
+  leftovers?(roots: string[]): Promise<Leftover[]>;
+  /**
+   * Removes the leftover at `path` whatever it holds, a person's decision (issue #1116): `gone` when it was not there,
+   * `left` when it is still there. Absent: the shell removes none.
+   */
+  removeLeftover?(path: string): Promise<'removed' | 'gone' | 'left'>;
 }
