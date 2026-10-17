@@ -24055,6 +24055,48 @@ tells hopper.io (issue #464); the machines (issue #466); the link state and last
 pending, with the same id, and a new code registers it again; no link, another account and a pending link change and record
 nothing; an unregister changes the `cloudLink` row only, and every other setting is as before.
 
+## The cloud link's messages (issue #465, part 4, 2026-10-17)
+
+**The problem.** Parts 2 and 3 built `CloudLink.register` and `CloudLink.unregister`, with no caller. The cloud link's
+agent (issue #464) will take messages from hopper.io and must call them. The agent is not built: its transport waits on a
+person. But what hopper.io may say about a registration, and how the instance answers, does not depend on the transport.
+R7 also asks that the instance check each message against a closed schema and a size cap, and R6 that a refusal is an
+event.
+
+**The change.** `createCloudLinkMessages` (`src/http/cloud-link-messages.ts`), transport-free. `receive(text)` takes one
+message from hopper.io and answers the message to send back:
+
+| hopper.io sends | the instance does | it answers |
+|---|---|---|
+| `{ type: 'register', code, account }` | `CloudLink.register(code, account)` | `{ type: 'registration', outcome }` |
+| `{ type: 'unregister', account }` | `CloudLink.unregister(account)` | `{ type: 'unregistration', outcome }` |
+| anything else | nothing | `{ type: 'refused', reason }`, and records `cloud_link.message_refused` (`reason`) |
+
+- The two incoming types are closed: a key outside them is `bad-shape`. A message of more than
+  `CLOUD_MESSAGE_MAX_BYTES` (1024) bytes is `too-large`, refused before it is read, never cut. Text that is not JSON is
+  `not-json`; any other type, or no type, is `unknown-type`. The event holds the reason only, never the message.
+- `outcome` is the cloud link's own answer (`registered`, `not-linked`, `other-account`, `no-code`; `unregistered`,
+  `not-linked`, `other-account`, `not-registered`), so hopper.io learns no more than the instance knows.
+- `unlinkedMessage(link)` is `{ type: 'unlinked', installId, account }`: the agent sends it before an unlink closes the
+  connection (item 5, the instance's side), so hopper.io removes that registration.
+
+**Decisions:**
+- **Two types only.** R1: nothing from hopper.io runs on the instance. These two change only the registration, which
+  parts 2 and 3 already allow. A remote action (R2) is another change.
+- **One cap for every incoming message.** The largest valid message is under 200 bytes; 1024 leaves room and stays small.
+- **No message id.** One connection, one message at a time, and each answer names its type. #464 adds an id if its
+  transport needs one.
+- **In `src/http/`, beside the cloud link.** It uses zod, as the routes do.
+
+**Left for later parts of issue #465:** the agent that carries these messages and the snapshot (issue #464); the
+machines in the snapshot (issue #466); the link state and last-seen time at hopper.io; the open questions (issue #469
+decision 6).
+
+**Verification:** `test/http/cloud-link-messages.test.ts` (the real instance store): the code that hopper.io sends
+registers once, and a wrong code or another account does not; the removal makes the link pending; a message too large,
+not JSON, of another type or another shape is refused, recorded with its reason only, and changes nothing; the unlink
+notice names the instance id and the account.
+
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
 **The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
