@@ -550,7 +550,7 @@ export interface InstanceStore {
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */
-  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; // the sandbox runs: each sandbox made for one step (issue #1349)
+  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; sagas: import('./sagas.ts').SagaRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */

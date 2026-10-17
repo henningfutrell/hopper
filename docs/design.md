@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
@@ -71,6 +71,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/issue-drafts/` | File an issue (issue #471, "File an issue"): one user's drafts and filed issues — the status and why not, a job's context masked, the file-issue run skill's prompt as sent, the draft with its timeout and cancel, the confirm step, the filing on the person's confirmation with no label and no assignee, the events (`service.ts`); the drafter, the user's own `claude` CLI running the run skill (`claude.ts`, `draftIssue` of `src/run-skills/`, composed by the user runtime alone); the request, the draft, the confirm step, the refusal and the note are `src/domain/issue-drafts.ts`, the constraints `src/run-skills/constraints.ts`, the masking Promote to GitHub's (`src/promotions/scan.ts`), the user's GitHub for it `src/users/github-proxy.ts`, the routes `src/http/ui/issue-drafts.ts` | engine, http, store, decider; plugins but in `claude.ts` |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -24055,6 +24056,48 @@ tells hopper.io (issue #464); the machines (issue #466); the link state and last
 pending, with the same id, and a new code registers it again; no link, another account and a pending link change and record
 nothing; an unregister changes the `cloudLink` row only, and every other setting is as before.
 
+## The cloud link's messages (issue #465, part 4, 2026-10-17)
+
+**The problem.** Parts 2 and 3 built `CloudLink.register` and `CloudLink.unregister`, with no caller. The cloud link's
+agent (issue #464) will take messages from hopper.io and must call them. The agent is not built: its transport waits on a
+person. But what hopper.io may say about a registration, and how the instance answers, does not depend on the transport.
+R7 also asks that the instance check each message against a closed schema and a size cap, and R6 that a refusal is an
+event.
+
+**The change.** `createCloudLinkMessages` (`src/http/cloud-link-messages.ts`), transport-free. `receive(text)` takes one
+message from hopper.io and answers the message to send back:
+
+| hopper.io sends | the instance does | it answers |
+|---|---|---|
+| `{ type: 'register', code, account }` | `CloudLink.register(code, account)` | `{ type: 'registration', outcome }` |
+| `{ type: 'unregister', account }` | `CloudLink.unregister(account)` | `{ type: 'unregistration', outcome }` |
+| anything else | nothing | `{ type: 'refused', reason }`, and records `cloud_link.message_refused` (`reason`) |
+
+- The two incoming types are closed: a key outside them is `bad-shape`. A message of more than
+  `CLOUD_MESSAGE_MAX_BYTES` (1024) bytes is `too-large`, refused before it is read, never cut. Text that is not JSON is
+  `not-json`; any other type, or no type, is `unknown-type`. The event holds the reason only, never the message.
+- `outcome` is the cloud link's own answer (`registered`, `not-linked`, `other-account`, `no-code`; `unregistered`,
+  `not-linked`, `other-account`, `not-registered`), so hopper.io learns no more than the instance knows.
+- `unlinkedMessage(link)` is `{ type: 'unlinked', installId, account }`: the agent sends it before an unlink closes the
+  connection (item 5, the instance's side), so hopper.io removes that registration.
+
+**Decisions:**
+- **Two types only.** R1: nothing from hopper.io runs on the instance. These two change only the registration, which
+  parts 2 and 3 already allow. A remote action (R2) is another change.
+- **One cap for every incoming message.** The largest valid message is under 200 bytes; 1024 leaves room and stays small.
+- **No message id.** One connection, one message at a time, and each answer names its type. #464 adds an id if its
+  transport needs one.
+- **In `src/http/`, beside the cloud link.** It uses zod, as the routes do.
+
+**Left for later parts of issue #465:** the agent that carries these messages and the snapshot (issue #464); the
+machines in the snapshot (issue #466); the link state and last-seen time at hopper.io; the open questions (issue #469
+decision 6).
+
+**Verification:** `test/http/cloud-link-messages.test.ts` (the real instance store): the code that hopper.io sends
+registers once, and a wrong code or another account does not; the removal makes the link pending; a message too large,
+not JSON, of another type or another shape is refused, recorded with its reason only, and changes nothing; the unlink
+notice names the instance id and the account.
+
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
 **The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
@@ -24159,3 +24202,130 @@ match, picked projects, the end marks only the account, removal), `test/gitlab/s
 issues of the picked projects, paged; a project not answered; paused; the token refused), `test/users/further-sources.test.ts`,
 `test/integration/gitlab-source.test.ts` (the daemon with a fake GitLab: connect, pick, Intake lists; 404; the token never
 answered; removal removes the source), `test/ui/gitlab-view.test.ts` and `test/ui/sources.test.ts`.
+
+## The hopper.io state snapshot (issue #466, part 1, 2026-10-17)
+
+Issue #466 is the dashboard at hopper.io: an account's instances (the issue says "installs"), each instance's machines,
+and what needs attention. The page can show only what the cloud link (issue #464) sends, so part 1 fixes that data
+first, in the instance's code, with no network code. It is the allow-list that `docs/hopper-io-security.md` R5 asks for:
+a new field changes this schema, bumps `schema`, and changes the field table below, in the same change.
+
+**The schema and the projection** (`src/domain/hopper-io-state.ts`, pure): `HOPPER_IO_STATE_SCHEMA`, a zod schema closed
+at every level (a key outside it is refused), and `projectHopperIoState(inputs)`, which builds every field from the
+instance's state and copies nothing through. `sentAt` and the machine key are passed in. The link checks each snapshot
+against the schema before it sends it (R4, R7); that check is #464's.
+
+| Field | From | Why hopper.io keeps it |
+|-------|------|------------------------|
+| `schema` | the constant `1` | which shape hopper.io parses |
+| `sentAt` | passed in, the link's clock | when the instance said it |
+| `instance.version` | `UpdateStatus.installed.commit`, its first 8 hex characters; `unknown` when none | the instances list: version |
+| `instance.channel` | `UpdateStatus.channel`: `dev`, `beta` or `stable` | the instances list: update channel |
+| `queue.waiting`, `.running`, `.locked` | `GET /api/queue`: how many jobs in each list | the instances list |
+| `queue.gate` | the queue gate's mode: `auto-accept` or `review` | the instances list |
+| `attention.questionsAwaitingOwner` | open questions at the human stage, a parked job's left out (the nav badge's count) | what needs attention |
+| `attention.jobsLocked` | the locked entries: failed jobs whose failure is still their work item's | what needs attention |
+| `attention.machinesOffline` | the machines not online | what needs attention |
+| `machines[].key` | `machineKey(id)`: an opaque, stable key the link derives (for example an HMAC under the cloud link key); never the id | to tell machines apart between snapshots, and for the name the owner gives it at hopper.io |
+| `machines[].online` | `MachineSnapshot.online` | machines per instance |
+| `machines[].lanesInUse`, `.lanes` | its lanes not idle; `maxLanes` | machines per instance |
+| `machines[].takesJobs`, `.notTaking` | why it takes no new job, in the decider's order (`idleReason`): `no-lanes`, `offline`, `leaving`, `drained`, `template-waiting`, `disk-low`, `work-tree`, `address`, `herdr` | machines per instance |
+
+What is never sent: the instance's name, a machine's id or label, any free text of a machine (`ssh`, `home`, `workTree`,
+`workTreeProblem`, `addressProblem`, `herdrProblem`, `hopperUrl`, `client.door`, who drained it), any user, and any job or
+question content. A machine's label is often its host name, which R5 forbids; the owner names instances and machines at
+hopper.io instead (#465). `test/domain/hopper-io-state.test.ts` sends a machine with a host name, a path, an address and a
+person's name in each free-text field, and checks that none of them comes out. One snapshot holds every user's machines
+of the instance, as one list (the tracking issue's decision 6a); per-user parts would be `schema: 2`. A snapshot of 50
+machines is under 8 KiB.
+
+**Live updates, with no polling of the instances** (the design for #464 and the hopper.io side; not built):
+
+1. *Instance → hopper.io*, on the cloud link. At connect the instance sends one full snapshot. After that it sends a new
+   full snapshot each time the projection's output changes, at most one each 2 seconds, and a heartbeat each 30
+   seconds. Full snapshots, not deltas: a lost message heals at the next one, and there is no order to keep.
+2. *hopper.io → the page.* hopper.io keeps the last snapshot and `lastSeenAt` of each instance, under each account that
+   registered it (R3), and pushes to an open page with Server-Sent Events: the account's whole view when the page opens,
+   then one event for each instance that changed. SSE is read-only from the browser, which fits a read-only version 1.
+   One hopper.io process fans out in memory; a second process needs a pub/sub (Postgres `LISTEN`/`NOTIFY`).
+3. *Online or offline* is hopper.io's, from the link itself, not from the snapshot: an instance is offline when its link
+   closes, or after 90 seconds with no message. The page then shows the last snapshot, greyed, with "last seen <time>",
+   never as current. After the retention period (R5, the tracking issue's decision 7) hopper.io deletes the snapshot.
+
+hopper.io never opens a connection to an instance (R1). The page escapes every text it shows (T3) and says that the
+state is what the instance reported (T1).
+
+Open (for a person): where the hopper.io code lives — a directory of this repo, public, that imports the snapshot type,
+or a repository of its own — with the tracking issue's decision 7 (who runs hopper.io, where, and its retention); and
+whether a machine's own label may go out after all, by a setting the admin turns on.
+
+## File an issue (issue #471, 2026-10-17)
+
+Part of #470 (AI-native hopper). The owner's decision on the issue: build it — a **File an issue** button that uses the
+user's own signed-in Claude to draft the issue, then files it. Nothing is filed without the person's confirmation.
+
+- **Where.** A button in the header on every screen, and **File an issue** in the user menu (a phone's top bar holds no
+  more, issue #666), and **File an issue** beside a job's state in the job
+  view, which attaches that job as the context. An operator's or admin's: a viewer sees no button, and the daemon refuses
+  a viewer's every call (the operator guard), whatever the UI shows. While the flow cannot run the button is off and says
+  why: no `claude` on the hopper's PATH, no GitHub connection, or no job repository (`GET /api/issue-drafts`:
+  `{ provider, available, usable, reason?, repos }`).
+- **Describe.** The repository, one of the user's job repositories (decision D7 of #470: no other list); the person's own
+  words; and the context — for a job, its id and state, its item's title and link, its error and its last 20 log lines,
+  masked as Report a bug's context is and cleaned as a promotion's text is (`POST /ui/api/issue-drafts/context`), editable.
+  **Show what is sent to Claude** answers the file-issue run skill's prompt exactly as the drafter gets it
+  (`POST /ui/api/issue-drafts/prompt`, `fileIssuePrompt`).
+- **Draft.** `POST /ui/api/issue-drafts/draft { repo, text, context?, instructions?, previous? }`. The file-issue run
+  skill (issue #472, "Run skills"), checked whole, through `draftIssue`: its instructions, the one list of constraints,
+  the login section, the template, the person's text and context as data between markers. A run again puts the edited
+  draft and what to change in the context (`draftContext`). It runs as the user's own `claude` CLI
+  (`src/issue-drafts/claude.ts`), locked down as the run skill says, in the user's work dir with the user's CLI config
+  dirs, as the TL;DR runs. The hopper holds no model credential. **Cancel** closes the request; the daemon aborts the run
+  when its request closes. A run past 180 s is 504, Claude's error 502, both in plain words that say the text is kept; the
+  UI keeps it. The answer: the draft with a secret or personal data masked (`cleanText`), Claude's `notes` (never filed),
+  and `findings`, the constraints the draft as written broke (`checkDraft`), shown beside it. The labels it suggests are
+  dropped.
+- **Review and edit.** The title and the body are editable, the body with a Markdown preview. **Draft again** sends the
+  edited draft and what to change. **Discard** closes the dialog: the draft is gone.
+- **Confirm.** `POST /ui/api/issue-drafts/check { repo, title, body, allowPersonalData? }` answers the confirm step on the
+  edited text: the repository and its visibility, the title, the body as it would be filed, the labels and the assignees
+  (always none), the constraints the text breaks and the refusal (`filingRefusal`): any constraint but personal data
+  refuses it — a secret, an `@` mention, a title over 120 or a body over 8000 characters —; personal data only on a
+  private repository with **File the personal data on this private repository**, as Promote to GitHub's rule; a public
+  repository only with **File on this public repository**.
+- **File.** `POST /ui/api/issue-drafts { repo, title, body, confirmed: true, confirmPublic?, allowPersonalData?, jobId? }`.
+  Without `confirmed: true` it is 400: no path files without the confirmation, an API call's included. The constraints run
+  again on this text (422). Filed with the person's own GitHub connection, the account of the repository (issue #1448), with
+  `labels: []` and no assignee, so it never starts a job (decision D8 of #470). The body ends with a fixed note that it was
+  drafted with Claude through File an issue and read, edited and filed by its author (`FILED_NOTE`): it names no person.
+  The answer links the issue.
+- **Events.** `issue_draft.drafted` (`repo`, `provider`, `model`, `skill` — `file-issue@<id>` —, `findings`: the
+  constraint ids) and `issue_draft.filed` (`repo`, `number`, `url`, `by` who confirmed, `provider`, `skill`; on the
+  attached job's timeline). Never the text.
+
+**Decisions:**
+- **D1: the hopper files**, with the person's own connection, after the confirm step: the confirm step and the scan stay in
+  the hopper, and the same path as Promote to GitHub and Report a bug is used.
+- **D2, D5: the user's `claude` CLI on the hopper's own machine**, running the file-issue run skill of #472, behind one
+  seam (`IssueDrafter`). Other providers and linked machines (#474) plug in at that seam.
+- **D6: the context is what the person types or attaches**, shown and editable before it is sent. No checkout or file of a
+  machine is read.
+- **D7: the user's job repositories only.**
+- **D8: never a label or an assignee.** The skill's suggested labels are dropped. A person who wants a job labels the
+  issue on GitHub.
+- **D9: block, with the masked draft shown**: the draft comes back masked, with the constraints it broke; the edited
+  text is refused at filing, with the reason, never filed in part. Personal data alone may go to a private repository
+  when the person allows it, as Promote to GitHub allows it.
+- **D10: operator and admin**, per user, as Promote to GitHub and Report a bug.
+- **Drafts are kept nowhere**: only the dialog holds one, so a draft cannot outlive the person's session or leak through a
+  table. An abandoned draft is gone when the dialog closes.
+- **Not a box action**: it starts no job and acts on no machine a person names.
+- **The constraints are #472's one list** (`src/run-skills/constraints.ts`, issue #475): a constraint added there is in
+  the prompt, the draft's findings, the confirm step and the filing at once.
+
+**Verification:** `test/issue-drafts/service.test.ts` (the status and why not; the run skill's prompt as sent; the draft
+cleaned with its findings, its labels dropped; a cancel, a timeout and a provider's error file nothing; filing needs the
+confirmation; the edited text checked again — a secret, an `@` mention —; a public repository; no label and no assignee), `test/integration/issue-drafts.test.ts` (the daemon: a job attached, a draft, the
+confirm step, the issue filed as the person with no label and no assignee, the event on the job's timeline; a viewer refused;
+no provider), `test/ui/file-issue.test.ts` (hidden from a viewer; off with the reason; what is sent; cancel mid-draft; a
+timeout; filed only after Confirm; a blocked value keeps Confirm off).

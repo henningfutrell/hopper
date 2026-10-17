@@ -1,4 +1,5 @@
 // The doubles a user's runtime takes at its ports.ts seams (issue #158), for integration tests. Production passes none.
+import type { IssueDrafter } from '../issue-drafts/index.ts';
 import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource, WindowsStepHost } from '../domain/ports.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
@@ -50,6 +51,8 @@ export interface UserSeams {
   jobStream?: { inlineMax?: number };
   /** Replaces the TL;DR's model (issue #569; default Claude Haiku through the `claude` CLI). */
   tldrWriter?: TldrWriter;
+  /** Replaces File an issue's drafter (issue #471; default the user's own `claude` CLI). */
+  issueDrafter?: IssueDrafter;
   /** Replaces the Windows host a step runs on (issue #731; default ssh and scp to the host). */
   windowsStepHost?: WindowsStepHost;
   /** The `claude` the hopper's Claude sign-in for pods runs `setup-token` with (issue #1287; default `claude` on PATH), and variables it gets besides its own. */

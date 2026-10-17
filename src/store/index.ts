@@ -13,6 +13,7 @@ import { keptSecrets } from './kept-secrets.ts';
 import { resealUnderNewKey } from './rotate-master-key.ts';
 import { createSandboxRepository } from './sandboxes.ts';
 import { createSandboxRunRepository } from './sandbox-runs.ts';
+import { createSagaRepository } from './sagas.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
 import { createSignInConfigRepository } from './sign-in-config.ts';
 import { userSchemaName } from './tenant-migrations.ts';
@@ -59,6 +60,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     joinCodes: createJoinCodeRepository(ctx),
     sandboxes: createSandboxRepository(ctx),
     sandboxRuns: createSandboxRunRepository(ctx),
+    sagas: createSagaRepository(ctx),
     config,
     signInConfig: createSignInConfigRepository(ctx, config),
     settings,

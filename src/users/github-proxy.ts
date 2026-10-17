@@ -16,6 +16,8 @@ import { createRepoChecks, createRepoChecksGitHub, type RepoChecksService } from
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
+import { createIssueDrafts, type IssueDrafter, type IssueDrafts } from '../issue-drafts/index.ts';
+import { ISSUE_DRAFT_TIMEOUT_MS } from '../domain/issue-drafts.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import {
   branchChecksWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
@@ -36,6 +38,9 @@ import {
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
 } from '../github-proxy/index.ts';
 
+/** No AI connection (issue #471): File an issue says so, and drafts nothing. */
+const NO_DRAFTER: IssueDrafter = { provider: 'claude', available: async () => ({ ok: false, reason: 'no AI connection to draft with' }), draft: async () => ({ error: 'no AI connection to draft with' }) };
+
 /** A user's side of the GitHub proxy: their jobs as askers, and their GitHub connection, which acts for their jobs and their jobs' git. */
 export interface UserGitHubProxy {
   user: ProxyUser;
@@ -54,6 +59,11 @@ export interface UserGitHubProxy {
   actors(): { api: ActorsGitHub; login: string } | { problem: string };
   /** Promote to GitHub (issue #946): this user's direct jobs posted with this user's own GitHub connection, never a job's. */
   promotions: Promotions;
+  /**
+   * File an issue (issue #471): drafted with this user's own signed-in Claude, filed after their confirmation with their
+   * own connection — the account of the repository —, on one of their job repositories.
+   */
+  issueDrafts: IssueDrafts;
   /** Report a bug's kept reports sent later, and the filed ones' states read (issue #694); its loop runs with the user's runtime. */
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
@@ -97,6 +107,10 @@ export interface UserGitHubProxyOptions {
   stack?: () => Promise<StackResources>;
   /** A push's lines, counted in the user's mirrors of the job repositories (issue #1096); absent: no shrink guard. */
   pushLines?: CountPushLines;
+  /** File an issue's drafter (issue #471): the user's own AI connection; absent: none, so File an issue cannot draft. */
+  issueDrafter?: IssueDrafter;
+  /** The host name, masked in a job's context that File an issue attaches. */
+  hostname?: string;
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
@@ -264,6 +278,16 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       promotions: userPromotions({
         store: o.store, clock: o.clock, artifactUrl: o.artifactUrl, publicUrl: o.publicUrl,
         github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createPromotionGitHub(mine()), login }; },
+      }),
+      issueDrafts: createIssueDrafts({
+        drafter: o.issueDrafter ?? NO_DRAFTER, repos: jobRepositories, timeoutMs: ISSUE_DRAFT_TIMEOUT_MS, ...(o.hostname ? { hostname: o.hostname } : {}),
+        github: (repo) => {
+          const key = keyOf(repo);
+          return o.accounts.account(key) === undefined
+            ? { problem: notMineAt(key, notMine) }
+            : { api: createPromotionGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused: string) => o.accounts.renew(key, refused) }) };
+        },
+        job: (id) => o.store.jobs.get(id), record: (e) => { o.store.events.append(e); },
       }),
       // A job's git acts with its own user's connection (issue #652), not the hopper's oldest user's.
       git: {

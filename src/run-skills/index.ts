@@ -11,7 +11,6 @@ import { releaseOf } from '../client/release.ts';
 export const RUN_SKILL_NAMES = ['file-issue'] as const;
 export type RunSkillName = (typeof RUN_SKILL_NAMES)[number];
 
-export const RUN_SKILLS_DIR = fileURLToPath(new URL('./', import.meta.url));
 
 export interface RunSkill {
   name: RunSkillName;
@@ -25,7 +24,9 @@ export interface RunSkill {
 
 /** The run skill, as its files are now. */
 export function loadRunSkill(name: RunSkillName): RunSkill {
-  const dir = join(RUN_SKILLS_DIR, name);
+  // Resolved here, not at import: a browser-like test environment (happy-dom) imports this module with a URL that is no
+  // file URL.
+  const dir = join(fileURLToPath(new URL('./', import.meta.url)), name);
   const files = Object.fromEntries(readdirSync(dir).filter((n) => n.endsWith('.md')).sort().map((n) => [n, readFileSync(join(dir, n), 'utf8')]));
   return { name, ...releaseOf(files) };
 }

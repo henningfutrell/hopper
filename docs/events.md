@@ -3539,6 +3539,20 @@ Version 1 (`docs/schemas/cloud_link.unregistered.v1.json`). hopper.io removed th
 }
 ```
 
+## `cloud_link.message_refused`
+
+Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`). Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` | yes |
+
+```json
+{
+  "reason": "unknown-type"
+}
+```
+
 ## `display_name.changed`
 
 Version 1 (`docs/schemas/display_name.changed.v1.json`). The hopper's admin changed the instance's display name (issue #465): what they call this hopper, shown in Settings → Version beside its instance id. `from` and `to` are the names, empty when none; `by`, who. An instance event: in every user's log.
@@ -5829,6 +5843,52 @@ Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoke
   "kind": "issue",
   "number": 12,
   "by": "octocat"
+}
+```
+
+## `issue_draft.drafted`
+
+Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the run `skill` and its id (`file-issue@<id>`, issue #472), and `findings`: the ids of the draft constraints the draft as written broke (a secret or personal data is masked before the person sees it). Nothing is filed. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `provider` | string | yes |
+| `model` | string | no |
+| `skill` | string | yes |
+| `findings` | string[] | yes |
+
+```json
+{
+  "repo": "octo-org/ops",
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "skill": "file-issue@3f2a9c1e7b4d5a60",
+  "findings": []
+}
+```
+
+## `issue_draft.filed`
+
+Version 1 (`docs/schemas/issue_draft.filed.v1.json`). A person confirmed and filed an issue that File an issue drafted (issue #471), with their own GitHub connection, with no label and no assignee: `repo`, `number`, `url`, `by` who confirmed it, the `provider` and the run `skill` with its id that drafted it. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `by` | string | yes |
+| `provider` | string | yes |
+| `skill` | string | yes |
+
+```json
+{
+  "repo": "octo-org/ops",
+  "number": 13,
+  "url": "https://github.com/octo-org/ops/issues/13",
+  "by": "octocat",
+  "provider": "claude",
+  "skill": "file-issue@3f2a9c1e7b4d5a60"
 }
 ```
 

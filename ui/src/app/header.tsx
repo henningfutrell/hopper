@@ -9,6 +9,8 @@
 // The header badges (issue #1181) show here on every screen: the Dashboard's KPI cards the user chose in Customize, each its
 // card's own total (`useKpis`), so a badge and its card never disagree; one Lanes badge until chosen. In flight (issue #1113)
 // is the work-item ledger's count, a link to the Jobs view filtered to them; the others link to the Dashboard.
+// File an issue (issue #471, file-issue.tsx) is a button here on every screen from tablet width up (a phone has it in the
+// user menu): an operator's or admin's, off with the reason while no provider can draft.
 // The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
@@ -28,6 +30,7 @@ import { useHopper } from '@/store';
 import { cn } from '@/lib/utils';
 import { useHeaderBadges, useYoloMode } from '@/store/polled';
 import { useKpis, useLoginsBadge } from '@/store/selectors';
+import { FileIssueButton } from './file-issue';
 import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
@@ -110,6 +113,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <span data-slot="connection" className="flex items-center gap-1.5 text-muted-foreground">
             <Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} /><span className="hidden sm:inline">{conn}</span>
           </span>
+          <FileIssueButton compact />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="max-sm:hidden" asChild>
