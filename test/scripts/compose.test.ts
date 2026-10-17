@@ -96,7 +96,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps no master key in a volume or a file: the hopper reads HOPPER_MASTER_KEY from the launch, and the old token_key only to move it (issues #659, #894)', () => {
     expect(hopper.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
-    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
+    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE ?? '').toBe('');
     const key = 'ab'.repeat(32);
     expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
     expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();

@@ -75,6 +75,11 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
     const d = e.data as { machineId: string; of: string; freeBytes: number; totalBytes: number; thresholdBytes: number; since?: string };
     return { ...b, machineId: d.machineId, of: d.of, freeBytes: d.freeBytes, totalBytes: d.totalBytes, thresholdBytes: d.thresholdBytes, ...(d.since ? { since: d.since } : {}) };
   }
+  // A machine offline for two minutes, and back (issue #1497): its id, its name, since when it is offline.
+  if (e.type === 'machine.offline' || e.type === 'machine.back_online') {
+    const d = e.data as { machineId: string; label: string; since: string };
+    return { ...b, machineId: d.machineId, label: d.label, since: d.since };
+  }
   return b;
 }
 

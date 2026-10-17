@@ -3,95 +3,17 @@
 // PATH that record each call; no unit of this machine is written or started. The image prints the script: `hopper service
 // script`. Nothing leaves this process tree.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, type AddressInfo, type Server } from 'node:net';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-
-const ROOT = join(import.meta.dirname, '..', '..');
-const SCRIPT = join(ROOT, 'scripts', 'hopper-service.sh');
-const KEY = '0123456789abcdef'.repeat(4);
-const dirs: string[] = [];
-const servers: Server[] = [];
+import { closedPort, dirs, folder, KEY, listening, MASTER_KEY, ROOT, SCRIPT, servers } from '../support/hopper-service-script.ts';
 
 afterEach(async () => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   await Promise.all(servers.splice(0).map((s) => new Promise((done) => s.close(done))));
 });
-
-const PODMAN = `#!/bin/sh
-printf 'podman %s | key=%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
-case "$*" in
-  "ps -aq --filter label=io.podman.compose.project=hopper") [ "\${STUB_STACK:-}" = podman-compose ] && echo 0123456789ab ;;
-  "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") [ -n "\${STUB_RUNNING:-}" ] && echo cid ;;
-  "port cid") [ -n "\${STUB_PORT:-}" ] && echo "4790/tcp -> \${STUB_PORT}" ;;
-  "volume exists hopper_postgres") [ -n "\${STUB_DATA:-}" ] || exit 1 ;;
-esac
-exit 0
-`;
-const PODMAN_COMPOSE = `#!/bin/sh
-printf 'podman-compose %s | key=%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
-`;
-const SYSTEMCTL = `#!/bin/sh
-printf 'systemctl %s\\n' "$*" >> "$STUB_LOG"
-[ "$*" = '--user import-environment HOPPER_MASTER_KEY' ] && printf 'imported key=%s\\n' "\${HOPPER_MASTER_KEY:-}" >> "$STUB_LOG"
-[ "$*" = '--user is-active --quiet hopper-compose.service' ] && exit "\${STUB_ACTIVE:-0}"
-exit 0
-`;
-const LOGINCTL = `#!/bin/sh
-printf 'loginctl %s\\n' "$*" >> "$STUB_LOG"
-case "$1" in show-user) echo "\${STUB_LINGER:-no}" ;; enable-linger) exit "\${STUB_LINGER_FAIL:-0}" ;; esac
-`;
-// master-key.sh as the service calls it: \`run <command>…\` runs the command with the unsealed key in its environment.
-const MASTER_KEY = `printf 'master-key.sh %s\\n' "$*" >> "$STUB_LOG"
-[ "$1" = run ] || exit 1
-shift
-HOPPER_MASTER_KEY=${KEY} exec "$@"
-`;
-
-function folder(o: { podmanCompose?: boolean } = {}) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jh-hopper-service-')));
-  dirs.push(dir);
-  writeFileSync(join(dir, 'hopper-service.sh'), readFileSync(SCRIPT));
-  writeFileSync(join(dir, 'compose.yaml'), readFileSync(join(ROOT, 'compose.yaml')));
-  const bin = join(dir, '.bin');
-  mkdirSync(bin);
-  const tools: Record<string, string> = { podman: PODMAN, systemctl: SYSTEMCTL, loginctl: LOGINCTL, ...(o.podmanCompose ? { 'podman-compose': PODMAN_COMPOSE } : {}) };
-  for (const [name, body] of Object.entries(tools)) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
-  const home = join(dir, '.home');
-  // Short, for a socket path.
-  const runtime = mkdtempSync(join(tmpdir(), 'jh-xdg-'));
-  dirs.push(runtime);
-  mkdirSync(home);
-  const log = join(dir, '.calls');
-  writeFileSync(log, '');
-  const run = (args: string[], env: Record<string, string> = {}) => {
-    const r = spawnSync('/bin/bash', ['hopper-service.sh', ...args], {
-      cwd: dir, encoding: 'utf8',
-      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), XDG_RUNTIME_DIR: runtime, USER: 'someone', STUB_LOG: log, HOPPER_SERVICE_RETRY: '0', ...env },
-    });
-    return { status: r.status, err: r.stderr };
-  };
-  const calls = () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean);
-  const unit = (name: string) => readFileSync(join(home, '.config', 'systemd', 'user', name), 'utf8');
-  return { dir, bin, home, runtime, run, calls, unit };
-}
-
-async function listening(): Promise<number> {
-  const server = createServer((socket) => socket.end());
-  servers.push(server);
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-  return (server.address() as AddressInfo).port;
-}
-
-async function closedPort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-  const { port } = server.address() as AddressInfo;
-  await new Promise((done) => server.close(done));
-  return port;
-}
 
 describe('scripts/hopper-service.sh (issue #1320)', () => {
   it('install writes the units, turns on linger, and starts the stack through the service: settings kept, no secret, no image', () => {
@@ -99,7 +21,9 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     const r = f.run(['install'], { HOPPER_BIND: '0.0.0.0', HOPPER_PORT: '4791', HOPPER_MASTER_KEY: KEY, HOPPER_KMS_KEY: 'kms', HOPPER_IMAGE: 'ghcr.io/henningfutrell/hopper:dev' });
     expect(r.status, r.err).toBe(0);
     const service = f.unit('hopper-compose.service');
-    expect(service).toContain(`WorkingDirectory="${f.dir}"`);
+    // systemd takes a path setting as it is: a quoted one is no absolute path, and the unit fails to load (issue #1453).
+    expect(service).toMatch(new RegExp(`^WorkingDirectory=${f.dir}$`, 'm'));
+    expect(f.unit('hopper-compose-check.service')).toMatch(new RegExp(`^WorkingDirectory=${f.dir}$`, 'm'));
     expect(service).toMatch(/^Type=oneshot$/m);
     expect(service).toMatch(/^RemainAfterExit=yes$/m);
     expect(service).toContain(`ExecStart="${spawnSync('/bin/bash', ['-c', 'command -v bash'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } }).stdout.trim()}" "${f.dir}/hopper-service.sh" start`);
@@ -115,6 +39,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(f.calls()).toEqual([
       'systemctl --user show-environment',
       expect.stringMatching(/^podman ps -aq --filter label=io\.podman\.compose\.project=hopper/),
+      'podman run --rm ghcr.io/henningfutrell/hopper:dev hopper master-key script | key=',
       'loginctl show-user someone -p Linger --value',
       'loginctl enable-linger someone',
       'systemctl --user daemon-reload',
@@ -123,6 +48,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
       'systemctl --user restart hopper-compose-check.timer',
     ]);
     expect(r.err).toMatch(/turned on linger for someone/);
+    expect(r.err).toMatch(/the image gives no master-key\.sh/);
   });
 
   it('install takes podman-compose when it started the stack, and gives the rootless Podman socket when podman.socket is on', async () => {
@@ -171,10 +97,11 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(compose).toEqual([
       'podman compose -p hopper down | key=',
       expect.stringMatching(/^master-key\.sh run bash .*hopper-service\.sh up$/),
-      `podman compose -p hopper up -d | key=${KEY}`,
+      `podman compose -p hopper up -d | key= | file=${KEY} at /run/hopper-master-key`,
     ]);
     for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
   });
+
 
   const upCalls = (f: ReturnType<typeof folder>) => f.calls().filter((c) => c.startsWith('podman compose') || c.startsWith('master-key.sh'));
 
@@ -186,7 +113,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', CREDENTIALS_DIRECTORY: creds, STUB_DATA: '1' });
     expect(r.status, r.err).toBe(0);
     expect(r.err).toMatch(/with the master key from the systemd credential hopper-master-key/);
-    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key=${KEY}`]);
+    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key= | file=${KEY} at /run/hopper-master-key`]);
     for (const c of f.calls()) expect(c.split(' | ')[0]).not.toContain(KEY);
     expect(r.err).not.toContain(KEY);
   });
@@ -199,7 +126,7 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', HOPPER_MASTER_KEY: other, STUB_DATA: '1' });
     expect(r.status, r.err).toBe(0);
     expect(r.err).toMatch(/with the master key from HOPPER_MASTER_KEY given at launch/);
-    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key=${other}`]);
+    expect(upCalls(f)).toEqual(['podman compose -p hopper down | key=', `podman compose -p hopper up -d | key= | file=${other} at /run/hopper-master-key`]);
     expect(r.err).not.toContain(other);
   });
 
@@ -256,6 +183,24 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
     expect(f.run(['start-with-key'], { HOPPER_KEY_TTY: join(f.dir, 'no-tty') }).err).toMatch(/no master key: give it as HOPPER_MASTER_KEY/);
   });
 
+  it('start-with-key reads a key piped in on stdin, and says so when the line is no key (issue #1497)', () => {
+    const f = folder();
+    expect(f.run(['install']).status).toBe(0);
+    const before = f.calls().length;
+    const piped = (input: string) => spawnSync('/bin/bash', ['hopper-service.sh', 'start-with-key'], {
+      cwd: f.dir, encoding: 'utf8', input,
+      env: { PATH: `${f.bin}:/usr/bin:/bin`, HOME: f.home, XDG_CONFIG_HOME: join(f.home, '.config'), USER: 'someone', STUB_LOG: join(f.dir, '.calls'), HOPPER_KEY_TTY: join(f.dir, 'no-tty') },
+    });
+    const r = piped(`${KEY}\n`);
+    expect(r.status, r.stderr).toBe(0);
+    expect(f.calls().slice(before)).toContain(`imported key=${KEY}`);
+    expect(r.stderr).not.toContain(KEY);
+    const bad = piped('nope\n');
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toMatch(/that is no master key/);
+    expect(piped('').stderr).toMatch(/pipe it in on stdin/);
+  });
+
   it('start with no key sealed here and no data yet starts the stack with no key, and stop takes it down', () => {
     const f = folder();
     expect(f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose' }).status).toBe(0);
@@ -265,6 +210,23 @@ describe('scripts/hopper-service.sh (issue #1320)', () => {
       'podman compose -p hopper up -d | key=',
       'podman compose -p hopper down | key=',
     ]);
+  });
+
+  it('start brings back each joined container that is stopped on the hopper\'s network, after the stack, without the key; never a stack container or a sandbox (issue #1497)', () => {
+    const f = folder();
+    writeFileSync(join(f.dir, 'master-key.sh'), MASTER_KEY);
+    writeFileSync(join(f.dir, 'hopper-master-key.enc'), 'sealed');
+    const r = f.run(['start'], { HOPPER_SERVICE_COMPOSE: 'podman compose', STUB_SEATS: '1', STUB_DATA: '1', STUB_SEAT2_FAILS: '1' });
+    expect(r.status, r.err).toBe(0);
+    const calls = f.calls();
+    const up = calls.indexOf(`podman compose -p hopper up -d | key= | file=${KEY} at /run/hopper-master-key`);
+    expect(up).toBeGreaterThan(-1);
+    const starts = calls.filter((c) => c.startsWith('podman start'));
+    expect(starts.map((c) => c.split(' | ')[0])).toEqual(['podman start seat1', 'podman start seat2']);
+    for (const c of starts) expect(c.split(' | ')[1]).toBe('key=');
+    expect(calls.indexOf(starts[0]!)).toBeGreaterThan(up);
+    expect(r.err).toMatch(/started the joined container fleet-seat1/);
+    expect(r.err).toMatch(/the joined container fleet-seat2 did not start/);
   });
 
   it('check restarts the service when the hopper container runs and its published port does not answer from this host', async () => {

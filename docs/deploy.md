@@ -362,7 +362,9 @@ is only in the hopper's environment, given at launch.
        override setting that gives another value than one `compose.yaml` fixes is a warning: the override's value wins.
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
        data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image; when `hopper-compose.service` owns the stack
-       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Every container is made again on the new
+       ("The user service" above), `systemctl --user restart hopper-compose.service` in place of the last two. Before that restart, it takes the
+       quotes out of a `WorkingDirectory="…"` that an older `hopper-service.sh` wrote in the units, which systemd refuses,
+       and runs `systemctl --user daemon-reload` (issue #1453). Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
        `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
        the old `compose.yaml` and `compose.override.yaml` back, points the image tag the old file names at the image
@@ -485,8 +487,21 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
 
 - **`hopper-compose.service`** (in `~/.config/systemd/user`, `Type=oneshot`, `RemainAfterExit=yes`) owns the stack: the
   containers' `conmon` and `rootlessport` processes are in its cgroup. Its start takes the stack down and starts it
-  again with the master key, for compose only: never a `.env`, a file or a volume. Its stop takes the stack down; the
-  volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at the install.
+  again with the master key, for compose only: never a `.env`, a file of this folder or a volume. Its stop takes the
+  stack down; the volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at
+  the install.
+- **The key as a file in memory** (issue #1487). The start never gives compose the key as a variable, so no container's
+  config holds it (`podman inspect` shows only the file's path). It writes the key to
+  `$XDG_RUNTIME_DIR/hopper-service/master-key`: in memory, in a folder only your user opens (mode 700). Compose mounts
+  that file read-only at `/run/hopper-master-key` in the hopper's container and hopper-vault's
+  (`HOPPER_MASTER_KEY_HOST_FILE`), and `HOPPER_MASTER_KEY_FILE` names it. The file stays while the service runs, so
+  `restart: unless-stopped` can start a container again. The service's stop removes it, and a restart of the host
+  clears it, so a `podman start` of an old container does not start without the service. Whoever can act as your user
+  can read the file while the stack runs, as they could read the containers' environment before.
+- **`master-key.sh` comes with the install** (issue #1487). With none beside `hopper-service.sh`, the install puts in
+  the image's. With `HOPPER_MASTER_KEY` given to the install and no key sealed here, it seals that key: then a restart
+  of the host (a reboot, `wsl --shutdown`) brings the stack back with no person. With data, no key given and none
+  sealed, it says the line that seals it: `bash master-key.sh seal`.
 - **The master key at launch** (issue #1372). Sealing is optional. The start takes the key from the first of these:
   1. The systemd credential `hopper-master-key`. The unit imports it (`ImportCredential=hopper-master-key`, systemd 254
      and later) from the user's credential stores. Or give it in a drop-in
@@ -494,6 +509,7 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
      from `systemd-creds --user encrypt --name=hopper-master-key - <file>` (under the TPM2 when the host has one), or
      `SetCredentialEncrypted=`. Only encrypted forms: never `SetCredential=` with the key in clear in the unit.
   2. `HOPPER_MASTER_KEY` given at launch: `bash hopper-service.sh start-with-key` reads it from `HOPPER_MASTER_KEY`, or
+     reads one line on stdin when stdin is no terminal (`… | bash hopper-service.sh start-with-key`, issue #1497), or
      asks for it on the terminal (nothing is shown). It puts the key in the user manager's environment from its own
      environment (`systemctl --user import-environment`, never as an argument), restarts the service, and removes it
      from the manager's environment after the start. The key is not kept: the next start (a reboot, the port check's
@@ -504,6 +520,24 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   a new hopper makes its key and shows it once. With data and no key, the start fails before it touches the stack, says
   how to give the key, and no new key is made (`journalctl --user -u hopper-compose.service`). The hopper itself also
   refuses to start without the key when its database keeps secrets, and names the key it needs by its fingerprint.
+- **`hopper-compose-alert.service`** (issue #1487) runs when a start of `hopper-compose.service` fails
+  (`OnFailure=`). The hopper is down then and cannot say so itself. The alert takes the last line the start wrote in its
+  journal, shows it in a desktop notice (`notify-send`, when there is one), and runs `hopper-alert.sh` beside
+  `hopper-service.sh`, when there is one, with that line as its one argument. Write there what reaches you, for example
+  a webhook:
+
+  ```sh
+  # hopper-alert.sh: keep a webhook URL with a token in a file only you read (chmod 600)
+  curl -fsS -m 10 -H 'Content-Type: application/json' \
+    --data "$(jq -n --arg text "$1" '{text: $text}')" "$(cat ~/.config/hopper/alert-url)"
+  ```
+- **Joined containers come back with the stack** (issue #1497). A container you joined to the hopper's network
+  (`podman network connect hopper_default <container>`, "The hopper's network"), an ssh target's machine for example,
+  stops with its host, and nothing else starts it. So after the stack is up, the service's start starts each such
+  container that is stopped, and says each one in its journal. A container of the hopper's compose project, and a sandbox (a label `io.hopper.*`), is
+  never one; the master key never goes to one. To keep one stopped, take it off the network: `podman network
+  disconnect hopper_default <container>`. A machine that still does not come back is told, after two minutes offline, as
+  `machine.offline` (`docs/design.md` "The offline watch"), where webhooks and notifiers take it.
 - **`hopper-compose-check.timer`** runs `hopper-compose-check.service` every minute. It reads the port the hopper's
   container publishes (`podman port`) and connects to it from the host (loopback for `0.0.0.0`). When the container runs
   and the port does not answer, twice, 10 seconds apart (`HOPPER_SERVICE_RETRY`), it restarts `hopper-compose.service`.
@@ -520,9 +554,10 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
   compose up` by hand. The update ("Upgrade" below) restarts the stack through the service when it owns the stack, and
   then checks the port from the host too. It starts the stack with the key sealed here; with none sealed, with the key
   given to the update, as `start-with-key` does. It stops before it changes anything when the key given is not the one
-  sealed here. It puts in the new image's `hopper-service.sh`. On Podman with no service, it
-  says the line that installs one.
-- **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service`.
+  sealed here. It puts in the new image's `hopper-service.sh` and `master-key.sh`, also when no `master-key.sh` was
+  here (issue #1487), and with no key sealed it says the line that seals it. On Podman with no service, it says the
+  line that installs one.
+- **Logs.** `journalctl --user -u hopper-compose.service -u hopper-compose-check.service -u hopper-compose-alert.service`.
 - **Docker and Kubernetes.** Not needed and not used: Docker's daemon serves the port, and on Kubernetes ("On
   Kubernetes, with Helm") the cluster does.
 

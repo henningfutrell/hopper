@@ -5,6 +5,7 @@ import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from
 import type { Job, LaneId, MachineSnapshot } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
+import { RESTORED_NOTE, restartInNewPane, restoredByHerdr } from './restored.ts';
 import { afterStatusNote, nudgeGapMs } from './nudge.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
@@ -16,7 +17,7 @@ import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
 import { paneEnds } from './pane-ends.ts';
 import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
-import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
+import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
@@ -93,18 +94,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
 
   // The reap and the close of a job's pane (pane-ends.ts), with the lanes and what the reap kept here.
-  const { reap, exitAndClose } = paneEnds({ pollMs: o.pollMs, sleep, herdrOn, reaped, lanes });
-
-  async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
-    if (!('interrupt' in result)) return result;
-    if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
-    // The engine parks the job, then asks `park` to end its pane: nothing of it is closed here.
-    if (result.interrupt === 'park') return { kind: 'failed', error: 'parked' };
-    if (result.interrupt !== 'timeout') { await exitAndClose(pane); return { kind: 'failed', error: 'aborted' }; }
-    // A timeout (issue #630): its scratch dir kept, as a park keeps it — it may go on there —, and its liveness said.
-    await exitAndClose(pane, 'keep');
-    return { kind: 'failed', error: 'timed out', liveness: timeoutLiveness(outputAt.get(pane.jobId), reaped.get(pane.jobId)) };
-  }
+  const { reap, exitAndClose, settle } = paneEnds({ pollMs: o.pollMs, sleep, herdrOn, reaped, lanes, outputAt });
 
   /**
    * Nudges so far in a row, and when the turn they belong to began; lost sends of the text in flight; `quiet`
@@ -141,13 +131,14 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }, login = s.login): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
-      paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend, markersAfter: turn.markersAfter,
+      paneId: s.paneId, ...(s.terminal ? { terminal: s.terminal } : {}), anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend, markersAfter: turn.markersAfter,
       timeoutMs: p.timeoutMs, startedAt: notes.startedAt,
       onQuestion: (seq, lapsesAt, waitLines) => ctx.saveState({ ...s, turn: waitLines === undefined ? turn : { ...turn, markersAfter: waitLines }, parkedSeq: seq, lapsesAt }),
       onOutput: (at) => outputAt.set(ctx.job.id, at), knownCodes: codes.get(ctx.job.id) ?? codes.set(ctx.job.id, new Set()).get(ctx.job.id)!,
       ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
       ...(ctx.notes ? { notesWaiting: ctx.notes.waiting } : {}),
     });
+    if ('paneRestored' in result) return restartRestored(ctx, s, p, RESTORED_NOTE);
     if ('notes' in result) {
       // A person's notes at the turn boundary (issue #997): typed in as the next turn, the job's own outcome left to it.
       const text = ctx.notes?.take('turn');
@@ -271,6 +262,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     });
   }
 
+  /** A pane herdr restored (restored.ts, issue #1465): its Claude stopped, then resumed in a new pane, told `text`. */
+  const restartRestored = (ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string): Promise<ExecutionOutcome> =>
+    restartInNewPane({ exitAndClose: (pane) => exitAndClose(pane, 'none'), startAndSend }, ctx, s, p, text);
+
   /** The answer a job resumes with, and after it the notes a person sent while it waited (issue #997). */
   function withNotes(ctx: ExecutionContext, answer: string): string {
     const notes = ctx.notes?.take('resume');
@@ -326,6 +321,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const herdr = herdrOn(state);
         const agent = await herdr.getAgent(state.agentName);
         if (!agent) return { kind: 'failed', error: 'pane lost' };
+        // Restored by herdr while the job waited (issue #1465): the answer goes to Claude resumed in a new pane.
+        if (restoredByHerdr(agent, state.terminal)) return restartRestored(ctx, { ...state, laneId: ctx.laneId }, p, `${RESTORED_NOTE}\n\n${withNotes(ctx, answer)}`);
         lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
         const s = { ...state, laneId: ctx.laneId };
         // The question was a dialog before the job's text reached Claude (issue #534): the answer goes into the

@@ -68,7 +68,8 @@ describe('a transient failure', () => {
     const token = await a.login();
     // Settings apply without a restart.
     await settings(a, token, { maxAttempts: 2, backoffSec: 1, backoffFactor: 1 });
-    const first = await a.pull(fail('read ECONNRESET'));
+    // A daemon restart: the same failure twice in a row does not stop it (issue #1461), so the retries run to the limit.
+    const first = await a.pull(fail('interrupted by daemon restart'));
     const key = first.source!.key;
     const jobs = await waitFor(async () => { const c = await chain(a, key); return c.length === 3 && c[2]!.status === 'failed' ? c : undefined; }, { timeoutMs: 10_000, what: 'two retries' });
     const reruns = (await a.events('types=job.rerun&limit=1000')).filter((e) => jobs.some((j) => j.id === e.jobId));

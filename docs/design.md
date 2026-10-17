@@ -1846,6 +1846,15 @@ For what the automatic path has not reached yet, **Dismiss many** (`POST /ui/api
 `{ jobIds }` dismisses each as one Dismiss does and answers each refusal with why, or `{ superseded: true }` runs
 the automatic pass now; the CLI's `hopper job dismiss <id>...` and `hopper job dismiss --superseded` (`src/cli-operator-dismiss.ts`).
 
+**A failure ends when its item's work ends** (issue #1461). An operator cleared failures by hand for hours: items whose
+work had landed, or whose pull request was closed, kept a hand-off open, because an item a person holds is `needs_you`
+and a merge or a close only marked its pull request. Now the item waits on no failure also when its pull request merged
+as the whole item (`mergedWhole`: not a part, not a culprit reverted from the landing branch) or closed without a merge
+(`itemEnded`, `src/failures/stale.ts`). The automatic pass also runs at each `job.pull_request_merged`,
+`job.pull_request_closed`, `job.pull_request_abandoned` and `landing_batch.promoted`: the hand-off closes
+(`item_closed`), its record settles, and the job is dismissed `by: "item_closed"`. The ledger then has the item `done`
+(merged) or `dropped` (closed). The sidebar's counts are issue #1457's.
+
 **Run again offered only where it is taken** (issues #362, #354). The UI never offers an action the
 daemon refuses: the Ended panel's Run again (`canRerun`) needs a failed or finished job, the newest of its
 item, its end reported. A closed issue no longer blocks it (Run again reopens it), so the per-sync
@@ -11505,6 +11514,15 @@ Two cases come before the rules and act on nothing (issue #517):
   its work may be stale, and a failure that old neither retries by itself nor opens or joins a problem that would
   hold other jobs.
 
+**The same failure twice in a row** (issue #1461). The record of its item's run before it — the same job's, when it
+was continued, else that of the job it ran again (`rerunOf`), by whatever ran it again — has the same signature
+(`repeatedOf`, `chain.ts`). A run again did not help, so the item stops: `person`, `repeated`, and no Jev pick (issue #550) runs it
+again. One the rules would run again gets the summary "Stopped: the same failure twice in a row"; one they give to a
+person already keeps its summary, with the repeat in its reasons. It is raised once, as one
+hand-off (`retry_limit` for a `transient` class, else `person`). Not a daemon restart, a timeout (its liveness
+decides) or a `shared` cause (its problem holds the job): they say nothing of the item's work. It comes after the rules,
+the two cases above, and a hopper bug the job reported (issue #1147).
+
 **hopper's own client errors** match known causes: `client <machine> is not dialled in` is `machine offline` (a
 problem, redirected or held, resolved by its online check); `no answer: its link closed` and `no answer within <n>
 ms, or its link closed` are `link closed`, transient — a link that drops for good fails the next run with `is not
@@ -13909,6 +13927,16 @@ Tests: `test/client/windows-link.test.ts` (the URLs, the answer, only 127.0.0.1,
 machine-resources.test.ts` (a client's link checked), `test/machines/windows-link-watch.test.ts` (told once, restored,
 offline), `test/integration/machine-history.test.ts` (the snapshot carries it; the event), `test/ui/windows-link.test.ts`
 (the card's line, the fix by mode, the banner's machines).
+
+**The offline watch** (issue #1497). After a host restart (a reboot, `wsl --shutdown`), a container an ssh target
+names stays stopped, and nothing told a person: the Machines view showed it offline, and that was all. At each record
+the **offline watch** (`src/machines/offline-watch.ts`) is shown every machine. A machine offline at every record for two
+minutes is told once, `machine.offline` (`machineId`, `label`, `since`), and once more when it is online again,
+`machine.back_online`. Two minutes so that a machine not probed yet after the hopper's start, or one short drop, is not
+told. Kept in memory, as the memory alert: after a restart of the hopper a machine still offline is told again. Webhooks
+and notifiers take it (the Grok Bot notifier posts both). Nothing is configured: a machine a person keeps offline is told
+once, then not again until it was online. The service starts each **joined container** again itself (`docs/deploy.md`
+"The user service"); the watch is for one it cannot start, or a machine that is no joined container.
 
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown
@@ -22832,3 +22860,41 @@ before the job starts, and asks a person for them up front.
 (the decider holds; the queue gate first; never a job resuming), `test/users/sandboxes-held.test.ts` (asked once, all at
 once; declined and skip sandbox approval do not hold; nothing asked for a job at the gate, not judged or resuming), and
 `test/integration/job-sandboxes.test.ts` (a held job starts once a person approves its request; `--template`).
+
+## A pane herdr restored (issue #1465, 2026-10-16)
+
+**The problem.** Jobs failed right after their Claude session resumed: in the resumed session `HOPPER_GH`, `HOPPER_URL`,
+the rest of the `HOPPER_*` variables and git's way to GitHub through the hopper (`GIT_CONFIG_*`) were unset, so git had no
+credential and the job could not reach the hopper. The hopper did not resume those sessions. herdr did: its
+`[session] resume_agents_on_restore` (on by default) restores every pane after a restart of its server and resumes each
+supported agent into its own session. A restored pane keeps its pane id but gets a new terminal (`terminal_id`) and a new
+shell, started with the server's environment, not the tab's: the variables the hopper gave with `herdr tab create --env`
+are gone (seen with herdr 0.8.2: a tab created with `--env` loses the variable after `herdr server stop` and a new server).
+The new shell is also outside the job's scope (the reap) and its sandbox (issue #1295), and never ran the job's start
+steps.
+
+**The change.** The hopper records the pane's terminal at its start (`PaneState.terminal`, from `tab create`'s
+`root_pane.terminal_id`), and the agent session there too (`PaneState.agentSession`). `herdr agent get` already says the
+agent's `terminal_id`, so each poll of the watch compares it at no extra call (`restoredByHerdr`,
+`src/executors/herdr/restored.ts`). Another terminal is a **restored pane**: the watch ends with `paneRestored`, and the
+executor stops that Claude and closes the pane as at a park (the reap without the scratch dir: worktree and session kept),
+then starts as a parked job's resume does — a new pane with the job's environment placed afresh (its credentials, its
+variables), the scope, the job's container runtime and sandbox, the same job worktree — and `claude --resume <session>`.
+It sends `RESTORED_NOTE`: what failed since the restart failed for want of the environment, and can run again. An answer
+to a job whose pane was restored while it waited on a question goes the same way, after that note. A job with no agent
+session recorded fails with the reason: a fresh session would lose what it did.
+
+**Not changed.** A pane saved before this change has no terminal and is not checked. The hopper does not change herdr's
+config: `resume_agents_on_restore` is the machine owner's, and herdr reads one config for the whole server.
+
+**Decisions:**
+- **Detect and start again, not prevent.** Turning `resume_agents_on_restore` off would need a write to the machine's herdr
+  config, which the hopper does not own ("Deployable": nothing leans on the machine), and would still
+  leave a restored pane with a plain shell and no Claude. Starting again also puts back the scope and the sandbox, which no
+  variable could.
+- **The terminal id, not a probe of the environment.** herdr says it with every `agent get`; reading the shell's variables
+  would need a command typed into a pane that Claude holds.
+
+**Verification:** `test/herdr/executor-herdr-restore.test.ts` (restored while watched; restored while it waited on a
+question; a pane saved with no terminal), `test/herdr/cli-client.test.ts` and `test/herdr/cli-client-ssh.test.ts`
+(`terminal_id` read from `tab create` and `agent get`), `test/herdr/executor-run.test.ts` (the terminal saved).

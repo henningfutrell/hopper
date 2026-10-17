@@ -28,7 +28,7 @@ const ALL: Record<EventType, true> = {
   'research.asked': true, 'research.submitted': true, 'research.escalated': true, 'research.escalated_to_human': true, 'research.reviewed': true,
   'research.revision_requested': true, 'research.accepted': true, 'research.cancelled': true,
   'machine.discovered': true, 'machine.discovery_failed': true, 'machine.radius_grew': true, 'machine.actor_mismatch': true, 'blast_radius.settings_changed': true, 'job.gate_passed': true,
-  'hopper.event_loop_stalled': true, 'machine.memory_low': true, 'machine.memory_recovered': true, 'machine.windows_link_broken': true, 'machine.windows_link_restored': true,
+  'hopper.event_loop_stalled': true, 'machine.memory_low': true, 'machine.memory_recovered': true, 'machine.windows_link_broken': true, 'machine.windows_link_restored': true, 'machine.offline': true, 'machine.back_online': true,
   'machine.disk_over_budget': true, 'machine.disk_within_budget': true,
   'minor_decision.picked': true, 'minor_decision.compared': true, 'minor_decision.overridden': true, 'minor_decision.settings_changed': true,
   'job.phase_changed': true, 'job.forked': true, 'job.fork_resolved': true, 'phase_shifts.settings_changed': true,

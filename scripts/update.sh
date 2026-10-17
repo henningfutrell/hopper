@@ -30,7 +30,9 @@
 #      drift`), and says the result. It exits 1 when one of these fails;
 #   8. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
 #      before, to go back to. An image a container still uses is not removed. A master-key.sh and a hopper-service.sh
-#      beside compose.yaml are replaced with the new image's. With Podman and no service, it says the line that installs it.
+#      beside compose.yaml are replaced with the new image's; when the service owns the stack, master-key.sh is put in
+#      even when none is here, and with no key sealed it says the line that seals it (issue #1487). With Podman and no
+#      service, it says the line that installs it.
 #
 #   HOPPER_UPDATE_WAIT          seconds to wait for the hopper's health (default: 180)
 #   HOPPER_UPDATE_FIX_OVERRIDE  1: remove the compose.override.yaml entries compose.yaml gives itself, with no question
@@ -110,6 +112,7 @@ main() {
     elif [ "$sealed" = 0 ] && [ "$(bash master-key.sh unseal 2>/dev/null || true)" != "$HOPPER_MASTER_KEY" ]; then
       fail 'the master key given is not the one sealed to this host, which hopper-compose.service starts the stack with: seal the right key (bash master-key.sh seal), then run the update again. Nothing changed'
     fi
+    repair_units
     if [ "$service_key" = 1 ]; then
       say 'hopper-compose.service owns the stack: the update stops and starts it through the service, with the master key given to this update (none is sealed here)'
     else
@@ -211,8 +214,13 @@ main() {
 
   check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}" "$service"
   prune "$runtime" "$image" "$previous"
-  [ "$sealed" = 0 ] || refresh_script "$runtime" "$image" master-key.sh master-key
+  # master-key.sh comes with the service too (issue #1487): without it no key can be sealed, and a restart of this host
+  # leaves the stack down until a person gives the key.
+  if [ "$sealed" = 1 ] || [ "$service" = 1 ] || [ -f master-key.sh ]; then refresh_script "$runtime" "$image" master-key.sh master-key; fi
   [ "$service" = 0 ] || refresh_script "$runtime" "$image" hopper-service.sh service
+  if [ "$service_key" = 1 ] && [ -f master-key.sh ]; then
+    say 'no master key is sealed here: after a restart of this host the stack does not start by itself. Seal it: bash master-key.sh seal (it asks for the key), then systemctl --user restart hopper-compose.service'
+  fi
   if [ "$runtime" = podman ] && [ "$service" = 0 ]; then
     say "the stack runs under this shell: its published port goes away when this shell's session ends. Put it under a user service of its own, once (docs/deploy.md \"The user service\"): $runtime run --rm $image hopper service script > hopper-service.sh && bash hopper-service.sh install"
   fi
@@ -228,6 +236,21 @@ restart_stack() {
   "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
   clear_one_shot "$runtime"
   "${compose[@]}" up -d </dev/null >&2
+}
+
+# The units an older hopper-service.sh wrote with WorkingDirectory quoted, which systemd refuses, so the restart fails
+# (issue #1453): the quotes taken out, and the user manager loads them again.
+repair_units() {
+  local unit file changed=0
+  for unit in hopper-compose.service hopper-compose-check.service; do
+    file="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$unit"
+    [ -f "$file" ] && grep -q '^WorkingDirectory="' "$file" || continue
+    sed -i 's/^WorkingDirectory="\(.*\)"$/WorkingDirectory=\1/' "$file"
+    changed=1
+  done
+  [ "$changed" = 1 ] || return 0
+  systemctl --user daemon-reload </dev/null >&2 || fail 'systemctl --user daemon-reload failed after the WorkingDirectory of hopper-compose.service was repaired. Nothing else changed'
+  say 'repaired WorkingDirectory in the hopper-compose units (it was quoted, which systemd refuses)'
 }
 
 # hopper-compose.service restarted. With no key sealed here (issue #1372), the key given to this update goes into the user

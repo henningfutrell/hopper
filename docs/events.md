@@ -2810,6 +2810,42 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 }
 ```
 
+## `machine.offline`
+
+Version 1 (`docs/schemas/machine.offline.v1.json`). A machine stayed offline for two minutes (issue #1497): offline at every record of the resource recorder `since` then. A container a host restart left stopped is the usual cause. `label` is its name on the Machines view. Once per stretch offline; after a restart of the hopper, a machine still offline is told again. Webhooks and notifiers take it.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `since` | string | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "label": "seat l1",
+  "since": "2026-10-16T22:33:00.000Z"
+}
+```
+
+## `machine.back_online`
+
+Version 1 (`docs/schemas/machine.back_online.v1.json`). A machine told by `machine.offline` is online again (issue #1497): `since` is when it went offline.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `since` | string | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "label": "seat l1",
+  "since": "2026-10-16T22:33:00.000Z"
+}
+```
+
 ## `machine.disk_over_budget`
 
 Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, and the repository checkouts in its workspace, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, the repository checkouts (the sweep never removes one), or more than the budget allows. Once while it stays over.

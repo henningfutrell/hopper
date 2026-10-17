@@ -77,6 +77,13 @@ export interface PaneState {
   workspaceId: string;
   tabId: string;
   paneId: string;
+  /**
+   * The pane's terminal when the hopper opened it (issue #1465): another one means herdr restored the pane after a server
+   * restart, in a shell without the tab's environment. Absent: a pane opened before the check, never checked.
+   */
+  terminal?: string;
+  /** The agent session Claude runs in (issue #1465): resumed in a new pane when herdr restored this one. */
+  agentSession?: string;
   agentName: string;
   cwd: string;
   /** The job's own git worktree of `cwd` or of `checkout`, in `cwd`'s workspace, where Claude runs (issues #379, #1103). Absent: Claude runs in `cwd`. */
@@ -202,7 +209,7 @@ export const scratchCommand = (cwd: string, jobId: string, make: boolean): strin
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
   const tmp = jobTmpOf(ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
-  const { tabId, paneId } = await d.herdr.createTab({
+  const { tabId, paneId, terminalId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
@@ -214,7 +221,7 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
     ...(ctx.machine.ssh && ctx.machine.herdr ? { ssh: ctx.machine.ssh } : {}),
     ...(ctx.machine.client ? { client: { machine: ctx.machine.id } } : {}),
-    workspaceId, tabId, paneId, agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,
+    workspaceId, tabId, paneId, ...(terminalId ? { terminal: terminalId } : {}), agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,
   };
   ctx.saveState({ ...state });
   return state;
@@ -416,7 +423,11 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   if ('startTimedOut' in started) return started;
   // Started, or held at a dialog (herdr's agent_not_ready): either way, a dialog may stand before the prompt.
   const settled = await settleStartup(d, ctx, s, started.ok);
-  if (!settled && !ctx.signal.aborted) ctx.agentSession?.(session);
+  if (!settled && !ctx.signal.aborted) {
+    ctx.agentSession?.(session);
+    s.agentSession = session;
+    ctx.saveState({ ...s });
+  }
   return settled;
 }
 

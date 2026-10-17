@@ -56,7 +56,8 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus', '--session-id', sessions[0]!], timeoutMs: 60000 }]);
     // The session the hopper chose (issue #501), reported once Claude is up: a parked job resumes it.
     expect(sessions).toEqual([expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)]);
-    expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
+    // The pane's terminal (issue #1465): another one later means herdr restored the pane.
+    expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', terminal: 'term_w1:p1_0', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('createTab')).toBeLessThan(order.indexOf('startAgent'));
   });
