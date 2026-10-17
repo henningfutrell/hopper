@@ -186,10 +186,10 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('with no read policy, a read need is approved by the auto-approve policy; with low off, it waits for a person', async () => {
     const { a, token } = await boot();
     const creds = await runningJob(a);
-    const auto = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/aws-account/123456789012']);
+    const auto = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/aws-role/123456789012/ReadOnly']);
     expect(auto.code, auto.stdout).toBe(3);
     expect(auto.stdout).toContain('is approved; waiting for the read-only check');
-    expect((await asked(a, token)).find((t) => t.profiles[0]?.asset.kind === 'aws-account')?.approval?.by).toBe('the auto-approve policy');
+    expect((await asked(a, token)).find((t) => t.profiles[0]?.asset.kind === 'aws-role')?.approval?.by).toBe('the auto-approve policy');
     expect((await a.events()).find((e) => e.type === 'vault.approved')?.data).toMatchObject({ by: 'the auto-approve policy' });
 
     expect((await a.ui('/ui/api/sandbox-approvals', { autoApprove: { low: false } }, { token })).status).toBe(200);
