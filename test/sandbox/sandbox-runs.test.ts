@@ -9,6 +9,7 @@
 //   Scenario: a sandbox left by a hopper that stopped mid-step is burned by the sweep, its run ended as swept
 //   Scenario: a step past its time limit is a timed-out run, and one the job stopped waiting for a cancelled run (issue #1371)
 //   Scenario: at start, a run a stopped hopper left ends as interrupted, and its sandbox is burned (issue #1371)
+//   Scenario: a container target's command runs in a box on no network, once a runtime answers (issue #865)
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,6 +70,22 @@ describe('sandbox runs (issue #1349)', () => {
     expect(view.runs).toHaveLength(1);
     expect(view.runs[0]).not.toHaveProperty('userId');
     expect((await sandboxes.view('u2')).runs).toEqual([]);
+  });
+
+  it('an offline step (a container target\'s command, issue #865) runs in a box on no network', async () => {
+    const { runtime, sandboxes } = setup();
+    const r = await sandboxes.needStep('u1', { name: 'hopper-command-aaaa', template: { image: 'img' }, env: {}, timeoutMs: 5000, dir: dirs[0]!, offline: true }, { log: () => {}, signal: new AbortController().signal, pollMs: 5 }, { jobId: 'job-1', step: 'c-1', template: 'container target box' });
+    expect(r.exit).toBe(0);
+    expect(runtime.ran.get('hopper-command-aaaa')).toMatchObject({ network: 'none' });
+  });
+
+  it('whether a step can run for the user now: no problem while the runtime answers, its reason when it does not', async () => {
+    const { runtime, sandboxes } = setup();
+    expect(await sandboxes.stepProblem('u1')).toBeUndefined();
+    runtime.down = 'podman does not answer';
+    expect(await sandboxes.stepProblem('u1')).toBe('podman does not answer');
+    const none = createSandboxes({ runtime: undefined, repo: memoryRepo(), runs: memorySandboxRuns(), instanceId: 'test', network: 'host', clock: { now: () => NOW }, logger: { info() {}, warn() {} } });
+    expect(await none.stepProblem('u1')).toMatch(/no container runtime socket/);
   });
 
   it('a step that failed is a failed run, burned all the same', async () => {

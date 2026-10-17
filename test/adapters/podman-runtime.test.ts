@@ -52,6 +52,13 @@ describe('the Podman container runtime', () => {
     expect(api.seen[0]!.body).not.toHaveProperty('networks');
   });
 
+  it('on no network (a container target\'s command box, issue #865), create joins no network namespace', async () => {
+    api = await startFakeRuntimeApi([on('POST', `${API}/containers/create`, { status: 201, body: { Id: 'c2' } })]);
+    await createPodmanRuntime(api.socket).create({ ...spec, network: 'none' });
+    expect(api.seen[0]!.body).toMatchObject({ netns: { nsmode: 'none' } });
+    expect(api.seen[0]!.body).not.toHaveProperty('networks');
+  });
+
   it('a refused create fails with Podman\'s own words', async () => {
     api = await startFakeRuntimeApi([on('POST', `${API}/containers/create`, { status: 500, body: { message: 'name is in use' } })]);
     await expect(createPodmanRuntime(api.socket).create(spec)).rejects.toThrow('podman refused to create the box hopper-sandbox-kube (500): name is in use');
