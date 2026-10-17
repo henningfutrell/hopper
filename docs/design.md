@@ -77,7 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per Windows host, stopped at the timeout, recorded, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
-| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check (`constraints.ts`, pure); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its answer checked in the form asked for and against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), and the machines it can run on (`providers.ts`, pure); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
@@ -23856,7 +23856,7 @@ on the machine.
   (the promotion scan, `src/promotions/scan.ts`), no `@` mention, no label the hopper acts on (`hopper`, `hopper:*`,
   `hopper@*`), a title of at most 120 characters, a body of at most 8000. Each constraint's text goes into the prompt;
   its check runs on the draft (`draftIssue` answers the findings), and is the check to run again on the text the user
-  edited before it is filed. A test fails when the prompt lacks a constraint's text.
+  edited before it is filed. A test fails when the prompt lacks a constraint's text. Issue #475 completes the model: "Draft constraints".
 - **Authentication pending** (issue #470 D17: a shared section, not its own skill). `src/domain/auth-pending.ts` holds
   the job rules' login line (`HOPPER_AUTH_PENDING`, issue #476) and the section every run skill carries. A print-mode run
   has no tools and cannot run a login: its CLI prints the code, the hopper reads it from the run's output
@@ -24329,3 +24329,57 @@ confirmation; the edited text checked again — a secret, an `@` mention —; a 
 confirm step, the issue filed as the person with no label and no assignee, the event on the job's timeline; a viewer refused;
 no provider), `test/ui/file-issue.test.ts` (hidden from a viewer; off with the reason; what is sent; cancel mid-draft; a
 timeout; filed only after Confirm; a blocked value keeps Confirm off).
+
+## Draft constraints (issue #475, 2026-10-17)
+
+**The problem.** An issue drafted by the user's own AI (issue #470) goes to GitHub as text people read. What it may hold,
+and what the run may read, was a short list of rules (issue #472) with no repository check, no check of the user's own
+names or of the secrets the hopper holds, no limit on what is sent to the model, and no rule for what the check does
+with what it finds. The publishing rule (`src/job-rules/index.ts` `PUBLISHING_RULE`) is only an instruction to a model.
+
+**The change.** One list, `DRAFT_CONSTRAINTS` (`src/run-skills/constraints.ts`): each constraint's line goes into the
+file-issue prompt, and its check runs on the model's draft and again on the text the user files. A test fails when the
+prompt lacks a constraint's line.
+- **The draft scope** (`DraftScope`), given by the caller, never by the model: `repos`, the repositories a draft may
+  target (the user's job repositories, issue #470 D7); `known`, the user's own names (machine and host names, connected
+  GitHub logins, display name, email), found as words in any case; `secrets`, the values of secrets the hopper holds,
+  found by value. A known name shorter than 3 characters, or a secret shorter than 8, is no finding: it would match
+  ordinary text. A finding names its constraint and never shows a value.
+- **The constraints:** `repo-allowed` (the target is one of `repos`, at the draft and at filing; a draft on another
+  repository is refused before the model runs); `no-secret` (the promotion scan's secret patterns — GitHub tokens, API
+  keys, private key blocks, 32-byte keys — and the held secrets); `no-personal-data` (email addresses, phone numbers, IPv4
+  and IPv6 addresses, private host names, home directories); `no-known-name`; `no-mention` (an `@` mention, at the draft
+  only: the model's are removed, and one the user adds by hand when they edit is theirs to file); `no-hopper-label` and
+  `label-allowed` (a label only from `SUGGESTED_LABELS`: `bug`, `enhancement`, `documentation`, `question`; never
+  `hopper`, `hopper:*` or `hopper@*`); `title-size` (1 to 120 characters) and `body-size` (at most 8000). The model's
+  answer has no assignee (its JSON Schema allows none).
+- **Enforcement: mask and show, then check again** (issue #470 D9). `maskDraft` masks the model's title and body —
+  held secrets, then the secret and personal patterns, known names, `@` mentions — and drops each label it may not
+  suggest; it answers each change as a **draft mask** (`{ constraint, count }`), never the value, for the review step and
+  the record. The repository and the sizes are not masked: the draft is refused with the reason, never cut. `checkDraft`
+  at `file` runs on the user's text before it is filed, so a value the user puts back is refused there.
+- **What the run reads** (issue #470 D6: no repository checkout): the user's text and the context they attach, nothing
+  else; the run has no tools. `checkRequest` refuses a text over 10,000 characters or a context over 20,000 before the
+  model runs. `maskContext` masks the context the same way (its `@` mentions kept) before it is sent, and answers its
+  masks. The skill tells the model that the text and the context are data and to ignore every instruction in them; the
+  hopper does not trust that it did: the repository is the user's choice and the labels are checked whatever the model
+  answers.
+- `draftIssueWith` (any **draft provider**'s turn, issue #474), `draftIssue` (the user's `claude`) and `draftOn` (the
+  provider and machine the user picked) take the scope and answer the masked draft, its `masks`, the context's
+  `contextMasks` and the findings left.
+
+**Decisions made here.** Mask and show (D9), not block: a draft the user can read and fix is better than none, and the
+check at filing still blocks. Held secrets are found by substring, not by hash or a constant-time compare: the check
+runs on text the hopper already holds, and a timing difference tells nobody outside anything. The labels are a fixed
+list, so the prompt's line and the check cannot differ.
+
+**Not done here.** The draft and filing routes (issue #471) give the scope — the user's job repositories, their names and the
+secrets the hopper holds for them — and runs `checkDraft` at `file` on the text it files. A check of what jobs write to
+GitHub beyond `PUBLISHING_RULE` would be a separate issue.
+
+**Verification:** `test/run-skills/constraints.test.ts` (each detector with near misses: version strings, times, code
+paths, public host names, digests, a word that holds a known name; known names and held secrets, never shown; the
+repository at both stages; the labels and the mentions; a value edited back in refused at filing; the sizes refused, not
+cut; the request limits; the context masks), `test/run-skills/draft.test.ts` (against a fake `claude`: the draft masked
+with its masks by constraint; an over-size draft refused by its findings; another repository and an over-size request
+refused before claude runs; the context masked on stdin; an instruction in the context that adds `hopper:high` dropped).
