@@ -256,9 +256,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     for (const s of sync.statuses().filter((j) => j.kind === `${providerOfKey(key)}-account`)) void sync.syncNow(s.name).catch(() => undefined);
   } });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }), issueDrafter: seams.issueDrafter ?? createClaudeDrafter({ cwd: dataDir, userEnv: cliEnv }), hostname: hostname() }); // the shrink guard's (issue #1096), in the user's mirrors
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, gitlabUrl: () => store.settings.getGitLabAccount()?.baseUrl, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }), issueDrafter: seams.issueDrafter ?? createClaudeDrafter({ cwd: dataDir, userEnv: cliEnv }), hostname: hostname() }); // the shrink guard's (issue #1096), in the user's mirrors
   // The user's GitLab account (issue #1448 part 2): its source comes and goes with it, and syncs at each change.
-  const gitlabAccount = createGitLabAccount({ settings: store.settings, secrets: system, clock, logger, ...(o.sourceEmailMatch ? { emailMatch: () => o.sourceEmailMatch!() } : {}), onChange: (presence) => {
+  // Who on GitLab starts the user's jobs (issue #1448 part 3): Access decides, the GitLab account told as the trusted actor.
+  const gitlabAccount = createGitLabAccount({ settings: store.settings, secrets: system, clock, logger, ...(o.sourceEmailMatch ? { emailMatch: () => o.sourceEmailMatch!() } : {}),
+    ...(o.access ? { startsJobs: (actor, actors) => o.access!.decideGitLabIntakeActor(user.id, actor, actors) } : {}), onChange: (presence) => {
     if (presence) void host.reload().catch(() => undefined);
     for (const s of sync.statuses().filter((j) => j.kind === 'gitlab-account')) void sync.syncNow(s.name).catch(() => undefined);
   } });

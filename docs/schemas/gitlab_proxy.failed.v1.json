@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "as": {
+      "type": "string"
+    },
+    "op": {
+      "type": "string",
+      "const": "git.push"
+    },
+    "project": {
+      "type": "string"
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "op",
+    "project",
+    "error"
+  ],
+  "additionalProperties": false
+}

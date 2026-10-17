@@ -1,6 +1,7 @@
 // The GitLab account (issue #1448 part 2, design.md "A GitLab source"): connect GitLab with a personal access token, at
 // gitlab.com or at a GitLab of your own; pick the projects whose issues labelled hopper Intake lists; the source's sync inside
-// the panel; Remove this account. Jobs do not act through GitLab yet: the panel says so. A token GitLab refused reads
+// the panel; Remove this account. An issue assigned to the account, of a trusted origin, becomes a job that works through the
+// hopper with the account's token (issue #1448 part 3): the panel says so. A token GitLab refused reads
 // "reconnect needed", with a field for a new one. Shown once the daemon answers GET /api/gitlab-account.
 import { Link2, RefreshCw, Unlink } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -104,7 +105,7 @@ export function GitLabSection({ source }: { source: SourceStatus | undefined }) 
       <div>
         <h2 id="sources-gitlab" className="text-sm font-semibold">GitLab</h2>
         <p className="text-xs text-muted-foreground">
-          Issues labelled <code>hopper</code> in the projects you pick are listed in Intake. Jobs do not act through GitLab yet, so no issue of GitLab becomes a job.
+          Issues labelled <code>hopper</code> in the projects you pick are listed in Intake. An issue that your GitLab account wrote, labelled and assigned to itself becomes a job. The job fetches and pushes through the hopper with this account's token, and opens a merge request. Give the token the scopes <code>api</code>, <code>read_user</code> and <code>write_repository</code>.
         </p>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">

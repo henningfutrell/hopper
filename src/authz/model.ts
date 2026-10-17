@@ -106,12 +106,16 @@ type item
 # A GitHub login, lowercased (issue #652): one who wrote, labelled or assigned an issue.
 type github_login
 
+# A GitLab user (issue #1448): one who wrote, labelled, assigned or edited a GitLab issue, by the GitLab's URL and user id.
+type gitlab_account
+
 # A user's intake (issue #652): whose acts on GitHub start the user's jobs. The hopper tells, at each check, the user's
-# trusted actors — the logins named in Settings → Intake, else the user's connected login. An issue is a job only when
-# its author, and whoever labelled and assigned it, may start jobs; any other is a request card a person approves.
+# trusted actors — the logins named in Settings → Intake, else the user's connected login; on GitLab (issue #1448), the
+# user's GitLab account. An issue is a job only when its author, and whoever labelled and assigned it, may start jobs; any
+# other is a request card a person approves.
 type intake
   relations
-    define trusted_actor: [github_login]
+    define trusted_actor: [github_login, gitlab_account]
     define can_start_jobs: trusted_actor
 
 # A job's vault grant (issue #652): whether the jobs of one item may use the vault's helper — a vault secret or a minted
@@ -173,6 +177,8 @@ const ITEM_ASKED: readonly [type: string, relation: string][] = [['item', 'can_a
 /** What the hopper tells and asks for intake (issue #652): apart, so a model edited before them still decides mints. */
 const INTAKE_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['intake', 'trusted_actor', 'github_login']];
 const INTAKE_ASKED: readonly [type: string, relation: string][] = [['intake', 'can_start_jobs']];
+/** What the hopper tells for intake on GitLab (issue #1448): apart, so a model edited before it still decides GitHub's. */
+const GITLAB_INTAKE_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['intake', 'trusted_actor', 'gitlab_account']];
 
 /** What the hopper writes (a relation and the type it accepts) and what it asks. */
 const WRITTEN: readonly [type: string, relation: string, accepts: string][] = [
@@ -249,6 +255,11 @@ export function itemGaps(model: ModelJson): string[] {
 /** What the model lacks for intake (issue #652); empty: trusted actors are decided. A gap here makes every issue a request card, never denies a mint. */
 export function intakeGaps(model: ModelJson): string[] {
   return gapsIn(model, INTAKE_WRITTEN, INTAKE_ASKED);
+}
+
+/** What the model lacks for intake on GitLab (issue #1448); empty: GitLab's trusted actors are decided. A gap: no GitLab issue is a job. */
+export function gitlabIntakeGaps(model: ModelJson): string[] {
+  return gapsIn(model, GITLAB_INTAKE_WRITTEN, INTAKE_ASKED);
 }
 
 /** What the model lacks for vault grants (issue #652); empty: grants are decided. A gap here denies every grant, never a mint. */

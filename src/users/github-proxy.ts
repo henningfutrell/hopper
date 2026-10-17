@@ -9,8 +9,10 @@ import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/ou
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CountPushLines } from '../git-mirror/push-lines.ts';
-import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
+import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts';
+import { GITLAB_GIT_PATH } from '../gitlab/git-broker.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecks, createRepoChecksGitHub, type RepoChecksService } from '../repo-checks/index.ts';
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
@@ -103,6 +105,8 @@ export interface UserGitHubProxyOptions {
   publicUrl(): string | undefined;
   /** The job sources' statuses, each with its last intake (issue #1077: the intake-vs-jobs watcher reads them). */
   sources(): readonly SourceStatus[];
+  /** The URL of the user's GitLab account (issue #1448 part 3); undefined: none attached. */
+  gitlabUrl?(): string | undefined;
   /** The stack resources (issue #1077: the stack-health watcher reads them), given to the oldest user only; absent: none. */
   stack?: () => Promise<StackResources>;
   /** A push's lines, counted in the user's mirrors of the job repositories (issue #1096); absent: no shrink guard. */
@@ -178,6 +182,11 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     },
     pullRequest,
   };
+  /** Where a GitLab job's git goes (issue #1448 part 3): its user's GitLab, rewritten to the hopper's GitLab git route. */
+  const gitlabOf = (job: Job): { url: string; path: string } | undefined => {
+    const at = isGitLabItem(sourceItemOf(job)) ? o.gitlabUrl?.() : undefined;
+    return at ? { url: at, path: GITLAB_GIT_PATH } : undefined;
+  };
   return {
     jobProxy(job, machine) {
       const url = o.url(machine);
@@ -194,7 +203,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
         vars: {
           [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
-          ...jobGitConfig(url, o.accounts.endpoints('github').url),
+          // A GitLab job's git (issue #1448 part 3): to its user's GitLab, through the hopper too; the job holds no GitLab token.
+          ...jobGitConfig(url, o.accounts.endpoints('github').url, gitlabOf(job)),
         },
       };
     },

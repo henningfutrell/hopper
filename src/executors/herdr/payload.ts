@@ -3,6 +3,7 @@
 import { homedir } from 'node:os';
 import { posix } from 'node:path';
 import { JOBS_DIR, sourceItemOf, type Job, type MachineSnapshot } from '../../domain/types.ts';
+import { gitlabCloneUrl, isGitLabItem } from '../../domain/gitlab-account.ts';
 
 export const DEFAULT_TIMEOUT_MS = 3600000;
 
@@ -14,6 +15,8 @@ export interface ClaudeJobPayload {
   makeWorkTree?: boolean;
   /** The job's repository (`owner/name`): fetched or cloned in the work tree before the agent starts (issue #361). */
   repo?: string;
+  /** Its clone URL when it is not GitHub's: a GitLab job's project (issue #1448 part 3). Absent: GitHub's. */
+  repoUrl?: string;
   /** Extra environment for the job's tab (the executor adds HOPPER_JOB_ID). */
   env: Record<string, string>;
   timeoutMs: number;
@@ -78,20 +81,23 @@ export function mappedWorkTree(workTrees: Record<string, string> | undefined, re
  * the work tree the machine maps the job's repository to (issue #691), else the machine's `workTree`, else the jobs
  * directory; the hopper makes the machine's trees when missing. A path set for one machine never reaches another.
  * It keeps its `~`: workTreeOn resolves it on the lane's machine. `repo`: the job's GitHub repository, if
- * any: fetched or cloned in a work tree that is no repository (job-worktree.ts).
+ * any: fetched or cloned in a work tree that is no repository (job-worktree.ts); or a GitLab job's project (issue #1448 part
+ * 3), cloned from `repoUrl`, its URL on its GitLab.
  */
 export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf' | 'followOn'>, machine: Pick<MachineSnapshot, 'id' | 'workTree' | 'workTrees'>): ClaudeJobPayload {
   // A fork (issue #548), or a follow-on queued before issue #859, works in its parent's repository.
   const source = sourceItemOf(job);
   const p = job.spec.payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; timeoutMs?: number };
   const own = job.spec.machineId === machine.id ? p.cwd : undefined;
-  const repo = source?.repo && source.kind.startsWith('github') ? source.repo : undefined;
+  const repoUrl = isGitLabItem(source) && source?.url ? gitlabCloneUrl(source.url) : undefined;
+  const repo = source?.repo && (source.kind.startsWith('github') || repoUrl) ? source.repo : undefined;
   return {
     prompt: p.prompt,
     cwd: own ?? mappedWorkTree(machine.workTrees, repo) ?? machine.workTree ?? JOBS_DIR,
     ...(own === undefined ? { makeWorkTree: true } : {}),
     model: p.model,
     ...(repo ? { repo } : {}),
+    ...(repo && repoUrl ? { repoUrl } : {}),
     env: { ...(p.env ?? {}) },
     timeoutMs: p.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   };
