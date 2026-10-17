@@ -108,6 +108,15 @@ describe('Work not pushed (issue #1010)', () => {
     expect(herdr.prompts[1]!.text).toContain('was not pushed');
     await a.waitForStatus(job.id, 'finished', 8000);
     expect((await a.events('types=job.continued')).filter((e) => e.jobId === job.id)).toEqual([expect.objectContaining({ data: { keptWork: true } })]);
+
+    // Its reap kept the same work again (issue #1470: a clone of another repository, whose push the hopper refuses):
+    // Push it is not offered again, so the job is not asked the same thing in a loop. Discard still is.
+    const again = await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id && !k.actions.push.ok), { what: 'its work kept again' });
+    expect(again.actions.discard).toEqual({ ok: true });
+    expect(again.actions.push).toMatchObject({ ok: false, why: expect.stringContaining('kept the same work') });
+    const refused = await pushIt(a, job.id, {}, token);
+    expect(refused.status).toBe(409);
+    expect(herdr.prompts.length).toBe(2);
   });
 
   it('a cancelled job whose work was kept: Push it goes on in its own session, told to push', { timeout: 30_000 }, async () => {
