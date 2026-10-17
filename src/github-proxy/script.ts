@@ -65,6 +65,9 @@ a minute at most. A job that ends its turn with HOPPER_WAITING while a pr wait i
 To wait on its merge conflicts (a tend job of the hopper rebases it, or another merge makes conflicts), run pr wait
 --for mergeable, once: it returns when the hopper sees its mergeable other than it was, or it merged or closed. The same
 read asked again and again is a poll: the answer says so (poll). Never wait on the hopper in a loop with sleep.
+When GitHub refuses the checks to your user's connection, checks is unknown and checksWhy says the permission it lacks
+and the fix; pr wait cannot wait on them, and pr checks answers what it may read (unreadable: what it may not). Asking
+again does not help: say checksWhy in your pull request or final message, so a person gives the permission.
 A failed check's log: check log reads the log of a GitHub Actions job through the hopper. Never ask a person to paste a
 log. Ask a person only when check log says that the hopper cannot read it, and say why.
 Contributing to a repository your user cannot push to (repo view says canPush false; a push there is refused so):

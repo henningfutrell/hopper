@@ -19,6 +19,8 @@ export interface PullRequestStatus {
   /** Its head commit's checks: `none`, it has none; `unknown`, the hopper may not read them or has not. */
   checks: ChecksState | 'none';
   failedChecks: FailedCheck[];
+  /** Why its checks are `unknown` when the hopper may not read them: the permission the connection lacks, and the fix (issue #1279). */
+  checksWhy?: string;
   base?: string;
   head?: string;
   /** Why the hopper has not merged it yet, in the Pull requests list's words; absent when the hopper does not follow it open. */
@@ -42,7 +44,7 @@ export function knownPullRequest(number: number, url: string, o: { card?: PullRe
   if (card && seen) {
     return {
       number, url, state: card.state === 'closed' ? 'closed' : 'open', draft: card.draft, mergeable: card.mergeable, checks: card.checks,
-      failedChecks: seen.failedChecks ?? [], ...(card.base ? { base: card.base } : {}), ...(seen.headRef ? { head: seen.headRef } : {}),
+      failedChecks: seen.failedChecks ?? [], ...(card.checksWhy ? { checksWhy: card.checksWhy } : {}), ...(card.base ? { base: card.base } : {}), ...(seen.headRef ? { head: seen.headRef } : {}),
       ...(card.waits ? { waits: card.waits } : {}), ...item,
     };
   }
