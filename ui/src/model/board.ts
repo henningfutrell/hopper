@@ -32,6 +32,9 @@ export function ownWaitOf(job: Job): 'command' | 'stuck' | undefined {
   return job.wait.stuckAt ? 'stuck' : 'command';
 }
 
+/** A time as `2026-10-17 12:00 UTC`. */
+const utc = (iso: string): string => `${iso.slice(0, 16).replace('T', ' ')} UTC`;
+
 /** A wait check (issue #1694) in words: what the hopper checks, when next, what the last check found, and whether it is overdue. */
 export function waitCheckText(check: WaitCheck, nowMs: number): { what: string; next: string; last?: string; overdue?: true } {
   const c = check.condition;
@@ -40,10 +43,12 @@ export function waitCheckText(check: WaitCheck, nowMs: number): { what: string; 
     : c.kind === 'job_ended' ? `the hopper checks whether job ${c.jobId} ended`
     : c.kind === 'question_settled' ? `the hopper checks whether question ${c.questionId} is settled`
     : c.kind === 'command_exited' ? 'the hopper checks whether its own command ended'
+    : c.kind === 'pr_checks_ended' ? `the hopper checks whether the checks of ${c.repo}#${c.number} ended`
+    : c.kind === 'time_passed' ? `the hopper wakes it at ${utc(c.at)}`
     : 'the hopper has no check for it: only its deadline counts';
   const mins = Math.round((Date.parse(check.nextCheckAt) - nowMs) / 60_000);
   const next = mins <= 0 ? 'next check now' : mins < 60 ? `next check in ${mins} min` : `next check in ${Math.round(mins / 60)} h`;
-  return { what, next, ...(check.result ? { last: check.result } : {}), ...(check.overdueAt ? { overdue: true as const } : {}) };
+  return { what: check.wakeAt ? `${what}, and wakes it at ${utc(check.wakeAt)}` : what, next, ...(check.result ? { last: check.result } : {}), ...(check.overdueAt ? { overdue: true as const } : {}) };
 }
 
 const PR_ABOUT = { merge: 'to merge', checks: 'checks to end', review: 'review' } as const;
