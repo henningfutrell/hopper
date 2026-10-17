@@ -84,9 +84,10 @@ describe('lane pods of another release', () => {
 
   it('only the hash is kept, and a GET answers when it was issued, never the key', async () => {
     const { a, session } = await boot();
-    expect((await a.api('GET', '/api/machines/pool-key')).body).toEqual({});
+    const read = async () => (await a.api('GET', '/api/machines/pool-key', undefined, { 'x-hopper-session': session })).body;
+    expect(await read()).toEqual({});
     const { key, issuedAt } = await issue(a, session);
-    const seen = (await a.api('GET', '/api/machines/pool-key')).body;
+    const seen = await read();
     expect(seen).toEqual({ issuedAt });
     expect(JSON.stringify(seen)).not.toContain(key);
   });
