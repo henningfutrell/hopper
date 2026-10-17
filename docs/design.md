@@ -24297,6 +24297,21 @@ person's name in each free-text field, and checks that none of them comes out. O
 of the instance, as one list (the tracking issue's decision 6a); per-user parts would be `schema: 3`. A snapshot of 50
 machines is under 8 KiB.
 
+**What hopper.io would get** (part 2, `src/http/hopper-io-state.ts`): the instance makes the snapshot from its live
+state. For each running user it reads the machines and their lanes, the queue and the open questions, the same reads as
+`GET /api/machines`, `GET /api/queue` and `GET /api/questions`, and it adds the installed version and channel of
+`GET /api/update`. It puts them in one list, through the projection, and checks the result against the schema. A
+machine id is a user's own (two users each have a `local`), so each machine goes into the projection under its place
+in the list, and `machineKey(userId, machineId)` gives its key. The queue gate is one field for the instance: `review`
+while any user's gate is `review`, since then jobs can wait on a person; else `auto-accept`. A job that waits on its
+answer is in no list the snapshot counts (`waitingAnswer`); its question counts in `attention`.
+
+`GET /api/cloud-link/state`, the instance admin's only, answers the snapshot now, linked or not. Settings → hopper.io
+shows it as JSON under "What hopper.io would get", so the admin can read the whole data boundary of R5 before linking.
+There each machine's key is `machine-<n>`, its place in the list: the opaque key is the connection's (#464), and a
+preview must not make up one. The read sends, changes and records nothing (`test/integration/hopper-io-state.test.ts`).
+The connection of #464 calls the same source with its own `machineKey`.
+
 **Live updates, with no polling of the instances** (the design for #464 and the hopper.io side; not built):
 
 1. *Instance → hopper.io*, on the cloud link. At connect the instance sends one full snapshot. After that it sends a new
