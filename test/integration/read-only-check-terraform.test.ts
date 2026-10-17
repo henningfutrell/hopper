@@ -6,8 +6,7 @@
 //
 // Feature: a terraform workspace in the read-only check
 //   Scenario: a terraform workspace's probes run with the AWS read session of the template's aws-role read need
-//   Scenario: a terraform workspace with no one aws-role read need beside it fails the check: its probes are not run, saying
-//     so, and the aws-role needs' probes still run (issue #873)
+//   Scenario: a terraform workspace with no one aws-role read need beside it fails the check, saying so, and runs no check box
 //   Scenario: a workspace need with no state backend fails the check: the state push past the wrapper is not run (part 6)
 //   Scenario: a person sets the workspace's state backend; the state push to the check's own key is refused by the account
 //   Scenario: a state backend the hopper cannot use is refused when the template is saved
@@ -74,33 +73,23 @@ describe('a terraform workspace in the read-only check (issue #715)', () => {
     expect((await asked(a, token)).savedAt).toBe(t.savedAt);
   });
 
-  it('a terraform workspace with no one aws-role read need beside it fails the check: its probes are not run, saying so, and the aws-role needs\' probes still run (issue #873)', async () => {
+  it('a terraform workspace with no one aws-role read need beside it fails the check, saying so, and runs no check box', async () => {
     const { a, token, runtime, sts } = await boot(['terraform-workspace/*', `aws-role/${ACCOUNT}/*`]);
     const creds = await runningJob(a);
     await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/terraform-workspace/shop-prod']);
     await a.app.sandboxes.check();
     const alone = await asked(a, token);
-    expect(alone.check).toMatchObject({ state: 'failed' });
-    expect(alone.check!.problem).toBeUndefined();
-    const notRun = (t: TemplateView, why: string): void => {
-      const workspace = t.check!.probes.filter((p) => p.asset === 'shop-prod');
-      expect(workspace.length).toBeGreaterThan(0);
-      for (const p of workspace) expect(p).toMatchObject({ outcome: 'not-run', passed: false, output: `not run: the check box gets no credential for read on terraform-workspace shop-prod: ${why}` });
-    };
-    notRun(alone, 'a terraform workspace is read with the AWS read session of the template\'s aws-role read need, and the template has none: ask for read on the aws-role its provider and state are read with');
-    // No probe of it can run: no check box.
-    expect(runtime.ran.size).toBe(0);
+    expect(alone.check).toMatchObject({ state: 'failed', probes: [] });
+    expect(alone.check!.problem).toBe('the check box gets no credential for read on terraform-workspace shop-prod: '
+      + 'a terraform workspace is read with the AWS read session of the template\'s aws-role read need, and the template has none: ask for read on the aws-role its provider and state are read with');
 
     await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/one read/aws-role/${ACCOUNT}/two`]);
     await a.app.sandboxes.check();
     const two = (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((x) => x.name !== alone.name && x.name.startsWith('asked-'))!;
-    expect(two.check).toMatchObject({ state: 'failed' });
-    notRun(two, `a terraform workspace is read with the AWS read session of the template's aws-role read need, and the template has 2 (${ACCOUNT}/one, ${ACCOUNT}/two): ask for one`);
-    // The probes of the two aws-roles ran in a check box, each with its own read session.
-    const roles = two.check!.probes.filter((p) => p.asset !== 'shop-prod');
-    expect(new Set(roles.map((p) => p.asset))).toEqual(new Set([`${ACCOUNT}/one`, `${ACCOUNT}/two`]));
-    expect(roles.every((p) => p.passed), JSON.stringify(roles)).toBe(true);
-    expect(runtime.ran.size).toBe(1);
+    expect(two.check).toMatchObject({ state: 'failed', probes: [] });
+    expect(two.check!.problem).toBe('the check box gets no credential for read on terraform-workspace shop-prod: '
+      + `a terraform workspace is read with the AWS read session of the template's aws-role read need, and the template has 2 (${ACCOUNT}/one, ${ACCOUNT}/two): ask for one`);
+    expect(runtime.ran.size).toBe(0);
     expect(sts.seen).toHaveLength(2);
   });
 });
