@@ -129,7 +129,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const fake: FakeHerdrClient = {
     session: o.session,
     calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [], credentials: [], checkpoints: [], restores: [], seeds: [],
-    addTurns: (...more) => { turns.push(...more); },
+    addTurns: (...more) => { turns.push(...more); }, setTurns: (...next) => { turns.splice(0, turns.length, ...next); },
     signIn: () => { signedIn = true; },
     dropPrompts: (count) => { droppedPrompts = count; },
     restartServer() {

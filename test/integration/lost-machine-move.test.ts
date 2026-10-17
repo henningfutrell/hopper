@@ -16,6 +16,8 @@ const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { po
 const LONG: FakeTurn = { steps: Array.from({ length: 400 }, (_, i) => `● Painting plank ${i + 1}`), output: ['● Painted the shed.', '  HOPPER_DONE'] };
 /** The end of the agent left waits on the saga's backoff (1 s, doubling) while that machine is away: more than vitest's default. */
 const MOVE_TIMEOUT_MS = 60_000;
+/** The long turn played to its end, on a slow runner: its 400 polls each write the job's progress. */
+const LONG_RUN_MS = 30_000;
 const DONE: FakeTurn = { output: ['● Painted the last planks.', '  HOPPER_DONE'] };
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', env: {} };
 const BASE = 'b'.repeat(40);
@@ -84,10 +86,12 @@ describe('the lost-machine move', () => {
   it('a job whose machine stays away past the link grace resumes on the other machine from its checkpoint, and its agent there is ended once that machine answers', async () => {
     const db = tempDbPath();
     cleanups.push(db.cleanup);
-    // Either machine may take the job first: each can play the long turn, then the resumed one.
-    const h = herdrs({ seatTurns: [LONG, DONE], hostTurns: [LONG, DONE] });
+    // Either machine may take the job first and play the long turn. The other one plays the resumed turn, a short one: the
+    // long turn is one step per poll, and on a slow runner it outlasts the wait for the job to finish.
+    const h = herdrs({ seatTurns: [LONG], hostTurns: [LONG] });
     const a = await boot(h, db.dbPath);
     const { job, on, other, paneId } = await atWork(a, h);
+    h[other].setTurns(DONE);
 
     h[on].setUnreachable(true);
     const done = await a.waitForStatus(job.id, 'finished', 15000);
@@ -129,14 +133,15 @@ describe('the lost-machine move', () => {
     const second = await boot(h, db.dbPath, { HOPPER_RECONNECT_GRACE_MS: '30000' });
     h[on].setUnreachable(false);
     await waitFor(() => (h[on].closed.includes(paneId) ? true : undefined), { what: 'the pane left on the lost machine closed', timeoutMs: 40_000 });
-    // The job's run on the other machine goes on: reattached there, never moved again, never failed.
-    await second.waitForStatus(job.id, 'finished', 15000);
+    // The job's run on the other machine goes on: reattached there, never moved again, never failed. Its long turn is one
+    // step per poll: on a slow runner it plays on well after the pane left was closed.
+    await second.waitForStatus(job.id, 'finished', LONG_RUN_MS);
     const events = await ofJob(second, job.id);
     expect(events.filter((e) => e.type === 'job.parked')).toHaveLength(1);
     expect(events.find((e) => e.type === 'job.reattached')).toMatchObject({ laneId: expect.stringContaining(other) });
     expect(events.some((e) => e.type === 'job.failed')).toBe(false);
     expect(h[on].prompts).toHaveLength(1);
-  }, MOVE_TIMEOUT_MS);
+  }, MOVE_TIMEOUT_MS + LONG_RUN_MS);
 
   it('once the job moved, the hopper refuses the agent left on the lost machine and answers the resumed one', async () => {
     const db = tempDbPath();
