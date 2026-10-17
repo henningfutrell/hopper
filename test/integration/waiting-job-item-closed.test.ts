@@ -95,7 +95,7 @@ describe('a person cancels a job with a reason (issue #1460)', () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const job = waiting(app, gh);
-    const r = await app.api<Job>('POST', `/ui/api/jobs/${job.id}/cancel`, { reason: 'its work landed by hand' });
+    const r = await app.ui<Job>(`/ui/api/jobs/${job.id}/cancel`, { reason: 'its work landed by hand' }, { token: await app.login() });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ id: job.id, status: 'cancelled' });
     expect((await app.events('types=job.cancelled')).find((e) => e.jobId === job.id)?.data).toEqual({ reason: 'cancelled in UI', note: 'its work landed by hand' });
@@ -107,10 +107,11 @@ describe('a person cancels a job with a reason (issue #1460)', () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const job = waiting(app, gh);
-    expect((await app.api('POST', `/ui/api/jobs/${job.id}/cancel`, { reason: 'x'.repeat(501) })).status).toBe(400);
-    expect((await app.api('POST', `/ui/api/jobs/${job.id}/cancel`, {})).status).toBe(200);
+    const token = await app.login();
+    expect((await app.ui(`/ui/api/jobs/${job.id}/cancel`, { reason: 'x'.repeat(501) }, { token })).status).toBe(400);
+    expect((await app.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
     expect((await app.events('types=job.cancelled')).find((e) => e.jobId === job.id)?.data).toEqual({ reason: 'cancelled in UI' });
-    expect((await app.api('POST', `/ui/api/jobs/${job.id}/cancel`, {})).status).toBe(409);
+    expect((await app.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(409);
   });
 
   it('through the CLI: hopper job cancel <id> --reason <text>', async () => {
