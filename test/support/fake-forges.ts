@@ -80,7 +80,7 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   revoked: string[][];
   /** Called as a revoke request arrives, before GitHub answers it. */
   onRevoke?: (credentials: string[]) => void;
-  /** GitHub: the revoke endpoint answers this status, revoking nothing. */
+  /** GitHub: the revoke endpoint and the grant deletion (`DELETE /applications/{client_id}/grant`, issue #463) answer this status, revoking nothing. */
   revokeDown?: number;
   /**
    * GitHub's git over HTTP (issue #652), when made with `gitRoot`: the bare repositories `<gitRoot>/<owner>/<name>.git`,
@@ -245,6 +245,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         for (const c of credentials) { tokens.delete(c); refreshTokens.delete(c); }
         return { status: 202, body: {} };
       }
+      if (r.method === 'DELETE' && r.path === `/api/v3/applications/${o.clientId}/grant`) { if (forge?.revokeDown) return { status: forge.revokeDown, body: { message: 'Server Error' } }; if (!o.clientSecret || r.auth !== `basic ${Buffer.from(`${o.clientId}:${o.clientSecret}`).toString('base64')}`) return { status: 404, body: { message: 'Not Found' } }; const who = tokens.get(String(r.body.access_token)); if (!who) return { status: 404, body: { message: 'Not Found' } }; for (const g of grants.filter((x) => x.login === who)) drop(g); return { status: 204 }; } // the grant and every token of it (issue #463)
       if (!r.path.startsWith('/api/v3/')) return jobLogBlobRoute(forge, r.method, r.path) ?? { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
