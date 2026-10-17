@@ -147,7 +147,7 @@ function Remembered({ remembered, hours, can, busy }: { remembered: readonly Rem
   );
 }
 
-/** Settings → Vault, Sandbox approvals (issue #991): skip template approval, skip sandbox approval, and YOLO, both; the auto-approve policy and the remembered write approvals (issue #1001). */
+/** Settings → Vault, Sandbox approvals (issue #991): skip template approval, skip sandbox approval, and YOLO, both; the standing read grant (issue #1472); the auto-approve policy and the remembered write approvals (issue #1001). */
 export function SandboxApprovals({ approvals, remembered, can, busy }: { approvals: Approvals | undefined; remembered: readonly RememberedWriteView[]; can: boolean; busy: boolean }) {
   const a = approvals ?? { skipTemplateApproval: false, skipSandboxApproval: false };
   const auto = autoApproveOf(approvals);
@@ -172,6 +172,7 @@ export function SandboxApprovals({ approvals, remembered, can, busy }: { approva
         {row('YOLO', 'Both below: a job gets its sandbox with no person.', yolo, (on) => set({ yolo: on }, on ? 'YOLO is on' : 'YOLO is off'))}
         {row('Skip template approval', 'A new template a job asks for is approved at once, its write, sync and apply profiles too.', a.skipTemplateApproval, (on) => set({ skipTemplateApproval: on }, 'Saved'))}
         {row('Skip sandbox approval', 'A sandbox run starts the moment a job asks, a high-blast-radius one too.', a.skipSandboxApproval, (on) => set({ skipSandboxApproval: on }, 'Saved'))}
+        {row('Standing read grant', 'A job on a sandbox whose template only reads what the read policy holds gets the vault with no person. A template with a write or a vault secret still waits for a person\'s grant. Off: no job that has not asked yet gets it.', a.standingReadGrant === true, (on) => set({ standingReadGrant: on }, on ? 'Standing read grant is on' : 'Standing read grant is off'))}
         <p className="pt-1 font-medium">Auto-approve by blast radius</p>
         <p className="text-xs text-muted-foreground">A new template a job asks for, and a sandbox run, of a level on here is approved with no person. Each approval is an event that names the auto-approve policy.</p>
         {LEVELS.map((l) => row(`Auto-approve ${l} radius`, LEVEL_HINT[l], auto[l], (on) => set({ autoApprove: { [l]: on } }, 'Saved')))}

@@ -4055,7 +4055,7 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 
 ## `vault.sandbox_approvals_set`
 
-Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person. `rememberWritesHours` (issue #1001): how long a person's write, sync or apply approval is remembered; 0, until an admin forgets it.
+Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person. `rememberWritesHours` (issue #1001): how long a person's write, sync or apply approval is remembered; 0, until an admin forgets it. Issue #1472: `standingReadGrant`, the standing read grant: a job on a box of a template that only reads what the read policy holds gets the vault grant with no person.
 
 | field | type | required |
 |---|---|---|
@@ -4063,6 +4063,7 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 | `skipSandboxApproval` | boolean | yes |
 | `autoApprove` | object | no |
 | `rememberWritesHours` | integer | no |
+| `standingReadGrant` | boolean | no |
 | `by` | string | yes |
 
 ```json
@@ -4215,7 +4216,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for; `standing read grant` (issue #1472) when the user's standing read grant gave it, with no person, to a job on a box of a template that only reads what the read policy holds.
 
 | field | type | required |
 |---|---|---|

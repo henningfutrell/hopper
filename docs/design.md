@@ -16522,6 +16522,39 @@ scope, as every box job did before. A person who grants a job of a request card'
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
 out ("Git through the hopper", residual risk).
 
+### The standing read grant (issue #1472, 2026-10-16)
+
+Owner decision on issue #1472 (part 4, a default read-only `cluster/uat-view` for every job): **a per-user setting, off
+by default**, that grants with no person only what is read-only. It reverses issue #652 option 1 ("a grant per job, asked
+when it is needed") for read-only grants only; every other grant is a person's, as above.
+
+**What it covers** (`readsOnlyInPolicy`, `src/domain/vault-grants.ts`): a template that has needs, every one a `read`
+the user's read policy holds ("Templates on request"), and no vault secret. A write, sync or apply, a read outside the
+policy, a vault secret, or no needs at all: not covered, and the job's ask becomes a grant ask for a person as before.
+`cluster/uat-view` is the first case: a template of `read cluster/uat` with `cluster/uat` in the read policy.
+
+**The grant** (`withVaultGrants`, `src/vault/grants.ts`). The gate checks a person's grant first. With none, and the
+toggle on, a box job whose box's template is covered passes, and `vault.granted { job, key, by: "standing read grant" }`
+is recorded once for that job — the same event as a person's grant, with the setting as `by`, as skip template approval
+names itself. The vault then decides as for any granted job: the template's approved scope, Access for a mint. The grant
+widens nothing, and it covers only the box it was asked from: the same job on a box of a template with a write is refused
+until a person grants it. No row is kept in `vault_grants`: the job is kept in the hopper's memory while it is at work, so
+Run again and Rework do not inherit it — each new job is granted again only while the toggle is on. It does not show in
+the **Vault grants** panel; the job's timeline shows the event.
+
+**Turned off**, it grants no job that has not asked yet: a job already granted keeps it until it ends (its run had
+started), and every other job's ask is a grant ask for a person. A hopper restart forgets the jobs it granted: with the
+toggle off, such a job's next ask waits for a person — closed, never open.
+
+**The toggle** is in Settings → Vault, panel **Sandbox approvals**: `standingReadGrant` on `POST /ui/api/sandbox-approvals`
+(admin, a box action), kept in the user's `sandboxApprovals` setting (absent: off, so no migration), recorded in
+`vault.sandbox_approvals_set`. YOLO does not set it. Tests: `test/integration/standing-read-grant.test.ts`,
+`test/domain/standing-read-grant.test.ts`.
+
+**Residual risk.** A read the policy holds is given to every job of the user while the toggle is on, whatever the job's
+origin: a job of a request card a person approved reads what any trusted job reads. The read policy is the upper bound,
+so an entry such as `cluster/*` gives every job a read of every cluster. Keep the policy narrow while the toggle is on.
+
 ## Delegate approvers (issue #1138, 2026-10-14)
 
 Requirement: the owner hands approvals to an agent (Chief of Staff) without the agent touching the owner's browser session
