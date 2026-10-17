@@ -145,6 +145,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** Each machine's last measure (issue #1120), and the machines told over the disk budget. */
   const measured = new Map<string, { paths: HopperDiskPath[]; at: string }>();
   const told = new Set<string>();
+  /** The jobs, by `<machine>/<job id>`, whose dirs the reap could not remove, told once (issue #1452). */
+  const stuck = new Set<string>();
   let busy = false;
   /** Each discard's removal under way or failed, by job (issue #1194), and the reaps running. */
   const discards = new Map<string, Discarding>();
@@ -227,6 +229,14 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         continue;
       }
       recordRemoved(r.jobId, m, said);
+      // A dir the reap could not remove is still there (issue #1452): never said removed, and told once while it stays.
+      const where = `${m.id}/${r.jobId}`;
+      if (said.left?.length) {
+        if (!stuck.has(where)) log(`hopper: the sweep could not remove job ${r.jobId}'s scratch dir on ${m.id}: ${said.left.join(', ')} is still there`);
+        stuck.add(where);
+        continue;
+      }
+      stuck.delete(where);
       if (r.scratch && said.kept.length === 0) removed += 1;
       if (discard && said.kept.length === 0) {
         log(`hopper: the sweep discarded job ${r.jobId}'s kept work on ${m.id}: ${WHY[reason]}`);
@@ -282,6 +292,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         }
         recordRemoved(jobId, m, said);
         if (said.kept.length > 0) { failed(`the machine ${m.id} kept it: update its client, then discard it again`); return; }
+        if (said.left?.length) { failed(`the machine ${m.id} could not remove ${said.left.join(', ')}`); return; }
         discards.delete(jobId);
         log(`hopper: job ${jobId}'s kept work was discarded on ${m.id}, its scratch dir removed`);
         c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [scratch], discarded: true, ...by } });

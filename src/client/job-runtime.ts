@@ -179,13 +179,17 @@ export function runtimeOutcome(screen: string): RuntimeOutcome | undefined {
  * reset — through the config written again here, with the job's storage and runtime dir named on the command line, so
  * nothing the job changed can point it at another runtime (its run state only in that config: Podman 4 refuses a
  * `--runroot` longer than 50 characters, and the runtime dir's is) —, then every process still started from it stopped, and the
- * dir removed. The scratch dir is the one given, else the one the runtime dir names, and only ever the job's own. Not a
+ * dir removed. The scratch dir is the one given, else the one the runtime dir names, and only ever the job's own; a runtime dir
+ * that is gone while the given scratch dir holds its storage is made again for this (issue #1452). Not a
  * timed-out job's (keep): it may go on there.
  */
 export const REAP_RUNTIME_SH = [
   'if [ "$k" != keep ]; then',
   HOST_RUNTIME_SH,
   `  j=$h/${RUNTIME_PREFIX}$id;`,
+  // Its runtime dir gone (a reboot clears the user's), its storage still in the scratch dir given (issue #1452): the
+  // runtime dir made again, so the storage is reset and removed as below. Else its files of the job's user namespace stay.
+  `  case $s in /*/.worktrees/@scratch/"$id"|/*/.hopper-scratch/"$id") [ ! -e "$j" ] && [ -d "$h" ] && [ -d "$s/${RUNTIME_SUBDIR}/storage" ] && [ ! -L "$s/${RUNTIME_SUBDIR}" ] && [ ! -L "$s/${RUNTIME_SUBDIR}/storage" ] && command -v podman >/dev/null 2>&1 && mkdir -m 700 "$j" 2>/dev/null;; esac;`,
   '  if [ -d "$j" ] && [ ! -L "$j" ]; then',
   '    js=$s; [ -n "$js" ] || js=$(head -n 1 "$j/scratch" 2>/dev/null);',
   '    case $js in /*/.worktrees/@scratch/"$id"|/*/.hopper-scratch/"$id") ;; *) js=;; esac;',

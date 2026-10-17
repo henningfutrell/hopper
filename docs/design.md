@@ -942,6 +942,10 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     (`job.containers_removed`).
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
+  A dir the reap could not remove (issue #1452) is never said removed. The reap makes a read-only dir in it (a Go
+  module cache) writable and removes it again, and resets the job's container storage in it through the job's runtime
+  dir, which it makes again when a reboot removed it. What is still there it names (`hopper-left <path>`): the sweep
+  logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking

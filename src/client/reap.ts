@@ -74,6 +74,8 @@ const REAP_SCRIPT = [
   `n=$w/${LAYOUT.scratch}/$id; o=$w/${LAYOUT.oldScratch}/$id;`,
   // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.
   'rm -rf "$n/credentials" "$o/credentials";',
+  // Removes $1, a dir of the job's: a read-only dir in it (a Go module cache) made writable first when a plain remove left it (issue #1452).
+  'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+w "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
   'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
@@ -116,8 +118,10 @@ const REAP_SCRIPT = [
   '    f=; [ "$k" = discard ] && f="--force --force";',
   '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove $f "$d" 2>/dev/null;',
   '  done;',
-  '  trees | while IFS= read -r t; do rm -rf "$t"; rmdir "${t%/*}" 2>/dev/null; done;',
-  '  rm -rf "$n" "$o";',
+  '  trees | while IFS= read -r t; do gone "$t"; rmdir "${t%/*}" 2>/dev/null; done;',
+  '  gone "$n"; gone "$o";',
+  // What is still there (issue #1452) is named: the sweep then never says it removed it.
+  '  { dirs; trees; } | sed "s/^/hopper-left /";',
   'fi;',
   // The layout before issue #1188, once it holds no job's scratch dir or worktree: its scratch area (with the shared
   // dependencies and repository mirrors only its jobs used) and its worktrees dir go. Then git forgets every worktree
@@ -185,17 +189,18 @@ export const reapArgv = (jobId: string, scratch = '', keep = false, discard = fa
 export const surveyArgv = (roots: readonly string[]): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', SURVEY_SCRIPT, 'sh', ...roots];
 
 /**
- * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), and the containers and
- * volumes of the job it removed (issue #1120). Undefined when it did not finish.
+ * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), the dirs of the job it
+ * could not remove (issue #1452), and the containers and volumes of the job it removed (issue #1120). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; pushed?: string[]; removed?: { containers: string[]; volumes: string[] } } | undefined {
+export function readReap(stdout: string): { kept: string[]; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[] } } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
   const pushed = named('hopper-pushed ');
   const containers = named('hopper-removed-container ');
   const volumes = named('hopper-removed-volume ');
-  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}), ...(containers.length || volumes.length ? { removed: { containers, volumes } } : {}) };
+  const left = named('hopper-left ');
+  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}), ...(containers.length || volumes.length ? { removed: { containers, volumes } } : {}) };
 }
 
 /** One scratch dir the survey found: its job, path and age. */
