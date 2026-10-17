@@ -5,6 +5,7 @@
 // tree line and the protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
+import { AUTH_PENDING_LINE } from '../domain/auth-pending.ts';
 import { SCRATCH_AREA, WORKTREES_DIR } from '../domain/job-layout.ts';
 import { asksOfSpec, followOnBrief, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type FollowOnOf, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
@@ -96,7 +97,7 @@ export const PROTOCOL_LINES: readonly string[] = [
   // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
   SKILL_LINE,
   // A login (issue #476); its outcome, said by the job that asked for it (issue #1110, `hopper-login`).
-  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in. Only you know whether a login worked: when it goes through, also tell the hopper: sh "$HOPPER_LOGIN" completed <tool>. When it fails, or a later check shows that it does not work, tell the hopper why: sh "$HOPPER_LOGIN" failed <tool> --reason "<why>".',
+  AUTH_PENDING_LINE,
   // A job's task count (issue #794): its progress, x/y, as each task completes; never a clock.
   TASKS_LINE,
   // A job's own wait (issue #483): blocked on a person or the outside world, it says so; never a question only to wait.

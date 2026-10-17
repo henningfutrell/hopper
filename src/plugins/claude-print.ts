@@ -34,10 +34,11 @@ export interface ClaudePrintOptions {
 
 /**
  * On an attached machine: claude in a fresh private dir there, removed after with the project dir
- * claude keeps for it. `"$@"` is claude and its arguments, passed as words, never parsed as script.
+ * claude keeps for it, named for the dir as claude sees it: its real path, so a TMPDIR through a link (issue #472) still
+ * finds it. `"$@"` is claude and its arguments, passed as words, never parsed as script.
  * Run as `sh -c ON_MACHINE sh <bin> <args…>`.
  */
-export const ON_MACHINE = 'd=$(mktemp -d) && cd "$d" || exit 1; "$@"; s=$?; cd /; rm -rf "$d" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(printf %s "$d" | tr -c A-Za-z0-9 -)"; exit $s';
+export const ON_MACHINE = 'd=$(mktemp -d) && cd "$d" && d=$(pwd -P) || exit 1; "$@"; s=$?; cd /; rm -rf "$d" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(printf %s "$d" | tr -c A-Za-z0-9 -)"; exit $s';
 
 /** Default `timeoutMs` of the claude plugins. */
 export const CLAUDE_TIMEOUT_MS = 180_000;
