@@ -33,9 +33,9 @@ describe('the section types', () => {
     expect(REVIEW_SECTIONS.research.decisions.map((d) => [d.id, d.effect, d.notes])).toEqual([
       ['accept', 'accept', 'optional'], ['dig_deeper', 'send_back', 'optional'], ['steer', 'send_back', 'required'],
     ]);
-    // A proposal is a set of paths (issue #651): continue with the selected paths, ask for more, steer, reject all.
+    // A proposal is a set of paths (issue #651): continue with the selected paths, ask for more, steer, reject (the whole proposal, issue #1659).
     expect(REVIEW_SECTIONS.proposal.decisions.map((d) => [d.id, d.effect, d.notes])).toEqual([
-      ['accept', 'accept', 'optional'], ['more_paths', 'send_back', 'optional'], ['steer', 'send_back', 'required'], ['reject', 'reject', 'required'],
+      ['accept', 'accept', 'optional'], ['more_paths', 'send_back', 'optional'], ['steer', 'send_back', 'required'], ['reject', 'reject', 'optional'],
     ]);
     expect(SECTIONS.research.events).toEqual(expect.arrayContaining(['research.submitted', 'research.accepted', 'research.cancelled']));
     expect(SECTIONS.research.events).not.toContain('research.rejected');
