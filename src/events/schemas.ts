@@ -110,6 +110,7 @@ const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean
 // `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
+const preemptionSettings = strict({ enabled: z.boolean(), minRunMinutes: z.number().min(0) });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
 export const EVENT_SCHEMAS = {
@@ -319,6 +320,8 @@ export const EVENT_SCHEMAS = {
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
   'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }),
+  'preemption.settings_changed': strict({ from: preemptionSettings, to: preemptionSettings, by: z.string() }),
+  'job.preempted': strict({ by: z.string(), byPriority: z.number(), priority: z.number(), reason: z.string() }),
   ...TLDR_EVENT_SCHEMAS,
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.

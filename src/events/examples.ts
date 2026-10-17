@@ -149,6 +149,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'allowed_hosts.changed': { from: [], to: ['hopper.example.net'], by: 'admin' }, 'source_email_match.changed': { on: false, by: 'admin' },
   'github_rate_limiter.settings_changed': { from: { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15, prCycleMinutes: 3 }, to: { slowBelowPercent: 40, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15, prCycleMinutes: 3 }, by: 'admin' },
   'auto_park.settings_changed': { from: { minutes: 30, highPriorityMinutes: 30 }, to: { minutes: 30, highPriorityMinutes: 10 }, by: 'admin' },
+  'preemption.settings_changed': { from: { enabled: true, minRunMinutes: 10 }, to: { enabled: true, minRunMinutes: 20 }, by: 'admin' },
+  'job.preempted': { by: 'j-high', byPriority: 75, priority: 50, reason: 'preempts j-low (priority 50, running 42 min) on laptop/lane-2: job j-high of priority 75 waits and every lane it may use is busy' },
   'question.thread_held': { questionId: 'q1', repo: 'someone/library', number: 12 },
   'question.thread_approved': { questionId: 'q1', by: 'admin' },
   'question.thread_posted': { questionId: 'q1', url: 'https://github.com/someone/library/issues/12#issuecomment-1', approvedBy: 'admin' },
