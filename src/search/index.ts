@@ -5,13 +5,14 @@
 //   schema); an `artifact.*` event marks its artifact, an `infra.plan_*` event its plan (part 3); an intake event the issues
 //   it names, and a read of the issue graph each issue and pull request it gave (part 4). A pass every 2 seconds
 //   builds each pending document again from Postgres and writes it to Solr; a mark is cleared only once Solr took the
-//   write, so a document changed while Solr is down is written when it is back. One that is gone is removed.
+//   write, so a document changed while Solr is down is written when it is back. One that is gone is removed. The marks
+//   are kept with search's event cursor (issue #1572): an event committed just before a stop is marked at the next start.
 // - **Backfill.** At the first pass that reaches Solr, a user whose documents the core lacks (none for this hopper and
 //   user: a new core, a lost volume) has every job, artifact, plan, issue and pull request marked; `reindex` marks them again when a person asks.
 // - **Degraded.** Solr not reached: the pass waits longer each time (up to a minute), a search answers `degraded` with
 //   why, and nothing else waits on it. Access not asked: the hits are hidden, and the search says so.
 import type { Access } from '../authz/access-port.ts';
-import type { Clock } from '../domain/ports.ts';
+import type { Clock, EventFollower } from '../domain/ports.ts';
 import {
   emptyFacets, parsePendingKey, pendingKey, searchDocumentId,
   type SearchAnswer, type SearchDocument, type SearchIndex, type SearchQuery, type SearchScope, type SearchStatus, type SearchType, type SuggestAnswer,
@@ -73,7 +74,7 @@ export interface SearchWiring { index: SearchIndex | undefined; instanceId: stri
 
 export function createUserSearch(o: {
   scope: SearchScope;
-  store: Pick<UserStore, 'jobs' | 'questions' | 'directJobs' | 'artifacts' | 'infraPlans' | 'issueGraph' | 'itemSnapshots' | 'events' | 'searchPending'>;
+  store: Pick<UserStore, 'jobs' | 'questions' | 'directJobs' | 'artifacts' | 'infraPlans' | 'issueGraph' | 'itemSnapshots' | 'events' | 'eventCursors' | 'searchPending' | 'tx'>;
   /** Absent: no HOPPER_SOLR_URL; search answers `not-configured` and nothing is marked. */
   index: SearchIndex | undefined;
   access: Pick<Access, 'decideSearchHit'> | undefined;
@@ -94,7 +95,7 @@ export function createUserSearch(o: {
   let backfill: SearchStatus['backfill'];
   let running: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
-  let unsubscribe: (() => void) | undefined;
+  let follower: EventFollower | undefined;
   let stopped = false;
 
   const degrade = (why: string): void => {
@@ -152,12 +153,15 @@ export function createUserSearch(o: {
     return jobDocument({ scope, job, questions: store.questions.list({ jobId: job.id }), ...(direct ? { direct } : {}) });
   };
 
+  /** The documents named since the last pass marked, with the cursor at the last event that named them (issue #1572). */
+  const markNamed = (): void => {
+    const keys = [...named];
+    named.clear();
+    store.tx(() => { store.searchPending.mark(keys); follower?.save(); });
+  };
+
   const write = async (ix: SearchIndex): Promise<void> => {
-    if (named.size > 0) {
-      const keys = [...named];
-      named.clear();
-      store.searchPending.mark(keys);
-    }
+    markNamed();
     if (o.clock.now().getTime() < nextAt) return;
     try {
       if (!schemaReady) { await ix.ensureSchema(); schemaReady = true; }
@@ -250,20 +254,20 @@ export function createUserSearch(o: {
     pass,
     start() {
       if (!index || timer || stopped) return;
-      unsubscribe = store.events.subscribe((e) => { for (const k of keysOf(e)) named.add(k); });
+      // From the event search last marked for (issue #1572): the events committed while it was stopped are named too.
+      follower = store.eventCursors.follow('search', (e) => { for (const k of keysOf(e)) named.add(k); });
       timer = setInterval(() => { void pass(); }, passMs);
       timer.unref();
       void pass();
     },
     async stop() {
       stopped = true;
-      unsubscribe?.();
+      follower?.stop();
       if (timer) clearInterval(timer);
       timer = undefined;
       await running;
       // Documents named since the last pass stay marked: the next start writes them.
-      if (named.size > 0) store.searchPending.mark([...named]);
-      named.clear();
+      markNamed();
     },
   };
 }
