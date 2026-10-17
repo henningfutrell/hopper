@@ -253,7 +253,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   secrets.connect((e) => runtimes.events.append(e));
   // Remote access (issue #880): the tunnel's settings, set in the UI, its authtoken in the instance's vault (an install's NGROK_AUTHTOKEN and
   // HOPPER_PUBLIC_URL from before moved there once), and its watch. The allowed hosts (issue #1024): the admin's, and this host's tailnet's.
-  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, port: () => port, tunnelApis: config.tunnelApis, ...(seams.tunnelProviders ? { providers: seams.tunnelProviders } : {}), env, publicUrl: config.publicUrl, now: () => clock.now(), logger }), allowedHosts = createAllowedHosts({ settings: store.settings, events: runtimes.events, tailnet: seams.tailnet, lanNames: config.lanNames, port: () => port, logger });
+  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, port: () => port, mints: { begin: (kind, key, data) => sagas.begin(kind, key, data), drive: (id) => sagas.drive(id), abort: (id, reason) => sagas.abort(id, reason), open: () => instance.sagas.open() }, instanceId: instance.settings.instanceId(), tunnelApis: config.tunnelApis, ...(seams.tunnelProviders ? { providers: seams.tunnelProviders } : {}), env, publicUrl: config.publicUrl, now: () => clock.now(), logger }), allowedHosts = createAllowedHosts({ settings: store.settings, events: runtimes.events, tailnet: seams.tailnet, lanNames: config.lanNames, port: () => port, logger });
   // The hopper's app's client secret turns GitHub sign-in by redirect on (issue #258). A bad one (NAME and
   // NAME_FILE both set, an unreadable file) stops the start; read again at each use, so a rotated one counts.
   const secret = runtimeSecrets(env);
@@ -294,7 +294,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     ...(config.egress && (sandboxRuntime?.kind === 'podman' || sandboxRuntime?.kind === 'docker') ? { egress: createEgress(config.egress) } : {}),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
-  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps }), jobMoveSaga({ engine: (userId) => runtimes.get(userId)?.engine })], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
+  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps }), jobMoveSaga({ engine: (userId) => runtimes.get(userId)?.engine }), ...remoteAccess.sagas], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
   const playground = createPlayground({ runtime: sandboxRuntime, noRuntime: inPod ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME, instanceId: instance.settings.instanceId(), network: hopperNetwork(config), limits: config.playground, clock, logger }); // the sandbox playground (issue #1410): many sandboxes at once, on the same runtime, none a machine
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
