@@ -10735,8 +10735,8 @@ may not assume, with nothing to tell them.
   `src/skills/template-request.ts`): it names each unminted need and the vault's reason, and the read needs on the same
   account or cluster that a check of another template passed with, to ask for in its place. `template.checked` asks a
   waiting request again, so a job on its own wait is woken with that refusal.
-- **Not built (left on the issue).** A job on its own wait whose agent session ended is not yet shown as stranded in the
-  operator CLI and the UI.
+- **A stranded wait (part 2).** A job on a wait the hopper watches whose agent session ended — its pane a bare shell —
+  is marked stranded and counted as stuck work (`stranded`, Wake all): "Stuck work" and "Watched items" below.
 
 Tests: `test/integration/read-only-check-unminted.test.ts` (the real daemon and `hopper-skill`: the check fails on a
 cluster with no minting credential, the job's wait ends with the refusal, a credential for another cluster keeps the
@@ -12388,12 +12388,13 @@ one press per cause where the hopper can move each item.
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
   tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
-  "waiting on nothing recorded", issue #1245); a job stuck on its own command wait (`own_wait`); an
+  "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
   item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
-  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed` (else 400;
-  `wait_unnamed`, Resume all, ends each such wait with a note that tells the job to go on or name what it waits on, issue #1245).
+  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed`, `stranded` (else 400;
+  `wait_unnamed`, Resume all, ends each such wait with a note that tells the job to go on or name what it waits on, issue #1245;
+  `stranded`, Wake all, ends each such wait as a person's End the wait, issue #1779).
   It reads the view at the press and runs the cause's action on each item, through the same path as its own button, with
   who pressed it, answered once each is checked, its give-back running after (issue #1194, "Actions answer at once"): the hand-off's resolution (Won't do with its card's why as the note, so the
   source is told why), the failure's Run again, Push it, Tend again. An item refused meanwhile is skipped and said with
@@ -22468,6 +22469,18 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   start the poll again. So a job is woken after a daemon start and after a seat's restart alike. Before, a wait on its own
   command whose pane was gone was nudged, then flagged stuck: now it is woken. A wait the hopper watches (a pull request, an
   item, a job, a question, a grant, watched items) is left to that watch.
+- **A stranded wait** (issue #1779). A wait the hopper watches is asked `paneLost` on the same tick too. Its agent session
+  ended (Claude exited and the pane shows a bare shell, or the pane is gone): the wait is marked `strandedAt`, not ended,
+  and the mark goes when its agent is seen again. Reported from a real run: two jobs waited on a template approval that
+  could not come, their panes at a shell prompt; nothing showed it, and the only way out was cancel and run again. What it
+  waits on still wakes it (its resume opens a new pane, below). Meanwhile it is stuck work, `stranded`, "Jobs on a wait
+  whose agent session ended": **Wake all** ends each such wait as a person's End the wait. The Dashboard's wait row shows
+  "stranded: its agent session ended". A person's end of a stranded wait tells the job that its session ended while it
+  waited, so what it waited for may not have happened: check it, wait again, or ask for something that can happen. The
+  operator CLI: `hopper failure stuck` lists the stuck causes, `hopper failure stuck <cause>` runs a cause's bulk action,
+  and `hopper job end-wait <id> [--note <text>]` ends one job's wait; `hopper queue list` and `hopper job show` give a stranded
+  wait's `strandedSince` (issue #1780's words for a wait). No event: the mark is on the wait, read by the views.
+  Tests: `test/integration/job-wait-stranded.test.ts`, `test/domain/stuck.test.ts`, `test/ui/job-wait-view.test.ts`.
 - **Resumed in a new pane.** A job resumed whose pane is gone (`resume`, herdr-claude) no longer fails `pane lost`: as for a
   pane herdr restored (issue #1465), what is left of the job is reaped, a new pane opens as at the start, Claude resumes the
   agent session, told `LOST_NOTE` and then its answer (`resumeLostPane`, `src/executors/herdr/restored.ts`). With no agent

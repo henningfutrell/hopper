@@ -14,12 +14,16 @@ import { EngineError } from './errors.ts';
 export type WaitEnder = 'person' | 'hopper';
 
 /** What the job is told in its pane when a person, or the hopper, ends its wait. */
-export function waitEndedNote(wait: Pick<JobWait, 'for'> | undefined, note?: string, by: WaitEnder = 'person'): string {
+export function waitEndedNote(wait: Pick<JobWait, 'for' | 'strandedAt'> | undefined, note?: string, by: WaitEnder = 'person'): string {
   const waited = wait ? ` (${wait.for})` : '';
   if (by === 'hopper') {
     return `[hopper] The hopper ended your wait${waited}: the answer to a request you made is ready.${note ? ` The answer: ${note}` : ''} Check it, then go on with the job.`;
   }
   const said = note ? ` The person's note: ${note}` : '';
+  // Its agent session ended while it waited (issue #1779): it is resumed in a new pane, and what it waited for may not have happened.
+  if (wait?.strandedAt) {
+    return `[hopper] A person ended your wait${waited}. Your agent session ended while you waited, so nothing could wake you.${said} Check what you waited for. If you still wait, end your turn with HOPPER_WAITING again. If it cannot happen, ask for something that can, or go on with the job.`;
+  }
   return `[hopper] A person ended your wait: what you waited for${waited} has happened.${said} Check it, then go on with the job.`;
 }
 

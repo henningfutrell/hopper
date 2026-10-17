@@ -100,6 +100,18 @@ describe('stuck work by cause (issue #1010)', () => {
     expect(causes).toEqual([{ cause: 'wait_unnamed', ids: ['j1', 'j2'], what: 'Jobs waiting on nothing recorded', act: 'Resume all' }]);
   });
 
+  it('a job on a wait whose agent session ended (issue #1779): stranded, with Wake all, before its own wait\'s cause', () => {
+    const causes = stuckOf({
+      ...empty,
+      jobs: [
+        job('j1', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'grant' }, strandedAt: 't' } }),
+        job('j2', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'grant' }, strandedAt: 't', check: { overdueAt: 't' } as never } }),
+        job('j3', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'grant' } } }),
+      ],
+    });
+    expect(causes).toEqual([{ cause: 'stranded', ids: ['j1', 'j2'], what: 'Jobs on a wait whose agent session ended', act: 'Wake all' }]);
+  });
+
   it('items left in PR open with no pull request to wait on (issue #1231): counted by their job, with what a person does', () => {
     const causes = stuckOf({ ...empty, prOpen: ['j1', 'j2'] });
     expect(causes.map((c) => [c.cause, c.ids])).toEqual([['pr_open_stale', ['j1', 'j2']]]);

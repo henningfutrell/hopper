@@ -51,6 +51,7 @@ export const OPERATOR_USAGE = `  hopper job show <id>                           
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
   hopper job cancel <id> [--reason <text>]           any job that has not ended ends cancelled, the reason kept on it
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
+  hopper job end-wait <id> [--note <text>]           end a job's own wait: it goes on, told the note; a stranded one resumes its session
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
@@ -73,6 +74,7 @@ ${QUEUE_USAGE}
   hopper handoff wont-do <id> --note <why>           Won't do: no more work on it; the note says why
   hopper failure list                                the open failures
   hopper failure retry <id>                          run a failure's job again
+  hopper failure stuck [<cause>]                     the stuck work by cause (stranded: a wait whose agent session ended); with a cause, run its bulk action
   hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
 ${PR_USAGE}
 ${REPO_USAGE}
@@ -125,10 +127,13 @@ function jobCall(args: string[]): Call {
   const direct = directCall(args[0], args.slice(1));
   if (direct) return direct;
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine <id>');
-  const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes;
+  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|end-wait <id>');
+  const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes, note = values.note;
+  // End a job's own wait (issue #1779: a stranded one too), as the job's End wait button.
+  if (verb === 'end-wait' && notes === undefined && values.reason === undefined) return { role: 'operator', path: `${at}/end-wait`, body: async () => (note === undefined ? {} : { note }) };
+  if (verb === 'end-wait' || note !== undefined) throw usage('job end-wait <id> [--note <text>]');
   // The whole job as the job view reads it; a held job's `holdReason` says why it is held, and one on its own wait what it waits on (issue #1780).
   if (verb === 'show' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}`, pick: (j) => ({ ...(j as Job), ...ownWaitOf(j as Job) }) };
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
@@ -145,7 +150,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine <id>');
+  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|end-wait <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */
@@ -186,7 +191,10 @@ function failureCall(args: string[]): Call {
   const [verb, id, ...extra] = args;
   if (verb === 'list' && !id) return failuresList((v) => v.recent);
   if (verb === 'retry' && id && extra.length === 0) return { role: 'operator', path: `/ui/api/failures/${encodeURIComponent(id)}/retry`, body: async () => ({}) };
-  throw usage('failure list | retry <id>');
+  // Stuck work (issues #1010, #1779): the causes, or one cause's bulk action.
+  if (verb === 'stuck' && !id) return failuresList((v) => v.stuck);
+  if (verb === 'stuck' && extra.length === 0) return { role: 'operator', path: `/ui/api/failures/stuck/${encodeURIComponent(id!)}`, body: async () => ({}) };
+  throw usage('failure list | retry <id> | stuck [<cause>]');
 }
 
 function backfillCall(args: string[]): Call {

@@ -51,8 +51,10 @@ export const JOBS_DIR = '~/hopper-jobs';
  * #1694: its wait check ends it now). `on` (issue #1245): what it waits on, typed; every wait since has one, and one without is
  * a legacy wait, stuck work. `polledAt` (issue #1210): when the hopper first saw its own command poll hopper state; `on` then
  * says what it polls. `check` (issue #1694): what the hopper tests of the wait and when, kept with it (wait-checks.ts).
+ * `strandedAt` (issue #1779): a wait the hopper watches, not its pane, whose agent session ended — when that was first seen;
+ * cleared when the agent is seen again. Only a person, or what it waits on, wakes it: stuck work, `stranded`.
  */
-export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; strandedAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
