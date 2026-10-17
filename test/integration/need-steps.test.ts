@@ -19,6 +19,7 @@
 //   Scenario: a template a person saved that declares the need and more is used: the step is minted only its need
 //   Scenario: a write need waits for a person; one approval, and the step goes on with no other action; a change with
 //     no approved plan is refused by the apply gate, and nothing is minted
+//   Scenario: sandbox strictness locked for the template (issue #655 part 8): the need step is refused, saying why
 //   Scenario: a need the vault mints nothing for is refused, saying why; a bad call is refused before anything runs
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -126,6 +127,19 @@ describe('need steps (issue #1007)', () => {
     expect(minted.map((e) => (e.data as { asset: unknown }).asset)).toEqual([role]);
     expect(stepBoxes(b)[0]!.env.HOPPER_STEP_KUBECONFIG).toBeUndefined();
     expect((await templates(b)).filter((x) => x.name.startsWith('asked-'))).toHaveLength(0);
+  });
+
+  it('sandbox strictness locked for the template (issue #655 part 8): the need step is refused, saying why', async () => {
+    const b = await bootSteps([]);
+    const role = { kind: 'aws-role', name: `${ACCOUNT}/readonly` };
+    expect((await vault(b.a, b.token, { action: 'save-template', name: 'dig', image: 'ghcr.io/henningfutrell/hopper:box-claude', secrets: [], profiles: [{ operation: 'read', asset: role }] })).status).toBe(200);
+    expect((await vault(b.a, b.token, { action: 'approve-template', name: 'dig' })).status).toBe(200);
+    expect((await b.a.ui('/ui/api/sandbox-strictness', { default: 'standard', radius: {}, templates: { dig: 'locked' } }, { token: b.token })).status).toBe(200);
+    const { creds } = await stepJob(b);
+    const r = await step(b, creds, ['need', READ, '--command', 'aws sts get-caller-identity']).end;
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('sandbox strictness locked for the template dig');
+    expect(stepBoxes(b)).toHaveLength(0);
   });
 
   it('a write need waits for a person; one approval and the step goes on by itself; with no approved plan the apply gate refuses it', async () => {
