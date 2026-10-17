@@ -31,6 +31,7 @@ const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: tru
 
 const DRAFT = { title: 'Export button does nothing', body: '## Summary\n\nThe export button does nothing.', notes: 'rephrased' };
 const input = { repo: 'acme/widgets', text: 'The export button does nothing.' };
+const scope = { repos: ['acme/widgets'] };
 const signal = () => new AbortController().signal;
 
 let dir: string;
@@ -88,7 +89,7 @@ const LOCKDOWN: Record<DraftProvider, string[]> = {
 describe('draftOn: each provider, locked down', () => {
   for (const provider of ['claude', 'codex', 'cursor-agent', 'opencode', 'omp'] as const) {
     it(`${provider}: the skill goes to it locked down, in a fresh dir removed after, and the draft comes back checked`, async () => {
-      const r = await draftOn(host([HERE]), pick(provider), input, signal());
+      const r = await draftOn(host([HERE]), pick(provider), input, scope, signal());
       expect(r).toMatchObject({ draft: DRAFT, findings: [], skill: { name: 'file-issue', id: loadRunSkill('file-issue').id } });
       const call = lastCall(provider);
       expect(call.argv).toEqual(expect.arrayContaining(LOCKDOWN[provider]));
@@ -101,7 +102,7 @@ describe('draftOn: each provider, locked down', () => {
   }
 
   it('over ssh: the same locked-down turn runs there, through the machine\'s connection', async () => {
-    const r = await draftOn(host([DESK]), pick('codex', 'desk'), input, signal());
+    const r = await draftOn(host([DESK]), pick('codex', 'desk'), input, scope, signal());
     expect(r).toMatchObject({ draft: DRAFT });
     const ssh = JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim().split('\n').at(-1)!) as { argv: string[] };
     expect(ssh.argv.slice(ssh.argv.indexOf('--') + 1, -1)).toEqual(['desk.example']);
@@ -109,11 +110,11 @@ describe('draftOn: each provider, locked down', () => {
   });
 
   it('a model and an effort go to the CLI in its own flags', async () => {
-    await draftOn(host([HERE]), pick('codex', 'local', { model: 'gpt-x', effort: 'max' }), input, signal());
+    await draftOn(host([HERE]), pick('codex', 'local', { model: 'gpt-x', effort: 'max' }), input, scope, signal());
     expect(lastCall('codex').argv).toEqual(expect.arrayContaining(['--model', 'gpt-x', '-c', 'model_reasoning_effort="xhigh"']));
-    await draftOn(host([HERE]), pick('omp', 'local', { effort: 'high' }), input, signal());
+    await draftOn(host([HERE]), pick('omp', 'local', { effort: 'high' }), input, scope, signal());
     expect(lastCall('omp').argv).toContain('--thinking=high');
-    await draftOn(host([HERE]), pick('claude', 'local', { model: 'fable', effort: 'low' }), input, signal());
+    await draftOn(host([HERE]), pick('claude', 'local', { model: 'fable', effort: 'low' }), input, scope, signal());
     expect(lastCall('claude').argv).toEqual(expect.arrayContaining(['--model', 'fable', '--effort', 'low']));
   });
 });
@@ -121,44 +122,44 @@ describe('draftOn: each provider, locked down', () => {
 describe('draftOn: what goes wrong, in plain words', () => {
   it('an answer that is not a draft is refused', async () => {
     process.env.FAKE_AGENT_REPLY = 'Here is your issue: it is about the export button.';
-    expect(await draftOn(host([HERE]), pick('omp'), input, signal())).toEqual({ error: 'omp on this machine gave no draft: omp answered no JSON object' });
+    expect(await draftOn(host([HERE]), pick('omp'), input, scope, signal())).toEqual({ error: 'omp on this machine gave no draft: omp answered no JSON object' });
     process.env.FAKE_AGENT_REPLY = JSON.stringify({ title: 'x' });
-    expect(await draftOn(host([HERE]), pick('codex'), input, signal())).toEqual({ error: NOT_A_DRAFT });
+    expect(await draftOn(host([HERE]), pick('codex'), input, scope, signal())).toEqual({ error: NOT_A_DRAFT });
     process.env.FAKE_CLAUDE_MODE = 'malformed';
-    expect(await draftOn(host([HERE]), pick('claude'), input, signal())).toEqual({ error: 'claude on this machine gave no draft: claude printed no JSON result' });
+    expect(await draftOn(host([HERE]), pick('claude'), input, scope, signal())).toEqual({ error: 'claude on this machine gave no draft: claude printed no JSON result' });
   });
 
   it('a CLI that is not signed in says so, and how to sign it in', async () => {
     process.env.FAKE_AGENT_MODE = 'error';
-    expect(await draftOn(host([HERE]), pick('codex'), input, signal())).toEqual({ error: 'codex is not signed in on this machine. Sign it in there (codex login), then draft again.' });
-    expect(await draftOn(host([HERE]), pick('omp'), input, signal())).toEqual({ error: 'omp is not signed in on this machine. Sign it in there (omp, then /login), then draft again.' });
+    expect(await draftOn(host([HERE]), pick('codex'), input, scope, signal())).toEqual({ error: 'codex is not signed in on this machine. Sign it in there (codex login), then draft again.' });
+    expect(await draftOn(host([HERE]), pick('omp'), input, scope, signal())).toEqual({ error: 'omp is not signed in on this machine. Sign it in there (omp, then /login), then draft again.' });
     process.env.FAKE_CURSOR_MODE = 'exit1';
-    expect(await draftOn(host([DESK]), pick('cursor-agent', 'desk'), input, signal())).toEqual({ error: 'cursor-agent is not signed in on machine desk. Sign it in there (cursor-agent login), then draft again.' });
+    expect(await draftOn(host([DESK]), pick('cursor-agent', 'desk'), input, scope, signal())).toEqual({ error: 'cursor-agent is not signed in on machine desk. Sign it in there (cursor-agent login), then draft again.' });
     process.env.FAKE_CLAUDE_MODE = 'exit1';
-    expect(await draftOn(host([HERE]), pick('claude'), input, signal())).toEqual({ error: expect.stringMatching(/^claude is not signed in on this machine/) });
+    expect(await draftOn(host([HERE]), pick('claude'), input, scope, signal())).toEqual({ error: expect.stringMatching(/^claude is not signed in on this machine/) });
   });
 
   it('a CLI that is not installed says so', async () => {
-    expect(await draftOn(host([HERE]), pick('opencode', 'local', { bin: join(dir, 'no-such-opencode') }), input, signal()))
+    expect(await draftOn(host([HERE]), pick('opencode', 'local', { bin: join(dir, 'no-such-opencode') }), input, scope, signal()))
       .toEqual({ error: expect.stringMatching(/^opencode is not installed on this machine/) });
   });
 
   it('an offline, unknown or container machine is refused before anything runs', async () => {
-    expect(await draftOn(host([{ ...DESK, online: false }]), pick('codex', 'desk'), input, signal())).toEqual({ error: 'machine desk is offline. Bring it back, or pick another machine.' });
-    expect(await draftOn(host([]), pick('codex', 'desk'), input, signal())).toEqual({ error: 'machine desk is not configured. Pick another machine.' });
-    expect(await draftOn(host([BOX]), pick('claude', 'box'), input, signal())).toEqual({ error: expect.stringMatching(/^machine box is a container target/) });
+    expect(await draftOn(host([{ ...DESK, online: false }]), pick('codex', 'desk'), input, scope, signal())).toEqual({ error: 'machine desk is offline. Bring it back, or pick another machine.' });
+    expect(await draftOn(host([]), pick('codex', 'desk'), input, scope, signal())).toEqual({ error: 'machine desk is not configured. Pick another machine.' });
+    expect(await draftOn(host([BOX]), pick('claude', 'box'), input, scope, signal())).toEqual({ error: expect.stringMatching(/^machine box is a container target/) });
     expect(existsSync(join(dir, 'agent-calls.jsonl'))).toBe(false);
   });
 
   it('a run past its timeout is stopped, and says so', async () => {
     process.env.FAKE_AGENT_MODE = 'hang';
-    expect(await draftOn(host([HERE]), pick('codex', 'local', { timeoutMs: 500 }), input, signal())).toEqual({ error: 'codex on this machine: timed out after 500 ms' });
+    expect(await draftOn(host([HERE]), pick('codex', 'local', { timeoutMs: 500 }), input, scope, signal())).toEqual({ error: 'codex on this machine: timed out after 500 ms' });
   });
 
   for (const [where, m, on] of [['this machine', HERE, 'this machine'], ['an ssh target', DESK, 'machine desk']] as const) {
     it(`a run stopped on ${where} is stopped there too, and leaves no run dir (issue #472)`, async () => {
       process.env.FAKE_AGENT_MODE = 'hang';
-      expect(await draftOn(host([m]), pick('codex', m.id, { timeoutMs: 1500 }), input, signal())).toEqual({ error: `codex on ${on}: timed out after 1500 ms` });
+      expect(await draftOn(host([m]), pick('codex', m.id, { timeoutMs: 1500 }), input, scope, signal())).toEqual({ error: `codex on ${on}: timed out after 1500 ms` });
       const call = lastCall('codex') as Call & { sandbox: { pid: number } };
       // Killed, it can stay a zombie a moment, until its new parent reaps it.
       await expect.poll(() => gone(call.sandbox.pid), { timeout: 2000 }).toBe(true);
@@ -170,13 +171,13 @@ describe('draftOn: what goes wrong, in plain words', () => {
     process.env.FAKE_AGENT_MODE = 'hang';
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 300);
-    expect(await draftOn(host([HERE]), pick('opencode'), input, ac.signal)).toEqual({ error: 'opencode on this machine: cancelled' });
+    expect(await draftOn(host([HERE]), pick('opencode'), input, scope, ac.signal)).toEqual({ error: 'opencode on this machine: cancelled' });
   });
 });
 
 describe('draftOn: client machines and users added later', () => {
   it('a client target drafts with claude through its client, locked down, the prompt on stdin', async () => {
-    const r = await draftOn(host([STUDIO]), pick('claude', 'studio'), input, signal());
+    const r = await draftOn(host([STUDIO]), pick('claude', 'studio'), input, scope, signal());
     expect(r).toMatchObject({ draft: DRAFT, model: 'claude-opus-resolved' });
     const call = lastCall('claude');
     expect(call.argv.slice(-2)).toEqual(['--tools', '']);
@@ -184,18 +185,18 @@ describe('draftOn: client machines and users added later', () => {
   });
 
   it('a client target refuses another CLI, and a client not dialled in says so', async () => {
-    expect(await draftOn(host([STUDIO]), pick('codex', 'studio'), input, signal())).toEqual({ error: expect.stringMatching(/^machine studio is a joined machine: its client runs only claude/) });
-    expect(await draftOn(host([STUDIO], { client: () => undefined }), pick('claude', 'studio'), input, signal())).toEqual({ error: expect.stringMatching(/^machine studio: its client is not dialled in/) });
+    expect(await draftOn(host([STUDIO]), pick('codex', 'studio'), input, scope, signal())).toEqual({ error: expect.stringMatching(/^machine studio is a joined machine: its client runs only claude/) });
+    expect(await draftOn(host([STUDIO], { client: () => undefined }), pick('claude', 'studio'), input, scope, signal())).toEqual({ error: expect.stringMatching(/^machine studio: its client is not dialled in/) });
   });
 
   it('a user added later runs claude here with their own config dir, and no other CLI here', async () => {
     // A user added later keeps only the machine's variables of the daemon's: the fakes' own go with their dirs.
     const fakes = { FAKE_CLAUDE_OUT: process.env.FAKE_CLAUDE_OUT!, FAKE_CLAUDE_STRUCTURED: process.env.FAKE_CLAUDE_STRUCTURED! };
     const userEnv = { CLAUDE_CONFIG_DIR: join(dir, 'claude-config'), GH_CONFIG_DIR: join(dir, 'gh'), ...fakes };
-    expect(await draftOn(host([HERE], { userEnv }), pick('claude'), input, signal())).toMatchObject({ draft: DRAFT });
+    expect(await draftOn(host([HERE], { userEnv }), pick('claude'), input, scope, signal())).toMatchObject({ draft: DRAFT });
     const env = (JSON.parse(readFileSync(join(dir, 'claude.json'), 'utf8')) as { env: Record<string, string> }).env;
     expect(env.CLAUDE_CONFIG_DIR).toBe(userEnv.CLAUDE_CONFIG_DIR);
-    expect(await draftOn(host([HERE], { userEnv }), pick('codex'), input, signal())).toEqual({ error: expect.stringMatching(/only your own claude login: codex here would run on another account/) });
-    expect(await draftOn(host([DESK], { userEnv }), pick('codex', 'desk'), input, signal())).toMatchObject({ draft: DRAFT });
+    expect(await draftOn(host([HERE], { userEnv }), pick('codex'), input, scope, signal())).toEqual({ error: expect.stringMatching(/only your own claude login: codex here would run on another account/) });
+    expect(await draftOn(host([DESK], { userEnv }), pick('codex', 'desk'), input, scope, signal())).toMatchObject({ draft: DRAFT });
   });
 });
